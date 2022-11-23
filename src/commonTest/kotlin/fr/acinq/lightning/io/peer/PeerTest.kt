@@ -139,7 +139,7 @@ class PeerTest : LightningTestSuite() {
         alice.forward(txSigsBob)
         val txSigsAlice = alice2bob.expect<TxSignatures>()
         bob.forward(txSigsAlice)
-        val (channelId, aliceState) = alice.expectState<WaitForFundingConfirmed>()
+        val (channelId, aliceState) = alice.expectState<WaitForFundingConfirmed> { fundingTx.signedTx != null }
         assertEquals(channelId, txAddInput.channelId)
         bob.expectState<WaitForFundingConfirmed>()
         val fundingTx = aliceState.fundingTx.signedTx
@@ -197,8 +197,8 @@ class PeerTest : LightningTestSuite() {
         bob.forward(commitSigAlice)
         val txSigsBob = bob2alice.expect<TxSignatures>()
         alice.forward(txSigsBob)
-        val channelReadyAlice = alice2bob.expect<ChannelReady>()
         val txSigsAlice = alice2bob.expect<TxSignatures>()
+        val channelReadyAlice = alice2bob.expect<ChannelReady>()
         bob.forward(txSigsAlice)
         val channelReadyBob = bob2alice.expect<ChannelReady>()
         alice.forward(channelReadyBob)
@@ -227,7 +227,7 @@ class PeerTest : LightningTestSuite() {
         val fundingFee = 100.sat
         val serviceFee = (internalRequestBob.maxFee - fundingFee - 1.sat).toMilliSatoshi()
         // total fee is below max acceptable
-        assert(fundingFee + serviceFee.truncateToSatoshi() < internalRequestBob.maxFee)
+        assertTrue(fundingFee + serviceFee.truncateToSatoshi() < internalRequestBob.maxFee)
         val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
         val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         alice.send(openAlice)
@@ -286,7 +286,7 @@ class PeerTest : LightningTestSuite() {
         assertEquals(request.localFundingAmount, 260_000.sat)
         val fundingFee = 100.sat
         val serviceFee = (internalRequestBob.maxFee - fundingFee + 1.sat).toMilliSatoshi()
-        assert(fundingFee + serviceFee.truncateToSatoshi() > internalRequestBob.maxFee)
+        assertTrue(fundingFee + serviceFee.truncateToSatoshi() > internalRequestBob.maxFee)
         val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
         val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         alice.send(openAlice)

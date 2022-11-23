@@ -31,14 +31,6 @@ data class InteractiveTxParams(
 
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
-
-    fun shouldSignFirst(localNodeId: PublicKey, remoteNodeId: PublicKey): Boolean = when {
-        // The peer with the lowest total of input amount must transmit its `tx_signatures` first.
-        localAmount < remoteAmount -> true
-        // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
-        localAmount == remoteAmount -> LexicographicalOrdering.isLessThan(localNodeId, remoteNodeId)
-        else -> false
-    }
 }
 
 sealed class FundingContributionFailure {

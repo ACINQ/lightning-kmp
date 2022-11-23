@@ -37,8 +37,6 @@ data class WaitForFundingConfirmed(
                         logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
                         val nextState = this@WaitForFundingConfirmed.copy(fundingTx = fullySignedTx)
                         val actions = buildList {
-                            // If we haven't sent our signatures yet, we do it now.
-                            if (!fundingParams.shouldSignFirst(commitments.localParams.nodeId, commitments.remoteParams.nodeId)) add(ChannelAction.Message.Send(fullySignedTx.localSigs))
                             add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
                             add(ChannelAction.Storage.StoreState(nextState))
                         }
@@ -238,7 +236,7 @@ data class WaitForFundingConfirmed(
                             val actions = buildList {
                                 add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
                                 add(ChannelAction.Storage.StoreState(nextState))
-                                if (fundingParams.shouldSignFirst(commitments.localParams.nodeId, commitments.remoteParams.nodeId)) add(ChannelAction.Message.Send(signedFundingTx.localSigs))
+                                add(ChannelAction.Message.Send(signedFundingTx.localSigs))
                             }
                             Pair(nextState, actions)
                         }

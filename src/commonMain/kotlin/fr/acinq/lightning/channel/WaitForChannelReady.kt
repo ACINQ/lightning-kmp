@@ -33,8 +33,6 @@ data class WaitForChannelReady(
                         logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
                         val nextState = this@WaitForChannelReady.copy(fundingTx = fullySignedTx)
                         val actions = buildList {
-                            // If we haven't sent our signatures yet, we do it now.
-                            if (!fundingParams.shouldSignFirst(commitments.localParams.nodeId, commitments.remoteParams.nodeId)) add(ChannelAction.Message.Send(fullySignedTx.localSigs))
                             add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
                             add(ChannelAction.Storage.StoreState(nextState))
                         }
