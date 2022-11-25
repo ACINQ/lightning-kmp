@@ -692,24 +692,24 @@ class Peer(
                             val (wallet, fundingAmount, pushAmount) = when (val origin = msg.origin) {
                                 is ChannelOrigin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
-                                    // Let's verify that the fee is indeed below our max (a honest LSP would not even try)
-                                    val totalFee = origin.serviceFee.truncateToSatoshi() + origin.fundingFee
-                                    if (totalFee > request.maxFee) {
-                                        logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: fee is too high (max=${request.maxFee} actual=${totalFee})" }
-                                        sendToPeer(Error(msg.temporaryChannelId, "channel opening fee too high"))
-                                        return
-                                    }
+                                        // Let's verify that the fee is indeed below our max (a honest LSP would not even try)
+                                        val totalFee = origin.serviceFee.truncateToSatoshi() + origin.fundingFee
+                                        if (totalFee > request.maxFee) {
+                                            logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: fee is too high (max=${request.maxFee} actual=${totalFee})" }
+                                            sendToPeer(Error(msg.temporaryChannelId, "channel opening fee too high"))
+                                            return@withMDC
+                                        }
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                         val fundingAmount = request.wallet.confirmedBalance - origin.fundingFee
                                         nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, fundingFee = origin.fundingFee))
                                         Triple(request.wallet, fundingAmount, origin.serviceFee)
                                     }
 
-                                else -> {
-                                    logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: cannot find channel request with requestId=${origin.requestId}" }
-                                    sendToPeer(Error(msg.temporaryChannelId, "no corresponding channel request"))
-                                    return
-                                }
+                                    else -> {
+                                        logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: cannot find channel request with requestId=${origin.requestId}" }
+                                        sendToPeer(Error(msg.temporaryChannelId, "no corresponding channel request"))
+                                        return@withMDC
+                                    }
                                 }
 
                                 else -> Triple(WalletState.empty, 0.sat, 0.msat)
