@@ -35,7 +35,6 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     logger.warning { "they have a more recent commitment, using it instead" }
                                     decrypted.get()
                                 } else {
-                                    logger.info { "ignoring their older backup" }
                                     state
                                 }
                             }
