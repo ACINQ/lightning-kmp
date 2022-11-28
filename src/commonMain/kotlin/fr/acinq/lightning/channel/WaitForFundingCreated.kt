@@ -68,7 +68,7 @@ data class WaitForFundingCreated(
                         )
                         when (firstCommitTxRes) {
                             is Either.Left -> {
-                                logger.error(firstCommitTxRes.value) { "c:$channelId cannot create first commit tx" }
+                                logger.error(firstCommitTxRes.value) { "cannot create first commit tx" }
                                 handleLocalError(cmd, firstCommitTxRes.value)
                             }
                             is Either.Right -> {
@@ -99,33 +99,33 @@ data class WaitForFundingCreated(
                         }
                     }
                     is InteractiveTxSessionAction.RemoteFailure -> {
-                        logger.warning { "c:$channelId interactive-tx failed: $interactiveTxAction" }
+                        logger.warning { "interactive-tx failed: $interactiveTxAction" }
                         handleLocalError(cmd, DualFundingAborted(channelId, interactiveTxAction.toString()))
                     }
                 }
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> {
-                logger.warning { "c:$channelId received commit_sig too early, aborting" }
+                logger.warning { "received commit_sig too early, aborting" }
                 handleLocalError(cmd, UnexpectedCommitSig(channelId))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> {
-                logger.warning { "c:$channelId received tx_signatures too early, aborting" }
+                logger.warning { "received tx_signatures too early, aborting" }
                 handleLocalError(cmd, UnexpectedFundingSignatures(channelId))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
-                logger.info { "c:$channelId ignoring unexpected tx_init_rbf message" }
+                logger.info { "ignoring unexpected tx_init_rbf message" }
                 Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAckRbf -> {
-                logger.info { "c:$channelId ignoring unexpected tx_ack_rbf message" }
+                logger.info { "ignoring unexpected tx_ack_rbf message" }
                 Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> {
-                logger.warning { "c:$channelId our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
+                logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
-                logger.error { "c:$channelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
+                logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> handleLocalError(cmd, ChannelFundingError(channelId))
@@ -136,7 +136,7 @@ data class WaitForFundingCreated(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForFundingCreated::class.simpleName}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }

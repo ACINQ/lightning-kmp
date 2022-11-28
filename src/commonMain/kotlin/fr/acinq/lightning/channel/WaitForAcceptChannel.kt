@@ -25,7 +25,7 @@ data class WaitForAcceptChannel(
     val init: ChannelCommand.InitInitiator,
     val lastSent: OpenDualFundedChannel
 ) : ChannelState() {
-    private val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
+    val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
@@ -49,14 +49,13 @@ data class WaitForAcceptChannel(
                             features = Features(init.remoteInit.features)
                         )
                         val channelId = computeChannelId(lastSent, accept)
-                        val channelIdAssigned = ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId)
                         val localFundingPubkey = init.localParams.channelKeys(keyManager).fundingPubKey
                         val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                         val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
                         val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, fundingPubkeyScript, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
                         when (val fundingContributions = FundingContributions.create(fundingParams, init.wallet.confirmedUtxos)) {
                             is Either.Left -> {
-                                logger.error { "c:$channelId could not fund channel: ${fundingContributions.value}" }
+                                logger.error { "could not fund channel: ${fundingContributions.value}" }
                                 Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
                             }
                             is Either.Right -> {
@@ -79,14 +78,14 @@ data class WaitForAcceptChannel(
                                             null
                                         )
                                         val actions = listOf(
-                                            channelIdAssigned,
+                                            ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
                                             ChannelAction.Message.Send(interactiveTxAction.msg),
                                             ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
                                         )
                                         Pair(nextState, actions)
                                     }
                                     else -> {
-                                        logger.error { "c:$channelId could not start interactive-tx session: $interactiveTxAction" }
+                                        logger.error { "could not start interactive-tx session: $interactiveTxAction" }
                                         Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
                                     }
                                 }
@@ -94,13 +93,13 @@ data class WaitForAcceptChannel(
                         }
                     }
                     is Either.Left -> {
-                        logger.error(res.value) { "c:$temporaryChannelId invalid ${cmd.message::class} in state ${this::class}" }
+                        logger.error(res.value) { "invalid ${cmd.message::class} in state ${this::class}" }
                         return Pair(Aborted, listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId(keyManager), res.value.message))))
                     }
                 }
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
-                logger.error { "c:$temporaryChannelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
+                logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
@@ -109,7 +108,7 @@ data class WaitForAcceptChannel(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$temporaryChannelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForAcceptChannel::class.simpleName}" }
         val error = Error(temporaryChannelId, t.message)
         return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }

@@ -12,11 +12,10 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.lightning.utils.toMilliSatoshi
+import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -30,7 +29,8 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
             ChannelContext(
                 StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
                 TestConstants.defaultBlockHeight,
-                OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+                OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+                MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
             ),
             WaitForInit
         )

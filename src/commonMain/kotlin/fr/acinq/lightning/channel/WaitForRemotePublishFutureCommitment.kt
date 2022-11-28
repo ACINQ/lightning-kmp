@@ -22,13 +22,13 @@ data class WaitForRemotePublishFutureCommitment(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:${commitments.channelId} error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForRemotePublishFutureCommitment::class}" }
         val error = Error(channelId, t.message)
         return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }
 
     internal fun ChannelContext.handleRemoteSpentFuture(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "c:${commitments.channelId} they published their future commit (because we asked them to) in txid=${tx.txid}" }
+        logger.warning { "they published their future commit (because we asked them to) in txid=${tx.txid}" }
         val remoteCommitPublished = claimRemoteCommitMainOutput(
             keyManager,
             commitments,

@@ -22,6 +22,7 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Cla
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
 import fr.acinq.lightning.utils.LoggingContext
+import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import org.kodein.log.Logger
@@ -31,7 +32,7 @@ import kotlin.test.*
 
 class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
 
-    override val logger: Logger = LoggerFactory.default.newLogger(this::class)
+    override val logger: MDCLogger = MDCLogger(LoggerFactory.default.newLogger(this::class))
 
     @Test
     fun `local commit published`() {

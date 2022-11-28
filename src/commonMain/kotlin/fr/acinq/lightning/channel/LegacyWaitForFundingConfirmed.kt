@@ -38,7 +38,7 @@ data class LegacyWaitForFundingConfirmed(
                             Transaction.correctlySpends(commitments.localCommit.publishableTxs.commitTx.tx, listOf(cmd.watch.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
                         }
                         if (result is Try.Failure) {
-                            logger.error { "c:$channelId funding tx verification failed: ${result.error}" }
+                            logger.error { "funding tx verification failed: ${result.error}" }
                             return handleLocalError(cmd, InvalidCommitmentSignature(channelId, cmd.watch.tx.txid))
                         }
                         val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys(keyManager).shaSeed, 1)
@@ -55,7 +55,7 @@ data class LegacyWaitForFundingConfirmed(
                             ChannelAction.Storage.StoreState(nextState)
                         )
                         if (deferred != null) {
-                            logger.info { "c:$channelId funding_locked has already been received" }
+                            logger.info { "funding_locked has already been received" }
                             val resultPair = nextState.run { process(ChannelCommand.MessageReceived(deferred)) }
                             Pair(resultPair.first, actions + resultPair.second)
                         } else {
@@ -79,7 +79,7 @@ data class LegacyWaitForFundingConfirmed(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@LegacyWaitForFundingConfirmed::class.simpleName}" }
         val error = Error(channelId, t.message)
         return when {
             commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))

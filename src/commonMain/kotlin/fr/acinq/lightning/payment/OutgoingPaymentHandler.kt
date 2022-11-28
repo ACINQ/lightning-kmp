@@ -16,7 +16,6 @@ import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import org.kodein.log.Logger
 import org.kodein.log.newLogger
 
 class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
@@ -48,28 +47,29 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     private fun getPaymentAttempt(childId: UUID): PaymentAttempt? = childToParentId[childId]?.let { pending[it] }
 
     suspend fun sendPayment(request: SendPayment, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): SendPaymentResult {
-        logger.info { "h:${request.paymentHash} p:${request.paymentId} sending ${request.amount} to ${request.recipient}" }
+        val logger = MDCLogger(logger, staticMdc = request.mdc())
+        logger.info { "sending ${request.amount} to ${request.recipient}" }
         if (request.amount <= 0.msat) {
-            logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment amount must be positive (${request.amount})" }
+            logger.warning { "payment amount must be positive (${request.amount})" }
             return Failure(request, FinalFailure.InvalidPaymentAmount.toPaymentFailure())
         }
         if (!nodeParams.features.areSupported(Features(request.paymentRequest.features).invoiceFeatures())) {
-            logger.warning { "h:${request.paymentHash} p:${request.paymentId} invoice contains mandatory features that we don't support" }
+            logger.warning { "invoice contains mandatory features that we don't support" }
             return Failure(request, FinalFailure.FeaturesNotSupported.toPaymentFailure())
         }
         if (pending.containsKey(request.paymentId)) {
-            logger.error { "h:${request.paymentHash} p:${request.paymentId} contract violation: caller is recycling uuid's" }
+            logger.error { "contract violation: caller is recycling uuid's" }
             return Failure(request, FinalFailure.InvalidPaymentId.toPaymentFailure())
         }
         if (db.listOutgoingPayments(request.paymentHash).find { it.status is OutgoingPayment.Status.Completed.Succeeded } != null) {
-            logger.error { "h:${request.paymentHash} p:${request.paymentId} invoice has already been paid" }
+            logger.error { "invoice has already been paid" }
             return Failure(request, FinalFailure.AlreadyPaid.toPaymentFailure())
         }
         val trampolineFees = request.trampolineFeesOverride ?: walletParams.trampolineFees
         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(request, trampolineFees.first(), currentBlockHeight)
         return when (val result = routeCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
-                logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${result.value}" }
+                logger.warning { "payment failed: ${result.value}" }
                 db.addOutgoingPayment(OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
                 val finalFailure = result.value
                 db.completeOutgoingPaymentOffchain(request.paymentId, finalFailure)
@@ -89,17 +89,19 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     }
 
     private fun createChildPayments(request: SendPayment, routes: List<RouteCalculation.Route>, trampolinePayload: PaymentAttempt.TrampolinePayload): List<Triple<OutgoingPayment.LightningPart, SharedSecrets, WrappedChannelCommand>> {
+        val logger = MDCLogger(logger, staticMdc = request.mdc())
         val childPayments = routes.map { createOutgoingPart(request, it, trampolinePayload) }
         childToParentId.putAll(childPayments.map { it.first.id to request.paymentId })
-        childPayments.forEach { logger.info { "h:${request.paymentHash} p:${request.paymentId} i:${it.first.id} sending ${it.first.amount} to channel ${it.third.channelId}" } }
+        childPayments.forEach { logger.info(mapOf("childPaymentId" to it.first.id)) { "sending ${it.first.amount} to channel ${it.third.channelId}" } }
         return childPayments
     }
 
     suspend fun processAddFailed(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddFailed, channels: Map<ByteVector32, ChannelState>): ProcessFailureResult? {
         val add = event.cmd
         val payment = getPaymentAttempt(add.paymentId) ?: return processPostRestartFailure(add.paymentId, Either.Left(event.error))
+        val logger = MDCLogger(logger, staticMdc = mapOf("channelId" to channelId, "childPaymentId" to add.paymentId) + payment.request.mdc())
 
-        logger.debug { "h:${add.paymentHash} p:${payment.request.paymentId} i:${add.paymentId} could not send HTLC: ${event.error.message}" }
+        logger.debug { "could not send HTLC: ${event.error.message}" }
         db.completeOutgoingLightningPart(add.paymentId, Either.Left(event.error))
 
         val (updated, result) = when (payment) {
@@ -128,6 +130,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
     suspend fun processAddSettled(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddSettledFail, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): ProcessFailureResult? {
         val payment = getPaymentAttempt(event.paymentId) ?: return processPostRestartFailure(event.paymentId, Either.Right(UnknownFailureMessage(0)))
+        val logger = MDCLogger(logger, staticMdc = mapOf("channelId" to channelId, "childPaymentId" to event.paymentId) + payment.request.mdc())
 
         val failure: FailureMessage = when (event.result) {
             is ChannelAction.HtlcResult.Fail.RemoteFail -> when (val part = payment.pending[event.paymentId]) {
@@ -140,7 +143,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             else -> UnknownFailureMessage(FailureMessage.BADONION)
         }
 
-        logger.debug { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC failed: ${failure.message}" }
+        logger.debug { "HTLC failed: ${failure.message}" }
         db.completeOutgoingLightningPart(event.paymentId, Either.Right(failure))
 
         val (updated, result) = when (payment) {
@@ -156,7 +159,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     PaymentAttempt.PaymentAborted(payment.request, finalError, payment.pending, listOf()).failChild(event.paymentId, Either.Right(failure), db, logger)
                 } else {
                     // The trampoline node is asking us to retry the payment with more fees.
-                    logger.debug { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} c:$channelId child payment failed because of fees" }
+                    logger.debug { "child payment failed because of fees" }
                     val updated = payment.copy(pending = payment.pending - event.paymentId)
                     if (updated.pending.isNotEmpty()) {
                         // We wait for all pending HTLCs to be settled before retrying.
@@ -164,11 +167,11 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         Pair(updated, null)
                     } else {
                         val nextFees = trampolineFees[payment.attemptNumber + 1]
-                        logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} retrying payment with higher fees (base=${nextFees.feeBase}, proportional=${nextFees.feeProportional})..." }
+                        logger.info { "retrying payment with higher fees (base=${nextFees.feeBase}, proportional=${nextFees.feeProportional})..." }
                         val (trampolineAmount, trampolineExpiry, trampolinePacket) = createTrampolinePayload(payment.request, nextFees, currentBlockHeight)
                         when (val routes = routeCalculation.findRoutes(payment.request.paymentId, trampolineAmount, channels)) {
                             is Either.Left -> {
-                                logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment failed: ${routes.value}" }
+                                logger.warning { "payment failed: ${routes.value}" }
                                 val aborted = PaymentAttempt.PaymentAborted(payment.request, routes.value, mapOf(), payment.failures + Either.Right(failure))
                                 val result = Failure(payment.request, OutgoingPaymentFailure(aborted.reason, aborted.failures))
                                 db.completeOutgoingPaymentOffchain(payment.request.paymentId, result.failure.reason)
@@ -207,22 +210,23 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     private suspend fun processPostRestartFailure(partId: UUID, failure: Either<ChannelException, FailureMessage>): ProcessFailureResult? {
         when (val payment = db.getOutgoingPaymentFromPartId(partId)) {
             null -> {
-                logger.error { "i:$partId paymentId doesn't match any known payment attempt" }
+                logger.error { "paymentId=$partId doesn't match any known payment attempt" }
                 return null
             }
             else -> {
-                logger.debug { "h:${payment.paymentHash} p:${payment.id} i:$partId could not send HTLC (wallet restart): ${failure.fold({ it.message }, { it.message })}" }
+                val logger = MDCLogger(logger, staticMdc = mapOf("childPaymentId" to partId) + payment.mdc())
+                logger.debug { "could not send HTLC (wallet restart): ${failure.fold({ it.message }, { it.message })}" }
                 db.completeOutgoingLightningPart(partId, failure)
                 val parts = payment.parts.filterIsInstance<OutgoingPayment.LightningPart>()
                 val hasMorePendingParts = parts.any { it.status == OutgoingPayment.LightningPart.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
-                    logger.warning { "h:${payment.paymentHash} p:${payment.id} payment failed: ${FinalFailure.WalletRestarted}" }
+                    logger.warning { "payment failed: ${FinalFailure.WalletRestarted}" }
                     db.completeOutgoingPaymentOffchain(payment.id, FinalFailure.WalletRestarted)
                     val request = when (payment.details) {
                         is OutgoingPayment.Details.Normal -> SendPaymentNormal(payment.id, payment.recipientAmount, payment.recipient, payment.details)
                         is OutgoingPayment.Details.SwapOut -> SendPaymentSwapOut(payment.id, payment.recipientAmount, payment.recipient, payment.details)
                         else -> {
-                            logger.debug { "h:${payment.paymentHash} p:${payment.id} i:$partId cannot recreate send-payment-request failure from db data with details=${payment.details}" }
+                            logger.debug { "cannot recreate send-payment-request failure from db data with details=${payment.details}" }
                             return null
                         }
                     }
@@ -243,8 +247,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     suspend fun processAddSettled(event: ChannelAction.ProcessCmdRes.AddSettledFulfill): ProcessFulfillResult? {
         val preimage = event.result.paymentPreimage
         val payment = getPaymentAttempt(event.paymentId) ?: return processPostRestartFulfill(event.paymentId, preimage)
+        val logger = MDCLogger(logger, staticMdc = mapOf("childPaymentId" to event.paymentId) + payment.request.mdc())
 
-        logger.debug { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} HTLC fulfilled" }
+        logger.debug { "HTLC fulfilled" }
         val part = payment.pending[event.paymentId]?.first?.copy(status = OutgoingPayment.LightningPart.Status.Succeeded(preimage))
         db.completeOutgoingLightningPart(event.paymentId, preimage)
 
@@ -254,7 +259,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             is PaymentAttempt.PaymentAborted -> {
                 // The recipient released the preimage without receiving the full payment amount.
                 // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
-                logger.warning { "h:${payment.request.paymentHash} p:${payment.request.paymentId} i:${event.paymentId} payment succeeded after partial failure: we may have paid less than the full amount" }
+                logger.warning { "payment succeeded after partial failure: we may have paid less than the full amount" }
                 PaymentAttempt.PaymentSucceeded(payment.request, preimage, part?.let { listOf(it) } ?: listOf(), payment.pending - event.paymentId)
             }
         }
@@ -262,7 +267,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         updateGlobalState(event.paymentId, updated)
 
         return if (updated.isComplete()) {
-            logger.info { "h:${payment.request.paymentHash} p:${payment.request.paymentId} payment successfully sent (fees=${updated.fees})" }
+            logger.info { "payment successfully sent (fees=${updated.fees})" }
             db.completeOutgoingPaymentOffchain(payment.request.paymentId, preimage)
             val r = payment.request
             Success(r, OutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage)), preimage)
@@ -274,24 +279,25 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     private suspend fun processPostRestartFulfill(partId: UUID, preimage: ByteVector32): ProcessFulfillResult? {
         when (val payment = db.getOutgoingPaymentFromPartId(partId)) {
             null -> {
-                logger.error { "i:$partId paymentId doesn't match any known payment attempt" }
+                logger.error { "paymentId=$partId doesn't match any known payment attempt" }
                 return null
             }
             else -> {
-                logger.debug { "h:${payment.paymentHash} p:${payment.id} i:$partId HTLC succeeded (wallet restart): $preimage" }
+                val logger = MDCLogger(logger, staticMdc = mapOf("childPaymentId" to partId) + payment.mdc())
+                logger.debug { "HTLC succeeded (wallet restart): $preimage" }
                 db.completeOutgoingLightningPart(partId, preimage)
                 // We try to re-create the request from what we have in the DB.
                 val request = when (payment.details) {
                     is OutgoingPayment.Details.Normal -> SendPaymentNormal(payment.id, payment.recipientAmount, payment.recipient, payment.details)
                     is OutgoingPayment.Details.SwapOut -> SendPaymentSwapOut(payment.id, payment.recipientAmount, payment.recipient, payment.details)
                     else -> {
-                        logger.warning { "h:${payment.paymentHash} p:${payment.id} i:$partId cannot recreate send-payment-request fulfill from db data with details=${payment.details}" }
+                        logger.warning { "cannot recreate send-payment-request fulfill from db data with details=${payment.details}" }
                         return null
                     }
                 }
                 val hasMorePendingParts = payment.parts.filterIsInstance<OutgoingPayment.LightningPart>().any { it.status == OutgoingPayment.LightningPart.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
-                    logger.info { "h:${payment.paymentHash} p:${payment.id} payment successfully sent (wallet restart)" }
+                    logger.info { "payment successfully sent (wallet restart)" }
                     db.completeOutgoingPaymentOffchain(payment.id, preimage)
                     val succeeded = db.getOutgoingPayment(payment.id)!! //  NB: we reload the payment to ensure all parts status are updated
                     Success(request, succeeded, preimage)
@@ -405,10 +411,10 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         ) : PaymentAttempt() {
             override val fees: MilliSatoshi = 0.msat
 
-            suspend fun failChild(childId: UUID, failure: Either<ChannelException, FailureMessage>, db: OutgoingPaymentsDb, logger: Logger): Pair<PaymentAborted, ProcessFailureResult?> {
+            suspend fun failChild(childId: UUID, failure: Either<ChannelException, FailureMessage>, db: OutgoingPaymentsDb, logger: MDCLogger): Pair<PaymentAborted, ProcessFailureResult?> {
                 val updated = copy(pending = pending - childId, failures = failures + failure)
                 val result = if (updated.isComplete()) {
-                    logger.warning { "h:${request.paymentHash} p:${request.paymentId} payment failed: ${updated.reason}" }
+                    logger.warning { "payment failed: ${updated.reason}" }
                     db.completeOutgoingPaymentOffchain(request.paymentId, updated.reason)
                     Failure(request, OutgoingPaymentFailure(updated.reason, updated.failures))
                 } else {
@@ -438,11 +444,11 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
             // The recipient released the preimage without receiving the full payment amount.
             // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
-            suspend fun failChild(childId: UUID, db: OutgoingPaymentsDb, logger: Logger): Pair<PaymentSucceeded, Success?> {
-                logger.warning { "h:${request.paymentHash} p:${request.paymentId} partial payment failure after fulfill: we may have paid less than the full amount" }
+            suspend fun failChild(childId: UUID, db: OutgoingPaymentsDb, logger: MDCLogger): Pair<PaymentSucceeded, Success?> {
+                logger.warning { "partial payment failure after fulfill: we may have paid less than the full amount" }
                 val updated = copy(pending = pending - childId)
                 val result = if (updated.isComplete()) {
-                    logger.info { "h:${request.paymentHash} p:${request.paymentId} payment successfully sent (fees=${updated.fees})" }
+                    logger.info { "payment successfully sent (fees=${updated.fees})" }
                     db.completeOutgoingPaymentOffchain(request.paymentId, preimage)
                     Success(request, OutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, parts, OutgoingPayment.Status.Completed.Succeeded.OffChain(preimage)), preimage)
                 } else {

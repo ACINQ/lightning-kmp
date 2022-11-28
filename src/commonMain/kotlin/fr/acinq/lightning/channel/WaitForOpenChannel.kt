@@ -79,14 +79,13 @@ data class WaitForOpenChannel(
                                     features = Features(remoteInit.features)
                                 )
                                 val channelId = computeChannelId(open, accept)
-                                val channelIdAssigned = ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId)
                                 val localFundingPubkey = localParams.channelKeys(keyManager).fundingPubKey
                                 val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                                 val dustLimit = open.dustLimit.max(localParams.dustLimit)
                                 val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, dustLimit, open.fundingFeerate)
                                 when (val fundingContributions = FundingContributions.create(fundingParams, wallet.confirmedUtxos)) {
                                     is Either.Left -> {
-                                        logger.error { "c:$temporaryChannelId could not fund channel: ${fundingContributions.value}" }
+                                        logger.error { "could not fund channel: ${fundingContributions.value}" }
                                         Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                     }
                                     is Either.Right -> {
@@ -106,7 +105,7 @@ data class WaitForOpenChannel(
                                             open.origin
                                         )
                                         val actions = listOf(
-                                            channelIdAssigned,
+                                            ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
                                             ChannelAction.Message.Send(accept),
                                             ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
                                         )
@@ -115,13 +114,13 @@ data class WaitForOpenChannel(
                                 }
                             }
                             is Either.Left -> {
-                                logger.error(res.value) { "c:$temporaryChannelId invalid ${cmd.message::class} in state ${this::class}" }
+                                logger.error(res.value) { "invalid ${cmd.message::class} in state ${this::class}" }
                                 Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, res.value.message))))
                             }
                         }
                     }
                     is Error -> {
-                        logger.error { "c:$temporaryChannelId peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
+                        logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                         return Pair(Aborted, listOf())
                     }
                     else -> unhandled(cmd)
@@ -134,7 +133,7 @@ data class WaitForOpenChannel(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$temporaryChannelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForOpenChannel::class.simpleName}" }
         val error = Error(temporaryChannelId, t.message)
         return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
     }

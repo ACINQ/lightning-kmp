@@ -1645,7 +1645,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         run {
             val alice1 = aliceClosing.copy(ctx = alice.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt()))
             val (alice2, actions) = alice1.process(ChannelCommand.CheckHtlcTimeout)
-            assertEquals(alice1, alice2)
+            assertEquals(alice1.state, alice2.state)
             assertTrue(actions.isEmpty())
         }
     }

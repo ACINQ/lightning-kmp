@@ -1,7 +1,6 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
@@ -9,15 +8,15 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
-
-import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
+import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.Init
-import fr.acinq.secp256k1.Hex
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -37,7 +36,8 @@ class LegacyWaitForFundingLockedTestsCommon {
         val ctx = ChannelContext(
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
             TestConstants.defaultBlockHeight,
-            OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+            OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+            MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
         )
         val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Restore(state))
         assertIs<LNChannel<Offline>>(state1)

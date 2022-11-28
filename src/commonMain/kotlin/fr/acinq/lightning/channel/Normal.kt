@@ -41,11 +41,11 @@ data class Normal(
                     is CMD_UPDATE_FEE -> handleCommandResult(cmd.command, commitments.sendFee(cmd.command), cmd.command.commit)
                     is CMD_SIGN -> when {
                         !commitments.localHasChanges() -> {
-                            logger.warning { "c:$channelId no changes to sign" }
+                            logger.warning { "no changes to sign" }
                             Pair(this@Normal, listOf())
                         }
                         commitments.remoteNextCommitInfo is Either.Left -> {
-                            logger.debug { "c:$channelId already in the process of signing, will sign again as soon as possible" }
+                            logger.debug { "already in the process of signing, will sign again as soon as possible" }
                             val commitments1 = commitments.copy(remoteNextCommitInfo = Either.Left(commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))
                             Pair(this@Normal.copy(commitments = commitments1), listOf())
                         }
@@ -59,7 +59,7 @@ data class Normal(
                                 // counterparty, so only htlcs above remote's dust_limit matter
                                 val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
                                 val htlcInfos = trimmedHtlcs.map { it.add }.map {
-                                    logger.info { "c:$channelId adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
+                                    logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
                                     ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
                                 }
                                 val nextState = this@Normal.copy(commitments = commitments1)
@@ -152,7 +152,7 @@ data class Normal(
                                     // we just signed htlcs that need to be resolved now
                                     ShuttingDown(commitments1, localShutdown, remoteShutdown, closingFeerates)
                                 } else {
-                                    logger.warning { "c:$channelId we have no htlcs but have not replied with our Shutdown yet, this should never happen" }
+                                    logger.warning { "we have no htlcs but have not replied with our Shutdown yet, this should never happen" }
                                     val closingTxProposed = if (isInitiator) {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                             keyManager,
@@ -278,12 +278,12 @@ data class Normal(
                 val failedHtlcs = mutableListOf<ChannelAction>()
                 val proposedHtlcs = commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
                 if (proposedHtlcs.isNotEmpty()) {
-                    logger.info { "c:$channelId updating channel_update announcement (reason=disabled)" }
+                    logger.info { "updating channel_update announcement (reason=disabled)" }
                     val channelUpdate = Announcements.disableChannel(channelUpdate, staticParams.nodeParams.nodePrivateKey, staticParams.remoteNodeId)
                     proposedHtlcs.forEach { htlc ->
                         commitments.payments[htlc.id]?.let { paymentId ->
                             failedHtlcs.add(ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, htlc, ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)))
-                        } ?: logger.warning { "c:$channelId cannot find payment for $htlc" }
+                        } ?: logger.warning { "cannot find payment for $htlc" }
                     }
                 }
                 Pair(Offline(this@Normal), failedHtlcs)
@@ -293,7 +293,7 @@ data class Normal(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@Normal::class.simpleName}" }
         val error = Error(channelId, t.message)
         return when {
             nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))

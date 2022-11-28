@@ -25,12 +25,12 @@ data class WaitForChannelReady(
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> when (fundingTx) {
                 is PartiallySignedSharedTransaction -> when (val fullySignedTx = fundingTx.addRemoteSigs(cmd.message)) {
                     null -> {
-                        logger.warning { "c:$channelId received invalid remote funding signatures for txId=${cmd.message.txId}" }
+                        logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                         // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
                         Pair(this@WaitForChannelReady, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                     }
                     else -> {
-                        logger.info { "c:$channelId received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
+                        logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
                         val nextState = this@WaitForChannelReady.copy(fundingTx = fullySignedTx)
                         val actions = buildList {
                             // If we haven't sent our signatures yet, we do it now.
@@ -42,12 +42,12 @@ data class WaitForChannelReady(
                     }
                 }
                 is FullySignedSharedTransaction -> {
-                    logger.info { "c:$channelId ignoring duplicate remote funding signatures" }
+                    logger.info { "ignoring duplicate remote funding signatures" }
                     Pair(this@WaitForChannelReady, listOf())
                 }
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
-                logger.info { "c:$channelId rejecting tx_init_rbf, we have already accepted the channel" }
+                logger.info { "rejecting tx_init_rbf, we have already accepted the channel" }
                 Pair(this@WaitForChannelReady, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, commitments.fundingTxId).message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is ChannelReady -> {
@@ -107,7 +107,7 @@ data class WaitForChannelReady(
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "c:$channelId error on event ${cmd::class} in state ${this::class}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForChannelReady::class.simpleName}" }
         val error = Error(channelId, t.message)
         return when {
             nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))

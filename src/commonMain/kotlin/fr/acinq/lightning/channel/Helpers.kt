@@ -228,11 +228,12 @@ object Helpers {
     }
 
     /** This helper method will publish txs only if they haven't yet reached minDepth. */
-    fun LoggingContext.publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.PublishTx> {
+    fun LoggingContext.publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>
+    ): List<ChannelAction.Blockchain.PublishTx> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx -> logger.info { "c:$channelId no need to republish txid=${tx.txid}, it has already been confirmed" } }
+        skip.forEach { tx -> logger.info { "no need to republish txid=${tx.txid}, it has already been confirmed" } }
         return process.map { tx ->
-            logger.info { "c:$channelId publishing txid=${tx.txid}" }
+            logger.info { "publishing txid=${tx.txid}" }
             ChannelAction.Blockchain.PublishTx(tx)
         }
     }
@@ -240,14 +241,14 @@ object Helpers {
     /** This helper method will watch txs only if they haven't yet reached minDepth. */
     fun LoggingContext.watchConfirmedIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32, minDepth: Long): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx -> logger.info { "c:$channelId no need to watch txid=${tx.txid}, it has already been confirmed" } }
+        skip.forEach { tx -> logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" } }
         return process.map { tx -> ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, minDepth, BITCOIN_TX_CONFIRMED(tx))) }
     }
 
     /** This helper method will watch txs only if the utxo they spend hasn't already been irrevocably spent. */
     fun LoggingContext.watchSpentIfNeeded(parentTx: Transaction, outputs: List<OutPoint>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = outputs.partition { irrevocablySpent.contains(it) }
-        skip.forEach { output -> logger.info { "c:$channelId no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent[output]?.txid}" } }
+        skip.forEach { output -> logger.info { "no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent[output]?.txid}" } }
         return process.map { output ->
             require(output.txid == parentTx.txid) { "output doesn't belong to the given parentTx: txid=${output.txid} but expected txid=${parentTx.txid}" }
             ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, parentTx, output.index.toInt(), BITCOIN_OUTPUT_SPENT))
@@ -732,7 +733,7 @@ object Helpers {
             // this tx has been published by remote, so we need to invert local/remote params
             val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !commitments.localParams.isInitiator, commitments.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
             require(txNumber <= 0xffffffffffffL) { "txNumber must be lesser than 48 bits long" }
-            logger.warning { "c:${commitments.channelId} a revoked commit has been published with txNumber=$txNumber" }
+            logger.warning { "a revoked commit has been published with txNumber=$txNumber" }
             return txNumber
         }
 
@@ -812,7 +813,7 @@ object Helpers {
             val localHtlcPubkey = Generators.derivePubKey(commitments.localParams.channelKeys(keyManager).htlcBasepoint, remotePerCommitmentPoint)
 
             // we retrieve the information needed to rebuild htlc scripts
-            logger.info { "c:${commitments.channelId} found ${htlcInfos.size} htlcs for txid=${revokedCommitPublished.commitTx.txid}" }
+            logger.info { "found ${htlcInfos.size} htlcs for txid=${revokedCommitPublished.commitTx.txid}" }
             val htlcsRedeemScripts = htlcInfos.flatMap { htlcInfo ->
                 val htlcReceived = Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlcInfo.paymentHash), htlcInfo.cltvExpiry)
                 val htlcOffered = Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlcInfo.paymentHash))
@@ -868,7 +869,7 @@ object Helpers {
             }
             val isHtlcTx = htlcTx.txIn.any { it.outPoint.txid == revokedCommitPublished.commitTx.txid } && !claimTxs.any { it.tx.txid == htlcTx.txid }
             if (isHtlcTx) {
-                logger.info { "c:${commitments.channelId} looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
+                logger.info { "looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
                 // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
                 val remotePerCommitmentPoint = revokedCommitPublished.remotePerCommitmentSecret.publicKey()
                 val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)

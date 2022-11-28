@@ -19,6 +19,8 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.encodeToString
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.*
 
 // LN Message
@@ -93,7 +95,7 @@ data class LNChannel<out S : ChannelState>(
             .let { (newState, actions) ->
                 checkSerialization(actions)
                 JsonSerializers.json.encodeToString(newState)
-                LNChannel(ctx, newState) to actions
+                LNChannel(ctx.copy(logger = ctx.logger.copy(staticMdc = newState.mdc())), newState) to actions
             }
 
     /** same as [process] but with the added assumption that we stay in the same state */
@@ -153,7 +155,8 @@ object TestsHelper {
             ChannelContext(
                 StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
                 currentBlockHeight = currentHeight,
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+                logger = MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
             ),
             WaitForInit
         )
@@ -161,7 +164,8 @@ object TestsHelper {
             ChannelContext(
                 StaticParams(bobNodeParams, TestConstants.Alice.keyManager.nodeId),
                 currentBlockHeight = currentHeight,
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+                logger = MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
             ),
             WaitForInit
         )

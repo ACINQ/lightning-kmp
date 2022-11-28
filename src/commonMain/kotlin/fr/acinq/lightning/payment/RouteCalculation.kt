@@ -6,6 +6,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.ChannelState
 import fr.acinq.lightning.channel.Normal
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import org.kodein.log.LoggerFactory
@@ -18,6 +19,8 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
     data class Route(val amount: MilliSatoshi, val channel: Normal)
 
     fun findRoutes(paymentId: UUID, amount: MilliSatoshi, channels: Map<ByteVector32, ChannelState>): Either<FinalFailure, List<Route>> {
+        val logger = MDCLogger(logger, staticMdc = mapOf("paymentId" to paymentId, "amount" to amount))
+
         data class ChannelBalance(val c: Normal) {
             val balance: MilliSatoshi = c.commitments.availableBalanceForSend()
             val capacity: Satoshi = c.commitments.commitInput.txOut.amount
@@ -25,7 +28,7 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
 
         val sortedChannels = channels.values.filterIsInstance<Normal>().map { ChannelBalance(it) }.sortedBy { it.balance }.reversed()
         if (sortedChannels.isEmpty()) {
-            logger.warning { "p:$paymentId no available channels" }
+            logger.warning { "no available channels" }
             return Either.Left(FinalFailure.NoAvailableChannels)
         }
 
@@ -42,10 +45,10 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
         }
 
         return if (remaining > 0.msat) {
-            logger.info { "p:$paymentId insufficient balance: ${sortedChannels.joinToString { "${it.c.shortChannelId}->${it.balance}/${it.capacity}" }}" }
+            logger.info { "insufficient balance: ${sortedChannels.joinToString { "${it.c.shortChannelId}->${it.balance}/${it.capacity}" }}" }
             Either.Left(FinalFailure.InsufficientBalance)
         } else {
-            logger.info { "p:$paymentId routes found: ${routes.map { "${it.channel.shortChannelId}->${it.amount}" }}" }
+            logger.info { "routes found: ${routes.map { "${it.channel.shortChannelId}->${it.amount}" }}" }
             Either.Right(routes)
         }
     }

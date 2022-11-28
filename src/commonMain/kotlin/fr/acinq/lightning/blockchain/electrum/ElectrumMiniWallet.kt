@@ -110,7 +110,7 @@ class ElectrumMiniWallet(
     fun Logger.mdcinfo(msgCreator: () -> String) {
         log(
             level = Logger.Level.INFO,
-            meta = mapOf("wallet" to name, "state" to walletStateFlow.value),
+            meta = mapOf("wallet" to name, "confirmed" to walletStateFlow.value.confirmedBalance, "unconfirmed" to walletStateFlow.value.unconfirmedBalance),
             msgCreator = msgCreator
         )
     }
