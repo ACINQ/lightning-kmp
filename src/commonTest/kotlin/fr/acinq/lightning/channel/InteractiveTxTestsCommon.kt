@@ -260,30 +260,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `signatures ordering`() {
-        val channelId = randomBytes32()
-        val feerate = FeeratePerKw(2500.sat)
-        val alice = PublicKey.fromHex("0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc")
-        val bob = PublicKey.fromHex("0392ea6e914abcee840dc8a763b02ba5ac47e0ac3fadcd5294f9516fe353882522")
-        assertTrue(LexicographicalOrdering.isLessThan(alice, bob))
-        // The node that contributes the most always signs last.
-        assertTrue(!InteractiveTxParams(channelId, true, 500.sat, 400.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(alice, bob))
-        assertTrue(!InteractiveTxParams(channelId, false, 500.sat, 400.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(alice, bob))
-        assertTrue(!InteractiveTxParams(channelId, true, 500.sat, 400.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(bob, alice))
-        assertTrue(!InteractiveTxParams(channelId, false, 500.sat, 400.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(bob, alice))
-        // The node that contributes the least always signs first.
-        assertTrue(InteractiveTxParams(channelId, true, 400.sat, 500.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(alice, bob))
-        assertTrue(InteractiveTxParams(channelId, false, 400.sat, 500.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(alice, bob))
-        assertTrue(InteractiveTxParams(channelId, true, 400.sat, 500.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(bob, alice))
-        assertTrue(InteractiveTxParams(channelId, false, 400.sat, 500.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(bob, alice))
-        // When both nodes contribute the same amount, the lowest public key signs first.
-        assertTrue(InteractiveTxParams(channelId, true, 500.sat, 500.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(alice, bob))
-        assertTrue(InteractiveTxParams(channelId, false, 500.sat, 500.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(alice, bob))
-        assertTrue(!InteractiveTxParams(channelId, true, 500.sat, 500.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(bob, alice))
-        assertTrue(!InteractiveTxParams(channelId, false, 500.sat, 500.sat, ByteVector.empty, 0, 0.sat, feerate).shouldSignFirst(bob, alice))
-    }
-
-    @Test
     fun `cannot contribute unusable or invalid inputs`() {
         val privKey = randomKey()
         val pubKey = privKey.publicKey()

@@ -69,7 +69,8 @@ data class WaitForFundingSigned(
                             val nextState = WaitForChannelReady(commitments, fundingParams, signedFundingTx, shortChannelId, channelReady)
                             val actions = buildList {
                                 add(ChannelAction.Blockchain.SendWatch(watchSpent))
-                                if (fundingParams.shouldSignFirst(localParams.nodeId, remoteParams.nodeId)) add(ChannelAction.Message.Send(signedFundingTx.localSigs))
+                                // We're not a liquidity provider, so we don't mind sending our signatures immediately.
+                                add(ChannelAction.Message.Send(signedFundingTx.localSigs))
                                 add(ChannelAction.Message.Send(channelReady))
                                 add(ChannelAction.Storage.StoreState(nextState))
                             }
@@ -91,7 +92,8 @@ data class WaitForFundingSigned(
                             val actions = buildList {
                                 add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
                                 add(ChannelAction.Storage.StoreState(nextState))
-                                if (fundingParams.shouldSignFirst(localParams.nodeId, remoteParams.nodeId)) add(ChannelAction.Message.Send(signedFundingTx.localSigs))
+                                // We're not a liquidity provider, so we don't mind sending our signatures immediately.
+                                add(ChannelAction.Message.Send(signedFundingTx.localSigs))
                             }
                             Pair(nextState, actions)
                         }

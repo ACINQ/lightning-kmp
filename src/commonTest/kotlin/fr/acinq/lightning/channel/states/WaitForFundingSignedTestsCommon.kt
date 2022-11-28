@@ -29,9 +29,8 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
             assertIs<LNChannel<WaitForFundingConfirmed>>(alice1)
-            // Alice contributed more than Bob, so Bob must send their signatures first.
-            assertEquals(actionsAlice1.size, 3)
-            assertNull(actionsAlice1.findOutgoingMessageOpt<TxSignatures>())
+            assertEquals(actionsAlice1.size, 4)
+            actionsAlice1.hasOutgoingMessage<TxSignatures>()
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
             val watchConfirmed = actionsAlice1.findWatch<WatchConfirmed>()
             assertEquals(WatchConfirmed(alice1.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmed)
@@ -40,7 +39,6 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
             assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
-            // Bob contributed less than Alice, so Bob must send their signatures first.
             assertEquals(actionsBob1.size, 5)
             actionsBob1.hasOutgoingMessage<TxSignatures>()
             actionsBob1.has<ChannelAction.Storage.StoreState>()
@@ -58,7 +56,8 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
             assertIs<LNChannel<WaitForChannelReady>>(alice1)
-            assertEquals(actionsAlice1.size, 4)
+            assertEquals(actionsAlice1.size, 5)
+            actionsAlice1.hasOutgoingMessage<TxSignatures>()
             assertEquals(actionsAlice1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(alice.staticParams.nodeParams.nodeId))
             assertEquals(actionsAlice1.findWatch<WatchSpent>().txId, alice1.commitments.fundingTxId)
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
