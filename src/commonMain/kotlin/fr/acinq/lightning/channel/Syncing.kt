@@ -54,7 +54,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                         nextRemoteRevocationNumber = nextState.commitments.remoteCommit.index,
                         yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-                    ).withChannelData(nextState.commitments.remoteChannelData)
+                    ).withChannelData(nextState.commitments.remoteChannelData, logger)
                     val actions = buildList {
                         add(ChannelAction.Message.Send(channelReestablish))
                         if (state is WaitForFundingConfirmed) add(ChannelAction.Message.Send(state.fundingTx.localSigs))

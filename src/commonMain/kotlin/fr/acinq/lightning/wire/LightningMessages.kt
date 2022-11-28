@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
+import org.kodein.log.Logger
 import kotlin.math.max
 import kotlin.math.min
 
@@ -154,11 +155,24 @@ data class EncryptedChannelData(val data: ByteVector) {
     }
 }
 
-interface HasEncryptedChannelData : LightningMessage {
+interface HasEncryptedChannelData : HasChannelId {
     val channelData: EncryptedChannelData
-    fun withChannelData(data: ByteVector): HasEncryptedChannelData = withChannelData(EncryptedChannelData(data))
-    fun withChannelData(ecd: EncryptedChannelData): HasEncryptedChannelData = if (ecd.isEmpty()) this else withNonEmptyChannelData(ecd)
     fun withNonEmptyChannelData(ecd: EncryptedChannelData): HasEncryptedChannelData
+    fun withChannelData(data: ByteVector, logger: MDCLogger? = null): HasEncryptedChannelData = withChannelData(EncryptedChannelData(data), logger)
+    fun withChannelData(ecd: EncryptedChannelData, logger: MDCLogger? = null): HasEncryptedChannelData {
+        // The maximum size for lightning messages is 65535 bytes, so we only include a channel backup when we have enough space available.
+        // Our peer needs to be able to send the backup back in their channel_reestablish message, and we don't know the size of that message.
+        // We use an upper bound of 60000 bytes, hoping that it will be enough to make it work in all cases.
+        val sizeWithoutBackup = write().size
+        return when {
+            ecd.isEmpty() -> this
+            ecd.data.size() + sizeWithoutBackup <= 60_000 -> withNonEmptyChannelData(ecd)
+            else -> {
+                logger?.warning { "c:${this.channelId} could not include encrypted backup in ${this::class.simpleName}: too large (${ecd.data.size()} bytes)" }
+                this
+            }
+        }
+    }
 }
 
 interface ChannelMessage
@@ -289,6 +303,7 @@ data class Pong(val data: ByteVector) : SetupMessage {
         }
     }
 }
+
 data class TxAddInput(
     override val channelId: ByteVector32,
     override val serialId: Long,
@@ -415,12 +430,15 @@ data class TxSignatures(
     val txHash: ByteVector32,
     val witnesses: List<ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
-) : InteractiveTxMessage(), HasChannelId {
+) : InteractiveTxMessage(), HasChannelId, HasEncryptedChannelData {
     constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>) : this(channelId, tx.hash, witnesses)
 
     override val type: Long get() = TxSignatures.type
 
     val txId: ByteVector32 get() = txHash.reversed()
+
+    override val channelData: EncryptedChannelData get() = tlvs.get<TxSignaturesTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): TxSignatures = copy(tlvs = tlvs.addOrUpdate(TxSignaturesTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -433,10 +451,14 @@ data class TxSignatures(
                 LightningCodecs.writeBytes(element.toByteArray(), out)
             }
         }
+        TlvStreamSerializer(false, readers).write(tlvs, out)
     }
 
     companion object : LightningMessageReader<TxSignatures> {
         const val type: Long = 71
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>)
 
         override fun read(input: Input): TxSignatures {
             val channelId = LightningCodecs.bytes(input, 32).byteVector32()
@@ -452,7 +474,7 @@ data class TxSignatures(
                 }
                 witnesses += ScriptWitness(stack.toList())
             }
-            return TxSignatures(channelId, txHash, witnesses)
+            return TxSignatures(channelId, txHash, witnesses, TlvStreamSerializer(false, readers).read(input))
         }
     }
 }

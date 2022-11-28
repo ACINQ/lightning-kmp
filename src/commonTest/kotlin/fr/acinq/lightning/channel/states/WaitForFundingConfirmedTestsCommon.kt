@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -443,6 +444,9 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
             assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
             val txSigs = actionsBob1.findOutgoingMessage<TxSignatures>()
+            if (bob.staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient)) {
+                assertFalse(txSigs.channelData.isEmpty())
+            }
             return Fixture(alice1, bob1, txSigs, alice.state.wallet)
         }
 
@@ -510,7 +514,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                     val commitSigBob = actionsBob2.findOutgoingMessage<CommitSig>()
                     val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(commitSigBob))
                     assertEquals(actionsAlice2.size, 3)
-                    actionsAlice2.hasOutgoingMessage<TxSignatures>()
+                    assertTrue(actionsAlice2.hasOutgoingMessage<TxSignatures>().channelData.isEmpty())
                     actionsAlice2.has<ChannelAction.Storage.StoreState>()
                     val watchAlice = actionsAlice2.findWatch<WatchConfirmed>()
                     val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(commitSigAlice))
@@ -519,6 +523,9 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                     actionsBob3.has<ChannelAction.Storage.StoreState>()
                     val watchBob = actionsBob3.findWatch<WatchConfirmed>()
                     val txSigsBob = actionsBob3.findOutgoingMessage<TxSignatures>()
+                    if (bob.staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient)) {
+                        assertFalse(txSigsBob.channelData.isEmpty())
+                    }
                     val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(txSigsBob))
                     assertIs<LNChannel<WaitForFundingConfirmed>>(alice3)
                     assertEquals(actionsAlice3.size, 2)
