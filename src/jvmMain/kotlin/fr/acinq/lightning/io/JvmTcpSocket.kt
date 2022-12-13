@@ -66,17 +66,17 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
     }
 
     override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = try {
-        JvmTcpSocket(when (tls) {
-            TcpSocket.TLS.TRUSTED_CERTIFICATES -> connection.tls(Dispatchers.IO)
-            TcpSocket.TLS.UNSAFE_CERTIFICATES -> connection.tls(Dispatchers.IO) {
+        when (tls) {
+            TcpSocket.TLS.TRUSTED_CERTIFICATES -> JvmTcpSocket(connection.tls(Dispatchers.IO), loggerFactory)
+            TcpSocket.TLS.UNSAFE_CERTIFICATES -> JvmTcpSocket(connection.tls(Dispatchers.IO) {
                 logger.warning { "using unsafe TLS!" }
                 trustManager = unsafeX509TrustManager()
-            }
+            }, loggerFactory)
             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey, logger))
+                JvmTcpSocket(connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
             }
-            else -> socket
-        }, loggerFactory)
+            TcpSocket.TLS.DISABLED -> this
+        }
     } catch (e: Exception) {
         throw when (e) {
             is ConnectException -> TcpSocket.IOException.ConnectionRefused()
