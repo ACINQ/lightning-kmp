@@ -75,7 +75,7 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
                 JvmTcpSocket(connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
             }
-            else -> this
+            TcpSocket.TLS.DISABLED -> this
         }
     } catch (e: Exception) {
         throw when (e) {
