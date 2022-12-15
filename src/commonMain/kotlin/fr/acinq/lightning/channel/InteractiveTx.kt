@@ -356,15 +356,14 @@ data class InteractiveTxSession(
             return InteractiveTxSessionAction.InvalidTxChangeAmount(fundingParams.channelId, tx.txid)
         }
 
-        // The transaction isn't signed yet, so we estimate its weight knowing that all inputs are using native segwit.
-        val minimumWitnessWeight = 107 // see Bolt 3
-        val minimumWeight = tx.weight() + tx.txIn.size * minimumWitnessWeight
-        if (minimumWeight > Transactions.MAX_STANDARD_TX_WEIGHT) {
+        // The transaction isn't signed yet, and segwit witnesses can be arbitrarily low (e.g. when using an OP_1 script),
+        // so we use empty witnesses to provide a lower bound on the transaction weight.
+        if (tx.weight() > Transactions.MAX_STANDARD_TX_WEIGHT) {
             return InteractiveTxSessionAction.InvalidTxWeight(fundingParams.channelId, tx.txid)
         }
-        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, minimumWeight)
+        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
         if (sharedTx.fees < minimumFee) {
-            return InteractiveTxSessionAction.InvalidTxFeerate(fundingParams.channelId, tx.txid, fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, minimumWeight))
+            return InteractiveTxSessionAction.InvalidTxFeerate(fundingParams.channelId, tx.txid, fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, tx.weight()))
         }
 
         // The transaction must double-spend every previous attempt, otherwise there is a risk that two funding transactions
