@@ -215,7 +215,6 @@ sealed class InteractiveTxSessionAction {
     data class InputOutOfBounds(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "invalid input $previousTxId:$previousTxOutput (serial_id=$serialId)" }
     data class NonReplaceableInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long, val sequence: Long) : RemoteFailure() { override fun toString(): String = "$previousTxId:$previousTxOutput is not replaceable (serial_id=$serialId, nSequence=$sequence)" }
     data class NonSegwitInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "$previousTxId:$previousTxOutput is not a native segwit input (serial_id=$serialId)" }
-    data class NonSegwitOutput(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "output with serial_id=$serialId is not a native segwit output" }
     data class OutputBelowDust(val channelId: ByteVector32, val serialId: Long, val amount: Satoshi, val dustLimit: Satoshi) : RemoteFailure() { override fun toString(): String = "invalid output amount=$amount below dust=$dustLimit (serial_id=$serialId)" }
     data class InvalidTxInputOutputCount(val channelId: ByteVector32, val txId: ByteVector32, val inputCount: Int, val outputCount: Int) : RemoteFailure() { override fun toString(): String = "invalid number of inputs or outputs (txId=$txId, inputCount=$inputCount, outputCount=$outputCount)" }
     data class InvalidTxSharedOutput(val channelId: ByteVector32, val txId: ByteVector32) : RemoteFailure() { override fun toString(): String = "shared output is missing or duplicated (txId=$txId)" }
@@ -300,8 +299,6 @@ data class InteractiveTxSession(
                     Pair(this, InteractiveTxSessionAction.DuplicateSerialId(message.channelId, message.serialId))
                 } else if (message.amount < fundingParams.dustLimit) {
                     Pair(this, InteractiveTxSessionAction.OutputBelowDust(message.channelId, message.serialId, message.amount, fundingParams.dustLimit))
-                } else if (!Script.isNativeWitnessScript(message.pubkeyScript)) {
-                    Pair(this, InteractiveTxSessionAction.NonSegwitOutput(message.channelId, message.serialId))
                 } else {
                     val next = copy(remoteOutputs = remoteOutputs + message, outputsReceivedCount = outputsReceivedCount + 1, txCompleteReceived = false)
                     next.send()
