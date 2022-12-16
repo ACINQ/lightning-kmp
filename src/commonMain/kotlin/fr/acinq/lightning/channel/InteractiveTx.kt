@@ -215,7 +215,6 @@ sealed class InteractiveTxSessionAction {
     data class InputOutOfBounds(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "invalid input $previousTxId:$previousTxOutput (serial_id=$serialId)" }
     data class NonReplaceableInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long, val sequence: Long) : RemoteFailure() { override fun toString(): String = "$previousTxId:$previousTxOutput is not replaceable (serial_id=$serialId, nSequence=$sequence)" }
     data class NonSegwitInput(val channelId: ByteVector32, val serialId: Long, val previousTxId: ByteVector32, val previousTxOutput: Long) : RemoteFailure() { override fun toString(): String = "$previousTxId:$previousTxOutput is not a native segwit input (serial_id=$serialId)" }
-    data class NonSegwitOutput(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "output with serial_id=$serialId is not a native segwit output" }
     data class OutputBelowDust(val channelId: ByteVector32, val serialId: Long, val amount: Satoshi, val dustLimit: Satoshi) : RemoteFailure() { override fun toString(): String = "invalid output amount=$amount below dust=$dustLimit (serial_id=$serialId)" }
     data class InvalidTxInputOutputCount(val channelId: ByteVector32, val txId: ByteVector32, val inputCount: Int, val outputCount: Int) : RemoteFailure() { override fun toString(): String = "invalid number of inputs or outputs (txId=$txId, inputCount=$inputCount, outputCount=$outputCount)" }
     data class InvalidTxSharedOutput(val channelId: ByteVector32, val txId: ByteVector32) : RemoteFailure() { override fun toString(): String = "shared output is missing or duplicated (txId=$txId)" }
@@ -300,8 +299,6 @@ data class InteractiveTxSession(
                     Pair(this, InteractiveTxSessionAction.DuplicateSerialId(message.channelId, message.serialId))
                 } else if (message.amount < fundingParams.dustLimit) {
                     Pair(this, InteractiveTxSessionAction.OutputBelowDust(message.channelId, message.serialId, message.amount, fundingParams.dustLimit))
-                } else if (!Script.isNativeWitnessScript(message.pubkeyScript)) {
-                    Pair(this, InteractiveTxSessionAction.NonSegwitOutput(message.channelId, message.serialId))
                 } else {
                     val next = copy(remoteOutputs = remoteOutputs + message, outputsReceivedCount = outputsReceivedCount + 1, txCompleteReceived = false)
                     next.send()
@@ -359,15 +356,14 @@ data class InteractiveTxSession(
             return InteractiveTxSessionAction.InvalidTxChangeAmount(fundingParams.channelId, tx.txid)
         }
 
-        // The transaction isn't signed yet, so we estimate its weight knowing that all inputs are using native segwit.
-        val minimumWitnessWeight = 107 // see Bolt 3
-        val minimumWeight = tx.weight() + tx.txIn.size * minimumWitnessWeight
-        if (minimumWeight > Transactions.MAX_STANDARD_TX_WEIGHT) {
+        // The transaction isn't signed yet, and segwit witnesses can be arbitrarily low (e.g. when using an OP_1 script),
+        // so we use empty witnesses to provide a lower bound on the transaction weight.
+        if (tx.weight() > Transactions.MAX_STANDARD_TX_WEIGHT) {
             return InteractiveTxSessionAction.InvalidTxWeight(fundingParams.channelId, tx.txid)
         }
-        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, minimumWeight)
+        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
         if (sharedTx.fees < minimumFee) {
-            return InteractiveTxSessionAction.InvalidTxFeerate(fundingParams.channelId, tx.txid, fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, minimumWeight))
+            return InteractiveTxSessionAction.InvalidTxFeerate(fundingParams.channelId, tx.txid, fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, tx.weight()))
         }
 
         // The transaction must double-spend every previous attempt, otherwise there is a risk that two funding transactions

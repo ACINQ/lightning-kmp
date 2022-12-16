@@ -331,6 +331,25 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `allow all output types`() {
+        val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
+        val testCases = listOf(
+            TxAddOutput(f.channelId, 1, 25_000.sat, Script.write(Script.pay2pkh(randomKey().publicKey())).byteVector()),
+            TxAddOutput(f.channelId, 1, 25_000.sat, Script.write(Script.pay2sh(listOf(OP_1))).byteVector()),
+            TxAddOutput(f.channelId, 1, 25_000.sat, Script.write(listOf(OP_1)).byteVector()),
+        )
+        testCases.forEach { output ->
+            val alice0 = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA)
+            // Alice --- tx_add_input --> Bob
+            val (alice1, _) = sendMessage<TxAddInput>(alice0)
+            // Alice <-- tx_add_output --- Bob
+            val (alice2, _) = receiveMessage<TxAddOutput>(alice1, output)
+            assertEquals(alice2.outputsReceivedCount, 1)
+            assertFalse(alice2.isComplete)
+        }
+    }
+
+    @Test
     fun `invalid output`() {
         val f = createFixture(100_000.sat, createWallet(listOf(120_000.sat)).second, 0.sat, WalletState.empty, FeeratePerKw(5000.sat), 330.sat, 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
@@ -338,7 +357,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             TxAddOutput(f.channelId, 0, 25_000.sat, validScript) to InteractiveTxSessionAction.InvalidSerialId(f.channelId, 0),
             TxAddOutput(f.channelId, 1, 45_000.sat, validScript) to InteractiveTxSessionAction.DuplicateSerialId(f.channelId, 1),
             TxAddOutput(f.channelId, 3, 329.sat, validScript) to InteractiveTxSessionAction.OutputBelowDust(f.channelId, 3, 329.sat, 330.sat),
-            TxAddOutput(f.channelId, 5, 45_000.sat, Script.write(Script.pay2pkh(randomKey().publicKey())).byteVector()) to InteractiveTxSessionAction.NonSegwitOutput(f.channelId, 5),
         )
         testCases.forEach { (output, expected) ->
             val alice0 = InteractiveTxSession(f.fundingParamsA, f.fundingContributionsA)
