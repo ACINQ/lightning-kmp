@@ -203,7 +203,8 @@ data class WaitForFundingConfirmed(
                         keyManager, commitments.localParams, commitments.remoteParams,
                         rbfStatus.fundingTx,
                         rbfStatus.commitTx, cmd.message,
-                        commitments.channelConfig, commitments.channelFeatures, commitments.channelFlags, commitments.remoteCommit.remotePerCommitmentPoint
+                        commitments.channelConfig, commitments.channelFeatures, commitments.channelFlags,
+                        commitments.remoteCommit.remotePerCommitmentPoint, commitments.remoteNextCommitInfo.right!!
                     )
                     when (firstCommitmentsRes) {
                         Helpers.Funding.InvalidRemoteCommitSig -> {

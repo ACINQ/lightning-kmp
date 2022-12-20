@@ -48,6 +48,7 @@ class PeerTest : LightningTestSuite() {
         randomKey().publicKey(),
         randomKey().publicKey(),
         randomKey().publicKey(),
+        randomKey().publicKey(),
         0.toByte(),
         TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)))
     )

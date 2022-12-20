@@ -43,6 +43,7 @@ object WaitForInit : ChannelState() {
                     delayedPaymentBasepoint = cmd.localParams.channelKeys(keyManager).delayedPaymentBasepoint,
                     htlcBasepoint = cmd.localParams.channelKeys(keyManager).htlcBasepoint,
                     firstPerCommitmentPoint = keyManager.commitmentPoint(cmd.localParams.channelKeys(keyManager).shaSeed, 0),
+                    secondPerCommitmentPoint = keyManager.commitmentPoint(cmd.localParams.channelKeys(keyManager).shaSeed, 1),
                     channelFlags = cmd.channelFlags,
                     tlvStream = TlvStream(
                         buildList {

@@ -12,7 +12,6 @@ import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
-import org.kodein.log.Logger
 import kotlin.math.max
 import kotlin.math.min
 
@@ -586,6 +585,7 @@ data class OpenDualFundedChannel(
     val delayedPaymentBasepoint: PublicKey,
     val htlcBasepoint: PublicKey,
     val firstPerCommitmentPoint: PublicKey,
+    val secondPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
@@ -613,6 +613,7 @@ data class OpenDualFundedChannel(
         LightningCodecs.writeBytes(delayedPaymentBasepoint.value, out)
         LightningCodecs.writeBytes(htlcBasepoint.value, out)
         LightningCodecs.writeBytes(firstPerCommitmentPoint.value, out)
+        LightningCodecs.writeBytes(secondPerCommitmentPoint.value, out)
         LightningCodecs.writeByte(channelFlags.toInt(), out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
@@ -647,6 +648,7 @@ data class OpenDualFundedChannel(
             PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
+            PublicKey(LightningCodecs.bytes(input, 33)),
             LightningCodecs.byte(input).toByte(),
             TlvStreamSerializer(false, readers).read(input)
         )
@@ -668,6 +670,7 @@ data class AcceptDualFundedChannel(
     val delayedPaymentBasepoint: PublicKey,
     val htlcBasepoint: PublicKey,
     val firstPerCommitmentPoint: PublicKey,
+    val secondPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
@@ -690,6 +693,7 @@ data class AcceptDualFundedChannel(
         LightningCodecs.writeBytes(delayedPaymentBasepoint.value, out)
         LightningCodecs.writeBytes(htlcBasepoint.value, out)
         LightningCodecs.writeBytes(firstPerCommitmentPoint.value, out)
+        LightningCodecs.writeBytes(secondPerCommitmentPoint.value, out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
@@ -713,6 +717,7 @@ data class AcceptDualFundedChannel(
             LightningCodecs.u32(input).toLong(),
             CltvExpiryDelta(LightningCodecs.u16(input)),
             LightningCodecs.u16(input),
+            PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),

@@ -344,7 +344,8 @@ object Helpers {
             channelConfig: ChannelConfig,
             channelFeatures: ChannelFeatures,
             channelFlags: Byte,
-            remoteFirstPerCommitmentPoint: PublicKey
+            remoteFirstPerCommitmentPoint: PublicKey,
+            remoteSecondPerCommitmentPoint: PublicKey,
         ): ReceiveFirstCommitResult {
             val fundingPubKey = localParams.channelKeys(keyManager).fundingPubKey
             val localSigOfLocalTx = keyManager.sign(firstCommitTx.localCommitTx, localParams.channelKeys(keyManager).fundingPrivateKey)
@@ -361,7 +362,7 @@ object Helpers {
                         RemoteChanges(listOf(), listOf(), listOf()),
                         localNextHtlcId = 0L, remoteNextHtlcId = 0L,
                         payments = mapOf(),
-                        remoteNextCommitInfo = Either.Right(Lightning.randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
+                        remoteNextCommitInfo = Either.Right(remoteSecondPerCommitmentPoint),
                         commitInput, ShaChain.init, remoteCommit.channelId, remoteCommit.channelData
                     )
                     when (val signedFundingTx = fundingTx.sign(keyManager, remoteCommit.channelId)) {
