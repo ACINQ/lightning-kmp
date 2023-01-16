@@ -231,18 +231,22 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     fun `recv TxInitRbf -- invalid feerate`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(alice.state.channelId, 0, TestConstants.feeratePerKw, alice.state.fundingParams.localAmount)))
-        assertEquals(bob1, bob)
         assertEquals(actions1.size, 1)
         assertEquals(actions1.hasOutgoingMessage<TxAbort>().toAscii(), InvalidRbfFeerate(alice.state.channelId, TestConstants.feeratePerKw, TestConstants.feeratePerKw * 25 / 24).message)
+        val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(TxAbort(alice.state.channelId, "acking tx_abort")))
+        assertEquals(bob2, bob)
+        assertTrue(actions2.isEmpty())
     }
 
     @Test
     fun `recv TxInitRbf -- invalid push amount`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(alice.state.channelId, 0, TestConstants.feeratePerKw * 1.25, TestConstants.alicePushAmount.truncateToSatoshi() - 1.sat)))
-        assertEquals(bob1, bob)
         assertEquals(actions1.size, 1)
         assertEquals(actions1.hasOutgoingMessage<TxAbort>().toAscii(), InvalidPushAmount(alice.state.channelId, TestConstants.alicePushAmount, TestConstants.alicePushAmount - 1000.msat).message)
+        val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(TxAbort(alice.state.channelId, "acking tx_abort")))
+        assertEquals(bob2, bob)
+        assertTrue(actions2.isEmpty())
     }
 
     @Test
@@ -256,10 +260,11 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(alice.state.fundingTx.tx.localInputs.first()))
         assertEquals(actions2.size, 1)
         actions2.hasOutgoingMessage<TxAddInput>()
-        val (bob3, actions3) = bob2.process(ChannelCommand.MessageReceived(TxAbort(alice.state.channelId, null)))
+        val (bob3, actions3) = bob2.process(ChannelCommand.MessageReceived(TxAbort(alice.state.channelId, "changed my mind")))
         assertIs<LNChannel<WaitForFundingConfirmed>>(bob3)
         assertEquals(bob3.state.rbfStatus, WaitForFundingConfirmed.Companion.RbfStatus.None)
-        assertTrue(actions3.isEmpty())
+        assertEquals(actions3.size, 1)
+        actions3.hasOutgoingMessage<TxAbort>()
     }
 
     @Test

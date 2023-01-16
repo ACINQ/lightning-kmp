@@ -116,7 +116,7 @@ data class WaitForFundingSigned(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> {
                 logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted, listOf())
+                Pair(Aborted, listOf(ChannelAction.Message.Send(TxAbort(channelId, DualFundingAborted(channelId, "requested by peer").message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
                 logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
