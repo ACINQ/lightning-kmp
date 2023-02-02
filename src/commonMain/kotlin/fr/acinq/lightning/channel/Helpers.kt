@@ -119,8 +119,8 @@ object Helpers {
             return Either.Left(InvalidChannelType(accept.temporaryChannelId, open.channelType!!, accept.channelType!!))
         }
 
-        if (accept.fundingAmount > nodeParams.maxFundingSatoshis) {
-            return Either.Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis))
+        if (accept.fundingAmount > nodeParams.maxFundingSatoshis || accept.fundingAmount < 0.sat) {
+            return Either.Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount, 0.sat, nodeParams.maxFundingSatoshis))
         }
 
         if (accept.pushAmount > accept.fundingAmount) {
