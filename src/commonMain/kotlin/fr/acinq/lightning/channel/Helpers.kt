@@ -5,7 +5,10 @@ import fr.acinq.bitcoin.Crypto.ripemd160
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
-import fr.acinq.lightning.*
+import fr.acinq.lightning.Feature
+import fr.acinq.lightning.Features
+import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.BITCOIN_OUTPUT_SPENT
 import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -228,8 +231,7 @@ object Helpers {
     }
 
     /** This helper method will publish txs only if they haven't yet reached minDepth. */
-    fun LoggingContext.publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>
-    ): List<ChannelAction.Blockchain.PublishTx> {
+    fun LoggingContext.publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>): List<ChannelAction.Blockchain.PublishTx> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
         skip.forEach { tx -> logger.info { "no need to republish txid=${tx.txid}, it has already been confirmed" } }
         return process.map { tx ->
@@ -311,12 +313,14 @@ object Helpers {
             val remoteSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
             if (!localParams.isInitiator) {
-                // they are the initiator, therefore they pay the fee: we need to make sure they can afford it!
+                // They initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
+                // Note that the reserve may not be always be met: we could be using dual funding with a large funding amount on
+                // our side and a small funding amount on their side. But we shouldn't care as long as they can pay the fees for
+                // the commitment transaction.
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
-                val reserve = (fundingAmount / 100).max(localParams.dustLimit)
-                val missing = remoteSpec.toLocal.truncateToSatoshi() - reserve - fees
-                if (missing < 0.sat) {
-                    return Either.Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = reserve, fees = fees))
+                val missing = fees - remoteSpec.toLocal.truncateToSatoshi()
+                if (missing > 0.sat) {
+                    return Either.Left(CannotAffordFees(temporaryChannelId, missing = missing, reserve = 0.sat, fees = fees))
                 }
             }
 

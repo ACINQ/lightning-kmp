@@ -87,6 +87,30 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `complete interactive-tx protocol -- with large non-initiator contributions`() {
+        // Alice's funding amount is below the channel reserve: this is ok as long as she can pay the commit tx fees.
+        val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, aliceFundingAmount = 10_000.sat, bobFundingAmount = 1_500_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        // Alice ---- tx_add_input ----> Bob
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
+        // Alice <--- tx_add_input ----- Bob
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxAddInput>()))
+        // Alice ---- tx_add_output ----> Bob
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
+        // Alice <--- tx_complete ----- Bob
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
+        // Alice ---- tx_complete ----> Bob
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
+        val commitSigAlice = actionsAlice2.findOutgoingMessage<CommitSig>()
+        val commitSigBob = actionsBob3.findOutgoingMessage<CommitSig>()
+        assertEquals(commitSigAlice.channelId, commitSigBob.channelId)
+        assertIs<LNChannel<WaitForFundingSigned>>(alice2)
+        assertIs<LNChannel<WaitForFundingSigned>>(bob3)
+        assertEquals(alice2.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(bob3.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        verifyCommits(alice2.state.firstCommitTx, bob3.state.firstCommitTx, balanceAlice = 10_000_000.msat, balanceBob = 1_500_000_000.msat)
+    }
+
+    @Test
     fun `complete interactive-tx protocol -- zero conf -- zero reserve`() {
         val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, alicePushAmount = 0.msat, zeroConf = true)
         // Alice ---- tx_add_input ----> Bob
