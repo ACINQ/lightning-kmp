@@ -71,7 +71,7 @@ data class WaitForChannelReady(
                     enable = Helpers.aboveReserve(commitments)
                 )
                 val nextState = Normal(
-                    commitments.copy(remoteNextCommitInfo = Either.Right(cmd.message.nextPerCommitmentPoint)),
+                    commitments,
                     shortChannelId,
                     buried = false,
                     null,
