@@ -73,6 +73,7 @@ data class InvalidHtlcPreimage                     (override val channelId: Byte
 data class UnknownHtlcId                           (override val channelId: ByteVector32, val id: Long) : ChannelException(channelId, "unknown htlc id=$id")
 data class CannotExtractSharedSecret               (override val channelId: ByteVector32, val htlc: UpdateAddHtlc) : ChannelException(channelId, "can't extract shared secret: paymentHash=${htlc.paymentHash} onion=${htlc.onionRoutingPacket}")
 data class NonInitiatorCannotSendUpdateFee         (override val channelId: ByteVector32) : ChannelException(channelId, "only the initiator should send update_fee message")
+data class CannotAffordFirstCommitFees             (override val channelId: ByteVector32, val missing: Satoshi, val fees: Satoshi) : ChannelException(channelId, "can't pay the fee in first commitment: missing=$missing fees=$fees")
 data class CannotAffordFees                        (override val channelId: ByteVector32, val missing: Satoshi, val reserve: Satoshi, val fees: Satoshi) : ChannelException(channelId, "can't pay the fee: missing=$missing reserve=$reserve fees=$fees")
 data class CannotSignWithoutChanges                (override val channelId: ByteVector32) : ChannelException(channelId, "cannot sign when there are no change")
 data class CannotSignBeforeRevocation              (override val channelId: ByteVector32) : ChannelException(channelId, "cannot sign until next revocation hash is received")

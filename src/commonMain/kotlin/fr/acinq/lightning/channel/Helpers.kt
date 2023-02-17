@@ -320,7 +320,7 @@ object Helpers {
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
                 val missing = fees - remoteSpec.toLocal.truncateToSatoshi()
                 if (missing > 0.sat) {
-                    return Either.Left(CannotAffordFees(temporaryChannelId, missing = missing, reserve = 0.sat, fees = fees))
+                    return Either.Left(CannotAffordFirstCommitFees(temporaryChannelId, missing = missing, fees = fees))
                 }
             }
 
