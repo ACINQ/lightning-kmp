@@ -72,6 +72,7 @@ data class WaitForAcceptChannel(
                                             accept.pushAmount,
                                             lastSent.commitmentFeerate,
                                             accept.firstPerCommitmentPoint,
+                                            accept.secondPerCommitmentPoint,
                                             lastSent.channelFlags,
                                             init.channelConfig,
                                             channelFeatures,

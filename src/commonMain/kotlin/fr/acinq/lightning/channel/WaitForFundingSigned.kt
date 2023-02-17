@@ -32,6 +32,7 @@ data class WaitForFundingSigned(
     val fundingTx: SharedTransaction,
     val firstCommitTx: Helpers.Funding.FirstCommitTx,
     val remoteFirstPerCommitmentPoint: PublicKey,
+    val remoteSecondPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
@@ -46,7 +47,8 @@ data class WaitForFundingSigned(
                     keyManager, localParams, remoteParams,
                     fundingTx,
                     firstCommitTx, cmd.message,
-                    channelConfig, channelFeatures, channelFlags, remoteFirstPerCommitmentPoint
+                    channelConfig, channelFeatures, channelFlags,
+                    remoteFirstPerCommitmentPoint, remoteSecondPerCommitmentPoint
                 )
                 when (firstCommitmentsRes) {
                     Helpers.Funding.InvalidRemoteCommitSig -> handleLocalError(cmd, InvalidCommitmentSignature(channelId, firstCommitTx.localCommitTx.tx.txid))
@@ -114,7 +116,7 @@ data class WaitForFundingSigned(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> {
                 logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted, listOf())
+                Pair(Aborted, listOf(ChannelAction.Message.Send(TxAbort(channelId, DualFundingAborted(channelId, "requested by peer").message))))
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
                 logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }

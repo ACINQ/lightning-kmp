@@ -145,12 +145,14 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (alice, _, bob, _) = init()
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxAbort(alice.channelId, "changed my mind")))
-            assertTrue(actionsAlice1.isEmpty())
+            assertEquals(actionsAlice1.size, 1)
+            actionsAlice1.hasOutgoingMessage<TxAbort>()
             assertIs<LNChannel<Aborted>>(alice1)
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxAbort(bob.channelId, "changed my mind")))
-            assertTrue(actionsBob1.isEmpty())
+            assertEquals(actionsBob1.size, 1)
+            actionsBob1.hasOutgoingMessage<TxAbort>()
             assertIs<LNChannel<Aborted>>(bob1)
         }
     }

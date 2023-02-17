@@ -12,7 +12,6 @@ import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
-import org.kodein.log.Logger
 import kotlin.math.max
 import kotlin.math.min
 
@@ -586,6 +585,7 @@ data class OpenDualFundedChannel(
     val delayedPaymentBasepoint: PublicKey,
     val htlcBasepoint: PublicKey,
     val firstPerCommitmentPoint: PublicKey,
+    val secondPerCommitmentPoint: PublicKey,
     val channelFlags: Byte,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
@@ -613,6 +613,7 @@ data class OpenDualFundedChannel(
         LightningCodecs.writeBytes(delayedPaymentBasepoint.value, out)
         LightningCodecs.writeBytes(htlcBasepoint.value, out)
         LightningCodecs.writeBytes(firstPerCommitmentPoint.value, out)
+        LightningCodecs.writeBytes(secondPerCommitmentPoint.value, out)
         LightningCodecs.writeByte(channelFlags.toInt(), out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
@@ -624,6 +625,7 @@ data class OpenDualFundedChannel(
         val readers = mapOf(
             ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
@@ -640,6 +642,7 @@ data class OpenDualFundedChannel(
             CltvExpiryDelta(LightningCodecs.u16(input)),
             LightningCodecs.u16(input),
             LightningCodecs.u32(input).toLong(),
+            PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
@@ -667,6 +670,7 @@ data class AcceptDualFundedChannel(
     val delayedPaymentBasepoint: PublicKey,
     val htlcBasepoint: PublicKey,
     val firstPerCommitmentPoint: PublicKey,
+    val secondPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
@@ -689,6 +693,7 @@ data class AcceptDualFundedChannel(
         LightningCodecs.writeBytes(delayedPaymentBasepoint.value, out)
         LightningCodecs.writeBytes(htlcBasepoint.value, out)
         LightningCodecs.writeBytes(firstPerCommitmentPoint.value, out)
+        LightningCodecs.writeBytes(secondPerCommitmentPoint.value, out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
@@ -699,6 +704,7 @@ data class AcceptDualFundedChannel(
         val readers = mapOf(
             ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
 
@@ -711,6 +717,7 @@ data class AcceptDualFundedChannel(
             LightningCodecs.u32(input).toLong(),
             CltvExpiryDelta(LightningCodecs.u16(input)),
             LightningCodecs.u16(input),
+            PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
             PublicKey(LightningCodecs.bytes(input, 33)),
