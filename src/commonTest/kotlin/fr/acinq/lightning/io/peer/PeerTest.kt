@@ -398,7 +398,7 @@ class PeerTest : LightningTestSuite() {
 
         run {
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 1.msat, "A description: \uD83D\uDE2C", 3600L * 3, deferredInvoice))
+            bob.send(ReceivePayment(randomBytes32(), 1.msat, Either.Left("A description: \uD83D\uDE2C"), 3600L * 3, deferredInvoice))
             val invoice = deferredInvoice.await()
             assertEquals(1.msat, invoice.amount)
             assertEquals(3600L * 3, invoice.expirySeconds)
@@ -416,7 +416,7 @@ class PeerTest : LightningTestSuite() {
 
         run {
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "default routing hints", null, deferredInvoice))
+            bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, Either.Left("default routing hints"), null, deferredInvoice))
             val invoice = deferredInvoice.await()
             // The routing hint uses default values since no channel update has been sent by Alice yet.
             assertEquals(1, invoice.routingInfo.size)
@@ -430,7 +430,7 @@ class PeerTest : LightningTestSuite() {
             bob.forward(aliceUpdate)
 
             val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 5_000_000.msat, "updated routing hints", null, deferredInvoice))
+            bob.send(ReceivePayment(randomBytes32(), 5_000_000.msat, Either.Left("updated routing hints"), null, deferredInvoice))
             val invoice = deferredInvoice.await()
             // The routing hint uses values from Alice's channel update.
             assertEquals(1, invoice.routingInfo.size)
@@ -454,7 +454,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
 
         val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", null, deferredInvoice))
+        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, Either.Left("test invoice"), null, deferredInvoice))
         val invoice = deferredInvoice.await()
 
         alice.send(SendPaymentNormal(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))
@@ -500,7 +500,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0))
 
         val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, "test invoice", null, deferredInvoice))
+        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, Either.Left("test invoice"), null, deferredInvoice))
         val invoice = deferredInvoice.await()
 
         alice.send(SendPaymentNormal(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, OutgoingPayment.Details.Normal(invoice)))

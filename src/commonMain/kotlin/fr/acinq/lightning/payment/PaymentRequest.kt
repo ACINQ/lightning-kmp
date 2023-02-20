@@ -132,7 +132,7 @@ data class PaymentRequest(
             amount: MilliSatoshi?,
             paymentHash: ByteVector32,
             privateKey: PrivateKey,
-            description: String,
+            description: Either<String, ByteVector32>,
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             features: Features,
             paymentSecret: ByteVector32 = randomBytes32(),
@@ -144,12 +144,13 @@ data class PaymentRequest(
             val prefix = prefixes[chainHash] ?: error("unknown chain hash")
             val tags = mutableListOf(
                 TaggedField.PaymentHash(paymentHash),
-                TaggedField.Description(description),
                 TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toLong()),
                 TaggedField.PaymentSecret(paymentSecret),
                 // We remove unknown features which could make the invoice too big.
                 TaggedField.Features(features.invoiceFeatures().copy(unknown = setOf()).toByteArray().toByteVector())
             )
+            description.left?.let { tags.add(TaggedField.Description(it)) }
+            description.right?.let { tags.add(TaggedField.DescriptionHash(it)) }
             paymentMetadata?.let { tags.add(TaggedField.PaymentMetadata(it)) }
             expirySeconds?.let { tags.add(TaggedField.Expiry(it)) }
             if (extraHops.isNotEmpty()) {
