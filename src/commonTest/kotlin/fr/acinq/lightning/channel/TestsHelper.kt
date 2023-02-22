@@ -218,7 +218,11 @@ object TestsHelper {
         assertIs<LNChannel<Normal>>(bob1)
         assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
-        return Triple(alice1, bob1, alice.state.fundingTx.tx.buildUnsignedTx())
+        val fundingTx = when (val fundingStatus = alice.commitments.latest.localFundingStatus) {
+            is LocalFundingStatus.UnconfirmedFundingTx -> fundingStatus.sharedTx.tx.buildUnsignedTx()
+            is LocalFundingStatus.ConfirmedFundingTx -> fundingStatus.signedTx
+        }
+        return Triple(alice1, bob1, fundingTx)
     }
 
     fun mutualCloseAlice(alice: LNChannel<Normal>, bob: LNChannel<Normal>, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
@@ -257,9 +261,9 @@ object TestsHelper {
 
     fun localClose(s: LNChannel<ChannelState>): Pair<LNChannel<Closing>, LocalCommitPublished> {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
-        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.channelFeatures.channelType)
+        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.params.channelFeatures.channelType)
         // an error occurs and s publishes their commit tx
-        val commitTx = s.state.commitments.localCommit.publishableTxs.commitTx.tx
+        val commitTx = s.state.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Closing>>(s1)
         actions1.has<ChannelAction.Storage.StoreState>()
@@ -301,13 +305,13 @@ object TestsHelper {
 
     fun remoteClose(rCommitTx: Transaction, s: LNChannel<ChannelState>): Pair<LNChannel<Closing>, RemoteCommitPublished> {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
-        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.channelFeatures.channelType)
+        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.params.channelFeatures.channelType)
         // we make s believe r unilaterally closed the channel
         val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchEventSpent(s.state.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
         assertIs<LNChannel<Closing>>(s1)
 
         if (s.state !is Closing) {
-            val channelBalance = s.state.commitments.localCommit.spec.toLocal
+            val channelBalance = s.state.commitments.latest.localCommit.spec.toLocal
             if (channelBalance > 0.msat) {
                 actions1.has<ChannelAction.Storage.StoreChannelClosing>()
             }
@@ -390,7 +394,7 @@ object TestsHelper {
 
         val (receiver0, _) = payee.process(ChannelCommand.MessageReceived(htlc))
         assertIs<LNChannel<ChannelStateWithCommitments>>(receiver0)
-        assertTrue(receiver0.state.commitments.remoteChanges.proposed.contains(htlc))
+        assertTrue(receiver0.state.commitments.changes.remoteChanges.proposed.contains(htlc))
 
         assertIs<LNChannel<T>>(sender0)
         assertIs<LNChannel<T>>(receiver0)
@@ -403,7 +407,7 @@ object TestsHelper {
 
         val (payer0, _) = payer.process(ChannelCommand.MessageReceived(fulfillHtlc))
         assertIs<LNChannel<ChannelStateWithCommitments>>(payer0)
-        assertTrue(payer0.state.commitments.remoteChanges.proposed.contains(fulfillHtlc))
+        assertTrue(payer0.state.commitments.changes.remoteChanges.proposed.contains(fulfillHtlc))
 
         assertIs<LNChannel<T>>(payer0)
         assertIs<LNChannel<T>>(payee0)
@@ -416,7 +420,7 @@ object TestsHelper {
 
         val (payer0, _) = payer.process(ChannelCommand.MessageReceived(failHtlc))
         assertIs<LNChannel<ChannelStateWithCommitments>>(payer0)
-        assertTrue(payer0.state.commitments.remoteChanges.proposed.contains(failHtlc))
+        assertTrue(payer0.state.commitments.changes.remoteChanges.proposed.contains(failHtlc))
 
         assertIs<LNChannel<T>>(payer0)
         assertIs<LNChannel<T>>(payee0)
@@ -427,9 +431,9 @@ object TestsHelper {
      * Cross sign nodes where nodeA initiate the signature exchange
      */
     fun <T : ChannelStateWithCommitments> crossSign(nodeA: LNChannel<T>, nodeB: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
-        val sCommitIndex = nodeA.state.commitments.localCommit.index
-        val rCommitIndex = nodeB.state.commitments.localCommit.index
-        val rHasChanges = nodeB.state.commitments.localHasChanges()
+        val sCommitIndex = nodeA.state.commitments.localCommitIndex
+        val rCommitIndex = nodeB.state.commitments.localCommitIndex
+        val rHasChanges = nodeB.state.commitments.changes.localHasChanges()
 
         val (sender0, sActions0) = nodeA.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
         val commitSig0 = sActions0.findOutgoingMessage<CommitSig>()
@@ -457,19 +461,19 @@ object TestsHelper {
 
             assertIs<LNChannel<T>>(sender4)
             assertIs<LNChannel<T>>(receiver3)
-            assertEquals(sCommitIndex + 1, sender4.commitments.localCommit.index)
-            assertEquals(sCommitIndex + 2, sender4.commitments.remoteCommit.index)
-            assertEquals(rCommitIndex + 2, receiver3.commitments.localCommit.index)
-            assertEquals(rCommitIndex + 1, receiver3.commitments.remoteCommit.index)
+            assertEquals(sCommitIndex + 1, sender4.commitments.localCommitIndex)
+            assertEquals(sCommitIndex + 2, sender4.commitments.remoteCommitIndex)
+            assertEquals(rCommitIndex + 2, receiver3.commitments.localCommitIndex)
+            assertEquals(rCommitIndex + 1, receiver3.commitments.remoteCommitIndex)
 
             return sender4 to receiver3
         } else {
             assertIs<LNChannel<T>>(sender2)
             assertIs<LNChannel<T>>(receiver2)
-            assertEquals(sCommitIndex + 1, sender2.commitments.localCommit.index)
-            assertEquals(sCommitIndex + 1, sender2.commitments.remoteCommit.index)
-            assertEquals(rCommitIndex + 1, receiver2.commitments.localCommit.index)
-            assertEquals(rCommitIndex + 1, receiver2.commitments.remoteCommit.index)
+            assertEquals(sCommitIndex + 1, sender2.commitments.localCommitIndex)
+            assertEquals(sCommitIndex + 1, sender2.commitments.remoteCommitIndex)
+            assertEquals(rCommitIndex + 1, receiver2.commitments.localCommitIndex)
+            assertEquals(rCommitIndex + 1, receiver2.commitments.remoteCommitIndex)
 
             return sender2 to receiver2
         }

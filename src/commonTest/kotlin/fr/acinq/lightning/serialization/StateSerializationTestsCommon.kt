@@ -47,14 +47,14 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         )
         val state = Serialization.deserialize(bin)
         assertIs<Normal>(state)
-        assertEquals(state.commitments.channelConfig, ChannelConfig.standard)
-        assertEquals(state.commitments.channelFeatures, ChannelFeatures(setOf(Feature.Wumbo, Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.ZeroConfChannels)))
+        assertEquals(state.commitments.params.channelConfig, ChannelConfig.standard)
+        assertEquals(state.commitments.params.channelFeatures, ChannelFeatures(setOf(Feature.Wumbo, Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.ZeroConfChannels)))
     }
 
     @Test
     fun `maximum number of HTLCs that is safe to use`() {
         val (alice, bob) = TestsHelper.reachNormal()
-        assertTrue(bob.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
+        assertTrue(bob.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
 
         tailrec fun addHtlcs(sender: LNChannel<Normal>, receiver: LNChannel<Normal>, amount: MilliSatoshi, count: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> = if (count == 0) Pair(sender, receiver) else {
             val (p, _) = TestsHelper.addHtlc(amount, sender, receiver)

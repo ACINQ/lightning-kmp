@@ -31,15 +31,13 @@ data class WaitForRemotePublishFutureCommitment(
         logger.warning { "they published their future commit (because we asked them to) in txid=${tx.txid}" }
         val remoteCommitPublished = claimRemoteCommitMainOutput(
             keyManager,
-            commitments,
+            commitments.params,
             tx,
             currentOnChainFeerates.claimMainFeerate
         )
         val nextState = Closing(
             commitments = commitments,
-            fundingTx = null,
             waitingSinceBlock = currentBlockHeight.toLong(),
-            alternativeCommitments = listOf(),
             futureRemoteCommitPublished = remoteCommitPublished
         )
         val actions = mutableListOf<ChannelAction>(ChannelAction.Storage.StoreState(nextState))

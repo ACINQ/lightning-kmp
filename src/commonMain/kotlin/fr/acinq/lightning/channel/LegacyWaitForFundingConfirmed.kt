@@ -35,20 +35,20 @@ data class LegacyWaitForFundingConfirmed(
                 when (cmd.watch) {
                     is WatchEventConfirmed -> {
                         val result = runTrying {
-                            Transaction.correctlySpends(commitments.localCommit.publishableTxs.commitTx.tx, listOf(cmd.watch.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+                            Transaction.correctlySpends(commitments.latest.localCommit.publishableTxs.commitTx.tx, listOf(cmd.watch.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
                         }
                         if (result is Try.Failure) {
                             logger.error { "funding tx verification failed: ${result.error}" }
                             return handleLocalError(cmd, InvalidCommitmentSignature(channelId, cmd.watch.tx.txid))
                         }
-                        val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys(keyManager).shaSeed, 1)
+                        val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
                         val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint)
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network
                         // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
                         val blockHeight = cmd.watch.blockHeight
                         val txIndex = cmd.watch.txIndex
-                        val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt())
+                        val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.latest.commitInput.outPoint.index.toInt())
                         val nextState = LegacyWaitForFundingLocked(commitments, shortChannelId, channelReady)
                         val actions = listOf(
                             ChannelAction.Message.Send(channelReady),
@@ -63,7 +63,7 @@ data class LegacyWaitForFundingConfirmed(
                         }
                     }
                     is WatchEventSpent -> when (cmd.watch.tx.txid) {
-                        commitments.remoteCommit.txid -> handleRemoteSpentCurrent(cmd.watch.tx)
+                        commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(cmd.watch.tx, commitments.latest)
                         else -> handleRemoteSpentOther(cmd.watch.tx)
                     }
                 }

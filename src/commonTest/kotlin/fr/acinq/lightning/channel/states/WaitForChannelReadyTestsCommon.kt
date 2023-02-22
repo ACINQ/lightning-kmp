@@ -13,6 +13,7 @@ import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.Error
+import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.lightning.wire.Warning
 import kotlin.test.*
 
@@ -21,13 +22,13 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures -- zero conf`() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bob.state.fundingTx.localSigs))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(getFundingSigs(bob)))
         assertIs<LNChannel<WaitForChannelReady>>(alice1)
         assertEquals(actionsAlice1.size, 2)
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
-        assertEquals(alice.commitments.fundingTxId, fundingTx.txid)
+        assertEquals(alice.commitments.latest.fundingTxId, fundingTx.txid)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
-        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(alice.state.fundingTx.localSigs))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(getFundingSigs(alice)))
         assertIs<LNChannel<WaitForChannelReady>>(bob1)
         assertEquals(actionsBob1.size, 2)
         assertEquals(actionsBob1.find<ChannelAction.Blockchain.PublishTx>().tx, fundingTx)
@@ -37,7 +38,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures and restart -- zero conf`() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bob.state.fundingTx.localSigs))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(getFundingSigs(bob)))
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
         val (alice2, actionsAlice2) = LNChannel(alice1.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
         assertIs<LNChannel<Offline>>(alice2)
@@ -48,8 +49,8 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- duplicate`() {
-        val (alice, _, bob, _) = init()
-        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(bob.state.fundingTx.localSigs))
+        val (alice, _, _, _) = init()
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, alice.commitments.latest.fundingTxId.reversed(), listOf())))
         assertEquals(alice1, alice)
         assertTrue(actions1.isEmpty())
     }
@@ -57,7 +58,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures -- invalid`() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bob.state.fundingTx.localSigs.copy(witnesses = listOf())))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(getFundingSigs(bob).copy(witnesses = listOf())))
         assertEquals(alice, alice1)
         assertEquals(actionsAlice1.size, 1)
         actionsAlice1.hasOutgoingMessage<Warning>()
@@ -87,12 +88,12 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         assertEquals(bobBalance, 175_000_000.msat)
         val (alice1, _) = alice.process(ChannelCommand.MessageReceived(fundingLockedBob))
         assertIs<LNChannel<Normal>>(alice1)
-        assertEquals(alice1.commitments.localCommit.spec.toLocal, aliceBalance)
-        assertEquals(alice1.commitments.localCommit.spec.toRemote, bobBalance)
+        assertEquals(alice1.commitments.latest.localCommit.spec.toLocal, aliceBalance)
+        assertEquals(alice1.commitments.latest.localCommit.spec.toRemote, bobBalance)
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(fundingLockedAlice))
         assertIs<LNChannel<Normal>>(bob1)
-        assertEquals(bob1.commitments.localCommit.spec.toLocal, bobBalance)
-        assertEquals(bob1.commitments.localCommit.spec.toRemote, aliceBalance)
+        assertEquals(bob1.commitments.latest.localCommit.spec.toLocal, bobBalance)
+        assertEquals(bob1.commitments.latest.localCommit.spec.toRemote, aliceBalance)
     }
 
     @Test
@@ -104,12 +105,12 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         assertEquals(bobBalance, 175_000_000.msat)
         val (alice1, _) = alice.process(ChannelCommand.MessageReceived(fundingLockedBob))
         assertIs<LNChannel<Normal>>(alice1)
-        assertEquals(alice1.commitments.localCommit.spec.toLocal, aliceBalance)
-        assertEquals(alice1.commitments.localCommit.spec.toRemote, bobBalance)
+        assertEquals(alice1.commitments.latest.localCommit.spec.toLocal, aliceBalance)
+        assertEquals(alice1.commitments.latest.localCommit.spec.toRemote, bobBalance)
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(fundingLockedAlice))
         assertIs<LNChannel<Normal>>(bob1)
-        assertEquals(bob1.commitments.localCommit.spec.toLocal, bobBalance)
-        assertEquals(bob1.commitments.localCommit.spec.toRemote, aliceBalance)
+        assertEquals(bob1.commitments.latest.localCommit.spec.toLocal, bobBalance)
+        assertEquals(bob1.commitments.latest.localCommit.spec.toRemote, aliceBalance)
     }
 
     @Test
@@ -117,7 +118,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         val (alice, _, bob, _) = init()
         // bob publishes his commitment tx
         run {
-            val bobCommitTx = bob.commitments.localCommit.publishableTxs.commitTx.tx
+            val bobCommitTx = bob.commitments.latest.localCommit.publishableTxs.commitTx.tx
             val (alice1, actions1) = alice.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
             assertIs<LNChannel<Closing>>(alice1)
             assertNotNull(alice1.state.remoteCommitPublished)
@@ -126,7 +127,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         }
         // alice publishes her commitment tx
         run {
-            val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
+            val aliceCommitTx = alice.commitments.latest.localCommit.publishableTxs.commitTx.tx
             val (bob1, actions1) = bob.process(ChannelCommand.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, aliceCommitTx)))
             assertIs<LNChannel<Closing>>(bob1)
             assertNotNull(bob1.state.remoteCommitPublished)
@@ -138,7 +139,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     @Test
     fun `recv BITCOIN_FUNDING_SPENT -- other commit`() {
         val (alice, _, _) = init()
-        val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
+        val aliceCommitTx = alice.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val unknownTx = Transaction(2, aliceCommitTx.txIn, listOf(), 0)
         val (alice1, actions1) = alice.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, unknownTx)))
         assertIs<LNChannel<ErrorInformationLeak>>(alice1)
@@ -149,7 +150,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     fun `recv Error`() {
         val (alice, _, bob, _) = init()
         listOf(alice, bob).forEach { state ->
-            val commitTx = state.commitments.localCommit.publishableTxs.commitTx.tx
+            val commitTx = state.commitments.latest.localCommit.publishableTxs.commitTx.tx
             val (state1, actions1) = state.process(ChannelCommand.MessageReceived(Error(state.channelId, "no lightning for you sir")))
             assertIs<LNChannel<Closing>>(state1)
             assertNotNull(state1.state.localCommitPublished)
@@ -174,7 +175,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     fun `recv CMD_FORCECLOSE`() {
         val (alice, _, bob, _) = init()
         listOf(alice, bob).forEach { state ->
-            val commitTx = state.commitments.localCommit.publishableTxs.commitTx.tx
+            val commitTx = state.commitments.latest.localCommit.publishableTxs.commitTx.tx
             val (state1, actions1) = state.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
             assertIs<LNChannel<Closing>>(state1)
             assertNotNull(state1.state.localCommitPublished)
@@ -193,6 +194,11 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         assertEquals(1, actions1.size)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(ForcedLocalCommit(bob.channelId).message, error.toAscii())
+    }
+
+    private fun getFundingSigs(channel: LNChannel<WaitForChannelReady>): TxSignatures {
+        assertIs<LocalFundingStatus.UnconfirmedFundingTx>(channel.commitments.latest.localFundingStatus)
+        return (channel.commitments.latest.localFundingStatus as LocalFundingStatus.UnconfirmedFundingTx).sharedTx.localSigs
     }
 
     companion object {
@@ -225,8 +231,8 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
                 val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(txSigsBob))
                 assertIs<LNChannel<WaitForFundingConfirmed>>(alice1)
                 val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
-                assertEquals(fundingTx.hash, alice1.state.fundingTx.localSigs.txHash)
-                val (bob1, _) = bob.process(ChannelCommand.MessageReceived(alice1.state.fundingTx.localSigs))
+                assertEquals(fundingTx.hash, alice1.state.latestFundingTx.sharedTx.localSigs.txHash)
+                val (bob1, _) = bob.process(ChannelCommand.MessageReceived(alice1.state.latestFundingTx.sharedTx.localSigs))
                 val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
                 assertIs<LNChannel<WaitForChannelReady>>(alice2)
                 val channelReadyAlice = actionsAlice2.findOutgoingMessage<ChannelReady>()

@@ -21,6 +21,7 @@ import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.CommitmentSpec
+import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
@@ -395,7 +396,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         listOf(true, false).forEach {
             val c = makeCommitments(31000000.msat, 702000000.msat, FeeratePerKw(2679.sat), 546.sat, it)
             val add = UpdateAddHtlc(
-                randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive(), randomBytes32(), CltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket
+                randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive(), randomBytes32(), CltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket
             )
             val result = c.receiveAdd(add)
             assertTrue(result.isRight)
@@ -438,9 +439,9 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         }
 
         val lcp = alice.state.localCommitPublished!!
-        val localCommit = alice.state.commitments.localCommit
+        val localCommit = alice.state.commitments.latest.localCommit
         val rcp = bob.state.remoteCommitPublished!!
-        val remoteCommit = bob.state.commitments.remoteCommit
+        val remoteCommit = bob.state.commitments.latest.remoteCommit
         val dustLimit = TestConstants.Alice.nodeParams.dustLimit
         val htlcTimeoutTxs = lcp.htlcTimeoutTxs()
         val htlcSuccessTxs = lcp.htlcSuccessTxs()
@@ -479,28 +480,38 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(),
                 Features.empty
             )
-            val commitmentInput = Helpers.Funding.makeFundingInputInfo(
-                randomBytes32(),
-                0, (toLocal + toRemote).truncateToSatoshi(), randomKey().publicKey(), remoteParams.fundingPubKey
-            )
+            val fundingAmount = (toLocal + toRemote).truncateToSatoshi()
+            val dummyFundingScript = Scripts.multiSig2of2(randomKey().publicKey(), randomKey().publicKey())
+            val dummyFundingTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(fundingAmount, Script.pay2wsh(dummyFundingScript))), 0)
+            val commitmentInput = Transactions.InputInfo(OutPoint(dummyFundingTx, 0), dummyFundingTx.txOut[0], dummyFundingScript)
             val localCommitTx = Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0))
             return Commitments(
-                ChannelConfig.standard,
-                ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
-                localParams,
-                remoteParams,
-                channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-                LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
-                RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
-                LocalChanges(listOf(), listOf(), listOf()),
-                RemoteChanges(listOf(), listOf(), listOf()),
-                localNextHtlcId = 1,
-                remoteNextHtlcId = 1,
+                ChannelParams(
+                    channelId = randomBytes32(),
+                    channelConfig = ChannelConfig.standard,
+                    channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
+                    localParams = localParams,
+                    remoteParams = remoteParams,
+                    channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
+                ),
+                CommitmentChanges(
+                    LocalChanges(listOf(), listOf(), listOf()),
+                    RemoteChanges(listOf(), listOf(), listOf()),
+                    localNextHtlcId = 1,
+                    remoteNextHtlcId = 1,
+                ),
+                listOf(
+                    Commitment(
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
+                        RemoteFundingStatus.Locked,
+                        LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
+                        RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
+                        nextRemoteCommit = null,
+                    )
+                ),
                 payments = mapOf(),
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
-                commitInput = commitmentInput,
                 remotePerCommitmentSecrets = ShaChain.init,
-                channelId = randomBytes32()
             )
         }
 
@@ -511,27 +522,38 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             val remoteParams = RemoteParams(
                 remoteNodeId, 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty
             )
-            val commitmentInput = Helpers.Funding.makeFundingInputInfo(
-                randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi(), randomKey().publicKey(), remoteParams.fundingPubKey
-            )
+            val fundingAmount = (toLocal + toRemote).truncateToSatoshi()
+            val dummyFundingScript = Scripts.multiSig2of2(randomKey().publicKey(), randomKey().publicKey())
+            val dummyFundingTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(fundingAmount, Script.pay2wsh(dummyFundingScript))), 0)
+            val commitmentInput = Transactions.InputInfo(OutPoint(dummyFundingTx, 0), dummyFundingTx.txOut[0], dummyFundingScript)
             val localCommitTx = Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0))
             return Commitments(
-                ChannelConfig.standard,
-                ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
-                localParams,
-                remoteParams,
-                channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-                LocalCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
-                RemoteCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
-                LocalChanges(listOf(), listOf(), listOf()),
-                RemoteChanges(listOf(), listOf(), listOf()),
-                localNextHtlcId = 1,
-                remoteNextHtlcId = 1,
+                ChannelParams(
+                    channelId = randomBytes32(),
+                    channelConfig = ChannelConfig.standard,
+                    channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
+                    localParams = localParams,
+                    remoteParams = remoteParams,
+                    channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
+                ),
+                CommitmentChanges(
+                    LocalChanges(listOf(), listOf(), listOf()),
+                    RemoteChanges(listOf(), listOf(), listOf()),
+                    localNextHtlcId = 1,
+                    remoteNextHtlcId = 1,
+                ),
+                listOf(
+                    Commitment(
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
+                        RemoteFundingStatus.Locked,
+                        LocalCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
+                        RemoteCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
+                        nextRemoteCommit = null
+                    )
+                ),
                 payments = mapOf(),
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
-                commitInput = commitmentInput,
                 remotePerCommitmentSecrets = ShaChain.init,
-                channelId = randomBytes32()
             )
         }
     }

@@ -25,12 +25,12 @@ class SyncingTestsCommon : LightningTestSuite() {
             val (alice, bob) = init()
             disconnect(alice, bob)
         }
-        val aliceCommitTx = alice.state.state.commitments.localCommit.publishableTxs.commitTx.tx
+        val aliceCommitTx = alice.state.state.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (bob1, actions) = bob.process(ChannelCommand.WatchReceived(WatchEventSpent(bob.state.channelId, BITCOIN_FUNDING_SPENT, aliceCommitTx)))
         assertIs<LNChannel<Closing>>(bob1)
         // we published a tx to claim our main output
         val claimTx = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }.first()
-        Transaction.correctlySpends(claimTx, alice.state.state.commitments.localCommit.publishableTxs.commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(claimTx, alice.state.state.commitments.latest.localCommit.publishableTxs.commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val watches = actions.findWatches<WatchConfirmed>()
         assertEquals(watches.map { it.txId }.toSet(), setOf(aliceCommitTx.txid, claimTx.txid))
     }
@@ -43,7 +43,7 @@ class SyncingTestsCommon : LightningTestSuite() {
             val (alice1, bob1) = nodes
             val (alice2, bob2) = TestsHelper.crossSign(alice1, bob1)
             val (alice3, bob3, _) = disconnect(alice2, bob2)
-            Triple(alice3, bob3, alice.commitments.localCommit.publishableTxs.commitTx.tx)
+            Triple(alice3, bob3, alice.commitments.latest.localCommit.publishableTxs.commitTx.tx)
         }
         val (bob1, actions) = bob.process(ChannelCommand.WatchReceived(WatchEventSpent(bob.state.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
         assertIs<LNChannel<Closing>>(bob1)
@@ -83,8 +83,8 @@ class SyncingTestsCommon : LightningTestSuite() {
     fun `watch unconfirmed funding tx with previous funding txs`() {
         val (alice, bob, txSigs, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigs, walletAlice)
-        val fundingTxId1 = alice.commitments.fundingTxId
-        val fundingTxId2 = alice1.commitments.fundingTxId
+        val fundingTxId1 = alice.commitments.latest.fundingTxId
+        val fundingTxId2 = alice1.commitments.latest.fundingTxId
         assertNotEquals(fundingTxId1, fundingTxId2)
         val (alice2, bob2, channelReestablishAlice) = disconnectWithBackup(alice1, bob1)
 
@@ -105,7 +105,7 @@ class SyncingTestsCommon : LightningTestSuite() {
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK`() {
         val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
-        val fundingTx = alice.state.fundingTx.tx.buildUnsignedTx()
+        val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         val (alice1, bob1, _) = disconnectWithBackup(alice, bob)
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
         assertEquals(alice1, alice2)
@@ -121,13 +121,13 @@ class SyncingTestsCommon : LightningTestSuite() {
     fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
         val (alice, bob, txSigs, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigs, walletAlice)
-        val previousFundingTx = alice1.state.previousFundingTxs.first().first.signedTx!!
+        val previousFundingTx = alice1.state.previousFundingTxs.first().signedTx!!
         val (alice2, bob2, _) = disconnectWithBackup(alice1, bob1)
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
         assertIs<LNChannel<Syncing>>(alice3)
         val aliceState3 = alice3.state.state
         assertIs<WaitForFundingConfirmed>(aliceState3)
-        assertEquals(aliceState3.commitments.fundingTxId, previousFundingTx.txid)
+        assertEquals(aliceState3.commitments.latest.fundingTxId, previousFundingTx.txid)
         assertTrue(aliceState3.previousFundingTxs.isEmpty())
         assertEquals(actionsAlice3.size, 1)
         assertEquals(actionsAlice3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
@@ -135,7 +135,7 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Syncing>>(bob3)
         val bobState3 = bob3.state.state
         assertIs<WaitForFundingConfirmed>(bobState3)
-        assertEquals(bobState3.commitments.fundingTxId, previousFundingTx.txid)
+        assertEquals(bobState3.commitments.latest.fundingTxId, previousFundingTx.txid)
         assertTrue(bobState3.previousFundingTxs.isEmpty())
         assertEquals(actionsBob3.size, 1)
         assertEquals(actionsBob3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
@@ -167,9 +167,9 @@ class SyncingTestsCommon : LightningTestSuite() {
             assertIs<LNChannel<Offline>>(bob1)
             assertTrue(actionsBob1.isEmpty())
 
-            val aliceInit = Init(ByteVector(alice1.state.state.commitments.localParams.features.toByteArray()))
-            val bobInit = Init(ByteVector(bob1.state.state.commitments.localParams.features.toByteArray()))
-            assertFalse(bob1.state.state.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
+            val aliceInit = Init(ByteVector(alice1.state.state.commitments.params.localParams.features.toByteArray()))
+            val bobInit = Init(ByteVector(bob1.state.state.commitments.params.localParams.features.toByteArray()))
+            assertFalse(bob1.state.state.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
 
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
             assertIs<LNChannel<Syncing>>(alice2)
@@ -188,10 +188,10 @@ class SyncingTestsCommon : LightningTestSuite() {
             assertIs<LNChannel<Offline>>(bob1)
             assertTrue(actionsBob1.isEmpty())
 
-            val aliceInit = Init(ByteVector(alice1.state.state.commitments.localParams.features.toByteArray()))
-            assertTrue(alice1.state.state.commitments.localParams.features.hasFeature(Feature.ChannelBackupProvider))
-            val bobInit = Init(ByteVector(bob1.state.state.commitments.localParams.features.toByteArray()))
-            assertTrue(bob1.state.state.commitments.localParams.features.hasFeature(Feature.ChannelBackupClient))
+            val aliceInit = Init(ByteVector(alice1.state.state.commitments.params.localParams.features.toByteArray()))
+            assertTrue(alice1.state.state.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupProvider))
+            val bobInit = Init(ByteVector(bob1.state.state.commitments.params.localParams.features.toByteArray()))
+            assertTrue(bob1.state.state.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
 
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
             assertIs<LNChannel<Syncing>>(alice2)

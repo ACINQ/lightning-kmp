@@ -21,43 +21,40 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                         // there isn't much to do except asking them again to publish their current commitment by sending an error
                         val exc = PleasePublishYourCommitment(channelId)
                         val error = Error(channelId, exc.message)
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
+                        val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         Pair(nextState, listOf(ChannelAction.Message.Send(error)))
                     }
                     staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> {
                         // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
                         logger.info { "syncing ${state::class}, waiting fo their channelReestablish message" }
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
+                        val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         Pair(Syncing(nextState, true), listOf())
                     }
                     else -> {
                         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommit.index)
+                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommitIndex)
                         val channelReestablish = ChannelReestablish(
                             channelId = channelId,
-                            nextLocalCommitmentNumber = state.commitments.localCommit.index + 1,
-                            nextRemoteRevocationNumber = state.commitments.remoteCommit.index,
+                            nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,
+                            nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
                             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
                         ).withChannelData(state.commitments.remoteChannelData, logger)
                         logger.info { "syncing ${state::class}" }
-                        val nextState = state.updateCommitments(state.commitments.updateFeatures(cmd.localInit, cmd.remoteInit))
+                        val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
                     }
                 }
             }
             cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventConfirmed -> {
                 if (cmd.watch.event is BITCOIN_FUNDING_DEPTHOK || cmd.watch.event is BITCOIN_FUNDING_DEEPLYBURIED) {
-                    val watchSpent = WatchSpent(channelId, cmd.watch.tx, state.commitments.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
-                    val nextState = when {
-                        state is WaitForFundingConfirmed && cmd.watch.tx.txid == state.commitments.fundingTxId -> {
+                    // NB: we don't yet mark the transaction as confirmed, this will be done after reconnection.
+                    val commitments1 = state.commitments.copy(active = state.commitments.active.filter { it.fundingTxId == cmd.watch.tx.txid })
+                    val watchSpent = WatchSpent(channelId, cmd.watch.tx, commitments1.latest.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
+                    val nextState = when (state) {
+                        is WaitForFundingConfirmed -> {
                             logger.info { "was confirmed while offline at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with funding txid=${cmd.watch.tx.txid}" }
-                            state.copy(previousFundingTxs = listOf())
-                        }
-                        state is WaitForFundingConfirmed && state.previousFundingTxs.find { cmd.watch.tx.txid == it.second.fundingTxId } != null -> {
-                            val (fundingTx, commitments) = state.previousFundingTxs.first { cmd.watch.tx.txid == it.second.fundingTxId }
-                            logger.info { "was confirmed while offline at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with a previous funding txid=${cmd.watch.tx.txid}" }
-                            state.copy(fundingTx = fundingTx, commitments = commitments, previousFundingTxs = listOf())
+                            state.copy(commitments = commitments1)
                         }
                         else -> state
                     }
@@ -72,9 +69,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     val closingTx = state.getMutualClosePublished(cmd.watch.tx)
                     val nextState = Closing(
                         state.commitments,
-                        fundingTx = null,
                         waitingSinceBlock = currentBlockHeight.toLong(),
-                        alternativeCommitments = listOf(),
                         mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
                         mutualClosePublished = listOf(closingTx)
                     )
@@ -85,9 +80,9 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     )
                     Pair(nextState, actions)
                 }
-                cmd.watch.tx.txid == state.commitments.remoteCommit.txid -> state.run { handleRemoteSpentCurrent(cmd.watch.tx) }
-                cmd.watch.tx.txid == state.commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> state.run { handleRemoteSpentNext(cmd.watch.tx) }
-                state is WaitForRemotePublishFutureCommitment -> state. run { handleRemoteSpentFuture(cmd.watch.tx) }
+                cmd.watch.tx.txid == state.commitments.latest.remoteCommit.txid -> state.run { handleRemoteSpentCurrent(cmd.watch.tx, state.commitments.latest) }
+                cmd.watch.tx.txid == state.commitments.latest.nextRemoteCommit?.commit?.txid -> state.run { handleRemoteSpentNext(cmd.watch.tx, state.commitments.latest) }
+                state is WaitForRemotePublishFutureCommitment -> state.run { handleRemoteSpentFuture(cmd.watch.tx) }
                 else -> state.run { handleRemoteSpentOther(cmd.watch.tx) }
             }
             cmd is ChannelCommand.CheckHtlcTimeout -> {

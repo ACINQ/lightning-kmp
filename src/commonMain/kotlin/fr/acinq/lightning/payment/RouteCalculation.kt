@@ -23,7 +23,7 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
 
         data class ChannelBalance(val c: Normal) {
             val balance: MilliSatoshi = c.commitments.availableBalanceForSend()
-            val capacity: Satoshi = c.commitments.commitInput.txOut.amount
+            val capacity: Satoshi = c.commitments.latest.fundingAmount
         }
 
         val sortedChannels = channels.values.filterIsInstance<Normal>().map { ChannelBalance(it) }.sortedBy { it.balance }.reversed()

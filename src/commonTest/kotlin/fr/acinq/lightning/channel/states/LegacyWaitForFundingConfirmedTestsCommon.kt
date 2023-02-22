@@ -31,7 +31,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         val state = PersistedChannelState.from(TestConstants.Bob.nodeParams.nodePrivateKey, EncryptedChannelData(waitForFundingConfirmed))
         assertIs<LegacyWaitForFundingConfirmed>(state)
         val fundingTx = Transaction.read("020000000100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0140420f0000000000220020f9aafa9be1212d0d373760c279f3817f9be707d674cae5f38bb31c1fd85c202900000000")
-        assertEquals(state.commitments.fundingTxId, fundingTx.txid)
+        assertEquals(state.commitments.latest.fundingTxId, fundingTx.txid)
         val ctx = ChannelContext(
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
             TestConstants.defaultBlockHeight ,
@@ -45,15 +45,15 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         assertEquals(watchConfirmed.event, BITCOIN_FUNDING_DEPTHOK)
         assertEquals(watchConfirmed.txId, fundingTx.txid)
         // Reconnect to our peer.
-        val localInit = Init(state.commitments.localParams.features.toByteArray().byteVector())
-        val remoteInit = Init(state.commitments.remoteParams.features.toByteArray().byteVector())
+        val localInit = Init(state.commitments.params.localParams.features.toByteArray().byteVector())
+        val remoteInit = Init(state.commitments.params.remoteParams.features.toByteArray().byteVector())
         val (state2, actions2) = state1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<LNChannel<Syncing>>(state2)
         assertTrue(actions2.isEmpty())
         val channelReestablish = ChannelReestablish(
             state.channelId,
-            state.commitments.remoteCommit.index + 1,
-            state.commitments.localCommit.index,
+            state.commitments.remoteCommitIndex + 1,
+            state.commitments.localCommitIndex,
             PrivateKey(ByteVector32.Zeroes),
             randomKey().publicKey()
         )

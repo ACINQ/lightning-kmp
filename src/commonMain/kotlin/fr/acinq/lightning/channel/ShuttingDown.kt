@@ -37,15 +37,15 @@ data class ShuttingDown(
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@ShuttingDown.copy(commitments = result.value), listOf())
                     }
-                    is CommitSig -> when (val result = commitments.receiveCommit(cmd.message, keyManager, logger)) {
+                    is CommitSig -> when (val result = commitments.receiveCommit(listOf(cmd.message), keyManager, logger)) {
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> {
                             val (commitments1, revocation) = result.value
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isInitiator -> {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.params.localParams.isInitiator -> {
                                     val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                         keyManager,
-                                        commitments1,
+                                        commitments1.latest,
                                         localShutdown.scriptPubKey.toByteArray(),
                                         remoteShutdown.scriptPubKey.toByteArray(),
                                         closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
@@ -73,7 +73,7 @@ data class ShuttingDown(
                                 else -> {
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
                                     val actions = mutableListOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(revocation))
-                                    if (commitments1.localHasChanges()) {
+                                    if (commitments1.changes.localHasChanges()) {
                                         // if we have newly acknowledged changes let's sign them
                                         actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
                                     }
@@ -88,10 +88,10 @@ data class ShuttingDown(
                             val (commitments1, actions) = result.value
                             val actions1 = actions.toMutableList()
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.localParams.isInitiator -> {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.params.localParams.isInitiator -> {
                                     val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                         keyManager,
-                                        commitments1,
+                                        commitments1.latest,
                                         localShutdown.scriptPubKey.toByteArray(),
                                         remoteShutdown.scriptPubKey.toByteArray(),
                                         closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
@@ -115,7 +115,7 @@ data class ShuttingDown(
                                 else -> {
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
                                     actions1.add(ChannelAction.Storage.StoreState(nextState))
-                                    if (commitments1.localHasChanges() && commitments1.remoteNextCommitInfo.isLeft && commitments1.remoteNextCommitInfo.left!!.reSignAsap) {
+                                    if (commitments1.changes.localHasChanges() && commitments1.remoteNextCommitInfo.isLeft) {
                                         actions1.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
                                     }
                                     Pair(nextState, actions1)
@@ -135,33 +135,32 @@ data class ShuttingDown(
                     // we don't provide a channel_update: this will be a permanent channel failure
                     handleCommandError(cmd.command, ChannelUnavailable(channelId))
                 }
-                cmd.command is CMD_SIGN && !commitments.localHasChanges() -> {
+                cmd.command is CMD_SIGN && !commitments.changes.localHasChanges() -> {
                     logger.debug { "ignoring CMD_SIGN (nothing to sign)" }
                     Pair(this@ShuttingDown, listOf())
                 }
                 cmd.command is CMD_SIGN && commitments.remoteNextCommitInfo.isLeft -> {
                     logger.debug { "already in the process of signing, will sign again as soon as possible" }
-                    Pair(this@ShuttingDown.copy(commitments = commitments.copy(remoteNextCommitInfo = Either.Left(commitments.remoteNextCommitInfo.left!!.copy(reSignAsap = true)))), listOf())
+                    Pair(this@ShuttingDown, listOf())
                 }
                 cmd.command is CMD_SIGN -> when (val result = commitments.sendCommit(keyManager, logger)) {
                     is Either.Left -> handleCommandError(cmd.command, result.value)
                     is Either.Right -> {
                         val commitments1 = result.value.first
-                        val nextRemoteCommit = commitments1.remoteNextCommitInfo.left!!.nextRemoteCommit
-                        val nextCommitNumber = nextRemoteCommit.index
+                        val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.commit.spec
                         // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
                         // counterparty, so only htlcs above remote's dust_limit matter
-                        val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec) + Transactions.trimReceivedHtlcs(commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
+                        val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec) + Transactions.trimReceivedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec)
                         val htlcInfos = trimmedHtlcs.map { it.add }.map {
-                            logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber" }
-                            ChannelAction.Storage.HtlcInfo(channelId, nextCommitNumber, it.paymentHash, it.cltvExpiry)
+                            logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=${commitments1.nextRemoteCommitIndex}" }
+                            ChannelAction.Storage.HtlcInfo(channelId, commitments1.nextRemoteCommitIndex, it.paymentHash, it.cltvExpiry)
                         }
                         val nextState = this@ShuttingDown.copy(commitments = commitments1)
-                        val actions = listOf(
-                            ChannelAction.Storage.StoreHtlcInfos(htlcInfos),
-                            ChannelAction.Storage.StoreState(nextState),
-                            ChannelAction.Message.Send(result.value.second)
-                        )
+                        val actions = buildList {
+                            add(ChannelAction.Storage.StoreHtlcInfos(htlcInfos))
+                            add(ChannelAction.Storage.StoreState(nextState))
+                            addAll(result.value.second.map { ChannelAction.Message.Send(it) })
+                        }
                         Pair(nextState, actions)
                     }
                 }
@@ -175,8 +174,8 @@ data class ShuttingDown(
             }
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventSpent -> when (watch.tx.txid) {
-                    commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
-                    commitments.remoteNextCommitInfo.left?.nextRemoteCommit?.txid -> handleRemoteSpentNext(watch.tx)
+                    commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx, commitments.latest)
+                    commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(watch.tx, commitments.latest)
                     else -> handleRemoteSpentOther(watch.tx)
                 }
                 else -> unhandled(cmd)

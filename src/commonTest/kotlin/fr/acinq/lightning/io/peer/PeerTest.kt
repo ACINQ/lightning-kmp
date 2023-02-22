@@ -140,10 +140,10 @@ class PeerTest : LightningTestSuite() {
         alice.forward(txSigsBob)
         val txSigsAlice = alice2bob.expect<TxSignatures>()
         bob.forward(txSigsAlice)
-        val (channelId, aliceState) = alice.expectState<WaitForFundingConfirmed> { fundingTx.signedTx != null }
+        val (channelId, aliceState) = alice.expectState<WaitForFundingConfirmed> { latestFundingTx.signedTx != null }
         assertEquals(channelId, txAddInput.channelId)
         bob.expectState<WaitForFundingConfirmed>()
-        val fundingTx = aliceState.fundingTx.signedTx
+        val fundingTx = aliceState.latestFundingTx.signedTx
         assertNotNull(fundingTx)
 
         alice.send(WatchReceived(WatchEventConfirmed(channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, fundingTx)))
@@ -265,12 +265,12 @@ class PeerTest : LightningTestSuite() {
         val txSigsBob = bob2alice.expect<TxSignatures>()
         alice.forward(txSigsBob)
         val (_, aliceState) = alice.expectState<WaitForFundingConfirmed>()
-        assertEquals(aliceState.commitments.localCommit.spec.toLocal, openAlice.fundingAmount.toMilliSatoshi() + serviceFee)
+        assertEquals(aliceState.commitments.latest.localCommit.spec.toLocal, openAlice.fundingAmount.toMilliSatoshi() + serviceFee)
         val (_, bobState) = bob.expectState<WaitForFundingConfirmed>()
         // Bob has to deduce from its balance:
         //  - the fees for the channel open (10 000 sat)
         //  - the miner fees for his input(s) in the funding transaction
-        assertEquals(bobState.commitments.localCommit.spec.toLocal, walletBob.confirmedBalance.toMilliSatoshi() - serviceFee - fundingFee.toMilliSatoshi())
+        assertEquals(bobState.commitments.latest.localCommit.spec.toLocal, walletBob.confirmedBalance.toMilliSatoshi() - serviceFee - fundingFee.toMilliSatoshi())
     }
 
     @Test
@@ -361,13 +361,13 @@ class PeerTest : LightningTestSuite() {
 
         val syncState = syncChannels.first()
         val yourLastPerCommitmentSecret = ByteVector32.Zeroes
-        val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(syncState.state.commitments.localParams, syncState.state.commitments.channelConfig)
-        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, syncState.state.commitments.localCommit.index)
+        val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(syncState.state.commitments.params.localParams, syncState.state.commitments.params.channelConfig)
+        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, syncState.state.commitments.localCommitIndex)
 
         val channelReestablish = ChannelReestablish(
             channelId = syncState.state.channelId,
-            nextLocalCommitmentNumber = syncState.state.commitments.localCommit.index + 1,
-            nextRemoteRevocationNumber = syncState.state.commitments.remoteCommit.index,
+            nextLocalCommitmentNumber = syncState.state.commitments.localCommitIndex + 1,
+            nextRemoteRevocationNumber = syncState.state.commitments.remoteCommitIndex,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
         ).withChannelData(syncState.state.commitments.remoteChannelData)

@@ -58,6 +58,7 @@ data class InvalidHtlcSignature                    (override val channelId: Byte
 data class InvalidCloseSignature                   (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid close signature: txId=$txId")
 data class InvalidCloseFee                         (override val channelId: ByteVector32, val fee: Satoshi) : ChannelException(channelId, "invalid close fee: fee_satoshis=$fee")
 data class InvalidCloseAmountBelowDust             (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid closing tx: some outputs are below dust: txId=$txId")
+data class CommitSigCountMismatch                  (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "commit sig count mismatch: expected=$expected actual=$actual")
 data class HtlcSigCountMismatch                    (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "htlc sig count mismatch: expected=$expected actual: $actual")
 data class ForcedLocalCommit                       (override val channelId: ByteVector32) : ChannelException(channelId, "forced local commit")
 data class UnexpectedHtlcId                        (override val channelId: ByteVector32, val expected: Long, val actual: Long) : ChannelException(channelId, "unexpected htlc id: expected=$expected actual=$actual")
