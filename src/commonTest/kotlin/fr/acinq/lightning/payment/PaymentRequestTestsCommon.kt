@@ -507,6 +507,19 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
         }
     }
 
+    @Test
+    fun `invoice with descriptionHash`() {
+        val descriptionHash = randomBytes32()
+        val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
+        val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 123.msat, ByteVector32.One, priv, Either.Right(descriptionHash), CltvExpiryDelta(18), features)
+        assertNotNull(pr.descriptionHash)
+        assertNull(pr.description)
+
+        val pr1 = PaymentRequest.read(pr.write())
+        assertEquals(pr1.descriptionHash, pr.descriptionHash)
+        assertNull(pr1.description)
+    }
+
     companion object {
         fun createInvoiceUnsafe(
             amount: MilliSatoshi? = null,
