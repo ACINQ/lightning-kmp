@@ -434,7 +434,7 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
             mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.ShutdownAnySegwit to FeatureSupport.Optional),
             setOf(UnknownFeature(103), UnknownFeature(256))
         )
-        val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 500.msat, randomBytes32(), randomKey(), "non-invoice features", CltvExpiryDelta(6), nodeFeatures)
+        val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 500.msat, randomBytes32(), randomKey(), Either.Left("non-invoice features"), CltvExpiryDelta(6), nodeFeatures)
         assertEquals(Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory), Features(pr.features))
     }
 
@@ -480,7 +480,7 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
     @Test
     fun `payment secret`() {
         val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
-        val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 123.msat, ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features)
+        val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 123.msat, ByteVector32.One, priv, Either.Left("Some invoice"), CltvExpiryDelta(18), features)
         assertNotNull(pr.paymentSecret)
         assertEquals(ByteVector("024100"), pr.features)
 
@@ -500,11 +500,24 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
                 123.msat,
                 ByteVector32.One,
                 priv,
-                "Invoice without secrets",
+                Either.Left("Invoice without secrets"),
                 CltvExpiryDelta(18),
                 Features(Feature.VariableLengthOnion to FeatureSupport.Optional, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
             )
         }
+    }
+
+    @Test
+    fun `invoice with descriptionHash`() {
+        val descriptionHash = randomBytes32()
+        val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
+        val pr = PaymentRequest.create(Block.LivenetGenesisBlock.hash, 123.msat, ByteVector32.One, priv, Either.Right(descriptionHash), CltvExpiryDelta(18), features)
+        assertNotNull(pr.descriptionHash)
+        assertNull(pr.description)
+
+        val pr1 = PaymentRequest.read(pr.write())
+        assertEquals(pr1.descriptionHash, pr.descriptionHash)
+        assertNull(pr1.description)
     }
 
     companion object {

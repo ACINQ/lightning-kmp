@@ -1219,19 +1219,19 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
 
         // create incoming payment that has expired and not been paid
-        val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "expired", listOf(), expirySeconds = 3600,
+        val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expirySeconds = 3600,
             timestampSeconds = 1)
 
         // create incoming payment that has expired and been paid
         delay(100)
-        val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, "paid", listOf(), expirySeconds = 3600,
+        val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expirySeconds = 3600,
             timestampSeconds = 100)
         paymentHandler.db.receivePayment(paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = null)),
             receivedAt = 101) // simulate incoming payment being paid before it expired
 
         // create unexpired payment
         delay(100)
-        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, "unexpired", listOf(), expirySeconds = 3600)
+        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("unexpired"), listOf(), expirySeconds = 3600)
 
         val unexpiredPayment = paymentHandler.db.getIncomingPayment(unexpiredInvoice.paymentHash)!!
         val paidPayment = paymentHandler.db.getIncomingPayment(paidInvoice.paymentHash)!!
@@ -1307,7 +1307,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
-            val paymentRequest = payee.createInvoice(defaultPreimage, amount, "unit test", listOf(), expirySeconds, timestamp)
+            val paymentRequest = payee.createInvoice(defaultPreimage, amount, Either.Left("unit test"), listOf(), expirySeconds, timestamp)
             assertNotNull(paymentRequest.paymentMetadata)
             return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret)
         }

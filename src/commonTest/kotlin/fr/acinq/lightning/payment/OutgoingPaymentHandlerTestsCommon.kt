@@ -247,7 +247,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
                 amount = 195_000.msat,
                 paymentHash = randomBytes32(),
                 privateKey = recipientKey,
-                description = "trampoline backwards-compatibility",
+                description = Either.Left("trampoline backwards-compatibility"),
                 minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
                 features = Features(invoiceFeatures.toMap()),
             )
@@ -495,7 +495,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         // The invoice comes from Bob, our direct peer (and trampoline node).
         val preimage = randomBytes32()
         val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, "phoenix to phoenix", listOf())
+        val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, Either.Left("phoenix to phoenix"), listOf())
         val payment = SendPaymentNormal(UUID.randomUUID(), 300_000.msat, invoice.nodeId, OutgoingPayment.Details.Normal(invoice))
 
         val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
@@ -962,7 +962,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             amount = amount,
             paymentHash = paymentHash,
             privateKey = privKey,
-            description = "unit test",
+            description = Either.Left("unit test"),
             minFinalCltvExpiryDelta = PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures.toMap()),
             extraHops = extraHops

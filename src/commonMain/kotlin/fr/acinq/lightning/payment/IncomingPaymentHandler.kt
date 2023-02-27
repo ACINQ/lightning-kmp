@@ -74,7 +74,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     suspend fun createInvoice(
         paymentPreimage: ByteVector32,
         amount: MilliSatoshi?,
-        description: String,
+        description: Either<String, ByteVector32>,
         extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>>,
         expirySeconds: Long? = null,
         timestampSeconds: Long = currentTimestampSeconds()
