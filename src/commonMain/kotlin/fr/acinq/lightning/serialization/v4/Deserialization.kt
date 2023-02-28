@@ -155,51 +155,99 @@ object Deserialization {
         state = readClosing()
     )
 
+    private fun Input.readSharedFundingInput(): SharedFundingInput = when (val discriminator = read()) {
+        0x01 -> SharedFundingInput.Multisig2of2(
+            info = readInputInfo(),
+            localFundingPubkey = readPublicKey(),
+            remoteFundingPubkey = readPublicKey(),
+        )
+        else -> error("unknown discriminator $discriminator for class ${SharedFundingInput::class}")
+    }
+
     private fun Input.readInteractiveTxParams() = InteractiveTxParams(
         channelId = readByteVector32(),
         isInitiator = readBoolean(),
         localAmount = readNumber().sat,
         remoteAmount = readNumber().sat,
+        sharedInput = readNullable { readSharedFundingInput() },
         fundingPubkeyScript = readDelimitedByteArray().toByteVector(),
+        localOutputs = readCollection { TxOut.read(readDelimitedByteArray()) }.toList(),
         lockTime = readNumber(),
         dustLimit = readNumber().sat,
         targetFeerate = FeeratePerKw(readNumber().sat)
     )
 
-    private fun Input.readRemoteTxAddInput() = RemoteTxAddInput(
+    private fun Input.readSharedInteractiveTxInput() = InteractiveTxInput.Shared(
+        serialId = readNumber(),
+        outPoint = readOutPoint(),
+        sequence = readNumber().toUInt(),
+        localAmount = readNumber().sat,
+        remoteAmount = readNumber().sat,
+    )
+
+    private fun Input.readLocalInteractiveTxInput() = InteractiveTxInput.Local(
+        serialId = readNumber(),
+        previousTx = readTransaction(),
+        previousTxOutput = readNumber(),
+        sequence = readNumber().toUInt(),
+    )
+
+    private fun Input.readRemoteInteractiveTxInput() = InteractiveTxInput.Remote(
         serialId = readNumber(),
         outPoint = readOutPoint(),
         txOut = TxOut.read(readDelimitedByteArray()),
-        sequence = readNumber().toUInt()
+        sequence = readNumber().toUInt(),
     )
 
-    private fun Input.readRemoteTxAddOutput() = RemoteTxAddOutput(
+    private fun Input.readSharedInteractiveTxOutput() = InteractiveTxOutput.Shared(
+        serialId = readNumber(),
+        pubkeyScript = readDelimitedByteArray().toByteVector(),
+        localAmount = readNumber().sat,
+        remoteAmount = readNumber().sat,
+    )
+
+    private fun Input.readLocalInteractiveTxOutput() = when (val discriminator = read()) {
+        0x01 -> InteractiveTxOutput.Local.Change(
+            serialId = readNumber(),
+            amount = readNumber().sat,
+            pubkeyScript = readDelimitedByteArray().toByteVector(),
+        )
+        0x02 -> InteractiveTxOutput.Local.NonChange(
+            serialId = readNumber(),
+            amount = readNumber().sat,
+            pubkeyScript = readDelimitedByteArray().toByteVector(),
+        )
+        else -> error("unknown discriminator $discriminator for class ${InteractiveTxOutput.Local::class}")
+    }
+
+    private fun Input.readRemoteInteractiveTxOutput() = InteractiveTxOutput.Remote(
         serialId = readNumber(),
         amount = readNumber().sat,
-        pubkeyScript = readDelimitedByteArray().toByteVector()
+        pubkeyScript = readDelimitedByteArray().toByteVector(),
     )
 
+    private fun Input.readSharedTransaction() = SharedTransaction(
+        sharedInput = readNullable { readSharedInteractiveTxInput() },
+        sharedOutput = readSharedInteractiveTxOutput(),
+        localInputs = readCollection { readLocalInteractiveTxInput() }.toList(),
+        remoteInputs = readCollection { readRemoteInteractiveTxInput() }.toList(),
+        localOutputs = readCollection { readLocalInteractiveTxOutput() }.toList(),
+        remoteOutputs = readCollection { readRemoteInteractiveTxOutput() }.toList(),
+        lockTime = readNumber(),
+    )
+
+    private fun Input.readScriptWitness() = ScriptWitness(readCollection { readDelimitedByteArray().toByteVector() }.toList())
+
     private fun Input.readSignedSharedTransaction() = when (val discriminator = read()) {
-        0x00 -> PartiallySignedSharedTransaction(
-            tx = SharedTransaction(
-                localInputs = readCollection { readLightningMessage() as TxAddInput }.toList(),
-                remoteInputs = readCollection { readRemoteTxAddInput() }.toList(),
-                localOutputs = readCollection { readLightningMessage() as TxAddOutput }.toList(),
-                remoteOutputs = readCollection { readRemoteTxAddOutput() }.toList(),
-                lockTime = readNumber()
-            ),
+        0x01 -> PartiallySignedSharedTransaction(
+            tx = readSharedTransaction(),
             localSigs = readLightningMessage() as TxSignatures
         )
-        0x01 -> FullySignedSharedTransaction(
-            tx = SharedTransaction(
-                localInputs = readCollection { readLightningMessage() as TxAddInput }.toList(),
-                remoteInputs = readCollection { readRemoteTxAddInput() }.toList(),
-                localOutputs = readCollection { readLightningMessage() as TxAddOutput }.toList(),
-                remoteOutputs = readCollection { readRemoteTxAddOutput() }.toList(),
-                lockTime = readNumber()
-            ),
+        0x02 -> FullySignedSharedTransaction(
+            tx = readSharedTransaction(),
             localSigs = readLightningMessage() as TxSignatures,
-            remoteSigs = readLightningMessage() as TxSignatures
+            remoteSigs = readLightningMessage() as TxSignatures,
+            sharedSigs = readNullable { readScriptWitness() },
         )
         else -> error("unknown discriminator $discriminator for class ${SignedSharedTransaction::class}")
     }
@@ -361,6 +409,7 @@ object Deserialization {
         0x0b -> HtlcPenaltyTx(input = readInputInfo(), tx = readTransaction())
         0x0c -> ClaimHtlcDelayedOutputPenaltyTx(input = readInputInfo(), tx = readTransaction())
         0x0d -> ClosingTx(input = readInputInfo(), tx = readTransaction(), toLocalIndex = readNullable { readNumber().toInt() })
+        0x0e -> SpliceTx(input = readInputInfo(), tx = readTransaction())
         else -> error("unknown discriminator $discriminator for class ${Transactions.TransactionWithInputInfo::class}")
     }
 

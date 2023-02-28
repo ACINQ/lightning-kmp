@@ -4,6 +4,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 
@@ -28,7 +29,7 @@ data class WaitForFundingConfirmed(
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> when (latestFundingTx.sharedTx) {
-                is PartiallySignedSharedTransaction -> when (val fullySignedTx = latestFundingTx.sharedTx.addRemoteSigs(cmd.message)) {
+                is PartiallySignedSharedTransaction -> when (val fullySignedTx = latestFundingTx.sharedTx.addRemoteSigs(latestFundingTx.fundingParams, cmd.message)) {
                     null -> {
                         logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                         // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
@@ -85,11 +86,11 @@ data class WaitForFundingConfirmed(
                                     latestFundingTx.fundingParams.dustLimit,
                                     cmd.message.feerate
                                 )
-                                val toSend = buildList<Either<TxAddInput, TxAddOutput>> {
+                                val toSend = buildList<Either<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>> {
                                     addAll(latestFundingTx.sharedTx.tx.localInputs.map { Either.Left(it) })
                                     addAll(latestFundingTx.sharedTx.tx.localOutputs.map { Either.Right(it) })
                                 }
-                                val session = InteractiveTxSession(fundingParams, toSend, previousFundingTxs.map { it.sharedTx })
+                                val session = InteractiveTxSession(fundingParams, 0.sat, 0.sat, toSend, previousFundingTxs.map { it.sharedTx })
                                 val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
                                 Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localAmount))))
                             }
@@ -124,7 +125,7 @@ data class WaitForFundingConfirmed(
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                         }
                         is Either.Right -> {
-                            val (session, action) = InteractiveTxSession(fundingParams, contributions.value, previousFundingTxs.map { it.sharedTx }).send()
+                            val (session, action) = InteractiveTxSession(fundingParams, 0.sat, 0.sat, contributions.value, previousFundingTxs.map { it.sharedTx }).send()
                             when (action) {
                                 is InteractiveTxSessionAction.SendMessage -> {
                                     val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))

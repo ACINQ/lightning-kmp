@@ -306,32 +306,55 @@ data class Pong(val data: ByteVector) : SetupMessage {
 data class TxAddInput(
     override val channelId: ByteVector32,
     override val serialId: Long,
-    val previousTx: Transaction,
+    val previousTx: Transaction?,
     val previousTxOutput: Long,
     val sequence: UInt,
     val tlvs: TlvStream<TxAddInputTlv> = TlvStream.empty()
 ) : InteractiveTxConstructionMessage(), HasChannelId, HasSerialId {
+    constructor(channelId: ByteVector32, serialId: Long, sharedInput: OutPoint, sequence: UInt) : this(
+        channelId,
+        serialId,
+        null,
+        sharedInput.index,
+        sequence,
+        TlvStream(listOf(TxAddInputTlv.SharedInputTxId(sharedInput.txid)))
+    )
+
     override val type: Long get() = TxAddInput.type
+    val sharedInput: OutPoint? = tlvs.get<TxAddInputTlv.SharedInputTxId>()?.let { OutPoint(it.txId.reversed(), previousTxOutput) }
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
         LightningCodecs.writeU64(serialId, out)
-        val encodedTx = Transaction.write(previousTx)
-        LightningCodecs.writeU16(encodedTx.size, out)
-        LightningCodecs.writeBytes(encodedTx, out)
+        when (previousTx) {
+            null -> LightningCodecs.writeU16(0, out)
+            else -> {
+                val encodedTx = Transaction.write(previousTx)
+                LightningCodecs.writeU16(encodedTx.size, out)
+                LightningCodecs.writeBytes(encodedTx, out)
+            }
+        }
         LightningCodecs.writeU32(previousTxOutput.toInt(), out)
         LightningCodecs.writeU32(sequence.toInt(), out)
+        TlvStreamSerializer(false, readers).write(tlvs, out)
     }
 
     companion object : LightningMessageReader<TxAddInput> {
         const val type: Long = 66
 
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(TxAddInputTlv.SharedInputTxId.tag to TxAddInputTlv.SharedInputTxId.Companion as TlvValueReader<TxAddInputTlv>)
+
         override fun read(input: Input): TxAddInput = TxAddInput(
             LightningCodecs.bytes(input, 32).byteVector32(),
             LightningCodecs.u64(input),
-            Transaction.read(LightningCodecs.bytes(input, LightningCodecs.u16(input))),
+            when (val txSize = LightningCodecs.u16(input)) {
+                0 -> null
+                else -> Transaction.read(LightningCodecs.bytes(input, txSize))
+            },
             LightningCodecs.u32(input).toLong(),
             LightningCodecs.u32(input).toUInt(),
+            TlvStreamSerializer(false, readers).read(input)
         )
     }
 }
@@ -430,11 +453,17 @@ data class TxSignatures(
     val witnesses: List<ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
 ) : InteractiveTxMessage(), HasChannelId, HasEncryptedChannelData {
-    constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>) : this(channelId, tx.hash, witnesses)
+    constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>, previousFundingSig: ByteVector64?) : this(
+        channelId,
+        tx.hash,
+        witnesses,
+        previousFundingSig?.let { TlvStream(listOf(TxSignaturesTlv.PreviousFundingTxSig(it))) } ?: TlvStream.empty()
+    )
 
     override val type: Long get() = TxSignatures.type
 
-    val txId: ByteVector32 get() = txHash.reversed()
+    val txId: ByteVector32 = txHash.reversed()
+    val previousFundingTxSig: ByteVector64? = tlvs.get<TxSignaturesTlv.PreviousFundingTxSig>()?.sig
 
     override val channelData: EncryptedChannelData get() = tlvs.get<TxSignaturesTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): TxSignatures = copy(tlvs = tlvs.addOrUpdate(TxSignaturesTlv.ChannelData(ecd)))
@@ -457,7 +486,10 @@ data class TxSignatures(
         const val type: Long = 71
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>)
+        val readers = mapOf(
+            TxSignaturesTlv.PreviousFundingTxSig.tag to TxSignaturesTlv.PreviousFundingTxSig.Companion as TlvValueReader<TxSignaturesTlv>,
+            TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>,
+        )
 
         override fun read(input: Input): TxSignatures {
             val channelId = LightningCodecs.bytes(input, 32).byteVector32()

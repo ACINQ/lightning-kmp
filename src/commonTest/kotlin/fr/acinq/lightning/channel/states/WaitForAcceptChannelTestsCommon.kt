@@ -74,8 +74,8 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv AcceptChannel -- funding negative`() {
-        val (alice, _, accept) = init(bobFundingAmount = (-1).sat)
-        val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(accept))
+        val (alice, _, accept) = init()
+        val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(accept.copy(fundingAmount = (-1).sat)))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidFundingAmount(accept.temporaryChannelId, (-1).sat, 0.sat, alice.staticParams.nodeParams.maxFundingSatoshis).message))
         assertIs<LNChannel<Aborted>>(alice1)

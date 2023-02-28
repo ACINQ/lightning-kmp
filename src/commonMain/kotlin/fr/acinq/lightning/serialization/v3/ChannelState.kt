@@ -41,6 +41,7 @@ package fr.acinq.lightning.serialization.v3
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.InteractiveTxOutput
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
@@ -386,7 +387,7 @@ internal data class Commitments(
                 // We will put a WatchConfirmed when starting, which will return the confirmed transaction.
                 fr.acinq.lightning.channel.LocalFundingStatus.UnconfirmedFundingTx(
                     fr.acinq.lightning.channel.PartiallySignedSharedTransaction(
-                        fr.acinq.lightning.channel.SharedTransaction(listOf(), listOf(), listOf(), listOf(), 0),
+                        fr.acinq.lightning.channel.SharedTransaction(null, InteractiveTxOutput.Shared(0, commitInput.txOut.publicKeyScript, commitInput.txOut.amount, commitInput.txOut.amount), listOf(), listOf(), listOf(), listOf(), 0),
                         // We must correctly set the txId here.
                         TxSignatures(channelId, commitInput.outPoint.hash, listOf()),
                     ),

@@ -38,6 +38,7 @@
     JsonSerializers.ChannelKeysSerializer::class,
     JsonSerializers.TransactionSerializer::class,
     JsonSerializers.OutPointSerializer::class,
+    JsonSerializers.TxOutSerializer::class,
     JsonSerializers.ClosingTxProposedSerializer::class,
     JsonSerializers.LocalCommitPublishedSerializer::class,
     JsonSerializers.RemoteCommitPublishedSerializer::class,
@@ -52,6 +53,7 @@
     JsonSerializers.ChannelUpdateSerializer::class,
     JsonSerializers.ChannelAnnouncementSerializer::class,
     JsonSerializers.WaitingForRevocationSerializer::class,
+    JsonSerializers.SharedFundingInputSerializer::class,
     JsonSerializers.InteractiveTxParamsSerializer::class,
     JsonSerializers.SignedSharedTransactionSerializer::class,
     JsonSerializers.RbfStatusSerializer::class,
@@ -227,6 +229,17 @@ object JsonSerializers {
 
     @Serializer(forClass = Closed::class)
     object ClosedSerializer
+
+    @Serializable
+    data class SharedFundingInputSurrogate(val outPoint: OutPoint, val amount: Satoshi)
+    object SharedFundingInputSerializer : SurrogateSerializer<SharedFundingInput, SharedFundingInputSurrogate>(
+        transform = { i ->
+            when (i) {
+                is SharedFundingInput.Multisig2of2 -> SharedFundingInputSurrogate(i.info.outPoint, i.info.txOut.amount)
+            }
+        },
+        delegateSerializer = SharedFundingInputSurrogate.serializer()
+    )
 
     @Serializer(forClass = InteractiveTxParams::class)
     object InteractiveTxParamsSerializer
