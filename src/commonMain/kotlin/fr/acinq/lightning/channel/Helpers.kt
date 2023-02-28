@@ -352,7 +352,7 @@ object Helpers {
             return when (Transactions.checkSpendable(signedLocalCommitTx)) {
                 is Try.Failure -> InvalidRemoteCommitSig
                 is Try.Success -> {
-                    when (val signedFundingTx = fundingTx.sign(keyManager, remoteCommit.channelId)) {
+                    when (val signedFundingTx = fundingTx.sign(keyManager, fundingParams, localParams)) {
                         null -> FundingSigFailure
                         else -> {
                             val commitment = Commitment(

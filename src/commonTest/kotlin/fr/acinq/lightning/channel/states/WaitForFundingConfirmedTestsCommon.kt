@@ -257,7 +257,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         assertIs<WaitForFundingConfirmed.Companion.RbfStatus.InProgress>(bob1.state.rbfStatus)
         assertEquals(actions1.size, 1)
         actions1.hasOutgoingMessage<TxAckRbf>()
-        val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(alice.state.latestFundingTx.sharedTx.tx.localInputs.first()))
+        val txAddInput = alice.state.latestFundingTx.sharedTx.tx.localInputs.first().run { TxAddInput(alice.channelId, serialId, previousTx, previousTxOutput, sequence) }
+        val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(txAddInput))
         assertEquals(actions2.size, 1)
         actions2.hasOutgoingMessage<TxAddInput>()
         val (bob3, actions3) = bob2.process(ChannelCommand.MessageReceived(TxAbort(alice.state.channelId, "changed my mind")))
