@@ -717,38 +717,39 @@ object Helpers {
         }
 
         /**
-         * When an unexpected transaction spending the funding tx is detected, we can use our secrets to identify the commitment number.
-         * This can then be used to find the necessary information to build penalty txs for every htlc output.
+         * When an unexpected transaction spending the funding tx is detected, we must be in one of the following scenarios:
+         *
+         *  - it is a revoked commitment: we then extract the remote per-commitment secret and publish penalty transactions
+         *  - it is a future commitment: if we lost future state, our peer could publish a future commitment (which may be
+         *    revoked, but we won't be able to know because we lost the corresponding state)
+         *  - it is not a valid commitment transaction: if our peer was able to steal our funding private key, they can
+         *    spend the funding transaction however they want, and we won't be able to do anything about it
+         *
+         * This function returns the per-commitment secret in the first case, and null in the other cases.
          */
-        private fun LoggingContext.extractTxNumber(keyManager: KeyManager, params: ChannelParams, tx: Transaction): Long {
-            require(tx.txIn.size == 1) { "commitment tx should have 1 input" }
+        fun LoggingContext.getRemotePerCommitmentSecret(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, tx: Transaction): Pair<PrivateKey, Long>? {
+            // a valid tx will always have at least one input, but this ensures we don't throw in tests
+            val sequence = tx.txIn.first().sequence
             val channelKeyPath = keyManager.channelKeyPath(params.localParams, params.channelConfig)
-            val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.first().sequence, tx.lockTime)
+            val obscuredTxNumber = Transactions.decodeTxNumber(sequence, tx.lockTime)
             val localPaymentPoint = keyManager.paymentPoint(channelKeyPath)
             // this tx has been published by remote, so we need to invert local/remote params
-            val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isInitiator, params.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
-            require(txNumber <= 0xffffffffffffL) { "txNumber must be lesser than 48 bits long" }
-            logger.warning { "a revoked commit has been published with txNumber=$txNumber" }
-            return txNumber
+            val commitmentNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isInitiator, params.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
+            if (commitmentNumber > 0xffffffffffffL) {
+                // txNumber must be lesser than 48 bits long
+                return null
+            }
+            // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
+            val hash = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - commitmentNumber) ?: return null
+            return Pair(PrivateKey(hash), commitmentNumber)
         }
 
         /**
-         * When an unexpected transaction spending the funding tx is detected:
-         * 1) we find out if the published transaction is one of our remote's revoked txs
-         * 2) and then:
-         *  a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
-         *  b) otherwise there is nothing we can do
-         *
-         * @return a [[RevokedCommitPublished]] object containing a penalty transaction for the remote's main output and the commitment number.
-         * With the commitment number, the caller should fetch information about the htlcs in this commitment and then call [[claimRevokedRemoteCommitTxHtlcOutputs]].
+         * When a revoked commitment transaction spending the funding tx is detected, we build a set of transactions that
+         * will punish our peer by stealing all their funds.
          */
-        fun LoggingContext.claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, tx: Transaction, feerates: OnChainFeerates): Pair<RevokedCommitPublished, Long>? {
-            val txNumber = extractTxNumber(keyManager, params, tx)
-            // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
-            val hash = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber) ?: return null
-
+        fun LoggingContext.claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecret: PrivateKey, commitTx: Transaction, feerates: OnChainFeerates): RevokedCommitPublished {
             val localPaymentPoint = params.localParams.channelKeys(keyManager).paymentBasepoint
-            val remotePerCommitmentSecret = PrivateKey.fromHex(hash.toHex())
             val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey()
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
             val remoteRevocationPubkey = Generators.revocationPubKey(params.localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
@@ -760,7 +761,7 @@ object Helpers {
             // first we will claim our main output right away
             val mainTx = generateTx("claim-remote-delayed-output") {
                 Transactions.makeClaimRemoteDelayedOutputTx(
-                    tx,
+                    commitTx,
                     params.localParams.dustLimit,
                     localPaymentPoint,
                     params.localParams.defaultFinalScriptPubKey,
@@ -774,7 +775,7 @@ object Helpers {
             // then we punish them by stealing their main output
             val mainPenaltyTx = generateTx("main-penalty") {
                 Transactions.makeMainPenaltyTx(
-                    tx,
+                    commitTx,
                     params.localParams.dustLimit,
                     remoteRevocationPubkey,
                     params.localParams.defaultFinalScriptPubKey.toByteArray(),
@@ -787,7 +788,7 @@ object Helpers {
                 Transactions.addSigs(it, sig)
             }
 
-            return Pair(RevokedCommitPublished(commitTx = tx, remotePerCommitmentSecret = remotePerCommitmentSecret, claimMainOutputTx = mainTx, mainPenaltyTx = mainPenaltyTx), txNumber)
+            return RevokedCommitPublished(commitTx = commitTx, remotePerCommitmentSecret = remotePerCommitmentSecret, claimMainOutputTx = mainTx, mainPenaltyTx = mainPenaltyTx)
         }
 
         /**

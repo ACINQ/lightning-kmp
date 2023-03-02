@@ -2,16 +2,16 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.channel.Channel.handleSync
 import fr.acinq.lightning.serialization.Encryption.from
+import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.lightning.wire.ChannelReady
-import fr.acinq.lightning.wire.ChannelReestablish
-import fr.acinq.lightning.wire.Error
+import fr.acinq.lightning.wire.*
 
 /**
  * waitForTheirReestablishMessage == true means that we want to wait until we've received their channel_reestablish message before
@@ -55,28 +55,17 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                         yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
                     ).withChannelData(nextState.commitments.remoteChannelData, logger)
-                    val actions = buildList {
-                        add(ChannelAction.Message.Send(channelReestablish))
-                        if (state is WaitForFundingConfirmed) add(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs))
-                    }
+                    val actions = listOf(ChannelAction.Message.Send(channelReestablish))
                     // now apply their reestablish message to the restored state
                     val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).run { processInternal(cmd) }
                     Pair(nextState1, actions + actions1)
                 }
                 state is LegacyWaitForFundingConfirmed -> {
-                    val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, state.commitments.latest.fundingAmount)
-                    val watch = WatchConfirmed(state.channelId, state.commitments.latest.fundingTxId, state.commitments.latest.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
-                    Pair(state, listOf(ChannelAction.Blockchain.SendWatch(watch)))
+                    Pair(state, listOf())
                 }
                 state is WaitForFundingConfirmed -> {
-                    val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, state.latestFundingTx.fundingParams.fundingAmount)
-                    // we put back the watches (operation is idempotent) because the event may have been fired while we were in OFFLINE
-                    val watches = state.commitments.active.map { WatchConfirmed(state.commitments.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }
-                    val actions = buildList {
-                        addAll(watches.map { ChannelAction.Blockchain.SendWatch(it) })
-                        add(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs))
-                    }
-                    Pair(state, actions)
+                    logger.debug { "re-sending tx_signatures" }
+                    Pair(state, listOf(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs)))
                 }
                 state is WaitForChannelReady || state is LegacyWaitForFundingLocked -> {
                     logger.debug { "re-sending channel_ready" }
@@ -91,28 +80,21 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
                             // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
                             if (keyManager.commitmentSecret(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, cmd.message.nextRemoteRevocationNumber - 1) == cmd.message.yourLastCommitmentSecret) {
-                                logger.warning { "counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${state.commitments.localCommitIndex} theirCommitmentNumber=${cmd.message.nextRemoteRevocationNumber}" }
                                 // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
                                 // would punish us by taking all the funds in the channel
-                                val exc = PleasePublishYourCommitment(channelId)
-                                val error = Error(channelId, exc.message.encodeToByteArray().toByteVector())
-                                val nextState = WaitForRemotePublishFutureCommitment(state.commitments, cmd.message)
-                                val actions = listOf(
-                                    ChannelAction.Storage.StoreState(nextState),
-                                    ChannelAction.Message.Send(error)
-                                )
-                                Pair(nextState, actions)
+                                logger.warning { "counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${state.commitments.localCommitIndex} theirCommitmentNumber=${cmd.message.nextRemoteRevocationNumber}" }
                             } else {
-                                logger.warning { "they lied! the last per_commitment_secret they claimed to have received from us is invalid" }
-                                val exc = InvalidRevokedCommitProof(channelId, state.commitments.localCommitIndex, cmd.message.nextRemoteRevocationNumber, cmd.message.yourLastCommitmentSecret)
-                                val error = Error(channelId, exc.message.encodeToByteArray().toByteVector())
-                                val (nextState, spendActions) = state.run { spendLocalCurrent() }
-                                val actions = buildList {
-                                    addAll(spendActions)
-                                    add(ChannelAction.Message.Send(error))
-                                }
-                                Pair(nextState, actions)
+                                // they are deliberately trying to fool us into thinking we have a late commitment, but we cannot risk publishing it ourselves, because it may really be revoked!
+                                logger.warning { "counterparty claims that we have an outdated commitment, but they sent an invalid proof, so our commitment may or may not be revoked: ourLocalCommitmentNumber=${state.commitments.localCommitIndex} theirRemoteCommitmentNumber=${cmd.message.nextRemoteRevocationNumber}" }
                             }
+                            val exc = PleasePublishYourCommitment(channelId)
+                            val error = Error(channelId, exc.message.encodeToByteArray().toByteVector())
+                            val nextState = WaitForRemotePublishFutureCommitment(state.commitments, cmd.message)
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Message.Send(error)
+                            )
+                            Pair(nextState, actions)
                         }
                         !Helpers.checkRemoteCommit(state.commitments, cmd.message.nextLocalCommitmentNumber) -> {
                             // if next_local_commit_number is more than one more our remote commitment index, it means that either we are using an outdated commitment, or they are lying
@@ -205,45 +187,48 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 }
                 else -> unhandled(cmd)
             }
-            cmd is ChannelCommand.WatchReceived -> {
-                val watch = cmd.watch
-                when {
-                    watch is WatchEventSpent -> when {
-                        state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
-                            logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
-                            val closingTx = state.getMutualClosePublished(watch.tx)
-                            val nextState = Closing(
-                                state.commitments,
-                                waitingSinceBlock = currentBlockHeight.toLong(),
-                                mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
-                                mutualClosePublished = listOf(closingTx)
-                            )
-                            val actions = listOf(
-                                ChannelAction.Storage.StoreState(nextState),
-                                ChannelAction.Blockchain.PublishTx(watch.tx),
-                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
-                            )
-                            Pair(nextState, actions)
-                        }
-                        watch.tx.txid == state.commitments.latest.remoteCommit.txid -> state.run { handleRemoteSpentCurrent(watch.tx, state.commitments.latest) }
-                        watch.tx.txid == state.commitments.latest.nextRemoteCommit?.commit?.txid -> state.run { handleRemoteSpentNext(watch.tx, state.commitments.latest) }
-                        state is WaitForRemotePublishFutureCommitment -> state.run { handleRemoteSpentFuture(watch.tx) }
-                        else -> state.run { handleRemoteSpentOther(watch.tx) }
+            cmd is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
+                is WatchEventSpent -> when {
+                    state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
+                        logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
+                        val closingTx = state.getMutualClosePublished(watch.tx)
+                        val nextState = Closing(
+                            state.commitments,
+                            waitingSinceBlock = currentBlockHeight.toLong(),
+                            mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
+                            mutualClosePublished = listOf(closingTx)
+                        )
+                        val actions = listOf(
+                            ChannelAction.Storage.StoreState(nextState),
+                            ChannelAction.Blockchain.PublishTx(watch.tx),
+                            ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
+                        )
+                        Pair(nextState, actions)
                     }
-                    watch is WatchEventConfirmed && (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) -> {
-                        // NB: we don't yet mark the transaction as confirmed, this will be done after reconnection.
-                        val commitments1 = state.commitments.copy(active = state.commitments.active.filter { it.fundingTxId == watch.tx.txid })
-                        val watchSpent = WatchSpent(channelId, watch.tx, commitments1.latest.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
-                        val nextState = when (state) {
-                            is WaitForFundingConfirmed -> {
-                                logger.info { "was confirmed while offline at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with funding txid=${watch.tx.txid}" }
-                                state.copy(commitments = commitments1)
+                    else -> state.run { handlePotentialForceClose(watch) }
+                }
+                is WatchEventConfirmed -> {
+                    if (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) {
+                        when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
+                            is Either.Left -> Pair(this@Syncing, listOf())
+                            is Either.Right -> {
+                                val (commitments1, _, actions) = res.value
+                                val nextState = when (state) {
+                                    is WaitForFundingConfirmed -> {
+                                        logger.info { "was confirmed while syncing at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with funding txid=${watch.tx.txid}" }
+                                        val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments1.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                                        val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
+                                        val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.commitInput.outPoint.index.toInt())
+                                        WaitForChannelReady(commitments1, shortChannelId, channelReady)
+                                    }
+                                    else -> state
+                                }
+                                Pair(this@Syncing.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState as PersistedChannelState)))
                             }
-                            else -> state
                         }
-                        Pair(this@Syncing.copy(state = nextState), listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+                    } else {
+                        Pair(this@Syncing, listOf())
                     }
-                    else -> unhandled(cmd)
                 }
             }
             cmd is ChannelCommand.CheckHtlcTimeout -> {
