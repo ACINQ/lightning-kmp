@@ -16,14 +16,14 @@ import fr.acinq.lightning.wire.*
 
 object Deserialization {
 
-    fun deserialize(bin: ByteArray): PersistedChannelState {
+    fun deserialize(bin: ByteArray): ChannelStateWithCommitments {
         val input = ByteArrayInput(bin)
         val version = input.read()
         require(version == Serialization.versionMagic) { "incorrect version $version, expected ${Serialization.versionMagic}" }
         return input.readPersistedChannelState()
     }
 
-    private fun Input.readPersistedChannelState(): PersistedChannelState = when (val discriminator = read()) {
+    private fun Input.readPersistedChannelState(): ChannelStateWithCommitments = when (val discriminator = read()) {
         0x08 -> readLegacyWaitForFundingConfirmed()
         0x09 -> readLegacyWaitForFundingLocked()
         0x00 -> readWaitForFundingConfirmed()
@@ -34,7 +34,8 @@ object Deserialization {
         0x05 -> readClosing()
         0x06 -> readWaitForRemotePublishFutureCommitment()
         0x07 -> readClosed()
-        else -> error("unknown discriminator $discriminator for class ${PersistedChannelState::class}")
+        0x0a -> readErrorInformationLeak()
+        else -> error("unknown discriminator $discriminator for class ${ChannelStateWithCommitments::class}")
     }
 
     private fun Input.readLegacyWaitForFundingConfirmed() = LegacyWaitForFundingConfirmed(
@@ -149,6 +150,10 @@ object Deserialization {
     private fun Input.readWaitForRemotePublishFutureCommitment(): WaitForRemotePublishFutureCommitment = WaitForRemotePublishFutureCommitment(
         commitments = readCommitments(),
         remoteChannelReestablish = readLightningMessage() as ChannelReestablish
+    )
+
+    private fun Input.readErrorInformationLeak(): ErrorInformationLeak = ErrorInformationLeak(
+        commitments = readCommitments()
     )
 
     private fun Input.readClosed(): Closed = Closed(

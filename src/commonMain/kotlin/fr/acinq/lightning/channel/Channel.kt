@@ -52,7 +52,7 @@ sealed class ChannelCommand {
         val remoteInit: Init
     ) : ChannelCommand()
 
-    data class Restore(val state: PersistedChannelState) : ChannelCommand()
+    data class Restore(val state: ChannelStateWithCommitments) : ChannelCommand()
     object CheckHtlcTimeout : ChannelCommand()
     data class MessageReceived(val message: LightningMessage) : ChannelCommand()
     data class WatchReceived(val watch: WatchEvent) : ChannelCommand()
@@ -82,7 +82,7 @@ sealed class ChannelAction {
     }
 
     sealed class Storage : ChannelAction() {
-        data class StoreState(val data: PersistedChannelState) : Storage()
+        data class StoreState(val data: ChannelStateWithCommitments) : Storage()
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
@@ -231,7 +231,7 @@ sealed class ChannelState {
 
     /** Update outgoing messages to include an encrypted backup when necessary. */
     private fun ChannelContext.updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
-        this@ChannelState is PersistedChannelState && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
+        this@ChannelState is ChannelStateWithCommitments && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
             when {
                 it is ChannelAction.Message.Send && it.message is TxSignatures -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
                 it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
@@ -305,7 +305,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     /**
      * Analyze and react to a potential force-close transaction spending one of our funding transactions.
      */
-    internal fun ChannelContext.handlePotentialForceClose(w: WatchEventSpent): Pair<ChannelState, List<ChannelAction>> = when {
+    internal fun ChannelContext.handlePotentialForceClose(w: WatchEventSpent): Pair<ChannelStateWithCommitments, List<ChannelAction>> = when {
         w.event != BITCOIN_FUNDING_SPENT -> Pair(this@ChannelStateWithCommitments, listOf())
         commitments.active.any { it.fundingTxId == w.tx.txid } -> Pair(this@ChannelStateWithCommitments, listOf())
         w.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> spendLocalCurrent()
@@ -346,7 +346,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         })
     }
 
-    internal fun ChannelContext.handleRemoteSpentNext(commitTx: Transaction, commitment: FullCommitment): Pair<ChannelState, List<ChannelAction>> {
+    internal fun ChannelContext.handleRemoteSpentNext(commitTx: Transaction, commitment: FullCommitment): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         logger.warning { "they published their next commit in txid=${commitTx.txid}" }
         require(commitment.nextRemoteCommit != null) { "next remote commit must be defined" }
         val remoteCommit = commitment.nextRemoteCommit.commit
@@ -375,7 +375,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         })
     }
 
-    internal fun ChannelContext.handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
+    internal fun ChannelContext.handleRemoteSpentOther(tx: Transaction): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         logger.warning { "funding tx spent in txid=${tx.txid}" }
         return getRemotePerCommitmentSecret(keyManager, commitments.params, commitments.remotePerCommitmentSecrets, tx)?.let { (remotePerCommitmentSecret, commitmentNumber) ->
             logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
@@ -430,7 +430,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         }
     }
 
-    internal fun ChannelContext.spendLocalCurrent(): Pair<ChannelState, List<ChannelAction>> {
+    internal fun ChannelContext.spendLocalCurrent(): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         val outdatedCommitment = when (this@ChannelStateWithCommitments) {
             is WaitForRemotePublishFutureCommitment -> true
             is Closing -> this@ChannelStateWithCommitments.futureRemoteCommitPublished != null
@@ -439,7 +439,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
         return if (outdatedCommitment) {
             logger.warning { "we have an outdated commitment: will not publish our local tx" }
-            Pair(this@ChannelStateWithCommitments as ChannelState, listOf())
+            Pair(this@ChannelStateWithCommitments, listOf())
         } else {
             val commitTx = commitments.latest.localCommit.publishableTxs.commitTx.tx
             val localCommitPublished = claimCurrentLocalCommitTxOutputs(
@@ -474,7 +474,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
      * Check HTLC timeout in our commitment and our remote's.
      * If HTLCs are at risk, we will publish our local commitment and close the channel.
      */
-    internal fun ChannelContext.checkHtlcTimeout(): Pair<ChannelState, List<ChannelAction>> {
+    internal fun ChannelContext.checkHtlcTimeout(): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         logger.info { "checking htlcs timeout at blockHeight=${currentBlockHeight}" }
         val timedOutOutgoing = commitments.timedOutOutgoingHtlcs(currentBlockHeight.toLong())
         val almostTimedOutIncoming = commitments.almostTimedOutIncomingHtlcs(currentBlockHeight.toLong(), staticParams.nodeParams.fulfillSafetyBeforeTimeoutBlocks)
@@ -513,11 +513,9 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             }
         }
     }
-}
 
-sealed class PersistedChannelState : ChannelStateWithCommitments() {
     companion object {
-        // this companion object is used by static extended function `fun PersistedChannelState.Companion.from` in Encryption.kt
+        // this companion object is used by static extended function `fun ChannelStateWithCommitments.Companion.from` in Encryption.kt
     }
 }
 

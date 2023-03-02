@@ -19,7 +19,7 @@ data class Negotiating(
     val closingTxProposed: List<List<ClosingTxProposed>>, // one list for every negotiation (there can be several in case of disconnection)
     val bestUnpublishedClosingTx: ClosingTx?,
     val closingFeerates: ClosingFeerates?
-) : PersistedChannelState() {
+) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
         require(!commitments.params.localParams.isInitiator || !closingTxProposed.any { it.isEmpty() }) { "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing" }

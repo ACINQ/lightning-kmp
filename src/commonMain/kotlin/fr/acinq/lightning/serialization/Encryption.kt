@@ -3,7 +3,7 @@ package fr.acinq.lightning.serialization
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.channel.PersistedChannelState
+import fr.acinq.lightning.channel.ChannelStateWithCommitments
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.toByteVector
@@ -27,14 +27,13 @@ object Encryption {
         val ciphertext = data.dropLast(12 + 16)
         val nonce = data.takeLast(12 + 16).take(12)
         val tag = data.takeLast(16)
-        val plaintext = ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
-        return plaintext
+        return ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
     }
 
     /**
-     * Convenience method that builds an [EncryptedChannelData] from a [PersistedChannelState]
+     * Convenience method that builds an [EncryptedChannelData] from a [ChannelStateWithCommitments]
      */
-    fun EncryptedChannelData.Companion.from(key: PrivateKey, state: PersistedChannelState): EncryptedChannelData {
+    fun EncryptedChannelData.Companion.from(key: PrivateKey, state: ChannelStateWithCommitments): EncryptedChannelData {
         val bin = Serialization.serialize(state)
         val encrypted = encrypt(key.value, bin)
         // we copy the first 2 bytes as meta-info on the serialization version
@@ -43,15 +42,14 @@ object Encryption {
     }
 
     /**
-     * Convenience method that decrypts and deserializes a [PersistedChannelState] from an [EncryptedChannelData]
+     * Convenience method that decrypts and deserializes a [ChannelStateWithCommitments] from an [EncryptedChannelData]
      */
-    fun PersistedChannelState.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): PersistedChannelState {
+    fun ChannelStateWithCommitments.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): ChannelStateWithCommitments {
         // we first assume that channel data is prefixed by 2 bytes of serialization meta-info
         val decrypted = runTrying { decrypt(key.value, encryptedChannelData.data.drop(2).toByteArray()) }
             .recoverWith { runTrying { decrypt(key.value, encryptedChannelData.data.toByteArray()) } }
             .get()
-        val state = Serialization.deserialize(decrypted)
-        return state
+        return Serialization.deserialize(decrypted)
     }
 
 }

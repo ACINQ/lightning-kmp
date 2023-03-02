@@ -106,10 +106,10 @@ data class LNChannel<out S : ChannelState>(
     }
 
     // we check that serialization works by checking that deserialize(serialize(state)) == state
-    private fun checkSerialization(state: PersistedChannelState) {
+    private fun checkSerialization(state: ChannelStateWithCommitments) {
 
         // We never persist a funding RBF attempt.
-        fun removeRbfAttempt(state: PersistedChannelState): PersistedChannelState = when (state) {
+        fun removeRbfAttempt(state: ChannelStateWithCommitments): ChannelStateWithCommitments = when (state) {
             is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
             else -> state
         }

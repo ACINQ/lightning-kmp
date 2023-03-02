@@ -2,7 +2,7 @@ package fr.acinq.lightning.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.channel.PersistedChannelState
+import fr.acinq.lightning.channel.ChannelStateWithCommitments
 import fr.acinq.lightning.db.ChannelsDb
 import fr.acinq.lightning.serialization.Serialization
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +49,7 @@ class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
 
     }
 
-    override suspend fun addOrUpdateChannel(state: PersistedChannelState) {
+    override suspend fun addOrUpdateChannel(state: ChannelStateWithCommitments) {
         withContext(Dispatchers.IO) {
             val data = Serialization.serialize(state)
             using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update ->
@@ -85,11 +85,11 @@ class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
         }
     }
 
-    override suspend fun listLocalChannels(): List<PersistedChannelState> {
+    override suspend fun listLocalChannels(): List<ChannelStateWithCommitments> {
         return withContext(Dispatchers.IO) {
             using(sqlite.createStatement()) { statement ->
                 val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-                val result = ArrayList<PersistedChannelState>()
+                val result = ArrayList<ChannelStateWithCommitments>()
                 while (rs.next()) {
                     result.add(Serialization.deserialize(rs.getBytes("data")))
                 }

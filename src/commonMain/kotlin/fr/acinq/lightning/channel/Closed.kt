@@ -3,7 +3,7 @@ package fr.acinq.lightning.channel
 /**
  * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten
  */
-data class Closed(val state: Closing) : PersistedChannelState() {
+data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val commitments: Commitments get() = state.commitments
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {

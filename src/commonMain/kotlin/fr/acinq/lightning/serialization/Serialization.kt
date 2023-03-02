@@ -1,15 +1,15 @@
 package fr.acinq.lightning.serialization
 
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.lightning.channel.PersistedChannelState
+import fr.acinq.lightning.channel.ChannelStateWithCommitments
 
 object Serialization {
 
-    fun serialize(state: PersistedChannelState): ByteArray {
+    fun serialize(state: ChannelStateWithCommitments): ByteArray {
         return fr.acinq.lightning.serialization.v4.Serialization.serialize(state)
     }
 
-    fun deserialize(bin: ByteArray): PersistedChannelState {
+    fun deserialize(bin: ByteArray): ChannelStateWithCommitments {
         return when {
             // v4 uses a 1-byte version discriminator
             bin[0].toInt() == 4 -> fr.acinq.lightning.serialization.v4.Deserialization.deserialize(bin)

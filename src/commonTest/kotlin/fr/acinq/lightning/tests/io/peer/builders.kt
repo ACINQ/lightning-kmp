@@ -35,7 +35,7 @@ suspend fun newPeers(
     scope: CoroutineScope,
     nodeParams: Pair<NodeParams, NodeParams>,
     walletParams: Pair<WalletParams, WalletParams>,
-    initChannels: List<Pair<LNChannel<PersistedChannelState>, LNChannel<PersistedChannelState>>> = emptyList(),
+    initChannels: List<Pair<LNChannel<ChannelStateWithCommitments>, LNChannel<ChannelStateWithCommitments>>> = emptyList(),
     automateMessaging: Boolean = true
 ): PeerTuple {
     // Create Alice and Bob peers

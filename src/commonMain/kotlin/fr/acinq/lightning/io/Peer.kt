@@ -752,7 +752,7 @@ class Peer(
                             if (msg.channelData.isEmpty()) {
                                 sendToPeer(Error(msg.channelId, "unknown channel"))
                             } else {
-                                when (val decrypted = runTrying { PersistedChannelState.from(nodeParams.nodePrivateKey, msg.channelData) }) {
+                                when (val decrypted = runTrying { ChannelStateWithCommitments.from(nodeParams.nodePrivateKey, msg.channelData) }) {
                                     is Try.Success -> {
                                         logger.warning { "restoring channel ${msg.channelId} from peer backup" }
                                         val backup = decrypted.result

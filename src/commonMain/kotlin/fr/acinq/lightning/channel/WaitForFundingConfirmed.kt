@@ -18,7 +18,7 @@ data class WaitForFundingConfirmed(
     // We can have at most one ongoing RBF attempt.
     // It doesn't need to be persisted: if we disconnect before signing, the rbf attempt is discarded.
     val rbfStatus: RbfStatus = RbfStatus.None
-) : PersistedChannelState() {
+) : ChannelStateWithCommitments() {
 
     val latestFundingTx = commitments.latest.localFundingStatus as LocalFundingStatus.UnconfirmedFundingTx
     private val allFundingTxs = commitments.active.map { it.localFundingStatus }.filterIsInstance<LocalFundingStatus.UnconfirmedFundingTx>()

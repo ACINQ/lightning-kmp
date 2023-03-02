@@ -132,7 +132,7 @@ object JsonSerializers {
         prettyPrint = true
         serializersModule = SerializersModule {
             // we need to explicitly define a [PolymorphicSerializer] for sealed classes, but not for interfaces
-            fun PolymorphicModuleBuilder<PersistedChannelState>.registerSubclasses() {
+            fun PolymorphicModuleBuilder<ChannelStateWithCommitments>.registerSubclasses() {
                 subclass(LegacyWaitForFundingConfirmed::class, LegacyWaitForFundingConfirmedSerializer)
                 subclass(LegacyWaitForFundingLocked::class, LegacyWaitForFundingLockedSerializer)
                 subclass(WaitForFundingConfirmed::class, WaitForFundingConfirmedSerializer)
@@ -142,6 +142,7 @@ object JsonSerializers {
                 subclass(Negotiating::class, NegotiatingSerializer)
                 subclass(Closing::class, ClosingSerializer)
                 subclass(WaitForRemotePublishFutureCommitment::class, WaitForRemotePublishFutureCommitmentSerializer)
+                subclass(ErrorInformationLeak::class, ErrorInformationLeakSerializer)
                 subclass(Closed::class, ClosedSerializer)
             }
             contextual(PolymorphicSerializer(ChannelState::class))
@@ -155,11 +156,6 @@ object JsonSerializers {
             contextual(PolymorphicSerializer(ChannelStateWithCommitments::class))
             polymorphicDefaultSerializer(ChannelStateWithCommitments::class) { ChannelStateSerializer }
             polymorphic(ChannelStateWithCommitments::class) {
-                registerSubclasses()
-            }
-
-            contextual(PolymorphicSerializer(PersistedChannelState::class))
-            polymorphic(PersistedChannelState::class) {
                 registerSubclasses()
             }
 
@@ -226,6 +222,9 @@ object JsonSerializers {
 
     @Serializer(forClass = WaitForRemotePublishFutureCommitment::class)
     object WaitForRemotePublishFutureCommitmentSerializer
+
+    @Serializer(forClass = ErrorInformationLeak::class)
+    object ErrorInformationLeakSerializer
 
     @Serializer(forClass = Closed::class)
     object ClosedSerializer

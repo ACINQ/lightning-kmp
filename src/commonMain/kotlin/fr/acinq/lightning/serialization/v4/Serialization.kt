@@ -34,14 +34,14 @@ object Serialization {
 
     const val versionMagic = 4
 
-    fun serialize(o: PersistedChannelState): ByteArray {
+    fun serialize(o: ChannelStateWithCommitments): ByteArray {
         val out = ByteArrayOutput()
         out.write(versionMagic)
         out.writePersistedChannelState(o)
         return out.toByteArray()
     }
 
-    private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
+    private fun Output.writePersistedChannelState(o: ChannelStateWithCommitments) = when (o) {
         is LegacyWaitForFundingConfirmed -> {
             write(0x08); writeLegacyWaitForFundingConfirmed(o)
         }
@@ -71,6 +71,9 @@ object Serialization {
         }
         is Closed -> {
             write(0x07); writeClosed(o)
+        }
+        is ErrorInformationLeak -> {
+            write(0x0a); writeErrorInformationLeak(o)
         }
     }
 
@@ -193,6 +196,10 @@ object Serialization {
     private fun Output.writeWaitForRemotePublishFutureCommitment(o: WaitForRemotePublishFutureCommitment) = o.run {
         writeCommitments(commitments)
         writeLightningMessage(remoteChannelReestablish)
+    }
+
+    private fun Output.writeErrorInformationLeak(o: ErrorInformationLeak) = o.run {
+        writeCommitments(commitments)
     }
 
     private fun Output.writeClosed(o: Closed) = o.run {

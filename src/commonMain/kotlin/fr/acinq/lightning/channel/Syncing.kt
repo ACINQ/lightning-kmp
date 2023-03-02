@@ -29,7 +29,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 waitForTheirReestablishMessage -> {
                     val nextState = if (!cmd.message.channelData.isEmpty()) {
                         logger.info { "channel_reestablish includes a peer backup" }
-                        when (val decrypted = runTrying { PersistedChannelState.from(staticParams.nodeParams.nodePrivateKey, cmd.message.channelData) }) {
+                        when (val decrypted = runTrying { ChannelStateWithCommitments.from(staticParams.nodeParams.nodePrivateKey, cmd.message.channelData) }) {
                             is Try.Success -> {
                                 if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
                                     logger.warning { "they have a more recent commitment, using it instead" }
@@ -223,7 +223,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     }
                                     else -> state
                                 }
-                                Pair(this@Syncing.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState as PersistedChannelState)))
+                                Pair(this@Syncing.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                             }
                         }
                     } else {
@@ -236,7 +236,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
-                    else -> Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), actions)
+                    else -> Pair(Syncing(newState, waitForTheirReestablishMessage), actions)
                 }
             }
             cmd is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())

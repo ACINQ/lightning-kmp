@@ -44,7 +44,7 @@ data class Closing(
     val nextRemoteCommitPublished: RemoteCommitPublished? = null,
     val futureRemoteCommitPublished: RemoteCommitPublished? = null,
     val revokedCommitPublished: List<RevokedCommitPublished> = emptyList()
-) : PersistedChannelState() {
+) : ChannelStateWithCommitments() {
 
     private val spendingTxs: List<Transaction> by lazy {
         mutualClosePublished.map { it.tx } + revokedCommitPublished.map { it.commitTx } + listOfNotNull(

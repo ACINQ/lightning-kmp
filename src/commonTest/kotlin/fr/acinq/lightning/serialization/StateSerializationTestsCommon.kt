@@ -32,11 +32,11 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal()
         val priv = randomKey()
         val bytes = EncryptedChannelData.from(priv, alice.state)
-        val check = PersistedChannelState.from(priv, bytes)
+        val check = ChannelStateWithCommitments.from(priv, bytes)
         assertEquals(alice.state, check)
 
         val bytes1 = EncryptedChannelData.from(priv, bob.state)
-        val check1 = PersistedChannelState.from(priv, bytes1)
+        val check1 = ChannelStateWithCommitments.from(priv, bytes1)
         assertEquals(bob.state, check1)
     }
 

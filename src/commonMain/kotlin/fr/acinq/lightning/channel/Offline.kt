@@ -64,7 +64,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                                     }
                                     else -> state
                                 }
-                                Pair(this@Offline.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState as PersistedChannelState)))
+                                Pair(this@Offline.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                             }
                         }
                     } else {
@@ -96,7 +96,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
-                    else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
+                    else -> Pair(Offline(newState), actions)
                 }
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {

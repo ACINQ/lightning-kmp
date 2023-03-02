@@ -420,7 +420,7 @@ internal sealed class ChannelStateWithCommitments {
     abstract val currentOnChainFeerates: OnChainFeerates
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId
-    abstract fun export(): fr.acinq.lightning.channel.PersistedChannelState
+    abstract fun export(): fr.acinq.lightning.channel.ChannelStateWithCommitments
 }
 
 @Serializable
