@@ -59,7 +59,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertEquals(actionsAlice1.size, 5)
             assertTrue(actionsAlice1.hasOutgoingMessage<TxSignatures>().channelData.isEmpty())
             assertEquals(actionsAlice1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(alice.staticParams.nodeParams.nodeId))
-            assertEquals(actionsAlice1.findWatch<WatchSpent>().txId, alice1.commitments.latest.fundingTxId)
+            assertEquals(actionsAlice1.findWatch<WatchConfirmed>().txId, alice1.commitments.latest.fundingTxId)
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
             assertEquals(ChannelEvents.Created(alice1.state), actionsAlice1.find<ChannelAction.EmitEvent>().event)
         }
@@ -69,7 +69,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertEquals(actionsBob1.size, 6)
             assertFalse(actionsBob1.hasOutgoingMessage<TxSignatures>().channelData.isEmpty())
             assertEquals(actionsBob1.hasOutgoingMessage<ChannelReady>().alias, ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId))
-            assertEquals(actionsBob1.findWatch<WatchSpent>().txId, bob1.commitments.latest.fundingTxId)
+            assertEquals(actionsBob1.findWatch<WatchConfirmed>().txId, bob1.commitments.latest.fundingTxId)
             actionsBob1.has<ChannelAction.Storage.StoreState>()
             assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, 200_000_000.msat)
             assertEquals(actionsBob1.find<ChannelAction.Storage.StoreIncomingAmount>().amount, 200_000_000.msat)

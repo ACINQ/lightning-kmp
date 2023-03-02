@@ -4,9 +4,11 @@ import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
 import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.router.Announcements
+import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 
@@ -29,14 +31,18 @@ data class WaitForChannelReady(
                             Pair(this@WaitForChannelReady, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                         }
                         else -> {
-                            logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
-                            val commitments1 = commitments.updateLocalFundingStatus(fullySignedTx.signedTx.txid, commitments.latest.localFundingStatus.copy(sharedTx = fullySignedTx), logger)
-                            val nextState = this@WaitForChannelReady.copy(commitments = commitments1)
-                            val actions = buildList {
-                                add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
-                                add(ChannelAction.Storage.StoreState(nextState))
+                            when (val res = commitments.updateLocalFundingStatus(fullySignedTx.signedTx.txid, commitments.latest.localFundingStatus.copy(sharedTx = fullySignedTx), logger)) {
+                                is Either.Left -> Pair(this@WaitForChannelReady, listOf())
+                                is Either.Right -> {
+                                    logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
+                                    val nextState = this@WaitForChannelReady.copy(commitments = res.value.first)
+                                    val actions = buildList {
+                                        add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
+                                        add(ChannelAction.Storage.StoreState(nextState))
+                                    }
+                                    Pair(nextState, actions)
+                                }
                             }
-                            Pair(nextState, actions)
                         }
                     }
                     is FullySignedSharedTransaction -> {
@@ -94,9 +100,16 @@ data class WaitForChannelReady(
                 Pair(nextState, actions)
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
-            cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventSpent -> when (cmd.watch.tx.txid) {
-                commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(cmd.watch.tx, commitments.latest)
-                else -> handleRemoteSpentOther(cmd.watch.tx)
+            cmd is ChannelCommand.WatchReceived -> when (cmd.watch) {
+                is WatchEventConfirmed -> when (val res = acceptFundingTxConfirmed(cmd.watch)) {
+                    is Either.Left -> Pair(this@WaitForChannelReady, listOf())
+                    is Either.Right -> {
+                        val (commitments1, _, actions) = res.value
+                        val nextState = this@WaitForChannelReady.copy(commitments = commitments1)
+                        Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
+                    }
+                }
+                is WatchEventSpent -> handlePotentialForceClose(cmd.watch)
             }
             cmd is ChannelCommand.ExecuteCommand -> when (cmd.command) {
                 is CMD_CLOSE -> Pair(this@WaitForChannelReady, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))

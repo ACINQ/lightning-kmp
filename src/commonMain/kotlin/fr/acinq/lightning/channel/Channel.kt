@@ -2,16 +2,15 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
-import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
-import fr.acinq.lightning.blockchain.Watch
-import fr.acinq.lightning.blockchain.WatchConfirmed
-import fr.acinq.lightning.blockchain.WatchEvent
+import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
+import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitMainOutput
 import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutputs
+import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.serialization.Encryption.from
@@ -53,7 +52,7 @@ sealed class ChannelCommand {
         val remoteInit: Init
     ) : ChannelCommand()
 
-    data class Restore(val state: ChannelState) : ChannelCommand()
+    data class Restore(val state: PersistedChannelState) : ChannelCommand()
     object CheckHtlcTimeout : ChannelCommand()
     data class MessageReceived(val message: LightningMessage) : ChannelCommand()
     data class WatchReceived(val watch: WatchEvent) : ChannelCommand()
@@ -291,6 +290,35 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
+    /**
+     * When a funding transaction confirms, we can prune previous commitments.
+     * We also watch this funding transaction to be able to detect force-close attempts.
+     */
+    internal fun ChannelContext.acceptFundingTxConfirmed(w: WatchEventConfirmed): Either<Commitments, Triple<Commitments, Commitment, List<ChannelAction>>> {
+        val fundingStatus = LocalFundingStatus.ConfirmedFundingTx(w.tx)
+        return commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, logger).map { (commitments1, commitment) ->
+            val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+            Triple(commitments1, commitment, listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+        }
+    }
+
+    /**
+     * Analyze and react to a potential force-close transaction spending one of our funding transactions.
+     */
+    internal fun ChannelContext.handlePotentialForceClose(w: WatchEventSpent): Pair<ChannelState, List<ChannelAction>> = when {
+        w.event != BITCOIN_FUNDING_SPENT -> Pair(this@ChannelStateWithCommitments, listOf())
+        commitments.active.any { it.fundingTxId == w.tx.txid } -> Pair(this@ChannelStateWithCommitments, listOf())
+        w.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> spendLocalCurrent()
+        w.tx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(w.tx, commitments.latest)
+        w.tx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(w.tx, commitments.latest)
+        w.tx.txIn.any { it.outPoint.txid == commitments.latest.fundingTxId } -> handleRemoteSpentOther(w.tx)
+        else -> {
+            logger.warning { "unrecognized tx=${w.tx.txid}" }
+            // this was for another commitments
+            Pair(this@ChannelStateWithCommitments, listOf())
+        }
+    }
+
     internal fun ChannelContext.handleRemoteSpentCurrent(commitTx: Transaction, commitment: FullCommitment): Pair<Closing, List<ChannelAction>> {
         logger.warning { "they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitment.remoteCommit.txid) { "txid mismatch" }
@@ -303,11 +331,6 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 commitments = commitments,
                 waitingSinceBlock = currentBlockHeight.toLong(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                remoteCommitPublished = remoteCommitPublished
-            )
-            is WaitForFundingConfirmed -> Closing(
-                commitments = commitments,
-                waitingSinceBlock = currentBlockHeight.toLong(),
                 remoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
@@ -354,12 +377,11 @@ sealed class ChannelStateWithCommitments : ChannelState() {
 
     internal fun ChannelContext.handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "funding tx spent in txid=${tx.txid}" }
-
-        return claimRevokedRemoteCommitTxOutputs(keyManager, commitments.params, commitments.remotePerCommitmentSecrets, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
+        return getRemotePerCommitmentSecret(keyManager, commitments.params, commitments.remotePerCommitmentSecrets, tx)?.let { (remotePerCommitmentSecret, commitmentNumber) ->
             logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
+            val revokedCommitPublished = claimRevokedRemoteCommitTxOutputs(keyManager, commitments.params, remotePerCommitmentSecret, tx, currentOnChainFeerates)
             val ex = FundingTxSpent(channelId, tx.txid)
             val error = Error(channelId, ex.message)
-
             val nextState = when (this@ChannelStateWithCommitments) {
                 is Closing -> if (this@ChannelStateWithCommitments.revokedCommitPublished.contains(revokedCommitPublished)) {
                     this@ChannelStateWithCommitments
@@ -378,17 +400,33 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
             }
-
-            return Pair(nextState, buildList {
+            Pair(nextState, buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
                 addAll(revokedCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
                 add(ChannelAction.Message.Send(error))
-                add(ChannelAction.Storage.GetHtlcInfos(revokedCommitPublished.commitTx.txid, txNumber))
+                add(ChannelAction.Storage.GetHtlcInfos(revokedCommitPublished.commitTx.txid, commitmentNumber))
             })
         } ?: run {
-            // the published tx was neither their current commitment nor a revoked one
-            logger.error { "couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
-            Pair(ErrorInformationLeak(commitments), listOf())
+            when (this@ChannelStateWithCommitments) {
+                is WaitForRemotePublishFutureCommitment -> {
+                    logger.warning { "they published their future commit (because we asked them to) in txid=${tx.txid}" }
+                    val remoteCommitPublished = claimRemoteCommitMainOutput(keyManager, commitments.params, tx, currentOnChainFeerates.claimMainFeerate)
+                    val nextState = Closing(
+                        commitments = commitments,
+                        waitingSinceBlock = currentBlockHeight.toLong(),
+                        futureRemoteCommitPublished = remoteCommitPublished
+                    )
+                    Pair(nextState, buildList {
+                        add(ChannelAction.Storage.StoreState(nextState))
+                        addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
+                    })
+                }
+                else -> {
+                    // the published tx doesn't seem to be a valid commitment transaction
+                    logger.error { "couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
+                    Pair(ErrorInformationLeak(commitments), listOf())
+                }
+            }
         }
     }
 
@@ -416,11 +454,6 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                     commitments = commitments,
                     waitingSinceBlock = currentBlockHeight.toLong(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                    localCommitPublished = localCommitPublished
-                )
-                is WaitForFundingConfirmed -> Closing(
-                    commitments = commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
                     localCommitPublished = localCommitPublished
                 )
                 else -> Closing(

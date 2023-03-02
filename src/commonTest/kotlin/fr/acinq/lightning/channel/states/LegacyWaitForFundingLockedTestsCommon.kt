@@ -3,9 +3,8 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
+import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
-import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.serialization.Encryption.from
@@ -42,9 +41,9 @@ class LegacyWaitForFundingLockedTestsCommon {
         val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Restore(state))
         assertIs<LNChannel<Offline>>(state1)
         assertEquals(actions1.size, 1)
-        val watchSpent = actions1.findWatch<WatchSpent>()
-        assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
-        assertEquals(watchSpent.txId, fundingTx.txid)
+        val watchConfirmed = actions1.findWatch<WatchConfirmed>()
+        assertEquals(watchConfirmed.event, BITCOIN_FUNDING_DEPTHOK)
+        assertEquals(watchConfirmed.txId, fundingTx.txid)
         // Reconnect to our peer.
         val localInit = Init(state.commitments.params.localParams.features.toByteArray().byteVector())
         val remoteInit = Init(state.commitments.params.remoteParams.features.toByteArray().byteVector())
@@ -67,9 +66,9 @@ class LegacyWaitForFundingLockedTestsCommon {
         val (state4, actions4) = state3.process(ChannelCommand.MessageReceived(ChannelReady(state.channelId, randomKey().publicKey())))
         assertIs<LNChannel<Normal>>(state4)
         assertEquals(actions4.size, 3)
-        val watchConfirmed = actions4.hasWatch<WatchConfirmed>()
-        assertEquals(watchConfirmed.event, BITCOIN_FUNDING_DEEPLYBURIED)
-        assertEquals(watchConfirmed.txId, fundingTx.txid)
+        val watchDeeplyConfirmed = actions4.hasWatch<WatchConfirmed>()
+        assertEquals(watchDeeplyConfirmed.event, BITCOIN_FUNDING_DEEPLYBURIED)
+        assertEquals(watchDeeplyConfirmed.txId, fundingTx.txid)
         actions4.has<ChannelAction.Storage.StoreState>()
     }
 }

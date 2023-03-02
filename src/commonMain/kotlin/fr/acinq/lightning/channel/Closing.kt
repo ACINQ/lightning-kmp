@@ -63,42 +63,38 @@ data class Closing(
                 val watch = cmd.watch
                 when {
                     watch is WatchEventConfirmed && watch.event is BITCOIN_FUNDING_DEPTHOK -> {
-                        val commitments1 = commitments.updateLocalFundingStatus(watch.tx.txid, LocalFundingStatus.ConfirmedFundingTx(watch.tx), logger)
-                        if (commitments.latest.fundingTxId == watch.tx.txid) {
-                            // The best funding tx candidate has been confirmed, we can forget alternative commitments.
-                            val nextState = this@Closing.copy(commitments = commitments1)
-                            val watchSpent = WatchSpent(channelId, watch.tx, commitments1.latest.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
-                            val actions = listOf(
-                                ChannelAction.Blockchain.SendWatch(watchSpent),
-                                ChannelAction.Storage.StoreState(nextState)
-                            )
-                            Pair(nextState, actions)
-                        } else {
-                            // This is a corner case where:
-                            //  - the funding tx was RBF-ed
-                            //  - *and* we went to CLOSING before any funding tx got confirmed (probably due to a local or remote error)
-                            //  - *and* an older version of the funding tx confirmed and reached min depth (it won't be re-orged out)
-                            //
-                            // This means that:
-                            //  - the whole current commitment tree has been double-spent and can safely be forgotten
-                            //  - from now on, we only need to keep track of the commitment associated to the funding tx that got confirmed
-                            //
-                            // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
-                            // to negotiate a mutual close.
-                            logger.info { "channel was confirmed at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with a previous funding txid=${watch.tx.txid}" }
-                            val watchSpent = WatchSpent(channelId, watch.tx, commitments1.latest.commitInput.outPoint.index.toInt(), BITCOIN_FUNDING_SPENT)
-                            val commitTx = commitments1.latest.localCommit.publishableTxs.commitTx.tx
-                            val localCommitPublished = claimCurrentLocalCommitTxOutputs(keyManager, commitments1.latest, commitTx, currentOnChainFeerates)
-                            val nextState = Closing(commitments1, waitingSinceBlock, localCommitPublished = localCommitPublished)
-                            val actions = buildList {
-                                add(ChannelAction.Blockchain.SendWatch(watchSpent))
-                                add(ChannelAction.Storage.StoreState(nextState))
-                                localCommitPublished.run { addAll(doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong())) }
+                        when (val res = acceptFundingTxConfirmed(watch)) {
+                            is Either.Left -> Pair(this@Closing, listOf())
+                            is Either.Right -> {
+                                val (commitments1, _, actions) = res.value
+                                if (commitments.latest.fundingTxId == watch.tx.txid) {
+                                    // The best funding tx candidate has been confirmed, we can forget alternative commitments.
+                                    val nextState = this@Closing.copy(commitments = commitments1)
+                                    Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
+                                } else {
+                                    // This is a corner case where:
+                                    //  - the funding tx was RBF-ed
+                                    //  - *and* we went to CLOSING before any funding tx got confirmed (probably due to a local or remote error)
+                                    //  - *and* an older version of the funding tx confirmed and reached min depth (it won't be re-orged out)
+                                    //
+                                    // This means that:
+                                    //  - the whole current commitment tree has been double-spent and can safely be forgotten
+                                    //  - from now on, we only need to keep track of the commitment associated to the funding tx that got confirmed
+                                    //
+                                    // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
+                                    // to negotiate a mutual close.
+                                    logger.info { "channel was confirmed at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with a previous funding txid=${watch.tx.txid}" }
+                                    val (nextState, actions1) = this@Closing.copy(commitments = commitments1).run { spendLocalCurrent() }
+                                    Pair(nextState, actions + actions1)
+                                }
                             }
-                            Pair(nextState, actions)
                         }
                     }
                     watch is WatchEventSpent && watch.event is BITCOIN_FUNDING_SPENT -> when {
+                        commitments.active.any { it.fundingTxId == watch.tx.txid } -> {
+                            // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
+                            Pair(this@Closing, listOf())
+                        }
                         mutualClosePublished.any { it.tx.txid == watch.tx.txid } -> {
                             // we already know about this tx, probably because we have published it ourselves after successful negotiation
                             Pair(this@Closing, listOf())
@@ -122,9 +118,14 @@ data class Closing(
                             // counterparty may attempt to spend its next commit tx at any time
                             handleRemoteSpentNext(watch.tx, commitments.latest)
                         }
-                        else -> {
+                        watch.tx.txIn.map { it.outPoint.txid }.contains(commitments.latest.fundingTxId) -> {
                             // counterparty may attempt to spend a revoked commit tx at any time
                             handleRemoteSpentOther(watch.tx)
+                        }
+                        else -> {
+                            logger.warning { "unrecognized tx=${watch.tx.txid}" }
+                            // this was for another commitments
+                            Pair(this@Closing, listOf())
                         }
                     }
                     watch is WatchEventSpent && watch.event is BITCOIN_OUTPUT_SPENT -> {

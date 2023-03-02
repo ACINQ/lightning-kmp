@@ -80,8 +80,6 @@ data class CannotSignWithoutChanges                (override val channelId: Byte
 data class CannotSignBeforeRevocation              (override val channelId: ByteVector32) : ChannelException(channelId, "cannot sign until next revocation hash is received")
 data class UnexpectedRevocation                    (override val channelId: ByteVector32) : ChannelException(channelId, "received unexpected RevokeAndAck message")
 data class InvalidRevocation                       (override val channelId: ByteVector32) : ChannelException(channelId, "invalid revocation")
-data class InvalidRevokedCommitProof               (override val channelId: ByteVector32, val ourCommitmentNumber: Long, val theirCommitmentNumber: Long, val perCommitmentSecret: PrivateKey) : ChannelException(channelId, "counterparty claimed that we have a revoked commit but their proof doesn't check out: ourCommitmentNumber=$ourCommitmentNumber theirCommitmentNumber=$theirCommitmentNumber perCommitmentSecret=$perCommitmentSecret")
-data class CommitmentSyncError                     (override val channelId: ByteVector32) : ChannelException(channelId, "commitment sync error")
 data class RevocationSyncError                     (override val channelId: ByteVector32) : ChannelException(channelId, "revocation sync error")
 data class InvalidFailureCode                      (override val channelId: ByteVector32) : ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 data class PleasePublishYourCommitment             (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")

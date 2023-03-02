@@ -40,11 +40,11 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(getFundingSigs(bob)))
         val fundingTx = actionsAlice1.find<ChannelAction.Blockchain.PublishTx>().tx
-        val (alice2, actionsAlice2) = LNChannel(alice1.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
+        val (alice2, actionsAlice2) = LNChannel(alice1.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state as PersistedChannelState))
         assertIs<LNChannel<Offline>>(alice2)
         assertEquals(actionsAlice2.size, 2)
         assertEquals(actionsAlice2.find<ChannelAction.Blockchain.PublishTx>().tx, fundingTx)
-        assertEquals(actionsAlice2.findWatch<WatchSpent>().txId, fundingTx.txid)
+        assertEquals(actionsAlice2.findWatch<WatchConfirmed>().txId, fundingTx.txid)
     }
 
     @Test
@@ -219,11 +219,11 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
                 val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
                 val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitBob))
                 assertIs<LNChannel<WaitForChannelReady>>(alice1)
-                assertEquals(actionsAlice1.findWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
+                assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
                 val channelReadyAlice = actionsAlice1.findOutgoingMessage<ChannelReady>()
                 val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitAlice))
                 assertIs<LNChannel<WaitForChannelReady>>(bob1)
-                assertEquals(actionsBob1.findWatch<WatchSpent>().event, BITCOIN_FUNDING_SPENT)
+                assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
                 val channelReadyBob = actionsBob1.findOutgoingMessage<ChannelReady>()
                 Fixture(alice1, channelReadyAlice, bob1, channelReadyBob)
             } else {

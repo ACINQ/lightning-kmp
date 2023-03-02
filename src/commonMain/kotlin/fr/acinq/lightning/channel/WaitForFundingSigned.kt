@@ -6,9 +6,7 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
-import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.utils.Either
@@ -69,9 +67,11 @@ data class WaitForFundingSigned(
                             remoteChannelData = cmd.message.channelData
                         )
                         logger.info { "funding tx created with txId=${commitment.fundingTxId}. ${fundingTx.localInputs.size} local inputs, ${fundingTx.remoteInputs.size} remote inputs, ${fundingTx.localOutputs.size} local outputs and ${fundingTx.remoteOutputs.size} remote outputs" }
+                        // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
+                        val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, fundingParams.fundingAmount)
+                        val watchConfirmed = WatchConfirmed(channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                         if (staticParams.useZeroConf) {
                             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
-                            val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                             val nextPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, 1)
                             val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
                             // We use part of the funding txid to create a dummy short channel id.
@@ -80,7 +80,7 @@ data class WaitForFundingSigned(
                             val shortChannelId = ShortChannelId(0, Pack.int32BE(commitment.fundingTxId.slice(0, 16).toByteArray()).absoluteValue, commitment.commitInput.outPoint.index.toInt())
                             val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady)
                             val actions = buildList {
-                                add(ChannelAction.Blockchain.SendWatch(watchSpent))
+                                add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
                                 // We're not a liquidity provider, so we don't mind sending our signatures immediately.
                                 add(ChannelAction.Message.Send(signedFundingTx.localSigs))
                                 add(ChannelAction.Message.Send(channelReady))
@@ -88,9 +88,7 @@ data class WaitForFundingSigned(
                             }
                             Pair(nextState, actions)
                         } else {
-                            val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, fundingParams.fundingAmount)
                             logger.info { "will wait for $fundingMinDepth confirmations" }
-                            val watchConfirmed = WatchConfirmed(channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                             val nextState = WaitForFundingConfirmed(
                                 commitments,
                                 localPushAmount,

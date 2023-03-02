@@ -59,9 +59,8 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         )
         val (state3, actions3) = state2.process(ChannelCommand.MessageReceived(channelReestablish))
         assertEquals(state, state3.state)
-        assertEquals(actions3.size, 2)
+        assertEquals(actions3.size, 1)
         actions3.hasOutgoingMessage<ChannelReestablish>()
-        assertEquals(watchConfirmed, actions3.findWatch())
         // The funding tx confirms.
         val (state4, actions4) = state3.process(ChannelCommand.WatchReceived(WatchEventConfirmed(state.channelId, watchConfirmed.event, 1105, 3, fundingTx)))
         assertIs<LNChannel<LegacyWaitForFundingLocked>>(state4)

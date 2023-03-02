@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.transactions.Transactions
@@ -261,12 +262,15 @@ data class Normal(
             }
             is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
-                is WatchEventSpent -> when (watch.tx.txid) {
-                    commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx, commitments.latest)
-                    commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(watch.tx, commitments.latest)
-                    else -> handleRemoteSpentOther(watch.tx)
+                is WatchEventConfirmed -> when (val res = acceptFundingTxConfirmed(watch)) {
+                    is Either.Left -> Pair(this@Normal, listOf())
+                    is Either.Right -> {
+                        val (commitments1, _, actions) = res.value
+                        val nextState = this@Normal.copy(commitments = commitments1)
+                        Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
+                    }
                 }
-                else -> unhandled(cmd)
+                is WatchEventSpent -> handlePotentialForceClose(watch)
             }
             is ChannelCommand.Disconnected -> {
                 // if we have pending unsigned outgoing htlcs, then we cancel them and advertise the fact that the channel is now disabled.

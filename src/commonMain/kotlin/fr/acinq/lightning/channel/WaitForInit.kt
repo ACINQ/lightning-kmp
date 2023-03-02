@@ -64,103 +64,80 @@ object WaitForInit : ChannelState() {
                 logger.info { "we have nothing at stake, going straight to CLOSED" }
                 Pair(Closed(cmd.state), listOf())
             }
-            cmd is ChannelCommand.Restore && cmd.state is Closing -> {
-                val closingType = cmd.state.closingTypeAlreadyKnown()
-                logger.info { "channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"})" }
-                // if the closing type is known:
-                // - there is no need to watch the funding tx because it has already been spent and the spending tx has
-                //   already reached mindepth
-                // - there is no need to attempt to publish transactions for other type of closes
-                when (closingType) {
-                    is MutualClose -> {
-                        Pair(cmd.state, doPublish(closingType.tx, cmd.state.channelId))
+            cmd is ChannelCommand.Restore -> {
+                logger.info { "restoring channel ${cmd.state.channelId} to state ${cmd.state::class.simpleName}" }
+                // We republish unconfirmed transactions.
+                val unconfirmedFundingTxs = cmd.state.commitments.active.mapNotNull { commitment ->
+                    when (val fundingStatus = commitment.localFundingStatus) {
+                        is LocalFundingStatus.UnconfirmedFundingTx -> fundingStatus.signedTx
+                        is LocalFundingStatus.ConfirmedFundingTx -> null
                     }
-                    is LocalClose -> {
-                        val actions = closingType.localCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
-                        Pair(cmd.state, actions)
+                }
+                // We watch all funding transactions regardless of the underlying state.
+                // There can be multiple funding transactions due to rbf, and they can be unconfirmed in any state due to zero-conf.
+                val fundingTxWatches = cmd.state.commitments.active.map { commitment ->
+                    when (commitment.localFundingStatus) {
+                        is LocalFundingStatus.UnconfirmedFundingTx -> {
+                            val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, commitment.fundingAmount).toLong()
+                            WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, BITCOIN_FUNDING_DEPTHOK)
+                        }
+                        is LocalFundingStatus.ConfirmedFundingTx -> {
+                            WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                        }
                     }
-                    is RemoteClose -> {
-                        val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
-                        Pair(cmd.state, actions)
-                    }
-                    is RevokedClose -> {
-                        val actions = closingType.revokedCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
-                        Pair(cmd.state, actions)
-                    }
-                    is RecoveryClose -> {
-                        val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
-                        Pair(cmd.state, actions)
-                    }
-                    null -> {
-                        // in all other cases we need to be ready for any type of closing
-                        val commitments = cmd.state.commitments
-                        val actions = mutableListOf<ChannelAction>(
-                            ChannelAction.Blockchain.SendWatch(
-                                WatchSpent(
-                                    cmd.state.channelId,
-                                    commitments.latest.commitInput.outPoint.txid,
-                                    commitments.latest.commitInput.outPoint.index.toInt(),
-                                    commitments.latest.commitInput.txOut.publicKeyScript,
-                                    BITCOIN_FUNDING_SPENT
-                                )
-                            ),
-                        )
-                        val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()
-                        cmd.state.mutualClosePublished.forEach { actions.addAll(doPublish(it, cmd.state.channelId)) }
-                        cmd.state.localCommitPublished?.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) }
-                        cmd.state.remoteCommitPublished?.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) }
-                        cmd.state.nextRemoteCommitPublished?.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) }
-                        cmd.state.revokedCommitPublished.forEach { it.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) } }
-                        cmd.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) }
-                        // if commitment number is zero, we also need to make sure that the funding tx has been published
-                        if (commitments.localCommitIndex == 0L && commitments.remoteCommitIndex == 0L) {
-                            when (val fundingStatus = cmd.state.commitments.latest.localFundingStatus) {
-                                is LocalFundingStatus.UnconfirmedFundingTx -> fundingStatus.signedTx?.let { actions.add(ChannelAction.Blockchain.PublishTx(it)) }
-                                is LocalFundingStatus.ConfirmedFundingTx -> Unit // no need to republish
+                }
+                when (cmd.state) {
+                    is Closing -> {
+                        val closingType = cmd.state.closingTypeAlreadyKnown()
+                        logger.info { "channel is closing (closing type = ${closingType?.let { it::class } ?: "unknown yet"})" }
+                        // if the closing type is known:
+                        // - there is no need to watch funding txs because one has already been spent and the spending tx has already reached mindepth
+                        // - there is no need to attempt to publish transactions for other type of closes
+                        when (closingType) {
+                            is MutualClose -> {
+                                Pair(cmd.state, doPublish(closingType.tx, cmd.state.channelId))
+                            }
+                            is LocalClose -> {
+                                val actions = closingType.localCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
+                                Pair(cmd.state, actions)
+                            }
+                            is RemoteClose -> {
+                                val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
+                                Pair(cmd.state, actions)
+                            }
+                            is RevokedClose -> {
+                                val actions = closingType.revokedCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
+                                Pair(cmd.state, actions)
+                            }
+                            is RecoveryClose -> {
+                                val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
+                                Pair(cmd.state, actions)
+                            }
+                            null -> {
+                                // in all other cases we need to be ready for any type of closing
+                                val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()
+                                val actions = buildList {
+                                    addAll(unconfirmedFundingTxs.map { ChannelAction.Blockchain.PublishTx(it) })
+                                    addAll(fundingTxWatches.map { ChannelAction.Blockchain.SendWatch(it) })
+                                    cmd.state.mutualClosePublished.forEach { addAll(doPublish(it, cmd.state.channelId)) }
+                                    cmd.state.localCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
+                                    cmd.state.remoteCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
+                                    cmd.state.nextRemoteCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
+                                    cmd.state.revokedCommitPublished.forEach { it.run { addAll(doPublish(cmd.state.channelId, minDepth)) } }
+                                    cmd.state.futureRemoteCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
+                                }
+                                Pair(cmd.state, actions)
                             }
                         }
-                        Pair(cmd.state, actions)
+                    }
+                    else -> {
+                        val actions = buildList {
+                            addAll(unconfirmedFundingTxs.map { ChannelAction.Blockchain.PublishTx(it) })
+                            addAll(fundingTxWatches.map { ChannelAction.Blockchain.SendWatch(it) })
+                        }
+                        Pair(Offline(cmd.state), actions)
                     }
                 }
-            }
-            cmd is ChannelCommand.Restore && cmd.state is LegacyWaitForFundingConfirmed -> {
-                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, cmd.state.commitments.latest.fundingAmount)
-                logger.info { "restoring legacy unconfirmed channel (waiting for $minDepth confirmations)" }
-                val watch = WatchConfirmed(cmd.state.channelId, cmd.state.commitments.latest.fundingTxId, cmd.state.commitments.latest.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
-                Pair(Offline(cmd.state), listOf(ChannelAction.Blockchain.SendWatch(watch)))
-            }
-            cmd is ChannelCommand.Restore && cmd.state is WaitForFundingConfirmed -> {
-                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, cmd.state.latestFundingTx.fundingParams.fundingAmount)
-                logger.info { "restoring unconfirmed channel (waiting for $minDepth confirmations)" }
-                val watches = cmd.state.commitments.active.map { WatchConfirmed(cmd.state.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }
-                val actions = buildList {
-                    cmd.state.latestFundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
-                    addAll(watches.map { ChannelAction.Blockchain.SendWatch(it) })
-                }
-                Pair(Offline(cmd.state), actions)
-            }
-            cmd is ChannelCommand.Restore && cmd.state is ChannelStateWithCommitments -> {
-                logger.info { "restoring channel ${cmd.state.channelId} to state ${cmd.state::class.simpleName}" }
-                // We only need to republish the funding transaction when using zero-conf: otherwise, it is already confirmed.
-                val fundingTx = when {
-                    cmd.state is WaitForChannelReady && staticParams.useZeroConf -> cmd.state.commitments.latest.localFundingStatus.signedTx
-                    else -> null
-                }
-                val watchSpent = WatchSpent(
-                    cmd.state.channelId,
-                    cmd.state.commitments.latest.fundingTxId,
-                    cmd.state.commitments.latest.commitInput.outPoint.index.toInt(),
-                    cmd.state.commitments.latest.commitInput.txOut.publicKeyScript,
-                    BITCOIN_FUNDING_SPENT
-                )
-                val actions = buildList {
-                    fundingTx?.let {
-                        logger.info { "republishing funding tx (txId=${it.txid})" }
-                        add(ChannelAction.Blockchain.PublishTx(it))
-                    }
-                    add(ChannelAction.Blockchain.SendWatch(watchSpent))
-                }
-                Pair(Offline(cmd.state), actions)
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
             else -> unhandled(cmd)

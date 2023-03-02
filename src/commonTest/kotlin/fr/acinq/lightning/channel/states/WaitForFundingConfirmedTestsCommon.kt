@@ -164,10 +164,11 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertEquals(actions1.findWatch<WatchConfirmed>().txId, fundingTx.txid)
             val (alice2, actions2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
             assertIs<LNChannel<Offline>>(alice2)
-            assertEquals(actions2.size, 1)
+            assertEquals(actions2.size, 2)
             val watchSpent = actions2.findWatch<WatchSpent>()
             assertEquals(watchSpent.txId, fundingTx.txid)
             assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
+            actions2.has<ChannelAction.Storage.StoreState>()
         }
         run {
             val (bob1, actions1) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob.state))
@@ -176,10 +177,11 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertEquals(actions1.findWatch<WatchConfirmed>().txId, fundingTx.txid)
             val (bob2, actions2) = bob1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
             assertIs<LNChannel<Offline>>(bob2)
-            assertEquals(actions2.size, 1)
+            assertEquals(actions2.size, 2)
             val watchSpent = actions2.findWatch<WatchSpent>()
             assertEquals(watchSpent.txId, fundingTx.txid)
             assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
+            actions2.has<ChannelAction.Storage.StoreState>()
         }
     }
 
@@ -192,15 +194,17 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         run {
             val (alice2, actions2) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
             assertIs<LNChannel<Offline>>(alice2)
-            assertEquals(actions2.size, 3)
+            assertEquals(actions2.size, 4)
+            actions2.hasTx(fundingTx1)
             actions2.hasTx(fundingTx2)
             assertEquals(actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(fundingTx1.txid, fundingTx2.txid))
             val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx1)))
             assertIs<LNChannel<Offline>>(alice3)
-            assertEquals(actions3.size, 1)
+            assertEquals(actions3.size, 2)
             val watchSpent = actions3.findWatch<WatchSpent>()
             assertEquals(watchSpent.txId, fundingTx1.txid)
             assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
+            actions3.has<ChannelAction.Storage.StoreState>()
         }
         run {
             val (bob2, actions2) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob1.state))
@@ -209,10 +213,11 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertEquals(actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(fundingTx1.txid, fundingTx2.txid))
             val (bob3, actions3) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx1)))
             assertIs<LNChannel<Offline>>(bob3)
-            assertEquals(actions3.size, 1)
+            assertEquals(actions3.size, 2)
             val watchSpent = actions3.findWatch<WatchSpent>()
             assertEquals(watchSpent.txId, fundingTx1.txid)
             assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
+            actions3.has<ChannelAction.Storage.StoreState>()
         }
     }
 

@@ -266,7 +266,7 @@ class Peer(
             val channelIds = bootChannels.map {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
-                val (state1, actions) = state.process(ChannelCommand.Restore(it as ChannelState))
+                val (state1, actions) = state.process(ChannelCommand.Restore(it))
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
                 it.channelId
@@ -757,7 +757,7 @@ class Peer(
                                         logger.warning { "restoring channel ${msg.channelId} from peer backup" }
                                         val backup = decrypted.result
                                         val state = WaitForInit
-                                        val event1 = ChannelCommand.Restore(backup as ChannelState)
+                                        val event1 = ChannelCommand.Restore(backup)
                                         val (state1, actions1) = state.process(event1)
                                         processActions(msg.channelId, actions1)
 

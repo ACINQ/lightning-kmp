@@ -751,18 +751,25 @@ data class Commitments(
         return Either.Right(Pair(commitments1, actions.toList()))
     }
 
-    fun updateLocalFundingStatus(txId: ByteVector32, status: LocalFundingStatus, log: MDCLogger): Commitments {
-        if (active.find { it.fundingTxId == txId } == null) {
-            log.error { "funding txid=$txId doesn't match any of our funding txs" }
-        }
-        return copy(active = active.map {
-            if (it.fundingTxId == txId) {
-                log.info { "setting localFundingStatus=${status::class.simpleName} for funding txid=$txId" }
-                it.copy(localFundingStatus = status)
-            } else {
-                it
+    fun updateLocalFundingStatus(txId: ByteVector32, status: LocalFundingStatus, log: MDCLogger): Either<Commitments, Pair<Commitments, Commitment>> {
+        return when (active.find { it.fundingTxId == txId }) {
+            null -> {
+                log.warning { "funding txid=$txId doesn't match any of our funding txs" }
+                Either.Left(this)
             }
-        }).pruneCommitments(log)
+            else -> {
+                val commitments1 = copy(active = active.map {
+                    if (it.fundingTxId == txId) {
+                        log.info { "setting localFundingStatus=${status::class.simpleName} for funding txid=$txId" }
+                        it.copy(localFundingStatus = status)
+                    } else {
+                        it
+                    }
+                }).pruneCommitments(log)
+                val commitment = commitments1.active.find { it.fundingTxId == txId }!!
+                Either.Right(Pair(commitments1, commitment))
+            }
+        }
     }
 
     /**
