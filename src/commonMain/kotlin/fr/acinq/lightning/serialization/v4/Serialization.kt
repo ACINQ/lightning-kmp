@@ -138,6 +138,16 @@ object Serialization {
         writeNullable(localShutdown) { writeLightningMessage(it) }
         writeNullable(remoteShutdown) { writeLightningMessage(it) }
         writeNullable(closingFeerates) { writeClosingFeerates(it) }
+        when (spliceStatus) {
+            is SpliceStatus.WaitingForSigs -> {
+                write(0x01)
+                writeInteractiveTxSigningSession(spliceStatus.session)
+                writeCollection(spliceStatus.origins) { writeChannelOrigin(it) }
+            }
+            else -> {
+                write(0x00)
+            }
+        }
     }
 
     private fun Output.writeShuttingDown(o: ShuttingDown) = o.run {

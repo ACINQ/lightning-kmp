@@ -58,7 +58,8 @@ data class LegacyWaitForFundingLocked(
                         null,
                         null,
                         null,
-                        null
+                        null,
+                        SpliceStatus.None
                     )
                     val actions = listOf(
                         ChannelAction.Blockchain.SendWatch(watchConfirmed),

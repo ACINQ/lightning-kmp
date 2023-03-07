@@ -196,5 +196,6 @@
     },
     "localShutdown": null,
     "remoteShutdown": null,
-    "closingFeerates": null
+    "closingFeerates": null,
+    "spliceStatus": "None"
 }

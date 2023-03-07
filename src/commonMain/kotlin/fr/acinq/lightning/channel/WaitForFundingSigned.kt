@@ -101,6 +101,11 @@ data class WaitForFundingSigned(
             remotePerCommitmentSecrets = ShaChain.init,
             remoteChannelData = remoteChannelData
         )
+        val commonActions = buildList {
+            action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
+            add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
+            add(ChannelAction.Message.Send(action.localSigs))
+        }
         return if (staticParams.useZeroConf) {
             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
             val nextPerCommitmentPoint = keyManager.commitmentPoint(channelParams.localParams.channelKeys(keyManager).shaSeed, 1)
@@ -112,9 +117,7 @@ data class WaitForFundingSigned(
             val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady)
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
-                action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
-                add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                add(ChannelAction.Message.Send(action.localSigs))
+                addAll(commonActions) // NB: order matters
                 add(ChannelAction.Message.Send(channelReady))
             }
             Pair(nextState, actions)
@@ -130,9 +133,7 @@ data class WaitForFundingSigned(
             )
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
-                action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
-                add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                add(ChannelAction.Message.Send(action.localSigs))
+                addAll(commonActions) // NB: order matters
             }
             Pair(nextState, actions)
         }

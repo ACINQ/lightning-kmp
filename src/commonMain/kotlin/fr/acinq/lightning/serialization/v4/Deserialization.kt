@@ -93,7 +93,16 @@ object Deserialization {
         remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate },
         localShutdown = readNullable { readLightningMessage() as Shutdown },
         remoteShutdown = readNullable { readLightningMessage() as Shutdown },
-        closingFeerates = readNullable { readClosingFeerates() }
+        closingFeerates = readNullable { readClosingFeerates() },
+        spliceStatus = when (val discriminator = read()) {
+            0x00 -> SpliceStatus.None
+            0x01 -> SpliceStatus.WaitingForSigs(
+                replyTo = null,
+                session = readInteractiveTxSigningSession(),
+                origins = readCollection { readChannelOrigin() as ChannelOrigin.PayToOpenOrigin }.toList()
+            )
+            else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
+        }
     )
 
     private fun Input.readShuttingDown(): ShuttingDown = ShuttingDown(

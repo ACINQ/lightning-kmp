@@ -108,6 +108,30 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
+    /** With rbfed splices we can have multiple origins*/
+    data class ChannelOriginsTlv(val channelOrigins: List<ChannelOrigin>) : ChannelTlv() {
+        override val tag: Long get() = ChannelOriginsTlv.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeU16(channelOrigins.size, out)
+            channelOrigins.forEach { ChannelOriginTlv(it).write(out) }
+        }
+
+        companion object : TlvValueReader<ChannelOriginsTlv> {
+            const val tag: Long = 0x47000009
+
+            override fun read(input: Input): ChannelOriginsTlv {
+                val size = LightningCodecs.u16(input)
+                val origins = buildList {
+                    for (i in 0 until size) {
+                        add(ChannelOriginTlv.read(input).channelOrigin)
+                    }
+                }
+                return ChannelOriginsTlv(origins)
+            }
+        }
+    }
+
     /** Amount that will be offered by the initiator of a dual-funded channel to the non-initiator. */
     data class PushAmountTlv(val amount: MilliSatoshi) : ChannelTlv() {
         override val tag: Long get() = PushAmountTlv.tag

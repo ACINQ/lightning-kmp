@@ -42,6 +42,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.InteractiveTxOutput
+import fr.acinq.lightning.channel.SpliceStatus
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
@@ -502,7 +503,8 @@ internal data class Normal(
         remoteChannelUpdate,
         localShutdown,
         remoteShutdown,
-        null
+        null,
+        SpliceStatus.None
     )
 }
 

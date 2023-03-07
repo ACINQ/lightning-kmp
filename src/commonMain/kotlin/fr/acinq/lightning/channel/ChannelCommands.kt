@@ -3,16 +3,59 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.TxOut
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.OnionRoutingPacket
+import kotlinx.coroutines.CompletableDeferred
 
-sealed class Command
+sealed class Command {
+
+    sealed class Splice {
+        data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val feerate: FeeratePerKw, val origins: List<ChannelOrigin.PayToOpenOrigin> = emptyList()) : Command() {
+            init {
+                require(spliceIn != null || spliceOut != null) { "there must be a splice-in or a splice-out" }
+            }
+
+            val additionalLocalFunding: Satoshi = spliceIn?.additionalLocalFunding ?: 0.sat
+            val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
+            val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
+
+            data class SpliceIn(val wallet: WalletState, val additionalLocalFunding: Satoshi, val pushAmount: MilliSatoshi = 0.msat)
+            data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
+        }
+
+        sealed class Response {
+            data class Success(
+                val channelId: ByteVector32,
+                val fundingTxIndex: Long,
+                val fundingTxId: ByteVector32,
+                val capacity: Satoshi,
+                val balance: MilliSatoshi
+            ) : Response()
+
+            sealed class Failure : Response() {
+                object InsufficientFunds : Failure()
+                object InvalidSpliceOutPubKeyScript : Failure()
+                object SpliceAlreadyInProgress : Failure()
+                object ChannelNotIdle : Failure()
+                data class FundingFailure(val reason: FundingContributionFailure) : Failure()
+                object CannotStartSession : Failure()
+                data class InteractiveTxSessionFailed(val reason: InteractiveTxSessionAction.RemoteFailure) : Failure()
+                data class CannotCreateCommitTx(val reason: ChannelException) : Failure()
+                data class AbortedByPeer(val reason: String) : Failure()
+                object Disconnected : Failure()
+            }
+        }
+    }
+}
 
 data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val paymentId: UUID, val commit: Boolean = false) : Command()
 

@@ -234,6 +234,8 @@ data class Commitment(
         return hasNoPendingHtlcs() && hasNoPendingFeeUpdate
     }
 
+    fun isIdle(changes: CommitmentChanges): Boolean = hasNoPendingHtlcs() && changes.localChanges.all.isEmpty() && changes.remoteChanges.all.isEmpty()
+
     fun timedOutOutgoingHtlcs(blockHeight: Long): Set<UpdateAddHtlc> {
         fun expired(add: UpdateAddHtlc) = blockHeight >= add.cltvExpiry.toLong()
 
@@ -541,6 +543,7 @@ data class Commitments(
 
     // @formatter:off
     // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
+    fun isIdle(): Boolean = active.first().isIdle(changes)
     fun hasNoPendingHtlcsOrFeeUpdate(): Boolean = active.first().hasNoPendingHtlcsOrFeeUpdate(changes)
     fun timedOutOutgoingHtlcs(currentHeight: Long): Set<UpdateAddHtlc> = active.first().timedOutOutgoingHtlcs(currentHeight)
     fun almostTimedOutIncomingHtlcs(currentHeight: Long, fulfillSafety: CltvExpiryDelta): Set<UpdateAddHtlc> = active.first().almostTimedOutIncomingHtlcs(currentHeight, fulfillSafety, changes)

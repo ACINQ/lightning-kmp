@@ -11,6 +11,7 @@ import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 
 /**
  * Created by t-bast on 22/08/2022.
@@ -23,12 +24,23 @@ sealed class SharedFundingInput {
     abstract fun sign(keyManager: KeyManager, localParams: LocalParams, tx: Transaction): ByteVector64
 
     data class Multisig2of2(override val info: Transactions.InputInfo, val localFundingPubkey: PublicKey, val remoteFundingPubkey: PublicKey) : SharedFundingInput() {
+
+        constructor(keyManager: KeyManager, params: ChannelParams, commitment: Commitment) : this(
+            info = commitment.commitInput,
+            localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey,
+            remoteFundingPubkey = params.remoteParams.fundingPubKey
+        )
+
         // This value was computed assuming 73 bytes signatures (worst-case scenario).
-        override val weight: Long = 388
+        override val weight: Long = Multisig2of2.weight
 
         override fun sign(keyManager: KeyManager, localParams: LocalParams, tx: Transaction): ByteVector64 {
             val fundingKey = keyManager.channelKeys(localParams.fundingKeyPath).fundingPrivateKey
             return keyManager.sign(Transactions.TransactionWithInputInfo.SpliceTx(info, tx), fundingKey)
+        }
+
+        companion object {
+            const val weight: Long = 388
         }
     }
 }
@@ -69,8 +81,28 @@ data class InteractiveTxParams(
     val fundingAmount: Satoshi = (sharedInput?.info?.txOut?.amount ?: 0.sat) + localContribution + remoteContribution
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
+
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity = if (isInitiator) 0 else 1
+
+    companion object {
+        fun computeLocalContribution(isInitiator: Boolean, commitment: Commitment, spliceIn: List<WalletState.Utxo>, spliceOut: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
+            val commonFieldsWeight = if (isInitiator) {
+                val dummyTx = Transaction(
+                    version = 2,
+                    txIn = emptyList(), // NB: we add the weight manually
+                    txOut = listOf(commitment.commitInput.txOut), // we're taking the previous output, it has the wrong amount but we don't care: only the weight matters to compute fees
+                    lockTime = 0
+                )
+                dummyTx.weight() + SharedFundingInput.Multisig2of2.weight
+            } else 0
+            val spliceInputsWeight = spliceIn.size * Transactions.p2wpkhInputWeight
+            val spliceOutputsWeight = spliceOut.sumOf { it.weight() }
+            val weight = commonFieldsWeight + spliceInputsWeight + spliceOutputsWeight
+            val fees = Transactions.weight2fee(targetFeerate, weight.toInt())
+            return spliceIn.map { it.amount }.sum() - spliceOut.map { it.amount }.sum() - fees
+        }
+    }
 }
 
 sealed class InteractiveTxInput {
@@ -85,11 +117,13 @@ sealed class InteractiveTxInput {
     data class Local(override val serialId: Long, val previousTx: Transaction, val previousTxOutput: Long, override val sequence: UInt) : InteractiveTxInput(), Outgoing {
         override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput)
     }
+
     /**
      * A remote-only input that funds the interactive transaction.
      * We only keep the data we need from our peer's TxAddInput to avoid storing potentially large messages in our DB.
      */
     data class Remote(override val serialId: Long, override val outPoint: OutPoint, val txOut: TxOut, override val sequence: UInt) : InteractiveTxInput(), Incoming
+
     /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
     data class Shared(override val serialId: Long, override val outPoint: OutPoint, override val sequence: UInt, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxInput(), Incoming, Outgoing
 }
@@ -107,11 +141,13 @@ sealed class InteractiveTxOutput {
         data class Change(override val serialId: Long, override val amount: Satoshi, override val pubkeyScript: ByteVector) : Local()
         data class NonChange(override val serialId: Long, override val amount: Satoshi, override val pubkeyScript: ByteVector) : Local()
     }
+
     /**
      * A remote-only output of the interactive transaction.
      * We only keep the data we need from our peer's TxAddOutput to avoid storing potentially large messages in our DB.
      */
     data class Remote(override val serialId: Long, override val amount: Satoshi, override val pubkeyScript: ByteVector) : InteractiveTxOutput(), Incoming
+
     /** The shared output can be added by us or by our peer, depending on who initiated the protocol. */
     data class Shared(override val serialId: Long, override val pubkeyScript: ByteVector, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxOutput(), Incoming, Outgoing {
         // Note that the truncation is a no-op: the sum of balances in a channel must be a satoshi amount.
@@ -761,4 +797,12 @@ sealed class RbfStatus {
     data class InProgress(val rbfSession: InteractiveTxSession) : RbfStatus()
     data class WaitingForSigs(val session: InteractiveTxSigningSession) : RbfStatus()
     object RbfAborted : RbfStatus()
+}
+
+sealed class SpliceStatus {
+    object None : SpliceStatus()
+    data class Requested(val command: Command.Splice.Request, val spliceInit: SpliceInit) : SpliceStatus()
+    data class InProgress(val replyTo: CompletableDeferred<Command.Splice.Response>?, val spliceSession: InteractiveTxSession, val localPushAmount: MilliSatoshi, val remotePushAmount: MilliSatoshi, val origins: List<ChannelOrigin.PayToOpenOrigin>) : SpliceStatus()
+    data class WaitingForSigs(val replyTo: CompletableDeferred<Command.Splice.Response>?, val session: InteractiveTxSigningSession, val origins: List<ChannelOrigin.PayToOpenOrigin>) : SpliceStatus()
+    object Aborted : SpliceStatus()
 }

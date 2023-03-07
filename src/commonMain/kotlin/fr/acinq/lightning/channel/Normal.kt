@@ -8,6 +8,9 @@ import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 
 data class Normal(
@@ -19,7 +22,8 @@ data class Normal(
     val remoteChannelUpdate: ChannelUpdate?,
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?,
-    val closingFeerates: ClosingFeerates?
+    val closingFeerates: ClosingFeerates?,
+    val spliceStatus: SpliceStatus
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -89,6 +93,48 @@ data class Normal(
                     }
                     is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
                     is CMD_BUMP_FUNDING_FEE -> unhandled(cmd)
+                    is Command.Splice.Request -> when (spliceStatus) {
+                        is SpliceStatus.None -> {
+                            if (commitments.isIdle()) {
+                                val parentCommitment = commitments.active.first()
+                                val fundingContribution = InteractiveTxParams.computeLocalContribution(
+                                    isInitiator = true,
+                                    commitment = parentCommitment,
+                                    spliceIn = cmd.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                                    spliceOut = cmd.command.spliceOutputs,
+                                    targetFeerate = cmd.command.feerate
+                                )
+                                if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < 0.msat) {
+                                    logger.warning { "cannot do splice: insufficient funds" }
+                                    cmd.command.replyTo.complete(Command.Splice.Response.Failure.InsufficientFunds)
+                                    Pair(this@Normal, emptyList())
+                                } else if (cmd.command.spliceOut?.scriptPubKey?.let { Helpers.Closing.isValidFinalScriptPubkey(it, allowAnySegwit = true) } == false) {
+                                    logger.warning { "cannot do splice: invalid splice-out script" }
+                                    cmd.command.replyTo.complete(Command.Splice.Response.Failure.InvalidSpliceOutPubKeyScript)
+                                    Pair(this@Normal, emptyList())
+                                } else {
+                                    val spliceInit = SpliceInit(
+                                        channelId,
+                                        fundingContribution = fundingContribution,
+                                        lockTime = currentBlockHeight.toLong(),
+                                        feerate = cmd.command.feerate,
+                                        pushAmount = cmd.command.pushAmount
+                                    )
+                                    logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(cmd.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
+                                }
+                            } else {
+                                logger.warning { "cannot initiate splice, channel not idle" }
+                                cmd.command.replyTo.complete(Command.Splice.Response.Failure.ChannelNotIdle)
+                                Pair(this@Normal, emptyList())
+                            }
+                        }
+                        else -> {
+                            logger.warning { "cannot initiate splice, another splice is already in progress" }
+                            cmd.command.replyTo.complete(Command.Splice.Response.Failure.SpliceAlreadyInProgress)
+                            Pair(this@Normal, emptyList())
+                        }
+                    }
                 }
             }
             is ChannelCommand.MessageReceived -> {
@@ -256,6 +302,114 @@ data class Normal(
                             }
                         }
                     }
+                    is SpliceInit -> when (spliceStatus) {
+                        is SpliceStatus.None ->
+                            if (commitments.isIdle()) {
+                                logger.info { "accepting splice with remote.amount=${cmd.message.fundingContribution} remote.push=${cmd.message.pushAmount}" }
+                                val parentCommitment = commitments.active.first()
+                                val spliceAck = SpliceAck(
+                                    channelId,
+                                    fundingContribution = 0.sat, // only remote contributes to the splice
+                                    pushAmount = 0.msat
+                                )
+                                val fundingParams = InteractiveTxParams(
+                                    channelId = channelId,
+                                    isInitiator = false,
+                                    localContribution = spliceAck.fundingContribution,
+                                    remoteContribution = cmd.message.fundingContribution,
+                                    sharedInput = SharedFundingInput.Multisig2of2(keyManager, commitments.params, parentCommitment),
+                                    fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
+                                    localOutputs = emptyList(),
+                                    lockTime = currentBlockHeight.toLong(),
+                                    dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
+                                    targetFeerate = cmd.message.feerate
+                                )
+                                val session = InteractiveTxSession(
+                                    fundingParams,
+                                    previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
+                                    previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
+                                    fundingContributions = FundingContributions(emptyList(), emptyList()), // as non-initiator we don't contribute to this splice for now
+                                    previousTxs = emptyList()
+                                )
+                                val nextState = this@Normal.copy(spliceStatus = SpliceStatus.InProgress(replyTo = null, session, localPushAmount = 0.msat, remotePushAmount = cmd.message.pushAmount, origins = cmd.message.origins))
+                                Pair(nextState, listOf(ChannelAction.Message.Send(SpliceAck(channelId, fundingParams.localContribution))))
+                            } else {
+                                logger.info { "rejecting splice attempt: channel is not idle" }
+                                Pair(this@Normal, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceChannelNotIdle(channelId).message))))
+                            }
+                        is SpliceStatus.Aborted -> {
+                            logger.info { "rejecting splice attempt: our previous tx_abort was not acked" }
+                            Pair(this@Normal, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceAbortNotAcked(channelId).message))))
+                        }
+                        else -> {
+                            logger.info { "rejecting splice attempt: the current splice attempt must be completed or aborted first" }
+                            Pair(this@Normal, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceAlreadyInProgress(channelId).message))))
+                        }
+                    }
+                    is SpliceAck -> when (spliceStatus) {
+                        is SpliceStatus.Requested -> {
+                            logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
+                            val parentCommitment = commitments.active.first()
+                            val sharedInput = SharedFundingInput.Multisig2of2(keyManager, commitments.params, parentCommitment)
+                            val fundingParams = InteractiveTxParams(
+                                channelId = channelId,
+                                isInitiator = true,
+                                localContribution = spliceStatus.spliceInit.fundingContribution,
+                                remoteContribution = cmd.message.fundingContribution,
+                                sharedInput = sharedInput,
+                                fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
+                                localOutputs = spliceStatus.command.spliceOutputs,
+                                lockTime = currentBlockHeight.toLong(),
+                                dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
+                                targetFeerate = spliceStatus.spliceInit.feerate
+                            )
+                            when (val fundingContributions = FundingContributions.create(
+                                params = fundingParams,
+                                sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
+                                walletUtxos = spliceStatus.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                                localOutputs = spliceStatus.command.spliceOutputs,
+                                changePubKey = null // we're spending every funds available TODO: check this
+                            )) {
+                                is Either.Left -> {
+                                    logger.error { "could not create splice contributions: ${fundingContributions.value}" }
+                                    spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.FundingFailure(fundingContributions.value))
+                                    Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                                }
+                                is Either.Right -> {
+                                    // The splice initiator always sends the first interactive-tx message.
+                                    val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
+                                        fundingParams,
+                                        previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
+                                        previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
+                                        fundingContributions.value, previousTxs = emptyList()
+                                    ).send()
+                                    when (interactiveTxAction) {
+                                        is InteractiveTxSessionAction.SendMessage -> {
+                                            val nextState = this@Normal.copy(
+                                                spliceStatus = SpliceStatus.InProgress(
+                                                    replyTo = spliceStatus.command.replyTo,
+                                                    interactiveTxSession,
+                                                    localPushAmount = spliceStatus.spliceInit.pushAmount,
+                                                    remotePushAmount = cmd.message.pushAmount,
+                                                    origins = emptyList()
+                                                )
+                                            )
+                                            Pair(nextState, listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
+                                        }
+                                        else -> {
+                                            logger.error { "could not start interactive-tx session: $interactiveTxAction" }
+                                            spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.CannotStartSession)
+                                            Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else -> {
+                            logger.warning { "ignoring unexpected splice_ack" }
+                            Pair(this@Normal, emptyList())
+                        }
+                    }
                     is Error -> handleRemoteError(cmd.message)
                     else -> unhandled(cmd)
                 }
@@ -278,7 +432,17 @@ data class Normal(
                         } ?: logger.warning { "cannot find payment for $htlc" }
                     }
                 }
-                Pair(Offline(this@Normal), failedHtlcs)
+                // if we are splicing, we need to cancel it
+                when (spliceStatus) {
+                    is SpliceStatus.Requested -> spliceStatus.command.replyTo
+                    is SpliceStatus.InProgress -> spliceStatus.replyTo
+                    is SpliceStatus.WaitingForSigs -> spliceStatus.replyTo
+                    else -> null
+                }?.let { replyTo ->
+                    logger.warning { "splice attempt failed: disconnected" }
+                    replyTo.complete(Command.Splice.Response.Failure.Disconnected)
+                }
+                Pair(Offline(this@Normal.copy(spliceStatus = SpliceStatus.None)), failedHtlcs)
             }
             else -> unhandled(cmd)
         }
