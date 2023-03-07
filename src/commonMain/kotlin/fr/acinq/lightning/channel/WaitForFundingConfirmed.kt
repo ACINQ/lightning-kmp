@@ -163,16 +163,18 @@ data class WaitForFundingConfirmed(
                     when (interactiveTxAction) {
                         is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus.copy(rbfSession1)), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
                         is InteractiveTxSessionAction.SignSharedTx -> {
+                            val replacedCommitment = commitments.latest
                             val signingSession = InteractiveTxSigningSession.create(
                                 keyManager,
                                 commitments.params,
                                 rbfSession1.fundingParams,
-                                fundingTxIndex = 0,
+                                fundingTxIndex = replacedCommitment.fundingTxIndex,
                                 interactiveTxAction.sharedTx,
                                 localPushAmount,
                                 remotePushAmount,
-                                commitments.latest.localCommit.spec.feerate,
-                                commitments.latest.remoteCommit.remotePerCommitmentPoint
+                                commitmentIndex = replacedCommitment.localCommit.index,
+                                replacedCommitment.localCommit.spec.feerate,
+                                replacedCommitment.remoteCommit.remotePerCommitmentPoint
                             )
                             when (signingSession) {
                                 is Either.Left -> {

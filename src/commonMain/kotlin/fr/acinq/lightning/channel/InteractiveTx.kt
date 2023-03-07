@@ -626,6 +626,7 @@ data class InteractiveTxSession(
 sealed class InteractiveTxSigningSessionAction {
     /** Wait for their tx_signatures before sending ours. */
     object WaitForTxSigs : InteractiveTxSigningSessionAction()
+
     /** Send our tx_signatures: we cannot forget the channel until it has been spent or double-spent. */
     data class SendTxSigs(val fundingTx: LocalFundingStatus.UnconfirmedFundingTx, val commitment: Commitment, val localSigs: TxSignatures) : InteractiveTxSigningSessionAction()
     data class AbortFundingAttempt(val reason: ChannelException) : InteractiveTxSigningSessionAction() {
@@ -710,31 +711,32 @@ data class InteractiveTxSigningSession(
             sharedTx: SharedTransaction,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
+            commitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
-            remoteFirstPerCommitmentPoint: PublicKey
+            remotePerCommitmentPoint: PublicKey
         ): Either<ChannelException, Pair<InteractiveTxSigningSession, CommitSig>> {
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript }
-            return Helpers.Funding.makeFirstCommitTxs(
+            return Helpers.Funding.makeCommitTxsWithoutHtlcs(
                 keyManager,
                 channelParams.channelId,
                 channelParams.localParams, channelParams.remoteParams,
                 fundingAmount = sharedTx.sharedOutput.amount,
                 toLocal = sharedTx.sharedOutput.localAmount - localPushAmount + remotePushAmount,
                 toRemote = sharedTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount,
+                commitmentIndex = commitmentIndex,
                 commitTxFeerate,
-                unsignedTx.hash,
-                sharedOutputIndex,
-                remoteFirstPerCommitmentPoint
+                fundingTxHash = unsignedTx.hash, fundingTxOutputIndex = sharedOutputIndex,
+                remotePerCommitmentPoint
             ).flatMap { firstCommitTx ->
                 val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, channelParams.localParams.channelKeys(keyManager).fundingPrivateKey)
                 val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf())
                 when (val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams)) {
                     null -> Either.Left(ChannelFundingError(channelParams.channelId))
                     else -> {
-                        val unsignedLocalCommit = UnsignedLocalCommit(0, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
-                        val remoteCommit = RemoteCommit(0, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint)
-                        Either.Right(Pair(InteractiveTxSigningSession(fundingParams,fundingTxIndex, signedFundingTx, Either.Left(unsignedLocalCommit), remoteCommit), commitSig))
+                        val unsignedLocalCommit = UnsignedLocalCommit(commitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
+                        val remoteCommit = RemoteCommit(commitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
+                        Either.Right(Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, Either.Left(unsignedLocalCommit), remoteCommit), commitSig))
                     }
                 }
             }

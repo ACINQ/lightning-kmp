@@ -281,26 +281,27 @@ object Helpers {
             )
         }
 
-        data class FirstCommitTx(val localSpec: CommitmentSpec, val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val remoteSpec: CommitmentSpec, val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx)
+        data class PairOfCommitTxs(val localSpec: CommitmentSpec, val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val remoteSpec: CommitmentSpec, val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx)
 
         /**
          * Creates both sides' first commitment transaction.
          *
          * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
          */
-        fun makeFirstCommitTxs(
+        fun makeCommitTxsWithoutHtlcs(
             keyManager: KeyManager,
-            temporaryChannelId: ByteVector32,
+            channelId: ByteVector32,
             localParams: LocalParams,
             remoteParams: RemoteParams,
             fundingAmount: Satoshi,
             toLocal: MilliSatoshi,
             toRemote: MilliSatoshi,
+            commitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
             fundingTxHash: ByteVector32,
             fundingTxOutputIndex: Int,
-            remoteFirstPerCommitmentPoint: PublicKey
-        ): Either<ChannelException, FirstCommitTx> {
+            remotePerCommitmentPoint: PublicKey
+        ): Either<ChannelException, PairOfCommitTxs> {
             val localSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
             val remoteSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
@@ -312,17 +313,17 @@ object Helpers {
                 val fees = commitTxFee(remoteParams.dustLimit, remoteSpec)
                 val missing = fees - remoteSpec.toLocal.truncateToSatoshi()
                 if (missing > 0.sat) {
-                    return Either.Left(CannotAffordFirstCommitFees(temporaryChannelId, missing = missing, fees = fees))
+                    return Either.Left(CannotAffordFirstCommitFees(channelId, missing = missing, fees = fees))
                 }
             }
 
             val fundingPubKey = localParams.channelKeys(keyManager).fundingPubKey
             val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteParams.fundingPubKey)
-            val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, 0)
-            val localCommitTx = Commitments.makeLocalTxs(keyManager.channelKeys(localParams.fundingKeyPath), 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
-            val remoteCommitTx = Commitments.makeRemoteTxs(keyManager, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec).first
+            val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, commitmentIndex)
+            val localCommitTx = Commitments.makeLocalTxs(keyManager.channelKeys(localParams.fundingKeyPath), commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
+            val remoteCommitTx = Commitments.makeRemoteTxs(keyManager, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec).first
 
-            return Either.Right(FirstCommitTx(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
+            return Either.Right(PairOfCommitTxs(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
         }
 
     }
