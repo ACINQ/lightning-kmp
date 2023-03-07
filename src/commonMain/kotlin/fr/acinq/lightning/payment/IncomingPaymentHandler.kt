@@ -9,6 +9,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.WalletParams
+import fr.acinq.lightning.PayToOpenEvents
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
@@ -177,7 +178,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     /** Main payment processing, that handles payment parts. */
     private suspend fun processPaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): ProcessAddResult {
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
-        when(paymentPart) {
+        when (paymentPart) {
             is HtlcPart -> logger.info { "processing htlc part expiry=${paymentPart.htlc.cltvExpiry}" }
             is PayToOpenPart -> logger.info { "processing pay-to-open part amount=${paymentPart.payToOpenRequest.amountMsat} funding=${paymentPart.payToOpenRequest.fundingSatoshis} fees=${paymentPart.payToOpenRequest.payToOpenFeeSatoshis}" }
         }
@@ -238,6 +239,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             pending[paymentPart.paymentHash] = payment
                             return ProcessAddResult.Pending(incomingPayment)
                         }
+                        // We have received all the payment parts.
                         payToOpenMinAmount != null && payToOpenAmount < payToOpenMinAmount -> {
                             // Because of the cost of opening a new channel, there is a minimum amount for incoming payments to trigger
                             // a pay-to-open. Given that the total amount of a payment is included in each payment part, we could have
@@ -256,11 +258,13 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                     is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
                                 }
                             }
+                            payment.parts.filterIsInstance<PayToOpenPart>().firstOrNull()?.let {
+                                nodeParams._nodeEvents.emit(PayToOpenEvents.Rejected.BelowMin(it.payToOpenRequest))
+                            }
                             pending.remove(paymentPart.paymentHash)
                             return ProcessAddResult.Rejected(actions, incomingPayment)
                         }
                         else -> {
-                            // We have received all the payment parts.
                             when (val paymentMetadata = paymentPart.finalPayload.paymentMetadata) {
                                 null -> logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
                                 else -> logger.info { "payment received (${payment.amountReceived}) with payment metadata ($paymentMetadata)" }
