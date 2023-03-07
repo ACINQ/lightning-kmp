@@ -99,7 +99,6 @@ data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) 
 
 sealed class PeerEvent
 data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerEvent()
-data class PaymentNotReceived(val actions: List<PeerCommand>, val incomingPayment: IncomingPayment?) : PeerEvent()
 data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerEvent()
@@ -560,7 +559,6 @@ class Peer(
             is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
         }
         when (result) {
-            is IncomingPaymentHandler.ProcessAddResult.Rejected -> _eventsFlow.emit(PaymentNotReceived(result.actions, result.incomingPayment))
             is IncomingPaymentHandler.ProcessAddResult.Accepted -> _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
             else -> Unit
         }
