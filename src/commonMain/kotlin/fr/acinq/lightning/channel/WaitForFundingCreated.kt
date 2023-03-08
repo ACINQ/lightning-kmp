@@ -56,6 +56,7 @@ data class WaitForFundingCreated(
                             keyManager,
                             channelParams,
                             interactiveTxSession.fundingParams,
+                            fundingTxIndex = 0,
                             interactiveTxAction.sharedTx,
                             localPushAmount,
                             remotePushAmount,

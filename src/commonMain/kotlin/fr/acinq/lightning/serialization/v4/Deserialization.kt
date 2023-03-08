@@ -274,6 +274,7 @@ object Deserialization {
 
     private fun Input.readInteractiveTxSigningSession(): InteractiveTxSigningSession = InteractiveTxSigningSession(
         fundingParams = readInteractiveTxParams(),
+        fundingTxIndex = readNumber(),
         fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
         localCommit = readEither(
             readLeft = {
@@ -371,6 +372,7 @@ object Deserialization {
     )
 
     private fun Input.readCommitment(htlcs: Set<DirectedHtlc>): Commitment = Commitment(
+        fundingTxIndex = readNumber(),
         localFundingStatus = when (val discriminator = read()) {
             0x00 -> LocalFundingStatus.UnconfirmedFundingTx(
                 sharedTx = readSignedSharedTransaction(),

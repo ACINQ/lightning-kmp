@@ -167,6 +167,7 @@ data class WaitForFundingConfirmed(
                                 keyManager,
                                 commitments.params,
                                 rbfSession1.fundingParams,
+                                fundingTxIndex = 0,
                                 interactiveTxAction.sharedTx,
                                 localPushAmount,
                                 remotePushAmount,

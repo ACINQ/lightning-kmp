@@ -502,6 +502,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 ),
                 listOf(
                     Commitment(
+                        fundingTxIndex = 0,
                         LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
@@ -544,6 +545,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 ),
                 listOf(
                     Commitment(
+                        fundingTxIndex = 0,
                         LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),

@@ -327,6 +327,7 @@ object Serialization {
 
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
+        writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
         // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel cannot be used for payments.
         writeEither(localCommit,
@@ -420,6 +421,7 @@ object Serialization {
     }
 
     private fun Output.writeCommitment(o: Commitment) = o.run {
+        writeNumber(fundingTxIndex)
         when (localFundingStatus) {
             is LocalFundingStatus.UnconfirmedFundingTx -> {
                 write(0x00)

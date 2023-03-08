@@ -383,6 +383,7 @@ internal data class Commitments(
         ),
         listOf(
             fr.acinq.lightning.channel.Commitment(
+                fundingTxIndex = 0,
                 // We previously didn't store the funding transaction, so we act as if it were unconfirmed.
                 // We will put a WatchConfirmed when starting, which will return the confirmed transaction.
                 fr.acinq.lightning.channel.LocalFundingStatus.UnconfirmedFundingTx(
