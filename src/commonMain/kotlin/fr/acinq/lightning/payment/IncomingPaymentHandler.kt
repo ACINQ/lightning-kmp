@@ -259,7 +259,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                 }
                             }
                             payment.parts.filterIsInstance<PayToOpenPart>().firstOrNull()?.let {
-                                nodeParams._nodeEvents.emit(PayToOpenEvents.Rejected.BelowMin(it.payToOpenRequest))
+                                nodeParams._nodeEvents.emit(PayToOpenEvents.Rejected.BelowMin(it.paymentHash, it.totalAmount, payToOpenAmount, payToOpenMinAmount))
                             }
                             pending.remove(paymentPart.paymentHash)
                             return ProcessAddResult.Rejected(actions, incomingPayment)

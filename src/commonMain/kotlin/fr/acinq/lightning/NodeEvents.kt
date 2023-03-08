@@ -24,8 +24,12 @@ sealed interface ChannelEvents : NodeEvents {
 }
 
 sealed interface PayToOpenEvents : NodeEvents {
-    abstract val request: PayToOpenRequest
+    val paymentHash: ByteVector32
+    /** Total incoming amount, incoming htlcs parts. */
+    val totalAmount: MilliSatoshi
+    /** Total amount for pay-to-open parts. */
+    val payToOpenAmount: MilliSatoshi
     sealed class Rejected: PayToOpenEvents {
-        data class BelowMin(override val request: PayToOpenRequest): Rejected()
+        data class BelowMin(override val paymentHash: ByteVector32, override val totalAmount: MilliSatoshi, override val payToOpenAmount: MilliSatoshi, val payToOpenMinAmount: MilliSatoshi): Rejected()
     }
 }
