@@ -33,8 +33,12 @@ data class Normal(
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
-            is ChannelCommand.ExecuteCommand -> {
-                when (cmd.command) {
+            is ChannelCommand.ExecuteCommand -> when {
+                cmd.command is Command.ForbiddenDuringSplice && spliceStatus !is SpliceStatus.None -> {
+                    val error = ForbiddenDuringSplice(channelId, cmd.command)
+                    return handleCommandError(cmd.command, error, channelUpdate)
+                }
+                else -> when (cmd.command) {
                     is CMD_ADD_HTLC -> {
                         if (localShutdown != null || remoteShutdown != null) {
                             // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)

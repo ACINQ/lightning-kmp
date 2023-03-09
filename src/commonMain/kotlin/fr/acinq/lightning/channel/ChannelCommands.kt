@@ -17,6 +17,7 @@ import fr.acinq.lightning.wire.OnionRoutingPacket
 import kotlinx.coroutines.CompletableDeferred
 
 sealed class Command {
+    sealed interface ForbiddenDuringSplice
 
     sealed class Splice {
         data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val feerate: FeeratePerKw, val origins: List<ChannelOrigin.PayToOpenOrigin> = emptyList()) : Command() {
@@ -57,9 +58,9 @@ sealed class Command {
     }
 }
 
-data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val paymentId: UUID, val commit: Boolean = false) : Command()
+data class CMD_ADD_HTLC(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val paymentId: UUID, val commit: Boolean = false) : Command(), Command.ForbiddenDuringSplice
 
-sealed class HtlcSettlementCommand : Command() {
+sealed class HtlcSettlementCommand : Command(), Command.ForbiddenDuringSplice {
     abstract val id: Long
 }
 
@@ -72,8 +73,8 @@ data class CMD_FAIL_HTLC(override val id: Long, val reason: Reason, val commit: 
     }
 }
 
-object CMD_SIGN : Command()
-data class CMD_UPDATE_FEE(val feerate: FeeratePerKw, val commit: Boolean = false) : Command()
+object CMD_SIGN : Command(), Command.ForbiddenDuringSplice
+data class CMD_UPDATE_FEE(val feerate: FeeratePerKw, val commit: Boolean = false) : Command(), Command.ForbiddenDuringSplice
 
 // We only support a very limited fee bumping mechanism where all spendable utxos will be used (only used in tests).
 data class CMD_BUMP_FUNDING_FEE(val targetFeerate: FeeratePerKw, val fundingAmount: Satoshi, val wallet: WalletState, val lockTime: Long) : Command()
