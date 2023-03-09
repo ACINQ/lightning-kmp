@@ -14,6 +14,7 @@ class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, IncomingPayment>()
     private val outgoing = mutableMapOf<UUID, LightningOutgoingPayment>()
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
+    override suspend fun setConfirmed(txId: ByteVector32) {}
 
     override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long) {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
@@ -29,7 +30,9 @@ class InMemoryPaymentsDb : PaymentsDb {
             else -> incoming[paymentHash] = run {
                 payment.copy(received = IncomingPayment.Received(
                     receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
-                    receivedAt = receivedAt))
+                    receivedAt = receivedAt
+                )
+                )
             }
         }
     }
@@ -37,22 +40,6 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: Set<IncomingPayment.ReceivedWith>, createdAt: Long, receivedAt: Long) {
         val paymentHash = preimage.sha256()
         incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Received(receivedWith, receivedAt), createdAt)
-    }
-
-    override suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32) {
-        val payment = incoming[paymentHash]
-        when (payment?.received?.receivedWith) {
-            null -> Unit // no-op
-            else -> incoming[paymentHash] = run {
-                val receivedWith = payment.received.receivedWith.map {
-                    when (it) {
-                        is IncomingPayment.ReceivedWith.NewChannel -> it.copy(channelId = channelId)
-                        else -> it
-                    }
-                }.toSet()
-                payment.copy(received = payment.received.copy(receivedWith = receivedWith))
-            }
-        }
     }
 
     fun listIncomingPayments(count: Int, skip: Int): List<IncomingPayment> =
@@ -88,7 +75,7 @@ class InMemoryPaymentsDb : PaymentsDb {
                 outgoing[outgoingPayment.id] = outgoingPayment.copy(parts = listOf())
                 outgoingPayment.parts.forEach { outgoingParts[it.id] = Pair(outgoingPayment.id, it) }
             }
-            //else -> TODO("not implemented")
+            else -> TODO("not implemented")
         }
     }
 

@@ -12,6 +12,9 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.LoggingContext
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.ClosingSigned
 
 /**
@@ -391,8 +394,13 @@ object ChannelFlags {
 
 data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: ClosingSigned)
 
-/** This gives the reason for creating a new channel. */
+/** Reason for creating a new channel or a splice. */
+// @formatter:off
 sealed class Origin {
-    data class PayToOpenOrigin(val paymentHash: ByteVector32, val fee: Satoshi) : Origin()
-    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, val serviceFee: MilliSatoshi, val fundingFee: Satoshi) : Origin()
+    abstract val amount: MilliSatoshi
+    abstract val serviceFee: MilliSatoshi
+    abstract val miningFee: Satoshi
+    data class PayToOpenOrigin(val paymentHash: ByteVector32, override val serviceFee: MilliSatoshi, override val miningFee: Satoshi, override val amount: MilliSatoshi) : Origin()
+    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, override val serviceFee: MilliSatoshi, override val miningFee: Satoshi, override val amount: MilliSatoshi) : Origin()
 }
+// @formatter:on

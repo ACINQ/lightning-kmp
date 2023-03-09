@@ -9,7 +9,28 @@ import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.FailureMessage
 
-interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb
+interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
+    /**
+     * On-chain-related payments are not instant, but needs to be displayed as soon as possible to the user
+     * for UX purposes. They affect the balance differently whether they are incoming or outgoing.
+     *
+     * For example, if a user initiates a swap-in, they will expect to see an incoming payment immediately in
+     * their payment history, even if the amount isn't included in the balance and the funds are not spendable right
+     * away. Conversely, after a swap-out, the balance is immediately decreased even if the transaction is not confirmed.
+     *
+     * Note that this is all related to transaction confirmations on the blockchain, but involves a bit more than
+     * that, because both sides of the channel need to agree, and they may also agree to not require any confirmation.
+     *
+     * Incoming payments (channel creation or splice-in) are considered confirmed when the corresponding funds are added
+     * to the balance and can be spent. Before that, they should appear as "pending" to the user.
+     *
+     * Outgoing payments (splice-out or channel close) are considered confirmed when the corresponding funding transaction
+     * is confirmed on the blockchain. Before that, they should appear as "final" to the user, but with some indication that
+     * the transaction is not yet confirmed. In the case of a force-close, the outgoing payment will only be considered confirmed
+     * when the channel is closed, meaning that all related transactions have been confirmed.
+     */
+    suspend fun setConfirmed(txId: ByteVector32)
+}
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
@@ -32,10 +53,6 @@ interface IncomingPaymentsDb {
 
     /** Simultaneously add and receive a payment. Use this method when receiving a spontaneous payment, for example a swap-in payment. */
     suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: Set<IncomingPayment.ReceivedWith>, createdAt: Long = currentTimestampMillis(), receivedAt: Long = currentTimestampMillis())
-
-    /** Update the channel id of the payments parts that have been received with a new channel, for a given payment hash. If there is no payments for this payment hash,
-     * or if the payment has not received any payment parts yet, then this method is a no-op. */
-    suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32)
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
@@ -105,16 +122,16 @@ sealed class WalletPayment {
  * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
  */
 data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, override val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
-    constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, null, currentTimestampMillis())
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
 
-    /** Returns the receivedAt timestamp if available. If any NewChannels parts have NOT yet confirmed, always returns null. */
-    override val completedAt: Long? = if (received?.receivedWith?.filterIsInstance<ReceivedWith.NewChannel>()?.any { !it.confirmed } == true) {
-        null
-    } else {
-        received?.receivedAt
-    }
+    /** Returns the confirmed reception timestamp. If any on-chain parts have NOT yet confirmed, returns null. */
+    override val completedAt: Long?
+        get() = when {
+            received == null -> null // payment has not yet been received
+            received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment && it.confirmedAt == null } -> null // payment has been received, but there is at least one unconfirmed on-chain part
+            else -> received.receivedAt
+        }
 
     /** Total fees paid to receive this payment. */
     override val fees: MilliSatoshi = received?.fees ?: 0.msat
@@ -132,8 +149,8 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         /** DEPRECATED: this is the legacy trusted swap-in, which we keep for backwards-compatibility (previous payments inside the DB). */
         data class SwapIn(val address: String?) : Origin()
 
-        /** Trust-less swap-in based on dual funding. */
-        data class DualSwapIn(val localInputs: Set<OutPoint>) : Origin()
+        /** Trustless swap-in (dual-funding or splice-in) */
+        data class OnChain(val txid: ByteVector32, val localInputs: Set<OutPoint>) : Origin()
     }
 
     data class Received(val receivedWith: Set<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
@@ -156,28 +173,41 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
         }
 
+        sealed class OnChainIncomingPayment : ReceivedWith() {
+            abstract val serviceFee: MilliSatoshi
+            abstract val miningFee: Satoshi
+            override val fees: MilliSatoshi
+                get() = serviceFee + miningFee.toMilliSatoshi()
+            abstract val channelId: ByteVector32
+            abstract val txId: ByteVector32
+            abstract val confirmedAt: Long?
+        }
+
         /**
          * Payment was received via a new channel opened to us.
          *
-         * @param id identifies each parts that contributed to creating a new channel. A single channel may be created by several payment parts.
          * @param amount Our side of the balance of this channel when it's created. This is the amount pushed to us once the creation fees are applied.
          * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
-         * @param fundingFee Feed paid to bitcoin miners for processing the L1 transaction.
+         * @param miningFee Feed paid to bitcoin miners for processing the L1 transaction.
          * @param channelId The long id of the channel created to receive this payment. May be null if the channel id is not known.
-         * @param confirmed The newly created channel will not be immediately usable, its funding tx must first reach a certain number of confirmations
-         *                  in the blockchain. This boolean is provided here as a convenience in case the implementor chooses to use this class directly,
-         *                  but it is up to the implementor to listen to the correct channel event and update it when the channel is confirmed.
          */
         data class NewChannel(
-            val id: UUID,
             override val amount: MilliSatoshi,
-            val serviceFee: MilliSatoshi,
-            val fundingFee: Satoshi = 0.sat,
-            val channelId: ByteVector32?,
-            val confirmed: Boolean = false
-        ) : ReceivedWith() {
-            override val fees: MilliSatoshi = serviceFee + fundingFee.toMilliSatoshi()
-        }
+            override val serviceFee: MilliSatoshi,
+            override val miningFee: Satoshi,
+            override val channelId: ByteVector32,
+            override val txId: ByteVector32,
+            override val confirmedAt: Long?
+        ) : OnChainIncomingPayment()
+
+        data class SpliceIn(
+            override val amount: MilliSatoshi,
+            override val serviceFee: MilliSatoshi,
+            override val miningFee: Satoshi,
+            override val channelId: ByteVector32,
+            override val txId: ByteVector32,
+            override val confirmedAt: Long?
+        ) : OnChainIncomingPayment()
     }
 
     /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. [Origin.KeySend] or [Origin.SwapIn] do not expire. */
@@ -363,6 +393,20 @@ data class LightningOutgoingPayment(
         val closingType: ChannelClosingType,
         override val createdAt: Long,
     ) : Part()
+}
+
+data class SpliceOutgoingPayment(
+    override val id: UUID,
+    val amountSatoshi: Satoshi,
+    val address: String,
+    val miningFees: Satoshi,
+    val txId: ByteVector32,
+    override val createdAt: Long,
+    val confirmedAt: Long? = null
+) : OutgoingPayment() {
+    override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val completedAt: Long? = confirmedAt
 }
 
 enum class ChannelClosingType {

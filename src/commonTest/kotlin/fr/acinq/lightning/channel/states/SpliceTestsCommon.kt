@@ -183,6 +183,21 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `remote splice_locked applies to previous splices`() {
+        val (alice, bob) = reachNormal(zeroConf = true)
+        val (alice1, bob1) = spliceOut(alice, bob, 60_000.sat)
+        val spliceTx1 = alice1.commitments.latest.localFundingStatus.signedTx!!
+        val (alice2, _) = spliceOut(alice1, bob1, 60_000.sat)
+        val spliceTx2 = alice2.commitments.latest.localFundingStatus.signedTx!!
+
+        val (_, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx2.hash)))
+        assertEquals(3, actionsAlice3.size)
+        actionsAlice3.has<ChannelAction.Storage.StoreState>()
+        assertContains(actionsAlice3,ChannelAction.Storage.SetConfirmed(spliceTx1.txid))
+        assertContains(actionsAlice3,ChannelAction.Storage.SetConfirmed(spliceTx2.txid))
+    }
+
+    @Test
     fun `use channel before splice_locked -- zero-conf`() {
         val (alice, bob) = reachNormal(zeroConf = true)
         val (alice1, bob1) = spliceOut(alice, bob, 50_000.sat)
@@ -482,16 +497,20 @@ class SpliceTestsCommon : LightningTestSuite() {
         val spliceLockedAlice = actionsAlice4.hasOutgoingMessage<SpliceLocked>()
         assertEquals(spliceLockedAlice.fundingTxId, spliceLockedBob.fundingTxId)
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(spliceLockedBob))
-        assertEquals(actionsAlice5.size, 1)
+        assertEquals(actionsAlice5.size, 3)
         assertEquals(alice5.commitments.active.size, 1)
         assertEquals(alice5.commitments.latest.fundingTxId, spliceLockedBob.fundingTxId)
         actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        assertContains(actionsAlice5, ChannelAction.Storage.SetConfirmed(alice1.commitments.latest.fundingTxId))
+        assertContains(actionsAlice5, ChannelAction.Storage.SetConfirmed(alice2.commitments.latest.fundingTxId))
 
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(spliceLockedAlice))
-        assertEquals(actionsBob5.size, 1)
+        assertEquals(actionsBob5.size, 3)
         assertEquals(bob5.commitments.active.size, 1)
         assertEquals(bob5.commitments.latest.fundingTxId, spliceLockedAlice.fundingTxId)
         actionsBob5.has<ChannelAction.Storage.StoreState>()
+        assertContains(actionsBob5, ChannelAction.Storage.SetConfirmed(bob1.commitments.latest.fundingTxId))
+        assertContains(actionsBob5, ChannelAction.Storage.SetConfirmed(bob2.commitments.latest.fundingTxId))
     }
 
     @Test
@@ -539,14 +558,16 @@ class SpliceTestsCommon : LightningTestSuite() {
         val spliceLockedAlice = actionsAlice5.hasOutgoingMessage<SpliceLocked>()
         assertEquals(spliceLockedAlice.fundingTxId, spliceTx2.txid)
         val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(spliceLockedBob))
-        assertEquals(actionsAlice6.size, 1)
+        assertEquals(actionsAlice6.size, 2)
         assertEquals(alice6.commitments.active.map { it.fundingTxId }, listOf(spliceTx2.txid, spliceTx1.txid))
         actionsAlice6.has<ChannelAction.Storage.StoreState>()
+        actionsAlice6.contains(ChannelAction.Storage.SetConfirmed(spliceTx1.txid))
 
         val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(spliceLockedAlice))
-        assertEquals(actionsBob6.size, 1)
+        assertEquals(actionsBob6.size, 2)
         assertEquals(bob6.commitments.active.map { it.fundingTxId }, listOf(spliceTx2.txid, spliceTx1.txid))
         actionsBob6.has<ChannelAction.Storage.StoreState>()
+        actionsBob6.contains(ChannelAction.Storage.SetConfirmed(spliceTx1.txid))
     }
 
     @Test

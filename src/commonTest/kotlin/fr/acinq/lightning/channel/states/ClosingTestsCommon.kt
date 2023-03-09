@@ -136,21 +136,22 @@ class ClosingTestsCommon : LightningTestSuite() {
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         run {
             val (aliceClosing, _) = localClose(alice)
-            val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, fundingTx)))
-            assertEquals(alice1.commitments.active.size, 1)
-            assertIs<LocalFundingStatus.ConfirmedFundingTx>(alice1.commitments.latest.localFundingStatus)
-            assertEquals(actions1.size, 2)
-            actions1.has<ChannelAction.Storage.StoreState>()
-            assertEquals(actions1.findWatch<WatchSpent>().txId, fundingTx.txid)
+            val (_, _) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, fundingTx)))
+                .also { (state, actions) ->
+                    assertEquals(1, state.commitments.active.size)
+                    actions.has<ChannelAction.Storage.StoreState>()
+                    actions.hasWatchFundingSpent(fundingTx.txid)
+                }
         }
         run {
             val (bobClosing, _) = localClose(bob)
-            val (bob1, actions1) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, fundingTx)))
-            assertEquals(bob1.commitments.active.size, 1)
-            assertIs<LocalFundingStatus.ConfirmedFundingTx>(bob1.commitments.latest.localFundingStatus)
-            assertEquals(actions1.size, 2)
-            actions1.has<ChannelAction.Storage.StoreState>()
-            assertEquals(actions1.findWatch<WatchSpent>().txId, fundingTx.txid)
+            val (_, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, fundingTx)))
+                .also { (state, actions) ->
+                    assertEquals(1, state.commitments.active.size)
+                    assertIs<LocalFundingStatus.ConfirmedFundingTx>(state.commitments.latest.localFundingStatus)
+                    actions.has<ChannelAction.Storage.StoreState>()
+                    assertEquals(actions.findWatch<WatchSpent>().txId, fundingTx.txid)
+                }
         }
     }
 
@@ -161,33 +162,37 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertNotEquals(previousFundingTx.txid, fundingTx.txid)
         run {
             val (aliceClosing, localCommitPublished) = localClose(alice1)
-            assertEquals(aliceClosing.commitments.latest.fundingTxId, fundingTx.txid)
-            assertEquals(aliceClosing.commitments.active.size, 2)
-            val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, previousFundingTx)))
-            assertIs<LNChannel<Closing>>(alice2)
-            assertEquals(alice2.commitments.latest.fundingTxId, previousFundingTx.txid)
-            assertEquals(alice2.commitments.active.size, 1)
-            actions2.has<ChannelAction.Storage.StoreState>()
-            assertEquals(actions2.findWatch<WatchSpent>().txId, previousFundingTx.txid)
-            assertEquals(actions2.findPublishTxs().size, 2) // commit tx and claim main
-            val localCommitPublished2 = alice2.state.localCommitPublished
-            assertNotNull(localCommitPublished2)
-            assertNotEquals(localCommitPublished.commitTx.txid, localCommitPublished2.commitTx.txid)
+            assertEquals(fundingTx.txid, aliceClosing.commitments.latest.fundingTxId)
+            assertEquals(2, aliceClosing.commitments.active.size)
+            val (_, _) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, previousFundingTx)))
+                .also { (state, actions) ->
+                    assertIs<LNChannel<Closing>>(state)
+                    assertEquals(previousFundingTx.txid, state.commitments.latest.fundingTxId)
+                    assertEquals(1, state.commitments.active.size) // the other funding tx has been pruned
+                    actions.has<ChannelAction.Storage.StoreState>()
+                    actions.hasWatchFundingSpent(previousFundingTx.txid)
+                    assertEquals(actions.findPublishTxs().size, 2) // commit tx and claim main
+                    val localCommitPublished2 = state.state.localCommitPublished
+                    assertNotNull(localCommitPublished2)
+                    assertNotEquals(localCommitPublished.commitTx.txid, localCommitPublished2.commitTx.txid)
+                }
         }
         run {
             val (bobClosing, localCommitPublished) = localClose(bob1)
-            assertEquals(bobClosing.commitments.latest.fundingTxId, fundingTx.txid)
-            assertEquals(bobClosing.commitments.active.size, 2)
-            val (bob2, actions2) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, previousFundingTx)))
-            assertIs<LNChannel<Closing>>(bob2)
-            assertEquals(bob2.commitments.latest.fundingTxId, previousFundingTx.txid)
-            assertEquals(bob2.commitments.active.size, 1)
-            actions2.has<ChannelAction.Storage.StoreState>()
-            assertEquals(actions2.findWatch<WatchSpent>().txId, previousFundingTx.txid)
-            assertEquals(actions2.findPublishTxs().size, 2) // commit tx and claim main
-            val localCommitPublished2 = bob2.state.localCommitPublished
-            assertNotNull(localCommitPublished2)
-            assertNotEquals(localCommitPublished.commitTx.txid, localCommitPublished2.commitTx.txid)
+            assertEquals(fundingTx.txid, bobClosing.commitments.latest.fundingTxId)
+            assertEquals(2, bobClosing.commitments.active.size)
+            val (_, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, previousFundingTx)))
+                .also { (state, actions) ->
+                    assertIs<LNChannel<Closing>>(state)
+                    assertEquals(state.commitments.latest.fundingTxId, previousFundingTx.txid)
+                    assertEquals(state.commitments.active.size, 1)
+                    actions.has<ChannelAction.Storage.StoreState>()
+                    actions.hasWatchFundingSpent(previousFundingTx.txid)
+                    assertEquals(actions.findPublishTxs().size, 2) // commit tx and claim main
+                    val localCommitPublished2 = state.state.localCommitPublished
+                    assertNotNull(localCommitPublished2)
+                    assertNotEquals(localCommitPublished.commitTx.txid, localCommitPublished2.commitTx.txid)
+                }
         }
     }
 

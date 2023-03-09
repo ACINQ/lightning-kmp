@@ -13,7 +13,7 @@ sealed interface NodeEvents
 
 sealed interface SwapInEvents : NodeEvents {
     data class Requested(val req: PleaseOpenChannel) : SwapInEvents
-    data class Accepted(val requestId: ByteVector32, val serviceFee: MilliSatoshi, val fundingFee: Satoshi) : SwapInEvents
+    data class Accepted(val requestId: ByteVector32, val serviceFee: MilliSatoshi, val miningFee: Satoshi) : SwapInEvents
     data class Rejected(val requestId: ByteVector32, val failure: PleaseOpenChannelFailure, val requiredFees: MilliSatoshi?) : SwapInEvents
 }
 

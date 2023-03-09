@@ -9,10 +9,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.noise.*
-import fr.acinq.lightning.db.Databases
-import fr.acinq.lightning.db.IncomingPayment
-import fr.acinq.lightning.db.LightningOutgoingPayment
-import fr.acinq.lightning.db.OutgoingPayment
+import fr.acinq.lightning.db.*
 import fr.acinq.lightning.payment.IncomingPaymentHandler
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.payment.OutgoingPaymentHandler
@@ -74,7 +71,7 @@ data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val reque
 data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerEvent()
-data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerEvent()
+data class PaymentSent(val request: SendPayment, val payment: LightningOutgoingPayment) : PeerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 /**
@@ -503,9 +500,28 @@ class Peer(
                         action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                     }
 
-                    action is ChannelAction.Storage.StoreIncomingAmount -> {
-                        logger.info { "storing incoming amount=${action.amount} with origin=${action.origin}" }
+                    action is ChannelAction.Storage.StoreIncomingPayment -> {
+                        logger.info { "storing incoming payment $action" }
                         incomingPaymentHandler.process(actualChannelId, action)
+                    }
+
+                    action is ChannelAction.Storage.StoreOutgoingPayment -> {
+                        logger.info { "storing outgoing amount=${action.amount} address=${action.address}" }
+                        db.payments.addOutgoingPayment(
+                            SpliceOutgoingPayment(
+                                id = UUID.randomUUID(),
+                                amountSatoshi = action.amount,
+                                address = action.address,
+                                miningFees = action.miningFees,
+                                txId = action.txId,
+                                createdAt = currentTimestampMillis()
+                            )
+                        )
+                    }
+
+                    action is ChannelAction.Storage.SetConfirmed -> {
+                        logger.info { "setting status confirmed for txid=${action.txId}" }
+                        db.payments.setConfirmed(action.txId)
                     }
 
                     action is ChannelAction.Storage.GetHtlcInfos -> {
@@ -696,16 +712,19 @@ class Peer(
                                 is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
                                         // Let's verify that the fee is indeed below our max (a honest LSP would not even try)
-                                        val totalFee = origin.serviceFee.truncateToSatoshi() + origin.fundingFee
+                                        val totalFee = origin.serviceFee.truncateToSatoshi() + origin.miningFee
                                         if (totalFee > request.maxFee) {
                                             logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: fee is too high (max=${request.maxFee} actual=${totalFee})" }
                                             sendToPeer(Error(msg.temporaryChannelId, "channel opening fee too high"))
                                             return@withMDC
                                         }
+                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
-                                        val fundingAmount = request.wallet.confirmedBalance - origin.fundingFee
-                                        nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, fundingFee = origin.fundingFee))
-                                        Triple(request.wallet, fundingAmount, origin.serviceFee)
+                                        val fundingAmount = request.wallet.confirmedBalance - fundingFee
+                                        // We pay the other fees by pushing the corresponding amount
+                                        val pushAmount = origin.serviceFee + origin.miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi()
+                                        nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, miningFee = origin.miningFee))
+                                        Triple(request.wallet, fundingAmount, pushAmount)
                                     }
 
                                     else -> {

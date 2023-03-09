@@ -8,10 +8,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.lightning.utils.toByteVector32
+import fr.acinq.lightning.utils.*
 
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
@@ -73,14 +70,17 @@ sealed class ChannelTlv : Tlv {
                 is Origin.PayToOpenOrigin -> {
                     LightningCodecs.writeU16(1, out)
                     LightningCodecs.writeBytes(origin.paymentHash, out)
-                    LightningCodecs.writeU64(origin.fee.toLong(), out)
+                    LightningCodecs.writeU64(origin.miningFee.toLong(), out)
+                    LightningCodecs.writeU64(origin.serviceFee.toLong(), out)
+                    LightningCodecs.writeU64(origin.amount.toLong(), out)
                 }
 
                 is Origin.PleaseOpenChannelOrigin -> {
                     LightningCodecs.writeU16(4, out)
                     LightningCodecs.writeBytes(origin.requestId, out)
+                    LightningCodecs.writeU64(origin.miningFee.toLong(), out)
                     LightningCodecs.writeU64(origin.serviceFee.toLong(), out)
-                    LightningCodecs.writeU64(origin.fundingFee.toLong(), out)
+                    LightningCodecs.writeU64(origin.amount.toLong(), out)
                 }
             }
         }
@@ -92,16 +92,19 @@ sealed class ChannelTlv : Tlv {
                 val origin = when (LightningCodecs.u16(input)) {
                     1 -> Origin.PayToOpenOrigin(
                         paymentHash = LightningCodecs.bytes(input, 32).byteVector32(),
-                        fee = LightningCodecs.u64(input).sat,
+                        miningFee = LightningCodecs.u64(input).sat,
+                        serviceFee = LightningCodecs.u64(input).msat,
+                        amount = LightningCodecs.u64(input).msat
                     )
 
                     4 -> Origin.PleaseOpenChannelOrigin(
                         requestId = LightningCodecs.bytes(input, 32).byteVector32(),
+                        miningFee = LightningCodecs.u64(input).sat,
                         serviceFee = LightningCodecs.u64(input).msat,
-                        fundingFee = LightningCodecs.u64(input).sat,
+                        amount = LightningCodecs.u64(input).msat
                     )
 
-                    else -> TODO("Unsupported channel origin discriminator")
+                    else -> error("Unsupported channel origin discriminator")
                 }
                 return OriginTlv(origin)
             }

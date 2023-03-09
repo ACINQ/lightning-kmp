@@ -314,12 +314,15 @@ object Deserialization {
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
         0x01 -> Origin.PayToOpenOrigin(
             paymentHash = readByteVector32(),
-            fee = readNumber().sat,
+            serviceFee = readNumber().msat,
+            miningFee = readNumber().sat,
+            amount = readNumber().msat,
         )
         0x02 -> Origin.PleaseOpenChannelOrigin(
             requestId = readByteVector32(),
             serviceFee = readNumber().msat,
-            fundingFee = readNumber().sat,
+            miningFee = readNumber().sat,
+            amount = readNumber().msat,
         )
         else -> error("unknown discriminator $discriminator for class ${Origin::class}")
     }
