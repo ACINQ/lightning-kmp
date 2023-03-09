@@ -371,12 +371,14 @@ object Serialization {
             write(0x01)
             writeByteVector32(o.paymentHash)
             writeNumber(o.fee.toLong())
+            writeNumber(o.amount.toLong())
         }
         is Origin.PleaseOpenChannelOrigin -> {
             write(0x02)
             writeByteVector32(o.requestId)
             writeNumber(o.serviceFee.toLong())
-            writeNumber(o.fundingFee.toLong())
+            writeNumber(o.miningFee.toLong())
+            writeNumber(o.amount.toLong())
         }
     }
 

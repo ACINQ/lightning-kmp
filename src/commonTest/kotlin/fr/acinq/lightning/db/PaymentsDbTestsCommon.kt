@@ -69,7 +69,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
             pr.paymentHash, setOf(
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 57_000.msat, channelId = channelId1, htlcId = 1L),
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 43_000.msat, channelId = channelId2, htlcId = 54L),
-                IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, serviceFee = 1_000.msat, id = UUID.randomUUID())
+                IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, serviceFee = 1_000.msat, miningFee = 0.sat, id = UUID.randomUUID(), txId = randomBytes32(), status = PaymentsDb.ConfirmationStatus.NOT_LOCKED)
             ), 110
         )
         val received = db.getIncomingPayment(pr.paymentHash)
@@ -144,7 +144,10 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
                     id = UUID.randomUUID(),
                     amount = 500_000.msat,
                     serviceFee = 15_000.msat,
-                    channelId = randomBytes32()
+                    miningFee = 0.sat,
+                    channelId = randomBytes32(),
+                    txId = randomBytes32(),
+                    status = PaymentsDb.ConfirmationStatus.NOT_LOCKED
                 )
             ), 110
         )
@@ -159,8 +162,8 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val db = InMemoryPaymentsDb()
         val preimage = randomBytes32()
         val channelId = randomBytes32()
-        val origin = IncomingPayment.Origin.DualSwapIn(setOf(OutPoint(randomBytes32(), 3)))
-        val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, serviceFee = 1_234.msat, channelId = channelId, id = UUID.randomUUID()))
+        val origin = IncomingPayment.Origin.OnChain(randomBytes32(), setOf(OutPoint(randomBytes32(), 3)))
+        val receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, serviceFee = 1_234.msat, miningFee = 0.sat, channelId = channelId, id = UUID.randomUUID(), txId = randomBytes32(), status = PaymentsDb.ConfirmationStatus.NOT_LOCKED))
         assertNull(db.getIncomingPayment(randomBytes32()))
 
         db.addAndReceivePayment(preimage = preimage, origin = origin, receivedWith = receivedWith)
@@ -486,7 +489,17 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
 
         private fun createExpiredInvoice(preimage: ByteVector32 = randomBytes32()): PaymentRequest {
             val now = currentTimestampSeconds()
-            return PaymentRequest.create(Block.LivenetGenesisBlock.hash, 150_000.msat, Crypto.sha256(preimage).toByteVector32(), randomKey(), Either.Left("invoice"), CltvExpiryDelta(16), defaultFeatures, expirySeconds = 60, timestampSeconds = now - 120)
+            return PaymentRequest.create(
+                Block.LivenetGenesisBlock.hash,
+                150_000.msat,
+                Crypto.sha256(preimage).toByteVector32(),
+                randomKey(),
+                Either.Left("invoice"),
+                CltvExpiryDelta(16),
+                defaultFeatures,
+                expirySeconds = 60,
+                timestampSeconds = now - 120
+            )
         }
     }
 

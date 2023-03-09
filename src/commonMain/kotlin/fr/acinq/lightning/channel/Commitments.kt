@@ -470,6 +470,15 @@ data class Commitment(
         val localCommit1 = LocalCommit(localCommit.index + 1, spec, PublishableTxs(signedCommitTx, htlcTxsAndSigs))
         return Either.Right(copy(localCommit = localCommit1))
     }
+
+    /**
+     * Indicates whether that commitment is locked by both sides.
+     * NB: This is an approximation, it doesn't handle corner cases where there are multiple splices pending and we receive local watch_confirmed or remote
+     * splice_locked in the wrong order. In this scenario, if splice n+1 is locked then splice n is also locked.
+     */
+    fun ChannelContext.isLocked(): Boolean {
+        return (staticParams.useZeroConf || localFundingStatus is LocalFundingStatus.ConfirmedFundingTx) && remoteFundingStatus is RemoteFundingStatus.Locked
+    }
 }
 
 /** Subset of Commitments when we want to work with a single, specific commitment. */

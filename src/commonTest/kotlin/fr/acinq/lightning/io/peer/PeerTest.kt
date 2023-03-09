@@ -15,7 +15,6 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.db.LightningOutgoingPayment
-import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.router.Announcements
@@ -226,23 +225,24 @@ class PeerTest : LightningTestSuite() {
         val request = bob2alice.expect<PleaseOpenChannel>()
         assertEquals(request.localFundingAmount, 260_000.sat)
 
-        val fundingFee = 100.sat
-        val serviceFee = (internalRequestBob.maxFee - fundingFee - 1.sat).toMilliSatoshi()
+        val miningFee = 500.sat
+        val serviceFee = (internalRequestBob.maxFee - miningFee - 1.sat).toMilliSatoshi()
         // total fee is below max acceptable
-        assertTrue(fundingFee + serviceFee.truncateToSatoshi() < internalRequestBob.maxFee)
+        assertTrue(miningFee + serviceFee.truncateToSatoshi() < internalRequestBob.maxFee)
         val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
         val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         alice.send(openAlice)
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
+                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, miningFee, openAlice.pushAmount))
             )
         )
         bob.forward(open)
         val accept = bob2alice.expect<AcceptDualFundedChannel>()
         assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
-        assertEquals(accept.pushAmount, serviceFee)
+        val fundingFee = walletBob.confirmedBalance - accept.fundingAmount
+        assertEquals(accept.pushAmount, serviceFee + miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi())
         alice.forward(accept)
 
         val txAddInputAlice = alice2bob.expect<TxAddInput>()
@@ -264,12 +264,12 @@ class PeerTest : LightningTestSuite() {
         val txSigsBob = bob2alice.expect<TxSignatures>()
         alice.forward(txSigsBob)
         val (_, aliceState) = alice.expectState<WaitForFundingConfirmed>()
-        assertEquals(aliceState.commitments.latest.localCommit.spec.toLocal, openAlice.fundingAmount.toMilliSatoshi() + serviceFee)
+        assertEquals(aliceState.commitments.latest.localCommit.spec.toLocal, openAlice.fundingAmount.toMilliSatoshi() + serviceFee + miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi())
         val (_, bobState) = bob.expectState<WaitForFundingConfirmed>()
         // Bob has to deduce from its balance:
         //  - the fees for the channel open (10 000 sat)
         //  - the miner fees for his input(s) in the funding transaction
-        assertEquals(bobState.commitments.latest.localCommit.spec.toLocal, walletBob.confirmedBalance.toMilliSatoshi() - serviceFee - fundingFee.toMilliSatoshi())
+        assertEquals(bobState.commitments.latest.localCommit.spec.toLocal, walletBob.confirmedBalance.toMilliSatoshi() - serviceFee - miningFee.toMilliSatoshi())
     }
 
     @Test
@@ -293,7 +293,7 @@ class PeerTest : LightningTestSuite() {
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
+                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee, openAlice.pushAmount))
             )
         )
         bob.forward(open)
@@ -313,7 +313,7 @@ class PeerTest : LightningTestSuite() {
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat))
+                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat, openAlice.pushAmount))
             )
         )
         bob.forward(open)

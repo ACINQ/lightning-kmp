@@ -26,6 +26,7 @@ import fr.acinq.lightning.wire.*
 
 /** Channel Events (inputs to be fed to the state machine). */
 sealed class ChannelCommand {
+    // @formatter:off
     data class InitInitiator(
         val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
@@ -60,11 +61,12 @@ sealed class ChannelCommand {
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelCommand()
     object Disconnected : ChannelCommand()
     data class Connected(val localInit: Init, val remoteInit: Init) : ChannelCommand()
+    // @formatter:on
 }
 
 /** Channel Actions (outputs produced by the state machine). */
 sealed class ChannelAction {
-
+    // @formatter:off
     data class ProcessLocalError(val error: Throwable, val trigger: ChannelCommand) : ChannelAction()
 
     sealed class Message : ChannelAction() {
@@ -125,7 +127,21 @@ sealed class ChannelAction {
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
-        data class StoreIncomingAmount(val amount: MilliSatoshi, val localInputs: Set<OutPoint>, val origin: Origin?) : Storage()
+        /** Payment received through on-chain operations (channel creation or splice-in) */
+        sealed class StoreIncomingPayment : Storage() {
+            data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val localInputs: Set<OutPoint>, val txId: ByteVector32, val origin: Origin?) : StoreIncomingPayment()
+            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val localInputs: Set<OutPoint>, val txId: ByteVector32, val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
+        }
+        /** Payment received through on-chain operations (channel close or splice-out) */
+        sealed class StoreOutgoingPayment : Storage() {
+            abstract val amount: Satoshi
+            abstract val miningFees: Satoshi
+            abstract val address: String
+            abstract val txId: ByteVector32
+            data class ViaSpliceOut(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
+            data class ViaClose(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
+        }
+        data class SetConfirmationStatus(val txId: ByteVector32, val status: ConfirmationStatus) : Storage() { enum class ConfirmationStatus { NOT_LOCKED, LOCKED } }
         data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
         data class StoreChannelClosed(val closingTxs: List<LightningOutgoingPayment.ClosingTxPart>) : Storage()
     }
@@ -166,6 +182,7 @@ sealed class ChannelAction {
     }
 
     data class EmitEvent(val event: ChannelEvents) : ChannelAction()
+    // @formatter:on
 }
 
 /** Channel static parameters. */
@@ -225,19 +242,8 @@ sealed class ChannelState {
             else -> this@ChannelState
         }
         return when {
-            oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) -> {
-                val channelCreated = ChannelAction.EmitEvent(ChannelEvents.Created(newState as ChannelStateWithCommitments))
-                when {
-                    !oldState.channelParams.localParams.isInitiator -> {
-                        val amount = oldState.signingSession.fundingParams.localContribution.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
-                        val localInputs = oldState.signingSession.fundingTx.tx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
-                        listOf(ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin), channelCreated)
-                    }
-                    else -> listOf(channelCreated)
-                }
-            }
             // we only want to fire the PaymentSent event when we transition to Closing for the first time
-            oldState is ChannelStateWithCommitments && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState)
+            oldState is ChannelStateWithCommitments && oldState !is WaitForInit && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState)
             else -> emptyList()
         }
     }
@@ -286,6 +292,7 @@ sealed class ChannelState {
         logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
         return Pair(this@ChannelState, listOf())
     }
+
 
     internal fun ChannelContext.handleCommandError(cmd: Command, error: ChannelException, channelUpdate: ChannelUpdate? = null): Pair<ChannelState, List<ChannelAction>> {
         logger.warning(error) { "processing command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName} failed" }
@@ -388,7 +395,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         return commitments.run {
             updateLocalFundingStatus(w.tx.txid, fundingStatus).map { (commitments1, commitment) ->
                 val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-                Triple(commitments1, commitment, listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+                val actions = buildList {
+                    if (!commitments.all.find { it.fundingTxId == commitment.fundingTxId }!!.run { isLocked() } && commitment.run { isLocked() }) {
+                        add(ChannelAction.Storage.SetConfirmationStatus(commitment.fundingTxId, ChannelAction.Storage.SetConfirmationStatus.ConfirmationStatus.LOCKED))
+                    }
+                    add(ChannelAction.Blockchain.SendWatch(watchSpent))
+                }
+                Triple(commitments1, commitment, actions)
             }
         }
     }
