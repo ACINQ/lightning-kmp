@@ -2,7 +2,6 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
@@ -56,24 +55,6 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<IncomingPayment> =
-        incoming.values
-            .asSequence()
-            .filter { it.received != null && it.origin.matchesFilters(filters) }
-            .sortedByDescending { it.completedAt() }
-            .drop(skip)
-            .take(count)
-            .toList()
-
-    override suspend fun listIncomingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<IncomingPayment> =
-        incoming.values
-            .asSequence()
-            .filter { it.origin.matchesFilters(filters) }
-            .sortedByDescending { it.createdAt }
-            .drop(skip)
-            .take(count)
-            .toList()
-    
     override suspend fun listExpiredPayments(fromCreatedAt: Long, toCreatedAt: Long): List<IncomingPayment> =
         incoming.values
             .asSequence()
@@ -164,23 +145,5 @@ class InMemoryPaymentsDb : PaymentsDb {
             val parts = outgoingParts.values.filter { it.first == payment.id }.map { it.second }
             payment.copy(parts = parts)
         }
-    }
-
-    override suspend fun listOutgoingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<OutgoingPayment> =
-        outgoing.values
-            .asSequence()
-            .filter { it.details.matchesFilters(filters) && (it.status is OutgoingPayment.Status.Completed) }
-            .sortedByDescending { it.completedAt() }
-            .drop(skip)
-            .take(count)
-            .toList()
-
-    override suspend fun listPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter>): List<WalletPayment> {
-        val incoming: List<WalletPayment> = listReceivedPayments(count + skip, 0, filters)
-        val outgoing: List<WalletPayment> = listOutgoingPayments(count + skip, 0, filters)
-        return (incoming + outgoing)
-            .sortedByDescending { it.completedAt() }
-            .drop(skip)
-            .take(count)
     }
 }

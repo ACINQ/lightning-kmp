@@ -9,10 +9,7 @@ import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.FailureMessage
 
-interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
-    /** List sent and received payments (with most recent payments first). */
-    suspend fun listPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<WalletPayment>
-}
+interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
@@ -39,12 +36,6 @@ interface IncomingPaymentsDb {
     /** Update the channel id of the payments parts that have been received with a new channel, for a given payment hash. If there is no payments for this payment hash,
      * or if the payment has not received any payment parts yet, then this method is a no-op. */
     suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32)
-
-    /** List received payments (with most recent payments first). */
-    suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
-
-    /** List incoming payments (with the most recent payments first). */
-    suspend fun listIncomingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
@@ -83,9 +74,6 @@ interface OutgoingPaymentsDb {
 
     /** List all the outgoing payment attempts that tried to pay the given payment hash. */
     suspend fun listOutgoingPayments(paymentHash: ByteVector32): List<OutgoingPayment>
-
-    /** List outgoing payments (with most recent payments first). */
-    suspend fun listOutgoingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<OutgoingPayment>
 }
 
 enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing }
