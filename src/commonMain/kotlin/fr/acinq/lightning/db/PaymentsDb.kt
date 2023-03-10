@@ -80,6 +80,8 @@ enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing 
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
+    abstract val createdAt: Long
+
     /** Absolute time in milliseconds since UNIX epoch when the payment was completed. */
     fun completedAt(): Long = when (this) {
         is IncomingPayment -> {
@@ -121,7 +123,7 @@ sealed class WalletPayment {
  * @param received funds received for this payment, null if no funds have been received yet.
  * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
  */
-data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
+data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, override val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
     constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, null, currentTimestampMillis())
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
@@ -220,7 +222,7 @@ data class OutgoingPayment(
     val details: Details,
     val parts: List<Part>,
     val status: Status,
-    val createdAt: Long = currentTimestampMillis()
+    override val createdAt: Long = currentTimestampMillis()
 ) : WalletPayment() {
 
     /** Create an outgoing payment in a pending status, without any parts yet. */
