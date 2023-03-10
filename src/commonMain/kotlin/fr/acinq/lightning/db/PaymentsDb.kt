@@ -80,28 +80,11 @@ enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing 
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
+    /** Absolute time in milliseconds since UNIX epoch when the payment was created. */
     abstract val createdAt: Long
 
-    /** Absolute time in milliseconds since UNIX epoch when the payment was completed. */
-    fun completedAt(): Long = when (this) {
-        is IncomingPayment -> {
-            when (val received = received) {
-                null -> 0
-                else -> {
-                    if (received.receivedWith.all {
-                        when (it) {
-                            is IncomingPayment.ReceivedWith.NewChannel -> it.confirmed
-                            else -> true
-                        }
-                    }) received.receivedAt else 0
-                }
-            }
-        }
-        is OutgoingPayment -> when (status) {
-            is OutgoingPayment.Status.Completed -> status.completedAt
-            else -> 0
-        }
-    }
+    /** Absolute time in milliseconds since UNIX epoch when the payment was completed. May be null. */
+    abstract val completedAt: Long?
 
     /** Fees applied to complete this payment. */
     abstract val fees: MilliSatoshi
@@ -109,7 +92,7 @@ sealed class WalletPayment {
     /**
      * The actual amount that has been sent or received:
      * - for outgoing payments, the fee is included. This is what left the wallet;
-     * - for incoming payments, the is the amount AFTER the fees are applied. This is what went into the wallet.
+     * - for incoming payments, this is the amount AFTER the fees are applied. This is what went into the wallet.
      */
     abstract val amount: MilliSatoshi
 }
@@ -127,6 +110,13 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, null, currentTimestampMillis())
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
+
+    /** Returns the receivedAt timestamp if available. If any NewChannels parts have NOT yet confirmed, always returns null. */
+    override val completedAt: Long? = if (received?.receivedWith?.filterIsInstance<ReceivedWith.NewChannel>()?.any { !it.confirmed } == true) {
+        null
+    } else {
+        received?.receivedAt
+    }
 
     /** Total fees paid to receive this payment. */
     override val fees: MilliSatoshi = received?.fees ?: 0.msat
@@ -232,6 +222,8 @@ data class OutgoingPayment(
 
     @Suppress("MemberVisibilityCanBePrivate")
     val routingFee = parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+
+    override val completedAt: Long? = (status as? Status.Completed)?.completedAt
 
     /** This is the total fees that have been paid to make the payment work. It includes the LN routing fees, the fee for the swap-out service, the mining fees for closing a channel. */
     override val fees: MilliSatoshi = when (status) {
