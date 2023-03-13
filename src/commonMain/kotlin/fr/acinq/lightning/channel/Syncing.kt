@@ -149,12 +149,25 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                         else -> {
                             // normal case, our data is up-to-date
                             val actions = ArrayList<ChannelAction>()
-                            if (cmd.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommitIndex == 0L) {
+                            if (state.commitments.latest.fundingTxIndex == 0L && cmd.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommitIndex == 0L) {
                                 // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
                                 logger.debug { "re-sending channel_ready" }
                                 val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
                                 val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                                 actions.add(ChannelAction.Message.Send(channelReady))
+                            } else {
+                                // NB: there is a key difference between channel_ready and splice_confirmed:
+                                // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
+                                // - splice_confirmed: the commitment index can be updated as long as it is compatible with all splices, so
+                                //   we must keep sending our most recent splice_confirmed at each reconnection
+                                state.commitments.active
+                                    .filter { it.fundingTxIndex > 0L } // only consider splice txs
+                                    .firstOrNull { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
+                                    ?.let {
+                                        logger.debug { "re-sending SpliceLocked for fundingTxid=${it.fundingTxId}" }
+                                        val spliceLocked = SpliceLocked(channelId, it.fundingTxId)
+                                        actions.add(ChannelAction.Message.Send(spliceLocked))
+                                    }
                             }
 
                             try {
