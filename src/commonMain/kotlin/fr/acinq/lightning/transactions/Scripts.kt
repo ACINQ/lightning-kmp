@@ -2,7 +2,6 @@ package fr.acinq.lightning.transactions
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.ScriptEltMapping.code2elt
-import fr.acinq.bitcoin.ScriptEltMapping.elt2code
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.utils.sat
@@ -42,7 +41,7 @@ object Scripts {
     fun encodeNumber(n: Long): ScriptElt = when (n) {
         0L -> OP_0
         -1L -> OP_1NEGATE
-        in 1..16 -> code2elt.getValue((elt2code.getValue(OP_1) + n - 1).toInt())
+        in 1..16 -> code2elt.getValue(OP_1.code + n.toInt() - 1)
         else -> OP_PUSHDATA(Script.encodeNumber(n))
     }
 
@@ -63,7 +62,7 @@ object Scripts {
      * @return the block height before which this tx cannot be published.
      */
     fun cltvTimeout(tx: Transaction): Long =
-        if (tx.lockTime <= Script.LockTimeThreshold) {
+        if (tx.lockTime <= Script.LOCKTIME_THRESHOLD) {
             // locktime is a number of blocks
             tx.lockTime
         } else {
