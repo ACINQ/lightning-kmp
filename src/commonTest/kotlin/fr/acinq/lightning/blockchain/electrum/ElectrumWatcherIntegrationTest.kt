@@ -9,17 +9,15 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendBlocking
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.ServerAddress
-import fr.acinq.lightning.utils.currentTimestampSeconds
+import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.sat
-import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 import org.kodein.log.LoggerFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -41,7 +39,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     @Test
     fun `watch for confirmed transactions`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
-        val watcher = ElectrumWatcher(client.Caller(), this, LoggerFactory.default)
+        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, _) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -68,7 +66,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     @Test
     fun `watch for confirmed transactions created while being offline`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
-        val watcher = ElectrumWatcher(client.Caller(), this, LoggerFactory.default)
+        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, _) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -96,7 +94,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     @Test
     fun `watch for spent transactions`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
-        val watcher = ElectrumWatcher(client.Caller(), this, LoggerFactory.default)
+        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -153,7 +151,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     @Test
     fun `watch for spent transactions before client is connected`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default)
-        val watcher = ElectrumWatcher(client.Caller(), this, LoggerFactory.default)
+        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -205,9 +203,6 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val msg = listener.first() as WatchEventSpent
         assertEquals(spendingTx.txid, msg.tx.txid)
 
-        val watcherState = watcher.pstate as WatcherRunning
-        assertTrue(watcherState.scriptHashSubscriptions.isNotEmpty())
-
         watcher.stop()
         client.stop()
     }
@@ -215,7 +210,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     @Test
     fun `watch for spent transactions while being offline`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
-        val watcher = ElectrumWatcher(client.Caller(), this, LoggerFactory.default)
+        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
@@ -274,7 +269,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     @Test
     fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = 2.minutes) {
         val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
-        val watcher = ElectrumWatcher(client.Caller(), this, LoggerFactory.default)
+        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
         val watcherNotifications = watcher.openWatchNotificationsFlow()
 
         suspend fun awaitForBlockCount(height: Int) {
@@ -394,32 +389,28 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `get transaction`() = runSuspendTest(timeout = 50.seconds) {
+    fun `notify when ready`() = runSuspendTest(timeout = 50.seconds) {
         // Run on a production server
         val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
-        val watcher = ElectrumWatcher(client.Caller(), this, LoggerFactory.default)
+        val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
+        val watcherNotifications = watcher.openWatchNotificationsFlow()
+        val readyNotifications = watcher.openUpToDateFlow()
 
         delay(1_000) // Wait for the electrum client to be ready
 
         // tx is in the blockchain
-        val txid1 = ByteVector32(Hex.decode("c0b18008713360d7c30dae0940d88152a4bbb10faef5a69fefca5f7a7e1a06cc"))
-        val txNotification = watcher.openTxNotificationsFlow()
-        watcher.send(GetTxWithMetaEvent(GetTxWithMeta(ByteVector32.Zeroes, txid1)))
-        val res1 = txNotification.first().second
-        assertEquals(res1.txid, txid1)
-        assertEquals(
-            res1.tx_opt,
+        val tx =
             Transaction.read("0100000001b5cbd7615a7494f60304695c180eb255113bd5effcf54aec6c7dfbca67f533a1010000006a473044022042115a5d1a489bbc9bd4348521b098025625c9b6c6474f84b96b11301da17a0602203ccb684b1d133ff87265a6017ef0fdd2d22dd6eef0725c57826f8aaadcc16d9d012103629aa3df53cad290078bbad26491f1e11f9c01697c65db0967561f6f142c993cffffffff02801015000000000017a914b8984d6344eed24689cdbc77adaf73c66c4fdd688734e9e818000000001976a91404607585722760691867b42d43701905736be47d88ac00000000")
-        )
-        assertTrue(res1.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx, 1, BITCOIN_FUNDING_DEPTHOK))
+        val watchEvent = watcherNotifications.first()
+        assertTrue(watchEvent is WatchEventConfirmed)
+        assertEquals(tx.txid, watchEvent.tx.txid)
 
-        // tx doesn't exist
-        val txid2 = ByteVector32(Hex.decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
-        watcher.send(GetTxWithMetaEvent(GetTxWithMeta(ByteVector32.Zeroes, txid2)))
-        val res2 = txNotification.first().second
-        assertEquals(res2.txid, txid2)
-        assertNull(res2.tx_opt)
-        assertTrue(res2.lastBlockTimestamp > currentTimestampSeconds() - 7200) // this server should be in sync
+        val timestamp = currentTimestampMillis()
+
+        // wait until we're notified that the watcher is ready i.e. has been idle for more than 5s
+        val ready = readyNotifications.first()
+        assertTrue(ready > timestamp + 3000)
 
         watcher.stop()
         client.stop()

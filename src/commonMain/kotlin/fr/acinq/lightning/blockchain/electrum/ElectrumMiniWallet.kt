@@ -100,7 +100,7 @@ private sealed interface WalletCommand {
  */
 class ElectrumMiniWallet(
     val chainHash: ByteVector32,
-    private val client: ElectrumClient.Caller,
+    private val client: ElectrumClient,
     private val scope: CoroutineScope,
     loggerFactory: LoggerFactory,
     private val name: String = ""
@@ -130,77 +130,69 @@ class ElectrumMiniWallet(
             mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
         }
     }
-
     init {
+        suspend fun WalletState.processSubscriptionResponse(msg: ScriptHashSubscriptionResponse): WalletState {
+            val bitcoinAddress = scriptHashes[msg.scriptHash]
+            return when {
+                bitcoinAddress == null || msg.status.isEmpty() -> this
+                else -> {
+                    val unspents = client.getScriptHashUnspents(msg.scriptHash)
+                    val newUtxos = unspents.minus((_walletStateFlow.value.addresses[bitcoinAddress] ?: emptyList()).toSet())
+                    // request new parent txs
+                    val parentTxs = newUtxos.map { utxo ->
+                        val tx = client.getTx(utxo.txid)
+                        logger.mdcinfo { "received parent transaction with txid=${tx.txid}" }
+                        tx
+                    }
+                    val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to unspents), parentTxs = this.parentTxs + parentTxs.associateBy { it.txid })
+                    logger.mdcinfo { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
+                    unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
+                    nextWalletState
+                }
+            }
+        }
+
+        suspend fun subscribe(bitcoinAddress: String): Triple<ByteVector32, String, ScriptHashSubscriptionResponse> {
+            val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
+            val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
+            logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
+            val response = client.startScriptHashSubscription(scriptHash)
+            return Triple(scriptHash, bitcoinAddress, response)
+        }
+
         launch {
             // listen to connection events
-            client.connectionState
-                .filterIsInstance<Connection.ESTABLISHED>()
-                .collect { mailbox.send(WalletCommand.Companion.ElectrumConnected) }
+            client.connectionState.filterIsInstance<Connection.ESTABLISHED>().collect { mailbox.send(WalletCommand.Companion.ElectrumConnected) }
         }
         launch {
             // listen to subscriptions events
-            client.notifications
-                .collect { mailbox.send(WalletCommand.Companion.ElectrumNotification(it)) }
+            client.notifications.collect { mailbox.send(WalletCommand.Companion.ElectrumNotification(it)) }
         }
         launch {
             mailbox.consumeAsFlow().collect {
                 when (it) {
                     is WalletCommand.Companion.ElectrumConnected -> {
                         logger.mdcinfo { "electrum connected" }
-                        scriptHashes.values.forEach { subscribe(it) }
+                        scriptHashes.values.forEach { scriptHash ->
+                            val (_, _, response) = subscribe(scriptHash)
+                            _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
+                        }
                     }
 
                     is WalletCommand.Companion.ElectrumNotification -> {
-                        // NB: we ignore responses for unknown script_hashes (electrum client doesn't maintain a list of subscribers so we receive all subscriptions)
-                        when (val msg = it.msg) {
-                            is ScriptHashSubscriptionResponse -> {
-                                scriptHashes[msg.scriptHash]?.let { bitcoinAddress ->
-                                    if (msg.status.isNotEmpty()) {
-                                        logger.mdcinfo { "non-empty status for address=$bitcoinAddress, requesting utxos" }
-                                        client.sendElectrumRequest(ScriptHashListUnspent(msg.scriptHash))
-                                    }
-                                }
-                            }
-
-                            is ScriptHashListUnspentResponse -> {
-                                scriptHashes[msg.scriptHash]?.let { address ->
-                                    val newUtxos = msg.unspents.minus((_walletStateFlow.value.addresses[address] ?: emptyList()).toSet())
-                                    // request new parent txs
-                                    newUtxos.forEach { utxo -> client.sendElectrumRequest(GetTransaction(utxo.txid)) }
-                                    val walletState = _walletStateFlow.value.copy(addresses = _walletStateFlow.value.addresses + (address to msg.unspents))
-                                    logger.mdcinfo { "${msg.unspents.size} utxo(s) for address=$address balance=${walletState.totalBalance}" }
-                                    msg.unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
-                                    // publish the updated balance
-                                    _walletStateFlow.value = walletState
-                                }
-                            }
-
-                            is GetTransactionResponse -> {
-                                val walletState = _walletStateFlow.value.copy(parentTxs = _walletStateFlow.value.parentTxs + (msg.tx.txid to msg.tx))
-                                logger.mdcinfo { "received parent transaction with txid=${msg.tx.txid}" }
-                                _walletStateFlow.value = walletState
-
-                            }
-
-                            else -> {} // ignore other electrum msgs
+                        if (it.msg is ScriptHashSubscriptionResponse) {
+                            _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
                         }
                     }
 
                     is WalletCommand.Companion.AddAddress -> {
                         logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
-                        scriptHashes = scriptHashes + subscribe(it.bitcoinAddress)
+                        val (scriptHash, address, response) = subscribe(it.bitcoinAddress)
+                        scriptHashes = scriptHashes + (scriptHash to address)
+                        _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
                     }
                 }
             }
         }
-    }
-
-    private fun subscribe(bitcoinAddress: String): Pair<ByteVector32, String> {
-        val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
-        val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
-        logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
-        client.sendElectrumRequest(ScriptHashSubscription(scriptHash))
-        return scriptHash to bitcoinAddress
     }
 }
