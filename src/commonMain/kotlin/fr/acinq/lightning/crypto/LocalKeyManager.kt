@@ -28,23 +28,9 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
 
     fun privateKey(keyPath: List<Long>): DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, keyPath)
 
-    private fun publicKey(keyPath: KeyPath): DeterministicWallet.ExtendedPublicKey = DeterministicWallet.publicKey(privateKey(keyPath))
-
     private fun publicKey(keyPath: List<Long>): DeterministicWallet.ExtendedPublicKey = DeterministicWallet.publicKey(privateKey(keyPath))
 
-    private fun fundingPrivateKey(channelKeyPath: KeyPath) = privateKey(internalKeyPath(channelKeyPath, hardened(0)))
-
-    private fun revocationSecret(channelKeyPath: KeyPath) = privateKey(internalKeyPath(channelKeyPath, hardened(1)))
-
-    private fun paymentSecret(channelKeyPath: KeyPath) = privateKey(internalKeyPath(channelKeyPath, hardened(2)))
-
-    private fun delayedPaymentSecret(channelKeyPath: KeyPath) = privateKey(internalKeyPath(channelKeyPath, hardened(3)))
-
-    private fun htlcSecret(channelKeyPath: KeyPath) = privateKey(internalKeyPath(channelKeyPath, hardened(4)))
-
     private fun shaSeed(channelKeyPath: KeyPath) = ByteVector32(Crypto.sha256(privateKey(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value.concat(1.toByte())))
-
-    private fun shaSeed(channelKeyPath: List<Long>) = ByteVector32(Crypto.sha256(privateKey(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value.concat(1.toByte())))
 
     override fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey {
         val path = bip84BasePath(chainHash) + hardened(account) + 0 + addressIndex
