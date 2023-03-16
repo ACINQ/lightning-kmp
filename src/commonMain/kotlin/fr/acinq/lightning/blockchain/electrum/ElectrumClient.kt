@@ -99,7 +99,9 @@ class ElectrumClient(
         }
     }
 
-    private fun establishConnection(serverAddress: ServerAddress) = launch {
+    private fun establishConnection(serverAddress: ServerAddress) = launch(CoroutineExceptionHandler { _, exception ->
+        logger.error(exception) { "error starting electrum client" }
+    }) {
         _connectionStatus.value = ElectrumConnectionStatus.Connecting
         val socket: TcpSocket = try {
             val (host, port, tls) = serverAddress

@@ -278,7 +278,6 @@ class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope, log
                             state.idleSince?.let {
                                 if (it < currentTimestampMillis() - 5000) {
                                     // no requests in progress and watcher has been idle for more than 5s
-                                    logger.debug { "Watcher is up-to-date and idle for more than 5s" }
                                     _notificationsFlow.emit(NotifyUpToDateEvent(currentTimestampMillis()))
                                 }
                             }
