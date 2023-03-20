@@ -67,7 +67,6 @@ data class WaitForAcceptChannel(
                                         val nextState = WaitForFundingCreated(
                                             init.localParams,
                                             remoteParams,
-                                            init.wallet,
                                             interactiveTxSession,
                                             lastSent.pushAmount,
                                             accept.pushAmount,

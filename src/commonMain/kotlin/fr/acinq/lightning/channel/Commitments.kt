@@ -90,6 +90,8 @@ data class HtlcTxAndSigs(val txinfo: HtlcTx, val localSig: ByteVector64, val rem
 data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
 data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
+/** A local commitment for which we haven't received our peer's signatures. */
+data class UnsignedLocalCommit(val index: Long, val spec: CommitmentSpec, val commitTx: CommitTx, val htlcTxs: List<HtlcTx>)
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey)
 /** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */

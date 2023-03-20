@@ -2,7 +2,9 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -16,8 +18,7 @@ data class WaitForFundingConfirmed(
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: ChannelReady?,
     // We can have at most one ongoing RBF attempt.
-    // It doesn't need to be persisted: if we disconnect before signing, the rbf attempt is discarded.
-    val rbfStatus: RbfStatus = RbfStatus.None
+    val rbfStatus: RbfStatus
 ) : PersistedChannelState() {
 
     val latestFundingTx = commitments.latest.localFundingStatus as LocalFundingStatus.UnconfirmedFundingTx
@@ -51,12 +52,18 @@ data class WaitForFundingConfirmed(
                     }
                 }
                 is FullySignedSharedTransaction -> when (rbfStatus) {
-                    RbfStatus.None -> {
-                        logger.info { "ignoring duplicate remote funding signatures" }
-                        Pair(this@WaitForFundingConfirmed, listOf())
+                    is RbfStatus.WaitingForSigs -> {
+                        when (val action = rbfStatus.session.receiveTxSigs(cmd.message, currentBlockHeight.toLong())) {
+                            is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
+                                logger.warning { "rbf attempt failed: ${action.reason.message}" }
+                                Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
+                            }
+                            InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingConfirmed, listOf())
+                            is InteractiveTxSigningSessionAction.SendTxSigs -> sendRbfTxSigs(action, cmd.message.channelData)
+                        }
                     }
                     else -> {
-                        logger.warning { "received rbf tx_signatures before commit_sig, aborting" }
+                        logger.warning { "rejecting unexpected tx_signatures for txId=${cmd.message.txId}" }
                         Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, UnexpectedFundingSignatures(channelId).message))))
                     }
                 }
@@ -154,34 +161,29 @@ data class WaitForFundingConfirmed(
                     when (interactiveTxAction) {
                         is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus.copy(rbfSession1)), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
                         is InteractiveTxSessionAction.SignSharedTx -> {
-                            val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
+                            val signingSession = InteractiveTxSigningSession.create(
                                 keyManager,
-                                channelId,
-                                commitments.params.localParams,
-                                commitments.params.remoteParams,
-                                rbfSession1.fundingParams.localAmount,
-                                rbfSession1.fundingParams.remoteAmount,
+                                commitments.params,
+                                rbfSession1.fundingParams,
+                                interactiveTxAction.sharedTx,
                                 localPushAmount,
                                 remotePushAmount,
                                 commitments.latest.localCommit.spec.feerate,
-                                interactiveTxAction.sharedTx.buildUnsignedTx().hash,
-                                interactiveTxAction.sharedOutputIndex,
                                 commitments.latest.remoteCommit.remotePerCommitmentPoint
                             )
-                            when (firstCommitTxRes) {
+                            when (signingSession) {
                                 is Either.Left -> {
-                                    logger.error(firstCommitTxRes.value) { "cannot create rbf commit tx" }
-                                    Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
+                                    logger.error(signingSession.value) { "cannot initiate interactive-tx rbf signing session" }
+                                    Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, signingSession.value.message))))
                                 }
                                 is Either.Right -> {
-                                    val firstCommitTx = firstCommitTxRes.value
-                                    val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, commitments.params.localParams.channelKeys(keyManager).fundingPrivateKey)
-                                    val commitSig = CommitSig(channelId, localSigOfRemoteTx, listOf())
+                                    val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.WaitingForSigs(signingSession.value))
                                     val actions = buildList {
                                         interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
-                                        add(ChannelAction.Message.Send(commitSig))
+                                        add(ChannelAction.Storage.StoreState(nextState))
+                                        add(ChannelAction.Message.Send(signingSession.value.localCommitSig))
                                     }
-                                    Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.WaitForCommitSig(rbfSession1.fundingParams, interactiveTxAction.sharedTx, firstCommitTx)), actions)
+                                    Pair(nextState, actions)
                                 }
                             }
                         }
@@ -197,46 +199,16 @@ data class WaitForFundingConfirmed(
                 }
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> when (rbfStatus) {
-                is RbfStatus.WaitForCommitSig -> {
-                    val firstCommitmentRes = Helpers.Funding.receiveFirstCommit(
-                        keyManager, rbfStatus.fundingParams, commitments.params.localParams, commitments.params.remoteParams,
-                        rbfStatus.fundingTx, rbfStatus.commitTx, cmd.message,
-                        commitments.latest.remoteCommit.remotePerCommitmentPoint,
-                        currentBlockHeight.toLong()
-                    )
-                    when (firstCommitmentRes) {
-                        Helpers.Funding.InvalidRemoteCommitSig -> {
-                            logger.warning { "rbf attempt failed: invalid commit_sig" }
-                            Pair(
-                                this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted),
-                                listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidCommitmentSignature(channelId, rbfStatus.commitTx.localCommitTx.tx.txid).message)))
-                            )
+                is RbfStatus.WaitingForSigs -> {
+                    val (signingSession1, action) = rbfStatus.session.receiveCommitSig(keyManager, commitments.params, cmd.message, currentBlockHeight.toLong())
+                    when (action) {
+                        is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
+                            logger.warning { "rbf attempt failed: ${action.reason.message}" }
+                            Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                         }
-                        Helpers.Funding.FundingSigFailure -> {
-                            logger.warning { "could not sign rbf funding tx" }
-                            Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
-                        }
-                        is Helpers.Funding.FirstCommitment -> {
-                            val (signedFundingTx, commitment) = firstCommitmentRes
-                            logger.info { "rbf funding tx created with txId=${commitment.fundingTxId}. ${signedFundingTx.tx.localInputs.size} local inputs, ${signedFundingTx.tx.remoteInputs.size} remote inputs, ${signedFundingTx.tx.localOutputs.size} local outputs and ${signedFundingTx.tx.remoteOutputs.size} remote outputs" }
-                            val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, rbfStatus.fundingParams.fundingAmount)
-                            logger.info { "will wait for $fundingMinDepth confirmations" }
-                            val watchConfirmed = WatchConfirmed(channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
-                            val nextState = WaitForFundingConfirmed(
-                                commitments.add(commitment),
-                                localPushAmount,
-                                remotePushAmount,
-                                waitingSinceBlock,
-                                deferred,
-                                RbfStatus.None
-                            )
-                            val actions = buildList {
-                                add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                                add(ChannelAction.Storage.StoreState(nextState))
-                                add(ChannelAction.Message.Send(signedFundingTx.localSigs))
-                            }
-                            Pair(nextState, actions)
-                        }
+                        // No need to store their commit_sig, they will re-send it if we disconnect.
+                        InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.WaitingForSigs(signingSession1)), listOf())
+                        is InteractiveTxSigningSessionAction.SendTxSigs -> sendRbfTxSigs(action, cmd.message.channelData)
                     }
                 }
                 else -> {
@@ -309,9 +281,38 @@ data class WaitForFundingConfirmed(
             )
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingConfirmed, listOf())
-            cmd is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.None)), listOf())
+            cmd is ChannelCommand.Disconnected -> {
+                val rbfStatus1 = when (rbfStatus) {
+                    // We keep track of the RBF status: we should be able to complete the signature steps on reconnection.
+                    is RbfStatus.WaitingForSigs -> rbfStatus
+                    else -> RbfStatus.None
+                }
+                Pair(Offline(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus1)), listOf())
+            }
             else -> unhandled(cmd)
         }
+    }
+
+    private fun ChannelContext.sendRbfTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<ChannelState, List<ChannelAction>> {
+        logger.info { "rbf funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
+        val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
+        logger.info { "will wait for $fundingMinDepth confirmations" }
+        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+        val nextState = WaitForFundingConfirmed(
+            commitments.add(action.commitment).copy(remoteChannelData = remoteChannelData),
+            localPushAmount,
+            remotePushAmount,
+            waitingSinceBlock,
+            deferred,
+            RbfStatus.None
+        )
+        val actions = buildList {
+            add(ChannelAction.Storage.StoreState(nextState))
+            action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
+            add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
+            add(ChannelAction.Message.Send(action.localSigs))
+        }
+        return Pair(nextState, actions)
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
@@ -328,7 +329,7 @@ data class WaitForFundingConfirmed(
             object None : RbfStatus()
             data class RbfRequested(val command: CMD_BUMP_FUNDING_FEE) : RbfStatus()
             data class InProgress(val rbfSession: InteractiveTxSession) : RbfStatus()
-            data class WaitForCommitSig(val fundingParams: InteractiveTxParams, val fundingTx: SharedTransaction, val commitTx: Helpers.Funding.FirstCommitTx) : RbfStatus()
+            data class WaitingForSigs(val session: InteractiveTxSigningSession) : RbfStatus()
             object RbfAborted : RbfStatus()
         }
     }

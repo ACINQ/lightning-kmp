@@ -59,7 +59,8 @@ object Deserialization {
         localPushAmount = readNumber().msat,
         remotePushAmount = readNumber().msat,
         waitingSinceBlock = readNumber(),
-        deferred = readNullable { readLightningMessage() as ChannelReady }
+        deferred = readNullable { readLightningMessage() as ChannelReady },
+        rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None
     )
 
     private fun Input.readWaitForChannelReady() = WaitForChannelReady(

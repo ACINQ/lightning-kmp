@@ -165,9 +165,9 @@ sealed class ChannelState {
                 oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) -> {
                     val channelCreated = ChannelAction.EmitEvent(ChannelEvents.Created(newState as ChannelStateWithCommitments))
                     when {
-                        !oldState.localParams.isInitiator -> {
-                            val amount = oldState.fundingParams.localAmount.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
-                            val localInputs = oldState.fundingTx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
+                        !oldState.channelParams.localParams.isInitiator -> {
+                            val amount = oldState.signingSession.fundingParams.localAmount.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
+                            val localInputs = oldState.signingSession.fundingTx.tx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
                             actions + ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin) + channelCreated
                         }
                         else -> actions + channelCreated
