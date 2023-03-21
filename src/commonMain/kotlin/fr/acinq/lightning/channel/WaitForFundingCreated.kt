@@ -78,6 +78,7 @@ data class WaitForFundingCreated(
                                 )
                                 val actions = buildList {
                                     interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
+                                    add(ChannelAction.Storage.StoreState(nextState))
                                     add(ChannelAction.Message.Send(signingSession.value.localCommitSig))
                                 }
                                 Pair(nextState, actions)

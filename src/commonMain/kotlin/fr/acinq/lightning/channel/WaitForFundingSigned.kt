@@ -38,9 +38,10 @@ data class WaitForFundingSigned(
     val localPushAmount: MilliSatoshi,
     val remotePushAmount: MilliSatoshi,
     val remoteSecondPerCommitmentPoint: PublicKey,
-    val channelOrigin: ChannelOrigin?
-) : ChannelState() {
-    val channelId: ByteVector32 = channelParams.channelId
+    val channelOrigin: ChannelOrigin?,
+    val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
+) : PersistedChannelState() {
+    override val channelId: ByteVector32 = channelParams.channelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
@@ -78,7 +79,8 @@ data class WaitForFundingSigned(
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> handleLocalError(cmd, ChannelFundingError(channelId))
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingSigned, listOf())
-            cmd is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
+            // We should be able to complete the channel open when reconnecting.
+            cmd is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForFundingSigned), listOf())
             else -> unhandled(cmd)
         }
     }

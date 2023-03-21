@@ -21,7 +21,7 @@ data class LegacyWaitForFundingConfirmed(
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: ChannelReady?,
     val lastSent: Either<FundingCreated, FundingSigned>
-) : PersistedChannelState() {
+) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {

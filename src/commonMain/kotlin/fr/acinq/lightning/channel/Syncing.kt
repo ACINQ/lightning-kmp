@@ -18,7 +18,7 @@ import fr.acinq.lightning.wire.*
  * we send ours (for example, to extract encrypted backup data from extra fields)
  * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
  */
-data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
+data class Syncing(val state: PersistedChannelState, val waitForTheirReestablishMessage: Boolean) : ChannelState() {
 
     val channelId = state.channelId
 
@@ -31,11 +31,15 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                         logger.info { "channel_reestablish includes a peer backup" }
                         when (val decrypted = runTrying { PersistedChannelState.from(staticParams.nodeParams.nodePrivateKey, cmd.message.channelData) }) {
                             is Try.Success -> {
-                                if (decrypted.get().commitments.isMoreRecent(state.commitments)) {
-                                    logger.warning { "they have a more recent commitment, using it instead" }
-                                    decrypted.get()
-                                } else {
-                                    state
+                                val decryptedState = decrypted.get()
+                                when {
+                                    decryptedState is ChannelStateWithCommitments && state is ChannelStateWithCommitments && decryptedState.commitments.isMoreRecent(state.commitments) -> {
+                                        logger.warning { "they have a more recent commitment, using it instead" }
+                                        decryptedState
+                                    }
+                                    else -> {
+                                        state
+                                    }
                                 }
                             }
                             is Try.Failure -> {
@@ -46,28 +50,45 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     } else {
                         state
                     }
-                    val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                    val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, nextState.commitments.localCommitIndex)
-                    val channelReestablish = ChannelReestablish(
-                        channelId = nextState.channelId,
-                        nextLocalCommitmentNumber = nextState.commitments.localCommitIndex + 1,
-                        nextRemoteRevocationNumber = nextState.commitments.remoteCommitIndex,
-                        yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-                    ).withChannelData(nextState.commitments.remoteChannelData, logger)
-                    val actions = listOf(ChannelAction.Message.Send(channelReestablish))
-                    // now apply their reestablish message to the restored state
-                    val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).run { processInternal(cmd) }
-                    Pair(nextState1, actions + actions1)
+                    when (nextState) {
+                        is WaitForFundingSigned -> {
+                            TODO()
+                        }
+                        is ChannelStateWithCommitments -> {
+                            val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
+                            val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(nextState.commitments.params.localParams.channelKeys(keyManager).shaSeed, nextState.commitments.localCommitIndex)
+                            val channelReestablish = ChannelReestablish(
+                                channelId = nextState.channelId,
+                                nextLocalCommitmentNumber = nextState.commitments.localCommitIndex + 1,
+                                nextRemoteRevocationNumber = nextState.commitments.remoteCommitIndex,
+                                yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+                                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+                            ).withChannelData(nextState.commitments.remoteChannelData, logger)
+                            val actions = listOf(ChannelAction.Message.Send(channelReestablish))
+                            // now apply their reestablish message to the restored state
+                            val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).run { processInternal(cmd) }
+                            Pair(nextState1, actions + actions1)
+                        }
+                    }
                 }
                 state is LegacyWaitForFundingConfirmed -> {
                     Pair(state, listOf())
+                }
+                state is WaitForFundingSigned -> {
+                    TODO()
                 }
                 state is WaitForFundingConfirmed -> {
                     logger.debug { "re-sending tx_signatures" }
                     Pair(state, listOf(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs)))
                 }
-                state is WaitForChannelReady || state is LegacyWaitForFundingLocked -> {
+                state is WaitForChannelReady -> {
+                    logger.debug { "re-sending channel_ready" }
+                    val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                    val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
+                    val actions = listOf(ChannelAction.Message.Send(channelReady))
+                    Pair(state, actions)
+                }
+                state is LegacyWaitForFundingLocked -> {
                     logger.debug { "re-sending channel_ready" }
                     val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
                     val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
@@ -187,7 +208,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 }
                 else -> unhandled(cmd)
             }
-            cmd is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
+            cmd is ChannelCommand.WatchReceived && state is ChannelStateWithCommitments -> when (val watch = cmd.watch) {
                 is WatchEventSpent -> when {
                     state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                         logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
@@ -231,12 +252,12 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                     }
                 }
             }
-            cmd is ChannelCommand.CheckHtlcTimeout -> {
+            cmd is ChannelCommand.CheckHtlcTimeout && state is ChannelStateWithCommitments -> {
                 val (newState, actions) = state.run { checkHtlcTimeout() }
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
-                    else -> Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), actions)
+                    else -> Pair(Syncing(newState as PersistedChannelState, waitForTheirReestablishMessage), actions)
                 }
             }
             cmd is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())
@@ -245,7 +266,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
-                    else -> Pair(Syncing(newState as ChannelStateWithCommitments, waitForTheirReestablishMessage), actions)
+                    else -> Pair(Syncing(newState as PersistedChannelState, waitForTheirReestablishMessage), actions)
                 }
             }
             else -> unhandled(cmd)

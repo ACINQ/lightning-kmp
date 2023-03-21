@@ -87,7 +87,7 @@ object Serialization {
         }
     }
 
-    fun decrypt(key: ByteVector32, data: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments {
+    fun decrypt(key: ByteVector32, data: ByteArray): fr.acinq.lightning.channel.PersistedChannelState {
         // nonce is 12B, tag is 16B
         val ciphertext = data.dropLast(12 + 16)
         val nonce = data.takeLast(12 + 16).take(12)
@@ -96,8 +96,8 @@ object Serialization {
         return deserialize(plaintext)
     }
 
-    fun decrypt(key: PrivateKey, data: ByteArray): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key.value, data)
-    fun decrypt(key: PrivateKey, backup: EncryptedChannelData): fr.acinq.lightning.channel.ChannelStateWithCommitments = decrypt(key, backup.data.toByteArray())
+    fun decrypt(key: PrivateKey, data: ByteArray): fr.acinq.lightning.channel.PersistedChannelState = decrypt(key.value, data)
+    fun decrypt(key: PrivateKey, backup: EncryptedChannelData): fr.acinq.lightning.channel.PersistedChannelState = decrypt(key, backup.data.toByteArray())
 
     @OptIn(ExperimentalSerializationApi::class)
     @ExperimentalSerializationApi

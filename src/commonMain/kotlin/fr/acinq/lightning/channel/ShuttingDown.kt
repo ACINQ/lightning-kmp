@@ -11,7 +11,7 @@ data class ShuttingDown(
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closingFeerates: ClosingFeerates?
-) : PersistedChannelState() {
+) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {

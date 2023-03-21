@@ -8,7 +8,7 @@ import fr.acinq.lightning.wire.Error
 data class WaitForRemotePublishFutureCommitment(
     override val commitments: Commitments,
     val remoteChannelReestablish: ChannelReestablish
-) : PersistedChannelState() {
+) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {

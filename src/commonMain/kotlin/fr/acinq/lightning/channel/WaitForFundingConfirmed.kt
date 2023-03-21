@@ -19,7 +19,7 @@ data class WaitForFundingConfirmed(
     val deferred: ChannelReady?,
     // We can have at most one ongoing RBF attempt.
     val rbfStatus: RbfStatus
-) : PersistedChannelState() {
+) : ChannelStateWithCommitments() {
 
     val latestFundingTx = commitments.latest.localFundingStatus as LocalFundingStatus.UnconfirmedFundingTx
     private val allFundingTxs = commitments.active.map { it.localFundingStatus }.filterIsInstance<LocalFundingStatus.UnconfirmedFundingTx>()

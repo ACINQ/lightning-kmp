@@ -282,9 +282,18 @@ sealed class ChannelState {
     }
 }
 
-sealed class ChannelStateWithCommitments : ChannelState() {
+/** A channel state that is persisted to the DB. */
+sealed class PersistedChannelState : ChannelState() {
+    abstract val channelId: ByteVector32
+
+    companion object {
+        // this companion object is used by static extended function `fun PersistedChannelState.Companion.from` in Encryption.kt
+    }
+}
+
+sealed class ChannelStateWithCommitments : PersistedChannelState() {
     abstract val commitments: Commitments
-    val channelId: ByteVector32 get() = commitments.channelId
+    override val channelId: ByteVector32 get() = commitments.channelId
     val isInitiator: Boolean get() = commitments.params.localParams.isInitiator
     val remoteNodeId: PublicKey get() = commitments.remoteNodeId
 
@@ -526,12 +535,6 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 }
             }
         }
-    }
-}
-
-sealed class PersistedChannelState : ChannelStateWithCommitments() {
-    companion object {
-        // this companion object is used by static extended function `fun PersistedChannelState.Companion.from` in Encryption.kt
     }
 }
 
