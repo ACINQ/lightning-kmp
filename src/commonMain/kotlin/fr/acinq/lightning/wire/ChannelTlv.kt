@@ -169,9 +169,9 @@ sealed class ChannelReestablishTlv : Tlv {
         }
     }
 
-    data class NextFunding(val txId: ByteVector32) : ChannelReestablishTlv() {
+    data class NextFunding(val txHash: ByteVector32) : ChannelReestablishTlv() {
         override val tag: Long get() = NextFunding.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(txId, out)
+        override fun write(out: Output) = LightningCodecs.writeBytes(txHash, out)
 
         companion object : TlvValueReader<NextFunding> {
             const val tag: Long = 333

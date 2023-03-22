@@ -59,14 +59,14 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                 nextRemoteRevocationNumber = 0,
                                 yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
                                 myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
-                                TlvStream(listOf(ChannelReestablishTlv.NextFunding(nextState.signingSession.fundingTx.txId)))
+                                TlvStream(listOf(ChannelReestablishTlv.NextFunding(nextState.signingSession.fundingTx.txId.reversed())))
                             ).withChannelData(nextState.remoteChannelData, logger)
                         }
                         is ChannelStateWithCommitments -> {
                             val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
                             val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(nextState.commitments.params.localParams.channelKeys(keyManager).shaSeed, nextState.commitments.localCommitIndex)
                             val tlvs: TlvStream<ChannelReestablishTlv> = when (nextState) {
-                                is WaitForFundingConfirmed -> nextState.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it))) } ?: TlvStream.empty()
+                                is WaitForFundingConfirmed -> nextState.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
                                 else -> TlvStream.empty()
                             }
                             ChannelReestablish(
