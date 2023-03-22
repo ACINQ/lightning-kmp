@@ -26,14 +26,12 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 kotlin {
     val ktorVersion: String by extra { "2.0.3" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val secp256k1Version = "0.7.0"
     val serializationVersion = "1.3.3"
     val coroutineVersion = "1.6.3"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.9.0")
-            api("fr.acinq.secp256k1:secp256k1-kmp:$secp256k1Version")
+            api("fr.acinq.bitcoin:bitcoin-kmp:0.11.1") // when upgrading, keep secp256k1-kmp-jni-jvm in sync below
             api("org.kodein.log:kodein-log:0.13.0")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
@@ -63,17 +61,11 @@ kotlin {
             api(ktor("client-okhttp"))
             api(ktor("network"))
             api(ktor("network-tls"))
+            implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.8.0")
             implementation("org.slf4j:slf4j-api:1.7.36")
             api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
         compilations["test"].defaultSourceSet.dependencies {
-            val target = when {
-                currentOs.isLinux -> "linux"
-                currentOs.isMacOsX -> "darwin"
-                currentOs.isWindows -> "mingw"
-                else -> error("UnsupportedmOS $currentOs")
-            }
-            implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm-$target:$secp256k1Version")
             implementation(kotlin("test-junit"))
             implementation("org.bouncycastle:bcprov-jdk15on:1.64")
             implementation("ch.qos.logback:logback-classic:1.2.3")
