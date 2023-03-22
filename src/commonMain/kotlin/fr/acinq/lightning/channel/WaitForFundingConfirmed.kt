@@ -1,5 +1,6 @@
 package fr.acinq.lightning.channel
 
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
@@ -212,8 +213,8 @@ data class WaitForFundingConfirmed(
                     }
                 }
                 else -> {
-                    logger.info { "ignoring unexpected commit_sig" }
-                    Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, UnexpectedCommitSig(channelId).message))))
+                    logger.info { "ignoring redundant commit_sig" }
+                    Pair(this@WaitForFundingConfirmed, listOf())
                 }
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> when (rbfStatus) {
@@ -315,22 +316,23 @@ data class WaitForFundingConfirmed(
         return Pair(nextState, actions)
     }
 
+    /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
+    fun getUnsignedFundingTxId(): ByteVector32? {
+        return when (rbfStatus) {
+            is RbfStatus.WaitingForSigs -> rbfStatus.session.fundingTx.txId
+            else -> when (latestFundingTx.sharedTx) {
+                is PartiallySignedSharedTransaction -> latestFundingTx.txId
+                is FullySignedSharedTransaction -> null
+            }
+        }
+    }
+
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForFundingConfirmed::class.simpleName}" }
         val error = Error(channelId, t.message)
         return when {
             commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
             else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
-        }
-    }
-
-    companion object {
-        sealed class RbfStatus {
-            object None : RbfStatus()
-            data class RbfRequested(val command: CMD_BUMP_FUNDING_FEE) : RbfStatus()
-            data class InProgress(val rbfSession: InteractiveTxSession) : RbfStatus()
-            data class WaitingForSigs(val session: InteractiveTxSigningSession) : RbfStatus()
-            object RbfAborted : RbfStatus()
         }
     }
 }

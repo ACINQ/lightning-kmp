@@ -50,36 +50,75 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                     } else {
                         state
                     }
-                    when (nextState) {
+                    val channelReestablish = when (nextState) {
                         is WaitForFundingSigned -> {
-                            TODO()
+                            val myFirstPerCommitmentPoint = keyManager.commitmentPoint(nextState.channelParams.localParams.channelKeys(keyManager).shaSeed, 0)
+                            ChannelReestablish(
+                                channelId = channelId,
+                                nextLocalCommitmentNumber = 1,
+                                nextRemoteRevocationNumber = 0,
+                                yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
+                                myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
+                                TlvStream(listOf(ChannelReestablishTlv.NextFunding(nextState.signingSession.fundingTx.txId)))
+                            ).withChannelData(nextState.remoteChannelData, logger)
                         }
                         is ChannelStateWithCommitments -> {
                             val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
                             val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(nextState.commitments.params.localParams.channelKeys(keyManager).shaSeed, nextState.commitments.localCommitIndex)
-                            val channelReestablish = ChannelReestablish(
+                            val tlvs: TlvStream<ChannelReestablishTlv> = when (nextState) {
+                                is WaitForFundingConfirmed -> nextState.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it))) } ?: TlvStream.empty()
+                                else -> TlvStream.empty()
+                            }
+                            ChannelReestablish(
                                 channelId = nextState.channelId,
                                 nextLocalCommitmentNumber = nextState.commitments.localCommitIndex + 1,
                                 nextRemoteRevocationNumber = nextState.commitments.remoteCommitIndex,
                                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+                                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+                                tlvStream = tlvs
                             ).withChannelData(nextState.commitments.remoteChannelData, logger)
-                            val actions = listOf(ChannelAction.Message.Send(channelReestablish))
-                            // now apply their reestablish message to the restored state
-                            val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).run { processInternal(cmd) }
-                            Pair(nextState1, actions + actions1)
                         }
                     }
+                    val actions = listOf(ChannelAction.Message.Send(channelReestablish))
+                    // now apply their reestablish message to the restored state
+                    val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).run { processInternal(cmd) }
+                    Pair(nextState1, actions + actions1)
                 }
                 state is LegacyWaitForFundingConfirmed -> {
                     Pair(state, listOf())
                 }
                 state is WaitForFundingSigned -> {
-                    TODO()
+                    when (cmd.message.nextFundingTxId) {
+                        // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
+                        state.signingSession.fundingTx.txId -> Pair(state, listOf(ChannelAction.Message.Send(state.signingSession.localCommitSig)))
+                        else -> Pair(state, listOf())
+                    }
                 }
                 state is WaitForFundingConfirmed -> {
-                    logger.debug { "re-sending tx_signatures" }
-                    Pair(state, listOf(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs)))
+                    when (cmd.message.nextFundingTxId) {
+                        null -> Pair(state, listOf())
+                        else -> {
+                            if (state.rbfStatus is RbfStatus.WaitingForSigs && state.rbfStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
+                                // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
+                                logger.info { "re-sending commit_sig for rbf attempt with fundingTxId=${cmd.message.nextFundingTxId}" }
+                                val actions = listOf(ChannelAction.Message.Send(state.rbfStatus.session.localCommitSig))
+                                Pair(state, actions)
+                            } else if (state.latestFundingTx.txId == cmd.message.nextFundingTxId) {
+                                // We retransmit commit_sig and tx_signatures (we sent them before, but they didn't receive it).
+                                logger.info { "re-sending commit_sig and tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                val actions = listOf(
+                                    ChannelAction.Message.Send(state.latestFundingTx.localCommitSig),
+                                    ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs)
+                                )
+                                Pair(state, actions)
+                            } else {
+                                // The fundingTxId must be for an RBF attempt that we didn't store (we got disconnected before receiving their tx_complete).
+                                // We tell them to abort that RBF attempt.
+                                logger.info { "aborting obsolete rbf attempt for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                Pair(state.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(state.channelId, RbfAttemptAborted(state.channelId).message))))
+                            }
+                        }
+                    }
                 }
                 state is WaitForChannelReady -> {
                     logger.debug { "re-sending channel_ready" }
@@ -269,6 +308,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                     else -> Pair(Syncing(newState as PersistedChannelState, waitForTheirReestablishMessage), actions)
                 }
             }
+            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> state.run { handleRemoteError(cmd.message) }
             else -> unhandled(cmd)
         }
     }

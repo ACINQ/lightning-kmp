@@ -1,9 +1,6 @@
 package fr.acinq.lightning.wire
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.OutPoint
-import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.byteVector32
+import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
@@ -169,6 +166,16 @@ sealed class ChannelReestablishTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+
+    data class NextFunding(val txId: ByteVector32) : ChannelReestablishTlv() {
+        override val tag: Long get() = NextFunding.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(txId, out)
+
+        companion object : TlvValueReader<NextFunding> {
+            const val tag: Long = 333
+            override fun read(input: Input): NextFunding = NextFunding(LightningCodecs.bytes(input, 32).toByteVector32())
         }
     }
 }

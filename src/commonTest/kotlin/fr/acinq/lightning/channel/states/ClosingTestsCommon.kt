@@ -156,14 +156,12 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
-        val (alice, bob, txSigsBob, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
-        val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigsBob, walletAlice)
-        val fundingTxId = alice1.commitments.latest.fundingTxId
-        val previousFundingTx = alice1.state.previousFundingTxs.first().signedTx!!
-        assertNotEquals(previousFundingTx.txid, fundingTxId)
+        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
+        val (alice1, bob1, fundingTx) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
+        assertNotEquals(previousFundingTx.txid, fundingTx.txid)
         run {
             val (aliceClosing, localCommitPublished) = localClose(alice1)
-            assertEquals(aliceClosing.commitments.latest.fundingTxId, fundingTxId)
+            assertEquals(aliceClosing.commitments.latest.fundingTxId, fundingTx.txid)
             assertEquals(aliceClosing.commitments.active.size, 2)
             val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, previousFundingTx)))
             assertIs<LNChannel<Closing>>(alice2)
@@ -178,7 +176,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
         run {
             val (bobClosing, localCommitPublished) = localClose(bob1)
-            assertEquals(bobClosing.commitments.latest.fundingTxId, fundingTxId)
+            assertEquals(bobClosing.commitments.latest.fundingTxId, fundingTx.txid)
             assertEquals(bobClosing.commitments.active.size, 2)
             val (bob2, actions2) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, previousFundingTx)))
             assertIs<LNChannel<Closing>>(bob2)

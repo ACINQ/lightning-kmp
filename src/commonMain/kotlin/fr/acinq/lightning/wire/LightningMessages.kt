@@ -1063,6 +1063,7 @@ data class ChannelReestablish(
 ) : HasChannelId, HasEncryptedChannelData {
     override val type: Long get() = ChannelReestablish.type
 
+    val nextFundingTxId: ByteVector32? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
     override val channelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ChannelReestablish = copy(tlvStream = tlvStream.addOrUpdate(ChannelReestablishTlv.ChannelData(ecd)))
 
@@ -1079,7 +1080,10 @@ data class ChannelReestablish(
         const val type: Long = 136
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>)
+        val readers = mapOf(
+            ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
+        )
 
         override fun read(input: Input): ChannelReestablish {
             return ChannelReestablish(

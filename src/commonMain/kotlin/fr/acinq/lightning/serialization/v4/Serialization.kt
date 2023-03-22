@@ -112,7 +112,7 @@ object Serialization {
         writeNumber(waitingSinceBlock)
         writeNullable(deferred) { writeLightningMessage(it) }
         when (rbfStatus) {
-            is WaitForFundingConfirmed.Companion.RbfStatus.WaitingForSigs -> {
+            is RbfStatus.WaitingForSigs -> {
                 write(0x01)
                 writeInteractiveTxSigningSession(rbfStatus.session)
             }
@@ -426,6 +426,7 @@ object Serialization {
                 write(0x00)
                 writeSignedSharedTransaction(localFundingStatus.sharedTx)
                 writeInteractiveTxParams(localFundingStatus.fundingParams)
+                writeLightningMessage(localFundingStatus.localCommitSig)
                 writeNumber(localFundingStatus.createdAt)
             }
             is LocalFundingStatus.ConfirmedFundingTx -> {

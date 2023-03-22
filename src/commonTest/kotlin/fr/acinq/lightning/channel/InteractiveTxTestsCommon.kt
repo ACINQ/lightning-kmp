@@ -66,7 +66,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNotEquals(outputA1.pubkeyScript, outputA2.pubkeyScript)
         assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript && it.amount == f.fundingParamsA.fundingAmount }, 1)
 
-        assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.localAmountIn, 145_000.sat)
         assertEquals(sharedTxA.sharedTx.remoteAmountIn, 100_000.sat)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 245_000.sat)
@@ -138,7 +137,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNotEquals(outputA1.pubkeyScript, outputA2.pubkeyScript)
         assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript && it.amount == f.fundingParamsA.fundingAmount }, 1)
 
-        assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 130_000.sat)
         assertEquals(sharedTxA.sharedTx.fees, 3024.sat)
         assertTrue(sharedTxB.sharedTx.localFees < sharedTxA.sharedTx.localFees)
@@ -197,7 +195,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNotEquals(outputA1.pubkeyScript, outputA2.pubkeyScript)
         assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript && it.amount == f.fundingParamsA.fundingAmount }, 1)
 
-        assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 350_000.sat)
         assertEquals(sharedTxA.sharedTx.fees, 5040.sat)
         assertTrue(sharedTxA.sharedTx.remoteFees < sharedTxA.sharedTx.localFees)
@@ -251,7 +248,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNotEquals(outputA1.pubkeyScript, outputA2.pubkeyScript)
         assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript && it.amount == f.fundingParamsA.fundingAmount }, 1)
 
-        assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 200_000.sat)
         assertEquals(sharedTxA.sharedTx.fees, 2205.sat)
         assertEquals(sharedTxA.sharedTx.localFees, 2205.sat)
@@ -322,7 +318,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNotEquals(outputA1.pubkeyScript, outputA2.pubkeyScript)
         assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript && it.amount == f.fundingParamsA.fundingAmount }, 1)
 
-        assertEquals(sharedTxA.sharedOutputIndex, sharedTxB.sharedOutputIndex)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 315_000.sat)
         assertNotNull(sharedTxA.sharedTx.sharedInput)
         assertEquals(sharedTxA.sharedTx.localFees, 998.sat)

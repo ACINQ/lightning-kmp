@@ -72,9 +72,9 @@ object Deserialization {
         waitingSinceBlock = readNumber(),
         deferred = readNullable { readLightningMessage() as ChannelReady },
         rbfStatus = when (val discriminator = read()) {
-            0x00 -> WaitForFundingConfirmed.Companion.RbfStatus.None
-            0x01 -> WaitForFundingConfirmed.Companion.RbfStatus.WaitingForSigs(readInteractiveTxSigningSession())
-            else -> error("unknown discriminator $discriminator for class ${WaitForFundingConfirmed.Companion.RbfStatus::class}")
+            0x00 -> RbfStatus.None
+            0x01 -> RbfStatus.WaitingForSigs(readInteractiveTxSigningSession())
+            else -> error("unknown discriminator $discriminator for class ${RbfStatus::class}")
         }
     )
 
@@ -376,6 +376,7 @@ object Deserialization {
             0x00 -> LocalFundingStatus.UnconfirmedFundingTx(
                 sharedTx = readSignedSharedTransaction(),
                 fundingParams = readInteractiveTxParams(),
+                localCommitSig = readLightningMessage() as CommitSig,
                 createdAt = readNumber()
             )
             0x01 -> LocalFundingStatus.ConfirmedFundingTx(

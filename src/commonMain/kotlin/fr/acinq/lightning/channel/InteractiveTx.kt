@@ -652,7 +652,7 @@ data class InteractiveTxSigningSession(
                     is Try.Success -> {
                         val signedLocalCommit = LocalCommit(localCommit.value.index, localCommit.value.spec, PublishableTxs(signedLocalCommitTx, listOf()))
                         if (shouldSignFirst(channelParams, fundingTx.tx)) {
-                            val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
+                            val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, localCommitSig, currentBlockHeight)
                             val commitment = Commitment(fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, nextRemoteCommit = null)
                             val action = InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
                             Pair(this.copy(localCommit = Either.Right(signedLocalCommit)), action)
@@ -672,7 +672,7 @@ data class InteractiveTxSigningSession(
             is Either.Right -> when (val fullySignedTx = fundingTx.addRemoteSigs(fundingParams, remoteTxSigs)) {
                 null -> InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidFundingSignature(fundingParams.channelId, fundingTx.txId))
                 else -> {
-                    val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fullySignedTx, fundingParams, currentBlockHeight)
+                    val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fullySignedTx, fundingParams, localCommitSig, currentBlockHeight)
                     val commitment = Commitment(fundingStatus, RemoteFundingStatus.NotLocked, localCommit.value, remoteCommit, nextRemoteCommit = null)
                     InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
                 }
@@ -730,3 +730,10 @@ data class InteractiveTxSigningSession(
 
 }
 
+sealed class RbfStatus {
+    object None : RbfStatus()
+    data class RbfRequested(val command: CMD_BUMP_FUNDING_FEE) : RbfStatus()
+    data class InProgress(val rbfSession: InteractiveTxSession) : RbfStatus()
+    data class WaitingForSigs(val session: InteractiveTxSigningSession) : RbfStatus()
+    object RbfAborted : RbfStatus()
+}

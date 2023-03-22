@@ -46,7 +46,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
             channelId2 to Offline(makeChannel(channelId2, 20_000.msat, 5.msat)),
             channelId3 to Offline(makeChannel(channelId3, 10_000.msat, 10.msat)),
         )
-        assertEquals(setOf(10_000.msat, 15_000.msat, 20_000.msat), offlineChannels.map { it.value.state.commitments.availableBalanceForSend() }.toSet())
+        assertEquals(setOf(10_000.msat, 15_000.msat, 20_000.msat), offlineChannels.map { (it.value.state as Normal).commitments.availableBalanceForSend() }.toSet())
 
         val normalChannels = mapOf(
             channelId1 to makeChannel(channelId1, 15_000.msat, 10.msat),

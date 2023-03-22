@@ -22,13 +22,7 @@ class CompatibilityTestsCommon {
     @Test
     fun `generate data`() {
         // generate test data
-        val (alice, bob, fundingTx) = run {
-            val (alice0, bob0, txSigsBob) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
-            val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(txSigsBob))
-            assertIs<LNChannel<WaitForFundingConfirmed>>(alice1)
-            val fundingTx = actions1.find<ChannelAction.Blockchain.PublishTx>().tx
-            Triple(alice1, bob0, fundingTx)
-        }
+        val (alice, bob, fundingTx) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         println("funding_tx: ${Transaction.write(fundingTx).byteVector().toHex()}")
         val bin = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob.state)
         println("wait_for_funding_confirmed: ${bin.data}")

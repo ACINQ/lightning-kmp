@@ -36,17 +36,33 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                     }
                     else -> when (state) {
                         is WaitForFundingSigned -> {
-                            TODO()
+                            val myFirstPerCommitmentPoint = keyManager.commitmentPoint(state.channelParams.localParams.channelKeys(keyManager).shaSeed, 0)
+                            val channelReestablish = ChannelReestablish(
+                                channelId = channelId,
+                                nextLocalCommitmentNumber = 1,
+                                nextRemoteRevocationNumber = 0,
+                                yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
+                                myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
+                                TlvStream(listOf(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTx.txId)))
+                            ).withChannelData(state.remoteChannelData, logger)
+                            logger.info { "syncing ${state::class}" }
+                            val nextState = state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
+                            Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
                         }
                         is ChannelStateWithCommitments -> {
                             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
                             val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommitIndex)
+                            val tlvs: TlvStream<ChannelReestablishTlv> = when (state) {
+                                is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it))) } ?: TlvStream.empty()
+                                else -> TlvStream.empty()
+                            }
                             val channelReestablish = ChannelReestablish(
                                 channelId = channelId,
                                 nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,
                                 nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
                                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+                                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+                                tlvStream = tlvs
                             ).withChannelData(state.commitments.remoteChannelData, logger)
                             logger.info { "syncing ${state::class}" }
                             val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))

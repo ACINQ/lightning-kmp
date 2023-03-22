@@ -270,7 +270,7 @@ object JsonSerializers {
         delegateSerializer = InteractiveTxSigningSessionSurrogate.serializer()
     )
 
-    @Serializer(forClass = WaitForFundingConfirmed.Companion.RbfStatus::class)
+    @Serializer(forClass = RbfStatus::class)
     object RbfStatusSerializer
 
     @Serializer(forClass = ChannelParams::class)
