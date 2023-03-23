@@ -300,7 +300,7 @@ object Deserialization {
         remoteNextHtlcId = readNumber(),
     )
 
-    private fun Input.readCommitment(): Commitment = Commitment(
+    private fun Input.readCommitment(htlcs: Set<DirectedHtlc>): Commitment = Commitment(
         localFundingStatus = when (val discriminator = read()) {
             0x00 -> LocalFundingStatus.UnconfirmedFundingTx(
                 sharedTx = readSignedSharedTransaction(),
@@ -319,7 +319,7 @@ object Deserialization {
         },
         localCommit = LocalCommit(
             index = readNumber(),
-            spec = readCommitmentSpec(),
+            spec = readCommitmentSpec(htlcs),
             publishableTxs = PublishableTxs(
                 commitTx = readTransactionWithInputInfo() as CommitTx,
                 htlcTxsAndSigs = readCollection {
@@ -333,7 +333,7 @@ object Deserialization {
         ),
         remoteCommit = RemoteCommit(
             index = readNumber(),
-            spec = readCommitmentSpec(),
+            spec = readCommitmentSpec(htlcs.map { it.opposite() }.toSet()),
             txid = readByteVector32(),
             remotePerCommitmentPoint = readPublicKey()
         ),
@@ -342,7 +342,7 @@ object Deserialization {
                 sig = readLightningMessage() as CommitSig,
                 commit = RemoteCommit(
                     index = readNumber(),
-                    spec = readCommitmentSpec(),
+                    spec = readCommitmentSpec(htlcs.map { it.opposite() }.toSet()),
                     txid = readByteVector32(),
                     remotePerCommitmentPoint = readPublicKey()
                 )
@@ -350,31 +350,47 @@ object Deserialization {
         }
     )
 
-    private fun Input.readCommitments(): Commitments = Commitments(
-        params = readChannelParams(),
-        changes = readCommitmentChanges(),
-        active = readCollection { readCommitment() }.toList(),
-        payments = readCollection {
+    private fun Input.readCommitments(): Commitments {
+        val params = readChannelParams()
+        val changes = readCommitmentChanges()
+        // When multiple commitments are active, htlcs are shared between all of these commitments, so we serialize them separately.
+        // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
+        val htlcs = readCollection { readDirectedHtlc() }.toSet()
+        val active = readCollection { readCommitment(htlcs) }.toList()
+        val payments = readCollection {
             readNumber() to UUID.fromString(readString())
-        }.toMap(),
-        remoteNextCommitInfo = readEither(
+        }.toMap()
+        val remoteNextCommitInfo = readEither(
             readLeft = { WaitingForRevocation(sentAfterLocalCommitIndex = readNumber()) },
             readRight = { readPublicKey() },
-        ),
-        remotePerCommitmentSecrets = ShaChain(
+        )
+        val remotePerCommitmentSecrets = ShaChain(
             knownHashes = readCollection {
                 readCollection { readBoolean() }.toList() to readByteVector32()
             }.toMap(),
             lastIndex = readNullable { readNumber() }
-        ),
-        remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
-    )
+        )
+        val remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
+        return Commitments(params, changes, active, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
+    }
 
-    private fun Input.readCommitmentSpec(): CommitmentSpec = CommitmentSpec(
+    private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {
+        0 -> IncomingHtlc(readLightningMessage() as UpdateAddHtlc)
+        1 -> OutgoingHtlc(readLightningMessage() as UpdateAddHtlc)
+        else -> error("invalid discriminator $discriminator for class ${DirectedHtlc::class}")
+    }
+
+    private fun Input.readCommitmentSpec(htlcs: Set<DirectedHtlc>): CommitmentSpec = CommitmentSpec(
         htlcs = readCollection {
             when (val discriminator = read()) {
-                0 -> IncomingHtlc(readLightningMessage() as UpdateAddHtlc)
-                1 -> OutgoingHtlc(readLightningMessage() as UpdateAddHtlc)
+                0 -> {
+                    val htlcId = readNumber()
+                    htlcs.first { it is IncomingHtlc && it.add.id == htlcId }
+                }
+                1 -> {
+                    val htlcId = readNumber()
+                    htlcs.first { it is OutgoingHtlc && it.add.id == htlcId }
+                }
                 else -> error("invalid discriminator $discriminator for class ${DirectedHtlc::class}")
             }
         }.toSet(),

@@ -7,10 +7,7 @@ import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.serialization.v4.Serialization.write
-import fr.acinq.lightning.transactions.CommitmentSpec
-import fr.acinq.lightning.transactions.IncomingHtlc
-import fr.acinq.lightning.transactions.OutgoingHtlc
-import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.LightningCodecs
@@ -396,6 +393,14 @@ object Serialization {
     private fun Output.writeCommitments(o: Commitments) = o.run {
         writeChannelParams(params)
         writeCommitmentChanges(changes)
+        // When multiple commitments are active, htlcs are shared between all of these commitments, so we serialize them separately.
+        // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
+        val htlcs = buildSet {
+            addAll(active.first().localCommit.spec.htlcs)
+            addAll(active.first().remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
+            active.first().nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
+        }
+        writeCollection(htlcs) { writeDirectedHtlc(it) }
         writeCollection(active) { writeCommitment(it) }
         writeCollection(payments.entries) { entry ->
             writeNumber(entry.key)
@@ -415,13 +420,22 @@ object Serialization {
         writeDelimited(remoteChannelData.data.toByteArray())
     }
 
-    private fun Output.write(o: CommitmentSpec): Unit = o.run {
+    private fun Output.writeDirectedHtlc(htlc: DirectedHtlc) = htlc.run {
+        when (htlc) {
+            is IncomingHtlc -> write(0)
+            is OutgoingHtlc -> write(1)
+        }
+        writeLightningMessage(add)
+    }
+
+    private fun Output.write(o: CommitmentSpec) = o.run {
         writeCollection(htlcs) {
             when (it) {
                 is IncomingHtlc -> write(0)
                 is OutgoingHtlc -> write(1)
             }
-            writeLightningMessage(it.add)
+            // To avoid duplication, HTLCs are serialized separately.
+            writeNumber(it.add.id)
         }
         writeNumber(feerate.toLong())
         writeNumber(toLocal.toLong())
