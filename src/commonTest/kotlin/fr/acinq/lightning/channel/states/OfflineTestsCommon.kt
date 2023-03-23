@@ -22,7 +22,7 @@ import kotlin.test.*
 class OfflineTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `handle disconnect - connect events (no messages sent yet)`() {
+    fun `handle disconnect - connect events -- no messages sent yet`() {
         val (alice, bob) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
         val (alice1, _) = alice.processEx(ChannelEvent.Disconnected)
         val (bob1, _) = bob.processEx(ChannelEvent.Disconnected)
@@ -445,7 +445,7 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `reprocess pending incoming htlcs after disconnection or wallet restart (htlc settlement signed by us)`() {
+    fun `reprocess pending incoming htlcs after disconnection or wallet restart -- htlc settlement signed by us`() {
         val (alice, bob, htlcs) = run {
             val (alice0, bob0) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
             val (aliceId, bobId) = Pair(alice0.staticParams.nodeParams.nodeId, bob0.staticParams.nodeParams.nodeId)
@@ -515,7 +515,7 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (no htlc timed out)`() {
+    fun `recv NewBlock -- no htlc timed out`() {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, _, _) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
@@ -534,7 +534,7 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (an htlc timed out)`() {
+    fun `recv NewBlock -- an htlc timed out`() {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
@@ -558,7 +558,7 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (fulfilled signed htlc ignored by peer)`() {
+    fun `recv NewBlock -- fulfilled signed htlc ignored by peer`() {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, preimage, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = TestsHelper.crossSign(nodes.first, nodes.second)

@@ -23,18 +23,18 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
-import kotlin.time.ExperimentalTime
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
-@OptIn(ExperimentalTime::class)
 class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     private val bitcoincli = BitcoindService
 
     init {
         runSuspendBlocking {
-            withTimeout(Duration.seconds(10)) {
+            withTimeout(10.seconds) {
                 while (runTrying { bitcoincli.getNetworkInfo() }.isFailure) {
-                    delay(Duration.seconds(0.5))
+                    delay(0.5.seconds)
                 }
             }
         }
@@ -272,7 +272,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @OptIn(FlowPreview::class)
     @Test
-    fun `watch for mempool transactions (txs in mempool before we set the watch)`() = runSuspendTest(timeout = Duration.seconds(50)) {
+    fun `watch for mempool transactions -- txs in mempool before we set the watch`() = runSuspendTest(timeout = 50.seconds) {
         val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -317,7 +317,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `watch for mempool transactions (txs not yet in the mempool when we set the watch)`() = runSuspendTest {
+    fun `watch for mempool transactions -- txs not yet in the mempool when we set the watch`() = runSuspendTest {
         val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
 
@@ -350,7 +350,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = Duration.minutes(2)) {
+    fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = 2.minutes) {
         val client = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
         val watcher = ElectrumWatcher(client, this)
         val watcherNotifications = watcher.openWatchNotificationsFlow()
@@ -358,7 +358,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         suspend fun awaitForBlockCount(height: Int) {
             do {
                 val count = bitcoincli.getBlockCount()
-                delay(Duration.seconds(1))
+                delay(1.seconds)
             } while (count < height)
         }
 
@@ -369,7 +369,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
                     assertEquals(1, mempool.size)
                     assertEquals(tx.txid.toHex(), mempool.first())
                 }
-                delay(Duration.seconds(1))
+                delay(1.seconds)
             } while (mempool.isEmpty())
         }
 
@@ -472,7 +472,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `get transaction`() = runSuspendTest(timeout = Duration.seconds(50)) {
+    fun `get transaction`() = runSuspendTest(timeout = 50.seconds) {
         // Run on a production server
         val electrumClient = ElectrumClient(TcpSocket.Builder(), this).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
         val electrumWatcher = ElectrumWatcher(electrumClient, this)

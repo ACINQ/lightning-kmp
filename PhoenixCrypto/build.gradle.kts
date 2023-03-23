@@ -6,8 +6,7 @@ listOf("iphoneos", "iphonesimulator").forEach { sdk ->
             "xcodebuild",
             "-project", "PhoenixCrypto.xcodeproj",
             "-target", "PhoenixCrypto",
-            "-sdk", sdk,
-            "BITCODE_GENERATION_MODE=bitcode"
+            "-sdk", sdk
         )
         workingDir(projectDir)
 

@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
 
 class RouteBlindingTestsCommon : LightningTestSuite() {
     @Test
-    fun `decode route blinding data (reference test vector)`() {
+    fun `decode route blinding data -- reference test vector`() {
         val payloads = mapOf(
             ByteVector("01080000000000000000 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145") to RouteBlindingEncryptedData(
                 TlvStream(

@@ -74,7 +74,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
     private val feerate = FeeratePerKw(22_000.sat)
 
     @Test
-    fun `encode and decode sequence and lockTime (one example)`() {
+    fun `encode and decode sequence and lockTime -- one example`() {
         val txNumber = 0x11F71FB268DL
 
         val (sequence, lockTime) = encodeTxNumber(txNumber)

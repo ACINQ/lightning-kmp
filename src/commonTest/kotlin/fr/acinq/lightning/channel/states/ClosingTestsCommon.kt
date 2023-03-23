@@ -54,14 +54,14 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FULFILL_HTLC (nonexistent htlc)`() {
+    fun `recv CMD_FULFILL_HTLC -- nonexistent htlc`() {
         val (alice, _, _) = initMutualClose()
         val (_, actions) = alice.processEx(ChannelEvent.ExecuteCommand(CMD_FULFILL_HTLC(1, ByteVector32.Zeroes)))
         assertTrue { actions.size == 1 && (actions.first() as ChannelAction.ProcessCmdRes.NotExecuted).t is UnknownHtlcId }
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (mutual close before converging)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- mutual close before converging`() {
         val (alice0, bob0) = reachNormal()
         // alice initiates a closing with a low fee
         val (alice1, aliceActions1) = alice0.process(ChannelEvent.ExecuteCommand(CMD_CLOSE(null, ClosingFeerates(FeeratePerKw(500.sat), FeeratePerKw(250.sat), FeeratePerKw(1000.sat)))))
@@ -99,7 +99,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (mutual close)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- mutual close`() {
         val (alice0, _, _) = initMutualClose()
         val mutualCloseTx = alice0.mutualClosePublished.last()
 
@@ -113,7 +113,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (mutual close with external btc address)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- mutual close with external btc address`() {
         val pubKey = Lightning.randomKey().publicKey()
         val bobBtcAddr = computeP2PkhAddress(pubKey, TestConstants.Bob.nodeParams.chainHash)
         val bobFinalScript = Script.write(Script.pay2pkh(pubKey)).toByteVector()
@@ -132,7 +132,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (local commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- local commit`() {
         val (aliceNormal, _) = reachNormal()
         val (aliceClosing, localCommitPublished) = localClose(aliceNormal)
 
@@ -144,7 +144,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (local commit)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- local commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, htlcs) = run {
             // alice sends an htlc to bob
@@ -209,7 +209,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (local commit with multiple htlcs for the same payment)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- local commit with multiple htlcs for the same payment`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
         val (aliceClosing, localCommitPublished) = run {
@@ -252,7 +252,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (local commit with htlcs only signed by local)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- local commit with htlcs only signed by local`() {
         val (alice0, bob0) = reachNormal()
         val aliceCommitTx = alice0.commitments.localCommit.publishableTxs.commitTx.tx
         val (aliceClosing, localCommitPublished, add) = run {
@@ -282,7 +282,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (local commit) followed by CMD_FULFILL_HTLC`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- local commit -- followed by CMD_FULFILL_HTLC`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
@@ -325,7 +325,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (local commit) followed by UpdateFailHtlc not acked by remote`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- local commit --  followed by UpdateFailHtlc not acked by remote`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, htlc) = run {
             // An HTLC Alice -> Bob is cross-signed that will be failed later.
@@ -365,7 +365,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_OUTPUT_SPENT (local commit)`() {
+    fun `recv BITCOIN_OUTPUT_SPENT -- local commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, preimage) = run {
             val (nodes1, preimage, _) = addHtlc(20_000_000.msat, alice0, bob0)
@@ -433,7 +433,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ChannelEvent Restore (local commit)`() {
+    fun `recv ChannelEvent Restore -- local commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished) = run {
             // alice sends an htlc to bob
@@ -478,7 +478,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (remote commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- remote commit`() {
         val (alice, _, bobCommitTxs) = initMutualClose(withPayments = true)
         // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
         val bobCommitTx = bobCommitTxs.last().commitTx.tx
@@ -491,7 +491,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (remote commit)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- remote commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished, htlcs) = run {
             // alice sends an htlc to bob
@@ -553,7 +553,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (remote commit with multiple htlcs for the same payment)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- remote commit with multiple htlcs for the same payment`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
         val (aliceClosing, remoteCommitPublished) = run {
@@ -584,7 +584,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- remote commit with htlcs only signed by local in next remote commit`() {
         val (alice0, bob0) = reachNormal()
         val bobCommitTx = bob0.commitments.localCommit.publishableTxs.commitTx.tx
         val (aliceClosing, remoteCommitPublished, add) = run {
@@ -612,7 +612,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (remote commit) followed by CMD_FULFILL_HTLC`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- remote commit --  followed by CMD_FULFILL_HTLC`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
@@ -654,7 +654,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_OUTPUT_SPENT (remote commit)`() {
+    fun `recv BITCOIN_OUTPUT_SPENT -- remote commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished, preimage) = run {
             val (nodes1, rb1, addAlice1) = addHtlc(20_000_000.msat, alice0, bob0)
@@ -732,7 +732,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ChannelEvent Restore (remote commit)`() {
+    fun `recv ChannelEvent Restore -- remote commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished) = run {
             // alice sends an htlc to bob
@@ -775,7 +775,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (next remote commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- next remote commit`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
         val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
@@ -801,7 +801,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (next remote commit)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- next remote commit`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
         val (aliceClosing, remoteCommitPublished) = run {
@@ -842,7 +842,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (next remote commit) followed by CMD_FULFILL_HTLC`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- next remote commit --  followed by CMD_FULFILL_HTLC`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
@@ -894,7 +894,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_OUTPUT_SPENT (next remote commit)`() {
+    fun `recv BITCOIN_OUTPUT_SPENT -- next remote commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished) = run {
             val (nodes1, rb1, addAlice1) = addHtlc(20_000_000.msat, alice0, bob0)
@@ -977,7 +977,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ChannelEvent Restore (next remote commit)`() {
+    fun `recv ChannelEvent Restore -- next remote commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished) = run {
             // alice sends an htlc to bob
@@ -1031,7 +1031,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (future remote commit)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- future remote commit`() {
         val (alice0, bob0) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
         val (_, bobDisconnected) = run {
             // This HTLC will be fulfilled.
@@ -1121,7 +1121,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (one revoked tx)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- one revoked tx`() {
         val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
 
         // bob publishes one of his revoked txs
@@ -1212,7 +1212,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (multiple revoked tx)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- multiple revoked tx`() {
         val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
         assertEquals(bobCommitTxs.size, bobCommitTxs.map { it.commitTx.tx.txid }.toSet().size) // all commit txs are distinct
 
@@ -1317,7 +1317,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED (one revoked tx, pending htlcs)`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- one revoked tx + pending htlcs`() {
         val (alice0, bob0) = reachNormal()
         // bob's first commit tx doesn't contain any htlc
         assertEquals(4, bob0.commitments.localCommit.publishableTxs.commitTx.tx.txOut.size) // 2 main outputs + 2 anchors
@@ -1372,7 +1372,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published HtlcSuccess tx)`() {
+    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx`() {
         val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
 
         // bob publishes one of his revoked txs
@@ -1474,7 +1474,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published aggregated htlc tx)`() {
+    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published aggregated htlc tx`() {
         val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
 
         // bob publishes one of his revoked txs
@@ -1567,7 +1567,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv NewBlock (an htlc timed out)`() {
+    fun `recv NewBlock -- an htlc timed out`() {
         val (alice, bob) = reachNormal()
         val (aliceClosing, htlc) = run {
             val (nodes1, _, htlc) = addHtlc(30_000_000.msat, alice, bob)
@@ -1599,7 +1599,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (funder, tx found)`() {
+    fun `recv GetTxResponse -- initiator + tx found`() {
         val (alice, _) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -1611,7 +1611,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (funder, tx not found)`() {
+    fun `recv GetTxResponse -- initiator + tx not found`() {
         val (alice, _) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -1624,7 +1624,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (fundee, tx found)`() {
+    fun `recv GetTxResponse -- non-initiator + tx found`() {
         val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -1636,7 +1636,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (fundee, tx not found)`() {
+    fun `recv GetTxResponse -- non-initiator + tx not found`() {
         val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)
@@ -1648,7 +1648,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv GetTxResponse (fundee, tx not found, timeout)`() {
+    fun `recv GetTxResponse -- non-initiator + tx not found + timeout`() {
         val (alice, bob) = initForceClose()
         val fundingTx = alice.fundingTx
         assertNotNull(fundingTx)

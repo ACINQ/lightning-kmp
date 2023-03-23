@@ -525,6 +525,7 @@ data class Commitments(
                 log.error(check.error) { "c:$channelId remote signature $commit is invalid" }
                 return Either.Left(InvalidCommitmentSignature(channelId, signedCommitTx.tx))
             }
+            else -> {}
         }
 
         val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }

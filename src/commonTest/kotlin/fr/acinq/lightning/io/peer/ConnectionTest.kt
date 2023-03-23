@@ -11,9 +11,7 @@ import fr.acinq.lightning.utils.Connection
 import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.time.ExperimentalTime
 
-@OptIn(ExperimentalTime::class)
 class ConnectionTest : LightningTestSuite() {
 
     @Test

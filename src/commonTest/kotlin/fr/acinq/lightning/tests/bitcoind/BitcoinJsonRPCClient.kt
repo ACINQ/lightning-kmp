@@ -3,12 +3,14 @@ package fr.acinq.lightning.tests.bitcoind
 import fr.acinq.lightning.utils.JsonRPCResponse
 import fr.acinq.lightning.utils.lightningLogger
 import io.ktor.client.*
-import io.ktor.client.features.auth.*
-import io.ktor.client.features.auth.providers.*
-import io.ktor.client.features.json.*
-import io.ktor.client.features.json.serializer.*
+import io.ktor.client.call.*
+import io.ktor.client.plugins.auth.*
+import io.ktor.client.plugins.auth.providers.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.serialization.kotlinx.json.*
 import io.ktor.client.request.*
 import kotlin.native.concurrent.ThreadLocal
+import io.ktor.http.*
 
 
 @ThreadLocal
@@ -23,8 +25,8 @@ object BitcoinJsonRPCClient {
     private val serviceUri = "$scheme://$host:$port/wallet/" // wallet/ specifies to use the default bitcoind wallet, named ""
 
     private val httpClient = HttpClient {
-        install(JsonFeature) {
-            serializer = KotlinxSerializer()
+        install(ContentNegotiation) {
+            json()
         }
         install(Auth) {
             basic {
@@ -36,10 +38,10 @@ object BitcoinJsonRPCClient {
     private val logger by lightningLogger()
 
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
-        val rpcResponse = httpClient.post<JsonRPCResponse>(serviceUri) {
+        val rpcResponse: JsonRPCResponse = httpClient.post(Url(serviceUri)) {
             logger.debug { "Send bitcoind command: ${request.asJsonRPCRequest()}" }
-            body = request.asJsonRPCRequest()
-        }
+            setBody(request.asJsonRPCRequest())
+        }.body()
         logger.debug { "Receive bitcoind response: $rpcResponse" }
         @Suppress("UNCHECKED_CAST")
         return request.parseJsonResponse(rpcResponse) as T

@@ -30,7 +30,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (remote commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- remote commit`() {
         val (alice, bob, _) = init()
         // bob publishes his commitment tx
         run {
@@ -53,7 +53,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT (other commit)`() {
+    fun `recv BITCOIN_FUNDING_SPENT -- other commit`() {
         val (alice, _, _) = init()
         val aliceCommitTx = alice.commitments.localCommit.publishableTxs.commitTx.tx
         val unknownTx = Transaction(2, aliceCommitTx.txIn, listOf(), 0)
@@ -103,7 +103,7 @@ class WaitForFundingLockedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FORCECLOSE (nothing at stake)`() {
+    fun `recv CMD_FORCECLOSE -- nothing at stake`() {
         val (_, bob, _) = init(pushMsat = 0.msat)
         val (bob1, actions1) = bob.processEx(ChannelEvent.ExecuteCommand(CMD_FORCECLOSE))
         assertTrue(bob1 is Aborted)

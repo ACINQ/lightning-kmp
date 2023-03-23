@@ -27,10 +27,8 @@ import kotlinx.coroutines.flow.first
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlin.time.ExperimentalTime
 
 
-@OptIn(ExperimentalTime::class)
 class PeerTest : LightningTestSuite() {
 
     fun buildOpenChannel(): OpenChannel = OpenChannel(
@@ -71,7 +69,7 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
-    fun `init peer (bundled)`() = runSuspendTest {
+    fun `init peer -- bundled`() = runSuspendTest {
         newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams))
     }
 
@@ -163,7 +161,7 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
-    fun `restore channel (bundled)`() = runSuspendTest {
+    fun `restore channel -- bundled`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         newPeers(this, Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams), listOf(alice0 to bob0))
     }
@@ -223,7 +221,7 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
-    fun `payment test between two phoenix nodes (manual mode)`() = runSuspendTest {
+    fun `payment test between two phoenix nodes -- manual mode`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
         val walletParams = Pair(
@@ -269,7 +267,7 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
-    fun `payment test between two phoenix nodes (automated messaging)`() = runSuspendTest {
+    fun `payment test between two phoenix nodes -- automated messaging`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
         val walletParams = Pair(
