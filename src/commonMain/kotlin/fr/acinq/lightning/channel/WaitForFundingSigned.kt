@@ -10,6 +10,8 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.electrum.WalletState
+import fr.acinq.lightning.crypto.ShaChain
+import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 import kotlin.math.absoluteValue
 
@@ -43,32 +45,40 @@ data class WaitForFundingSigned(
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> {
-                val firstCommitmentsRes = Helpers.Funding.receiveFirstCommit(
-                    keyManager, localParams, remoteParams,
-                    fundingTx,
-                    firstCommitTx, cmd.message,
-                    channelConfig, channelFeatures, channelFlags,
-                    remoteFirstPerCommitmentPoint, remoteSecondPerCommitmentPoint
+                val firstCommitmentRes = Helpers.Funding.receiveFirstCommit(
+                    keyManager, fundingParams, localParams, remoteParams,
+                    fundingTx, firstCommitTx, cmd.message,
+                    remoteFirstPerCommitmentPoint,
+                    currentBlockHeight.toLong()
                 )
-                when (firstCommitmentsRes) {
+                when (firstCommitmentRes) {
                     Helpers.Funding.InvalidRemoteCommitSig -> handleLocalError(cmd, InvalidCommitmentSignature(channelId, firstCommitTx.localCommitTx.tx.txid))
                     Helpers.Funding.FundingSigFailure -> {
                         logger.warning { "could not sign funding tx" }
                         Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
                     }
-                    is Helpers.Funding.FirstCommitments -> {
-                        val (signedFundingTx, commitments) = firstCommitmentsRes
-                        logger.info { "funding tx created with txId=${commitments.fundingTxId}. ${fundingTx.localInputs.size} local inputs, ${fundingTx.remoteInputs.size} remote inputs, ${fundingTx.localOutputs.size} local outputs and ${fundingTx.remoteOutputs.size} remote outputs" }
+                    is Helpers.Funding.FirstCommitment -> {
+                        val (signedFundingTx, commitment) = firstCommitmentRes
+                        val commitments = Commitments(
+                            ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags),
+                            CommitmentChanges.init(),
+                            listOf(commitment),
+                            payments = mapOf(),
+                            remoteNextCommitInfo = Either.Right(remoteSecondPerCommitmentPoint),
+                            remotePerCommitmentSecrets = ShaChain.init,
+                            remoteChannelData = cmd.message.channelData
+                        )
+                        logger.info { "funding tx created with txId=${commitment.fundingTxId}. ${fundingTx.localInputs.size} local inputs, ${fundingTx.remoteInputs.size} remote inputs, ${fundingTx.localOutputs.size} local outputs and ${fundingTx.remoteOutputs.size} remote outputs" }
                         if (staticParams.useZeroConf) {
                             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
-                            val watchSpent = WatchSpent(channelId, commitments.fundingTxId, commitments.commitInput.outPoint.index.toInt(), commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-                            val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.localParams.channelKeys(keyManager).shaSeed, 1)
-                            val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
+                            val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                            val nextPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, 1)
+                            val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
                             // We use part of the funding txid to create a dummy short channel id.
                             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
                             // Collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed).
-                            val shortChannelId = ShortChannelId(0, Pack.int32BE(commitments.fundingTxId.slice(0, 16).toByteArray()).absoluteValue, commitments.commitInput.outPoint.index.toInt())
-                            val nextState = WaitForChannelReady(commitments, fundingParams, signedFundingTx, shortChannelId, channelReady)
+                            val shortChannelId = ShortChannelId(0, Pack.int32BE(commitment.fundingTxId.slice(0, 16).toByteArray()).absoluteValue, commitment.commitInput.outPoint.index.toInt())
+                            val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady)
                             val actions = buildList {
                                 add(ChannelAction.Blockchain.SendWatch(watchSpent))
                                 // We're not a liquidity provider, so we don't mind sending our signatures immediately.
@@ -80,14 +90,11 @@ data class WaitForFundingSigned(
                         } else {
                             val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, fundingParams.fundingAmount)
                             logger.info { "will wait for $fundingMinDepth confirmations" }
-                            val watchConfirmed = WatchConfirmed(channelId, commitments.fundingTxId, commitments.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                            val watchConfirmed = WatchConfirmed(channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                             val nextState = WaitForFundingConfirmed(
                                 commitments,
-                                fundingParams,
                                 localPushAmount,
                                 remotePushAmount,
-                                signedFundingTx,
-                                listOf(),
                                 currentBlockHeight.toLong(),
                                 null
                             )

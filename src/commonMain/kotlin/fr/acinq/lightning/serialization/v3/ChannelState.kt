@@ -219,9 +219,7 @@ internal data class RemoteCommit(
 }
 
 @Serializable
-internal data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false) {
-    fun export() = fr.acinq.lightning.channel.WaitingForRevocation(nextRemoteCommit.export(), sent, sentAfterLocalCommitIndex, reSignAsap)
-}
+internal data class WaitingForRevocation(val nextRemoteCommit: RemoteCommit, val sent: CommitSig, val sentAfterLocalCommitIndex: Long, val reSignAsap: Boolean = false)
 
 @Serializable
 internal data class LocalCommitPublished(
@@ -368,22 +366,42 @@ internal data class Commitments(
     val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) {
     fun export() = fr.acinq.lightning.channel.Commitments(
-        channelConfig.export(),
-        channelFeatures.export(),
-        localParams.export(),
-        remoteParams.export(),
-        channelFlags,
-        localCommit.export(),
-        remoteCommit.export(),
-        localChanges.export(),
-        remoteChanges.export(),
-        localNextHtlcId,
-        remoteNextHtlcId,
+        fr.acinq.lightning.channel.ChannelParams(
+            channelId,
+            channelConfig.export(),
+            channelFeatures.export(),
+            localParams.export(),
+            remoteParams.export(),
+            channelFlags
+        ),
+        fr.acinq.lightning.channel.CommitmentChanges(
+            localChanges.export(),
+            remoteChanges.export(),
+            localNextHtlcId,
+            remoteNextHtlcId,
+        ),
+        listOf(
+            fr.acinq.lightning.channel.Commitment(
+                // We previously didn't store the funding transaction, so we act as if it were unconfirmed.
+                // We will put a WatchConfirmed when starting, which will return the confirmed transaction.
+                fr.acinq.lightning.channel.LocalFundingStatus.UnconfirmedFundingTx(
+                    fr.acinq.lightning.channel.PartiallySignedSharedTransaction(
+                        fr.acinq.lightning.channel.SharedTransaction(listOf(), listOf(), listOf(), listOf(), 0),
+                        // We must correctly set the txId here.
+                        TxSignatures(channelId, commitInput.outPoint.hash, listOf()),
+                    ),
+                    fr.acinq.lightning.channel.InteractiveTxParams(channelId, localParams.isFunder, commitInput.txOut.amount, commitInput.txOut.amount, commitInput.txOut.publicKeyScript, 0, localParams.dustLimit, localCommit.spec.feerate),
+                    0
+                ),
+                fr.acinq.lightning.channel.RemoteFundingStatus.Locked,
+                localCommit.export(),
+                remoteCommit.export(),
+                remoteNextCommitInfo.fold({ x -> fr.acinq.lightning.channel.NextRemoteCommit(x.sent, x.nextRemoteCommit.export()) }, { _ -> null })
+            )
+        ),
         payments,
-        remoteNextCommitInfo.transform({ x -> x.export() }, { y -> y }),
-        commitInput,
+        remoteNextCommitInfo.transform({ x -> fr.acinq.lightning.channel.WaitingForRevocation(x.sentAfterLocalCommitIndex) }, { y -> y }),
         remotePerCommitmentSecrets,
-        channelId,
         remoteChannelData
     )
 }
@@ -439,7 +457,6 @@ internal data class WaitForFundingConfirmed(
         lastSent
     )
 }
-
 
 /**
  * This class contains data used for channels opened before the migration to dual-funding.
@@ -552,9 +569,7 @@ internal data class Closing(
 ) : ChannelStateWithCommitments() {
     override fun export() = fr.acinq.lightning.channel.Closing(
         commitments.export(),
-        fundingTx,
         waitingSinceBlock,
-        listOf(),
         mutualCloseProposed,
         mutualClosePublished,
         localCommitPublished?.export(),

@@ -8,6 +8,7 @@ import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.Error
 
@@ -30,8 +31,8 @@ data class LegacyWaitForFundingLocked(
                     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
                     val watchConfirmed = WatchConfirmed(
                         this@LegacyWaitForFundingLocked.channelId,
-                        commitments.commitInput.outPoint.txid,
-                        commitments.commitInput.txOut.publicKeyScript,
+                        commitments.latest.commitInput.outPoint.txid,
+                        commitments.latest.commitInput.txOut.publicKeyScript,
                         ANNOUNCEMENTS_MINCONF.toLong(),
                         BITCOIN_FUNDING_DEEPLYBURIED
                     )
@@ -42,10 +43,10 @@ data class LegacyWaitForFundingLocked(
                         staticParams.remoteNodeId,
                         shortChannelId,
                         staticParams.nodeParams.expiryDeltaBlocks,
-                        commitments.remoteParams.htlcMinimum,
+                        commitments.params.remoteParams.htlcMinimum,
                         staticParams.nodeParams.feeBase,
                         staticParams.nodeParams.feeProportionalMillionth.toLong(),
-                        commitments.localCommit.spec.totalFunds,
+                        commitments.latest.fundingAmount.toMilliSatoshi(),
                         enable = Helpers.aboveReserve(commitments)
                     )
                     val nextState = Normal(
@@ -71,7 +72,7 @@ data class LegacyWaitForFundingLocked(
             }
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventSpent -> when (watch.tx.txid) {
-                    commitments.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx)
+                    commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx, commitments.latest)
                     else -> handleRemoteSpentOther(watch.tx)
                 }
                 else -> unhandled(cmd)

@@ -5,12 +5,14 @@
     // If we used @Serializable annotations directly on the actual classes, Kotlin would be
     // able to resolve serializers by itself. It is verbose, but it allows us to contain
     // serialization code in this file.
+    JsonSerializers.CommitmentSerializer::class,
     JsonSerializers.CommitmentsSerializer::class,
     JsonSerializers.ClosingFeeratesSerializer::class,
     JsonSerializers.LocalParamsSerializer::class,
     JsonSerializers.RemoteParamsSerializer::class,
     JsonSerializers.LocalCommitSerializer::class,
     JsonSerializers.RemoteCommitSerializer::class,
+    JsonSerializers.NextRemoteCommitSerializer::class,
     JsonSerializers.LocalChangesSerializer::class,
     JsonSerializers.RemoteChangesSerializer::class,
     JsonSerializers.EitherSerializer::class,
@@ -53,6 +55,10 @@
     JsonSerializers.InteractiveTxParamsSerializer::class,
     JsonSerializers.SignedSharedTransactionSerializer::class,
     JsonSerializers.RbfStatusSerializer::class,
+    JsonSerializers.ChannelParamsSerializer::class,
+    JsonSerializers.CommitmentChangesSerializer::class,
+    JsonSerializers.LocalFundingStatusSerializer::class,
+    JsonSerializers.RemoteFundingStatusSerializer::class,
     JsonSerializers.EncryptedChannelDataSerializer::class,
     JsonSerializers.ShutdownSerializer::class,
     JsonSerializers.ClosingSignedSerializer::class,
@@ -231,6 +237,39 @@ object JsonSerializers {
     @Serializer(forClass = WaitForFundingConfirmed.Companion.RbfStatus::class)
     object RbfStatusSerializer
 
+    @Serializer(forClass = ChannelParams::class)
+    object ChannelParamsSerializer
+
+    @Serializer(forClass = CommitmentChanges::class)
+    object CommitmentChangesSerializer
+
+    @Serializable
+    data class LocalFundingStatusSurrogate(val status: String, val txId: ByteVector32)
+    object LocalFundingStatusSerializer : SurrogateSerializer<LocalFundingStatus, LocalFundingStatusSurrogate>(
+        transform = { o ->
+            when (o) {
+                is LocalFundingStatus.UnconfirmedFundingTx -> LocalFundingStatusSurrogate("unconfirmed", o.txId)
+                is LocalFundingStatus.ConfirmedFundingTx -> LocalFundingStatusSurrogate("confirmed", o.txId)
+            }
+        },
+        delegateSerializer = LocalFundingStatusSurrogate.serializer()
+    )
+
+    @Serializable
+    data class RemoteFundingStatusSurrogate(val status: String)
+    object RemoteFundingStatusSerializer : SurrogateSerializer<RemoteFundingStatus, RemoteFundingStatusSurrogate>(
+        transform = { o ->
+            when (o) {
+                RemoteFundingStatus.NotLocked -> RemoteFundingStatusSurrogate("not-locked")
+                RemoteFundingStatus.Locked -> RemoteFundingStatusSurrogate("locked")
+            }
+        },
+        delegateSerializer = RemoteFundingStatusSurrogate.serializer()
+    )
+
+    @Serializer(forClass = Commitment::class)
+    object CommitmentSerializer
+
     @Serializer(forClass = Commitments::class)
     object CommitmentsSerializer
 
@@ -248,6 +287,9 @@ object JsonSerializers {
 
     @Serializer(forClass = RemoteCommit::class)
     object RemoteCommitSerializer
+
+    @Serializer(forClass = NextRemoteCommit::class)
+    object NextRemoteCommitSerializer
 
     @Serializer(forClass = LocalChanges::class)
     object LocalChangesSerializer

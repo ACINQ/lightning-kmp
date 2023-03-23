@@ -140,7 +140,7 @@ data class ChannelContext(
     val currentBlockHeight: Int,
     val currentOnChainFeerates: OnChainFeerates,
     override val logger: MDCLogger
-): LoggingContext {
+) : LoggingContext {
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
     val privateKey: PrivateKey get() = staticParams.nodeParams.nodePrivateKey
 }
@@ -178,9 +178,9 @@ sealed class ChannelState {
                 oldState is WaitForInit && newState is Closing -> actions
                 oldState is Closing && newState is Closing -> actions
                 oldState is ChannelStateWithCommitments && newState is Closing -> {
-                    val channelBalance = oldState.commitments.localCommit.spec.toLocal
+                    val channelBalance = oldState.commitments.latest.localCommit.spec.toLocal
                     if (channelBalance > 0.msat) {
-                        val defaultScriptPubKey = oldState.commitments.localParams.defaultFinalScriptPubKey
+                        val defaultScriptPubKey = oldState.commitments.params.localParams.defaultFinalScriptPubKey
                         val localShutdown = when (this@ChannelState) {
                             is Normal -> this@ChannelState.localShutdown
                             is Negotiating -> this@ChannelState.localShutdown
@@ -266,9 +266,7 @@ sealed class ChannelState {
             this@ChannelState is Negotiating && this@ChannelState.bestUnpublishedClosingTx != null -> {
                 val nexState = Closing(
                     commitments = commitments,
-                    fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
-                    alternativeCommitments = listOf(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                 )
@@ -288,47 +286,33 @@ sealed class ChannelState {
 sealed class ChannelStateWithCommitments : ChannelState() {
     abstract val commitments: Commitments
     val channelId: ByteVector32 get() = commitments.channelId
-    val isInitiator: Boolean get() = commitments.localParams.isInitiator
-    val remoteNodeId: PublicKey get() = commitments.remoteParams.nodeId
+    val isInitiator: Boolean get() = commitments.params.localParams.isInitiator
+    val remoteNodeId: PublicKey get() = commitments.remoteNodeId
 
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
-    fun nothingAtStake(): Boolean {
-        return when (this) {
-            is WaitForFundingConfirmed -> (listOf(commitments) + previousFundingTxs.map { it.second }).fold(true) { current, commitments -> current && commitments.nothingAtStake() }
-            is Closing -> (listOf(commitments) + alternativeCommitments).fold(true) { current, commitments -> current && commitments.nothingAtStake() }
-            else -> commitments.nothingAtStake()
-        }
-    }
-
-    internal fun ChannelContext.handleRemoteSpentCurrent(commitTx: Transaction): Pair<Closing, List<ChannelAction>> {
+    internal fun ChannelContext.handleRemoteSpentCurrent(commitTx: Transaction, commitment: FullCommitment): Pair<Closing, List<ChannelAction>> {
         logger.warning { "they published their current commit in txid=${commitTx.txid}" }
-        require(commitTx.txid == commitments.remoteCommit.txid) { "txid mismatch" }
+        require(commitTx.txid == commitment.remoteCommit.txid) { "txid mismatch" }
 
-        val remoteCommitPublished = claimRemoteCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, currentOnChainFeerates)
+        val remoteCommitPublished = claimRemoteCommitTxOutputs(keyManager, commitment, commitment.remoteCommit, commitTx, currentOnChainFeerates)
 
         val nextState = when (this@ChannelStateWithCommitments) {
             is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
             is Negotiating -> Closing(
                 commitments = commitments,
-                fundingTx = null,
                 waitingSinceBlock = currentBlockHeight.toLong(),
-                alternativeCommitments = listOf(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 remoteCommitPublished = remoteCommitPublished
             )
             is WaitForFundingConfirmed -> Closing(
                 commitments = commitments,
-                fundingTx = fundingTx.signedTx,
                 waitingSinceBlock = currentBlockHeight.toLong(),
-                alternativeCommitments = previousFundingTxs.map { it.second },
                 remoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
                 commitments = commitments,
-                fundingTx = null,
                 waitingSinceBlock = currentBlockHeight.toLong(),
-                alternativeCommitments = listOf(),
                 remoteCommitPublished = remoteCommitPublished
             )
         }
@@ -339,31 +323,25 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         })
     }
 
-    internal fun ChannelContext.handleRemoteSpentNext(commitTx: Transaction): Pair<ChannelState, List<ChannelAction>> {
+    internal fun ChannelContext.handleRemoteSpentNext(commitTx: Transaction, commitment: FullCommitment): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "they published their next commit in txid=${commitTx.txid}" }
-        require(commitments.remoteNextCommitInfo.isLeft) { "next remote commit must be defined" }
-        val remoteCommit = commitments.remoteNextCommitInfo.left?.nextRemoteCommit
-        require(remoteCommit != null) { "remote commit must not be null" }
+        require(commitment.nextRemoteCommit != null) { "next remote commit must be defined" }
+        val remoteCommit = commitment.nextRemoteCommit.commit
         require(commitTx.txid == remoteCommit.txid) { "txid mismatch" }
 
-        val remoteCommitPublished = claimRemoteCommitTxOutputs(keyManager, commitments, remoteCommit, commitTx, currentOnChainFeerates)
+        val remoteCommitPublished = claimRemoteCommitTxOutputs(keyManager, commitment, remoteCommit, commitTx, currentOnChainFeerates)
 
         val nextState = when (this@ChannelStateWithCommitments) {
             is Closing -> copy(nextRemoteCommitPublished = remoteCommitPublished)
             is Negotiating -> Closing(
                 commitments = commitments,
-                fundingTx = null,
                 waitingSinceBlock = currentBlockHeight.toLong(),
-                alternativeCommitments = listOf(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 nextRemoteCommitPublished = remoteCommitPublished
             )
-            // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed, so we don't have the case where fundingTx is defined
             else -> Closing(
                 commitments = commitments,
-                fundingTx = null,
                 waitingSinceBlock = currentBlockHeight.toLong(),
-                alternativeCommitments = listOf(),
                 nextRemoteCommitPublished = remoteCommitPublished
             )
         }
@@ -377,7 +355,7 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     internal fun ChannelContext.handleRemoteSpentOther(tx: Transaction): Pair<ChannelState, List<ChannelAction>> {
         logger.warning { "funding tx spent in txid=${tx.txid}" }
 
-        return claimRevokedRemoteCommitTxOutputs(keyManager, commitments, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
+        return claimRevokedRemoteCommitTxOutputs(keyManager, commitments.params, commitments.remotePerCommitmentSecrets, tx, currentOnChainFeerates)?.let { (revokedCommitPublished, txNumber) ->
             logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
             val ex = FundingTxSpent(channelId, tx.txid)
             val error = Error(channelId, ex.message)
@@ -390,18 +368,13 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 }
                 is Negotiating -> Closing(
                     commitments = commitments,
-                    fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
-                    alternativeCommitments = listOf(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
-                // NB: if there is a next commitment, we can't be in WaitForFundingConfirmed, so we don't have the case where fundingTx is defined
                 else -> Closing(
                     commitments = commitments,
-                    fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
-                    alternativeCommitments = listOf(),
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
             }
@@ -430,10 +403,10 @@ sealed class ChannelStateWithCommitments : ChannelState() {
             logger.warning { "we have an outdated commitment: will not publish our local tx" }
             Pair(this@ChannelStateWithCommitments as ChannelState, listOf())
         } else {
-            val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
+            val commitTx = commitments.latest.localCommit.publishableTxs.commitTx.tx
             val localCommitPublished = claimCurrentLocalCommitTxOutputs(
                 keyManager,
-                commitments,
+                commitments.latest,
                 commitTx,
                 currentOnChainFeerates
             )
@@ -441,24 +414,18 @@ sealed class ChannelStateWithCommitments : ChannelState() {
                 is Closing -> copy(localCommitPublished = localCommitPublished)
                 is Negotiating -> Closing(
                     commitments = commitments,
-                    fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
-                    alternativeCommitments = listOf(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     localCommitPublished = localCommitPublished
                 )
                 is WaitForFundingConfirmed -> Closing(
                     commitments = commitments,
-                    fundingTx = fundingTx.signedTx,
                     waitingSinceBlock = currentBlockHeight.toLong(),
-                    alternativeCommitments = previousFundingTxs.map { it.second },
                     localCommitPublished = localCommitPublished
                 )
                 else -> Closing(
                     commitments = commitments,
-                    fundingTx = null,
                     waitingSinceBlock = currentBlockHeight.toLong(),
-                    alternativeCommitments = listOf(),
                     localCommitPublished = localCommitPublished
                 )
             }
@@ -486,15 +453,13 @@ sealed class ChannelStateWithCommitments : ChannelState() {
         return when (channelEx) {
             null -> Pair(this@ChannelStateWithCommitments, listOf())
             else -> {
-                logger.error { "${channelEx.message}" }
+                logger.error { channelEx.message }
                 when {
                     this@ChannelStateWithCommitments is Closing -> Pair(this@ChannelStateWithCommitments, listOf()) // nothing to do, there is already a spending tx published
                     this@ChannelStateWithCommitments is Negotiating && this@ChannelStateWithCommitments.bestUnpublishedClosingTx != null -> {
                         val nexState = Closing(
                             commitments,
-                            fundingTx = null,
                             waitingSinceBlock = currentBlockHeight.toLong(),
-                            alternativeCommitments = listOf(),
                             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                         )
@@ -551,28 +516,30 @@ object Channel {
     fun handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments, keyManager: KeyManager, log: MDCLogger): Pair<Commitments, List<ChannelAction>> {
         val sendQueue = ArrayList<ChannelAction>()
         // first we clean up unacknowledged updates
-        log.debug { "discarding proposed OUT: ${d.commitments.localChanges.proposed}" }
-        log.debug { "discarding proposed IN: ${d.commitments.remoteChanges.proposed}" }
+        log.debug { "discarding proposed OUT: ${d.commitments.changes.localChanges.proposed}" }
+        log.debug { "discarding proposed IN: ${d.commitments.changes.remoteChanges.proposed}" }
         val commitments1 = d.commitments.copy(
-            localChanges = d.commitments.localChanges.copy(proposed = emptyList()),
-            remoteChanges = d.commitments.remoteChanges.copy(proposed = emptyList()),
-            localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.filterIsInstance<UpdateAddHtlc>().size,
-            remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.filterIsInstance<UpdateAddHtlc>().size
+            changes = d.commitments.changes.copy(
+                localChanges = d.commitments.changes.localChanges.copy(proposed = emptyList()),
+                remoteChanges = d.commitments.changes.remoteChanges.copy(proposed = emptyList()),
+                localNextHtlcId = d.commitments.changes.localNextHtlcId - d.commitments.changes.localChanges.proposed.filterIsInstance<UpdateAddHtlc>().size,
+                remoteNextHtlcId = d.commitments.changes.remoteNextHtlcId - d.commitments.changes.remoteChanges.proposed.filterIsInstance<UpdateAddHtlc>().size
+            )
         )
-        log.debug { "localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}" }
-        log.debug { "remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}" }
+        log.debug { "localNextHtlcId=${d.commitments.changes.localNextHtlcId}->${commitments1.changes.localNextHtlcId}" }
+        log.debug { "remoteNextHtlcId=${d.commitments.changes.remoteNextHtlcId}->${commitments1.changes.remoteNextHtlcId}" }
 
         fun resendRevocation() {
             // let's see the state of remote sigs
-            when (commitments1.localCommit.index) {
+            when (commitments1.localCommitIndex) {
                 channelReestablish.nextRemoteRevocationNumber -> {
                     // nothing to do
                 }
                 channelReestablish.nextRemoteRevocationNumber + 1 -> {
                     // our last revocation got lost, let's resend it
                     log.debug { "re-sending last revocation" }
-                    val localPerCommitmentSecret = keyManager.commitmentSecret(d.commitments.localParams.channelKeys(keyManager).shaSeed, d.commitments.localCommit.index - 1)
-                    val localNextPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.localParams.channelKeys(keyManager).shaSeed, d.commitments.localCommit.index + 1)
+                    val localPerCommitmentSecret = keyManager.commitmentSecret(d.commitments.params.localParams.channelKeys(keyManager).shaSeed, d.commitments.localCommitIndex - 1)
+                    val localNextPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.params.localParams.channelKeys(keyManager).shaSeed, d.commitments.localCommitIndex + 1)
                     val revocation = RevokeAndAck(commitments1.channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
                     sendQueue.add(ChannelAction.Message.Send(revocation))
                 }
@@ -581,34 +548,34 @@ object Channel {
         }
 
         when {
-            commitments1.remoteNextCommitInfo.isLeft && commitments1.remoteNextCommitInfo.left!!.nextRemoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber -> {
+            commitments1.remoteNextCommitInfo.isLeft && commitments1.nextRemoteCommitIndex + 1 == channelReestablish.nextLocalCommitmentNumber -> {
                 // we had sent a new sig and were waiting for their revocation
                 // they had received the new sig but their revocation was lost during the disconnection
                 // they will send us the revocation, nothing to do here
                 log.debug { "waiting for them to re-send their last revocation" }
                 resendRevocation()
             }
-            commitments1.remoteNextCommitInfo.isLeft && commitments1.remoteNextCommitInfo.left!!.nextRemoteCommit.index == channelReestablish.nextLocalCommitmentNumber -> {
+            commitments1.remoteNextCommitInfo.isLeft && commitments1.nextRemoteCommitIndex == channelReestablish.nextLocalCommitmentNumber -> {
                 // we had sent a new sig and were waiting for their revocation
                 // they didn't receive the new sig because of the disconnection
                 // we just resend the same updates and the same sig
-                val revWasSentLast = commitments1.localCommit.index > commitments1.remoteNextCommitInfo.left!!.sentAfterLocalCommitIndex
+                val revWasSentLast = commitments1.localCommitIndex > commitments1.remoteNextCommitInfo.left!!.sentAfterLocalCommitIndex
                 if (!revWasSentLast) resendRevocation()
 
-                log.debug { "re-sending previously local signed changes: ${commitments1.localChanges.signed}" }
-                commitments1.localChanges.signed.forEach { sendQueue.add(ChannelAction.Message.Send(it)) }
+                log.debug { "re-sending previously local signed changes: ${commitments1.changes.localChanges.signed}" }
+                commitments1.changes.localChanges.signed.forEach { sendQueue.add(ChannelAction.Message.Send(it)) }
                 log.debug { "re-sending the exact same previous sig" }
-                sendQueue.add(ChannelAction.Message.Send(commitments1.remoteNextCommitInfo.left!!.sent))
+                commitments1.active.forEach { sendQueue.add(ChannelAction.Message.Send(it.nextRemoteCommit!!.sig)) }
                 if (revWasSentLast) resendRevocation()
             }
-            commitments1.remoteNextCommitInfo.isRight && commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber -> {
+            commitments1.remoteNextCommitInfo.isRight && commitments1.remoteCommitIndex + 1 == channelReestablish.nextLocalCommitmentNumber -> {
                 // there wasn't any sig in-flight when the disconnection occurred
                 resendRevocation()
             }
             else -> throw RevocationSyncError(d.channelId)
         }
 
-        if (commitments1.localHasChanges()) {
+        if (commitments1.changes.localHasChanges()) {
             sendQueue.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
         }
 
@@ -621,8 +588,8 @@ object Channel {
         // That's why we need to look in *their* commitment with direction=OUT.
         //
         // We also need to filter out htlcs that we already settled and signed (the settlement messages are being retransmitted).
-        val alreadySettled = commitments1.localChanges.signed.filterIsInstance<HtlcSettlementMessage>().map { it.id }.toSet()
-        val htlcsToReprocess = commitments1.remoteCommit.spec.htlcs.outgoings().filter { !alreadySettled.contains(it.id) }
+        val alreadySettled = commitments1.changes.localChanges.signed.filterIsInstance<HtlcSettlementMessage>().map { it.id }.toSet()
+        val htlcsToReprocess = commitments1.latest.remoteCommit.spec.htlcs.outgoings().filter { !alreadySettled.contains(it.id) }
         log.debug { "re-processing signed IN: $htlcsToReprocess" }
         sendQueue.addAll(htlcsToReprocess.map { ChannelAction.ProcessIncomingHtlc(it) })
 

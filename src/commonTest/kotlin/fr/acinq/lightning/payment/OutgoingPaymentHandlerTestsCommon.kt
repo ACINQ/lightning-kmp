@@ -123,7 +123,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `channel restrictions -- maxAcceptedHtlcs`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
-        alice = alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxAcceptedHtlcs = 1))))
+        alice = alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(params = alice.commitments.params.copy(remoteParams = alice.commitments.params.remoteParams.copy(maxAcceptedHtlcs = 1)))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
@@ -175,7 +175,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `channel restrictions -- maxHtlcValueInFlight`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
         val maxHtlcValueInFlightMsat = 150_000L
-        alice = alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(remoteParams = alice.commitments.remoteParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat))))
+        alice =
+            alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(params = alice.commitments.params.copy(remoteParams = alice.commitments.params.remoteParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat)))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
@@ -971,7 +972,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     private fun makeChannels(): Map<ByteVector32, Normal> {
         val (alice, _) = TestsHelper.reachNormal()
-        val reserve = alice.commitments.localChannelReserve
+        val reserve = alice.commitments.latest.localChannelReserve
         val channelDetails = listOf(
             Pair(ShortChannelId(1), 250_000.msat),
             Pair(ShortChannelId(2), 150_000.msat),
@@ -984,8 +985,10 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             val channel = alice.state.copy(
                 shortChannelId = it.first,
                 commitments = alice.commitments.copy(
-                    channelId = channelId,
-                    remoteCommit = alice.commitments.remoteCommit.copy(spec = CommitmentSpec(setOf(), FeeratePerKw(0.sat), 50_000.msat, (it.second + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi())))
+                    params = alice.commitments.params.copy(channelId = channelId),
+                    active = alice.commitments.active.map { commitment ->
+                        commitment.copy(remoteCommit = commitment.remoteCommit.copy(spec = CommitmentSpec(setOf(), FeeratePerKw(0.sat), 50_000.msat, (it.second + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi()))))
+                    }
                 )
             )
             channelId to channel

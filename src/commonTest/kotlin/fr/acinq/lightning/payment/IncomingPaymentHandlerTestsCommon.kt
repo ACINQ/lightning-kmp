@@ -48,13 +48,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         actions = processResult.second
         assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
 
-        assertTrue { alice.commitments.localChanges.proposed.size == 1 }
-        assertTrue { alice.commitments.localChanges.signed.isEmpty() }
-        assertTrue { alice.commitments.localChanges.acked.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.proposed.size == 1 }
+        assertTrue { alice.commitments.changes.localChanges.signed.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.acked.isEmpty() }
 
-        assertTrue { bob.commitments.remoteChanges.proposed.size == 1 }
-        assertTrue { bob.commitments.remoteChanges.acked.isEmpty() }
-        assertTrue { bob.commitments.remoteChanges.signed.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.proposed.size == 1 }
+        assertTrue { bob.commitments.changes.remoteChanges.acked.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.signed.isEmpty() }
 
         // Step 2: alice ---> commitment_signed ---> bob
 
@@ -69,13 +69,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val bobRev = actions.findOutgoingMessage<RevokeAndAck>()
         val bobCmdSign = actions.findCommand<CMD_SIGN>()
 
-        assertTrue { alice.commitments.localChanges.proposed.isEmpty() }
-        assertTrue { alice.commitments.localChanges.signed.size == 1 }
-        assertTrue { alice.commitments.localChanges.acked.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.proposed.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.signed.size == 1 }
+        assertTrue { alice.commitments.changes.localChanges.acked.isEmpty() }
 
-        assertTrue { bob.commitments.remoteChanges.proposed.isEmpty() }
-        assertTrue { bob.commitments.remoteChanges.acked.size == 1 }
-        assertTrue { bob.commitments.remoteChanges.signed.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.proposed.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.acked.size == 1 }
+        assertTrue { bob.commitments.changes.remoteChanges.signed.isEmpty() }
 
         // Step 3: alice <--- revoke_and_ack <--- bob
 
@@ -84,13 +84,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         actions = processResult.second
         assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
 
-        assertTrue { alice.commitments.localChanges.proposed.isEmpty() }
-        assertTrue { alice.commitments.localChanges.signed.isEmpty() }
-        assertTrue { alice.commitments.localChanges.acked.size == 1 }
+        assertTrue { alice.commitments.changes.localChanges.proposed.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.signed.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.acked.size == 1 }
 
-        assertTrue { bob.commitments.remoteChanges.proposed.isEmpty() }
-        assertTrue { bob.commitments.remoteChanges.acked.size == 1 }
-        assertTrue { bob.commitments.remoteChanges.signed.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.proposed.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.acked.size == 1 }
+        assertTrue { bob.commitments.changes.remoteChanges.signed.isEmpty() }
 
         // Step 4: alice <--- commitment_signed <--- bob
 
@@ -104,13 +104,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         actions = processResult.second
         val aliceRev = actions.findOutgoingMessage<RevokeAndAck>()
 
-        assertTrue { alice.commitments.localChanges.proposed.isEmpty() }
-        assertTrue { alice.commitments.localChanges.signed.isEmpty() }
-        assertTrue { alice.commitments.localChanges.acked.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.proposed.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.signed.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.acked.isEmpty() }
 
-        assertTrue { bob.commitments.remoteChanges.proposed.isEmpty() }
-        assertTrue { bob.commitments.remoteChanges.acked.isEmpty() }
-        assertTrue { bob.commitments.remoteChanges.signed.size == 1 }
+        assertTrue { bob.commitments.changes.remoteChanges.proposed.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.acked.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.signed.size == 1 }
 
         // Step 5: alice ---> revoke_and_ack ---> bob
 
@@ -120,13 +120,13 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertTrue { actions.filterIsInstance<ChannelAction.Message.Send>().isEmpty() }
         assertTrue { actions.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().size == 1 }
 
-        assertTrue { alice.commitments.localChanges.proposed.isEmpty() }
-        assertTrue { alice.commitments.localChanges.signed.isEmpty() }
-        assertTrue { alice.commitments.localChanges.acked.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.proposed.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.signed.isEmpty() }
+        assertTrue { alice.commitments.changes.localChanges.acked.isEmpty() }
 
-        assertTrue { bob.commitments.remoteChanges.proposed.isEmpty() }
-        assertTrue { bob.commitments.remoteChanges.acked.isEmpty() }
-        assertTrue { bob.commitments.remoteChanges.signed.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.proposed.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.acked.isEmpty() }
+        assertTrue { bob.commitments.changes.remoteChanges.signed.isEmpty() }
     }
 
     @Test
@@ -190,10 +190,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(expectedFees, result2.received.fees)
 
         val (id1, id2) = result2.received.receivedWith.map { (it as IncomingPayment.ReceivedWith.NewChannel).id }
-        assertEquals(setOf(
-            makeReceivedWithNewChannel(payToOpenRequest1, uuid = id1),
-            makeReceivedWithNewChannel(payToOpenRequest2, uuid = id2)
-        ), result2.received.receivedWith)
+        assertEquals(
+            setOf(
+                makeReceivedWithNewChannel(payToOpenRequest1, uuid = id1),
+                makeReceivedWithNewChannel(payToOpenRequest2, uuid = id2)
+            ), result2.received.receivedWith
+        )
 
         checkDbPayment(result2.incomingPayment, paymentHandler.db)
     }
@@ -218,10 +220,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(expectedFees, result2.received.fees)
 
         val (id1, id2) = result2.received.receivedWith.map { (it as IncomingPayment.ReceivedWith.NewChannel).id }
-        assertEquals(setOf(
-            makeReceivedWithNewChannel(payToOpenRequest1, uuid = id1),
-            makeReceivedWithNewChannel(payToOpenRequest2, uuid = id2)
-        ), result2.received.receivedWith)
+        assertEquals(
+            setOf(
+                makeReceivedWithNewChannel(payToOpenRequest1, uuid = id1),
+                makeReceivedWithNewChannel(payToOpenRequest2, uuid = id2)
+            ), result2.received.receivedWith
+        )
 
         checkDbPayment(result2.incomingPayment, paymentHandler.db)
     }
@@ -1219,15 +1223,21 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
 
         // create incoming payment that has expired and not been paid
-        val expiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expirySeconds = 3600,
-            timestampSeconds = 1)
+        val expiredInvoice = paymentHandler.createInvoice(
+            randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expirySeconds = 3600,
+            timestampSeconds = 1
+        )
 
         // create incoming payment that has expired and been paid
         delay(100)
-        val paidInvoice = paymentHandler.createInvoice(defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expirySeconds = 3600,
-            timestampSeconds = 100)
-        paymentHandler.db.receivePayment(paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = null)),
-            receivedAt = 101) // simulate incoming payment being paid before it expired
+        val paidInvoice = paymentHandler.createInvoice(
+            defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expirySeconds = 3600,
+            timestampSeconds = 100
+        )
+        paymentHandler.db.receivePayment(
+            paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = null)),
+            receivedAt = 101
+        ) // simulate incoming payment being paid before it expired
 
         // create unexpired payment
         delay(100)

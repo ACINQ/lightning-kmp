@@ -60,7 +60,7 @@ object WaitForInit : ChannelState() {
                 logger.warning { "cannot open channel with invalid channel_type=${cmd.channelType.name}" }
                 Pair(Aborted, listOf())
             }
-            cmd is ChannelCommand.Restore && cmd.state is Closing && cmd.state.nothingAtStake() -> {
+            cmd is ChannelCommand.Restore && cmd.state is Closing && cmd.state.commitments.nothingAtStake() -> {
                 logger.info { "we have nothing at stake, going straight to CLOSED" }
                 Pair(Closed(cmd.state), listOf())
             }
@@ -98,9 +98,9 @@ object WaitForInit : ChannelState() {
                             ChannelAction.Blockchain.SendWatch(
                                 WatchSpent(
                                     cmd.state.channelId,
-                                    commitments.commitInput.outPoint.txid,
-                                    commitments.commitInput.outPoint.index.toInt(),
-                                    commitments.commitInput.txOut.publicKeyScript,
+                                    commitments.latest.commitInput.outPoint.txid,
+                                    commitments.latest.commitInput.outPoint.index.toInt(),
+                                    commitments.latest.commitInput.txOut.publicKeyScript,
                                     BITCOIN_FUNDING_SPENT
                                 )
                             ),
@@ -113,26 +113,28 @@ object WaitForInit : ChannelState() {
                         cmd.state.revokedCommitPublished.forEach { it.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) } }
                         cmd.state.futureRemoteCommitPublished?.run { actions.addAll(doPublish(cmd.state.channelId, minDepth)) }
                         // if commitment number is zero, we also need to make sure that the funding tx has been published
-                        if (commitments.localCommit.index == 0L && commitments.remoteCommit.index == 0L) {
-                            cmd.state.fundingTx?.let { actions.add(ChannelAction.Blockchain.PublishTx(it)) }
+                        if (commitments.localCommitIndex == 0L && commitments.remoteCommitIndex == 0L) {
+                            when (val fundingStatus = cmd.state.commitments.latest.localFundingStatus) {
+                                is LocalFundingStatus.UnconfirmedFundingTx -> fundingStatus.signedTx?.let { actions.add(ChannelAction.Blockchain.PublishTx(it)) }
+                                is LocalFundingStatus.ConfirmedFundingTx -> Unit // no need to republish
+                            }
                         }
                         Pair(cmd.state, actions)
                     }
                 }
             }
             cmd is ChannelCommand.Restore && cmd.state is LegacyWaitForFundingConfirmed -> {
-                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, cmd.state.commitments.fundingAmount)
+                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, cmd.state.commitments.latest.fundingAmount)
                 logger.info { "restoring legacy unconfirmed channel (waiting for $minDepth confirmations)" }
-                val watch = WatchConfirmed(cmd.state.channelId, cmd.state.commitments.fundingTxId, cmd.state.commitments.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+                val watch = WatchConfirmed(cmd.state.channelId, cmd.state.commitments.latest.fundingTxId, cmd.state.commitments.latest.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
                 Pair(Offline(cmd.state), listOf(ChannelAction.Blockchain.SendWatch(watch)))
             }
             cmd is ChannelCommand.Restore && cmd.state is WaitForFundingConfirmed -> {
-                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, cmd.state.fundingParams.fundingAmount)
+                val minDepth = Helpers.minDepthForFunding(staticParams.nodeParams, cmd.state.latestFundingTx.fundingParams.fundingAmount)
                 logger.info { "restoring unconfirmed channel (waiting for $minDepth confirmations)" }
-                val allCommitments = listOf(cmd.state.commitments) + cmd.state.previousFundingTxs.map { it.second }
-                val watches = allCommitments.map { WatchConfirmed(it.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }
+                val watches = cmd.state.commitments.active.map { WatchConfirmed(cmd.state.channelId, it.fundingTxId, it.commitInput.txOut.publicKeyScript, minDepth.toLong(), BITCOIN_FUNDING_DEPTHOK) }
                 val actions = buildList {
-                    cmd.state.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
+                    cmd.state.latestFundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
                     addAll(watches.map { ChannelAction.Blockchain.SendWatch(it) })
                 }
                 Pair(Offline(cmd.state), actions)
@@ -141,14 +143,14 @@ object WaitForInit : ChannelState() {
                 logger.info { "restoring channel ${cmd.state.channelId} to state ${cmd.state::class.simpleName}" }
                 // We only need to republish the funding transaction when using zero-conf: otherwise, it is already confirmed.
                 val fundingTx = when {
-                    cmd.state is WaitForChannelReady && staticParams.useZeroConf -> cmd.state.fundingTx.signedTx
+                    cmd.state is WaitForChannelReady && staticParams.useZeroConf -> cmd.state.commitments.latest.localFundingStatus.signedTx
                     else -> null
                 }
                 val watchSpent = WatchSpent(
                     cmd.state.channelId,
-                    cmd.state.commitments.fundingTxId,
-                    cmd.state.commitments.commitInput.outPoint.index.toInt(),
-                    cmd.state.commitments.commitInput.txOut.publicKeyScript,
+                    cmd.state.commitments.latest.fundingTxId,
+                    cmd.state.commitments.latest.commitInput.outPoint.index.toInt(),
+                    cmd.state.commitments.latest.commitInput.txOut.publicKeyScript,
                     BITCOIN_FUNDING_SPENT
                 )
                 val actions = buildList {

@@ -44,15 +44,9 @@ data class CommitmentSpec(
     val toLocal: MilliSatoshi,
     val toRemote: MilliSatoshi
 ) {
+    fun findIncomingHtlcById(id: Long): IncomingHtlc? = htlcs.find { it is IncomingHtlc && it.add.id == id } as IncomingHtlc?
 
-    fun findIncomingHtlcById(id: Long): IncomingHtlc? =
-        htlcs.find { it is IncomingHtlc && it.add.id == id } as IncomingHtlc?
-
-    fun findOutgoingHtlcById(id: Long): OutgoingHtlc? =
-        htlcs.find { it is OutgoingHtlc && it.add.id == id } as OutgoingHtlc?
-
-    @Transient
-    val totalFunds: MilliSatoshi = toLocal + toRemote + MilliSatoshi(htlcs.map { it.add.amountMsat.toLong() }.sum())
+    fun findOutgoingHtlcById(id: Long): OutgoingHtlc? = htlcs.find { it is OutgoingHtlc && it.add.id == id } as OutgoingHtlc?
 
     companion object {
         fun removeHtlc(changes: List<UpdateMessage>, id: Long): List<UpdateMessage> =

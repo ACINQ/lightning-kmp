@@ -56,19 +56,14 @@ object Deserialization {
 
     private fun Input.readWaitForFundingConfirmed() = WaitForFundingConfirmed(
         commitments = readCommitments(),
-        fundingParams = readInteractiveTxParams(),
         localPushAmount = readNumber().msat,
         remotePushAmount = readNumber().msat,
-        fundingTx = readSignedSharedTransaction(),
-        previousFundingTxs = readCollection { readSignedSharedTransaction() to readCommitments() }.toList(),
         waitingSinceBlock = readNumber(),
         deferred = readNullable { readLightningMessage() as ChannelReady }
     )
 
     private fun Input.readWaitForChannelReady() = WaitForChannelReady(
         commitments = readCommitments(),
-        fundingParams = readInteractiveTxParams(),
-        fundingTx = readSignedSharedTransaction(),
         shortChannelId = ShortChannelId(readNumber()),
         lastSent = readLightningMessage() as ChannelReady
     )
@@ -110,9 +105,7 @@ object Deserialization {
 
     private fun Input.readClosing(): Closing = Closing(
         commitments = readCommitments(),
-        fundingTx = readNullable { readTransaction() },
         waitingSinceBlock = readNumber(),
-        alternativeCommitments = readCollection { readCommitments() }.toList(),
         mutualCloseProposed = readCollection { readTransactionWithInputInfo() as ClosingTx }.toList(),
         mutualClosePublished = readCollection { readTransactionWithInputInfo() as ClosingTx }.toList(),
         localCommitPublished = readNullable { readLocalCommitPublished() },
@@ -211,7 +204,8 @@ object Deserialization {
         else -> error("unknown discriminator $discriminator for class ${SignedSharedTransaction::class}")
     }
 
-    private fun Input.readCommitments(): Commitments = Commitments(
+    private fun Input.readChannelParams(): ChannelParams = ChannelParams(
+        channelId = readByteVector32(),
         channelConfig = ChannelConfig(readDelimitedByteArray()),
         channelFeatures = ChannelFeatures(Features(readDelimitedByteArray()).activated.keys),
         localParams = LocalParams(
@@ -241,6 +235,40 @@ object Deserialization {
             features = Features(readDelimitedByteArray().toByteVector())
         ),
         channelFlags = readNumber().toByte(),
+    )
+
+    private fun Input.readCommitmentChanges(): CommitmentChanges = CommitmentChanges(
+        localChanges = LocalChanges(
+            proposed = readCollection { readLightningMessage() as UpdateMessage }.toList(),
+            signed = readCollection { readLightningMessage() as UpdateMessage }.toList(),
+            acked = readCollection { readLightningMessage() as UpdateMessage }.toList(),
+        ),
+        remoteChanges = RemoteChanges(
+            proposed = readCollection { readLightningMessage() as UpdateMessage }.toList(),
+            acked = readCollection { readLightningMessage() as UpdateMessage }.toList(),
+            signed = readCollection { readLightningMessage() as UpdateMessage }.toList(),
+        ),
+        localNextHtlcId = readNumber(),
+        remoteNextHtlcId = readNumber(),
+    )
+
+    private fun Input.readCommitment(): Commitment = Commitment(
+        localFundingStatus = when (val discriminator = read()) {
+            0x00 -> LocalFundingStatus.UnconfirmedFundingTx(
+                sharedTx = readSignedSharedTransaction(),
+                fundingParams = readInteractiveTxParams(),
+                createdAt = readNumber()
+            )
+            0x01 -> LocalFundingStatus.ConfirmedFundingTx(
+                signedTx = readTransaction()
+            )
+            else -> error("unknown discriminator $discriminator for class ${LocalFundingStatus::class}")
+        },
+        remoteFundingStatus = when (val discriminator = read()) {
+            0x00 -> RemoteFundingStatus.NotLocked
+            0x01 -> RemoteFundingStatus.Locked
+            else -> error("unknown discriminator $discriminator for class ${RemoteFundingStatus::class}")
+        },
         localCommit = LocalCommit(
             index = readNumber(),
             spec = readCommitmentSpec(),
@@ -261,45 +289,36 @@ object Deserialization {
             txid = readByteVector32(),
             remotePerCommitmentPoint = readPublicKey()
         ),
-        localChanges = LocalChanges(
-            proposed = readCollection { readLightningMessage() as UpdateMessage }.toList(),
-            signed = readCollection { readLightningMessage() as UpdateMessage }.toList(),
-            acked = readCollection { readLightningMessage() as UpdateMessage }.toList(),
-        ),
-        remoteChanges = RemoteChanges(
-            proposed = readCollection { readLightningMessage() as UpdateMessage }.toList(),
-            acked = readCollection { readLightningMessage() as UpdateMessage }.toList(),
-            signed = readCollection { readLightningMessage() as UpdateMessage }.toList(),
-        ),
-        localNextHtlcId = readNumber(),
-        remoteNextHtlcId = readNumber(),
+        nextRemoteCommit = readNullable {
+            NextRemoteCommit(
+                sig = readLightningMessage() as CommitSig,
+                commit = RemoteCommit(
+                    index = readNumber(),
+                    spec = readCommitmentSpec(),
+                    txid = readByteVector32(),
+                    remotePerCommitmentPoint = readPublicKey()
+                )
+            )
+        }
+    )
+
+    private fun Input.readCommitments(): Commitments = Commitments(
+        params = readChannelParams(),
+        changes = readCommitmentChanges(),
+        active = readCollection { readCommitment() }.toList(),
         payments = readCollection {
             readNumber() to UUID.fromString(readString())
         }.toMap(),
         remoteNextCommitInfo = readEither(
-            readLeft = {
-                WaitingForRevocation(
-                    nextRemoteCommit = RemoteCommit(
-                        index = readNumber(),
-                        spec = readCommitmentSpec(),
-                        txid = readByteVector32(),
-                        remotePerCommitmentPoint = readPublicKey()
-                    ),
-                    sent = readLightningMessage() as CommitSig,
-                    sentAfterLocalCommitIndex = readNumber(),
-                    reSignAsap = readBoolean()
-                )
-            },
+            readLeft = { WaitingForRevocation(sentAfterLocalCommitIndex = readNumber()) },
             readRight = { readPublicKey() },
         ),
-        commitInput = readInputInfo(),
         remotePerCommitmentSecrets = ShaChain(
             knownHashes = readCollection {
                 readCollection { readBoolean() }.toList() to readByteVector32()
             }.toMap(),
             lastIndex = readNullable { readNumber() }
         ),
-        channelId = readByteVector32(),
         remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
     )
 
