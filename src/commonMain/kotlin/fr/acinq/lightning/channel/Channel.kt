@@ -303,6 +303,20 @@ sealed class ChannelStateWithCommitments : ChannelState() {
     }
 
     /**
+     * Default handler when a funding transaction confirms.
+     */
+    internal fun ChannelContext.updateFundingTxStatus(w: WatchEventConfirmed): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
+        return when (val res = acceptFundingTxConfirmed(w)) {
+            is Either.Left -> Pair(this@ChannelStateWithCommitments, listOf())
+            is Either.Right -> {
+                val (commitments1, _, actions) = res.value
+                val nextState = this@ChannelStateWithCommitments.updateCommitments(commitments1)
+                Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState as PersistedChannelState)))
+            }
+        }
+    }
+
+    /**
      * Analyze and react to a potential force-close transaction spending one of our funding transactions.
      */
     internal fun ChannelContext.handlePotentialForceClose(w: WatchEventSpent): Pair<ChannelState, List<ChannelAction>> = when {

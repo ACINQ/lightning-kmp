@@ -141,14 +141,7 @@ data class Negotiating(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
             cmd is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
-                is WatchEventConfirmed -> when (val res = acceptFundingTxConfirmed(watch)) {
-                    is Either.Left -> Pair(this@Negotiating, listOf())
-                    is Either.Right -> {
-                        val (commitments1, _, actions) = res.value
-                        val nextState = this@Negotiating.copy(commitments = commitments1)
-                        Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
-                    }
-                }
+                is WatchEventConfirmed -> updateFundingTxStatus(watch)
                 is WatchEventSpent -> when {
                     watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                         // they can publish a closing tx with any sig we sent them, even if we are not done negotiating

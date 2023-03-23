@@ -262,14 +262,7 @@ data class Normal(
             }
             is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
-                is WatchEventConfirmed -> when (val res = acceptFundingTxConfirmed(watch)) {
-                    is Either.Left -> Pair(this@Normal, listOf())
-                    is Either.Right -> {
-                        val (commitments1, _, actions) = res.value
-                        val nextState = this@Normal.copy(commitments = commitments1)
-                        Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
-                    }
-                }
+                is WatchEventConfirmed -> updateFundingTxStatus(watch)
                 is WatchEventSpent -> handlePotentialForceClose(watch)
             }
             is ChannelCommand.Disconnected -> {

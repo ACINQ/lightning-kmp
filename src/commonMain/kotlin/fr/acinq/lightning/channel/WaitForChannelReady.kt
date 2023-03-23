@@ -101,14 +101,7 @@ data class WaitForChannelReady(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
             cmd is ChannelCommand.WatchReceived -> when (cmd.watch) {
-                is WatchEventConfirmed -> when (val res = acceptFundingTxConfirmed(cmd.watch)) {
-                    is Either.Left -> Pair(this@WaitForChannelReady, listOf())
-                    is Either.Right -> {
-                        val (commitments1, _, actions) = res.value
-                        val nextState = this@WaitForChannelReady.copy(commitments = commitments1)
-                        Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
-                    }
-                }
+                is WatchEventConfirmed -> updateFundingTxStatus(cmd.watch)
                 is WatchEventSpent -> handlePotentialForceClose(cmd.watch)
             }
             cmd is ChannelCommand.ExecuteCommand -> when (cmd.command) {
