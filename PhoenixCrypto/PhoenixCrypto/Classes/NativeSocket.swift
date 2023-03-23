@@ -19,10 +19,14 @@ enum DecodePubKeyError: Error {
 @objc
 public class NativeSocket: NSObject {
 	
+	private let host: String
 	private let connection: NWConnection
+	private let parentConnections: [NWConnection]
 	
-	private init(connection: NWConnection) {
+	private init(host: String, connection: NWConnection, parentConnections: [NWConnection] = []) {
+		self.host = host
 		self.connection = connection
+		self.parentConnections = parentConnections
 	}
 	
 	@objc
@@ -34,18 +38,40 @@ public class NativeSocket: NSObject {
 		failure: @escaping (NativeSocketError) -> Void
 	) -> Void {
 		
+		rawConnect(
+			host: host,
+			port: port,
+			tls: tls.makeProtocolOptions()
+		) { (connection: NWConnection) in
+			success(NativeSocket(host: host, connection: connection))
+		} failure: { (error: NWError) in
+			failure(error.toNativeSocketError())
+		}
+	}
+	
+	private class func rawConnect(
+		host: String,
+		port: UInt16,
+		tls: NWProtocolTLS.Options?,
+		success: @escaping (NWConnection) -> Void,
+		failure: @escaping (NWError) -> Void
+	) -> Void {
+		
 		var _connection: NWConnection? = nil
 		var completionCalled = false
-		let finish = {(result: Result<NativeSocket, NWError>) in
-			_connection?.stateUpdateHandler = nil
+		
+		let finish = {(result: Result<NWConnection, NWError>) in
 			DispatchQueue.main.async {
+				
 				guard !completionCalled else { return }
 				completionCalled = true
+				_connection?.stateUpdateHandler = nil
+				
 				switch result {
 				case .success(let socket):
 					success(socket)
 				case .failure(let error):
-					failure(error.toNativeSocketError())
+					failure(error)
 				}
 			}
 		}
@@ -55,150 +81,50 @@ public class NativeSocket: NSObject {
 			return finish(.failure(.posix(.EINVAL)))
 		}
 		
-		let tlsOptions: NWProtocolTLS.Options?
 		let tcpOptions = NWProtocolTCP.Options()
-		
-		if let pinnedPubKeyStr = tls.pinnedPublicKey {
-			tlsOptions = NWProtocolTLS.Options()
-			
-			let verify_queue = DispatchQueue.global()
-			let verify_block: sec_protocol_verify_t = {(
-				metadata   : sec_protocol_metadata_t,
-				trust      : sec_trust_t,
-				completion : @escaping sec_protocol_verify_complete_t
-			) in
-				
-				let result = decodePublicKey(pinnedPubKeyStr)
-				guard case .success(let pinnedPubKey) = result else {
-					if case .failure(let error) = result {
-						switch error {
-						case .stringToBase64:
-							log.warning("Unable to decode tls.pinnedPublicKey")
-						case .dataToSecKey:
-							log.warning("Unable to create pubKey using tls.pinnedPublicKey")
-						}
-					}
-					return completion(false)
-				}
-				
-				let serverPubKey: SecKey? = {
-					
-					let sec_trust = sec_trust_copy_ref(trust).takeRetainedValue()
-					let serverCerts: [SecCertificate]
-					if #available(iOS 15, macOS 12, tvOS 15, watchOS 8, *) {
-						serverCerts = SecTrustCopyCertificateChain(sec_trust) as? [SecCertificate] ?? []
-					} else {
-						serverCerts = (0 ..< SecTrustGetCertificateCount(sec_trust)).compactMap { index in
-							SecTrustGetCertificateAtIndex(sec_trust, index)
-						}
-					}
-					if let serverCert = serverCerts.first {
-						return SecCertificateCopyKey(serverCert)
-					} else {
-						return nil
-					}
-				}()
-				
-				if let serverPubKey = serverPubKey {
-					if pinnedPubKey == serverPubKey {
-						completion(true)
-					} else {
-						completion(false)
-					}
-				} else {
-					completion(false)
-				}
-			}
-			
-			sec_protocol_options_set_verify_block(tlsOptions!.securityProtocolOptions, verify_block, verify_queue)
-			
-		} else if tls.allowUnsafeCertificates {
-			tlsOptions = NWProtocolTLS.Options()
-			
-			let verify_queue = DispatchQueue.global()
-			let verify_block: sec_protocol_verify_t = {(
-				metadata   : sec_protocol_metadata_t,
-				trust      : sec_trust_t,
-				completion : @escaping sec_protocol_verify_complete_t
-			) in
-				completion(true)
-			}
-			
-			sec_protocol_options_set_verify_block(tlsOptions!.securityProtocolOptions, verify_block, verify_queue)
-			
-		} else if tls.disabled {
-			tlsOptions = nil
-			
-		} else {
-			tlsOptions = NWProtocolTLS.Options()
-		}
-		
-		let options = NWParameters(tls: tlsOptions, tcp: tcpOptions)
+		let options = NWParameters(tls: tls, tcp: tcpOptions)
 		let connection = NWConnection(host: ep_host, port: ep_port, using: options)
 		
 		connection.stateUpdateHandler = {(state: NWConnection.State) in
 			
 			switch state {
-				case .failed(let error):
+			case .setup:
+				log.debug("NWConnection.state => setup")
+			case .waiting(let error):
+				switch error {
+				case .posix(_):
+					log.debug("NWConnection.state => waiting: err(posix): \(String(describing: error))")
+				case .dns(_):
+					log.debug("NWConnection.state => waiting: err(dns): \(String(describing: error))")
+				case .tls(_):
+					log.debug("NWConnection.state => waiting: err(tls): \(String(describing: error))")
+				@unknown default:
+					log.debug("NWConnection.state => waiting: err(unknown): \(String(describing: error))")
+				}
+				if case NWError.tls = error {
 					finish(.failure(error))
 					connection.cancel()
-				case .ready:
-					finish(.success(NativeSocket(connection: connection)))
-				case .cancelled:
-					finish(.failure(.posix(.ECANCELED)))
-				default:
-					break
+				}
+			case .preparing:
+				log.debug("NWConnection.state => preparing")
+			case .ready:
+				log.debug("NWConnection.state => ready")
+				finish(.success(connection))
+			case .failed(let error):
+				log.debug("NWConnection.state => failed")
+				finish(.failure(error))
+				connection.cancel()
+			case .cancelled:
+				log.debug("NWConnection.state => cancelled")
+				finish(.failure(.posix(.ECANCELED)))
+			@unknown default:
+				log.error("NWConnection.state => unknown")
 			}
 			
 		} // </stateUpdateHandler>
 		
 		_connection = connection
 		connection.start(queue: DispatchQueue.global(qos: .userInitiated))
-	}
-
-	private class func decodePublicKey(_ pubKeyStr: String) -> Result<SecKey, DecodePubKeyError> {
-		
-		guard let pubKeyData = Data(base64Encoded: pubKeyStr, options: .ignoreUnknownCharacters) else {
-			return .failure(.stringToBase64)
-		}
-		
-		let tryCreateKey = {(attributes: [String:String]) -> Result<SecKey, Error> in
-			
-			var cfError: Unmanaged<CFError>? = nil
-			let pubKey = SecKeyCreateWithData(pubKeyData as CFData, attributes as CFDictionary, &cfError)
-			
-			if let pubKey = pubKey {
-				return .success(pubKey)
-			} else if let cfError = cfError {
-				let error = cfError.takeRetainedValue()
-				return .failure(error)
-			} else {
-				fatalError("SecKeyCreateWithData() failed without error")
-			}
-		}
-		
-		let attributes_1: [String: String] = [
-			kSecAttrKeyType  as String : kSecAttrKeyTypeRSA as String,
-			kSecAttrKeyClass as String : kSecAttrKeyClassPublic as String
-		]
-		let attributes_2: [String: String] = [
-			kSecAttrKeyType  as String : kSecAttrKeyTypeEC as String,
-			kSecAttrKeyClass as String : kSecAttrKeyClassPublic as String
-		]
-		let attributes_3: [String: String] = [
-			kSecAttrKeyType  as String : kSecAttrKeyTypeECSECPrimeRandom as String,
-			kSecAttrKeyClass as String : kSecAttrKeyClassPublic as String
-		]
-		
-		for attributes in [attributes_1, attributes_2, attributes_3] {
-			
-			let result = tryCreateKey(attributes)
-			if case .success(let pubKey) = result {
-				return .success(pubKey)
-			}
-		}
-		
-		return .failure(.dataToSecKey)
 	}
 	
 	@objc
@@ -296,8 +222,207 @@ public class NativeSocket: NSObject {
 	}
 	
 	@objc
+	public func startTLS(
+		tls: NativeSocketTLS,
+		success: @escaping (NativeSocket) -> Void,
+		failure: @escaping (NativeSocketError) -> Void
+	) -> Void {
+		
+		// NWConnection doesn't support startTLS (or SOCKS).
+		// So we have to manually code a workaround.
+		// Here's how it works:
+		//
+		// 1. We start a listener to accept incoming connections.
+		//
+		//    This will only accept connections from the localhost on loopback.
+		//    This will only accept a single connection.
+		//    The port number is randomly assigned by the OS.
+		//
+		// 2. We immediately connect to the listener.
+		//
+		//    This yields 2 new connections:
+		//    newClientConnection -> the "outgoing" connection to our listener
+		//    proxyConnection -> the "incoming" accepted connection from the listener
+		//
+		// 3. We use the proxyConnection to bind to the oldClientConnection
+		//
+		//    Any data we receive on the proxyConnection is forwarded to the oldClientConnection.
+		//    Any data we receive on the oldClientConnection is forwarded to the proxyConnection.
+		//
+		//    So the proxy connection is just a dumb pipe connectiong the old & new client connections.
+		//
+		// 4. We enabled TLS on the newClientConnection
+		//
+		//    Note that if standard TLS verification is being used, then we must override the "tlsServerName".
+		//    If we don't, then the TLS verification routine will expect a certificate for "127.0.0.1".
+		//    Obviously, that's not what we want.
+		//    It needs to verify against the hostname used for the oldClientConnection.
+		
+		var _listener: NWListener? = nil
+		var completionCalled = false
+		
+		let finish = {(result: Result<NativeSocket, NWError>) in
+			DispatchQueue.main.async {
+				
+				guard !completionCalled else { return }
+				completionCalled = true
+				_listener?.stateUpdateHandler = nil
+				_listener?.cancel()
+				
+				switch result {
+				case .success(let socket):
+					success(socket)
+				case .failure(let error):
+					failure(error.toNativeSocketError())
+				}
+			}
+		}
+		
+		let oldServerName: String = host
+		let oldClientConnection: NWConnection = connection
+		var _newClientConnection: NWConnection? = nil
+		var _proxyConnection: NWConnection? = nil
+		
+		let finishSubTask = {(newClientConnection: NWConnection?, proxyConnection: NWConnection?) in
+			DispatchQueue.main.async {
+				
+				if let newClientConnection = newClientConnection {
+					log.debug("finishSubTask: newClientConnection")
+					_newClientConnection = newClientConnection
+				}
+				if let proxyConnection = proxyConnection {
+					log.debug("finishSubTask: proxyConnection")
+					_proxyConnection = proxyConnection
+				}
+				
+				if let _newClientConnection = _newClientConnection,
+				   let _proxyConnection = _proxyConnection
+				{
+					finish(.success(NativeSocket(
+						host: oldServerName,
+						connection: _newClientConnection,
+						parentConnections: [_proxyConnection, oldClientConnection]
+					)))
+				}
+			}
+		}
+		
+		let startClientConnection = {(port: NWEndpoint.Port) in
+			log.debug("startClientConnection(\(port.rawValue))")
+			
+			NativeSocket.rawConnect(
+				host: "127.0.0.1",
+				port: port.rawValue,
+				tls: tls.makeProtocolOptions(overrideServerName: oldServerName)
+			) { (connection: NWConnection) in
+				log.debug("newOutgoingConnection.connect: success")
+				finishSubTask(connection, nil)
+			} failure: { (error: NWError) in
+				log.debug("newOutgoingConnection.connect: error: \(String(describing: error))")
+				finish(.failure(error))
+			}
+		}
+		
+		let tcpOptions = NWProtocolTCP.Options()
+		let params = NWParameters(tls: nil, tcp: tcpOptions)
+		params.requiredInterfaceType = .loopback
+		
+		let listener: NWListener
+		do {
+			listener = try NWListener(using: params, on: .any)
+		} catch {
+			log.error("Error opening NWListener on loopback: \(String(describing: error))")
+			if let nwerr = error as? NWError {
+				return finish(.failure(nwerr))
+			} else {
+				return finish(.failure(.posix(.EDEVERR)))
+			}
+		}
+		
+		listener.newConnectionLimit = 1
+		listener.newConnectionHandler = {(proxyConnection: NWConnection) in
+			
+			proxyConnection.start(queue: DispatchQueue.global())
+			NativeSocket.transferLoop(rcv: proxyConnection, snd: oldClientConnection, label: "->prxy->oldClnt")
+			NativeSocket.transferLoop(rcv: oldClientConnection, snd: proxyConnection, label: "->oldClnt->prxy")
+			
+			finishSubTask(nil, proxyConnection)
+		}
+		
+		listener.stateUpdateHandler = {(state: NWListener.State) in
+			
+			switch state {
+			case .setup:
+				log.debug("NWListener.state => setup")
+			case .waiting(let error):
+				switch error {
+				case .posix(_):
+					log.debug("NWListener.state => waiting: err(posix): \(String(describing: error))")
+				case .dns(_):
+					log.debug("NWListener.state => waiting: err(dns): \(String(describing: error))")
+				case .tls(_):
+					log.debug("NWListener.state => waiting: err(tls): \(String(describing: error))")
+				@unknown default:
+					log.debug("NWListener.state => waiting: err(unknown): \(String(describing: error))")
+				}
+			case .ready:
+				log.debug("NWListener.state => ready")
+				if let port = listener.port {
+					log.debug("NWListener.port => \(port.rawValue)")
+					startClientConnection(port)
+				} else {
+					log.warning("NWListener.port => nil ?!?")
+					listener.cancel()
+				}
+			case .failed(let nwerr):
+				log.warning("NWListener.state => failed: \(String(describing: nwerr))")
+				finish(.failure(nwerr))
+			case .cancelled:
+				log.warning("NWListener.state => cancelled")
+				finish(.failure(.posix(.ECANCELED)))
+			@unknown default:
+				log.error("NWListener.state => unknown")
+			}
+		}
+		
+		_listener = listener
+		listener.start(queue: DispatchQueue.global(qos: .default))
+	}
+	
+	private class func transferLoop(rcv: NWConnection, snd: NWConnection, label: String) {
+		
+		rcv.receive(minimumIncompleteLength: 1, maximumLength: 1024 * 8) {
+			(content: Data?, contentContext: NWConnection.ContentContext?, isComplete: Bool, error: NWError?) in
+			
+			if let content = content {
+				log.error("TransferLoop[\(label)]: receive.length=\(content.count))")
+				
+				snd.send(
+					content: content,
+					contentContext: .defaultStream,
+					isComplete: false,
+					completion: .contentProcessed({ (error: NWError?) in
+						if let error = error {
+							log.error("TransferLoop[\(label)]: send.error: \(String(describing: error))")
+						}
+					})
+				)
+				transferLoop(rcv: rcv, snd: snd, label: label)
+				
+			} else if let error = error {
+				
+				log.error("TransferLoop[\(label)]: rcv.receive.error: \(String(describing: error))")
+				rcv.cancel()
+			}
+		}
+	}
+	
+	@objc
 	public func close() {
 		connection.cancel()
+		for parentConnection in parentConnections {
+			parentConnection.cancel()
+		}
 	}
 }
 
@@ -332,6 +457,136 @@ public class NativeSocketTLS: NSObject {
 	@objc
 	public class func disabled() -> NativeSocketTLS {
 		return NativeSocketTLS(disabled: true, allowUnsafeCertificates: false, pinnedPublicKey: nil)
+	}
+	
+	public func makeProtocolOptions(overrideServerName: String? = nil) -> NWProtocolTLS.Options? {
+		
+		if let pinnedPubKeyStr = self.pinnedPublicKey {
+			let tlsOptions = NWProtocolTLS.Options()
+			
+			let verify_queue = DispatchQueue.global()
+			let verify_block: sec_protocol_verify_t = {(
+				metadata   : sec_protocol_metadata_t,
+				trust      : sec_trust_t,
+				completion : @escaping sec_protocol_verify_complete_t
+			) in
+				
+				let result = NativeSocketTLS.decodePublicKey(pinnedPubKeyStr)
+				guard case .success(let pinnedPubKey) = result else {
+					if case .failure(let error) = result {
+						switch error {
+						case .stringToBase64:
+							log.warning("Unable to decode tls.pinnedPublicKey")
+						case .dataToSecKey:
+							log.warning("Unable to create pubKey using tls.pinnedPublicKey")
+						}
+					}
+					return completion(false)
+				}
+				
+				let serverPubKey: SecKey? = {
+					
+					let sec_trust = sec_trust_copy_ref(trust).takeRetainedValue()
+					let serverCerts: [SecCertificate]
+					if #available(iOS 15, macOS 12, tvOS 15, watchOS 8, *) {
+						serverCerts = SecTrustCopyCertificateChain(sec_trust) as? [SecCertificate] ?? []
+					} else {
+						serverCerts = (0 ..< SecTrustGetCertificateCount(sec_trust)).compactMap { index in
+							SecTrustGetCertificateAtIndex(sec_trust, index)
+						}
+					}
+					if let serverCert = serverCerts.first {
+						return SecCertificateCopyKey(serverCert)
+					} else {
+						return nil
+					}
+				}()
+				
+				if let serverPubKey = serverPubKey {
+					if pinnedPubKey == serverPubKey {
+						completion(true)
+					} else {
+						completion(false)
+					}
+				} else {
+					completion(false)
+				}
+			}
+			
+			sec_protocol_options_set_verify_block(tlsOptions.securityProtocolOptions, verify_block, verify_queue)
+			return tlsOptions
+			
+		} else if self.allowUnsafeCertificates {
+			let tlsOptions = NWProtocolTLS.Options()
+			
+			let verify_queue = DispatchQueue.global()
+			let verify_block: sec_protocol_verify_t = {(
+				metadata   : sec_protocol_metadata_t,
+				trust      : sec_trust_t,
+				completion : @escaping sec_protocol_verify_complete_t
+			) in
+				completion(true)
+			}
+			
+			sec_protocol_options_set_verify_block(tlsOptions.securityProtocolOptions, verify_block, verify_queue)
+			return tlsOptions
+			
+		} else if self.disabled {
+			return nil
+			
+		} else {
+			let tlsOptions = NWProtocolTLS.Options()
+			
+			if let serverName = overrideServerName {
+				sec_protocol_options_set_tls_server_name(tlsOptions.securityProtocolOptions, serverName)
+			}
+			return tlsOptions
+		}
+	}
+
+	private class func decodePublicKey(_ pubKeyStr: String) -> Result<SecKey, DecodePubKeyError> {
+		
+		guard let pubKeyData = Data(base64Encoded: pubKeyStr, options: .ignoreUnknownCharacters) else {
+			return .failure(.stringToBase64)
+		}
+		
+		let tryCreateKey = {(attributes: [String:String]) -> Result<SecKey, Error> in
+			
+			var cfError: Unmanaged<CFError>? = nil
+			let pubKey = SecKeyCreateWithData(pubKeyData as CFData, attributes as CFDictionary, &cfError)
+			
+			if let pubKey = pubKey {
+				return .success(pubKey)
+			} else if let cfError = cfError {
+				let error = cfError.takeRetainedValue()
+				return .failure(error)
+			} else {
+				fatalError("SecKeyCreateWithData() failed without error")
+			}
+		}
+		
+		let attributes_1: [String: String] = [
+			kSecAttrKeyType  as String : kSecAttrKeyTypeRSA as String,
+			kSecAttrKeyClass as String : kSecAttrKeyClassPublic as String
+		]
+		let attributes_2: [String: String] = [
+			kSecAttrKeyType  as String : kSecAttrKeyTypeEC as String,
+			kSecAttrKeyClass as String : kSecAttrKeyClassPublic as String
+		]
+		let attributes_3: [String: String] = [
+			kSecAttrKeyType  as String : kSecAttrKeyTypeECSECPrimeRandom as String,
+			kSecAttrKeyClass as String : kSecAttrKeyClassPublic as String
+		]
+		
+		for attributes in [attributes_1, attributes_2, attributes_3] {
+			
+			let result = tryCreateKey(attributes)
+			if case .success(let pubKey) = result {
+				return .success(pubKey)
+			}
+		}
+		
+		return .failure(.dataToSecKey)
 	}
 }
 
@@ -406,3 +661,4 @@ extension NWError {
 		}
 	}
 }
+
