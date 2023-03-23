@@ -27,6 +27,7 @@ data class DustLimitTooLarge                       (override val channelId: Byte
 data class ToSelfDelayTooHigh                      (override val channelId: ByteVector32, val toSelfDelay: CltvExpiryDelta, val max: CltvExpiryDelta) : ChannelException(channelId, "unreasonable to_self_delay=$toSelfDelay (max=$max)")
 data class ChannelFundingError                     (override val channelId: ByteVector32) : ChannelException(channelId, "channel funding error")
 data class RbfAttemptAborted                       (override val channelId: ByteVector32) : ChannelException(channelId, "rbf attempt aborted")
+data class SpliceAborted                           (override val channelId: ByteVector32) : ChannelException(channelId, "splice aborted")
 data class DualFundingAborted                      (override val channelId: ByteVector32, val reason: String) : ChannelException(channelId, "dual funding aborted: $reason")
 data class UnexpectedInteractiveTxMessage          (override val channelId: ByteVector32, val msg: InteractiveTxMessage) : ChannelException(channelId, "unexpected interactive-tx message (${msg::class})")
 data class UnexpectedCommitSig                     (override val channelId: ByteVector32) : ChannelException(channelId, "unexpected commitment signatures (commit_sig)")

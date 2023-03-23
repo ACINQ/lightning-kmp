@@ -504,6 +504,7 @@ data class Normal(
                                 is PartiallySignedSharedTransaction -> when (val fullySignedTx = commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
                                     null -> {
                                         logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
+                                        logger.warning { "tx=${commitments.latest.localFundingStatus.sharedTx}" }
                                         // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
                                         Pair(this@Normal, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                                     }
@@ -531,6 +532,47 @@ data class Normal(
                                 logger.info { "ignoring funding signatures for txId=${cmd.message.txId}, transaction is already confirmed" }
                                 Pair(this@Normal, listOf())
                             }
+                        }
+                    }
+                    is TxAbort -> when (spliceStatus) {
+                        is SpliceStatus.Requested -> {
+                            logger.info { "our peer rejected our splice request: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
+                            spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            Pair(
+                                this@Normal.copy(spliceStatus = SpliceStatus.None),
+                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                            )
+                        }
+                        is SpliceStatus.InProgress -> {
+                            logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
+                            spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            Pair(
+                                this@Normal.copy(spliceStatus = SpliceStatus.None),
+                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                            )
+                        }
+                        is SpliceStatus.WaitingForSigs -> {
+                            logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
+                            spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            Pair(
+                                this@Normal.copy(spliceStatus = SpliceStatus.None),
+                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                            )
+                        }
+                        is SpliceStatus.Aborted -> {
+                            logger.info { "our peer acked our previous tx_abort" }
+                            Pair(
+                                this@Normal.copy(spliceStatus = SpliceStatus.None),
+                                emptyList()
+                            )
+                        }
+                        is SpliceStatus.None -> {
+                            logger.info { "our peer wants to abort the splice, but we've already negotiated a splice transaction: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
+                            // We ack their tx_abort but we keep monitoring the funding transaction until it's confirmed or double-spent.
+                            Pair(
+                                this@Normal,
+                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                            )
                         }
                     }
                     is SpliceLocked -> {
