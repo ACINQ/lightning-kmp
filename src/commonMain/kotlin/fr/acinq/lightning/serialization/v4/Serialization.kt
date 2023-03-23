@@ -202,53 +202,102 @@ object Serialization {
         writeClosing(state)
     }
 
+    private fun Output.writeSharedFundingInput(i: SharedFundingInput) = when (i) {
+        is SharedFundingInput.Multisig2of2 -> {
+            write(0x01)
+            writeInputInfo(i.info)
+            writePublicKey(i.localFundingPubkey)
+            writePublicKey(i.remoteFundingPubkey)
+        }
+    }
+
     private fun Output.writeInteractiveTxParams(o: InteractiveTxParams) = o.run {
         writeByteVector32(channelId)
         writeBoolean(isInitiator)
         writeNumber(localAmount.toLong())
         writeNumber(remoteAmount.toLong())
+        writeNullable(sharedInput) { writeSharedFundingInput(it) }
         writeDelimited(fundingPubkeyScript.toByteArray())
+        writeCollection(localOutputs) { writeBtcObject(it) }
         writeNumber(lockTime)
         writeNumber(dustLimit.toLong())
         writeNumber(targetFeerate.toLong())
     }
 
-    private fun Output.writeRemoteTxAddInput(o: RemoteTxAddInput) = o.run {
+    private fun Output.writeSharedInteractiveTxInput(i: InteractiveTxInput.Shared) = i.run {
+        writeNumber(serialId)
+        writeBtcObject(outPoint)
+        writeNumber(sequence.toLong())
+        writeNumber(localAmount.toLong())
+        writeNumber(remoteAmount.toLong())
+    }
+
+    private fun Output.writeLocalInteractiveTxInput(i: InteractiveTxInput.Local) = i.run {
+        writeNumber(serialId)
+        writeBtcObject(previousTx)
+        writeNumber(previousTxOutput)
+        writeNumber(sequence.toLong())
+    }
+
+    private fun Output.writeRemoteInteractiveTxInput(i: InteractiveTxInput.Remote) = i.run {
         writeNumber(serialId)
         writeBtcObject(outPoint)
         writeBtcObject(txOut)
         writeNumber(sequence.toLong())
     }
 
-    private fun Output.writeRemoteTxAddOutput(o: RemoteTxAddOutput) = o.run {
+    private fun Output.writeSharedInteractiveTxOutput(o: InteractiveTxOutput.Shared) = o.run {
+        writeNumber(serialId)
+        writeDelimited(pubkeyScript.toByteArray())
+        writeNumber(localAmount.toLong())
+        writeNumber(remoteAmount.toLong())
+    }
+
+    private fun Output.writeLocalInteractiveTxOutput(o: InteractiveTxOutput.Local) = when (o) {
+        is InteractiveTxOutput.Local.Change -> o.run {
+            write(0x01)
+            writeNumber(serialId)
+            writeNumber(amount.toLong())
+            writeDelimited(pubkeyScript.toByteArray())
+        }
+        is InteractiveTxOutput.Local.NonChange -> o.run {
+            write(0x02)
+            writeNumber(serialId)
+            writeNumber(amount.toLong())
+            writeDelimited(pubkeyScript.toByteArray())
+        }
+    }
+
+    private fun Output.writeRemoteInteractiveTxOutput(o: InteractiveTxOutput.Remote) = o.run {
         writeNumber(serialId)
         writeNumber(amount.toLong())
         writeDelimited(pubkeyScript.toByteArray())
     }
 
+    private fun Output.writeSharedTransaction(tx: SharedTransaction) = tx.run {
+        writeNullable(sharedInput) { writeSharedInteractiveTxInput(it) }
+        writeSharedInteractiveTxOutput(sharedOutput)
+        writeCollection(localInputs) { writeLocalInteractiveTxInput(it) }
+        writeCollection(remoteInputs) { writeRemoteInteractiveTxInput(it) }
+        writeCollection(localOutputs) { writeLocalInteractiveTxOutput(it) }
+        writeCollection(remoteOutputs) { writeRemoteInteractiveTxOutput(it) }
+        writeNumber(lockTime)
+    }
+
+    private fun Output.writeScriptWitness(w: ScriptWitness) = writeCollection(w.stack) { writeDelimited(it.toByteArray()) }
+
     private fun Output.writeSignedSharedTransaction(o: SignedSharedTransaction) = when (o) {
         is PartiallySignedSharedTransaction -> o.run {
-            write(0x00)
-            tx.run {
-                writeCollection(localInputs) { writeLightningMessage(it) }
-                writeCollection(remoteInputs) { writeRemoteTxAddInput(it) }
-                writeCollection(localOutputs) { writeLightningMessage(it) }
-                writeCollection(remoteOutputs) { writeRemoteTxAddOutput(it) }
-                writeNumber(lockTime)
-            }
+            write(0x01)
+            writeSharedTransaction(tx)
             writeLightningMessage(localSigs)
         }
         is FullySignedSharedTransaction -> o.run {
-            write(0x01)
-            tx.run {
-                writeCollection(localInputs) { writeLightningMessage(it) }
-                writeCollection(remoteInputs) { writeRemoteTxAddInput(it) }
-                writeCollection(localOutputs) { writeLightningMessage(it) }
-                writeCollection(remoteOutputs) { writeRemoteTxAddOutput(it) }
-                writeNumber(lockTime)
-            }
+            write(0x02)
+            writeSharedTransaction(tx)
             writeLightningMessage(localSigs)
             writeLightningMessage(remoteSigs)
+            writeNullable(sharedSigs) { writeScriptWitness(it) }
         }
     }
 
@@ -428,6 +477,9 @@ object Serialization {
             }
             is ClosingTx -> {
                 write(0x0d); writeInputInfo(o.input); writeBtcObject(o.tx); writeNullable(o.toLocalIndex) { writeNumber(it) }
+            }
+            is SpliceTx -> {
+                write(0x0e); writeInputInfo(o.input); writeBtcObject(o.tx)
             }
         }
     }

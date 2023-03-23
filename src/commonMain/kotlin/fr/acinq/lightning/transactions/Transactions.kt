@@ -61,6 +61,9 @@ object Transactions {
             }
 
         @Serializable
+        data class SpliceTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
+
+        @Serializable
         data class CommitTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
@@ -823,9 +826,10 @@ object Transactions {
         return Crypto.der2compact(sigDER)
     }
 
-    fun sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sigHash: Int = SigHash.SIGHASH_ALL): ByteVector64 {
-        require(txinfo.tx.txIn.size == 1) { "only one input allowed" }
-        return sign(txinfo.tx, 0, txinfo.input.redeemScript.toByteArray(), txinfo.input.txOut.amount, key, sigHash)
+    fun sign(txInfo: TransactionWithInputInfo, key: PrivateKey, sigHash: Int = SigHash.SIGHASH_ALL): ByteVector64 {
+        val inputIndex = txInfo.tx.txIn.indexOfFirst { it.outPoint == txInfo.input.outPoint }
+        require(inputIndex >= 0) { "transaction doesn't spend the input to sign" }
+        return sign(txInfo.tx, inputIndex, txInfo.input.redeemScript.toByteArray(), txInfo.input.txOut.amount, key, sigHash)
     }
 
     fun addSigs(
