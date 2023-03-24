@@ -333,29 +333,28 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `counterparty lies about having a more recent commitment`() {
+    fun `counterparty lies about having a more recent commitment and publishes current commitment`() {
         val (alice0, bob0) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
-        val (alice1, bob1) = disconnect(alice0, bob0)
 
+        // We simulate a disconnection followed by a reconnection.
+        val (alice1, bob1) = disconnect(alice0, bob0)
         val localInit = Init(ByteVector(alice0.commitments.params.localParams.features.toByteArray()))
         val remoteInit = Init(ByteVector(bob0.commitments.params.localParams.features.toByteArray()))
-
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<LNChannel<Syncing>>(alice2)
         actionsAlice2.findOutgoingMessage<ChannelReestablish>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(remoteInit, localInit))
         assertIs<LNChannel<Syncing>>(bob2)
-        // let's forge a dishonest channel_reestablish
-        val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>().copy(nextRemoteRevocationNumber = 42)
+        val invalidReestablish = actionsBob2.findOutgoingMessage<ChannelReestablish>().copy(nextRemoteRevocationNumber = 42)
 
-        // alice finds out bob is lying
-        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
-        assertIs<LNChannel<Closing>>(alice3)
-        assertNotNull(alice3.state.localCommitPublished)
-        actionsAlice3.hasTx(alice3.state.localCommitPublished!!.commitTx)
-        actionsAlice3.hasTx(alice3.state.localCommitPublished!!.claimMainDelayedOutputTx!!.tx)
+        // Alice then asks Bob to publish his commitment to find out if Bob is lying.
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(invalidReestablish))
+        assertIs<LNChannel<WaitForRemotePublishFutureCommitment>>(alice3)
+        assertEquals(alice3.state.remoteChannelReestablish, invalidReestablish)
+        assertEquals(actionsAlice3.size, 2)
         val error = actionsAlice3.hasOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), InvalidRevokedCommitProof(alice0.channelId, 0, 42, channelReestablishB.yourLastCommitmentSecret).message)
+        assertEquals(error.toAscii(), PleasePublishYourCommitment(alice0.channelId).message)
+        actionsAlice3.has<ChannelAction.Storage.StoreState>()
     }
 
     @Test
@@ -505,18 +504,48 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `republish unconfirmed funding tx with previous funding txs after restart`() {
+        val (alice, bob, txSigs, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigs, walletAlice)
+        assertEquals(alice1.commitments.active.size, 2)
+        val fundingTx1 = alice1.commitments.active.last().localFundingStatus.signedTx!!
+        val fundingTx2 = alice1.commitments.active.first().localFundingStatus.signedTx!!
+        assertNotEquals(fundingTx1.txid, fundingTx2.txid)
+        // Alice restarts:
+        val (alice2, actionsAlice2) = LNChannel(alice1.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
+        assertEquals(alice2.state, Offline(alice1.state))
+        assertEquals(actionsAlice2.size, 4)
+        actionsAlice2.hasTx(fundingTx1)
+        actionsAlice2.hasTx(fundingTx2)
+        assertEquals(actionsAlice2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(fundingTx1.txid, fundingTx2.txid))
+        // Bob restarts:
+        val (bob2, actionsBob2) = LNChannel(bob1.ctx, WaitForInit).process(ChannelCommand.Restore(bob1.state))
+        assertEquals(bob2.state, Offline(bob1.state))
+        assertEquals(actionsBob2.size, 2)
+        // Bob doesn't have Alice's signatures, so he cannot publish the funding transactions.
+        bob1.commitments.active.forEach { assertNull(it.localFundingStatus.signedTx) }
+        assertEquals(actionsBob2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(fundingTx1.txid, fundingTx2.txid))
+    }
+
+    @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK`() {
         val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         val (alice1, bob1) = disconnect(alice, bob)
+        assertIs<WaitForFundingConfirmed>(alice1.state.state)
+        assertIs<WaitForFundingConfirmed>(bob1.state.state)
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
-        assertEquals(alice1, alice2)
-        assertEquals(actionsAlice2.size, 1)
+        assertIs<LNChannel<Offline>>(alice2)
+        assertIs<WaitForChannelReady>(alice2.state.state)
+        assertEquals(actionsAlice2.size, 2)
         assertEquals(actionsAlice2.hasWatch<WatchSpent>().txId, fundingTx.txid)
+        actionsAlice2.has<ChannelAction.Storage.StoreState>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
-        assertEquals(bob1, bob2)
-        assertEquals(actionsBob2.size, 1)
+        assertIs<LNChannel<Offline>>(bob2)
+        assertIs<WaitForChannelReady>(bob2.state.state)
+        assertEquals(actionsBob2.size, 2)
         assertEquals(actionsBob2.hasWatch<WatchSpent>().txId, fundingTx.txid)
+        actionsBob2.has<ChannelAction.Storage.StoreState>()
     }
 
     @Test
@@ -525,22 +554,26 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, txSigsBob, walletAlice)
         val previousFundingTx = alice1.state.previousFundingTxs.first().signedTx!!
         val (alice2, bob2) = disconnect(alice1, bob1)
+        assertIs<WaitForFundingConfirmed>(alice2.state.state)
+        assertIs<WaitForFundingConfirmed>(bob2.state.state)
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
         assertIs<LNChannel<Offline>>(alice3)
         val aliceState3 = alice3.state.state
-        assertIs<WaitForFundingConfirmed>(aliceState3)
+        assertIs<WaitForChannelReady>(aliceState3)
+        assertEquals(aliceState3.commitments.active.size, 1)
         assertEquals(aliceState3.commitments.latest.fundingTxId, previousFundingTx.txid)
-        assertTrue(aliceState3.previousFundingTxs.isEmpty())
-        assertEquals(actionsAlice3.size, 1)
+        assertEquals(actionsAlice3.size, 2)
         assertEquals(actionsAlice3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
+        actionsAlice3.has<ChannelAction.Storage.StoreState>()
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
         assertIs<LNChannel<Offline>>(bob3)
         val bobState3 = bob3.state.state
-        assertIs<WaitForFundingConfirmed>(bobState3)
+        assertIs<WaitForChannelReady>(bobState3)
+        assertEquals(bobState3.commitments.active.size, 1)
         assertEquals(bobState3.commitments.latest.fundingTxId, previousFundingTx.txid)
-        assertTrue(bobState3.previousFundingTxs.isEmpty())
-        assertEquals(actionsBob3.size, 1)
+        assertEquals(actionsBob3.size, 2)
         assertEquals(actionsBob3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
+        actionsBob3.has<ChannelAction.Storage.StoreState>()
     }
 
     @Test

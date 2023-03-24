@@ -1154,6 +1154,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         // alice is able to claim its main output
         val aliceTxs = aliceActions3.findTxs()
         assertEquals(listOf(futureRemoteCommitPublished.claimMainOutputTx!!.tx), aliceTxs)
+        Transaction.correctlySpends(futureRemoteCommitPublished.claimMainOutputTx!!.tx, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         // simulate a wallet restart
         run {

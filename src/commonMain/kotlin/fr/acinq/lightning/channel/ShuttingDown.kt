@@ -1,5 +1,6 @@
 package fr.acinq.lightning.channel
 
+import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
@@ -173,12 +174,8 @@ data class ShuttingDown(
                 else -> unhandled(cmd)
             }
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
-                is WatchEventSpent -> when (watch.tx.txid) {
-                    commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx, commitments.latest)
-                    commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(watch.tx, commitments.latest)
-                    else -> handleRemoteSpentOther(watch.tx)
-                }
-                else -> unhandled(cmd)
+                is WatchEventConfirmed -> updateFundingTxStatus(watch)
+                is WatchEventSpent -> handlePotentialForceClose(watch)
             }
             is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelCommand.Disconnected -> Pair(Offline(this@ShuttingDown), listOf())

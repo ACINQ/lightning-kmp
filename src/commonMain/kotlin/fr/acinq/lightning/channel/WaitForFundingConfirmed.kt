@@ -36,14 +36,18 @@ data class WaitForFundingConfirmed(
                         Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                     }
                     else -> {
-                        logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
-                        val commitments1 = commitments.updateLocalFundingStatus(fullySignedTx.signedTx.txid, latestFundingTx.copy(sharedTx = fullySignedTx), logger)
-                        val nextState = this@WaitForFundingConfirmed.copy(commitments = commitments1)
-                        val actions = buildList {
-                            add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
-                            add(ChannelAction.Storage.StoreState(nextState))
+                        when (val res = commitments.updateLocalFundingStatus(fullySignedTx.signedTx.txid, latestFundingTx.copy(sharedTx = fullySignedTx), logger)) {
+                            is Either.Left -> Pair(this@WaitForFundingConfirmed, listOf())
+                            is Either.Right -> {
+                                logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
+                                val nextState = this@WaitForFundingConfirmed.copy(commitments = res.value.first)
+                                val actions = buildList {
+                                    add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
+                                    add(ChannelAction.Storage.StoreState(nextState))
+                                }
+                                Pair(nextState, actions)
+                            }
                         }
-                        Pair(nextState, actions)
                     }
                 }
                 is FullySignedSharedTransaction -> when (rbfStatus) {
@@ -258,33 +262,29 @@ data class WaitForFundingConfirmed(
             cmd is ChannelCommand.MessageReceived && cmd.message is ChannelReady -> Pair(this@WaitForFundingConfirmed.copy(deferred = cmd.message), listOf())
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
             cmd is ChannelCommand.WatchReceived && cmd.watch is WatchEventConfirmed -> {
-                if (commitments.active.find { it.fundingTxId == cmd.watch.tx.txid } == null) {
-                    logger.error { "internal error: the funding tx that confirmed doesn't match any of our funding txs: ${cmd.watch.tx}" }
-                    Pair(this@WaitForFundingConfirmed, listOf())
-                } else {
-                    logger.info { "was confirmed at blockHeight=${cmd.watch.blockHeight} txIndex=${cmd.watch.txIndex} with funding txid=${cmd.watch.tx.txid}" }
-                    val commitments1 = commitments.updateLocalFundingStatus(cmd.watch.tx.txid, LocalFundingStatus.ConfirmedFundingTx(cmd.watch.tx), logger)
-                    val commitment = commitments1.active.first()
-                    val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-                    val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments1.params.localParams.channelKeys(keyManager).shaSeed, 1)
-                    val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
-                    // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
-                    // as soon as it reaches NORMAL state, and before it is announced on the network
-                    // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
-                    val shortChannelId = ShortChannelId(cmd.watch.blockHeight, cmd.watch.txIndex, commitment.commitInput.outPoint.index.toInt())
-                    val nextState = WaitForChannelReady(commitments1, shortChannelId, channelReady)
-                    val actions = buildList {
-                        add(ChannelAction.Blockchain.SendWatch(watchSpent))
-                        if (rbfStatus != RbfStatus.None) add(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, cmd.watch.tx.txid).message)))
-                        add(ChannelAction.Message.Send(channelReady))
-                        add(ChannelAction.Storage.StoreState(nextState))
-                    }
-                    if (deferred != null) {
-                        logger.info { "funding_locked has already been received" }
-                        val (nextState1, actions1) = nextState.run { process(ChannelCommand.MessageReceived(deferred)) }
-                        Pair(nextState1, actions + actions1)
-                    } else {
-                        Pair(nextState, actions)
+                when (val res = acceptFundingTxConfirmed(cmd.watch)) {
+                    is Either.Left -> Pair(this@WaitForFundingConfirmed, listOf())
+                    is Either.Right -> {
+                        val (commitments1, commitment, actions) = res.value
+                        val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments1.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                        val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(listOf(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId)))))
+                        // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
+                        // as soon as it reaches NORMAL state, and before it is announced on the network
+                        // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
+                        val shortChannelId = ShortChannelId(cmd.watch.blockHeight, cmd.watch.txIndex, commitment.commitInput.outPoint.index.toInt())
+                        val nextState = WaitForChannelReady(commitments1, shortChannelId, channelReady)
+                        val actions1 = buildList {
+                            if (rbfStatus != RbfStatus.None) add(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, cmd.watch.tx.txid).message)))
+                            add(ChannelAction.Message.Send(channelReady))
+                            add(ChannelAction.Storage.StoreState(nextState))
+                        }
+                        if (deferred != null) {
+                            logger.info { "funding_locked has already been received" }
+                            val (nextState1, actions2) = nextState.run { process(ChannelCommand.MessageReceived(deferred)) }
+                            Pair(nextState1, actions + actions1 + actions2)
+                        } else {
+                            Pair(nextState, actions + actions1)
+                        }
                     }
                 }
             }

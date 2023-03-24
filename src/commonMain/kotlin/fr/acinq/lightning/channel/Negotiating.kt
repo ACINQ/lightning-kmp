@@ -2,10 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
-import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
-import fr.acinq.lightning.blockchain.WatchConfirmed
-import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.Either
@@ -144,6 +141,7 @@ data class Negotiating(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
             cmd is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
+                is WatchEventConfirmed -> updateFundingTxStatus(watch)
                 is WatchEventSpent -> when {
                     watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
                         // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
@@ -162,11 +160,8 @@ data class Negotiating(
                         )
                         Pair(nextState, actions)
                     }
-                    watch.tx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx, commitments.latest)
-                    watch.tx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(watch.tx, commitments.latest)
-                    else -> handleRemoteSpentOther(watch.tx)
+                    else -> handlePotentialForceClose(watch)
                 }
-                else -> unhandled(cmd)
             }
             cmd is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
             cmd is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating), listOf())
