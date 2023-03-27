@@ -288,7 +288,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                     }
                                     else -> state
                                 }
-                                Pair(this@Syncing.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState as PersistedChannelState)))
+                                Pair(this@Syncing.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                             }
                         }
                     } else {
@@ -301,7 +301,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
-                    else -> Pair(Syncing(newState as PersistedChannelState, waitForTheirReestablishMessage), actions)
+                    else -> Pair(Syncing(newState, waitForTheirReestablishMessage), actions)
                 }
             }
             cmd is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())
