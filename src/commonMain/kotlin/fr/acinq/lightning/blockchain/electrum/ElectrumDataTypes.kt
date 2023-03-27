@@ -7,6 +7,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKB
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -156,24 +157,23 @@ data class EstimateFees(val confirmations: Int) : ElectrumRequest(confirmations)
 
 data class EstimateFeeResponse(val confirmations: Int, val feerate: FeeratePerKw?) : ElectrumResponse
 
+sealed interface ElectrumSubscriptionResponse : ElectrumResponse
 
 data class ScriptHashSubscription(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.subscribe"
 }
 
-data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String = "") : ElectrumResponse
+data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String = "") : ElectrumSubscriptionResponse
 
 object HeaderSubscription : ElectrumRequest() {
     override val method: String = "blockchain.headers.subscribe"
 }
 
-data class HeaderSubscriptionResponse(val blockHeight: Int, val header: BlockHeader) : ElectrumResponse
+data class HeaderSubscriptionResponse(val blockHeight: Int, val header: BlockHeader) : ElectrumSubscriptionResponse
 
 /**
  * Other Electrum responses
  */
-data class TransactionHistory(val history: List<TransactionHistoryItem>) : ElectrumResponse
-data class AddressStatus(val address: String, val status: String?) : ElectrumResponse
 data class ServerError(val request: ElectrumRequest, val error: JsonRPCError) : ElectrumResponse
 
 /**
@@ -184,10 +184,10 @@ data class ServerError(val request: ElectrumRequest, val error: JsonRPCError) : 
  * The former are correlated 1:1 with JSON RPC requests, based on request id. The latter are not: one
  * subscription can yield an indefinite number of notifications.
  */
-object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonRPCResponse>> {
+object ElectrumResponseDeserializer : DeserializationStrategy<Either<ElectrumSubscriptionResponse, JsonRPCResponse>> {
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun deserialize(decoder: Decoder): Either<ElectrumResponse, JsonRPCResponse> {
+    override fun deserialize(decoder: Decoder): Either<ElectrumSubscriptionResponse, JsonRPCResponse> {
         // Decoder -> JsonInput
         val input = decoder as? JsonDecoder
             ?: throw SerializationException("This class can be loaded only by JSON")
@@ -219,10 +219,6 @@ object ElectrumResponseDeserializer : KSerializer<Either<ElectrumResponse, JsonR
 
             else -> Either.Right(json.decodeFromJsonElement(JsonRPCResponseDeserializer(json), jsonObject))
         }
-    }
-
-    override fun serialize(encoder: Encoder, value: Either<ElectrumResponse, JsonRPCResponse>) {
-        throw SerializationException("This ($value) is not meant to be serialized!")
     }
 
     override val descriptor: SerialDescriptor

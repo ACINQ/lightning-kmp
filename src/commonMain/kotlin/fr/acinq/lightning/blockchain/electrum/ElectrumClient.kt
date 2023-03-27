@@ -53,12 +53,12 @@ class ElectrumClient(
     val connectionState: StateFlow<Connection> get() = _connectionState.asStateFlow()
 
     // subscriptions notifications (headers, script_hashes, etc.)
-    private val _notifications = MutableSharedFlow<ElectrumResponse>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
-    val notifications: Flow<ElectrumResponse> get() = _notifications.asSharedFlow()
+    private val _notifications = MutableSharedFlow<ElectrumSubscriptionResponse>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
+    val notifications: Flow<ElectrumSubscriptionResponse> get() = _notifications.asSharedFlow()
 
     private sealed interface Action {
         data class SendToServer(val request: Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>) : Action
-        data class ProcessServerResponse(val response: Either<ElectrumResponse, JsonRPCResponse>) : Action
+        data class ProcessServerResponse(val response: Either<ElectrumSubscriptionResponse, JsonRPCResponse>) : Action
         object Disconnect : Action
     }
 
@@ -157,7 +157,7 @@ class ElectrumClient(
         var requestId = 0
 
         // reset mailbox
-        mailbox = Channel<Action>()
+        mailbox = Channel()
 
         suspend fun ping() {
             while (isActive) {
