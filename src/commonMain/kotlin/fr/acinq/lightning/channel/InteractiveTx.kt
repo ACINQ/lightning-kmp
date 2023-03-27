@@ -6,6 +6,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
@@ -685,6 +686,9 @@ data class InteractiveTxSigningSession(
     }
 
     companion object {
+        /** A local commitment for which we haven't received our peer's signatures. */
+        data class UnsignedLocalCommit(val index: Long, val spec: CommitmentSpec, val commitTx: Transactions.TransactionWithInputInfo.CommitTx, val htlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>)
+
         fun create(
             keyManager: KeyManager,
             channelParams: ChannelParams,

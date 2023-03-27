@@ -14,6 +14,7 @@ import kotlin.math.absoluteValue
 
 /*
  * We exchange signatures for a new channel.
+ * We have already sent our commit_sig.
  * If we send our tx_signatures first, the protocol flow is:
  *
  *       Local                        Remote

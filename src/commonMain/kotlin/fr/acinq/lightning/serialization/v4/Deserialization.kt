@@ -277,7 +277,7 @@ object Deserialization {
         fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
         localCommit = readEither(
             readLeft = {
-                UnsignedLocalCommit(
+                InteractiveTxSigningSession.Companion.UnsignedLocalCommit(
                     index = readNumber(),
                     spec = readCommitmentSpecWithHtlcs(),
                     commitTx = readTransactionWithInputInfo() as CommitTx,

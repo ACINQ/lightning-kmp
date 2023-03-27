@@ -30,7 +30,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                         logger.info { "syncing ${state::class}, waiting fo their channelReestablish message" }
                         val nextState = when (state) {
                             is ChannelStateWithCommitments -> state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
-                            else -> state
+                            is WaitForFundingSigned -> state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
                         }
                         Pair(Syncing(nextState, true), listOf())
                     }

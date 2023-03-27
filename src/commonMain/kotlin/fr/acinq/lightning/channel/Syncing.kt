@@ -31,7 +31,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                         logger.info { "channel_reestablish includes a peer backup" }
                         when (val decrypted = runTrying { PersistedChannelState.from(staticParams.nodeParams.nodePrivateKey, cmd.message.channelData) }) {
                             is Try.Success -> {
-                                val decryptedState = decrypted.get()
+                                val decryptedState = decrypted.result
                                 when {
                                     decryptedState is ChannelStateWithCommitments && state is ChannelStateWithCommitments && decryptedState.commitments.isMoreRecent(state.commitments) -> {
                                         logger.warning { "they have a more recent commitment, using it instead" }
