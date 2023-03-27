@@ -399,7 +399,6 @@ internal data class Commitments(
                         TxSignatures(channelId, commitInput.outPoint.hash, listOf()),
                     ),
                     fr.acinq.lightning.channel.InteractiveTxParams(channelId, localParams.isFunder, commitInput.txOut.amount, commitInput.txOut.amount, commitInput.txOut.publicKeyScript, 0, localParams.dustLimit, localCommit.spec.feerate),
-                    CommitSig(channelId, ByteVector64.Zeroes, listOf()),
                     0
                 ),
                 fr.acinq.lightning.channel.RemoteFundingStatus.Locked,

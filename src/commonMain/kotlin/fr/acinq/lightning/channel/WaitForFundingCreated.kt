@@ -68,9 +68,10 @@ data class WaitForFundingCreated(
                                 handleLocalError(cmd, signingSession.value)
                             }
                             is Either.Right -> {
+                                val (session, commitSig) = signingSession.value
                                 val nextState = WaitForFundingSigned(
                                     channelParams,
-                                    signingSession.value,
+                                    session,
                                     localPushAmount,
                                     remotePushAmount,
                                     remoteSecondPerCommitmentPoint,
@@ -79,7 +80,7 @@ data class WaitForFundingCreated(
                                 val actions = buildList {
                                     interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
                                     add(ChannelAction.Storage.StoreState(nextState))
-                                    add(ChannelAction.Message.Send(signingSession.value.localCommitSig))
+                                    add(ChannelAction.Message.Send(commitSig))
                                 }
                                 Pair(nextState, actions)
                             }

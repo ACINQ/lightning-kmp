@@ -178,11 +178,12 @@ data class WaitForFundingConfirmed(
                                     Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, signingSession.value.message))))
                                 }
                                 is Either.Right -> {
-                                    val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.WaitingForSigs(signingSession.value))
+                                    val (session, commitSig) = signingSession.value
+                                    val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.WaitingForSigs(session))
                                     val actions = buildList {
                                         interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
                                         add(ChannelAction.Storage.StoreState(nextState))
-                                        add(ChannelAction.Message.Send(signingSession.value.localCommitSig))
+                                        add(ChannelAction.Message.Send(commitSig))
                                     }
                                     Pair(nextState, actions)
                                 }

@@ -275,7 +275,6 @@ object Deserialization {
     private fun Input.readInteractiveTxSigningSession(): InteractiveTxSigningSession = InteractiveTxSigningSession(
         fundingParams = readInteractiveTxParams(),
         fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
-        localCommitSig = readLightningMessage() as CommitSig,
         localCommit = readEither(
             readLeft = {
                 UnsignedLocalCommit(
@@ -376,7 +375,6 @@ object Deserialization {
             0x00 -> LocalFundingStatus.UnconfirmedFundingTx(
                 sharedTx = readSignedSharedTransaction(),
                 fundingParams = readInteractiveTxParams(),
-                localCommitSig = readLightningMessage() as CommitSig,
                 createdAt = readNumber()
             )
             0x01 -> LocalFundingStatus.ConfirmedFundingTx(

@@ -329,6 +329,17 @@ object Helpers {
 
             return Either.Right(FirstCommitTx(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
         }
+
+        /** Sign the current remote commit, for example when retransmitting our commit_sig after a disconnection. */
+        fun signRemoteCommit(keyManager: KeyManager, params: ChannelParams, commitInput: Transactions.InputInfo, remoteCommit: RemoteCommit): CommitSig {
+            val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index, params.localParams, params.remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+            val channelKeys = params.localParams.channelKeys(keyManager)
+            val sig = keyManager.sign(remoteCommitTx, channelKeys.fundingPrivateKey)
+            // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
+            val sortedHtlcsTxs = htlcTxs.sortedBy { it.input.outPoint.index }
+            val htlcSigs = sortedHtlcsTxs.map { keyManager.sign(it, channelKeys.htlcKey, remoteCommit.remotePerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+            return CommitSig(params.channelId, sig, htlcSigs.toList())
+        }
     }
 
     object Closing {

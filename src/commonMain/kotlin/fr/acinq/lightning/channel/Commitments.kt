@@ -101,7 +101,7 @@ sealed class LocalFundingStatus {
     abstract val signedTx: Transaction?
     abstract val txId: ByteVector32
 
-    data class UnconfirmedFundingTx(val sharedTx: SignedSharedTransaction, val fundingParams: InteractiveTxParams, val localCommitSig: CommitSig, val createdAt: Long) : LocalFundingStatus() {
+    data class UnconfirmedFundingTx(val sharedTx: SignedSharedTransaction, val fundingParams: InteractiveTxParams, val createdAt: Long) : LocalFundingStatus() {
         override val signedTx: Transaction? = sharedTx.signedTx
         override val txId: ByteVector32 = sharedTx.localSigs.txId
     }

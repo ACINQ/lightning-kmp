@@ -628,7 +628,6 @@ sealed class InteractiveTxSigningSessionAction {
 data class InteractiveTxSigningSession(
     val fundingParams: InteractiveTxParams,
     val fundingTx: PartiallySignedSharedTransaction,
-    val localCommitSig: CommitSig,
     val localCommit: Either<UnsignedLocalCommit, LocalCommit>,
     val remoteCommit: RemoteCommit
 ) {
@@ -641,6 +640,11 @@ data class InteractiveTxSigningSession(
     //     |       |<------- tx_signatures ------|       |
     //     +-------+                             +-------+
 
+    val commitInput: Transactions.InputInfo = when (localCommit) {
+        is Either.Left -> localCommit.value.commitTx.input
+        is Either.Right -> localCommit.value.publishableTxs.commitTx.input
+    }
+
     fun receiveCommitSig(keyManager: KeyManager, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
         return when (localCommit) {
             is Either.Left -> {
@@ -652,7 +656,7 @@ data class InteractiveTxSigningSession(
                     is Try.Success -> {
                         val signedLocalCommit = LocalCommit(localCommit.value.index, localCommit.value.spec, PublishableTxs(signedLocalCommitTx, listOf()))
                         if (shouldSignFirst(channelParams, fundingTx.tx)) {
-                            val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, localCommitSig, currentBlockHeight)
+                            val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
                             val commitment = Commitment(fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, nextRemoteCommit = null)
                             val action = InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
                             Pair(this.copy(localCommit = Either.Right(signedLocalCommit)), action)
@@ -672,7 +676,7 @@ data class InteractiveTxSigningSession(
             is Either.Right -> when (val fullySignedTx = fundingTx.addRemoteSigs(fundingParams, remoteTxSigs)) {
                 null -> InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidFundingSignature(fundingParams.channelId, fundingTx.txId))
                 else -> {
-                    val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fullySignedTx, fundingParams, localCommitSig, currentBlockHeight)
+                    val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fullySignedTx, fundingParams, currentBlockHeight)
                     val commitment = Commitment(fundingStatus, RemoteFundingStatus.NotLocked, localCommit.value, remoteCommit, nextRemoteCommit = null)
                     InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
                 }
@@ -690,7 +694,7 @@ data class InteractiveTxSigningSession(
             remotePushAmount: MilliSatoshi,
             commitTxFeerate: FeeratePerKw,
             remoteFirstPerCommitmentPoint: PublicKey
-        ): Either<ChannelException, InteractiveTxSigningSession> {
+        ): Either<ChannelException, Pair<InteractiveTxSigningSession, CommitSig>> {
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript }
             return Helpers.Funding.makeFirstCommitTxs(
@@ -711,7 +715,7 @@ data class InteractiveTxSigningSession(
                     else -> {
                         val unsignedLocalCommit = UnsignedLocalCommit(0, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
                         val remoteCommit = RemoteCommit(0, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint)
-                        Either.Right(InteractiveTxSigningSession(fundingParams, signedFundingTx, commitSig, Either.Left(unsignedLocalCommit), remoteCommit))
+                        Either.Right(Pair(InteractiveTxSigningSession(fundingParams, signedFundingTx, Either.Left(unsignedLocalCommit), remoteCommit), commitSig))
                     }
                 }
             }
