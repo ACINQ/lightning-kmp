@@ -222,7 +222,6 @@ class Peer(
         }
         launch {
             watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.collect {
-                watcher.client.askCurrentHeader()
                 // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
                 // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
                 // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
@@ -295,16 +294,12 @@ class Peer(
 
     @OptIn(FlowPreview::class)
     private suspend fun updateEstimateFees() {
-        val flow = watcher.client.notifications
-            .filterIsInstance<EstimateFeeResponse>()
-            .take(3) // we will send 3 requests, we expect 3 responses
-            .produceIn(this) // creates a ad-hoc receive channel to collect values
-            .consumeAsFlow() // once
         watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.first()
-        watcher.client.sendElectrumRequest(EstimateFees(2))
-        watcher.client.sendElectrumRequest(EstimateFees(6))
-        watcher.client.sendElectrumRequest(EstimateFees(10))
-        val sortedFees = flow.toList().sortedBy { it.confirmations }
+        val sortedFees = listOf(
+            watcher.client.estimateFees(2),
+            watcher.client.estimateFees(6),
+            watcher.client.estimateFees(10)
+        )
         logger.info { "on-chain fees: $sortedFees" }
         // TODO: If some feerates are null, we may implement a retry
         onChainFeeratesFlow.value = OnChainFeerates(
