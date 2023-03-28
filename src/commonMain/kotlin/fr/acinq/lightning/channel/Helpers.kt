@@ -330,44 +330,6 @@ object Helpers {
             return Either.Right(FirstCommitTx(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
         }
 
-        sealed class ReceiveFirstCommitResult
-        data class FirstCommitment(val fundingTx: PartiallySignedSharedTransaction, val commitment: Commitment) : ReceiveFirstCommitResult()
-        object InvalidRemoteCommitSig : ReceiveFirstCommitResult()
-        object FundingSigFailure : ReceiveFirstCommitResult()
-
-        fun receiveFirstCommit(
-            keyManager: KeyManager,
-            fundingParams: InteractiveTxParams,
-            localParams: LocalParams,
-            remoteParams: RemoteParams,
-            fundingTx: SharedTransaction,
-            firstCommitTx: FirstCommitTx,
-            remoteCommit: CommitSig,
-            remoteFirstPerCommitmentPoint: PublicKey,
-            currentBlockHeight: Long,
-        ): ReceiveFirstCommitResult {
-            val fundingPubKey = localParams.channelKeys(keyManager).fundingPubKey
-            val localSigOfLocalTx = keyManager.sign(firstCommitTx.localCommitTx, localParams.channelKeys(keyManager).fundingPrivateKey)
-            val signedLocalCommitTx = Transactions.addSigs(firstCommitTx.localCommitTx, fundingPubKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteCommit.signature)
-            return when (Transactions.checkSpendable(signedLocalCommitTx)) {
-                is Try.Failure -> InvalidRemoteCommitSig
-                is Try.Success -> {
-                    when (val signedFundingTx = fundingTx.sign(keyManager, fundingParams, localParams)) {
-                        null -> FundingSigFailure
-                        else -> {
-                            val commitment = Commitment(
-                                LocalFundingStatus.UnconfirmedFundingTx(signedFundingTx, fundingParams, currentBlockHeight),
-                                RemoteFundingStatus.NotLocked,
-                                LocalCommit(0, firstCommitTx.localSpec, PublishableTxs(signedLocalCommitTx, listOf())),
-                                RemoteCommit(0, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
-                                nextRemoteCommit = null
-                            )
-                            FirstCommitment(signedFundingTx, commitment)
-                        }
-                    }
-                }
-            }
-        }
     }
 
     object Closing {
@@ -727,7 +689,7 @@ object Helpers {
          *
          * This function returns the per-commitment secret in the first case, and null in the other cases.
          */
-        fun LoggingContext.getRemotePerCommitmentSecret(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, tx: Transaction): Pair<PrivateKey, Long>? {
+        fun getRemotePerCommitmentSecret(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, tx: Transaction): Pair<PrivateKey, Long>? {
             // a valid tx will always have at least one input, but this ensures we don't throw in tests
             val sequence = tx.txIn.first().sequence
             val channelKeyPath = keyManager.channelKeyPath(params.localParams, params.channelConfig)

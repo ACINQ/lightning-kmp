@@ -1,14 +1,15 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.wire.ChannelReady
+import fr.acinq.lightning.wire.ChannelReadyTlv
+import fr.acinq.lightning.wire.Error
+import fr.acinq.lightning.wire.TlvStream
 
-data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
+data class Offline(val state: PersistedChannelState) : ChannelState() {
 
     val channelId = state.channelId
 
@@ -28,26 +29,24 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> {
                         // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
                         logger.info { "syncing ${state::class}, waiting fo their channelReestablish message" }
-                        val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
+                        val nextState = when (state) {
+                            is ChannelStateWithCommitments -> state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
+                            is WaitForFundingSigned -> state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
+                        }
                         Pair(Syncing(nextState, true), listOf())
                     }
                     else -> {
-                        val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommitIndex)
-                        val channelReestablish = ChannelReestablish(
-                            channelId = channelId,
-                            nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,
-                            nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
-                            yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-                        ).withChannelData(state.commitments.remoteChannelData, logger)
                         logger.info { "syncing ${state::class}" }
-                        val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
+                        val channelReestablish = state.run { createChannelReestablish() }
+                        val nextState = when (state) {
+                            is WaitForFundingSigned -> state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
+                            is ChannelStateWithCommitments -> state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
+                        }
                         Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
                     }
                 }
             }
-            cmd is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
+            cmd is ChannelCommand.WatchReceived && state is ChannelStateWithCommitments -> when (val watch = cmd.watch) {
                 is WatchEventConfirmed -> {
                     if (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) {
                         when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
@@ -64,7 +63,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                                     }
                                     else -> state
                                 }
-                                Pair(this@Offline.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState as PersistedChannelState)))
+                                Pair(this@Offline.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                             }
                         }
                     } else {
@@ -91,12 +90,12 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     else -> state.run { handlePotentialForceClose(watch) }
                 }
             }
-            cmd is ChannelCommand.CheckHtlcTimeout -> {
+            cmd is ChannelCommand.CheckHtlcTimeout && state is ChannelStateWithCommitments -> {
                 val (newState, actions) = state.run { checkHtlcTimeout() }
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
-                    else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
+                    else -> Pair(Offline(newState), actions)
                 }
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {
@@ -105,7 +104,7 @@ data class Offline(val state: ChannelStateWithCommitments) : ChannelState() {
                     // NB: it doesn't make sense to try to send outgoing messages if we're offline.
                     is Closing -> Pair(newState, actions.filterNot { it is ChannelAction.Message.Send })
                     is Closed -> Pair(newState, actions.filterNot { it is ChannelAction.Message.Send })
-                    else -> Pair(Offline(newState as ChannelStateWithCommitments), actions)
+                    else -> Pair(Offline(newState as PersistedChannelState), actions)
                 }
             }
             else -> unhandled(cmd)

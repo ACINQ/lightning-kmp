@@ -2,9 +2,11 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
@@ -335,7 +337,7 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
 sealed class InteractiveTxSessionAction {
     // @formatter:off
     data class SendMessage(val msg: InteractiveTxConstructionMessage) : InteractiveTxSessionAction()
-    data class SignSharedTx(val sharedTx: SharedTransaction, val sharedOutputIndex: Int, val txComplete: TxComplete?) : InteractiveTxSessionAction()
+    data class SignSharedTx(val sharedTx: SharedTransaction, val txComplete: TxComplete?) : InteractiveTxSessionAction()
     sealed class RemoteFailure : InteractiveTxSessionAction()
     data class InvalidSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "invalid serial_id=$serialId" }
     data class UnknownSerialId(val channelId: ByteVector32, val serialId: Long) : RemoteFailure() { override fun toString(): String = "unknown serial_id=$serialId" }
@@ -375,6 +377,21 @@ data class InteractiveTxSession(
     val inputsReceivedCount: Int = 0,
     val outputsReceivedCount: Int = 0,
 ) {
+
+    //                      Example flow:
+    //     +-------+                             +-------+
+    //     |       |-------- tx_add_input ------>|       |
+    //     |       |<------- tx_add_input -------|       |
+    //     |       |-------- tx_add_output ----->|       |
+    //     |       |<------- tx_add_output ------|       |
+    //     |       |-------- tx_add_input ------>|       |
+    //     |   A   |<------- tx_complete --------|   B   |
+    //     |       |-------- tx_remove_output -->|       |
+    //     |       |<------- tx_add_output ------|       |
+    //     |       |-------- tx_complete ------->|       |
+    //     |       |<------- tx_complete --------|       |
+    //     +-------+                             +-------+
+
     constructor(fundingParams: InteractiveTxParams, previousLocalBalance: Satoshi, previousRemoteBalance: Satoshi, fundingContributions: FundingContributions, previousTxs: List<SignedSharedTransaction> = listOf()) : this(
         fundingParams,
         previousLocalBalance,
@@ -546,8 +563,6 @@ data class InteractiveTxSession(
 
         val sharedTx = SharedTransaction(sharedInput, sharedOutput, localOnlyInputs, remoteOnlyInputs, localOnlyOutputs, remoteOnlyOutputs, fundingParams.lockTime)
         val tx = sharedTx.buildUnsignedTx()
-        val sharedOutputIndex = tx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript }
-
         if (sharedTx.localAmountIn < sharedTx.localAmountOut || sharedTx.remoteAmountIn < sharedTx.remoteAmountOut) {
             return InteractiveTxSessionAction.InvalidTxChangeAmount(fundingParams.channelId, tx.txid)
         }
@@ -587,11 +602,146 @@ data class InteractiveTxSession(
             }
         }
 
-        return InteractiveTxSessionAction.SignSharedTx(sharedTx, sharedOutputIndex, txComplete)
+        return InteractiveTxSessionAction.SignSharedTx(sharedTx, txComplete)
     }
 
     companion object {
         // We restrict the number of inputs / outputs that our peer can send us to ensure the protocol eventually ends.
         const val MAX_INPUTS_OUTPUTS_RECEIVED = 4096
     }
+}
+
+sealed class InteractiveTxSigningSessionAction {
+    /** Wait for their tx_signatures before sending ours. */
+    object WaitForTxSigs : InteractiveTxSigningSessionAction()
+    /** Send our tx_signatures: we cannot forget the channel until it has been spent or double-spent. */
+    data class SendTxSigs(val fundingTx: LocalFundingStatus.UnconfirmedFundingTx, val commitment: Commitment, val localSigs: TxSignatures) : InteractiveTxSigningSessionAction()
+    data class AbortFundingAttempt(val reason: ChannelException) : InteractiveTxSigningSessionAction() {
+        override fun toString(): String = reason.message
+    }
+}
+
+/**
+ * Once a shared transaction has been created, peers exchange signatures for the commitment and the shared transaction.
+ * We store the channel state once we reach that step. Once we've sent tx_signatures, we cannot forget the channel
+ * until it has been spent or double-spent.
+ */
+data class InteractiveTxSigningSession(
+    val fundingParams: InteractiveTxParams,
+    val fundingTx: PartiallySignedSharedTransaction,
+    val localCommit: Either<UnsignedLocalCommit, LocalCommit>,
+    val remoteCommit: RemoteCommit
+) {
+
+    //                      Example flow:
+    //     +-------+                             +-------+
+    //     |       |-------- commit_sig -------->|       |
+    //     |   A   |<------- commit_sig ---------|   B   |
+    //     |       |-------- tx_signatures ----->|       |
+    //     |       |<------- tx_signatures ------|       |
+    //     +-------+                             +-------+
+
+    val commitInput: Transactions.InputInfo = when (localCommit) {
+        is Either.Left -> localCommit.value.commitTx.input
+        is Either.Right -> localCommit.value.publishableTxs.commitTx.input
+    }
+
+    fun receiveCommitSig(keyManager: KeyManager, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
+        return when (localCommit) {
+            is Either.Left -> {
+                val fundingPubKey = channelParams.localParams.channelKeys(keyManager).fundingPubKey
+                val localSigOfLocalTx = keyManager.sign(localCommit.value.commitTx, channelParams.localParams.channelKeys(keyManager).fundingPrivateKey)
+                val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingPubKey, channelParams.remoteParams.fundingPubKey, localSigOfLocalTx, remoteCommitSig.signature)
+                when (Transactions.checkSpendable(signedLocalCommitTx)) {
+                    is Try.Failure -> Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
+                    is Try.Success -> {
+                        val signedLocalCommit = LocalCommit(localCommit.value.index, localCommit.value.spec, PublishableTxs(signedLocalCommitTx, listOf()))
+                        if (shouldSignFirst(channelParams, fundingTx.tx)) {
+                            val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
+                            val commitment = Commitment(fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, nextRemoteCommit = null)
+                            val action = InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
+                            Pair(this.copy(localCommit = Either.Right(signedLocalCommit)), action)
+                        } else {
+                            Pair(this.copy(localCommit = Either.Right(signedLocalCommit)), InteractiveTxSigningSessionAction.WaitForTxSigs)
+                        }
+                    }
+                }
+            }
+            is Either.Right -> Pair(this, InteractiveTxSigningSessionAction.WaitForTxSigs)
+        }
+    }
+
+    fun receiveTxSigs(remoteTxSigs: TxSignatures, currentBlockHeight: Long): InteractiveTxSigningSessionAction {
+        return when (localCommit) {
+            is Either.Left -> InteractiveTxSigningSessionAction.AbortFundingAttempt(UnexpectedFundingSignatures(fundingParams.channelId))
+            is Either.Right -> when (val fullySignedTx = fundingTx.addRemoteSigs(fundingParams, remoteTxSigs)) {
+                null -> InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidFundingSignature(fundingParams.channelId, fundingTx.txId))
+                else -> {
+                    val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fullySignedTx, fundingParams, currentBlockHeight)
+                    val commitment = Commitment(fundingStatus, RemoteFundingStatus.NotLocked, localCommit.value, remoteCommit, nextRemoteCommit = null)
+                    InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
+                }
+            }
+        }
+    }
+
+    companion object {
+        /** A local commitment for which we haven't received our peer's signatures. */
+        data class UnsignedLocalCommit(val index: Long, val spec: CommitmentSpec, val commitTx: Transactions.TransactionWithInputInfo.CommitTx, val htlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>)
+
+        fun create(
+            keyManager: KeyManager,
+            channelParams: ChannelParams,
+            fundingParams: InteractiveTxParams,
+            sharedTx: SharedTransaction,
+            localPushAmount: MilliSatoshi,
+            remotePushAmount: MilliSatoshi,
+            commitTxFeerate: FeeratePerKw,
+            remoteFirstPerCommitmentPoint: PublicKey
+        ): Either<ChannelException, Pair<InteractiveTxSigningSession, CommitSig>> {
+            val unsignedTx = sharedTx.buildUnsignedTx()
+            val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript }
+            return Helpers.Funding.makeFirstCommitTxs(
+                keyManager,
+                channelParams.channelId,
+                channelParams.localParams, channelParams.remoteParams,
+                fundingParams.localAmount, fundingParams.remoteAmount,
+                localPushAmount, remotePushAmount,
+                commitTxFeerate,
+                unsignedTx.hash,
+                sharedOutputIndex,
+                remoteFirstPerCommitmentPoint
+            ).flatMap { firstCommitTx ->
+                val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, channelParams.localParams.channelKeys(keyManager).fundingPrivateKey)
+                val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf())
+                when (val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams)) {
+                    null -> Either.Left(ChannelFundingError(channelParams.channelId))
+                    else -> {
+                        val unsignedLocalCommit = UnsignedLocalCommit(0, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
+                        val remoteCommit = RemoteCommit(0, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint)
+                        Either.Right(Pair(InteractiveTxSigningSession(fundingParams, signedFundingTx, Either.Left(unsignedLocalCommit), remoteCommit), commitSig))
+                    }
+                }
+            }
+        }
+
+        fun shouldSignFirst(channelParams: ChannelParams, tx: SharedTransaction): Boolean {
+            return if (tx.localAmountIn == tx.remoteAmountIn) {
+                // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
+                LexicographicalOrdering.isLessThan(channelParams.localParams.nodeId, channelParams.remoteParams.nodeId)
+            } else {
+                // Otherwise, the peer with the lowest total of input amount must transmit its `tx_signatures` first.
+                tx.localAmountIn < tx.remoteAmountIn
+            }
+        }
+    }
+
+}
+
+sealed class RbfStatus {
+    object None : RbfStatus()
+    data class RbfRequested(val command: CMD_BUMP_FUNDING_FEE) : RbfStatus()
+    data class InProgress(val rbfSession: InteractiveTxSession) : RbfStatus()
+    data class WaitingForSigs(val session: InteractiveTxSigningSession) : RbfStatus()
+    object RbfAborted : RbfStatus()
 }

@@ -83,8 +83,10 @@ data class LNChannel<out S : ChannelState>(
         }
     }
     val commitments: Commitments by lazy {
-        when (state) {
-            is ChannelStateWithCommitments -> state.commitments
+        when {
+            state is ChannelStateWithCommitments -> state.commitments
+            state is Offline && state.state is ChannelStateWithCommitments -> (state.state as ChannelStateWithCommitments).commitments
+            state is Syncing && state.state is ChannelStateWithCommitments -> (state.state as ChannelStateWithCommitments).commitments
             else -> error("no commitments in state ${state::class}")
         }
     }
@@ -108,9 +110,12 @@ data class LNChannel<out S : ChannelState>(
     // we check that serialization works by checking that deserialize(serialize(state)) == state
     private fun checkSerialization(state: PersistedChannelState) {
 
-        // We never persist a funding RBF attempt.
+        // We don't persist unsigned funding RBF attempts.
         fun removeRbfAttempt(state: PersistedChannelState): PersistedChannelState = when (state) {
-            is WaitForFundingConfirmed -> state.copy(rbfStatus = WaitForFundingConfirmed.Companion.RbfStatus.None)
+            is WaitForFundingConfirmed -> when (state.rbfStatus) {
+                is RbfStatus.WaitingForSigs -> state
+                else -> state.copy(rbfStatus = RbfStatus.None)
+            }
             else -> state
         }
 

@@ -360,17 +360,19 @@ class PeerTest : LightningTestSuite() {
         assertEquals(channelId, syncChannels.first().state.channelId)
 
         val syncState = syncChannels.first()
+        assertIs<Normal>(syncState.state)
+        val commitments = (syncState.state as Normal).commitments
         val yourLastPerCommitmentSecret = ByteVector32.Zeroes
-        val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(syncState.state.commitments.params.localParams, syncState.state.commitments.params.channelConfig)
-        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, syncState.state.commitments.localCommitIndex)
+        val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(commitments.params.localParams, commitments.params.channelConfig)
+        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, commitments.localCommitIndex)
 
         val channelReestablish = ChannelReestablish(
             channelId = syncState.state.channelId,
-            nextLocalCommitmentNumber = syncState.state.commitments.localCommitIndex + 1,
-            nextRemoteRevocationNumber = syncState.state.commitments.remoteCommitIndex,
+            nextLocalCommitmentNumber = commitments.localCommitIndex + 1,
+            nextRemoteRevocationNumber = commitments.remoteCommitIndex,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-        ).withChannelData(syncState.state.commitments.remoteChannelData)
+        ).withChannelData(commitments.remoteChannelData)
 
         val reestablishMsg = LightningMessage.encode(channelReestablish)
         peer.send(BytesReceived(reestablishMsg))
@@ -388,6 +390,14 @@ class PeerTest : LightningTestSuite() {
     fun `restore channel -- bundled`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         newPeers(this, Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams), listOf(alice0 to bob0))
+    }
+
+    @Test
+    fun `restore channel -- unknown channel`() = runSuspendTest {
+        val (alice, _, alice2bob) = newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams))
+        val unknownChannelReestablish = ChannelReestablish(randomBytes32(), 1, 0, randomKey(), randomKey().publicKey())
+        alice.send(BytesReceived(LightningMessage.encode(unknownChannelReestablish)))
+        alice2bob.expect<Error>()
     }
 
     @Test

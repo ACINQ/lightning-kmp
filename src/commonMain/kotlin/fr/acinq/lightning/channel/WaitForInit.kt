@@ -67,24 +67,30 @@ object WaitForInit : ChannelState() {
             cmd is ChannelCommand.Restore -> {
                 logger.info { "restoring channel ${cmd.state.channelId} to state ${cmd.state::class.simpleName}" }
                 // We republish unconfirmed transactions.
-                val unconfirmedFundingTxs = cmd.state.commitments.active.mapNotNull { commitment ->
-                    when (val fundingStatus = commitment.localFundingStatus) {
-                        is LocalFundingStatus.UnconfirmedFundingTx -> fundingStatus.signedTx
-                        is LocalFundingStatus.ConfirmedFundingTx -> null
+                val unconfirmedFundingTxs = when (cmd.state) {
+                    is ChannelStateWithCommitments -> cmd.state.commitments.active.mapNotNull { commitment ->
+                        when (val fundingStatus = commitment.localFundingStatus) {
+                            is LocalFundingStatus.UnconfirmedFundingTx -> fundingStatus.signedTx
+                            is LocalFundingStatus.ConfirmedFundingTx -> null
+                        }
                     }
+                    else -> listOf()
                 }
                 // We watch all funding transactions regardless of the underlying state.
                 // There can be multiple funding transactions due to rbf, and they can be unconfirmed in any state due to zero-conf.
-                val fundingTxWatches = cmd.state.commitments.active.map { commitment ->
-                    when (commitment.localFundingStatus) {
-                        is LocalFundingStatus.UnconfirmedFundingTx -> {
-                            val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, commitment.fundingAmount).toLong()
-                            WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, BITCOIN_FUNDING_DEPTHOK)
-                        }
-                        is LocalFundingStatus.ConfirmedFundingTx -> {
-                            WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                val fundingTxWatches = when (cmd.state) {
+                    is ChannelStateWithCommitments -> cmd.state.commitments.active.map { commitment ->
+                        when (commitment.localFundingStatus) {
+                            is LocalFundingStatus.UnconfirmedFundingTx -> {
+                                val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, commitment.fundingAmount).toLong()
+                                WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, BITCOIN_FUNDING_DEPTHOK)
+                            }
+                            is LocalFundingStatus.ConfirmedFundingTx -> {
+                                WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                            }
                         }
                     }
+                    else -> listOf()
                 }
                 when (cmd.state) {
                     is Closing -> {

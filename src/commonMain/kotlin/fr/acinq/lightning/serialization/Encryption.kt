@@ -27,8 +27,7 @@ object Encryption {
         val ciphertext = data.dropLast(12 + 16)
         val nonce = data.takeLast(12 + 16).take(12)
         val tag = data.takeLast(16)
-        val plaintext = ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
-        return plaintext
+        return ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
     }
 
     /**
@@ -50,8 +49,7 @@ object Encryption {
         val decrypted = runTrying { decrypt(key.value, encryptedChannelData.data.drop(2).toByteArray()) }
             .recoverWith { runTrying { decrypt(key.value, encryptedChannelData.data.toByteArray()) } }
             .get()
-        val state = Serialization.deserialize(decrypted)
-        return state
+        return Serialization.deserialize(decrypted)
     }
 
 }

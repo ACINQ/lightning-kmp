@@ -34,6 +34,8 @@ object Deserialization {
         0x05 -> readClosing()
         0x06 -> readWaitForRemotePublishFutureCommitment()
         0x07 -> readClosed()
+        0x0a -> readWaitForFundingSigned()
+        0x0b -> readErrorInformationLeak()
         else -> error("unknown discriminator $discriminator for class ${PersistedChannelState::class}")
     }
 
@@ -54,12 +56,26 @@ object Deserialization {
         lastSent = readLightningMessage() as ChannelReady
     )
 
+    private fun Input.readWaitForFundingSigned() = WaitForFundingSigned(
+        channelParams = readChannelParams(),
+        signingSession = readInteractiveTxSigningSession(),
+        localPushAmount = readNumber().msat,
+        remotePushAmount = readNumber().msat,
+        remoteSecondPerCommitmentPoint = readPublicKey(),
+        channelOrigin = readNullable { readChannelOrigin() }
+    )
+
     private fun Input.readWaitForFundingConfirmed() = WaitForFundingConfirmed(
         commitments = readCommitments(),
         localPushAmount = readNumber().msat,
         remotePushAmount = readNumber().msat,
         waitingSinceBlock = readNumber(),
-        deferred = readNullable { readLightningMessage() as ChannelReady }
+        deferred = readNullable { readLightningMessage() as ChannelReady },
+        rbfStatus = when (val discriminator = read()) {
+            0x00 -> RbfStatus.None
+            0x01 -> RbfStatus.WaitingForSigs(readInteractiveTxSigningSession())
+            else -> error("unknown discriminator $discriminator for class ${RbfStatus::class}")
+        }
     )
 
     private fun Input.readWaitForChannelReady() = WaitForChannelReady(
@@ -149,6 +165,10 @@ object Deserialization {
     private fun Input.readWaitForRemotePublishFutureCommitment(): WaitForRemotePublishFutureCommitment = WaitForRemotePublishFutureCommitment(
         commitments = readCommitments(),
         remoteChannelReestablish = readLightningMessage() as ChannelReestablish
+    )
+
+    private fun Input.readErrorInformationLeak(): ErrorInformationLeak = ErrorInformationLeak(
+        commitments = readCommitments()
     )
 
     private fun Input.readClosed(): Closed = Closed(
@@ -252,6 +272,56 @@ object Deserialization {
         else -> error("unknown discriminator $discriminator for class ${SignedSharedTransaction::class}")
     }
 
+    private fun Input.readInteractiveTxSigningSession(): InteractiveTxSigningSession = InteractiveTxSigningSession(
+        fundingParams = readInteractiveTxParams(),
+        fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
+        localCommit = readEither(
+            readLeft = {
+                InteractiveTxSigningSession.Companion.UnsignedLocalCommit(
+                    index = readNumber(),
+                    spec = readCommitmentSpecWithHtlcs(),
+                    commitTx = readTransactionWithInputInfo() as CommitTx,
+                    htlcTxs = readCollection { readTransactionWithInputInfo() as HtlcTx }.toList(),
+                )
+            },
+            readRight = {
+                LocalCommit(
+                    index = readNumber(),
+                    spec = readCommitmentSpecWithHtlcs(),
+                    publishableTxs = PublishableTxs(
+                        commitTx = readTransactionWithInputInfo() as CommitTx,
+                        htlcTxsAndSigs = readCollection {
+                            HtlcTxAndSigs(
+                                txinfo = readTransactionWithInputInfo() as HtlcTx,
+                                localSig = readByteVector64(),
+                                remoteSig = readByteVector64()
+                            )
+                        }.toList()
+                    )
+                )
+            },
+        ),
+        remoteCommit = RemoteCommit(
+            index = readNumber(),
+            spec = readCommitmentSpecWithHtlcs(),
+            txid = readByteVector32(),
+            remotePerCommitmentPoint = readPublicKey()
+        )
+    )
+
+    private fun Input.readChannelOrigin(): ChannelOrigin = when (val discriminator = read()) {
+        0x01 -> ChannelOrigin.PayToOpenOrigin(
+            paymentHash = readByteVector32(),
+            fee = readNumber().sat,
+        )
+        0x02 -> ChannelOrigin.PleaseOpenChannelOrigin(
+            requestId = readByteVector32(),
+            serviceFee = readNumber().msat,
+            fundingFee = readNumber().sat,
+        )
+        else -> error("unknown discriminator $discriminator for class ${ChannelOrigin::class}")
+    }
+
     private fun Input.readChannelParams(): ChannelParams = ChannelParams(
         channelId = readByteVector32(),
         channelConfig = ChannelConfig(readDelimitedByteArray()),
@@ -319,7 +389,7 @@ object Deserialization {
         },
         localCommit = LocalCommit(
             index = readNumber(),
-            spec = readCommitmentSpec(htlcs),
+            spec = readCommitmentSpecWithoutHtlcs(htlcs),
             publishableTxs = PublishableTxs(
                 commitTx = readTransactionWithInputInfo() as CommitTx,
                 htlcTxsAndSigs = readCollection {
@@ -333,7 +403,7 @@ object Deserialization {
         ),
         remoteCommit = RemoteCommit(
             index = readNumber(),
-            spec = readCommitmentSpec(htlcs.map { it.opposite() }.toSet()),
+            spec = readCommitmentSpecWithoutHtlcs(htlcs.map { it.opposite() }.toSet()),
             txid = readByteVector32(),
             remotePerCommitmentPoint = readPublicKey()
         ),
@@ -342,7 +412,7 @@ object Deserialization {
                 sig = readLightningMessage() as CommitSig,
                 commit = RemoteCommit(
                     index = readNumber(),
-                    spec = readCommitmentSpec(htlcs.map { it.opposite() }.toSet()),
+                    spec = readCommitmentSpecWithoutHtlcs(htlcs.map { it.opposite() }.toSet()),
                     txid = readByteVector32(),
                     remotePerCommitmentPoint = readPublicKey()
                 )
@@ -380,7 +450,14 @@ object Deserialization {
         else -> error("invalid discriminator $discriminator for class ${DirectedHtlc::class}")
     }
 
-    private fun Input.readCommitmentSpec(htlcs: Set<DirectedHtlc>): CommitmentSpec = CommitmentSpec(
+    private fun Input.readCommitmentSpecWithHtlcs(): CommitmentSpec = CommitmentSpec(
+        htlcs = readCollection { readDirectedHtlc() }.toSet(),
+        feerate = FeeratePerKw(readNumber().sat),
+        toLocal = readNumber().msat,
+        toRemote = readNumber().msat
+    )
+
+    private fun Input.readCommitmentSpecWithoutHtlcs(htlcs: Set<DirectedHtlc>): CommitmentSpec = CommitmentSpec(
         htlcs = readCollection {
             when (val discriminator = read()) {
                 0 -> {

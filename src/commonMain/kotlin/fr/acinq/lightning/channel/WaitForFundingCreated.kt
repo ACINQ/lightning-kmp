@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
@@ -32,7 +31,6 @@ import fr.acinq.lightning.wire.*
 data class WaitForFundingCreated(
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
-    val wallet: WalletState,
     val interactiveTxSession: InteractiveTxSession,
     val localPushAmount: MilliSatoshi,
     val remotePushAmount: MilliSatoshi,
@@ -53,47 +51,35 @@ data class WaitForFundingCreated(
                 when (interactiveTxAction) {
                     is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingCreated.copy(interactiveTxSession = interactiveTxSession1), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
                     is InteractiveTxSessionAction.SignSharedTx -> {
-                        val firstCommitTxRes = Helpers.Funding.makeFirstCommitTxs(
+                        val channelParams = ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
+                        val signingSession = InteractiveTxSigningSession.create(
                             keyManager,
-                            channelId,
-                            localParams,
-                            remoteParams,
-                            interactiveTxSession.fundingParams.localAmount,
-                            interactiveTxSession.fundingParams.remoteAmount,
+                            channelParams,
+                            interactiveTxSession.fundingParams,
+                            interactiveTxAction.sharedTx,
                             localPushAmount,
                             remotePushAmount,
                             commitTxFeerate,
-                            interactiveTxAction.sharedTx.buildUnsignedTx().hash,
-                            interactiveTxAction.sharedOutputIndex,
                             remoteFirstPerCommitmentPoint
                         )
-                        when (firstCommitTxRes) {
+                        when (signingSession) {
                             is Either.Left -> {
-                                logger.error(firstCommitTxRes.value) { "cannot create first commit tx" }
-                                handleLocalError(cmd, firstCommitTxRes.value)
+                                logger.error(signingSession.value) { "cannot initiate interactive-tx signing session" }
+                                handleLocalError(cmd, signingSession.value)
                             }
                             is Either.Right -> {
-                                val firstCommitTx = firstCommitTxRes.value
-                                val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, localParams.channelKeys(keyManager).fundingPrivateKey)
-                                val commitSig = CommitSig(channelId, localSigOfRemoteTx, listOf())
+                                val (session, commitSig) = signingSession.value
                                 val nextState = WaitForFundingSigned(
-                                    localParams,
-                                    remoteParams,
-                                    wallet,
-                                    interactiveTxSession1.fundingParams,
+                                    channelParams,
+                                    session,
                                     localPushAmount,
                                     remotePushAmount,
-                                    interactiveTxAction.sharedTx,
-                                    firstCommitTx,
-                                    remoteFirstPerCommitmentPoint,
                                     remoteSecondPerCommitmentPoint,
-                                    channelFlags,
-                                    channelConfig,
-                                    channelFeatures,
                                     channelOrigin
                                 )
                                 val actions = buildList {
                                     interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
+                                    add(ChannelAction.Storage.StoreState(nextState))
                                     add(ChannelAction.Message.Send(commitSig))
                                 }
                                 Pair(nextState, actions)
