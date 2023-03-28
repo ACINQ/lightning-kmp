@@ -168,6 +168,16 @@ sealed class CommitSigTlv : Tlv {
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
         }
     }
+
+    data class Batch(val size: Int) : CommitSigTlv() {
+        override val tag: Long get() = Batch.tag
+        override fun write(out: Output) = LightningCodecs.writeTU16(size, out)
+
+        companion object : TlvValueReader<Batch> {
+            const val tag: Long = 0x47010005
+            override fun read(input: Input): Batch = Batch(size = LightningCodecs.tu16(input))
+        }
+    }
 }
 
 sealed class RevokeAndAckTlv : Tlv {

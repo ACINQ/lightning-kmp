@@ -1083,6 +1083,8 @@ data class CommitSig(
     override val channelData: EncryptedChannelData get() = tlvStream.get<CommitSigTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): CommitSig = copy(tlvStream = tlvStream.addOrUpdate(CommitSigTlv.ChannelData(ecd)))
 
+    val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
+
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(signature, out)
@@ -1095,7 +1097,10 @@ data class CommitSig(
         const val type: Long = 132
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>)
+        val readers = mapOf(
+            CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>,
+            CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>
+        )
 
         override fun read(input: Input): CommitSig {
             val channelId = ByteVector32(LightningCodecs.bytes(input, 32))

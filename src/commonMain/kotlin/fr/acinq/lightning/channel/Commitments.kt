@@ -693,7 +693,15 @@ data class Commitments(
                 remoteChanges = changes.remoteChanges.copy(acked = emptyList(), signed = changes.remoteChanges.acked)
             )
         )
-        return Either.Right(Pair(commitments1, sigs))
+        val sigs1 = if (sigs.size > 1) {
+            sigs.map { sig ->
+                sig.copy(tlvStream = sig.tlvStream.copy(records = buildList {
+                    addAll(sig.tlvStream.records)
+                    add(CommitSigTlv.Batch(sigs.size))
+                }))
+            }
+        } else sigs
+        return Either.Right(Pair(commitments1, sigs1))
     }
 
     fun receiveCommit(commits: List<CommitSig>, keyManager: KeyManager, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {

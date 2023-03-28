@@ -28,6 +28,7 @@ data class Normal(
     val closingFeerates: ClosingFeerates?,
     val spliceStatus: SpliceStatus
 ) : ChannelStateWithCommitments() {
+
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -188,18 +189,21 @@ data class Normal(
                         // NB: in all other cases we process the commit_sig normally. We could do a full pattern matching on all splice statuses, but it would force us to handle
                         // corner cases like race condition between splice_init and a non-splice commit_sig
                         else -> {
-                            when (val result = commitments.receiveCommit(listOf(cmd.message), keyManager, logger)) {
-                                is Either.Left -> handleLocalError(cmd, result.value)
-                                is Either.Right -> {
-                                    val nextState = this@Normal.copy(commitments = result.value.first)
-                                    val actions = mutableListOf<ChannelAction>()
-                                    actions.add(ChannelAction.Message.Send(result.value.second))
-                                    actions.add(ChannelAction.Storage.StoreState(nextState))
-                                    if (result.value.first.changes.localHasChanges()) {
-                                        actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                            when (val sigs = aggregateSigs(cmd.message)) {
+                                is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, keyManager, logger)) {
+                                    is Either.Left -> handleLocalError(cmd, result.value)
+                                    is Either.Right -> {
+                                        val nextState = this@Normal.copy(commitments = result.value.first)
+                                        val actions = mutableListOf<ChannelAction>()
+                                        actions.add(ChannelAction.Message.Send(result.value.second))
+                                        actions.add(ChannelAction.Storage.StoreState(nextState))
+                                        if (result.value.first.changes.localHasChanges()) {
+                                            actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                                        }
+                                        Pair(nextState, actions)
                                     }
-                                    Pair(nextState, actions)
                                 }
+                                else -> Pair(this@Normal, listOf())
                             }
                         }
                     }
@@ -571,6 +575,8 @@ data class Normal(
                     logger.warning { "splice attempt failed: disconnected" }
                     replyTo.complete(Command.Splice.Response.Failure.Disconnected)
                 }
+                // reset the commit_sig batch
+                sigStash = emptyList()
                 Pair(Offline(this@Normal.copy(spliceStatus = SpliceStatus.None)), failedHtlcs)
             }
             else -> unhandled(cmd)
