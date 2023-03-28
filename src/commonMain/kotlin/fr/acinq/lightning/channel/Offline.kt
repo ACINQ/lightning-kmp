@@ -1,12 +1,13 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.wire.ChannelReady
+import fr.acinq.lightning.wire.ChannelReadyTlv
+import fr.acinq.lightning.wire.Error
+import fr.acinq.lightning.wire.TlvStream
 
 data class Offline(val state: PersistedChannelState) : ChannelState() {
 
@@ -34,40 +35,14 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                         }
                         Pair(Syncing(nextState, true), listOf())
                     }
-                    else -> when (state) {
-                        is WaitForFundingSigned -> {
-                            val myFirstPerCommitmentPoint = keyManager.commitmentPoint(state.channelParams.localParams.channelKeys(keyManager).shaSeed, 0)
-                            val channelReestablish = ChannelReestablish(
-                                channelId = channelId,
-                                nextLocalCommitmentNumber = 1,
-                                nextRemoteRevocationNumber = 0,
-                                yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
-                                myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
-                                TlvStream(listOf(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTx.txId.reversed())))
-                            ).withChannelData(state.remoteChannelData, logger)
-                            logger.info { "syncing ${state::class}" }
-                            val nextState = state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
-                            Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
+                    else -> {
+                        logger.info { "syncing ${state::class}" }
+                        val channelReestablish = state.run { createChannelReestablish() }
+                        val nextState = when (state) {
+                            is WaitForFundingSigned -> state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
+                            is ChannelStateWithCommitments -> state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         }
-                        is ChannelStateWithCommitments -> {
-                            val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                            val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommitIndex)
-                            val tlvs: TlvStream<ChannelReestablishTlv> = when (state) {
-                                is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
-                                else -> TlvStream.empty()
-                            }
-                            val channelReestablish = ChannelReestablish(
-                                channelId = channelId,
-                                nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,
-                                nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
-                                yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-                                tlvStream = tlvs
-                            ).withChannelData(state.commitments.remoteChannelData, logger)
-                            logger.info { "syncing ${state::class}" }
-                            val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
-                            Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
-                        }
+                        Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
                     }
                 }
             }

@@ -1,7 +1,5 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
@@ -50,35 +48,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                     } else {
                         state
                     }
-                    val channelReestablish = when (nextState) {
-                        is WaitForFundingSigned -> {
-                            val myFirstPerCommitmentPoint = keyManager.commitmentPoint(nextState.channelParams.localParams.channelKeys(keyManager).shaSeed, 0)
-                            ChannelReestablish(
-                                channelId = channelId,
-                                nextLocalCommitmentNumber = 1,
-                                nextRemoteRevocationNumber = 0,
-                                yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
-                                myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
-                                TlvStream(listOf(ChannelReestablishTlv.NextFunding(nextState.signingSession.fundingTx.txId.reversed())))
-                            ).withChannelData(nextState.remoteChannelData, logger)
-                        }
-                        is ChannelStateWithCommitments -> {
-                            val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                            val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(nextState.commitments.params.localParams.channelKeys(keyManager).shaSeed, nextState.commitments.localCommitIndex)
-                            val tlvs: TlvStream<ChannelReestablishTlv> = when (nextState) {
-                                is WaitForFundingConfirmed -> nextState.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
-                                else -> TlvStream.empty()
-                            }
-                            ChannelReestablish(
-                                channelId = nextState.channelId,
-                                nextLocalCommitmentNumber = nextState.commitments.localCommitIndex + 1,
-                                nextRemoteRevocationNumber = nextState.commitments.remoteCommitIndex,
-                                yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-                                tlvStream = tlvs
-                            ).withChannelData(nextState.commitments.remoteChannelData, logger)
-                        }
-                    }
+                    val channelReestablish = nextState.run { createChannelReestablish() }
                     val actions = listOf(ChannelAction.Message.Send(channelReestablish))
                     // now apply their reestablish message to the restored state
                     val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).run { processInternal(cmd) }

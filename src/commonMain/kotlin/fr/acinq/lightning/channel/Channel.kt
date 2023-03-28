@@ -286,6 +286,36 @@ sealed class ChannelState {
 sealed class PersistedChannelState : ChannelState() {
     abstract val channelId: ByteVector32
 
+    internal fun ChannelContext.createChannelReestablish(): HasEncryptedChannelData = when (val state = this@PersistedChannelState) {
+        is WaitForFundingSigned -> {
+            val myFirstPerCommitmentPoint = keyManager.commitmentPoint(state.channelParams.localParams.channelKeys(keyManager).shaSeed, 0)
+            ChannelReestablish(
+                channelId = channelId,
+                nextLocalCommitmentNumber = 1,
+                nextRemoteRevocationNumber = 0,
+                yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
+                myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
+                TlvStream(listOf(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTx.txId.reversed())))
+            ).withChannelData(state.remoteChannelData, logger)
+        }
+        is ChannelStateWithCommitments -> {
+            val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
+            val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommitIndex)
+            val tlvs: TlvStream<ChannelReestablishTlv> = when (state) {
+                is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
+                else -> TlvStream.empty()
+            }
+            ChannelReestablish(
+                channelId = channelId,
+                nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,
+                nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
+                yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+                tlvStream = tlvs
+            ).withChannelData(state.commitments.remoteChannelData, logger)
+        }
+    }
+
     companion object {
         // this companion object is used by static extended function `fun PersistedChannelState.Companion.from` in Encryption.kt
     }
