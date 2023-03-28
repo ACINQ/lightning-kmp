@@ -88,10 +88,23 @@ data class CommitmentChanges(val localChanges: LocalChanges, val remoteChanges: 
 
 data class HtlcTxAndSigs(val txinfo: HtlcTx, val localSig: ByteVector64, val remoteSig: ByteVector64)
 data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
+
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
 data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
+
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
-data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey)
+data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey) {
+    fun sign(keyManager: KeyManager, params: ChannelParams, commitInput: Transactions.InputInfo): CommitSig {
+        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(keyManager, index, params.localParams, params.remoteParams, commitInput, remotePerCommitmentPoint, spec)
+        val channelKeys = params.localParams.channelKeys(keyManager)
+        val sig = keyManager.sign(remoteCommitTx, channelKeys.fundingPrivateKey)
+        // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
+        val sortedHtlcsTxs = htlcTxs.sortedBy { it.input.outPoint.index }
+        val htlcSigs = sortedHtlcsTxs.map { keyManager.sign(it, channelKeys.htlcKey, remotePerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+        return CommitSig(params.channelId, sig, htlcSigs.toList())
+    }
+}
+
 /** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */
 data class NextRemoteCommit(val sig: CommitSig, val commit: RemoteCommit)
 

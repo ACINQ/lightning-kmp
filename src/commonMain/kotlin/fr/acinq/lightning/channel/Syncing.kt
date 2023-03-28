@@ -61,7 +61,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                     when (cmd.message.nextFundingTxId) {
                         // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                         state.signingSession.fundingTx.txId -> {
-                            val commitSig = Helpers.Funding.signRemoteCommit(keyManager, state.channelParams, state.signingSession.commitInput, state.signingSession.remoteCommit)
+                            val commitSig = state.signingSession.remoteCommit.sign(keyManager, state.channelParams, state.signingSession.commitInput)
                             Pair(state, listOf(ChannelAction.Message.Send(commitSig)))
                         }
                         else -> Pair(state, listOf())
@@ -74,13 +74,13 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                             if (state.rbfStatus is RbfStatus.WaitingForSigs && state.rbfStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
                                 // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                                 logger.info { "re-sending commit_sig for rbf attempt with fundingTxId=${cmd.message.nextFundingTxId}" }
-                                val commitSig = Helpers.Funding.signRemoteCommit(keyManager, state.commitments.params, state.rbfStatus.session.commitInput, state.rbfStatus.session.remoteCommit)
+                                val commitSig = state.rbfStatus.session.remoteCommit.sign(keyManager, state.commitments.params, state.rbfStatus.session.commitInput)
                                 val actions = listOf(ChannelAction.Message.Send(commitSig))
                                 Pair(state, actions)
                             } else if (state.latestFundingTx.txId == cmd.message.nextFundingTxId) {
                                 // We retransmit commit_sig and tx_signatures (we sent them before, but they didn't receive it).
                                 logger.info { "re-sending commit_sig and tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
-                                val commitSig = Helpers.Funding.signRemoteCommit(keyManager, state.commitments.params, state.commitments.latest.commitInput, state.commitments.latest.remoteCommit)
+                                val commitSig = state.commitments.latest.remoteCommit.sign(keyManager, state.commitments.params, state.commitments.latest.commitInput)
                                 val actions = listOf(
                                     ChannelAction.Message.Send(commitSig),
                                     ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs)
