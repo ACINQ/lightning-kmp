@@ -428,6 +428,16 @@ class Peer(
             }
     }
 
+    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expirySeconds: Long? = null) {
+        val command = ReceivePayment(
+            paymentPreimage = paymentPreimage,
+            amount = amount,
+            description = description,
+            expirySeconds = expirySeconds,
+            result = CompletableDeferred())
+        command.result.await()
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
