@@ -37,7 +37,7 @@ sealed class ChannelCommand {
         val channelFlags: Byte,
         val channelConfig: ChannelConfig,
         val channelType: ChannelType.SupportedChannelType,
-        val channelOrigin: ChannelOrigin? = null
+        val channelOrigin: Origin? = null
     ) : ChannelCommand() {
         fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = keyManager.channelKeys(localParams.fundingKeyPath).temporaryChannelId
     }
@@ -125,7 +125,7 @@ sealed class ChannelAction {
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
-        data class StoreIncomingAmount(val amount: MilliSatoshi, val localInputs: Set<OutPoint>, val origin: ChannelOrigin?) : Storage()
+        data class StoreIncomingAmount(val amount: MilliSatoshi, val localInputs: Set<OutPoint>, val origin: Origin?) : Storage()
         data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
         data class StoreChannelClosed(val closingTxs: List<LightningOutgoingPayment.ClosingTxPart>) : Storage()
     }

@@ -40,7 +40,7 @@ data class WaitForFundingCreated(
     val channelFlags: Byte,
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
-    val channelOrigin: ChannelOrigin?
+    val channelOrigin: Origin?
 ) : ChannelState() {
     val channelId: ByteVector32 = interactiveTxSession.fundingParams.channelId
 

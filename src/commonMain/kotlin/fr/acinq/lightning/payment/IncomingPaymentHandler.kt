@@ -117,12 +117,12 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, serviceFee = 0.msat, channelId = channelId))
                 )
             }
-            is ChannelOrigin.PayToOpenOrigin -> {
+            is Origin.PayToOpenOrigin -> {
                 // In that case, the pay-to-open payment parts have already been handled in the main `processPaymentPart` handler. We just need
                 // to update the channel id of the pay-to-open received-with parts with type new-channel.
                 db.updateNewChannelReceivedWithChannelId(action.origin.paymentHash, channelId)
             }
-            is ChannelOrigin.PleaseOpenChannelOrigin -> {
+            is Origin.PleaseOpenChannelOrigin -> {
                 db.addAndReceivePayment(
                     preimage = fakePreimage,
                     origin = IncomingPayment.Origin.DualSwapIn(action.localInputs),

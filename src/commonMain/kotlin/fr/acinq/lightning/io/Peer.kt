@@ -693,7 +693,7 @@ class Peer(
 
                         msg is OpenDualFundedChannel -> {
                             val (wallet, fundingAmount, pushAmount) = when (val origin = msg.origin) {
-                                is ChannelOrigin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
+                                is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
                                         // Let's verify that the fee is indeed below our max (a honest LSP would not even try)
                                         val totalFee = origin.serviceFee.truncateToSatoshi() + origin.fundingFee
@@ -728,7 +728,7 @@ class Peer(
                                 val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
                                 _channels = _channels + (msg.temporaryChannelId to state2)
                                 when (val origin = msg.origin) {
-                                    is ChannelOrigin.PleaseOpenChannelOrigin -> channelRequests = channelRequests - origin.requestId
+                                    is Origin.PleaseOpenChannelOrigin -> channelRequests = channelRequests - origin.requestId
                                     else -> Unit
                                 }
                                 processActions(msg.temporaryChannelId, actions1 + actions2)

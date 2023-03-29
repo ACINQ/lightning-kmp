@@ -386,7 +386,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
             amount = 15_000_000.msat,
             localInputs = setOf(),
-            origin = ChannelOrigin.PayToOpenOrigin(paymentHash = preimage.sha256(), fee = 1_000.sat)
+            origin = Origin.PayToOpenOrigin(paymentHash = preimage.sha256(), fee = 1_000.sat)
         )
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
         // simulate payment processed as a pay-to-open
@@ -409,7 +409,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val amountOrigin = ChannelAction.Storage.StoreIncomingAmount(
             amount = 33_000_000.msat,
             localInputs = setOf(OutPoint(randomBytes32(), 7)),
-            origin = ChannelOrigin.PleaseOpenChannelOrigin(randomBytes32(), 1_200_000.msat, 0.sat)
+            origin = Origin.PleaseOpenChannelOrigin(randomBytes32(), 1_200_000.msat, 0.sat)
         )
         val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
         handler.process(channelId, amountOrigin)

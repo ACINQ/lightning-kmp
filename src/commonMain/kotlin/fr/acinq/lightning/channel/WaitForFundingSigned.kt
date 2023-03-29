@@ -40,7 +40,7 @@ data class WaitForFundingSigned(
     val localPushAmount: MilliSatoshi,
     val remotePushAmount: MilliSatoshi,
     val remoteSecondPerCommitmentPoint: PublicKey,
-    val channelOrigin: ChannelOrigin?,
+    val channelOrigin: Origin?,
     val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) : PersistedChannelState() {
     override val channelId: ByteVector32 = channelParams.channelId

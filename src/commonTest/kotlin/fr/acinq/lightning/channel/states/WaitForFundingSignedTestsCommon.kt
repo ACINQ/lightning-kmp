@@ -70,7 +70,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig -- with channel origin -- pay-to-open`() {
-        val channelOrigin = ChannelOrigin.PayToOpenOrigin(randomBytes32(), 42.sat)
+        val channelOrigin = Origin.PayToOpenOrigin(randomBytes32(), 42.sat)
         val (_, commitSigAlice, bob, _) = init(bobFundingAmount = 0.sat, alicePushAmount = TestConstants.alicePushAmount, bobPushAmount = 0.msat, channelOrigin = channelOrigin)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
         assertIs<WaitForFundingConfirmed>(bob1.state)
@@ -84,7 +84,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig -- with channel origin -- dual-swap-in`() {
-        val channelOrigin = ChannelOrigin.PleaseOpenChannelOrigin(randomBytes32(), 2500.msat, 0.sat)
+        val channelOrigin = Origin.PleaseOpenChannelOrigin(randomBytes32(), 2500.msat, 0.sat)
         val (_, commitSigAlice, bob, _) = init(alicePushAmount = 0.msat, channelOrigin = channelOrigin)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
         assertIs<WaitForFundingConfirmed>(bob1.state)
@@ -293,7 +293,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             zeroConf: Boolean = false,
-            channelOrigin: ChannelOrigin? = null
+            channelOrigin: Origin? = null
         ): Fixture {
             val (alice, bob, inputAlice, walletAlice) = WaitForFundingCreatedTestsCommon.init(
                 channelType,

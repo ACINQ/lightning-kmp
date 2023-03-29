@@ -4,8 +4,8 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
-import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.crypto.assertArrayEquals
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
@@ -67,24 +67,24 @@ class OpenTlvTestsCommon : LightningTestSuite() {
     fun `channel origin TLV`() {
         val testCases = listOf(
             Pair(
-                ChannelOrigin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"), 1234.sat),
+                Origin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"), 1234.sat),
                 Hex.decode("fe47000005 2a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2")
             ),
             Pair(
-                ChannelOrigin.PleaseOpenChannelOrigin(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 1_234_567.msat, 321.sat),
+                Origin.PleaseOpenChannelOrigin(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 1_234_567.msat, 321.sat),
                 Hex.decode("fe47000005 32 0004 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000012d687 0000000000000141")
             )
         )
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(ChannelTlv.ChannelOriginTlv.tag to ChannelTlv.ChannelOriginTlv.Companion as TlvValueReader<ChannelTlv>)
+        val readers = mapOf(ChannelTlv.OriginTlv.tag to ChannelTlv.OriginTlv.Companion as TlvValueReader<ChannelTlv>)
         val tlvStreamSerializer = TlvStreamSerializer(false, readers)
 
         testCases.forEach {
             val decoded = tlvStreamSerializer.read(it.second)
             val encoded = tlvStreamSerializer.write(decoded)
             assertArrayEquals(it.second, encoded)
-            val channelOrigin = decoded.get<ChannelTlv.ChannelOriginTlv>()?.channelOrigin
+            val channelOrigin = decoded.get<ChannelTlv.OriginTlv>()?.origin
             assertNotNull(channelOrigin)
             assertEquals(it.first, channelOrigin)
         }
