@@ -3,9 +3,9 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.6.21"
-    kotlin("plugin.serialization") version "1.6.21"
-    id("org.jetbrains.dokka") version "1.6.21"
+    kotlin("multiplatform") version "1.8.10"
+    kotlin("plugin.serialization") version "1.8.10"
+    id("org.jetbrains.dokka") version "1.8.10"
     `maven-publish`
 }
 
@@ -26,8 +26,8 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 kotlin {
     val ktorVersion: String by extra { "2.0.3" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val serializationVersion = "1.3.3"
-    val coroutineVersion = "1.6.3"
+    val serializationVersion = "1.5.0"
+    val coroutineVersion = "1.7.0-Beta"
 
     val commonMain by sourceSets.getting {
         dependencies {
@@ -37,7 +37,7 @@ kotlin {
             api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
-            api("org.jetbrains.kotlinx:kotlinx-datetime:0.3.2")
+            api("org.jetbrains.kotlinx:kotlinx-datetime:0.4.0")
         }
     }
     val commonTest by sourceSets.getting {
@@ -143,6 +143,7 @@ tasks.dokkaHtml {
                 Platform.js -> "js"
                 Platform.native -> "native"
                 Platform.common -> "common"
+                Platform.wasm -> "wasm"
             }
             displayName.set(platformName)
 
