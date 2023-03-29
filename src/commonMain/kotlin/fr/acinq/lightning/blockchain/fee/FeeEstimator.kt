@@ -10,11 +10,12 @@ interface FeeEstimator {
 /**
  * Preferences regarding on-chain feerates that will be applied to various transactions.
  *
+ * @param fundingFeerate feerate used for funding transactions, including splices (typically configured by the user, based on their preference).
  * @param mutualCloseFeerate feerate used in mutual close scenarios (typically configured by the user, based on their preference).
  * @param claimMainFeerate feerate used to claim our main output when a channel is force-closed (typically configured by the user, based on their preference).
  * @param fastFeerate feerate used to claim outputs quickly to avoid loss of funds: this one should not be set by the user (we should look at current on-chain fees).
  */
-data class OnChainFeerates(val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
+data class OnChainFeerates(val fundingFeerate: FeeratePerKw, val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
 
 data class FeerateTolerance(val ratioLow: Double, val ratioHigh: Double)
 

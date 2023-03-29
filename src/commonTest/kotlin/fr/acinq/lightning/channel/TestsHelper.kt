@@ -66,7 +66,7 @@ internal inline fun <reified T : ChannelAction> List<ChannelAction>.find() = fin
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.doesNotHave() = assertTrue { none { it is T } }
 
-fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChannel<S> = this.copy(ctx = this.ctx.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate)))
+fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChannel<S> = this.copy(ctx = this.ctx.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate)))
 
 fun Features.add(vararg pairs: Pair<Feature, FeatureSupport>): Features = this.copy(activated = this.activated + mapOf(*pairs))
 fun Features.remove(vararg features: Feature): Features = this.copy(activated = activated.filterKeys { f -> !features.contains(f) })
@@ -163,7 +163,7 @@ object TestsHelper {
             ChannelContext(
                 StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
                 currentBlockHeight = currentHeight,
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
                 logger = MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
             ),
             WaitForInit
@@ -172,7 +172,7 @@ object TestsHelper {
             ChannelContext(
                 StaticParams(bobNodeParams, TestConstants.Alice.keyManager.nodeId),
                 currentBlockHeight = currentHeight,
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
                 logger = MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
             ),
             WaitForInit

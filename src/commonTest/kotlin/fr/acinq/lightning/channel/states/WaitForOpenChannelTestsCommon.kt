@@ -29,7 +29,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
             ChannelContext(
                 StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
                 TestConstants.defaultBlockHeight,
-                OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+                OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
                 MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
             ),
             WaitForInit

@@ -35,7 +35,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         val ctx = ChannelContext(
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
             TestConstants.defaultBlockHeight ,
-            OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+            OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
             MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
         )
         val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Restore(state))
