@@ -91,6 +91,7 @@ class ElectrumClient(
         } else logger.warning { "electrum client is already running" }
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
     fun disconnect() {
         launch {
             if (!mailbox.isClosedForSend) {

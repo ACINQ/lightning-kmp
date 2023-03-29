@@ -9,7 +9,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.Databases
 import fr.acinq.lightning.db.IncomingPayment
@@ -138,6 +137,7 @@ class Peer(
 
         /** Account number for the final wallet derivation path. */
         val finalWalletAccount = 0L
+
         /** Account number for the swap-in wallet derivation path. */
         val swapInWalletAccount = 1L
     }
@@ -454,7 +454,7 @@ class Peer(
             }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
+    @OptIn(DelicateCoroutinesApi::class)
     suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
         // Avoids polluting the logs with pings/pongs
