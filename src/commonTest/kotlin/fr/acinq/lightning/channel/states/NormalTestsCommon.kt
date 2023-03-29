@@ -1095,7 +1095,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice3.hasOutgoingMessage<Error>()
         assertEquals(2, actionsAlice3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice3.findWatches<WatchConfirmed>().count())
-        actionsAlice3.hasTx(tx)
+        actionsAlice3.hasPublishTx(tx)
     }
 
     @Test
@@ -1111,7 +1111,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice2.hasOutgoingMessage<Error>()
         assertEquals(2, actionsAlice2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice2.findWatches<WatchConfirmed>().count())
-        actionsAlice2.hasTx(tx)
+        actionsAlice2.hasPublishTx(tx)
     }
 
     @Test
@@ -1415,7 +1415,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw.CommitmentFeerate * 4)
         val (bob2, actions) = bob1.process(ChannelCommand.MessageReceived(fee))
         assertIs<LNChannel<Closing>>(bob2)
-        actions.hasTx(commitTx)
+        actions.hasPublishTx(commitTx)
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 11_240.sat, reserve = 10_000.sat, fees = 26_580.sat).message)
@@ -1427,7 +1427,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(FeeratePerKw.CommitmentFeerate, bob.commitments.latest.localCommit.spec.feerate)
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(UpdateFee(bob.channelId, FeeratePerKw(252.sat))))
         assertIs<LNChannel<Closing>>(bob1)
-        actions.hasTx(bob.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actions.hasPublishTx(bob.commitments.latest.localCommit.publishableTxs.commitTx.tx)
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
         assertTrue(error.toAscii().contains("emote fee rate is too small: remoteFeeratePerKw=252"))
@@ -1952,7 +1952,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertNull(actions2.findOutgoingMessageOpt<Error>())
         assertNull(actions2.findOpt<ChannelAction.Storage.GetHtlcInfos>())
 
-        val claimTxs = actions2.findTxs()
+        val claimTxs = actions2.findPublishTxs()
         assertEquals(6, claimTxs.size)
         val mainOutputTx = claimTxs[0]
         val mainPenaltyTx = claimTxs[1]
@@ -2003,10 +2003,10 @@ class NormalTestsCommon : LightningTestSuite() {
         actions.hasOutgoingMessage<Error>()
         actions.has<ChannelAction.Storage.StoreState>()
         val lcp = alice3.state.localCommitPublished!!
-        actions.hasTx(lcp.commitTx)
+        actions.hasPublishTx(lcp.commitTx)
         assertEquals(1, lcp.htlcTimeoutTxs().size)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
-        assertEquals(4, actions.findTxs().size) // commit tx + main output + htlc-timeout + claim-htlc-delayed
+        assertEquals(4, actions.findPublishTxs().size) // commit tx + main output + htlc-timeout + claim-htlc-delayed
         assertEquals(3, actions.findWatches<WatchConfirmed>().size) // commit tx + main output + claim-htlc-delayed
         assertEquals(1, actions.findWatches<WatchSpent>().size) // htlc-timeout
     }
@@ -2025,7 +2025,7 @@ class NormalTestsCommon : LightningTestSuite() {
         Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first().tx, lcp.htlcSuccessTxs().first().tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.htlcSuccessTxs().first().tx, lcp.claimHtlcDelayedTxs.first().tx)
-        assertEquals(txs, actions.findTxs().toSet())
+        assertEquals(txs, actions.findPublishTxs().toSet())
         val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.claimHtlcDelayedTxs.first().tx).map { it.txid }.toSet()
         assertEquals(watchConfirmed, actions.findWatches<WatchConfirmed>().map { it.txId }.toSet())
         val watchSpent = setOf(lcp.htlcSuccessTxs().first().input.outPoint)

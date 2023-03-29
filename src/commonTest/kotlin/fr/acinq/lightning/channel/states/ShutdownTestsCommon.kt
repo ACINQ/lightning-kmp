@@ -91,7 +91,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(UpdateFulfillHtlc(alice.channelId, 42, r1)))
         actions.hasOutgoingMessage<Error>()
         // Alice should publish: commit tx + main delayed tx + 2 * htlc timeout txs + 2 * htlc delayed txs
-        assertEquals(6, actions.findTxs().size)
+        assertEquals(6, actions.findPublishTxs().size)
         assertIs<LNChannel<Closing>>(alice1)
     }
 
@@ -264,7 +264,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Closing>>(alice3)
         actionsAlice3.hasOutgoingMessage<Error>()
         assertNotNull(alice3.state.localCommitPublished)
-        actionsAlice3.hasTx(alice2.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actionsAlice3.hasPublishTx(alice2.commitments.latest.localCommit.publishableTxs.commitTx.tx)
     }
 
     @Test
@@ -280,7 +280,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Closing>>(alice2)
         actionsAlice2.hasOutgoingMessage<Error>()
         assertNotNull(alice2.state.localCommitPublished)
-        actionsAlice2.hasTx(alice1.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actionsAlice2.hasPublishTx(alice1.commitments.latest.localCommit.publishableTxs.commitTx.tx)
     }
 
     @Test
@@ -339,7 +339,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(revack.copy(perCommitmentSecret = randomKey())))
         assertIs<LNChannel<Closing>>(bob3)
         assertNotNull(bob3.state.localCommitPublished)
-        actionsBob3.hasTx(bob2.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actionsBob3.hasPublishTx(bob2.commitments.latest.localCommit.publishableTxs.commitTx.tx)
         actionsBob3.hasOutgoingMessage<Error>()
     }
 
@@ -349,7 +349,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(RevokeAndAck(alice0.channelId, randomKey(), randomKey().publicKey())))
         assertIs<LNChannel<Closing>>(alice1)
         assertNotNull(alice1.state.localCommitPublished)
-        actions1.hasTx(alice0.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actions1.hasPublishTx(alice0.commitments.latest.localCommit.publishableTxs.commitTx.tx)
         actions1.hasOutgoingMessage<Error>()
     }
 
@@ -387,7 +387,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         }
         assertIs<LNChannel<Closing>>(alice1)
         assertNotNull(alice1.state.localCommitPublished)
-        actions1.hasTx(commitTx)
+        actions1.hasPublishTx(commitTx)
         actions1.hasOutgoingMessage<Error>()
     }
 

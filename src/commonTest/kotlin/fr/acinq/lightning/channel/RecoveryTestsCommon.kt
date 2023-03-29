@@ -23,7 +23,7 @@ class RecoveryTestsCommon {
 
         // Alice force-closes the channel and publishes her commit tx
         val (_, actions) = alice1.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
-        val transactions = actions.findTxs()
+        val transactions = actions.findPublishTxs()
         val commitTx = transactions[0]
         val aliceTx = transactions[1]
 

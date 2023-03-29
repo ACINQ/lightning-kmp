@@ -41,8 +41,8 @@ internal inline fun <reified T : Command> List<ChannelAction>.findCommand(): T =
 internal inline fun <reified T : Command> List<ChannelAction>.hasCommand() = assertNotNull(findCommandOpt<T>(), "cannot find command ${T::class}")
 
 // Transactions
-internal fun List<ChannelAction>.findTxs(): List<Transaction> = filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
-internal fun List<ChannelAction>.hasTx(tx: Transaction) = assertTrue(findTxs().contains(tx))
+internal fun List<ChannelAction>.findPublishTxs(): List<Transaction> = filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
+internal fun List<ChannelAction>.hasPublishTx(tx: Transaction) = assertContains(findPublishTxs(), tx)
 
 // Errors
 internal inline fun <reified T : Throwable> List<ChannelAction>.findErrorOpt(): T? = filterIsInstance<ChannelAction.ProcessLocalError>().map { it.error }.filterIsInstance<T>().firstOrNull()
@@ -93,11 +93,11 @@ data class LNChannel<out S : ChannelState>(
 
     fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> =
         state
-            .run { ctx.process(cmd) }
+            .run { ctx.copy(logger = ctx.logger.copy(staticMdc = mapOf("alias" to ctx.staticParams.nodeParams.alias) + state.mdc())).process(cmd) }
             .let { (newState, actions) ->
                 checkSerialization(actions)
                 JsonSerializers.json.encodeToString(newState)
-                LNChannel(ctx.copy(logger = ctx.logger.copy(staticMdc = newState.mdc())), newState) to actions
+                LNChannel(ctx, newState) to actions
             }
 
     /** same as [process] but with the added assumption that we stay in the same state */
@@ -277,17 +277,17 @@ object TestsHelper {
         val localCommitPublished = s1.state.localCommitPublished
         assertNotNull(localCommitPublished)
         assertEquals(commitTx, localCommitPublished.commitTx)
-        actions1.hasTx(commitTx)
+        actions1.hasPublishTx(commitTx)
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
-        actions1.hasTx(localCommitPublished.claimMainDelayedOutputTx!!.tx)
+        actions1.hasPublishTx(localCommitPublished.claimMainDelayedOutputTx!!.tx)
         Transaction.correctlySpends(localCommitPublished.claimMainDelayedOutputTx!!.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         // all htlcs success/timeout should be published
         localCommitPublished.htlcTxs.values.filterNotNull().forEach { htlcTx ->
             Transaction.correctlySpends(htlcTx.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            actions1.hasTx(htlcTx.tx)
+            actions1.hasPublishTx(htlcTx.tx)
         }
         // and their outputs should be claimed
-        localCommitPublished.claimHtlcDelayedTxs.forEach { claimHtlcDelayed -> actions1.hasTx(claimHtlcDelayed.tx) }
+        localCommitPublished.claimHtlcDelayedTxs.forEach { claimHtlcDelayed -> actions1.hasPublishTx(claimHtlcDelayed.tx) }
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
         val expectedWatchConfirmed = buildSet {
@@ -329,12 +329,12 @@ object TestsHelper {
         // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
         remoteCommitPublished.claimMainOutputTx?.let { claimMain ->
             Transaction.correctlySpends(claimMain.tx, rCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            actions1.hasTx(claimMain.tx)
+            actions1.hasPublishTx(claimMain.tx)
         }
         // all htlcs success/timeout should be claimed
         remoteCommitPublished.claimHtlcTxs.values.filterNotNull().forEach { claimHtlc ->
             Transaction.correctlySpends(claimHtlc.tx, rCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-            actions1.hasTx(claimHtlc.tx)
+            actions1.hasPublishTx(claimHtlc.tx)
         }
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
