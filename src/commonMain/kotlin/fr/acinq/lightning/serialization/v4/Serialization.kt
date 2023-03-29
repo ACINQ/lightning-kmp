@@ -481,12 +481,20 @@ object Serialization {
         // When multiple commitments are active, htlcs are shared between all of these commitments, so we serialize them separately.
         // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
         val htlcs = buildSet {
+            // All active commitments have the same htlc set, so we only consider the first one
             addAll(active.first().localCommit.spec.htlcs)
             addAll(active.first().remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
             active.first().nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
+            // Each inactive commitment may have a distinct htlc set
+            inactive.forEach { c ->
+                addAll(c.localCommit.spec.htlcs)
+                addAll(c.remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
+                c.nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
+            }
         }
         writeCollection(htlcs) { writeDirectedHtlc(it) }
         writeCollection(active) { writeCommitment(it) }
+        writeCollection(inactive) { writeCommitment(it) }
         writeCollection(payments.entries) { entry ->
             writeNumber(entry.key)
             writeString(entry.value.toString())

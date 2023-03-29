@@ -495,6 +495,7 @@ data class Commitments(
     val params: ChannelParams,
     val changes: CommitmentChanges,
     val active: List<Commitment>,
+    val inactive: List<Commitment>,
     val payments: Map<Long, UUID>, // for outgoing htlcs, maps to paymentId
     val remoteNextCommitInfo: Either<WaitingForRevocation, PublicKey>, // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit
     val remotePerCommitmentSecrets: ShaChain,
@@ -518,6 +519,11 @@ data class Commitments(
 
     // We always use the last commitment that was created, to make sure we never go back in time.
     val latest = FullCommitment(params, changes, active.first().fundingTxIndex, active.first().localFundingStatus, active.first().remoteFundingStatus, active.first().localCommit, active.first().remoteCommit, active.first().nextRemoteCommit)
+
+    val all = buildList {
+        addAll(active)
+        addAll(inactive)
+    }
 
     fun add(commitment: Commitment): Commitments = copy(active = buildList {
         add(commitment)
@@ -769,41 +775,89 @@ data class Commitments(
         return Either.Right(Pair(commitments1, actions.toList()))
     }
 
-    fun updateLocalFundingStatus(txId: ByteVector32, status: LocalFundingStatus, log: MDCLogger): Either<Commitments, Pair<Commitments, Commitment>> {
-        return when (active.find { it.fundingTxId == txId }) {
-            null -> {
-                log.warning { "funding txid=$txId doesn't match any of our funding txs" }
-                Either.Left(this)
+    private fun ChannelContext.updateFundingStatus(fundingTxId: ByteVector32, updateMethod: (Commitment, Long) -> Commitment): Either<Commitments, Pair<Commitments, Commitment>> {
+        return when (val c = all.find { it.fundingTxId == fundingTxId }) {
+            is Commitment -> {
+                val commitments1 = copy(
+                    active = active.map { updateMethod(it, c.fundingTxIndex) },
+                    inactive = inactive.map { updateMethod(it, c.fundingTxIndex) },
+                )
+                val commitment = commitments1.all.find { it.fundingTxId == fundingTxId }!! // NB: this commitment might be pruned at the next line
+                val commitments2 = commitments1.run { deactivateCommitments() }.run { pruneCommitments() }
+                logger.info { "commitments active=${commitments2.active.map { it.fundingTxIndex}} inactive=${commitments2.inactive.map { it.fundingTxIndex}}" }
+                Either.Right(Pair(commitments2, commitment))
             }
             else -> {
-                val commitments1 = copy(active = active.map {
-                    if (it.fundingTxId == txId) {
-                        log.info { "setting localFundingStatus=${status::class.simpleName} for funding txid=$txId" }
-                        it.copy(localFundingStatus = status)
-                    } else {
-                        it
-                    }
-                }).pruneCommitments(log)
-                val commitment = commitments1.active.find { it.fundingTxId == txId }!!
-                Either.Right(Pair(commitments1, commitment))
+                logger.warning { "fundingTxId=$fundingTxId doesn't match any of our funding txs" }
+                Either.Left(this@Commitments)
+            }
+        }
+    }
+
+    fun ChannelContext.updateLocalFundingStatus(fundingTxId: ByteVector32, status: LocalFundingStatus): Either<Commitments, Pair<Commitments, Commitment>> =
+        updateFundingStatus(fundingTxId) { c: Commitment, _: Long ->
+            if (c.fundingTxId == fundingTxId) {
+                logger.debug { "setting localFundingStatus=${status::class.simpleName} for funding fundingTxId=$fundingTxId" }
+                c.copy(localFundingStatus = status)
+            } else c
+        }
+
+    fun ChannelContext.updateRemoteFundingStatus(fundingTxId: ByteVector32): Either<Commitments, Pair<Commitments, Commitment>> =
+        updateFundingStatus(fundingTxId) { c: Commitment, fundingTxIndex: Long ->
+            // all funding older than this one are considered locked
+            if (c.fundingTxId == fundingTxId || c.fundingTxIndex < fundingTxIndex) {
+                logger.debug { "setting remoteFundingStatus=${RemoteFundingStatus.Locked::class.simpleName} for fundingTxId=$fundingTxId" }
+                c.copy(remoteFundingStatus = RemoteFundingStatus.Locked)
+            } else c
+        }
+
+    /**
+     * Commitments are considered inactive when they have been superseded by a newer commitment, but can still potentially
+     * end up on-chain. This is a consequence of using zero-conf. Inactive commitments will be cleaned up by
+     * [pruneCommitments], when the next funding tx confirms.
+     */
+    private fun ChannelContext.deactivateCommitments(): Commitments {
+        val lastLocalLockedIndex: Long = active.firstOrNull { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }?.fundingTxIndex ?: -1
+        val lastRemoteLockedIndex: Long = active.firstOrNull { it.remoteFundingStatus is RemoteFundingStatus.Locked }?.fundingTxIndex ?: -1
+        val lastLockedIndex = min(lastLocalLockedIndex, lastRemoteLockedIndex)
+        return when (val lastLocked = active.find { it.fundingTxIndex == lastLockedIndex }) {
+            is Commitment -> {
+                // all commitments older than this one are inactive
+                val inactive1 = active.filter { it.fundingTxId != lastLocked.fundingTxId && it.fundingTxIndex <= lastLocked.fundingTxIndex }
+                inactive1.forEach { logger.info { "deactivating commitment fundingTxindex=${it.fundingTxIndex} fundingTxid=${it.fundingTxId}" } }
+                copy(
+                    active = active - inactive1.toSet(),
+                    inactive = inactive1 - inactive.toSet()
+                )
+            }
+            else -> this@Commitments
+        }
+    }
+
+    /**
+     * We can prune inactive commitments in two cases:
+     * - their funding tx has been permanently double-spent by the funding tx of a concurrent commitments (happens when using RBF)
+     * - their funding tx has been permanently spent by a splice tx
+     */
+    private fun ChannelContext.pruneCommitments(): Commitments {
+        return when (val lastConfirmed = active.find { it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }) {
+            null -> this@Commitments
+            else -> {
+                // We can prune all other commitments with the same or lower funding index.
+                val pruned = inactive.filter { it.fundingTxId != lastConfirmed.fundingTxId && it.fundingTxIndex <= lastConfirmed.fundingTxIndex }
+                pruned.forEach { logger.info { "pruning commitment fundingTxindex=${it.fundingTxIndex} fundingTxId=${it.fundingTxId}" } }
+                copy(inactive = inactive - pruned.toSet())
             }
         }
     }
 
     /**
-     * Current (pre-splice) implementation prune initial commitments. There can be several of them with RBF, but they all
-     * double-spend each other and can be pruned once one of them confirms.
+     * Find the corresponding commitment, based on a spending transaction.
+     *
+     * @param spendingTx A transaction that may spend a current or former funding tx
      */
-    private fun pruneCommitments(log: MDCLogger): Commitments {
-        return when (val confirmedTx = active.find { it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }) {
-            null -> this
-            else -> {
-                // We can prune all other commitments with the same or lower funding index.
-                val pruned = active.filter { it.fundingTxId != confirmedTx.fundingTxId }
-                pruned.forEach { log.info { "pruning commitment fundingTxId=${it.fundingTxId}" } }
-                copy(active = active - pruned.toSet())
-            }
-        }
+    fun resolveCommitment(spendingTx: Transaction): Commitment? {
+        return all.find { commitment -> spendingTx.txIn.map { it.outPoint.txid }.contains(commitment.fundingTxId) }
     }
 
     companion object {

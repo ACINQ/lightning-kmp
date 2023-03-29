@@ -95,7 +95,8 @@ data class WaitForFundingSigned(
         val commitments = Commitments(
             channelParams,
             CommitmentChanges.init(),
-            listOf(action.commitment),
+            active = listOf(action.commitment),
+            inactive = emptyList(),
             payments = mapOf(),
             remoteNextCommitInfo = Either.Right(remoteSecondPerCommitmentPoint),
             remotePerCommitmentSecrets = ShaChain.init,

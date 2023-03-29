@@ -382,7 +382,7 @@ internal data class Commitments(
             localNextHtlcId,
             remoteNextHtlcId,
         ),
-        listOf(
+        active = listOf(
             fr.acinq.lightning.channel.Commitment(
                 fundingTxIndex = 0,
                 // We previously didn't store the funding transaction, so we act as if it were unconfirmed.
@@ -402,6 +402,7 @@ internal data class Commitments(
                 remoteNextCommitInfo.fold({ x -> fr.acinq.lightning.channel.NextRemoteCommit(x.sent, x.nextRemoteCommit.export()) }, { _ -> null })
             )
         ),
+        inactive = emptyList(),
         payments,
         remoteNextCommitInfo.transform({ x -> fr.acinq.lightning.channel.WaitingForRevocation(x.sentAfterLocalCommitIndex) }, { y -> y }),
         remotePerCommitmentSecrets,

@@ -438,6 +438,7 @@ object Deserialization {
         // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
         val htlcs = readCollection { readDirectedHtlc() }.toSet()
         val active = readCollection { readCommitment(htlcs) }.toList()
+        val inactive = readCollection { readCommitment(htlcs) }.toList()
         val payments = readCollection {
             readNumber() to UUID.fromString(readString())
         }.toMap()
@@ -452,7 +453,7 @@ object Deserialization {
             lastIndex = readNullable { readNumber() }
         )
         val remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
-        return Commitments(params, changes, active, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
+        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {

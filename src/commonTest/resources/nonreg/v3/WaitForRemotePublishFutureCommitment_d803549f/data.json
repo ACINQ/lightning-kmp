@@ -238,6 +238,8 @@
                 "nextRemoteCommit": null
             }
         ],
+        "inactive": [
+        ],
         "payments": {
             "0": "d4f57ab7-0de9-4440-9aea-debd7c80496c",
             "1": "bbac2fe3-1c00-4426-804f-24fd754236ef",

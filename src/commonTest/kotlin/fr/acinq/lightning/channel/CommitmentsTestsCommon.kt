@@ -500,7 +500,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     localNextHtlcId = 1,
                     remoteNextHtlcId = 1,
                 ),
-                listOf(
+                active = listOf(
                     Commitment(
                         fundingTxIndex = 0,
                         LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
@@ -510,6 +510,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                         nextRemoteCommit = null,
                     )
                 ),
+                inactive = emptyList(),
                 payments = mapOf(),
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
                 remotePerCommitmentSecrets = ShaChain.init,
@@ -543,7 +544,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     localNextHtlcId = 1,
                     remoteNextHtlcId = 1,
                 ),
-                listOf(
+                active = listOf(
                     Commitment(
                         fundingTxIndex = 0,
                         LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
@@ -553,6 +554,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                         nextRemoteCommit = null
                     )
                 ),
+                inactive = emptyList(),
                 payments = mapOf(),
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
                 remotePerCommitmentSecrets = ShaChain.init,

@@ -1180,7 +1180,6 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(UpdateFulfillHtlc(alice0.channelId, 42, randomBytes32())))
         assertIs<LNChannel<Closing>>(alice1)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
-        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx, ChannelAction.Blockchain.PublishTx.Type.CommitTx)))
         assertEquals(commitTx, actions1.hasPublishTx(Type.CommitTx))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })

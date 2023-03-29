@@ -160,6 +160,8 @@
                 "nextRemoteCommit": null
             }
         ],
+        "inactive": [
+        ],
         "payments": {
         },
         "remoteNextCommitInfo": {

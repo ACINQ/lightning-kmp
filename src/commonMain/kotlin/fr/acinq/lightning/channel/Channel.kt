@@ -375,10 +375,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
      * We also watch this funding transaction to be able to detect force-close attempts.
      */
     internal fun ChannelContext.acceptFundingTxConfirmed(w: WatchEventConfirmed): Either<Commitments, Triple<Commitments, Commitment, List<ChannelAction>>> {
+        logger.info { "funding txid=${w.tx.txid} was confirmed at blockHeight=${w.blockHeight} txIndex=${w.txIndex}" }
         val fundingStatus = LocalFundingStatus.ConfirmedFundingTx(w.tx)
-        return commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, logger).map { (commitments1, commitment) ->
-            val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-            Triple(commitments1, commitment, listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+        return commitments.run {
+            updateLocalFundingStatus(w.tx.txid, fundingStatus).map { (commitments1, commitment) ->
+                val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                Triple(commitments1, commitment, listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+            }
         }
     }
 
@@ -401,15 +404,20 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
      */
     internal fun ChannelContext.handlePotentialForceClose(w: WatchEventSpent): Pair<ChannelStateWithCommitments, List<ChannelAction>> = when {
         w.event != BITCOIN_FUNDING_SPENT -> Pair(this@ChannelStateWithCommitments, listOf())
-        commitments.active.any { it.fundingTxId == w.tx.txid } -> Pair(this@ChannelStateWithCommitments, listOf())
+        commitments.all.any { it.fundingTxId == w.tx.txid } -> Pair(this@ChannelStateWithCommitments, listOf()) // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
         w.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> spendLocalCurrent()
         w.tx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(w.tx, commitments.latest)
         w.tx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(w.tx, commitments.latest)
         w.tx.txIn.any { it.outPoint.txid == commitments.latest.fundingTxId } -> handleRemoteSpentOther(w.tx)
-        else -> {
-            logger.warning { "unrecognized tx=${w.tx.txid}" }
-            // this was for another commitments
-            Pair(this@ChannelStateWithCommitments, listOf())
+        else -> when (val commitment = commitments.resolveCommitment(w.tx)) {
+            is Commitment -> {
+                logger.warning { "a commit tx for an older commitment has been published txid=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
+                spendLocalCurrent().run { copy(second = second + ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, w.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED))) }
+            }
+            else -> {
+                logger.warning { "unrecognized tx=${w.tx.txid}" }
+                Pair(this@ChannelStateWithCommitments, listOf())
+            }
         }
     }
 
