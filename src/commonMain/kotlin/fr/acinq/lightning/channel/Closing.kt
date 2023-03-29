@@ -13,7 +13,7 @@ import fr.acinq.lightning.channel.Helpers.Closing.onChainOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.lightning.db.ChannelClosingType
-import fr.acinq.lightning.db.OutgoingPayment
+import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.ChannelReestablish
@@ -411,10 +411,10 @@ data class Closing(
      */
     private fun storeChannelClosed(additionalConfirmedTx: Transaction): ChannelAction.Storage.StoreChannelClosed {
 
-        /** Helper method to extract a [OutgoingPayment.ClosingTxPart] from a list of transactions, given a set of confirmed tx ids. */
-        fun extractClosingTx(confirmedTxids: Set<ByteVector32>, txs: List<Transaction>, closingType: ChannelClosingType): List<OutgoingPayment.ClosingTxPart> {
+        /** Helper method to extract a [LightningOutgoingPayment.ClosingTxPart] from a list of transactions, given a set of confirmed tx ids. */
+        fun extractClosingTx(confirmedTxids: Set<ByteVector32>, txs: List<Transaction>, closingType: ChannelClosingType): List<LightningOutgoingPayment.ClosingTxPart> {
             return txs.filter { confirmedTxids.contains(it.txid) }.map {
-                OutgoingPayment.ClosingTxPart(
+                LightningOutgoingPayment.ClosingTxPart(
                     id = UUID.randomUUID(),
                     txId = it.txid,
                     claimed = it.txOut.first().amount,
@@ -444,7 +444,7 @@ data class Closing(
                 closingType = ChannelClosingType.Revoked
             )
         } + mutualClosePublished.firstOrNull { it.tx == additionalConfirmedTx }?.let {
-            OutgoingPayment.ClosingTxPart(
+            LightningOutgoingPayment.ClosingTxPart(
                 id = UUID.randomUUID(),
                 txId = it.tx.txid,
                 claimed = it.toLocalOutput?.amount ?: 0.sat,

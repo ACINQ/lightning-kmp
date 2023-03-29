@@ -49,10 +49,10 @@ interface OutgoingPaymentsDb {
     suspend fun addOutgoingPayment(outgoingPayment: OutgoingPayment)
 
     /** Get information about an outgoing payment (settled or not). */
-    suspend fun getOutgoingPayment(id: UUID): OutgoingPayment?
+    suspend fun getLightningOutgoingPayment(id: UUID): LightningOutgoingPayment?
 
     /** Mark an outgoing payment as completed for closing a Lightning channel on-chain with a list of on-chain txs. */
-    suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<OutgoingPayment.ClosingTxPart>, completedAt: Long = currentTimestampMillis())
+    suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<LightningOutgoingPayment.ClosingTxPart>, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment as completed over Lightning. */
     suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
@@ -61,7 +61,7 @@ interface OutgoingPaymentsDb {
     suspend fun completeOutgoingPaymentOffchain(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis())
 
     /** Add new partial payments to a pending outgoing payment. */
-    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<OutgoingPayment.LightningPart>)
+    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.LightningPart>)
 
     /** Mark an outgoing payment part as failed. */
     suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
@@ -70,10 +70,10 @@ interface OutgoingPaymentsDb {
     suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
     /** Get information about an outgoing payment from the id of one of its parts. */
-    suspend fun getOutgoingPaymentFromPartId(partId: UUID): OutgoingPayment?
+    suspend fun getLightningOutgoingPaymentFromPartId(partId: UUID): LightningOutgoingPayment?
 
     /** List all the outgoing payment attempts that tried to pay the given payment hash. */
-    suspend fun listOutgoingPayments(paymentHash: ByteVector32): List<OutgoingPayment>
+    suspend fun listLightningOutgoingPayments(paymentHash: ByteVector32): List<LightningOutgoingPayment>
 }
 
 enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing }
@@ -193,6 +193,10 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     fun isExpired(): Boolean = origin is Origin.Invoice && origin.paymentRequest.isExpired()
 }
 
+sealed class OutgoingPayment : WalletPayment() {
+    abstract val id: UUID
+}
+
 /**
  * An outgoing payment sent by this node.
  * The payment may be split in multiple parts, which may fail, be retried, and then either succeed or fail.
@@ -205,15 +209,15 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
  * @param parts list of partial child payments that have actually been sent.
  * @param status current status of the payment.
  */
-data class OutgoingPayment(
-    val id: UUID,
+data class LightningOutgoingPayment(
+    override val id: UUID,
     val recipientAmount: MilliSatoshi,
     val recipient: PublicKey,
     val details: Details,
     val parts: List<Part>,
     val status: Status,
     override val createdAt: Long = currentTimestampMillis()
-) : WalletPayment() {
+) : OutgoingPayment() {
 
     /** Create an outgoing payment in a pending status, without any parts yet. */
     constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)

@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.Databases
 import fr.acinq.lightning.db.IncomingPayment
+import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.payment.IncomingPaymentHandler
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
@@ -69,7 +70,7 @@ interface SendPayment {
     val paymentId: UUID
     val amount: MilliSatoshi
     val recipient: PublicKey
-    val details: OutgoingPayment.Details
+    val details: LightningOutgoingPayment.Details
     val trampolineFeesOverride: List<TrampolineFees>?
     val paymentRequest: PaymentRequest
     val paymentHash: ByteVector32 get() = details.paymentHash
@@ -79,7 +80,7 @@ data class SendPaymentNormal(
     override val paymentId: UUID,
     override val amount: MilliSatoshi,
     override val recipient: PublicKey,
-    override val details: OutgoingPayment.Details.Normal,
+    override val details: LightningOutgoingPayment.Details.Normal,
     override val trampolineFeesOverride: List<TrampolineFees>? = null
 ) : PaymentCommand(), SendPayment {
     override val paymentRequest = details.paymentRequest
@@ -89,7 +90,7 @@ data class SendPaymentSwapOut(
     override val paymentId: UUID,
     override val amount: MilliSatoshi,
     override val recipient: PublicKey,
-    override val details: OutgoingPayment.Details.SwapOut,
+    override val details: LightningOutgoingPayment.Details.SwapOut,
     override val trampolineFeesOverride: List<TrampolineFees>? = null
 ) : PaymentCommand(), SendPayment {
     override val paymentRequest = details.paymentRequest
@@ -538,17 +539,17 @@ class Peer(
                     action is ChannelAction.Storage.StoreChannelClosing -> {
                         val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
                         val recipient = if (action.isSentToDefaultAddress) nodeParams.nodeId else PublicKey.Generator
-                        val payment = OutgoingPayment(
+                        val payment = LightningOutgoingPayment(
                             id = dbId,
                             recipientAmount = action.amount,
                             recipient = recipient,
-                            details = OutgoingPayment.Details.ChannelClosing(
+                            details = LightningOutgoingPayment.Details.ChannelClosing(
                                 channelId = channelId,
                                 closingAddress = action.closingAddress,
                                 isSentToDefaultAddress = action.isSentToDefaultAddress
                             ),
                             parts = emptyList(),
-                            status = OutgoingPayment.Status.Pending
+                            status = LightningOutgoingPayment.Status.Pending
                         )
                         db.payments.addOutgoingPayment(payment)
                         _eventsFlow.emit(ChannelClosing(channelId))
