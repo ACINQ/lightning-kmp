@@ -228,12 +228,12 @@ object Helpers {
     }
 
     /** This helper method will publish txs only if they haven't yet reached minDepth. */
-    fun LoggingContext.publishIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>): List<ChannelAction.Blockchain.PublishTx> {
-        val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
-        skip.forEach { tx -> logger.info { "no need to republish txid=${tx.txid}, it has already been confirmed" } }
-        return process.map { tx ->
-            logger.info { "publishing txid=${tx.txid}" }
-            ChannelAction.Blockchain.PublishTx(tx)
+    fun LoggingContext.publishIfNeeded(txs: List<ChannelAction.Blockchain.PublishTx>, irrevocablySpent: Map<OutPoint, Transaction>): List<ChannelAction.Blockchain.PublishTx> {
+        val (skip, process) = txs.partition { it.tx.inputsAlreadySpent(irrevocablySpent) }
+        skip.forEach { tx -> logger.info { "no need to republish txid=${tx.tx.txid}, it has already been confirmed" } }
+        return process.map { publish ->
+            logger.info(mapOf("txType" to publish.txType)) { "publishing txid=${publish.tx.txid}" }
+            publish
         }
     }
 

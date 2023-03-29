@@ -164,7 +164,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(UpdateFailHtlc(alice.channelId, 42, ByteVector.empty)))
         assertIs<LNChannel<Closing>>(alice1)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
-        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(commitTx, actions1.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.CommitTx))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions1.findWatches<WatchSpent>().isNotEmpty())
         val error = actions1.findOutgoingMessage<Error>()
@@ -187,7 +187,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(fail))
         assertIs<LNChannel<Closing>>(alice1)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(alice1.state)))
-        assertTrue(actions.contains(ChannelAction.Blockchain.PublishTx(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx)))
+        assertEquals(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx, actions.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.CommitTx))
         assertEquals(6, actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
         assertEquals(6, actions.filterIsInstance<ChannelAction.Blockchain.SendWatch>().size)
         val error = actions.findOutgoingMessage<Error>()
