@@ -236,7 +236,7 @@ class PeerTest : LightningTestSuite() {
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
+                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
             )
         )
         bob.forward(open)
@@ -293,7 +293,7 @@ class PeerTest : LightningTestSuite() {
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
+                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
             )
         )
         bob.forward(open)
@@ -313,7 +313,7 @@ class PeerTest : LightningTestSuite() {
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat))
+                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat))
             )
         )
         bob.forward(open)

@@ -147,7 +147,7 @@ object TestsHelper {
         alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
         bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         zeroConf: Boolean = false,
-        channelOrigin: ChannelOrigin? = null
+        channelOrigin: Origin? = null
     ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForOpenChannel>, OpenDualFundedChannel> {
         val (aliceNodeParams, bobNodeParams) = when (zeroConf) {
             true -> Pair(

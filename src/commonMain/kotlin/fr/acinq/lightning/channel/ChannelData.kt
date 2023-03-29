@@ -392,7 +392,7 @@ object ChannelFlags {
 data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: ClosingSigned)
 
 /** This gives the reason for creating a new channel. */
-sealed class ChannelOrigin {
-    data class PayToOpenOrigin(val paymentHash: ByteVector32, val fee: Satoshi) : ChannelOrigin()
-    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, val serviceFee: MilliSatoshi, val fundingFee: Satoshi) : ChannelOrigin()
+sealed class Origin {
+    data class PayToOpenOrigin(val paymentHash: ByteVector32, val fee: Satoshi) : Origin()
+    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, val serviceFee: MilliSatoshi, val fundingFee: Satoshi) : Origin()
 }

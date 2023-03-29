@@ -366,13 +366,13 @@ object Serialization {
         }
     }
 
-    private fun Output.writeChannelOrigin(o: ChannelOrigin) = when (o) {
-        is ChannelOrigin.PayToOpenOrigin -> {
+    private fun Output.writeChannelOrigin(o: Origin) = when (o) {
+        is Origin.PayToOpenOrigin -> {
             write(0x01)
             writeByteVector32(o.paymentHash)
             writeNumber(o.fee.toLong())
         }
-        is ChannelOrigin.PleaseOpenChannelOrigin -> {
+        is Origin.PleaseOpenChannelOrigin -> {
             write(0x02)
             writeByteVector32(o.requestId)
             writeNumber(o.serviceFee.toLong())
