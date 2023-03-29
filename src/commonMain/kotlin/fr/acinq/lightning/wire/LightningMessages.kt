@@ -1664,7 +1664,6 @@ data class PleaseOpenChannel(
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
-            PleaseOpenChannelTlv.MaxFees.tag to PleaseOpenChannelTlv.MaxFees.Companion as TlvValueReader<PleaseOpenChannelTlv>,
             PleaseOpenChannelTlv.GrandParents.tag to PleaseOpenChannelTlv.GrandParents.Companion as TlvValueReader<PleaseOpenChannelTlv>,
         )
 

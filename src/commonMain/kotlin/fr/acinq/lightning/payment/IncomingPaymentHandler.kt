@@ -16,7 +16,6 @@ import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import org.kodein.log.newLogger
-import kotlin.time.Duration
 
 sealed class PaymentPart {
     abstract val amount: MilliSatoshi
@@ -257,7 +256,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             pending[paymentPart.paymentHash] = payment
                             return ProcessAddResult.Pending(incomingPayment)
                         }
-                        // We have received all the payment parts.
                         payToOpenMinAmount != null && payToOpenAmount < payToOpenMinAmount -> {
                             // Because of the cost of opening a new channel, there is a minimum amount for incoming payments to trigger
                             // a pay-to-open. Given that the total amount of a payment is included in each payment part, we could have
@@ -276,13 +274,27 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                     is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
                                 }
                             }
-                            payment.parts.filterIsInstance<PayToOpenPart>().firstOrNull()?.let {
-                                nodeParams._nodeEvents.emit(PayToOpenEvents.Rejected.BelowMin(it.paymentHash, it.totalAmount, payToOpenAmount, payToOpenMinAmount))
-                            }
                             pending.remove(paymentPart.paymentHash)
                             return ProcessAddResult.Rejected(actions, incomingPayment)
                         }
                         else -> {
+                            if (payToOpenMinAmount != null) {
+                                val payToOpenFee = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenFeeSatoshis }.sum().toMilliSatoshi()
+                                nodeParams.liquidityPolicy.maybeReject(payment.amountReceived, payToOpenFee, LiquidityEvents.Source.OffChainPayment)?.let { rejected ->
+                                    logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
+                                    nodeParams._nodeEvents.emit(rejected)
+                                    val actions = payment.parts.map { part ->
+                                        val failureMsg = TemporaryNodeFailure
+                                        when (part) {
+                                            is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
+                                            is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
+                                        }
+                                    }
+                                    pending.remove(paymentPart.paymentHash)
+                                    return ProcessAddResult.Rejected(actions, incomingPayment)
+                                }
+                            }
+
                             when (val paymentMetadata = paymentPart.finalPayload.paymentMetadata) {
                                 null -> logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
                                 else -> logger.info { "payment received (${payment.amountReceived}) with payment metadata ($paymentMetadata)" }
