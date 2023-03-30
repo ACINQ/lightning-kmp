@@ -27,18 +27,15 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
             cmd is ChannelCommand.MessageReceived && cmd.message is ChannelReestablish -> when {
                 waitForTheirReestablishMessage -> {
                     val nextState = if (!cmd.message.channelData.isEmpty()) {
-                        logger.info { "channel_reestablish includes a peer backup" }
                         when (val decrypted = runTrying { PersistedChannelState.from(staticParams.nodeParams.nodePrivateKey, cmd.message.channelData) }) {
                             is Try.Success -> {
                                 val decryptedState = decrypted.result
                                 when {
                                     decryptedState is ChannelStateWithCommitments && state is ChannelStateWithCommitments && decryptedState.commitments.isMoreRecent(state.commitments) -> {
-                                        logger.warning { "they have a more recent commitment, using it instead" }
+                                        logger.info { "channel_reestablish includes a peer backup with a more recent commitment, using it instead" }
                                         decryptedState
                                     }
-                                    else -> {
-                                        state
-                                    }
+                                    else -> state
                                 }
                             }
                             is Try.Failure -> {
@@ -50,7 +47,13 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                         state
                     }
                     val channelReestablish = nextState.run { createChannelReestablish() }
-                    val actions = listOf(ChannelAction.Message.Send(channelReestablish))
+                    val actions = buildList {
+                        if (nextState != state) {
+                            // we just restored from backup
+                            add(ChannelAction.Storage.StoreState(nextState))
+                        }
+                       add(ChannelAction.Message.Send(channelReestablish))
+                    }
                     // now apply their reestablish message to the restored state
                     val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).run { processInternal(cmd) }
                     Pair(nextState1, actions + actions1)

@@ -756,6 +756,7 @@ class Peer(
                                     is Try.Success -> {
                                         logger.warning { "restoring channel ${msg.channelId} from peer backup" }
                                         val backup = decrypted.result
+                                        db.channels.addOrUpdateChannel(backup)
                                         val state = WaitForInit
                                         val event1 = ChannelCommand.Restore(backup)
                                         val (state1, actions1) = state.process(event1)
