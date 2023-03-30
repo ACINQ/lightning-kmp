@@ -293,21 +293,16 @@ object Helpers {
             temporaryChannelId: ByteVector32,
             localParams: LocalParams,
             remoteParams: RemoteParams,
-            localFundingAmount: Satoshi,
-            remoteFundingAmount: Satoshi,
-            localPushAmount: MilliSatoshi,
-            remotePushAmount: MilliSatoshi,
+            fundingAmount: Satoshi,
+            toLocal: MilliSatoshi,
+            toRemote: MilliSatoshi,
             commitTxFeerate: FeeratePerKw,
             fundingTxHash: ByteVector32,
             fundingTxOutputIndex: Int,
             remoteFirstPerCommitmentPoint: PublicKey
         ): Either<ChannelException, FirstCommitTx> {
-            val fundingAmount = localFundingAmount + remoteFundingAmount
-            val toLocalMsat = localFundingAmount.toMilliSatoshi() - localPushAmount + remotePushAmount
-            val toRemoteMsat = remoteFundingAmount.toMilliSatoshi() + localPushAmount - remotePushAmount
-
-            val localSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
-            val remoteSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
+            val localSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
+            val remoteSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
             if (!localParams.isInitiator) {
                 // They initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!

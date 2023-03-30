@@ -8,7 +8,7 @@ import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.Error
 import fr.acinq.lightning.wire.OpenDualFundedChannel
@@ -61,7 +61,7 @@ data class WaitForAcceptChannel(
                             }
                             is Either.Right -> {
                                 // The channel initiator always sends the first interactive-tx message.
-                                val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(fundingParams, 0.sat, 0.sat, fundingContributions.value).send()
+                                val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(fundingParams, 0.msat, 0.msat, fundingContributions.value).send()
                                 when (interactiveTxAction) {
                                     is InteractiveTxSessionAction.SendMessage -> {
                                         val nextState = WaitForFundingCreated(

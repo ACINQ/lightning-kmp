@@ -187,8 +187,8 @@ object Deserialization {
     private fun Input.readInteractiveTxParams() = InteractiveTxParams(
         channelId = readByteVector32(),
         isInitiator = readBoolean(),
-        localAmount = readNumber().sat,
-        remoteAmount = readNumber().sat,
+        localContribution = readNumber().sat,
+        remoteContribution = readNumber().sat,
         sharedInput = readNullable { readSharedFundingInput() },
         fundingPubkeyScript = readDelimitedByteArray().toByteVector(),
         localOutputs = readCollection { TxOut.read(readDelimitedByteArray()) }.toList(),
@@ -201,8 +201,8 @@ object Deserialization {
         serialId = readNumber(),
         outPoint = readOutPoint(),
         sequence = readNumber().toUInt(),
-        localAmount = readNumber().sat,
-        remoteAmount = readNumber().sat,
+        localAmount = readNumber().msat,
+        remoteAmount = readNumber().msat,
     )
 
     private fun Input.readLocalInteractiveTxInput() = InteractiveTxInput.Local(
@@ -222,8 +222,8 @@ object Deserialization {
     private fun Input.readSharedInteractiveTxOutput() = InteractiveTxOutput.Shared(
         serialId = readNumber(),
         pubkeyScript = readDelimitedByteArray().toByteVector(),
-        localAmount = readNumber().sat,
-        remoteAmount = readNumber().sat,
+        localAmount = readNumber().msat,
+        remoteAmount = readNumber().msat,
     )
 
     private fun Input.readLocalInteractiveTxOutput() = when (val discriminator = read()) {

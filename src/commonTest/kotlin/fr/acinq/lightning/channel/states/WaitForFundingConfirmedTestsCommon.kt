@@ -183,7 +183,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxInitRbf -- invalid feerate`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
-        val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(alice.state.channelId, 0, TestConstants.feeratePerKw, alice.state.latestFundingTx.fundingParams.localAmount)))
+        val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(alice.state.channelId, 0, TestConstants.feeratePerKw, alice.state.latestFundingTx.fundingParams.localContribution)))
         assertEquals(actions1.size, 1)
         assertEquals(actions1.hasOutgoingMessage<TxAbort>().toAscii(), InvalidRbfFeerate(alice.state.channelId, TestConstants.feeratePerKw, TestConstants.feeratePerKw * 25 / 24).message)
         val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(TxAbort(alice.state.channelId, "acking tx_abort")))
@@ -205,7 +205,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxInitRbf -- failed rbf attempt`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
-        val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(alice.state.channelId, 0, TestConstants.feeratePerKw * 1.25, alice.state.latestFundingTx.fundingParams.localAmount)))
+        val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(alice.state.channelId, 0, TestConstants.feeratePerKw * 1.25, alice.state.latestFundingTx.fundingParams.localContribution)))
         assertIs<WaitForFundingConfirmed>(bob1.state)
         assertIs<RbfStatus.InProgress>(bob1.state.rbfStatus)
         assertEquals(actions1.size, 1)
@@ -444,7 +444,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 wallet.addresses + (address to (wallet.addresses[address] ?: listOf()) + UnspentItem(parentTx.txid, 0, 30_000, 654321)),
                 wallet.parentTxs + (parentTx.txid to parentTx),
             )
-            return CMD_BUMP_FUNDING_FEE(previousFundingTx.feerate * 1.1, previousFundingParams.localAmount + 20_000.sat, wallet1, previousFundingTx.tx.lockTime + 1)
+            return CMD_BUMP_FUNDING_FEE(previousFundingTx.feerate * 1.1, previousFundingParams.localContribution + 20_000.sat, wallet1, previousFundingTx.tx.lockTime + 1)
         }
 
         fun rbf(alice: LNChannel<WaitForFundingConfirmed>, bob: LNChannel<WaitForFundingConfirmed>, walletAlice: WalletState): Triple<LNChannel<WaitForFundingConfirmed>, LNChannel<WaitForFundingConfirmed>, Transaction> {
@@ -455,12 +455,12 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(command))
             assertEquals(actionsAlice1.size, 1)
             val txInitRbf = actionsAlice1.findOutgoingMessage<TxInitRbf>()
-            assertEquals(txInitRbf.fundingContribution, previousFundingParams.localAmount + 20_000.sat)
+            assertEquals(txInitRbf.fundingContribution, previousFundingParams.localContribution + 20_000.sat)
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(txInitRbf))
             assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
             assertEquals(actionsBob1.size, 1)
             val txAckRbf = actionsBob1.findOutgoingMessage<TxAckRbf>()
-            assertEquals(txAckRbf.fundingContribution, previousFundingParams.remoteAmount) // the non-initiator doesn't change its contribution
+            assertEquals(txAckRbf.fundingContribution, previousFundingParams.remoteContribution) // the non-initiator doesn't change its contribution
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(txAckRbf))
             assertIs<LNChannel<WaitForFundingConfirmed>>(alice2)
             assertEquals(actionsAlice2.size, 1)

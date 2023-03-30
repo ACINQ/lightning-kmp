@@ -166,7 +166,7 @@ sealed class ChannelState {
                     val channelCreated = ChannelAction.EmitEvent(ChannelEvents.Created(newState as ChannelStateWithCommitments))
                     when {
                         !oldState.channelParams.localParams.isInitiator -> {
-                            val amount = oldState.signingSession.fundingParams.localAmount.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
+                            val amount = oldState.signingSession.fundingParams.localContribution.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
                             val localInputs = oldState.signingSession.fundingTx.tx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
                             actions + ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin) + channelCreated
                         }

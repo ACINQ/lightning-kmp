@@ -238,8 +238,8 @@ object Serialization {
     private fun Output.writeInteractiveTxParams(o: InteractiveTxParams) = o.run {
         writeByteVector32(channelId)
         writeBoolean(isInitiator)
-        writeNumber(localAmount.toLong())
-        writeNumber(remoteAmount.toLong())
+        writeNumber(localContribution.toLong())
+        writeNumber(remoteContribution.toLong())
         writeNullable(sharedInput) { writeSharedFundingInput(it) }
         writeDelimited(fundingPubkeyScript.toByteArray())
         writeCollection(localOutputs) { writeBtcObject(it) }
