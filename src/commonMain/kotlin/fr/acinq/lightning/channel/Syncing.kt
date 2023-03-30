@@ -63,7 +63,13 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
                         ).withChannelData(nextState.commitments.remoteChannelData)
-                        val actions = listOf<ChannelAction>(ChannelAction.Message.Send(channelReestablish))
+                        val actions = buildList {
+                            if (nextState != state) {
+                                // we just restored from backup
+                                add(ChannelAction.Storage.StoreState(nextState))
+                            }
+                            add(ChannelAction.Message.Send(channelReestablish))
+                        }
                         // now apply their reestablish message to the restored state
                         val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).processInternal(event)
                         Pair(nextState1, actions + actions1)

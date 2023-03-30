@@ -613,6 +613,7 @@ class Peer(
                                 is Try.Success -> {
                                     logger.warning { "n:$remoteNodeId restoring channelId=${msg.channelId} from peer backup" }
                                     val backup = decrypted.result
+                                    db.channels.addOrUpdateChannel(backup)
                                     val state = WaitForInit(StaticParams(nodeParams, remoteNodeId), currentTipFlow.filterNotNull().first(), onChainFeeratesFlow.filterNotNull().first())
                                     val event1 = ChannelEvent.Restore(backup as ChannelState)
                                     val (state1, actions1) = state.process(event1)
