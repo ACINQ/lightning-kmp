@@ -194,82 +194,16 @@ sealed class ChannelState {
 
     fun ChannelContext.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return try {
-            val (newState, actions) = processInternal(cmd)
-            val oldState = when (this@ChannelState) {
-                is Offline -> this@ChannelState.state
-                is Syncing -> this@ChannelState.state
-                else -> this@ChannelState
-            }
-            val actions1 = when {
-                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) -> {
-                    val channelCreated = ChannelAction.EmitEvent(ChannelEvents.Created(newState as ChannelStateWithCommitments))
-                    when {
-                        !oldState.channelParams.localParams.isInitiator -> {
-                            val amount = oldState.signingSession.fundingParams.localContribution.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
-                            val localInputs = oldState.signingSession.fundingTx.tx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
-                            actions + ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin) + channelCreated
-                        }
-                        else -> actions + channelCreated
-                    }
-                }
-                // we only want to fire the PaymentSent event when we transition to Closing for the first time
-                oldState is WaitForInit && newState is Closing -> actions
-                oldState is Closing && newState is Closing -> actions
-                oldState is ChannelStateWithCommitments && newState is Closing -> {
-                    val channelBalance = oldState.commitments.latest.localCommit.spec.toLocal
-                    if (channelBalance > 0.msat) {
-                        val defaultScriptPubKey = oldState.commitments.params.localParams.defaultFinalScriptPubKey
-                        val localShutdown = when (this@ChannelState) {
-                            is Normal -> this@ChannelState.localShutdown
-                            is Negotiating -> this@ChannelState.localShutdown
-                            is ShuttingDown -> this@ChannelState.localShutdown
-                            else -> null
-                        }
-                        if (localShutdown != null && localShutdown.scriptPubKey != defaultScriptPubKey) {
-                            // Non-default output address
-                            val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
-                                scriptPubKey = localShutdown.scriptPubKey,
-                                chainHash = staticParams.nodeParams.chainHash
-                            ) ?: "unknown"
-                            actions + ChannelAction.Storage.StoreChannelClosing(
-                                amount = channelBalance,
-                                closingAddress = btcAddr,
-                                isSentToDefaultAddress = false
-                            )
-                        } else {
-                            // Default output address
-                            val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
-                                scriptPubKey = defaultScriptPubKey,
-                                chainHash = staticParams.nodeParams.chainHash
-                            ) ?: "unknown"
-                            actions + ChannelAction.Storage.StoreChannelClosing(
-                                amount = channelBalance,
-                                closingAddress = btcAddr,
-                                isSentToDefaultAddress = true
-                            )
-                        }
-                    } else /* channelBalance <= 0.msat */ {
-                        actions
-                    }
-                }
-                else -> actions
-            }
-            val actions2 = newState.run { updateActions(actions1) }
-            Pair(newState, actions2)
+            processInternal(cmd)
+                .let { (newState, actions) -> Pair(newState, newState.run { maybeAddBackupToMessages(actions) }) }
+                .let { (newState, actions) -> Pair(newState, actions + onTransition(newState)) }
         } catch (t: Throwable) {
             handleLocalError(cmd, t)
         }
     }
 
-    abstract fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>>
-
-    internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
-        return Pair(this@ChannelState, listOf())
-    }
-
     /** Update outgoing messages to include an encrypted backup when necessary. */
-    private fun ChannelContext.updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
+    private fun ChannelContext.maybeAddBackupToMessages(actions: List<ChannelAction>): List<ChannelAction> = when {
         this@ChannelState is PersistedChannelState && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
             when {
                 it is ChannelAction.Message.Send && it.message is TxSignatures -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
@@ -281,6 +215,76 @@ sealed class ChannelState {
             }
         }
         else -> actions
+    }
+
+    /** Add actions for some transitions */
+    private fun ChannelContext.onTransition(newState: ChannelState): List<ChannelAction> {
+        val oldState = when (this@ChannelState) {
+            is Offline -> this@ChannelState.state
+            is Syncing -> this@ChannelState.state
+            else -> this@ChannelState
+        }
+        return when {
+            oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) -> {
+                val channelCreated = ChannelAction.EmitEvent(ChannelEvents.Created(newState as ChannelStateWithCommitments))
+                when {
+                    !oldState.channelParams.localParams.isInitiator -> {
+                        val amount = oldState.signingSession.fundingParams.localContribution.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
+                        val localInputs = oldState.signingSession.fundingTx.tx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
+                        listOf(ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin), channelCreated)
+                    }
+                    else -> listOf(channelCreated)
+                }
+            }
+            // we only want to fire the PaymentSent event when we transition to Closing for the first time
+            oldState is ChannelStateWithCommitments && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState)
+            else -> emptyList()
+        }
+    }
+
+    private fun ChannelContext.emitClosingEvents(oldState: ChannelStateWithCommitments): List<ChannelAction> {
+        val channelBalance = oldState.commitments.latest.localCommit.spec.toLocal
+        return if (channelBalance > 0.msat) {
+            val defaultScriptPubKey = oldState.commitments.params.localParams.defaultFinalScriptPubKey
+            val localShutdown = when (this@ChannelState) {
+                is Normal -> this@ChannelState.localShutdown
+                is Negotiating -> this@ChannelState.localShutdown
+                is ShuttingDown -> this@ChannelState.localShutdown
+                else -> null
+            }
+            if (localShutdown != null && localShutdown.scriptPubKey != defaultScriptPubKey) {
+                // Non-default output address
+                val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
+                    scriptPubKey = localShutdown.scriptPubKey,
+                    chainHash = staticParams.nodeParams.chainHash
+                ) ?: "unknown"
+                listOf(
+                    ChannelAction.Storage.StoreChannelClosing(
+                        amount = channelBalance,
+                        closingAddress = btcAddr,
+                        isSentToDefaultAddress = false
+                    )
+                )
+            } else {
+                // Default output address
+                val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
+                    scriptPubKey = defaultScriptPubKey,
+                    chainHash = staticParams.nodeParams.chainHash
+                ) ?: "unknown"
+                listOf(
+                    ChannelAction.Storage.StoreChannelClosing(
+                        amount = channelBalance,
+                        closingAddress = btcAddr,
+                        isSentToDefaultAddress = true
+                    )
+                )
+            }
+        } else emptyList() // balance == 0
+    }
+
+    internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
+        return Pair(this@ChannelState, listOf())
     }
 
     internal fun ChannelContext.handleCommandError(cmd: Command, error: ChannelException, channelUpdate: ChannelUpdate? = null): Pair<ChannelState, List<ChannelAction>> {
@@ -295,6 +299,8 @@ sealed class ChannelState {
         ChannelAction.Blockchain.PublishTx(tx),
         ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx.tx)))
     )
+
+    abstract fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>>
 
     fun ChannelContext.handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
