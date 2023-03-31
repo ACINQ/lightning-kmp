@@ -509,15 +509,38 @@ class Peer(
                     action is ChannelAction.Storage.StoreOutgoingPayment -> {
                         logger.info { "storing outgoing amount=${action.amount} address=${action.address}" }
                         db.payments.addOutgoingPayment(
-                            SpliceOutgoingPayment(
-                                id = UUID.randomUUID(),
-                                amountSatoshi = action.amount,
-                                address = action.address,
-                                miningFees = action.miningFees,
-                                txId = action.txId,
-                                createdAt = currentTimestampMillis()
-                            )
+                            when (action) {
+                                is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
+                                    SpliceOutgoingPayment(
+                                        id = UUID.randomUUID(),
+                                        amountSatoshi = action.amount,
+                                        address = action.address,
+                                        miningFees = action.miningFees,
+                                        txId = action.txId,
+                                        createdAt = currentTimestampMillis()
+                                    )
+                                is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
+                                    ChannelCloseOutgoingPayment(
+                                        id = UUID.randomUUID(),
+                                        amountSatoshi = action.amount,
+                                        address = action.address,
+                                        isSentToDefaultAddress = action.isSentToDefaultAddress,
+                                        miningFees = action.miningFees,
+                                        txId = action.txId,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null,
+                                        channelId = channelId,
+                                        closingType = when (action.closingType) {
+                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Mutual -> ChannelCloseOutgoingPayment.ChannelClosingType.Mutual
+                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Local -> ChannelCloseOutgoingPayment.ChannelClosingType.Local
+                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote -> ChannelCloseOutgoingPayment.ChannelClosingType.Remote
+                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Revoked -> ChannelCloseOutgoingPayment.ChannelClosingType.Revoked
+                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Other -> ChannelCloseOutgoingPayment.ChannelClosingType.Other
+                                        }
+                                    )
+                            }
                         )
+                        _eventsFlow.emit(ChannelClosing(channelId))
                     }
 
                     action is ChannelAction.Storage.SetConfirmationStatus -> {
@@ -534,31 +557,6 @@ class Peer(
                     action is ChannelAction.Storage.GetHtlcInfos -> {
                         val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
                         input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
-                    }
-
-                    action is ChannelAction.Storage.StoreChannelClosing -> {
-                        val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
-                        val recipient = if (action.isSentToDefaultAddress) nodeParams.nodeId else PublicKey.Generator
-                        val payment = LightningOutgoingPayment(
-                            id = dbId,
-                            recipientAmount = action.amount,
-                            recipient = recipient,
-                            details = LightningOutgoingPayment.Details.ChannelClosing(
-                                channelId = channelId,
-                                closingAddress = action.closingAddress,
-                                isSentToDefaultAddress = action.isSentToDefaultAddress
-                            ),
-                            parts = emptyList(),
-                            status = LightningOutgoingPayment.Status.Pending
-                        )
-                        db.payments.addOutgoingPayment(payment)
-                        _eventsFlow.emit(ChannelClosing(channelId))
-                    }
-
-                    action is ChannelAction.Storage.StoreChannelClosed -> {
-                        val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
-                        db.payments.completeOutgoingPaymentForClosing(id = dbId, parts = action.closingTxs, completedAt = currentTimestampMillis())
-                        _eventsFlow.emit(ChannelClosing(channelId))
                     }
 
                     action is ChannelAction.ChannelId.IdAssigned -> {

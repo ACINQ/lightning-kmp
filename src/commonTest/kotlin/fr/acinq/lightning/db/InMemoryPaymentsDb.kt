@@ -75,7 +75,7 @@ class InMemoryPaymentsDb : PaymentsDb {
                 outgoing[outgoingPayment.id] = outgoingPayment.copy(parts = listOf())
                 outgoingPayment.parts.forEach { outgoingParts[it.id] = Pair(outgoingPayment.id, it) }
             }
-            else -> TODO("not implemented")
+            is OnChainOutgoingPayment -> {} // we don't persist on-chain payments
         }
     }
 
@@ -85,22 +85,12 @@ class InMemoryPaymentsDb : PaymentsDb {
             return when (payment.status) {
                 is LightningOutgoingPayment.Status.Completed.Succeeded -> {
                     payment.copy(parts = parts.filter {
-                        (it is LightningOutgoingPayment.LightningPart && it.status is LightningOutgoingPayment.LightningPart.Status.Succeeded) || it is LightningOutgoingPayment.ClosingTxPart
+                        it is LightningOutgoingPayment.LightningPart && it.status is LightningOutgoingPayment.LightningPart.Status.Succeeded
                     })
                 }
                 else -> payment.copy(parts = parts)
             }
         }
-    }
-
-    override suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<LightningOutgoingPayment.ClosingTxPart>, completedAt: Long) {
-        require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
-        val payment = outgoing[id]!!
-        parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
-        parts.forEach { outgoingParts[it.id] = Pair(id, it) }
-
-
-        outgoing[id] = payment.copy(status = LightningOutgoingPayment.Status.Completed.Succeeded.OnChain(completedAt))
     }
 
     override suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long) {

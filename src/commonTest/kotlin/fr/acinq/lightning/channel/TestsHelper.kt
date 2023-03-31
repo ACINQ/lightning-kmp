@@ -273,7 +273,10 @@ object TestsHelper {
         val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Closing>>(s1)
         actions1.has<ChannelAction.Storage.StoreState>()
-        actions1.has<ChannelAction.Storage.StoreChannelClosing>()
+        actions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
+            assertEquals(commitTx.txid, it.txId)
+            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Local, it.closingType)
+        }
 
         val localCommitPublished = s1.state.localCommitPublished
         assertNotNull(localCommitPublished)
@@ -319,7 +322,10 @@ object TestsHelper {
         if (s.state !is Closing) {
             val channelBalance = s.state.commitments.latest.localCommit.spec.toLocal
             if (channelBalance > 0.msat) {
-                actions1.has<ChannelAction.Storage.StoreChannelClosing>()
+                actions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
+                    assertEquals(rCommitTx.txid, it.txId)
+                    assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, it.closingType )
+                }
             }
         }
 

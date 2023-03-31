@@ -277,79 +277,79 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         partsSettled.parts.forEach { assertEquals(paymentSucceeded, db.getLightningOutgoingPaymentFromPartId(it.id)) }
     }
 
-    @Test
-    fun `outgoing payment from closed channel`() = runSuspendTest {
-        // When a channel is closed, a corresponding OutgoingPayment is
-        // automatically injected into the database (the user's ledger).
-        // The payment.recipientAmount is set to the channel's local balance
-        // at the time the channel is closed.
-        val (db, _, pr) = createFixture()
-        val paymentId = UUID.randomUUID()
-        val channelBalance = 100_000_000.msat
-        val pendingPayment = LightningOutgoingPayment(
-            id = paymentId,
-            recipientAmount = channelBalance,
-            recipient = pr.nodeId,
-            details = LightningOutgoingPayment.Details.ChannelClosing(
-                channelId = randomBytes32(),
-                closingAddress = "",
-                isSentToDefaultAddress = true
-            ),
-            parts = listOf(),
-            status = LightningOutgoingPayment.Status.Pending
-        )
-        db.addOutgoingPayment(pendingPayment)
+//    @Test
+//    fun `outgoing payment from closed channel`() = runSuspendTest {
+//        // When a channel is closed, a corresponding OutgoingPayment is
+//        // automatically injected into the database (the user's ledger).
+//        // The payment.recipientAmount is set to the channel's local balance
+//        // at the time the channel is closed.
+//        val (db, _, pr) = createFixture()
+//        val paymentId = UUID.randomUUID()
+//        val channelBalance = 100_000_000.msat
+//        val pendingPayment = LightningOutgoingPayment(
+//            id = paymentId,
+//            recipientAmount = channelBalance,
+//            recipient = pr.nodeId,
+//            details = LightningOutgoingPayment.Details.ChannelClosing(
+//                channelId = randomBytes32(),
+//                closingAddress = "",
+//                isSentToDefaultAddress = true
+//            ),
+//            parts = listOf(),
+//            status = LightningOutgoingPayment.Status.Pending
+//        )
+//        db.addOutgoingPayment(pendingPayment)
+//
+//        // Fees should be zero at this point, since the payment is still Pending.
+//        // It's not completed until the transactions are confirmed on the blockchain.
+//        assertEquals(pendingPayment.fees, MilliSatoshi(0))
+//
+//        val fundsLost = Satoshi(100)
+//        val closingTx = LightningOutgoingPayment.ClosingTxPart(
+//            id = UUID.randomUUID(),
+//            txId = randomBytes32(),
+//            claimed = channelBalance.truncateToSatoshi() - fundsLost,
+//            closingType = ChannelClosingType.Mutual,
+//            createdAt = currentTimestampMillis()
+//        )
+//        db.completeOutgoingPaymentForClosing(id = paymentId, parts = listOf(closingTx), completedAt = currentTimestampMillis())
+//
+//        val completedPayment = db.getLightningOutgoingPayment(paymentId) as LightningOutgoingPayment
+//        assertNotNull(completedPayment)
+//        assertEquals(listOf(closingTx), completedPayment.parts)
+//
+//        // Now that the payment has been settled on-chain, the fees can be calculated.
+//        // If we failed to claim any amount of the channel balance,
+//        // we can consider these as fees (in a generic sense).
+//        // The UI is expected to provide a more detailed explanation.
+//        assertEquals(fundsLost.toMilliSatoshi(), completedPayment.fees)
+//        assertEquals(channelBalance, completedPayment.amount)
+//    }
 
-        // Fees should be zero at this point, since the payment is still Pending.
-        // It's not completed until the transactions are confirmed on the blockchain.
-        assertEquals(pendingPayment.fees, MilliSatoshi(0))
-
-        val fundsLost = Satoshi(100)
-        val closingTx = LightningOutgoingPayment.ClosingTxPart(
-            id = UUID.randomUUID(),
-            txId = randomBytes32(),
-            claimed = channelBalance.truncateToSatoshi() - fundsLost,
-            closingType = ChannelClosingType.Mutual,
-            createdAt = currentTimestampMillis()
-        )
-        db.completeOutgoingPaymentForClosing(id = paymentId, parts = listOf(closingTx), completedAt = currentTimestampMillis())
-
-        val completedPayment = db.getLightningOutgoingPayment(paymentId) as LightningOutgoingPayment
-        assertNotNull(completedPayment)
-        assertEquals(listOf(closingTx), completedPayment.parts)
-
-        // Now that the payment has been settled on-chain, the fees can be calculated.
-        // If we failed to claim any amount of the channel balance,
-        // we can consider these as fees (in a generic sense).
-        // The UI is expected to provide a more detailed explanation.
-        assertEquals(fundsLost.toMilliSatoshi(), completedPayment.fees)
-        assertEquals(channelBalance, completedPayment.amount)
-    }
-
-    @Test
-    fun `outgoing payment from closed channel without parts`() = runSuspendTest {
-        val (db, _, pr) = createFixture()
-        val paymentId = UUID.randomUUID()
-        val channelBalance = 100_000_000.msat
-        val pendingPayment = LightningOutgoingPayment(
-            id = paymentId,
-            recipientAmount = channelBalance,
-            recipient = pr.nodeId,
-            details = LightningOutgoingPayment.Details.ChannelClosing(
-                channelId = randomBytes32(),
-                closingAddress = "",
-                isSentToDefaultAddress = true
-            ),
-            parts = listOf(),
-            status = LightningOutgoingPayment.Status.Pending
-        )
-        db.addOutgoingPayment(pendingPayment)
-        db.completeOutgoingPaymentForClosing(id = paymentId, parts = listOf(), completedAt = currentTimestampMillis())
-
-        val completedPayment = db.getLightningOutgoingPayment(paymentId)
-        assertNotNull(completedPayment)
-        assertEquals(channelBalance, completedPayment.amount)
-    }
+//    @Test
+//    fun `outgoing payment from closed channel without parts`() = runSuspendTest {
+//        val (db, _, pr) = createFixture()
+//        val paymentId = UUID.randomUUID()
+//        val channelBalance = 100_000_000.msat
+//        val pendingPayment = LightningOutgoingPayment(
+//            id = paymentId,
+//            recipientAmount = channelBalance,
+//            recipient = pr.nodeId,
+//            details = LightningOutgoingPayment.Details.ChannelClosing(
+//                channelId = randomBytes32(),
+//                closingAddress = "",
+//                isSentToDefaultAddress = true
+//            ),
+//            parts = listOf(),
+//            status = LightningOutgoingPayment.Status.Pending
+//        )
+//        db.addOutgoingPayment(pendingPayment)
+//        db.completeOutgoingPaymentForClosing(id = paymentId, parts = listOf(), completedAt = currentTimestampMillis())
+//
+//        val completedPayment = db.getLightningOutgoingPayment(paymentId)
+//        assertNotNull(completedPayment)
+//        assertEquals(channelBalance, completedPayment.amount)
+//    }
 
     @Test
     fun `outgoing normal payment fee and amount computation`() = runSuspendTest {

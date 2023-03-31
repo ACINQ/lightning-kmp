@@ -10,6 +10,26 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.FailureMessage
 
 interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
+    /**
+     * On-chain-related payments are not instant, but needs to be displayed as soon as possible to the user
+     * for UX purposes. They affect the balance differently whether they are incoming or outgoing.
+     *
+     * For example, if a user initiates a swap-in, they will expect to see an incoming payment immediately in
+     * their payment history, even if the amount isn't included in the balance and the funds are not spendable right
+     * away. Conversely, after a swap-out, the balance is immediately decreased even if the transaction is not confirmed.
+     *
+     * Note that this is all related to transaction confirmations on the blockchain, but involves a bit more than
+     * that, because both sides of the channel need to agree, and they may also agree to not require any confirmtion.
+     * That is why the status are not simply named confirmed/unconfirmed.
+     *
+     * Incoming payments (channel creation or splice-in) are considered [LOCKED] when the corresponding funds are added
+     * to the balance and can be spent. Before that, they should appear as "pending" to the user.
+     *
+     * Outgoing payments (splice-out or channel close) are considered [LOCKED] when the corresponding funding transaction
+     * is confirmed on the blockchain. Before that, they should appear as "final" to the user, but with some indication that
+     * the transaction is not yet confirmed. In the case of a force-close, the outgoing payment will only be considered [[LOCKED]]
+     * when the channel is closed, meaning that all related transactions have been confirmed.
+     */
     enum class ConfirmationStatus { NOT_LOCKED, LOCKED }
 
     suspend fun setConfirmationStatus(txId: ByteVector32, status: ConfirmationStatus)
@@ -50,9 +70,6 @@ interface OutgoingPaymentsDb {
 
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getLightningOutgoingPayment(id: UUID): LightningOutgoingPayment?
-
-    /** Mark an outgoing payment as completed for closing a Lightning channel on-chain with a list of on-chain txs. */
-    suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<LightningOutgoingPayment.ClosingTxPart>, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment as completed over Lightning. */
     suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
@@ -169,10 +186,6 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
          * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
          * @param miningFee Feed paid to bitcoin miners for processing the L1 transaction.
          * @param channelId The long id of the channel created to receive this payment. May be null if the channel id is not known.
-         * @param status When the payment part is tied to an on-chain transaction (channel creation or splice), the process goes through several steps:
-         *               - drafted: the transaction is being negotiated and may be aborted. Do not display the amount to users
-         *               - unconfirmed: the transaction has been published but isn't confirmed yet and the amount cannot be spent. Should be displayed as "pending"
-         *               - confirmed: the transaction has been confirmed and the amount can be spent. Should be displayed as "received"
          */
         data class NewChannel(
             val id: UUID,
@@ -252,21 +265,10 @@ data class LightningOutgoingPayment(
                 routingFee
             }
         }
-        is Status.Completed.Succeeded.OnChain -> {
-            if (details is Details.ChannelClosing) {
-                // For a channel closing, recipientAmount is the balance of the channel that is being closed.
-                // It DOES include the future mining fees. Fees are found by subtracting the aggregated claims from the recipient amount.
-                recipientAmount - parts.filterIsInstance<ClosingTxPart>().map { it.claimed.toMilliSatoshi() }.sum()
-            } else {
-                routingFee
-            }
-        }
     }
 
     /** Amount that actually left the wallet. It does include the fees. */
     override val amount: MilliSatoshi = when (details) {
-        // For a channel closing, recipientAmount is the balance of the channel that is closed. It already contains the fees.
-        is Details.ChannelClosing -> recipientAmount
         // For a swap-out, recipientAmount is the amount paid to the swap service. It contains the swap-out fee, but not the routing fee.
         is Details.SwapOut -> recipientAmount + routingFee
         else -> recipientAmount + fees
@@ -293,20 +295,6 @@ data class LightningOutgoingPayment(
         data class SwapOut(val address: String, val paymentRequest: PaymentRequest, val swapOutFee: Satoshi) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
-
-        /** Corresponds to the on-chain payments made when closing a channel. */
-        data class ChannelClosing(
-            val channelId: ByteVector32,
-            val closingAddress: String, // btc address
-            // The closingAddress may have been supplied by the user during a mutual close.
-            // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
-            // So `isSentToDefaultAddress` means this default Phoenix address was used,
-            // and is used by the UI to explain the situation to the user.
-            val isSentToDefaultAddress: Boolean
-        ) : Details() {
-            override val paymentHash: ByteVector32 = channelId.sha256()
-        }
-
     }
 
     sealed class Status {
@@ -318,10 +306,6 @@ data class LightningOutgoingPayment(
             sealed class Succeeded : Completed() {
                 data class OffChain(
                     val preimage: ByteVector32,
-                    override val completedAt: Long = currentTimestampMillis()
-                ) : Succeeded()
-
-                data class OnChain(
                     override val completedAt: Long = currentTimestampMillis()
                 ) : Succeeded()
             }
@@ -366,40 +350,54 @@ data class LightningOutgoingPayment(
             }
         }
     }
+}
 
-    /**
-     * A child payment for closing a channel through an on-chain transaction.
-     *
-     * @param claimed represents the sum total of bitcoin tx outputs claimed for the user. A simplified fees can be
-     *      calculated as: OutgoingPayment.recipientAmount - claimed.
-     * @param closingType the type of the closing : it can be mutually decided by both end of the channel, or unilaterally
-     *      initiated by the remote or the local peer.
-     */
-    data class ClosingTxPart(
-        override val id: UUID,
-        val txId: ByteVector32,
-        val claimed: Satoshi,
-        val closingType: ChannelClosingType,
-        override val createdAt: Long,
-    ) : Part()
+sealed class OnChainOutgoingPayment : OutgoingPayment() {
+    abstract override val id: UUID
+    abstract val amountSatoshi: Satoshi
+    abstract val address: String
+    abstract val miningFees: Satoshi
+    abstract val txId: ByteVector32
+    abstract override val createdAt: Long
+    abstract val confirmedAt: Long?
 }
 
 data class SpliceOutgoingPayment(
     override val id: UUID,
-    val amountSatoshi: Satoshi,
-    val address: String,
-    val miningFees: Satoshi,
-    val txId: ByteVector32,
+    override val amountSatoshi: Satoshi,
+    override val address: String,
+    override val miningFees: Satoshi,
+    override val txId: ByteVector32,
     override val createdAt: Long,
-    val confirmedAt: Long? = null
-) : OutgoingPayment() {
+    override val confirmedAt: Long? = null
+) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
 }
 
-enum class ChannelClosingType {
-    Mutual, Local, Remote, Revoked, Other;
+data class ChannelCloseOutgoingPayment(
+    override val id: UUID,
+    override val amountSatoshi: Satoshi,
+    override val address: String,
+    // The closingAddress may have been supplied by the user during a mutual close initiated by the user.
+    // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
+    // So `isSentToDefaultAddress` means this default Phoenix address was used,
+    // and is used by the UI to explain the situation to the user.
+    val isSentToDefaultAddress: Boolean,
+    override val miningFees: Satoshi,
+    override val txId: ByteVector32,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    val channelId: ByteVector32,
+    val closingType: ChannelClosingType
+) : OnChainOutgoingPayment() {
+    override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val completedAt: Long? = confirmedAt
+    enum class ChannelClosingType {
+        Mutual, Local, Remote, Revoked, Other;
+    }
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
