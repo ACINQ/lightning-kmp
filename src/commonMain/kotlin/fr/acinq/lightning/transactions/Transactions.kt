@@ -107,9 +107,7 @@ object Transactions {
 
         @Serializable
         sealed class ClaimRemoteCommitMainOutputTx : TransactionWithInputInfo() {
-            @Serializable
-            data class ClaimP2WPKHOutputTx(override val input: InputInfo, @Contextual override val tx: Transaction) : ClaimRemoteCommitMainOutputTx()
-
+            // TODO: once we deprecate v2/v3 serialization, we can remove the class nesting.
             @Serializable
             data class ClaimRemoteDelayedOutputTx(override val input: InputInfo, @Contextual override val tx: Transaction) : ClaimRemoteCommitMainOutputTx()
         }
@@ -541,45 +539,6 @@ object Transactions {
             ?: TxResult.Skipped(TxGenerationSkipped.OutputNotFound)
     }
 
-    fun makeClaimP2WPKHOutputTx(
-        delayedOutputTx: Transaction,
-        localDustLimit: Satoshi,
-        localPaymentPubkey: PublicKey,
-        localFinalScriptPubKey: ByteArray,
-        feerate: FeeratePerKw
-    ): TxResult<TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx> {
-        val redeemScript = Script.pay2pkh(localPaymentPubkey)
-        val pubkeyScript = Script.write(Script.pay2wpkh(localPaymentPubkey))
-        return when (val pubkeyScriptIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript)) {
-            is TxResult.Skipped -> TxResult.Skipped(pubkeyScriptIndex.why)
-            is TxResult.Success -> {
-                val outputIndex = pubkeyScriptIndex.result
-                val input = InputInfo(
-                    OutPoint(delayedOutputTx, outputIndex.toLong()),
-                    delayedOutputTx.txOut[outputIndex],
-                    ByteVector(Script.write(redeemScript))
-                )
-                // unsigned tx
-                val tx = Transaction(
-                    version = 2,
-                    txIn = listOf(TxIn(input.outPoint, ByteVector.empty, 0x00000000L)),
-                    txOut = listOf(TxOut(0.sat, localFinalScriptPubKey)),
-                    lockTime = 0
-                )
-                // compute weight with a dummy 73 bytes signature (the largest you can get) and a dummy 33 bytes pubkey
-                val weight = addSigs(TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx(input, tx), PlaceHolderPubKey, PlaceHolderSig).tx.weight()
-                val fee = weight2fee(feerate, weight)
-                val amount = input.txOut.amount - fee
-                if (amount < localDustLimit) {
-                    TxResult.Skipped(TxGenerationSkipped.AmountBelowDustLimit)
-                } else {
-                    val tx1 = tx.copy(txOut = listOf(tx.txOut.first().copy(amount = amount)))
-                    TxResult.Success(TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx(input, tx1))
-                }
-            }
-        }
-    }
-
     fun makeClaimRemoteDelayedOutputTx(
         commitTx: Transaction, localDustLimit: Satoshi,
         localPaymentPubkey: PublicKey,
@@ -871,15 +830,6 @@ object Transactions {
     fun addSigs(claimHtlcTimeoutTx: TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx, localSig: ByteVector64): TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx {
         val witness = Scripts.witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
         return claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
-    }
-
-    fun addSigs(
-        claimP2WPKHOutputTx: TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx,
-        localPaymentPubkey: PublicKey,
-        localSig: ByteVector64
-    ): TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx {
-        val witness = ScriptWitness(listOf(Scripts.der(localSig, SigHash.SIGHASH_ALL), localPaymentPubkey.value))
-        return claimP2WPKHOutputTx.copy(tx = claimP2WPKHOutputTx.tx.updateWitness(0, witness))
     }
 
     fun addSigs(claimRemoteDelayed: TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx, localSig: ByteVector64): TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx {

@@ -554,9 +554,6 @@ object Serialization {
             is ClaimLocalDelayedOutputTx -> {
                 write(0x07); writeInputInfo(o.input); writeBtcObject(o.tx)
             }
-            is ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx -> {
-                write(0x08); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
             is ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx -> {
                 write(0x09); writeInputInfo(o.input); writeBtcObject(o.tx)
             }

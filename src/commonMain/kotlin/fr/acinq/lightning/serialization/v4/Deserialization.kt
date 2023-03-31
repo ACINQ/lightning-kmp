@@ -142,7 +142,7 @@ object Deserialization {
 
     private fun Input.readRemoteCommitPublished(): RemoteCommitPublished = RemoteCommitPublished(
         commitTx = readTransaction(),
-        claimMainOutputTx = readNullable { readTransactionWithInputInfo() as ClaimRemoteCommitMainOutputTx },
+        claimMainOutputTx = readNullable { readTransactionWithInputInfo() as ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx },
         claimHtlcTxs = readCollection { readOutPoint() to readNullable { readTransactionWithInputInfo() as ClaimHtlcTx } }.toMap(),
         claimAnchorTxs = readCollection { readTransactionWithInputInfo() as ClaimAnchorOutputTx }.toList(),
         irrevocablySpent = readIrrevocablySpent()
@@ -151,7 +151,7 @@ object Deserialization {
     private fun Input.readRevokedCommitPublished(): RevokedCommitPublished = RevokedCommitPublished(
         commitTx = readTransaction(),
         remotePerCommitmentSecret = PrivateKey(readByteVector32()),
-        claimMainOutputTx = readNullable { readTransactionWithInputInfo() as ClaimRemoteCommitMainOutputTx },
+        claimMainOutputTx = readNullable { readTransactionWithInputInfo() as ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx },
         mainPenaltyTx = readNullable { readTransactionWithInputInfo() as MainPenaltyTx },
         htlcPenaltyTxs = readCollection { readTransactionWithInputInfo() as HtlcPenaltyTx }.toList(),
         claimHtlcDelayedPenaltyTxs = readCollection { readTransactionWithInputInfo() as ClaimHtlcDelayedOutputPenaltyTx }.toList(),
@@ -495,7 +495,6 @@ object Deserialization {
         0x05 -> ClaimAnchorOutputTx.ClaimLocalAnchorOutputTx(input = readInputInfo(), tx = readTransaction())
         0x06 -> ClaimAnchorOutputTx.ClaimRemoteAnchorOutputTx(input = readInputInfo(), tx = readTransaction())
         0x07 -> ClaimLocalDelayedOutputTx(input = readInputInfo(), tx = readTransaction())
-        0x08 -> ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx(input = readInputInfo(), tx = readTransaction())
         0x09 -> ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx(input = readInputInfo(), tx = readTransaction())
         0x10 -> ClaimLocalDelayedOutputTx(input = readInputInfo(), tx = readTransaction())
         0x0a -> MainPenaltyTx(input = readInputInfo(), tx = readTransaction())
