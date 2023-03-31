@@ -1,6 +1,5 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
 import fr.acinq.lightning.blockchain.*
@@ -12,8 +11,6 @@ import fr.acinq.lightning.channel.Helpers.Closing.extractPreimages
 import fr.acinq.lightning.channel.Helpers.Closing.onChainOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
-import fr.acinq.lightning.db.ChannelClosingType
-import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.ChannelReestablish
@@ -270,7 +267,7 @@ data class Closing(
                                 if (closingType !is MutualClose) {
                                     logger.debug { "last known remoteChannelData=${commitments.remoteChannelData}" }
                                 }
-                                Pair(Closed(closing1), listOf(closing1.storeChannelClosed(watch.tx)))
+                                Pair(Closed(closing1), listOf(setClosingStatus(closingType)))
                             }
                         }
                         val actions = buildList {
@@ -402,56 +399,21 @@ data class Closing(
         }
     }
 
-    /**
-     * This method returns the closing transactions that should be persisted in a database. It should be
-     * called when the channel has been actually closed, so that we know those transactions are confirmed.
-     *
-     * @param additionalConfirmedTx additional confirmed transaction for mutual close; we need this for the
-     *      mutual close scenario because we don't store the closing tx in the channel state.
-     */
-    private fun storeChannelClosed(additionalConfirmedTx: Transaction): ChannelAction.Storage.StoreChannelClosed {
-
-        /** Helper method to extract a [LightningOutgoingPayment.ClosingTxPart] from a list of transactions, given a set of confirmed tx ids. */
-        fun extractClosingTx(confirmedTxids: Set<ByteVector32>, txs: List<Transaction>, closingType: ChannelClosingType): List<LightningOutgoingPayment.ClosingTxPart> {
-            return txs.filter { confirmedTxids.contains(it.txid) }.map {
-                LightningOutgoingPayment.ClosingTxPart(
-                    id = UUID.randomUUID(),
-                    txId = it.txid,
-                    claimed = it.txOut.first().amount,
-                    closingType = closingType,
-                    createdAt = currentTimestampMillis()
-                )
+    companion object {
+        /**
+         * This method returns updates the status of the closing transaction that should be persisted in a database. It should be
+         * called when the channel has been actually closed, so that we know those transactions are confirmed. Note that we only
+         * keep track of the commit tx in the non-mutual-close case.
+         */
+        private fun setClosingStatus(closingType: ClosingType): ChannelAction.Storage.SetConfirmed {
+            val txId = when (closingType) {
+                is MutualClose -> closingType.tx.tx.txid
+                is LocalClose -> closingType.localCommit.publishableTxs.commitTx.tx.txid
+                is RemoteClose -> closingType.remoteCommit.txid
+                is RecoveryClose -> closingType.remoteCommitPublished.commitTx.txid
+                is RevokedClose -> closingType.revokedCommitPublished.commitTx.txid
             }
+            return ChannelAction.Storage.SetConfirmed(txId)
         }
-
-        val txs = listOfNotNull(localCommitPublished).flatMap { local ->
-            extractClosingTx(
-                confirmedTxids = local.irrevocablySpent.values.map { it.txid }.toSet(),
-                txs = (local.claimHtlcDelayedTxs.map { it.tx } + local.claimMainDelayedOutputTx?.tx).filterNotNull(),
-                closingType = ChannelClosingType.Local
-            )
-        } + listOfNotNull(remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished).flatMap { remote ->
-            extractClosingTx(
-                confirmedTxids = remote.irrevocablySpent.values.map { it.txid }.toSet(),
-                txs = (remote.claimHtlcTxs.map { it.value?.tx } + remote.claimMainOutputTx?.tx).filterNotNull(),
-                closingType = ChannelClosingType.Remote
-            )
-        } + revokedCommitPublished.flatMap { revoked ->
-            extractClosingTx(
-                confirmedTxids = revoked.irrevocablySpent.values.map { it.txid }.toSet(),
-                txs = (revoked.claimHtlcDelayedPenaltyTxs.map { it.tx } + revoked.htlcPenaltyTxs.map { it.tx }
-                        + revoked.claimMainOutputTx?.tx + revoked.mainPenaltyTx?.tx).filterNotNull(),
-                closingType = ChannelClosingType.Revoked
-            )
-        } + mutualClosePublished.firstOrNull { it.tx == additionalConfirmedTx }?.let {
-            LightningOutgoingPayment.ClosingTxPart(
-                id = UUID.randomUUID(),
-                txId = it.tx.txid,
-                claimed = it.toLocalOutput?.amount ?: 0.sat,
-                closingType = ChannelClosingType.Mutual,
-                createdAt = currentTimestampMillis()
-            )
-        }
-        return ChannelAction.Storage.StoreChannelClosed(txs.filterNotNull())
     }
 }

@@ -12,7 +12,6 @@ import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
@@ -145,8 +144,6 @@ sealed class ChannelAction {
             data class ViaClose(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: Type) : StoreOutgoingPayment() { enum class Type { Mutual, Local, Remote, Revoked, Other; } }
         }
         data class SetConfirmed(val txId: ByteVector32) : Storage()
-        data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
-        data class StoreChannelClosed(val closingTxs: List<LightningOutgoingPayment.ClosingTxPart>) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -246,47 +243,111 @@ sealed class ChannelState {
         }
         return when {
             // we only want to fire the PaymentSent event when we transition to Closing for the first time
-            oldState is ChannelStateWithCommitments && oldState !is WaitForInit && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState)
+            oldState is ChannelStateWithCommitments && oldState !is WaitForInit && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState, newState)
             else -> emptyList()
         }
     }
 
-    private fun ChannelContext.emitClosingEvents(oldState: ChannelStateWithCommitments): List<ChannelAction> {
+    private fun ChannelContext.emitClosingEvents(oldState: ChannelStateWithCommitments, newState: Closing): List<ChannelAction> {
         val channelBalance = oldState.commitments.latest.localCommit.spec.toLocal
         return if (channelBalance > 0.msat) {
-            val defaultScriptPubKey = oldState.commitments.params.localParams.defaultFinalScriptPubKey
-            val localShutdown = when (this@ChannelState) {
-                is Normal -> this@ChannelState.localShutdown
-                is Negotiating -> this@ChannelState.localShutdown
-                is ShuttingDown -> this@ChannelState.localShutdown
-                else -> null
-            }
-            if (localShutdown != null && localShutdown.scriptPubKey != defaultScriptPubKey) {
-                // Non-default output address
-                val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
-                    scriptPubKey = localShutdown.scriptPubKey,
-                    chainHash = staticParams.nodeParams.chainHash
-                ) ?: "unknown"
-                listOf(
-                    ChannelAction.Storage.StoreChannelClosing(
-                        amount = channelBalance,
-                        closingAddress = btcAddr,
-                        isSentToDefaultAddress = false
+            when {
+                newState.mutualClosePublished.isNotEmpty() -> {
+                    // this code is only executed for the first transition to Closing, so there can only be one transaction here
+                    val closingTx = newState.mutualClosePublished.first()
+                    val finalAmount = closingTx.toLocalOutput?.amount ?: 0.sat
+                    val address = closingTx.toLocalOutput?.publicKeyScript?.let {
+                        Helpers.Closing.btcAddressFromScriptPubKey(
+                            scriptPubKey = it,
+                            chainHash = staticParams.nodeParams.chainHash
+                        )
+                    } ?: "unknown"
+                    listOf(
+                        ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
+                            amount = finalAmount,
+                            miningFees = channelBalance.truncateToSatoshi() - finalAmount,
+                            address = address,
+                            txId = closingTx.tx.txid,
+                            isSentToDefaultAddress = closingTx.toLocalOutput?.publicKeyScript == oldState.commitments.params.localParams.defaultFinalScriptPubKey,
+                            closingType = ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Mutual
+                        )
                     )
-                )
-            } else {
-                // Default output address
-                val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
-                    scriptPubKey = defaultScriptPubKey,
-                    chainHash = staticParams.nodeParams.chainHash
-                ) ?: "unknown"
-                listOf(
-                    ChannelAction.Storage.StoreChannelClosing(
-                        amount = channelBalance,
-                        closingAddress = btcAddr,
-                        isSentToDefaultAddress = true
+                }
+                else -> {
+                    // this is a force close, the closing tx is a commit tx
+                    // since force close scenarios may be complicated with multiple layers of transactions, we estimate global fees by listing all the final outputs
+                    // going to us, and subtracting that from the current balance
+                    val (commitTx, type, finalOutputs) = when {
+                        newState.localCommitPublished is LocalCommitPublished -> {
+                            val finalOutputs = buildList {
+                                newState.localCommitPublished.claimMainDelayedOutputTx?.let { addAll(it.tx.txOut) }
+                                addAll(newState.localCommitPublished.claimHtlcDelayedTxs.flatMap { it.tx.txOut })
+                            }
+                            Triple(newState.localCommitPublished.commitTx, ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Local, finalOutputs)
+                        }
+                        newState.remoteCommitPublished is RemoteCommitPublished -> {
+                            val finalOutputs = buildList {
+                                newState.remoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
+                                addAll(newState.remoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap {
+                                    when (it) {
+                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> it.tx.txOut
+                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> it.tx.txOut
+                                    }
+                                })
+                            }
+                            Triple(newState.remoteCommitPublished.commitTx, ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, finalOutputs)
+                        }
+                        newState.nextRemoteCommitPublished is RemoteCommitPublished -> {
+                            val finalOutputs = buildList {
+                                newState.nextRemoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
+                                addAll(newState.nextRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap {
+                                    when (it) {
+                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> it.tx.txOut
+                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> it.tx.txOut
+                                    }
+                                })
+                            }
+                            Triple(newState.nextRemoteCommitPublished.commitTx, ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, finalOutputs)
+                        }
+                        newState.futureRemoteCommitPublished is RemoteCommitPublished -> {
+                            val finalOutputs = buildList {
+                                newState.futureRemoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
+                                addAll(newState.futureRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap {
+                                    when (it) {
+                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> it.tx.txOut
+                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> it.tx.txOut
+                                    }
+                                })
+                            }
+                            Triple(newState.futureRemoteCommitPublished.commitTx, ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, finalOutputs)
+                        }
+                        else -> {
+                            val revokedCommitPublished = newState.revokedCommitPublished.first() // must be there
+                            val finalOutputs = buildList {
+                                revokedCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
+                                revokedCommitPublished.mainPenaltyTx?.let { addAll(it.tx.txOut) }
+                                addAll(revokedCommitPublished.htlcPenaltyTxs.flatMap { it.tx.txOut })
+                                addAll(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.flatMap { it.tx.txOut })
+                            }
+                            Triple(revokedCommitPublished.commitTx, ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Revoked, finalOutputs)
+                        }
+                    }
+                    val finalAmount = finalOutputs.map { it.amount }.sum()
+                    val address = Helpers.Closing.btcAddressFromScriptPubKey(
+                        scriptPubKey = oldState.commitments.params.localParams.defaultFinalScriptPubKey, // force close always send to the default script
+                        chainHash = staticParams.nodeParams.chainHash
+                    ) ?: "unknown"
+                    listOf(
+                        ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
+                            amount = finalAmount,
+                            miningFees = channelBalance.truncateToSatoshi() - finalAmount,
+                            address = address,
+                            txId = commitTx.txid,
+                            isSentToDefaultAddress = true, // force close always send to the default script
+                            closingType = type
+                        )
                     )
-                )
+                }
             }
         } else emptyList() // balance == 0
     }
@@ -295,7 +356,6 @@ sealed class ChannelState {
         logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
         return Pair(this@ChannelState, listOf())
     }
-
 
     internal fun ChannelContext.handleCommandError(cmd: Command, error: ChannelException, channelUpdate: ChannelUpdate? = null): Pair<ChannelState, List<ChannelAction>> {
         logger.warning(error) { "processing command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName} failed" }

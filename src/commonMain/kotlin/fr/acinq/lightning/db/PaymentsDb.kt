@@ -68,9 +68,6 @@ interface OutgoingPaymentsDb {
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getLightningOutgoingPayment(id: UUID): LightningOutgoingPayment?
 
-    /** Mark an outgoing payment as completed for closing a Lightning channel on-chain with a list of on-chain txs. */
-    suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<LightningOutgoingPayment.ClosingTxPart>, completedAt: Long = currentTimestampMillis())
-
     /** Mark an outgoing payment as completed over Lightning. */
     suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
@@ -263,21 +260,10 @@ data class LightningOutgoingPayment(
                 routingFee
             }
         }
-        is Status.Completed.Succeeded.OnChain -> {
-            if (details is Details.ChannelClosing) {
-                // For a channel closing, recipientAmount is the balance of the channel that is being closed.
-                // It DOES include the future mining fees. Fees are found by subtracting the aggregated claims from the recipient amount.
-                recipientAmount - parts.filterIsInstance<ClosingTxPart>().map { it.claimed.toMilliSatoshi() }.sum()
-            } else {
-                routingFee
-            }
-        }
     }
 
     /** Amount that actually left the wallet. It does include the fees. */
     override val amount: MilliSatoshi = when (details) {
-        // For a channel closing, recipientAmount is the balance of the channel that is closed. It already contains the fees.
-        is Details.ChannelClosing -> recipientAmount
         // For a swap-out, recipientAmount is the amount paid to the swap service. It contains the swap-out fee, but not the routing fee.
         is Details.SwapOut -> recipientAmount + routingFee
         else -> recipientAmount + fees
@@ -304,20 +290,6 @@ data class LightningOutgoingPayment(
         data class SwapOut(val address: String, val paymentRequest: PaymentRequest, val swapOutFee: Satoshi) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
-
-        /** Corresponds to the on-chain payments made when closing a channel. */
-        data class ChannelClosing(
-            val channelId: ByteVector32,
-            val closingAddress: String, // btc address
-            // The closingAddress may have been supplied by the user during a mutual close.
-            // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
-            // So `isSentToDefaultAddress` means this default Phoenix address was used,
-            // and is used by the UI to explain the situation to the user.
-            val isSentToDefaultAddress: Boolean
-        ) : Details() {
-            override val paymentHash: ByteVector32 = channelId.sha256()
-        }
-
     }
 
     sealed class Status {
@@ -329,10 +301,6 @@ data class LightningOutgoingPayment(
             sealed class Succeeded : Completed() {
                 data class OffChain(
                     val preimage: ByteVector32,
-                    override val completedAt: Long = currentTimestampMillis()
-                ) : Succeeded()
-
-                data class OnChain(
                     override val completedAt: Long = currentTimestampMillis()
                 ) : Succeeded()
             }
@@ -377,40 +345,54 @@ data class LightningOutgoingPayment(
             }
         }
     }
+}
 
-    /**
-     * A child payment for closing a channel through an on-chain transaction.
-     *
-     * @param claimed represents the sum total of bitcoin tx outputs claimed for the user. A simplified fees can be
-     *      calculated as: OutgoingPayment.recipientAmount - claimed.
-     * @param closingType the type of the closing : it can be mutually decided by both end of the channel, or unilaterally
-     *      initiated by the remote or the local peer.
-     */
-    data class ClosingTxPart(
-        override val id: UUID,
-        val txId: ByteVector32,
-        val claimed: Satoshi,
-        val closingType: ChannelClosingType,
-        override val createdAt: Long,
-    ) : Part()
+sealed class OnChainOutgoingPayment : OutgoingPayment() {
+    abstract override val id: UUID
+    abstract val amountSatoshi: Satoshi
+    abstract val address: String
+    abstract val miningFees: Satoshi
+    abstract val txId: ByteVector32
+    abstract override val createdAt: Long
+    abstract val confirmedAt: Long?
 }
 
 data class SpliceOutgoingPayment(
     override val id: UUID,
-    val amountSatoshi: Satoshi,
-    val address: String,
-    val miningFees: Satoshi,
-    val txId: ByteVector32,
+    override val amountSatoshi: Satoshi,
+    override val address: String,
+    override val miningFees: Satoshi,
+    override val txId: ByteVector32,
     override val createdAt: Long,
-    val confirmedAt: Long? = null
-) : OutgoingPayment() {
+    override val confirmedAt: Long? = null
+) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
 }
 
-enum class ChannelClosingType {
-    Mutual, Local, Remote, Revoked, Other;
+data class ChannelCloseOutgoingPayment(
+    override val id: UUID,
+    override val amountSatoshi: Satoshi,
+    override val address: String,
+    // The closingAddress may have been supplied by the user during a mutual close initiated by the user.
+    // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
+    // So `isSentToDefaultAddress` means this default Phoenix address was used,
+    // and is used by the UI to explain the situation to the user.
+    val isSentToDefaultAddress: Boolean,
+    override val miningFees: Satoshi,
+    override val txId: ByteVector32,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    val channelId: ByteVector32,
+    val closingType: ChannelClosingType
+) : OnChainOutgoingPayment() {
+    override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val completedAt: Long? = confirmedAt
+    enum class ChannelClosingType {
+        Mutual, Local, Remote, Revoked, Other;
+    }
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
