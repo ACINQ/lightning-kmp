@@ -31,8 +31,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val utxosB = listOf(100_000.sat)
         val f = createFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660.sat, 42)
         assertEquals(f.fundingParamsA.fundingPubkeyScript, f.fundingParamsB.fundingPubkeyScript)
-        assertEquals(f.fundingParamsA.fundingAmount(0.sat), fundingA + fundingB)
-        assertEquals(f.fundingParamsA.fundingAmount(0.sat), fundingA + fundingB)
+        assertEquals(f.fundingParamsA.fundingAmount, fundingA + fundingB)
+        assertEquals(f.fundingParamsA.fundingAmount, fundingA + fundingB)
 
         val alice0 = InteractiveTxSession(f.fundingParamsA, 0.msat, 0.msat, f.fundingContributionsA)
         val bob0 = InteractiveTxSession(f.fundingParamsB, 0.msat, 0.msat, f.fundingContributionsB)
@@ -113,7 +113,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val fundingB = 50_000.sat
         val utxosB = listOf(80_000.sat)
         val f = createFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660.sat, 0)
-        assertEquals(f.fundingParamsA.fundingAmount(0.sat), fundingA + fundingB)
+        assertEquals(f.fundingParamsA.fundingAmount, fundingA + fundingB)
 
         val alice0 = InteractiveTxSession(f.fundingParamsA, 0.msat, 0.msat, f.fundingContributionsA)
         val bob0 = InteractiveTxSession(f.fundingParamsB, 0.msat, 0.msat, f.fundingContributionsB)
@@ -172,7 +172,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val fundingB = 50_000.sat
         val utxosB = listOf(200_000.sat)
         val f = createFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660.sat, 0)
-        assertEquals(f.fundingParamsA.fundingAmount(0.sat), fundingA + fundingB)
+        assertEquals(f.fundingParamsA.fundingAmount, fundingA + fundingB)
 
         val alice0 = InteractiveTxSession(f.fundingParamsA, 0.msat, 0.msat, f.fundingContributionsA)
         val bob0 = InteractiveTxSession(f.fundingParamsB, 0.msat, 0.msat, f.fundingContributionsB)
@@ -221,7 +221,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val fundingA = 150_000.sat
         val utxosA = listOf(80_000.sat, 120_000.sat)
         val f = createFixture(fundingA, utxosA, 0.sat, listOf(), targetFeerate, 330.sat, 0)
-        assertEquals(f.fundingParamsA.fundingAmount(0.sat), fundingA)
+        assertEquals(f.fundingParamsA.fundingAmount, fundingA)
 
         val alice0 = InteractiveTxSession(f.fundingParamsA, 0.msat, 0.msat, f.fundingContributionsA)
         val bob0 = InteractiveTxSession(f.fundingParamsB, 0.msat, 0.msat, f.fundingContributionsB)
@@ -287,9 +287,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val balanceB = 50_000_600.msat
         val additionalFundingB = 20_000.sat
         val utxosB = listOf(80_000.sat)
-        val previousFundingAmount = (balanceA + balanceB).truncateToSatoshi()
         val f = createSpliceFixture(balanceA, additionalFundingA, utxosA, listOf(), balanceB, additionalFundingB, utxosB, listOf(), targetFeerate, 330.sat, 0)
-        assertEquals(f.fundingParamsA.fundingAmount(previousFundingAmount), 200_000.sat)
+        assertEquals(f.fundingParamsA.fundingAmount, 200_000.sat)
         assertNotNull(f.fundingParamsA.sharedInput)
         assertNotNull(f.fundingParamsB.sharedInput)
 
@@ -363,9 +362,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val balanceB = 90_000_300.msat
         val spliceOutputsB = listOf(TxOut(30_000.sat, Script.pay2wpkh(randomKey().publicKey())))
         val subtractedFundingB = 30_500.sat
-        val previousFundingAmount = (balanceA + balanceB).truncateToSatoshi()
         val f = createSpliceFixture(balanceA, -subtractedFundingA, listOf(), spliceOutputsA, balanceB, -subtractedFundingB, listOf(), spliceOutputsB, FeeratePerKw(1000.sat), 330.sat, 0)
-        assertEquals(f.fundingParamsA.fundingAmount(previousFundingAmount), 108_500.sat)
+        assertEquals(f.fundingParamsA.fundingAmount, 108_500.sat)
         assertNotNull(f.fundingParamsA.sharedInput)
         assertNotNull(f.fundingParamsB.sharedInput)
 
@@ -433,9 +431,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val balanceB = 99_999_175.msat
         val spliceOutputsB = listOf(25_000.sat, 15_000.sat).map { TxOut(it, Script.pay2wpkh(randomKey().publicKey())) }
         val subtractedFundingB = 40_500.sat
-        val previousFundingAmount = (balanceA + balanceB).truncateToSatoshi()
         val f = createSpliceFixture(balanceA, -subtractedFundingA, listOf(), spliceOutputsA, balanceB, -subtractedFundingB, listOf(), spliceOutputsB, FeeratePerKw(1000.sat), 330.sat, 0)
-        assertEquals(f.fundingParamsA.fundingAmount(previousFundingAmount), 158_500.sat)
+        assertEquals(f.fundingParamsA.fundingAmount, 158_500.sat)
         assertNotNull(f.fundingParamsA.sharedInput)
         assertNotNull(f.fundingParamsB.sharedInput)
 
@@ -512,9 +509,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val additionalFundingB = 15_000.sat
         val spliceOutputsB = listOf(TxOut(10_000.sat, Script.pay2wpkh(randomKey().publicKey())))
         val utxosB = listOf(50_000.sat)
-        val previousFundingAmount = (balanceA + balanceB).truncateToSatoshi()
         val f = createSpliceFixture(balanceA, additionalFundingA, utxosA, spliceOutputsA, balanceB, additionalFundingB, utxosB, spliceOutputsB, targetFeerate, 330.sat, 0)
-        assertEquals(f.fundingParamsA.fundingAmount(previousFundingAmount), 290_000.sat)
+        assertEquals(f.fundingParamsA.fundingAmount, 290_000.sat)
         assertNotNull(f.fundingParamsA.sharedInput)
         assertNotNull(f.fundingParamsB.sharedInput)
 
@@ -860,7 +856,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val subtractedFundingA = 96_000.sat
         val balanceB = 500_000_000.msat
         val f = createSpliceFixture(balanceA, -subtractedFundingA, listOf(), spliceOutputsA, balanceB, 0.sat, listOf(), listOf(), FeeratePerKw(1000.sat), 330.sat, 0)
-        assertEquals(f.fundingParamsA.fundingAmount(600_000.sat), 504_000.sat)
+        assertEquals(f.fundingParamsA.fundingAmount, 504_000.sat)
         assertNotNull(f.fundingParamsA.sharedInput)
         assertNotNull(f.fundingParamsB.sharedInput)
 
