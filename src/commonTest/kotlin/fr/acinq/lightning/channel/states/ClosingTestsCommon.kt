@@ -1655,7 +1655,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     fun `recv Disconnected`() {
         val (alice0, _, _) = initMutualClose()
         val (alice1, _) = alice0.process(ChannelCommand.Disconnected)
-        assertTrue { alice1.state is Offline }
+        assertTrue { alice1.state is Closing }
     }
 
     companion object {
