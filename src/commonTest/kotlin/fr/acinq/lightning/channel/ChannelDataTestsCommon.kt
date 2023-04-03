@@ -12,7 +12,6 @@ import fr.acinq.lightning.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
-
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions.InputInfo
@@ -25,7 +24,6 @@ import fr.acinq.lightning.utils.LoggingContext
 import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
-import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.test.*
@@ -362,7 +360,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             }
 
             val remoteCommit = run {
-                val claimMain = ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx(txInput(claimMainAlice), claimMainAlice)
+                val claimMain = ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx(txInput(claimMainAlice), claimMainAlice)
                 val claimHtlcTxs = mapOf(
                     htlcSuccess1.txIn.first().outPoint to ClaimHtlcSuccessTx(txInput(htlcSuccess1), htlcSuccess1, 0),
                     htlcSuccess2.txIn.first().outPoint to ClaimHtlcSuccessTx(txInput(htlcSuccess2), htlcSuccess2, 1),
@@ -377,7 +375,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
                     val tx = Transaction(2, listOf(TxIn(OutPoint(commitTx, 1), 0)), listOf(TxOut(39_500.sat, ByteVector.empty)), 0)
                     MainPenaltyTx(txInput(tx), tx)
                 }
-                val claimMain = ClaimRemoteCommitMainOutputTx.ClaimP2WPKHOutputTx(txInput(claimMainAlice), claimMainAlice)
+                val claimMain = ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx(txInput(claimMainAlice), claimMainAlice)
                 val htlcPenaltyTxs = listOf(htlcSuccess1, htlcSuccess2, htlcTimeout1, htlcTimeout2).map { HtlcPenaltyTx(txInput(it), it) }
                 RevokedCommitPublished(commitTx, randomKey(), claimMain, mainPenalty, htlcPenaltyTxs)
             }

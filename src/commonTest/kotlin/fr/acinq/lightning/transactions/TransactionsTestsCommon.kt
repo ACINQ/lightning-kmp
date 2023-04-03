@@ -33,7 +33,6 @@ import fr.acinq.lightning.transactions.Transactions.checkSpendable
 import fr.acinq.lightning.transactions.Transactions.claimHtlcDelayedWeight
 import fr.acinq.lightning.transactions.Transactions.claimHtlcSuccessWeight
 import fr.acinq.lightning.transactions.Transactions.claimHtlcTimeoutWeight
-import fr.acinq.lightning.transactions.Transactions.claimP2WPKHOutputWeight
 import fr.acinq.lightning.transactions.Transactions.commitTxFee
 import fr.acinq.lightning.transactions.Transactions.decodeTxNumber
 import fr.acinq.lightning.transactions.Transactions.encodeTxNumber
@@ -44,7 +43,6 @@ import fr.acinq.lightning.transactions.Transactions.makeClaimDelayedOutputPenalt
 import fr.acinq.lightning.transactions.Transactions.makeClaimHtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.makeClaimHtlcTimeoutTx
 import fr.acinq.lightning.transactions.Transactions.makeClaimLocalDelayedOutputTx
-import fr.acinq.lightning.transactions.Transactions.makeClaimP2WPKHOutputTx
 import fr.acinq.lightning.transactions.Transactions.makeClaimRemoteDelayedOutputTx
 import fr.acinq.lightning.transactions.Transactions.makeClosingTx
 import fr.acinq.lightning.transactions.Transactions.makeCommitTx
@@ -57,11 +55,9 @@ import fr.acinq.lightning.transactions.Transactions.sign
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
-import kotlinx.serialization.InternalSerializationApi
 import kotlin.random.Random
 import kotlin.test.*
 
-@InternalSerializationApi
 class TransactionsTestsCommon : LightningTestSuite() {
 
     private val localFundingPriv = PrivateKey(randomBytes32())
@@ -133,19 +129,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val blockHeight = 400_000
 
         run {
-            // ClaimP2WPKHOutputTx
-            // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimP2WPKHOutputTx
-            val pubKeyScript = write(pay2wpkh(localPaymentPriv.publicKey()))
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
-            val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey(), finalPubKeyScript, feeratePerKw)
-            assertTrue(claimP2WPKHOutputTx is Success, "is $claimP2WPKHOutputTx")
-            // we use dummy signatures to compute the weight
-            val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx.result, localPaymentPriv.publicKey(), PlaceHolderSig).tx)
-            assertEquals(claimP2WPKHOutputWeight, weight)
-            assertTrue(claimP2WPKHOutputTx.result.fee >= claimP2WPKHOutputTx.result.minRelayFee)
-        }
-
-        run {
             // ClaimHtlcDelayedTx
             // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the ClaimDelayedOutputTx
             val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey())))
@@ -157,7 +140,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertEquals(claimHtlcDelayedWeight, weight)
             assertTrue(claimHtlcDelayedTx.result.fee >= claimHtlcDelayedTx.result.minRelayFee)
         }
-
         run {
             // MainPenaltyTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
@@ -170,7 +152,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertEquals(mainPenaltyWeight, weight)
             assertTrue(mainPenaltyTx.result.fee >= mainPenaltyTx.result.minRelayFee)
         }
-
         run {
             // HtlcPenaltyTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
@@ -186,7 +167,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertEquals(htlcPenaltyWeight, weight)
             assertTrue(htlcPenaltyTx.result.fee >= htlcPenaltyTx.result.minRelayFee)
         }
-
         run {
             // ClaimHtlcSuccessTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
@@ -216,7 +196,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertEquals(claimHtlcSuccessWeight, weight)
             assertTrue(claimHtlcSuccessTx.result.fee >= claimHtlcSuccessTx.result.minRelayFee)
         }
-
         run {
             // ClaimHtlcTimeoutTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcTimeoutTx
@@ -337,7 +316,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 assertTrue(csResult.isSuccess, "is $csResult")
             }
         }
-
         run {
             // local spends delayed output of htlc1 timeout tx
             val claimHtlcDelayed = makeClaimLocalDelayedOutputTx(htlcTimeoutTxs[1].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
@@ -349,7 +327,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val claimHtlcDelayed1 = makeClaimLocalDelayedOutputTx(htlcTimeoutTxs[0].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey(), finalPubKeyScript, feerate)
             assertEquals(Skipped(OutputNotFound), claimHtlcDelayed1)
         }
-
         run {
             // remote spends local->remote htlc1/htlc3 output directly in case of success
             for ((htlc, paymentPreimage) in listOf(htlc1 to paymentPreimage1, htlc3 to paymentPreimage3)) {
@@ -362,7 +339,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 assertTrue(csResult.isSuccess, "is $csResult")
             }
         }
-
         run {
             // local spends remote->local htlc2/htlc4 output with htlc success tx using payment preimage
             for ((htlcSuccessTx, paymentPreimage) in listOf(htlcSuccessTxs[1] to paymentPreimage2, htlcSuccessTxs[0] to paymentPreimage4)) {
@@ -375,7 +351,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 assertTrue(checkSig(htlcSuccessTx, remoteSig, remoteHtlcPriv.publicKey(), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY))
             }
         }
-
         run {
             // local spends delayed output of htlc2 success tx
             val claimHtlcDelayed = makeClaimLocalDelayedOutputTx(htlcSuccessTxs[1].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
@@ -388,7 +363,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val claimHtlcDelayed1 = makeClaimLocalDelayedOutputTx(htlcSuccessTxs[0].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
             assertEquals(Skipped(AmountBelowDustLimit), claimHtlcDelayed1)
         }
-
         run {
             // remote spends main output
             val claimP2WPKHOutputTx = makeClaimRemoteDelayedOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey(), finalPubKeyScript.toByteVector(), feerate)
@@ -398,7 +372,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val csResult = checkSpendable(signedTx)
             assertTrue(csResult.isSuccess, "is $csResult")
         }
-
         run {
             // remote spends htlc1's htlc-timeout tx with revocation key
             val claimHtlcDelayedPenaltyTxs = makeClaimDelayedOutputPenaltyTxs(htlcTimeoutTxs[1].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
@@ -413,7 +386,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val claimHtlcDelayedPenaltyTxsSkipped = makeClaimDelayedOutputPenaltyTxs(htlcTimeoutTxs[0].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
             assertEquals(listOf(Skipped(AmountBelowDustLimit)), claimHtlcDelayedPenaltyTxsSkipped)
         }
-
         run {
             // remote spends remote->local htlc output directly in case of timeout
             val claimHtlcTimeoutTx =
@@ -424,7 +396,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
         }
-
         run {
             // remote spends htlc2's htlc-success tx with revocation key
             val claimHtlcDelayedPenaltyTxs = makeClaimDelayedOutputPenaltyTxs(htlcSuccessTxs[1].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
@@ -439,7 +410,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val claimHtlcDelayedPenaltyTxsSkipped = makeClaimDelayedOutputPenaltyTxs(htlcSuccessTxs[0].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
             assertEquals(listOf(Skipped(AmountBelowDustLimit)), claimHtlcDelayedPenaltyTxsSkipped)
         }
-
         run {
             // remote spends all htlc txs aggregated in a single tx
             val txIn = htlcTimeoutTxs.flatMap { it.tx.txIn } + htlcSuccessTxs.flatMap { it.tx.txIn }
@@ -453,7 +423,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertEquals(2, claimed.size)
             assertEquals(2, claimed.map { it.result.input.outPoint }.toSet().size)
         }
-
         run {
             // remote spends offered HTLC output with revocation key
             val script = write(htlcOffered(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc1.paymentHash)))
@@ -468,7 +437,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
         }
-
         run {
             // remote spends received HTLC output with revocation key
             val script = write(htlcReceived(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc2.paymentHash), htlc2.cltvExpiry))
