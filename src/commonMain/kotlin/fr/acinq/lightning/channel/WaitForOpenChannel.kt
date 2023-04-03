@@ -12,7 +12,6 @@ import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 
 /*
@@ -91,7 +90,7 @@ data class WaitForOpenChannel(
                                         Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                     }
                                     is Either.Right -> {
-                                        val interactiveTxSession = InteractiveTxSession(fundingParams, 0.sat, 0.sat, fundingContributions.value)
+                                        val interactiveTxSession = InteractiveTxSession(fundingParams, 0.msat, 0.msat, fundingContributions.value)
                                         val nextState = WaitForFundingCreated(
                                             localParams,
                                             remoteParams,

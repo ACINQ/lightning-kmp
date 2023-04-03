@@ -7,6 +7,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
@@ -91,7 +92,7 @@ data class WaitForFundingConfirmed(
                                 val fundingParams = InteractiveTxParams(
                                     channelId,
                                     isInitiator,
-                                    latestFundingTx.fundingParams.localAmount, // we don't change our funding contribution
+                                    latestFundingTx.fundingParams.localContribution, // we don't change our funding contribution
                                     cmd.message.fundingContribution,
                                     latestFundingTx.fundingParams.fundingPubkeyScript,
                                     cmd.message.lockTime,
@@ -102,9 +103,9 @@ data class WaitForFundingConfirmed(
                                     addAll(latestFundingTx.sharedTx.tx.localInputs.map { Either.Left(it) })
                                     addAll(latestFundingTx.sharedTx.tx.localOutputs.map { Either.Right(it) })
                                 }
-                                val session = InteractiveTxSession(fundingParams, 0.sat, 0.sat, toSend, previousFundingTxs.map { it.sharedTx })
+                                val session = InteractiveTxSession(fundingParams, SharedFundingInputBalances(0.msat, 0.msat), toSend, previousFundingTxs.map { it.sharedTx })
                                 val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
-                                Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localAmount))))
+                                Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localContribution))))
                             }
                         }
                         RbfStatus.RbfAborted -> {
@@ -137,7 +138,7 @@ data class WaitForFundingConfirmed(
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                         }
                         is Either.Right -> {
-                            val (session, action) = InteractiveTxSession(fundingParams, 0.sat, 0.sat, contributions.value, previousFundingTxs.map { it.sharedTx }).send()
+                            val (session, action) = InteractiveTxSession(fundingParams, 0.msat, 0.msat, contributions.value, previousFundingTxs.map { it.sharedTx }).send()
                             when (action) {
                                 is InteractiveTxSessionAction.SendMessage -> {
                                     val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))

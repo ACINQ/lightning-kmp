@@ -9,6 +9,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.math.absoluteValue
 

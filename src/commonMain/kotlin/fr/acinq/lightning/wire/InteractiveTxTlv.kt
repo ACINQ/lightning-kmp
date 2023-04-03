@@ -55,31 +55,37 @@ sealed class TxSignaturesTlv : Tlv {
 }
 
 sealed class TxInitRbfTlv : Tlv {
-    /** Amount that the peer will contribute to the transaction's shared output. */
+    /**
+     * Amount that the peer will contribute to the transaction's shared output.
+     * When used for splicing, this is a signed value that represents funds that are added or removed from the channel.
+     */
     data class SharedOutputContributionTlv(val amount: Satoshi) : TxInitRbfTlv() {
         override val tag: Long get() = SharedOutputContributionTlv.tag
 
-        override fun write(out: Output) = LightningCodecs.writeTU64(amount.toLong(), out)
+        override fun write(out: Output) = LightningCodecs.writeInt64(amount.toLong(), out)
 
         companion object : TlvValueReader<SharedOutputContributionTlv> {
             const val tag: Long = 0
 
-            override fun read(input: Input): SharedOutputContributionTlv = SharedOutputContributionTlv(LightningCodecs.tu64(input).sat)
+            override fun read(input: Input): SharedOutputContributionTlv = SharedOutputContributionTlv(LightningCodecs.int64(input).sat)
         }
     }
 }
 
 sealed class TxAckRbfTlv : Tlv {
-    /** Amount that the peer will contribute to the transaction's shared output. */
+    /**
+     * Amount that the peer will contribute to the transaction's shared output.
+     * When used for splicing, this is a signed value that represents funds that are added or removed from the channel.
+     */
     data class SharedOutputContributionTlv(val amount: Satoshi) : TxAckRbfTlv() {
         override val tag: Long get() = SharedOutputContributionTlv.tag
 
-        override fun write(out: Output) = LightningCodecs.writeTU64(amount.toLong(), out)
+        override fun write(out: Output) = LightningCodecs.writeInt64(amount.toLong(), out)
 
         companion object : TlvValueReader<SharedOutputContributionTlv> {
             const val tag: Long = 0
 
-            override fun read(input: Input): SharedOutputContributionTlv = SharedOutputContributionTlv(LightningCodecs.tu64(input).sat)
+            override fun read(input: Input): SharedOutputContributionTlv = SharedOutputContributionTlv(LightningCodecs.int64(input).sat)
         }
     }
 }

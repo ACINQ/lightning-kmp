@@ -94,6 +94,16 @@ object LightningCodecs {
     @JvmStatic
     fun writeU64(input: Long, output: Output) = output.write(Pack.writeInt64BE(input))
 
+    @JvmStatic
+    fun int64(input: Input): Long {
+        val bin = ByteArray(8)
+        readStrict(input, bin, bin.size)
+        return Pack.int64BE(bin, 0)
+    }
+
+    @JvmStatic
+    fun writeInt64(input: Long, output: Output) = output.write(Pack.writeInt64BE(input))
+
     /**
      * Compute the length a truncated integer should have, depending on its value.
      * See https://github.com/lightningnetwork/lightning-rfc/blob/master/01-messaging.md#fundamental-types

@@ -33,11 +33,16 @@ sealed class SharedFundingInput {
     }
 }
 
+/** The current balances of a [[SharedFundingInput]]. */
+data class SharedFundingInputBalances(val toLocal: MilliSatoshi, val toRemote: MilliSatoshi) {
+    val fundingAmount: Satoshi = (toLocal + toRemote).truncateToSatoshi()
+}
+
 /**
  * @param channelId id of the channel.
  * @param isInitiator true if we initiated the protocol, in which case we will pay fees for the shared parts of the transaction.
- * @param localAmount amount contributed by us to the shared output.
- * @param remoteAmount amount contributed by our peer to the shared output.
+ * @param localContribution amount contributed by us to the shared output (can be negative when removing funds from an existing channel).
+ * @param remoteContribution amount contributed by our peer to the shared output (can be negative when removing funds from an existing channel).
  * @param sharedInput previous input shared between the two participants (e.g. previous funding output when splicing).
  * @param fundingPubkeyScript script of the shared output.
  * @param localOutputs outputs to be added to the shared transaction (e.g. splice-out).
@@ -48,8 +53,8 @@ sealed class SharedFundingInput {
 data class InteractiveTxParams(
     val channelId: ByteVector32,
     val isInitiator: Boolean,
-    val localAmount: Satoshi,
-    val remoteAmount: Satoshi,
+    val localContribution: Satoshi,
+    val remoteContribution: Satoshi,
     val sharedInput: SharedFundingInput?,
     val fundingPubkeyScript: ByteVector,
     val localOutputs: List<TxOut>,
@@ -57,14 +62,11 @@ data class InteractiveTxParams(
     val dustLimit: Satoshi,
     val targetFeerate: FeeratePerKw
 ) {
-    constructor(channelId: ByteVector32, isInitiator: Boolean, localAmount: Satoshi, remoteAmount: Satoshi, fundingPubkeyScript: ByteVector, lockTime: Long, dustLimit: Satoshi, targetFeerate: FeeratePerKw) :
-            this(channelId, isInitiator, localAmount, remoteAmount, null, fundingPubkeyScript, listOf(), lockTime, dustLimit, targetFeerate)
+    constructor(channelId: ByteVector32, isInitiator: Boolean, localContribution: Satoshi, remoteContribution: Satoshi, fundingPubkeyScript: ByteVector, lockTime: Long, dustLimit: Satoshi, targetFeerate: FeeratePerKw) :
+            this(channelId, isInitiator, localContribution, remoteContribution, null, fundingPubkeyScript, listOf(), lockTime, dustLimit, targetFeerate)
 
-    init {
-        require(localAmount >= 0.sat && remoteAmount >= 0.sat) { "funding amount cannot be negative" }
-    }
-
-    val fundingAmount: Satoshi = localAmount + remoteAmount
+    /** The amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
+    val fundingAmount: Satoshi = (sharedInput?.info?.txOut?.amount ?: 0.sat) + localContribution + remoteContribution
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
@@ -89,7 +91,7 @@ sealed class InteractiveTxInput {
      */
     data class Remote(override val serialId: Long, override val outPoint: OutPoint, val txOut: TxOut, override val sequence: UInt) : InteractiveTxInput(), Incoming
     /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
-    data class Shared(override val serialId: Long, override val outPoint: OutPoint, override val sequence: UInt, val localAmount: Satoshi, val remoteAmount: Satoshi) : InteractiveTxInput(), Incoming, Outgoing
+    data class Shared(override val serialId: Long, override val outPoint: OutPoint, override val sequence: UInt, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxInput(), Incoming, Outgoing
 }
 
 sealed class InteractiveTxOutput {
@@ -111,8 +113,9 @@ sealed class InteractiveTxOutput {
      */
     data class Remote(override val serialId: Long, override val amount: Satoshi, override val pubkeyScript: ByteVector) : InteractiveTxOutput(), Incoming
     /** The shared output can be added by us or by our peer, depending on who initiated the protocol. */
-    data class Shared(override val serialId: Long, override val pubkeyScript: ByteVector, val localAmount: Satoshi, val remoteAmount: Satoshi) : InteractiveTxOutput(), Incoming, Outgoing {
-        override val amount: Satoshi = localAmount + remoteAmount
+    data class Shared(override val serialId: Long, override val pubkeyScript: ByteVector, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxOutput(), Incoming, Outgoing {
+        // Note that the truncation is a no-op: the sum of balances in a channel must be a satoshi amount.
+        override val amount: Satoshi = (localAmount + remoteAmount).truncateToSatoshi()
     }
 }
 
@@ -124,6 +127,7 @@ sealed class FundingContributionFailure {
     data class InputTxTooLarge(val tx: Transaction) : FundingContributionFailure() { override fun toString(): String = "invalid input tx ${tx.txid} (too large)" }
     data class NotEnoughFunding(val fundingAmount: Satoshi, val nonFundingAmount: Satoshi, val providedAmount: Satoshi) : FundingContributionFailure() { override fun toString(): String = "not enough funds provided (expected at least $fundingAmount + $nonFundingAmount, got $providedAmount)" }
     data class NotEnoughFees(val currentFees: Satoshi, val expectedFees: Satoshi) : FundingContributionFailure() { override fun toString(): String = "not enough funds to pay fees (expected at least $expectedFees, got $currentFees)" }
+    data class InvalidFundingBalances(val fundingAmount: Satoshi, val localBalance: MilliSatoshi, val remoteBalance: MilliSatoshi) : FundingContributionFailure() { override fun toString(): String = "invalid balances funding_amount=$fundingAmount local=$localBalance remote=$remoteBalance" }
     // @formatter:on
 }
 
@@ -143,7 +147,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
          */
         fun create(
             params: InteractiveTxParams,
-            sharedUtxo: Pair<SharedFundingInput, Satoshi>?,
+            sharedUtxo: Pair<SharedFundingInput, SharedFundingInputBalances>?,
             walletUtxos: List<WalletState.Utxo>,
             localOutputs: List<TxOut>,
             changePubKey: PublicKey? = null
@@ -154,16 +158,17 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 if (!Script.isPay2wpkh(tx.txOut[txOutput].publicKeyScript.toByteArray())) return Either.Left(FundingContributionFailure.NonPay2wpkhInput(tx.txid, txOutput))
                 if (Transaction.write(tx).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(tx))
             }
-            val totalAmountIn = walletUtxos.map { it.amount }.sum() + (sharedUtxo?.second ?: 0.sat)
-            val totalAmountOut = params.localAmount + localOutputs.map { it.amount }.sum()
-            if (totalAmountIn < totalAmountOut) {
-                return Either.Left(FundingContributionFailure.NotEnoughFunding(params.localAmount, localOutputs.map { it.amount }.sum(), totalAmountIn))
+            val previousFundingAmount = sharedUtxo?.second?.fundingAmount ?: 0.sat
+            val totalAmountIn = previousFundingAmount + walletUtxos.map { it.amount }.sum()
+            val totalAmountOut = previousFundingAmount + params.localContribution + localOutputs.map { it.amount }.sum()
+            if (totalAmountIn < totalAmountOut || params.fundingAmount < params.dustLimit) {
+                return Either.Left(FundingContributionFailure.NotEnoughFunding(params.localContribution, localOutputs.map { it.amount }.sum(), totalAmountIn))
             }
 
             // We compute the fees that we should pay in the shared transaction.
             val dummyWalletWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Scripts.der(Transactions.PlaceHolderSig, SigHash.SIGHASH_ALL))
             val dummySignedWalletTxIn = walletUtxos.map { TxIn(it.outPoint, ByteVector.empty, 0, dummyWalletWitness) }
-            val dummyChangeTxOut = TxOut(params.localAmount, Script.pay2wpkh(Transactions.PlaceHolderPubKey))
+            val dummyChangeTxOut = TxOut(params.localContribution, Script.pay2wpkh(Transactions.PlaceHolderPubKey))
             val sharedTxOut = TxOut(params.fundingAmount, params.fundingPubkeyScript)
             val (weightWithoutChange, weightWithChange) = when (params.isInitiator) {
                 true -> {
@@ -187,7 +192,13 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 return Either.Left(FundingContributionFailure.NotEnoughFees(feesWithoutChange, Transactions.weight2fee(params.targetFeerate, weightWithoutChange)))
             }
 
-            val sharedOutput = listOf(InteractiveTxOutput.Shared(0, params.fundingPubkeyScript, params.localAmount, params.remoteAmount))
+            val nextLocalBalance = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi()
+            val nextRemoteBalance = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi()
+            if (nextLocalBalance < 0.msat || nextRemoteBalance < 0.msat) {
+                return Either.Left(FundingContributionFailure.InvalidFundingBalances(params.fundingAmount, nextLocalBalance, nextRemoteBalance))
+            }
+
+            val sharedOutput = listOf(InteractiveTxOutput.Shared(0, params.fundingPubkeyScript, nextLocalBalance, nextRemoteBalance))
             val nonChangeOutputs = localOutputs.map { o -> InteractiveTxOutput.Local.NonChange(0, o.amount, o.publicKeyScript) }
             val changeOutput = when (changePubKey) {
                 null -> listOf()
@@ -200,7 +211,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                     }
                 }
             }
-            val sharedInput = sharedUtxo?.let { (i, localAmount) -> listOf(InteractiveTxInput.Shared(0, i.info.outPoint, 0xfffffffdU, localAmount, i.info.txOut.amount - localAmount)) } ?: listOf()
+            val sharedInput = sharedUtxo?.let { (i, balances) -> listOf(InteractiveTxInput.Shared(0, i.info.outPoint, 0xfffffffdU, balances.toLocal, balances.toRemote)) } ?: listOf()
             val walletInputs = walletUtxos.map { i -> InteractiveTxInput.Local(0, i.previousTx, i.outputIndex.toLong(), 0xfffffffdU) }
             return if (params.isInitiator) {
                 Either.Right(sortFundingContributions(params, sharedInput + walletInputs, sharedOutput + nonChangeOutputs + changeOutput))
@@ -238,14 +249,15 @@ data class SharedTransaction(
     val localOutputs: List<InteractiveTxOutput.Local>, val remoteOutputs: List<InteractiveTxOutput.Remote>,
     val lockTime: Long
 ) {
-    val localAmountIn: Satoshi = (sharedInput?.localAmount ?: 0.sat) + localInputs.map { i -> i.previousTx.txOut[i.previousTxOutput.toInt()].amount }.sum()
-    val remoteAmountIn: Satoshi = (sharedInput?.remoteAmount ?: 0.sat) + remoteInputs.map { i -> i.txOut.amount }.sum()
-    val totalAmountIn: Satoshi = localAmountIn + remoteAmountIn
-    val localAmountOut: Satoshi = sharedOutput.localAmount + localOutputs.map { o -> o.amount }.sum()
-    val remoteAmountOut: Satoshi = sharedOutput.remoteAmount + remoteOutputs.map { o -> o.amount }.sum()
-    val localFees: Satoshi = localAmountIn - localAmountOut
-    val remoteFees: Satoshi = remoteAmountIn - remoteAmountOut
-    val fees: Satoshi = localFees + remoteFees
+    // Note that the satoshi truncations are no-ops: the sum of balances in a channel must be a satoshi amount.
+    val localAmountIn: MilliSatoshi = (sharedInput?.localAmount ?: 0.msat) + localInputs.map { i -> i.previousTx.txOut[i.previousTxOutput.toInt()].amount }.sum().toMilliSatoshi()
+    val remoteAmountIn: MilliSatoshi = (sharedInput?.remoteAmount ?: 0.msat) + remoteInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi()
+    val totalAmountIn: Satoshi = (localAmountIn + remoteAmountIn).truncateToSatoshi()
+    val localAmountOut: MilliSatoshi = sharedOutput.localAmount + localOutputs.map { o -> o.amount }.sum().toMilliSatoshi()
+    val remoteAmountOut: MilliSatoshi = sharedOutput.remoteAmount + remoteOutputs.map { o -> o.amount }.sum().toMilliSatoshi()
+    val localFees: MilliSatoshi = localAmountIn - localAmountOut
+    val remoteFees: MilliSatoshi = remoteAmountIn - remoteAmountOut
+    val fees: Satoshi = (localFees + remoteFees).truncateToSatoshi()
 
     fun buildUnsignedTx(): Transaction {
         val sharedTxIn = sharedInput?.let { i -> listOf(Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong()))) } ?: listOf()
@@ -364,8 +376,7 @@ sealed class InteractiveTxSessionAction {
 
 data class InteractiveTxSession(
     val fundingParams: InteractiveTxParams,
-    val previousLocalBalance: Satoshi,
-    val previousRemoteBalance: Satoshi,
+    val previousFunding: SharedFundingInputBalances,
     val toSend: List<Either<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>>,
     val previousTxs: List<SignedSharedTransaction> = listOf(),
     val localInputs: List<InteractiveTxInput.Outgoing> = listOf(),
@@ -392,10 +403,9 @@ data class InteractiveTxSession(
     //     |       |<------- tx_complete --------|       |
     //     +-------+                             +-------+
 
-    constructor(fundingParams: InteractiveTxParams, previousLocalBalance: Satoshi, previousRemoteBalance: Satoshi, fundingContributions: FundingContributions, previousTxs: List<SignedSharedTransaction> = listOf()) : this(
+    constructor(fundingParams: InteractiveTxParams, previousLocalBalance: MilliSatoshi, previousRemoteBalance: MilliSatoshi, fundingContributions: FundingContributions, previousTxs: List<SignedSharedTransaction> = listOf()) : this(
         fundingParams,
-        previousLocalBalance,
-        previousRemoteBalance,
+        SharedFundingInputBalances(previousLocalBalance, previousRemoteBalance),
         fundingContributions.inputs.map { i -> Either.Left<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>(i) } + fundingContributions.outputs.map { o -> Either.Right<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>(o) },
         previousTxs
     )
@@ -445,7 +455,7 @@ data class InteractiveTxSession(
                 val expectedSharedOutpoint = fundingParams.sharedInput?.info?.outPoint ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 val receivedSharedOutpoint = message.sharedInput ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 if (expectedSharedOutpoint != receivedSharedOutpoint) return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
-                InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, message.sequence, previousLocalBalance, previousRemoteBalance)
+                InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, message.sequence, previousFunding.toLocal, previousFunding.toRemote)
             }
             else -> {
                 if (message.previousTx.txOut.size <= message.previousTxOutput) {
@@ -481,7 +491,9 @@ data class InteractiveTxSession(
         } else if (message.pubkeyScript == fundingParams.fundingPubkeyScript && message.amount != fundingParams.fundingAmount) {
             Either.Left(InteractiveTxSessionAction.InvalidTxSharedAmount(message.channelId, message.serialId, message.amount, fundingParams.fundingAmount))
         } else if (message.pubkeyScript == fundingParams.fundingPubkeyScript) {
-            Either.Right(InteractiveTxOutput.Shared(message.serialId, message.pubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount))
+            val localAmount = previousFunding.toLocal + fundingParams.localContribution.toMilliSatoshi()
+            val remoteAmount = previousFunding.toRemote + fundingParams.remoteContribution.toMilliSatoshi()
+            Either.Right(InteractiveTxOutput.Shared(message.serialId, message.pubkeyScript, localAmount, remoteAmount))
         } else {
             Either.Right(InteractiveTxOutput.Remote(message.serialId, message.amount, message.pubkeyScript))
         }
@@ -545,21 +557,21 @@ data class InteractiveTxSession(
         val localOnlyOutputs = localOutputs.filterIsInstance<InteractiveTxOutput.Local>()
         val remoteOnlyOutputs = remoteOutputs.filterIsInstance<InteractiveTxOutput.Remote>()
 
+        if (sharedOutputs.size != 1) {
+            return InteractiveTxSessionAction.InvalidTxSharedOutput(fundingParams.channelId)
+        }
+        val sharedOutput = sharedOutputs.first()
+
         val sharedInput = fundingParams.sharedInput?.let {
             val remoteReserve = (fundingParams.fundingAmount / 100).max(fundingParams.dustLimit)
-            if (fundingParams.remoteAmount < remoteReserve && remoteOnlyOutputs.isNotEmpty()) {
-                return InteractiveTxSessionAction.InvalidTxBelowReserve(fundingParams.channelId, fundingParams.remoteAmount, remoteReserve)
+            if (sharedOutput.remoteAmount < remoteReserve && remoteOnlyOutputs.isNotEmpty()) {
+                return InteractiveTxSessionAction.InvalidTxBelowReserve(fundingParams.channelId, sharedOutput.remoteAmount.truncateToSatoshi(), remoteReserve)
             }
             if (sharedInputs.size != 1) {
                 return InteractiveTxSessionAction.InvalidTxSharedInput(fundingParams.channelId)
             }
             sharedInputs.first()
         }
-
-        if (sharedOutputs.size != 1) {
-            return InteractiveTxSessionAction.InvalidTxSharedOutput(fundingParams.channelId)
-        }
-        val sharedOutput = sharedOutputs.first()
 
         val sharedTx = SharedTransaction(sharedInput, sharedOutput, localOnlyInputs, remoteOnlyInputs, localOnlyOutputs, remoteOnlyOutputs, fundingParams.lockTime)
         val tx = sharedTx.buildUnsignedTx()
@@ -705,8 +717,9 @@ data class InteractiveTxSigningSession(
                 keyManager,
                 channelParams.channelId,
                 channelParams.localParams, channelParams.remoteParams,
-                fundingParams.localAmount, fundingParams.remoteAmount,
-                localPushAmount, remotePushAmount,
+                fundingAmount = sharedTx.sharedOutput.amount,
+                toLocal = sharedTx.sharedOutput.localAmount - localPushAmount + remotePushAmount,
+                toRemote = sharedTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount,
                 commitTxFeerate,
                 unsignedTx.hash,
                 sharedOutputIndex,
