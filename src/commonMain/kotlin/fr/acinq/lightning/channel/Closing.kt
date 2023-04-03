@@ -314,7 +314,6 @@ data class Closing(
                 else -> unhandled(cmd)
             }
             is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelCommand.Disconnected -> Pair(Offline(this@Closing), listOf())
             else -> unhandled(cmd)
         }
     }
