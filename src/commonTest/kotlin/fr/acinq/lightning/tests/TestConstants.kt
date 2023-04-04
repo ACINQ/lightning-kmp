@@ -2,7 +2,6 @@ package fr.acinq.lightning.tests
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
-import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
@@ -95,8 +94,6 @@ object TestConstants {
             channelFlags = 1,
             paymentRequestExpirySeconds = 3600,
             multiPartPaymentExpirySeconds = 60,
-            minFundingSatoshis = 1_000.sat,
-            maxFundingSatoshis = 25_000_000.sat,
             maxPaymentAttempts = 5,
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
             zeroConfPeers = setOf(),
@@ -173,8 +170,6 @@ object TestConstants {
             channelFlags = 1,
             paymentRequestExpirySeconds = 3600,
             multiPartPaymentExpirySeconds = 60,
-            minFundingSatoshis = 1_000.sat,
-            maxFundingSatoshis = 25_000_000.sat,
             maxPaymentAttempts = 5,
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
             zeroConfPeers = setOf(),

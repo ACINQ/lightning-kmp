@@ -42,19 +42,16 @@ object Helpers {
      * @param fundingAmount funding amount of the channel
      * @return number of confirmations needed
      */
-    fun minDepthForFunding(nodeParams: NodeParams, fundingAmount: Satoshi): Int =
-        if (fundingAmount <= Channel.MAX_FUNDING) {
-            nodeParams.minDepthBlocks
-        } else {
-            val blockReward = 6.25f // this is true as of ~May 2020, but will be too large after 2024
-            val scalingFactor = 15
-            val btc = fundingAmount.toLong().toDouble() / 100_000_000L
-            val blocksToReachFunding: Int = (((scalingFactor * btc) / blockReward) + 1).toInt()
-            max(nodeParams.minDepthBlocks, blocksToReachFunding)
-        }
+    fun minDepthForFunding(nodeParams: NodeParams, fundingAmount: Satoshi): Int {
+        val blockReward = 6.25f // this is true as of ~May 2020, but will be too large after 2024
+        val scalingFactor = 15
+        val btc = fundingAmount.toLong().toDouble() / 100_000_000L
+        val blocksToReachFunding: Int = (((scalingFactor * btc) / blockReward) + 1).toInt()
+        return max(nodeParams.minDepthBlocks, blocksToReachFunding)
+    }
 
     /** Called by the non-initiator. */
-    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel, localFeatures: Features): Either<ChannelException, ChannelFeatures> {
+    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel): Either<ChannelException, ChannelFeatures> {
         // NB: we only accept channels from peers who support explicit channel type negotiation.
         val channelType = open.channelType ?: return Either.Left(MissingChannelType(open.temporaryChannelId))
         if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve).contains(channelType)) {
@@ -65,15 +62,6 @@ object Helpers {
         // MUST reject the channel.
         if (nodeParams.chainHash != open.chainHash) {
             return Either.Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
-        }
-
-        if (open.fundingAmount < nodeParams.minFundingSatoshis || open.fundingAmount > nodeParams.maxFundingSatoshis) {
-            return Either.Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingAmount, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis))
-        }
-
-        // BOLT #2: Channel funding limits
-        if (open.fundingAmount >= Channel.MAX_FUNDING && !localFeatures.hasFeature(Feature.Wumbo)) {
-            return Either.Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingAmount, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING))
         }
 
         // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
@@ -122,8 +110,8 @@ object Helpers {
             return Either.Left(InvalidChannelType(accept.temporaryChannelId, open.channelType!!, accept.channelType!!))
         }
 
-        if (accept.fundingAmount > nodeParams.maxFundingSatoshis || accept.fundingAmount < 0.sat) {
-            return Either.Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount, 0.sat, nodeParams.maxFundingSatoshis))
+        if (accept.fundingAmount < 0.sat) {
+            return Either.Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount))
         }
 
         if (accept.pushAmount > accept.fundingAmount) {

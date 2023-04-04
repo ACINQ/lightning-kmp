@@ -1,13 +1,11 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.wire.AnnouncementSignatures
 import fr.acinq.lightning.wire.InteractiveTxMessage
 import fr.acinq.lightning.wire.UpdateAddHtlc
 
@@ -17,7 +15,7 @@ open class ChannelException(open val channelId: ByteVector32, override val messa
 
 // @formatter:off
 data class InvalidChainHash                        (override val channelId: ByteVector32, val local: ByteVector32, val remote: ByteVector32) : ChannelException(channelId, "invalid chainHash (local=$local remote=$remote)")
-data class InvalidFundingAmount                    (override val channelId: ByteVector32, val fundingAmount: Satoshi, val min: Satoshi, val max: Satoshi) : ChannelException(channelId, "invalid funding_satoshis=$fundingAmount (min=$min max=$max)")
+data class InvalidFundingAmount                    (override val channelId: ByteVector32, val fundingAmount: Satoshi) : ChannelException(channelId, "invalid funding_amount=$fundingAmount")
 data class InvalidPushAmount                       (override val channelId: ByteVector32, val pushAmount: MilliSatoshi, val max: MilliSatoshi) : ChannelException(channelId, "invalid pushAmount=$pushAmount (max=$max)")
 data class InvalidMaxAcceptedHtlcs                 (override val channelId: ByteVector32, val maxAcceptedHtlcs: Int, val max: Int) : ChannelException(channelId, "invalid max_accepted_htlcs=$maxAcceptedHtlcs (max=$max)")
 data class InvalidChannelType                      (override val channelId: ByteVector32, val ourChannelType: ChannelType, val theirChannelType: ChannelType) : ChannelException(channelId, "invalid channel_type=${theirChannelType.name}, expected channel_type=${ourChannelType.name}")
@@ -43,30 +41,25 @@ data class InvalidSpliceAlreadyInProgress          (override val channelId: Byte
 data class InvalidSpliceAbortNotAcked              (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: our previous tx_abort has not been acked")
 data class InvalidSpliceChannelNotIdle             (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: channel is not idle")
 data class NoMoreHtlcsClosingInProgress            (override val channelId: ByteVector32) : ChannelException(channelId, "cannot send new htlcs, closing in progress")
-data class NoMoreFeeUpdateClosingInProgress        (override val channelId: ByteVector32) : ChannelException(channelId, "cannot send new update_fee, closing in progress")
 data class ClosingAlreadyInProgress                (override val channelId: ByteVector32) : ChannelException(channelId, "closing already in progress")
 data class CannotCloseWithUnsignedOutgoingHtlcs    (override val channelId: ByteVector32) : ChannelException(channelId, "cannot close when there are unsigned outgoing htlc")
 data class CannotCloseWithUnsignedOutgoingUpdateFee(override val channelId: ByteVector32) : ChannelException(channelId, "cannot close when there is an unsigned fee update")
 data class ChannelUnavailable                      (override val channelId: ByteVector32) : ChannelException(channelId, "channel is unavailable (offline or closing)")
 data class InvalidFinalScript                      (override val channelId: ByteVector32) : ChannelException(channelId, "invalid final script")
-data class FundingTxTimedout                       (override val channelId: ByteVector32) : ChannelException(channelId, "funding tx timed out")
 data class FundingTxSpent                          (override val channelId: ByteVector32, val spendingTxId: ByteVector32) : ChannelException(channelId, "funding tx has been spent by txId=$spendingTxId")
 data class HtlcsTimedOutDownstream                 (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs timed out downstream: ids=${htlcs.map { it.id } .joinToString(",")}")
 data class FulfilledHtlcsWillTimeout               (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs that should be fulfilled are close to timing out: ids=${htlcs.map { it.id }.joinToString()}")
 data class HtlcOverriddenByLocalCommit             (override val channelId: ByteVector32, val htlc: UpdateAddHtlc) : ChannelException(channelId, "htlc ${htlc.id} was overridden by local commit")
 data class FeerateTooSmall                         (override val channelId: ByteVector32, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "remote fee rate is too small: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()}")
 data class FeerateTooDifferent                     (override val channelId: ByteVector32, val localFeeratePerKw: FeeratePerKw, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "local/remote feerates are too different: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()} localFeeratePerKw=${localFeeratePerKw.toLong()}")
-data class InvalidAnnouncementSignatures           (override val channelId: ByteVector32, val annSigs: AnnouncementSignatures) : ChannelException(channelId, "invalid announcement signatures: $annSigs")
 data class InvalidCommitmentSignature              (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid commitment signature: txId=$txId")
 data class InvalidHtlcSignature                    (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid htlc signature: txId=$txId")
 data class InvalidCloseSignature                   (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid close signature: txId=$txId")
-data class InvalidCloseFee                         (override val channelId: ByteVector32, val fee: Satoshi) : ChannelException(channelId, "invalid close fee: fee_satoshis=$fee")
 data class InvalidCloseAmountBelowDust             (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid closing tx: some outputs are below dust: txId=$txId")
 data class CommitSigCountMismatch                  (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "commit sig count mismatch: expected=$expected actual=$actual")
 data class HtlcSigCountMismatch                    (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "htlc sig count mismatch: expected=$expected actual: $actual")
 data class ForcedLocalCommit                       (override val channelId: ByteVector32) : ChannelException(channelId, "forced local commit")
 data class UnexpectedHtlcId                        (override val channelId: ByteVector32, val expected: Long, val actual: Long) : ChannelException(channelId, "unexpected htlc id: expected=$expected actual=$actual")
-data class ExpiryTooSmall                          (override val channelId: ByteVector32, val minimum: CltvExpiry, val actual: CltvExpiry, val blockCount: Long) : ChannelException(channelId, "expiry too small: minimum=$minimum actual=$actual blockCount=$blockCount")
 data class ExpiryTooBig                            (override val channelId: ByteVector32, val maximum: CltvExpiry, val actual: CltvExpiry, val blockCount: Long) : ChannelException(channelId, "expiry too big: maximum=$maximum actual=$actual blockCount=$blockCount")
 data class HtlcValueTooSmall                       (override val channelId: ByteVector32, val minimum: MilliSatoshi, val actual: MilliSatoshi) : ChannelException(channelId, "htlc value too small: minimum=$minimum actual=$actual")
 data class HtlcValueTooHighInFlight                (override val channelId: ByteVector32, val maximum: ULong, val actual: MilliSatoshi) : ChannelException(channelId, "in-flight htlcs hold too much value: maximum=$maximum actual=$actual")

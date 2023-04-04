@@ -130,24 +130,6 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel -- funding too low`() {
-        val (_, bob, open) = TestsHelper.init(aliceFundingAmount = 100.sat, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
-        val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
-        val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 100.sat, bob.staticParams.nodeParams.minFundingSatoshis, bob.staticParams.nodeParams.maxFundingSatoshis).message))
-        assertIs<LNChannel<Aborted>>(bob1)
-    }
-
-    @Test
-    fun `recv OpenChannel -- funding too high`() {
-        val (_, bob, open) = TestsHelper.init(aliceFundingAmount = 30_000_000.sat)
-        val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
-        val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 30_000_000.sat, bob.staticParams.nodeParams.minFundingSatoshis, bob.staticParams.nodeParams.maxFundingSatoshis).message))
-        assertIs<LNChannel<Aborted>>(bob1)
-    }
-
-    @Test
     fun `recv OpenChannel -- invalid max accepted htlcs`() {
         val (_, bob, open) = TestsHelper.init()
         val open1 = open.copy(maxAcceptedHtlcs = Channel.MAX_ACCEPTED_HTLCS + 1)

@@ -648,7 +648,6 @@ object Channel {
     const val ANNOUNCEMENTS_MINCONF = 6
 
     // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
-    val MAX_FUNDING = 10.btc
     const val MAX_ACCEPTED_HTLCS = 483
 
     // We may need to rely on our peer's commit tx in certain cases (backup/restore) so we must ensure their transactions
