@@ -109,7 +109,7 @@ data class Closing(
                             // at any time they can publish a closing tx with any sig we sent them
                             val closingTx = mutualCloseProposed.first { it.tx.txid == watch.tx.txid }.copy(tx = watch.tx)
                             val nextState = this@Closing.copy(mutualClosePublished = mutualClosePublished + listOf(closingTx))
-                            val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Blockchain.PublishTx(watch.tx))
+                            val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Blockchain.PublishTx(closingTx))
                             Pair(nextState, actions)
                         }
                         localCommitPublished?.commitTx == watch.tx || remoteCommitPublished?.commitTx == watch.tx || nextRemoteCommitPublished?.commitTx == watch.tx || futureRemoteCommitPublished?.commitTx == watch.tx -> {
@@ -195,7 +195,7 @@ data class Closing(
                         val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
                             val (newRevokedCommitPublished, penaltyTxs) = claimRevokedHtlcTxOutputs(keyManager, commitments.params, rev, watch.tx, currentOnChainFeerates)
                             penaltyTxs.forEach {
-                                revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it.tx)
+                                revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
                                 revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
                             }
                             newRevokedCommitPublished

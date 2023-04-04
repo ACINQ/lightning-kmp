@@ -83,7 +83,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         // let's make bob publish this closing tx
         val (bob3, bobActions3) = bob2.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "")))
         assertIs<LNChannel<Closing>>(bob3)
-        assertEquals(ChannelAction.Blockchain.PublishTx(mutualCloseTx.tx), bobActions3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first())
+        assertEquals(ChannelAction.Blockchain.PublishTx(mutualCloseTx), bobActions3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().first())
         assertEquals(mutualCloseTx, bob3.state.mutualClosePublished.last())
         bobActions3.has<ChannelAction.Storage.StoreChannelClosing>()
 

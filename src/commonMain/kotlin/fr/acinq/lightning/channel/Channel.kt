@@ -15,7 +15,7 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.transactions.Transactions
-import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
+import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -79,10 +79,10 @@ sealed class ChannelAction {
 
     sealed class Blockchain : ChannelAction() {
         data class SendWatch(val watch: Watch) : Blockchain()
-        data class PublishTx(val tx: Transaction, val txType: Type = Type.Unspecified) : Blockchain() {
+        data class PublishTx(val tx: Transaction, val txType: Type) : Blockchain() {
             // region txType
             enum class Type {
-                Unspecified,
+                FundingTx,
                 CommitTx,
                 HtlcSuccessTx,
                 HtlcTimeoutTx,
@@ -91,31 +91,29 @@ sealed class ChannelAction {
                 ClaimLocalAnchorOutputTx,
                 ClaimRemoteAnchorOutputTx,
                 ClaimLocalDelayedOutputTx,
-                ClaimP2WPKHOutputTx,
                 ClaimRemoteDelayedOutputTx,
                 MainPenaltyTx,
                 HtlcPenaltyTx,
                 ClaimHtlcDelayedOutputPenaltyTx,
                 ClosingTx,
-                SpliceTx,
             }
             constructor(txinfo: Transactions.TransactionWithInputInfo) : this(
                 tx = txinfo.tx,
                 txType = when(txinfo) {
-                    is Transactions.TransactionWithInputInfo.CommitTx -> Type.CommitTx
-                    is Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx -> Type.HtlcSuccessTx
-                    is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx -> Type.HtlcTimeoutTx
-                    is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> Type.ClaimHtlcSuccessTx
-                    is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> Type.ClaimHtlcTimeoutTx
-                    is Transactions.TransactionWithInputInfo.ClaimAnchorOutputTx.ClaimLocalAnchorOutputTx -> Type.ClaimLocalAnchorOutputTx
-                    is Transactions.TransactionWithInputInfo.ClaimAnchorOutputTx.ClaimRemoteAnchorOutputTx -> Type.ClaimRemoteAnchorOutputTx
-                    is Transactions.TransactionWithInputInfo.ClaimLocalDelayedOutputTx -> Type.ClaimLocalDelayedOutputTx
-                    is Transactions.TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx -> Type.ClaimRemoteDelayedOutputTx
-                    is Transactions.TransactionWithInputInfo.MainPenaltyTx -> Type.MainPenaltyTx
-                    is Transactions.TransactionWithInputInfo.HtlcPenaltyTx -> Type.HtlcPenaltyTx
-                    is Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx -> Type.ClaimHtlcDelayedOutputPenaltyTx
-                    is Transactions.TransactionWithInputInfo.ClosingTx -> Type.ClosingTx
-                    is Transactions.TransactionWithInputInfo.SpliceTx -> Type.SpliceTx
+                    is CommitTx -> Type.CommitTx
+                    is HtlcTx.HtlcSuccessTx -> Type.HtlcSuccessTx
+                    is HtlcTx.HtlcTimeoutTx -> Type.HtlcTimeoutTx
+                    is ClaimHtlcTx.ClaimHtlcSuccessTx -> Type.ClaimHtlcSuccessTx
+                    is ClaimHtlcTx.ClaimHtlcTimeoutTx -> Type.ClaimHtlcTimeoutTx
+                    is ClaimAnchorOutputTx.ClaimLocalAnchorOutputTx -> Type.ClaimLocalAnchorOutputTx
+                    is ClaimAnchorOutputTx.ClaimRemoteAnchorOutputTx -> Type.ClaimRemoteAnchorOutputTx
+                    is ClaimLocalDelayedOutputTx -> Type.ClaimLocalDelayedOutputTx
+                    is ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx -> Type.ClaimRemoteDelayedOutputTx
+                    is MainPenaltyTx -> Type.MainPenaltyTx
+                    is HtlcPenaltyTx -> Type.HtlcPenaltyTx
+                    is ClaimHtlcDelayedOutputPenaltyTx -> Type.ClaimHtlcDelayedOutputPenaltyTx
+                    is ClosingTx -> Type.ClosingTx
+                    is SpliceTx -> Type.FundingTx
                 }
             )
             // endregion
@@ -294,7 +292,7 @@ sealed class ChannelState {
     }
 
     internal fun ChannelContext.doPublish(tx: ClosingTx, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
-        ChannelAction.Blockchain.PublishTx(tx.tx),
+        ChannelAction.Blockchain.PublishTx(tx),
         ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx.tx)))
     )
 

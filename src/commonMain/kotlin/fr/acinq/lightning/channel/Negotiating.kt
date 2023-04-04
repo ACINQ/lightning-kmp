@@ -155,7 +155,7 @@ data class Negotiating(
                         )
                         val actions = listOf(
                             ChannelAction.Storage.StoreState(nextState),
-                            ChannelAction.Blockchain.PublishTx(watch.tx),
+                            ChannelAction.Blockchain.PublishTx(closingTx),
                             ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
                         )
                         Pair(nextState, actions)
@@ -188,7 +188,7 @@ data class Negotiating(
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
             closingSigned?.let { add(ChannelAction.Message.Send(it)) }
-            add(ChannelAction.Blockchain.PublishTx(signedClosingTx.tx))
+            add(ChannelAction.Blockchain.PublishTx(signedClosingTx))
             add(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx.tx))))
         }
         return Pair(nextState, actions)
@@ -209,7 +209,7 @@ data class Negotiating(
                 )
                 val actions = listOf(
                     ChannelAction.Storage.StoreState(nextState),
-                    ChannelAction.Blockchain.PublishTx(bestUnpublishedClosingTx.tx),
+                    ChannelAction.Blockchain.PublishTx(bestUnpublishedClosingTx),
                     ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, bestUnpublishedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(bestUnpublishedClosingTx.tx)))
                 )
                 Pair(nextState, actions)

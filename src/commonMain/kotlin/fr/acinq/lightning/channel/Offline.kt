@@ -82,7 +82,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                         )
                         val actions = listOf(
                             ChannelAction.Storage.StoreState(nextState),
-                            ChannelAction.Blockchain.PublishTx(watch.tx),
+                            ChannelAction.Blockchain.PublishTx(closingTx),
                             ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
                         )
                         Pair(nextState, actions)

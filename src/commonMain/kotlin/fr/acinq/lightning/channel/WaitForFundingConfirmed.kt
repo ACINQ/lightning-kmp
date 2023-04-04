@@ -8,7 +8,6 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 
@@ -45,7 +44,7 @@ data class WaitForFundingConfirmed(
                                 logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
                                 val nextState = this@WaitForFundingConfirmed.copy(commitments = res.value.first)
                                 val actions = buildList {
-                                    add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
+                                    add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx, ChannelAction.Blockchain.PublishTx.Type.FundingTx))
                                     add(ChannelAction.Storage.StoreState(nextState))
                                 }
                                 Pair(nextState, actions)
@@ -314,7 +313,7 @@ data class WaitForFundingConfirmed(
         )
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
+            action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
         }

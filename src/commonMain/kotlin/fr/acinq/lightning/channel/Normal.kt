@@ -519,7 +519,7 @@ data class Normal(
                                                 logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid} fundingTxIndex=${commitments.latest.fundingTxIndex}" }
                                                 val nextState = this@Normal.copy(commitments = res.value.first)
                                                 val actions = buildList {
-                                                    add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
+                                                    add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx, ChannelAction.Blockchain.PublishTx.Type.FundingTx))
                                                     add(ChannelAction.Storage.StoreState(nextState))
                                                 }
                                                 Pair(nextState, actions)
@@ -641,7 +641,7 @@ data class Normal(
         val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None)
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
+            action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
             if (staticParams.useZeroConf) {
