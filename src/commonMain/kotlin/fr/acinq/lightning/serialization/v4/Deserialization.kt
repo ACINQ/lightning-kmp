@@ -97,7 +97,6 @@ object Deserialization {
         spliceStatus = when (val discriminator = read()) {
             0x00 -> SpliceStatus.None
             0x01 -> SpliceStatus.WaitingForSigs(
-                replyTo = null,
                 session = readInteractiveTxSigningSession(),
                 origins = readCollection { readChannelOrigin() as ChannelOrigin.PayToOpenOrigin }.toList()
             )

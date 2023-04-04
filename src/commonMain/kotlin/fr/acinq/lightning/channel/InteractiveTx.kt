@@ -803,6 +803,6 @@ sealed class SpliceStatus {
     object None : SpliceStatus()
     data class Requested(val command: Command.Splice.Request, val spliceInit: SpliceInit) : SpliceStatus()
     data class InProgress(val replyTo: CompletableDeferred<Command.Splice.Response>?, val spliceSession: InteractiveTxSession, val localPushAmount: MilliSatoshi, val remotePushAmount: MilliSatoshi, val origins: List<ChannelOrigin.PayToOpenOrigin>) : SpliceStatus()
-    data class WaitingForSigs(val replyTo: CompletableDeferred<Command.Splice.Response>?, val session: InteractiveTxSigningSession, val origins: List<ChannelOrigin.PayToOpenOrigin>) : SpliceStatus()
+    data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<ChannelOrigin.PayToOpenOrigin>) : SpliceStatus()
     object Aborted : SpliceStatus()
 }

@@ -14,7 +14,6 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
-import kotlinx.coroutines.CompletableDeferred
 
 data class Normal(
     override val commitments: Commitments,
@@ -187,7 +186,7 @@ data class Normal(
                                     logger.info { "waiting for tx_sigs" }
                                     Pair(this@Normal.copy(spliceStatus = spliceStatus.copy(session = signingSession1)), listOf())
                                 }
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.replyTo, action, cmd.message.channelData)
+                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(action, cmd.message.channelData)
                             }
                         }
                         // NB: in all other cases we process the commit_sig normally. We could do a full pattern matching on all splice statuses, but it would force us to handle
@@ -470,7 +469,18 @@ data class Normal(
                                         is Either.Right -> {
                                             val (session, commitSig) = signingSession.value
                                             logger.info { "splice funding tx created with txId=${session.fundingTx.txId}, ${session.fundingTx.tx.localInputs.size} local inputs, ${session.fundingTx.tx.remoteInputs.size} remote inputs, ${session.fundingTx.tx.localOutputs.size} local outputs and ${session.fundingTx.tx.remoteOutputs.size} remote outputs" }
-                                            val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(spliceStatus.replyTo, session, spliceStatus.origins))
+                                            // It is a bit early to declare the splice a success, signatures still need to be exchanged but the negotiation is finished. The splice be persisted and survive a restart, after
+                                            // which the replyTo will be voided.
+                                            spliceStatus.replyTo?.complete(
+                                                Command.Splice.Response.Success(
+                                                    channelId = channelId,
+                                                    fundingTxIndex = session.fundingTxIndex,
+                                                    fundingTxId = interactiveTxAction.sharedTx.buildUnsignedTx().txid,
+                                                    capacity = session.fundingParams.fundingAmount,
+                                                    balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal
+                                                )
+                                            )
+                                            val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(session, spliceStatus.origins))
                                             val actions = buildList {
                                                 interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
                                                 add(ChannelAction.Storage.StoreState(nextState))
@@ -500,7 +510,7 @@ data class Normal(
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                                 }
                                 InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@Normal, listOf())
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.replyTo, action, cmd.message.channelData)
+                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(action, cmd.message.channelData)
                             }
                         }
                         else -> when (commitments.latest.localFundingStatus) {
@@ -557,7 +567,6 @@ data class Normal(
                         }
                         is SpliceStatus.WaitingForSigs -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
-                            spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
                             Pair(
                                 this@Normal.copy(spliceStatus = SpliceStatus.None),
                                 listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
@@ -615,7 +624,6 @@ data class Normal(
                 when (spliceStatus) {
                     is SpliceStatus.Requested -> spliceStatus.command.replyTo
                     is SpliceStatus.InProgress -> spliceStatus.replyTo
-                    is SpliceStatus.WaitingForSigs -> spliceStatus.replyTo
                     else -> null
                 }?.let { replyTo ->
                     logger.warning { "splice attempt failed: disconnected" }
@@ -629,11 +637,8 @@ data class Normal(
         }
     }
 
-    private fun ChannelContext.sendSpliceTxSigs(replyTo: CompletableDeferred<Command.Splice.Response>?, action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<Normal, List<ChannelAction>> {
+    private fun ChannelContext.sendSpliceTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<Normal, List<ChannelAction>> {
         logger.info { "sending tx_sigs" }
-        action.fundingTx.signedTx?.let {
-            replyTo?.complete(Command.Splice.Response.Success(channelId, action.commitment.fundingTxIndex, action.commitment.fundingTxId, action.commitment.fundingAmount, action.commitment.localCommit.spec.toLocal))
-        }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)

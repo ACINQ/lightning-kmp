@@ -44,12 +44,12 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(actionsAlice4.findOutgoingMessage<TxAddOutput>()))
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(actionsBob4.findOutgoingMessage<TxComplete>()))
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(actionsAlice5.findOutgoingMessage<TxComplete>()))
+        runBlocking { assertIs<Command.Splice.Response>(cmd.replyTo.await()) }
         val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(actionsAlice5.findOutgoingMessage<CommitSig>()))
         val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(actionsBob5.findOutgoingMessage<CommitSig>()))
         val (alice7, actionsAlice7) = alice6.process(ChannelCommand.MessageReceived(actionsBob6.findOutgoingMessage<TxSignatures>()))
         val (bob7, _) = bob6.process(ChannelCommand.MessageReceived(actionsAlice7.findOutgoingMessage<TxSignatures>()))
 
-        runBlocking { assertIs<Command.Splice.Response>(cmd.replyTo.await()) }
         assertEquals(alice.commitments.active.size + 1, alice7.commitments.active.size)
         assertEquals(bob.commitments.active.size + 1, bob7.commitments.active.size)
         assertIs<LNChannel<Normal>>(alice7)
