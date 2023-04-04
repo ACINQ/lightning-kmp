@@ -340,10 +340,12 @@ sealed class PersistedChannelState : ChannelState() {
         is ChannelStateWithCommitments -> {
             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
             val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommitIndex)
-            val tlvs: TlvStream<ChannelReestablishTlv> = when (state) {
-                is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
-                else -> TlvStream.empty()
+            val unsignedFundingTxId = when (state) {
+                is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()
+                is Normal -> state.getUnsignedFundingTxId() // a splice was in progress, we tell our peer that we are remembering it and are expecting signatures
+                else -> null
             }
+            val tlvs: TlvStream<ChannelReestablishTlv> = unsignedFundingTxId?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
             ChannelReestablish(
                 channelId = channelId,
                 nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,

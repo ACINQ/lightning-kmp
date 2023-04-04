@@ -148,17 +148,21 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                         }
                         else -> {
                             // normal case, our data is up-to-date
+
+                            var state1 = state
                             val actions = ArrayList<ChannelAction>()
+
+                            // re-send channel_ready or splice_locked
                             if (state.commitments.latest.fundingTxIndex == 0L && cmd.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommitIndex == 0L) {
-                                // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
+                                // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit channel_ready, otherwise it MUST NOT
                                 logger.debug { "re-sending channel_ready" }
                                 val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
                                 val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                                 actions.add(ChannelAction.Message.Send(channelReady))
                             } else {
-                                // NB: there is a key difference between channel_ready and splice_confirmed:
+                                // NB: there is a key difference between channel_ready and splice_locked:
                                 // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
-                                // - splice_confirmed: the commitment index can be updated as long as it is compatible with all splices, so
+                                // - splice_locked: the commitment index can be updated as long as it is compatible with all splices, so
                                 //   we must keep sending our most recent splice_confirmed at each reconnection
                                 state.commitments.active
                                     .filter { it.fundingTxIndex > 0L } // only consider splice txs
@@ -168,6 +172,34 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                         val spliceLocked = SpliceLocked(channelId, it.fundingTxId.reversed())
                                         actions.add(ChannelAction.Message.Send(spliceLocked))
                                     }
+                            }
+
+                            // resume splice signing session if any
+                            if (state.spliceStatus is SpliceStatus.WaitingForSigs && state.spliceStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
+                                // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
+                                logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
+                                val commitSig = state.spliceStatus.session.remoteCommit.sign(keyManager, state.commitments.params, state.spliceStatus.session.commitInput)
+                                actions.add(ChannelAction.Message.Send(commitSig))
+                            } else if (state.commitments.latest.fundingTxId == cmd.message.nextFundingTxId) {
+                                if (state.commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx) {
+                                    if (state.commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
+                                        // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
+                                        logger.info { "re-sending commit_sig and tx_signatures for fundingTxIndex=${state.commitments.latest.fundingTxIndex} fundingTxId=${state.commitments.latest.fundingTxId}" }
+                                        val commitSig = state.commitments.latest.remoteCommit.sign(keyManager, state.commitments.params, state.commitments.latest.commitInput)
+                                        actions.add(ChannelAction.Message.Send(commitSig))
+                                    }
+                                    logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                    actions.add(ChannelAction.Message.Send(state.commitments.latest.localFundingStatus.sharedTx.localSigs))
+                                } else {
+                                    // The funding tx is confirmed, and they have not received our tx_signatures, but they must have received our commit_sig, otherwise they
+                                    // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
+                                    // recompute our tx_signatures, but instead we do nothing: they will shortly be notified that the funding tx has confirmed.
+                                }
+                            } else {
+                                // The fundingTxId must be for a splice attempt that we didn't store (we got disconnected before receiving their tx_complete)
+                                logger.info { "aborting obsolete splice attempt for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                state1 = state.copy(spliceStatus = SpliceStatus.Aborted)
+                                actions.add(ChannelAction.Message.Send(TxAbort(state.channelId, RbfAttemptAborted(state.channelId).message)))
                             }
 
                             try {
@@ -194,10 +226,10 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                 }
 
                                 logger.info { "switching to ${state::class.simpleName}" }
-                                Pair(state.copy(commitments = commitments1), actions)
+                                Pair(state1.copy(commitments = commitments1), actions)
                             } catch (e: RevocationSyncError) {
                                 val error = Error(channelId, e.message)
-                                state.run { spendLocalCurrent() }.run { copy(second = second + ChannelAction.Message.Send(error)) }
+                                state1.run { spendLocalCurrent() }.run { copy(second = second + ChannelAction.Message.Send(error)) }
                             }
                         }
                     }

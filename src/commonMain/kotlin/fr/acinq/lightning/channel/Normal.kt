@@ -1,5 +1,6 @@
 package fr.acinq.lightning.channel
 
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
@@ -626,18 +627,21 @@ data class Normal(
                         } ?: logger.warning { "cannot find payment for $htlc" }
                     }
                 }
-                // if we are splicing, we need to cancel it
-                when (spliceStatus) {
-                    is SpliceStatus.Requested -> spliceStatus.command.replyTo
-                    is SpliceStatus.InProgress -> spliceStatus.replyTo
-                    else -> null
-                }?.let { replyTo ->
-                    logger.warning { "splice attempt failed: disconnected" }
-                    replyTo.complete(Command.Splice.Response.Failure.Disconnected)
+                // if we are splicing and are earlyè in the process, then we cancel it
+                val spliceStatus1 = when (spliceStatus) {
+                    is SpliceStatus.Requested -> {
+                        spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.Disconnected)
+                        SpliceStatus.None
+                    }
+                    is SpliceStatus.InProgress -> {
+                        spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.Disconnected)
+                        SpliceStatus.None
+                    }
+                    else -> spliceStatus
                 }
                 // reset the commit_sig batch
                 sigStash = emptyList()
-                Pair(Offline(this@Normal.copy(spliceStatus = SpliceStatus.None)), failedHtlcs)
+                Pair(Offline(this@Normal.copy(spliceStatus = spliceStatus1)), failedHtlcs)
             }
             else -> unhandled(cmd)
         }
@@ -662,6 +666,12 @@ data class Normal(
             }
         }
         return Pair(nextState, actions)
+    }
+
+    /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
+    fun getUnsignedFundingTxId(): ByteVector32? = when (spliceStatus) {
+        is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.txId
+        else -> null
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
