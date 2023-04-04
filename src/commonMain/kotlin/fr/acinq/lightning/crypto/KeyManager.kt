@@ -17,6 +17,8 @@ interface KeyManager {
 
     fun bip84Address(account: Long, addressIndex: Long): String
 
+    fun bip84Xpub(account: Long): String
+
     fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray>
 
     fun fundingPublicKey(keyPath: KeyPath): ExtendedPublicKey

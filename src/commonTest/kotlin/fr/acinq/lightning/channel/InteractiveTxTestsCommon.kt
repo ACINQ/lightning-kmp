@@ -9,6 +9,7 @@ import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Scripts
@@ -1103,7 +1104,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         private fun createWallet(keyManager: KeyManager, amounts: List<Satoshi>): WalletState {
             val privateKey = keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
-            val address = keyManager.bip84Address(account = 1, addressIndex = 0)
+            val address = keyManager.bip84Address(account = Peer.swapInWalletAccount, addressIndex = 0L)
             val utxos = amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0))
                 val txOut = listOf(TxOut(amount, Script.pay2wpkh(privateKey.publicKey())), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))

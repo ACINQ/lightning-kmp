@@ -9,6 +9,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.Databases
 import fr.acinq.lightning.db.IncomingPayment
@@ -134,6 +135,11 @@ class Peer(
     companion object {
         private const val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
+
+        /** Account number for the final wallet derivation path. */
+        val finalWalletAccount = 0L
+        /** Account number for the swap-in wallet derivation path. */
+        val swapInWalletAccount = 1L
     }
 
     var socketBuilder: TcpSocket.Builder? = socketBuilder
@@ -208,10 +214,10 @@ class Peer(
     }
 
     val finalWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "final")
-    val finalAddress: String = nodeParams.keyManager.bip84Address(account = 0L, addressIndex = 0L).also { finalWallet.addAddress(it) }
+    val finalAddress: String = nodeParams.keyManager.bip84Address(account = Peer.finalWalletAccount, addressIndex = 0L).also { finalWallet.addAddress(it) }
 
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
-    val swapInAddress: String = nodeParams.keyManager.bip84Address(account = 1L, addressIndex = 0L).also { swapInWallet.addAddress(it) }
+    val swapInAddress: String = nodeParams.keyManager.bip84Address(account = Peer.swapInWalletAccount, addressIndex = 0L).also { swapInWallet.addAddress(it) }
 
     init {
         launch {
