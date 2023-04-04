@@ -835,7 +835,7 @@ data class Commitments(
                 inactive1.forEach { logger.info { "deactivating commitment fundingTxindex=${it.fundingTxIndex} fundingTxid=${it.fundingTxId}" } }
                 copy(
                     active = active - inactive1.toSet(),
-                    inactive = inactive1 - inactive.toSet()
+                    inactive = inactive1 + inactive.toSet()
                 )
             }
             else -> this@Commitments
@@ -852,6 +852,8 @@ data class Commitments(
             null -> this@Commitments
             else -> {
                 // We can prune all other commitments with the same or lower funding index.
+                // NB: we cannot prune active commitments, even if we know that they have been double-spent, because our peer may not yet
+                // be aware of it, and will expect us to send commit_sig.
                 val pruned = inactive.filter { it.fundingTxId != lastConfirmed.fundingTxId && it.fundingTxIndex <= lastConfirmed.fundingTxIndex }
                 pruned.forEach { logger.info { "pruning commitment fundingTxindex=${it.fundingTxIndex} fundingTxId=${it.fundingTxId}" } }
                 copy(inactive = inactive - pruned.toSet())
@@ -865,7 +867,7 @@ data class Commitments(
      * @param spendingTx A transaction that may spend a current or former funding tx
      */
     fun resolveCommitment(spendingTx: Transaction): Commitment? {
-        return all.find { commitment -> spendingTx.txIn.map { it.outPoint.txid }.contains(commitment.fundingTxId) }
+        return all.find { commitment -> spendingTx.txIn.map { it.outPoint }.contains(commitment.commitInput.outPoint) }
     }
 
     companion object {
