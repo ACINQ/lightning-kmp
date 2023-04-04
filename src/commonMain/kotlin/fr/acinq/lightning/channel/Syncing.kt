@@ -78,22 +78,15 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                 val actions = listOf(ChannelAction.Message.Send(commitSig))
                                 Pair(state, actions)
                             } else if (state.latestFundingTx.txId == cmd.message.nextFundingTxId) {
-                                val actions = when (state.latestFundingTx.sharedTx) {
-                                    is PartiallySignedSharedTransaction -> {
-                                        // We retransmit commit_sig and tx_signatures (we sent them before, but they didn't receive it).
-                                        logger.info { "re-sending commit_sig and tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                val actions = buildList {
+                                    if (state.latestFundingTx.sharedTx is PartiallySignedSharedTransaction) {
+                                        // We have not received their tx_signatures: we retransmit our commit_sig because we don't know if they received it.
+                                        logger.info { "re-sending commit_sig for fundingTxId=${cmd.message.nextFundingTxId}" }
                                         val commitSig = state.commitments.latest.remoteCommit.sign(keyManager, state.commitments.params, state.commitments.latest.commitInput)
-                                        listOf(
-                                            ChannelAction.Message.Send(commitSig),
-                                            ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs)
-                                        )
+                                        add(ChannelAction.Message.Send(commitSig))
                                     }
-                                    is FullySignedSharedTransaction -> {
-                                        // We've already received their tx_signatures, which means they've received and stored our commit_sig,
-                                        // we only need to retransmit our tx_signatures.
-                                        logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
-                                        listOf(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs))
-                                    }
+                                    logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                    add(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs))
                                 }
                                 Pair(state, actions)
                             } else {
