@@ -162,7 +162,7 @@ sealed class ChannelAction {
             data class RemoteFail(val fail: UpdateFailHtlc) : Fail()
             data class RemoteFailMalformed(val fail: UpdateFailMalformedHtlc) : Fail()
             data class OnChainFail(val cause: ChannelException) : Fail()
-            data class Disconnected(val channelUpdate: ChannelUpdate) : Fail()
+            object Disconnected : Fail()
         }
     }
 

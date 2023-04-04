@@ -23,7 +23,7 @@ object Announcements {
      */
     fun isNode1(localNodeId: PublicKey, remoteNodeId: PublicKey) = LexicographicalOrdering.isLessThan(localNodeId.value, remoteNodeId.value)
 
-    fun makeChannelFlags(isNode1: Boolean, enable: Boolean): Byte {
+    private fun makeChannelFlags(isNode1: Boolean, enable: Boolean): Byte {
         var result: Byte = 0
         if (!isNode1) result = result or 1
         if (!enable) result = result or 2
@@ -48,42 +48,6 @@ object Announcements {
         val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestampSeconds, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimum, feeBase, feeProportionalMillionths, htlcMaximum, ByteVector.empty)
         val sig = Crypto.sign(witness, nodePrivateKey)
         return ChannelUpdate(sig, chainHash, shortChannelId, timestampSeconds, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimum, feeBase, feeProportionalMillionths, htlcMaximum)
-    }
-
-    fun disableChannel(channelUpdate: ChannelUpdate, nodePrivateKey: PrivateKey, remoteNodeId: PublicKey): ChannelUpdate {
-        return when (channelUpdate.isEnabled()) {
-            true -> makeChannelUpdate(
-                channelUpdate.chainHash,
-                nodePrivateKey,
-                remoteNodeId,
-                channelUpdate.shortChannelId,
-                channelUpdate.cltvExpiryDelta,
-                channelUpdate.htlcMinimumMsat,
-                channelUpdate.feeBaseMsat,
-                channelUpdate.feeProportionalMillionths,
-                channelUpdate.htlcMaximumMsat!!,
-                enable = false
-            )
-            false -> channelUpdate // channel is already disabled
-        }
-    }
-
-    fun enableChannel(channelUpdate: ChannelUpdate, nodePrivateKey: PrivateKey, remoteNodeId: PublicKey): ChannelUpdate {
-        return when (channelUpdate.isEnabled()) {
-            true -> channelUpdate // channel is already enabled
-            false -> makeChannelUpdate(
-                channelUpdate.chainHash,
-                nodePrivateKey,
-                remoteNodeId,
-                channelUpdate.shortChannelId,
-                channelUpdate.cltvExpiryDelta,
-                channelUpdate.htlcMinimumMsat,
-                channelUpdate.feeBaseMsat,
-                channelUpdate.feeProportionalMillionths,
-                channelUpdate.htlcMaximumMsat!!,
-                enable = true
-            )
-        }
     }
 
     private fun channelUpdateWitnessEncode(
