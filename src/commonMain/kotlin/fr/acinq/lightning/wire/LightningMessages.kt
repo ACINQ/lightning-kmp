@@ -932,14 +932,15 @@ data class SpliceAck(
 
 data class SpliceLocked(
     override val channelId: ByteVector32,
-    val fundingTxid: ByteVector32,
+    val fundingTxHash: ByteVector32,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId {
     override val type: Long get() = SpliceLocked.type
+    val fundingTxId = fundingTxHash.reversed()
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
-        LightningCodecs.writeBytes(fundingTxid, out)
+        LightningCodecs.writeBytes(fundingTxHash, out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
@@ -950,7 +951,7 @@ data class SpliceLocked(
 
         override fun read(input: Input): SpliceLocked = SpliceLocked(
             channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
-            fundingTxid = ByteVector32(LightningCodecs.bytes(input, 32)),
+            fundingTxHash = ByteVector32(LightningCodecs.bytes(input, 32)),
             tlvStream = TlvStreamSerializer(false, readers).read(input)
         )
     }

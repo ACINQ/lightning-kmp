@@ -580,7 +580,7 @@ data class Normal(
                         }
                     }
                     is SpliceLocked -> {
-                        when (val res = commitments.run { updateRemoteFundingStatus(cmd.message.fundingTxid) }) {
+                        when (val res = commitments.run { updateRemoteFundingStatus(cmd.message.fundingTxId) }) {
                             is Either.Left -> Pair(this@Normal, emptyList())
                             is Either.Right -> {
                                 val (commitments1, _) = res.value
@@ -646,7 +646,7 @@ data class Normal(
             add(ChannelAction.Message.Send(action.localSigs))
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }
-                val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId)
+                val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId.reversed())
                 add(ChannelAction.Message.Send(spliceLocked))
             }
         }
