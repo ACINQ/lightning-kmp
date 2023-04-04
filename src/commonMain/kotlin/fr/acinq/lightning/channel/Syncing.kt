@@ -78,13 +78,16 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                 val actions = listOf(ChannelAction.Message.Send(commitSig))
                                 Pair(state, actions)
                             } else if (state.latestFundingTx.txId == cmd.message.nextFundingTxId) {
-                                // We retransmit commit_sig and tx_signatures (we sent them before, but they didn't receive it).
-                                logger.info { "re-sending commit_sig and tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
-                                val commitSig = state.commitments.latest.remoteCommit.sign(keyManager, state.commitments.params, state.commitments.latest.commitInput)
-                                val actions = listOf(
-                                    ChannelAction.Message.Send(commitSig),
-                                    ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs)
-                                )
+                                val actions = buildList {
+                                    if (state.latestFundingTx.sharedTx is PartiallySignedSharedTransaction) {
+                                        // We have not received their tx_signatures: we retransmit our commit_sig because we don't know if they received it.
+                                        logger.info { "re-sending commit_sig for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                        val commitSig = state.commitments.latest.remoteCommit.sign(keyManager, state.commitments.params, state.commitments.latest.commitInput)
+                                        add(ChannelAction.Message.Send(commitSig))
+                                    }
+                                    logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                    add(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs))
+                                }
                                 Pair(state, actions)
                             } else {
                                 // The fundingTxId must be for an RBF attempt that we didn't store (we got disconnected before receiving their tx_complete).

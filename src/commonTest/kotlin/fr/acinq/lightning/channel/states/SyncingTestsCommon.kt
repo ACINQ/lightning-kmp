@@ -139,6 +139,36 @@ class SyncingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `reestablish unsigned channel -- tx_signatures received`() {
+        val (alice, commitSigAlice, bob, commitSigBob) = WaitForFundingSignedTestsCommon.init()
+        val (alice1, _) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
+        assertIs<LNChannel<WaitForFundingSigned>>(alice1)
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
+        assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
+        val fundingTxId = bob1.state.latestFundingTx.txId
+        val txSigsBob = actionsBob1.hasOutgoingMessage<TxSignatures>()
+        val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(txSigsBob))
+        assertIs<LNChannel<WaitForFundingConfirmed>>(alice2)
+        val (alice3, bob2, channelReestablishAlice) = disconnectWithBackup(alice2, bob1)
+        assertNull(channelReestablishAlice.nextFundingTxId)
+
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        assertEquals(actionsBob3.size, 1)
+        val channelReestablishBob = actionsBob3.hasOutgoingMessage<ChannelReestablish>()
+        assertEquals(channelReestablishBob.nextFundingTxId, fundingTxId)
+
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<LNChannel<WaitForFundingConfirmed>>(alice4)
+        assertEquals(actionsAlice4.size, 1)
+        val txSigsAlice = actionsAlice4.hasOutgoingMessage<TxSignatures>()
+
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(txSigsAlice))
+        assertIs<WaitForFundingConfirmed>(bob4.state)
+        actionsBob4.has<ChannelAction.Storage.StoreState>()
+        assertEquals(actionsBob4.find<ChannelAction.Blockchain.PublishTx>().tx.txid, fundingTxId)
+    }
+
+    @Test
     fun `reestablish unsigned rbf attempt -- commit_sig not received`() {
         val (alice, _, bob, _, rbfFundingTxId) = createUnsignedRbf()
         val (alice1, bob1, channelReestablishAlice) = disconnectWithBackup(alice, bob)
