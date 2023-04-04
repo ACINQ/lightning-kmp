@@ -884,7 +884,7 @@ data class SpliceInit(
 
         override fun read(input: Input): SpliceInit = SpliceInit(
             channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
-            fundingContribution = Satoshi(LightningCodecs.u64(input)),
+            fundingContribution = Satoshi(LightningCodecs.int64(input)),
             lockTime = LightningCodecs.u32(input).toLong(),
             feerate = FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
             tlvStream = TlvStreamSerializer(false, readers).read(input)
@@ -924,7 +924,7 @@ data class SpliceAck(
 
         override fun read(input: Input): SpliceAck = SpliceAck(
             channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
-            fundingContribution = Satoshi(LightningCodecs.u64(input)),
+            fundingContribution = Satoshi(LightningCodecs.int64(input)),
             tlvStream = TlvStreamSerializer(false, readers).read(input)
         )
     }
