@@ -372,7 +372,7 @@ data class Normal(
                                 Pair(nextState, listOf(ChannelAction.Message.Send(SpliceAck(channelId, fundingParams.localContribution))))
                             } else {
                                 logger.info { "rejecting splice attempt: channel is not idle" }
-                                Pair(this@Normal, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceChannelNotIdle(channelId).message))))
+                                Pair(this@Normal, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceChannelNotIdle(channelId).message))))
                             }
                         is SpliceStatus.Aborted -> {
                             logger.info { "rejecting splice attempt: our previous tx_abort was not acked" }
@@ -410,7 +410,7 @@ data class Normal(
                                 is Either.Left -> {
                                     logger.error { "could not create splice contributions: ${fundingContributions.value}" }
                                     spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.FundingFailure(fundingContributions.value))
-                                    Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                                 }
                                 is Either.Right -> {
                                     // The splice initiator always sends the first interactive-tx message.
@@ -436,7 +436,7 @@ data class Normal(
                                         else -> {
                                             logger.error { "could not start interactive-tx session: $interactiveTxAction" }
                                             spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.CannotStartSession)
-                                            Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                                         }
                                     }
                                 }
