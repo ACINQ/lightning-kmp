@@ -357,7 +357,7 @@ data class Normal(
                                     sharedInput = SharedFundingInput.Multisig2of2(keyManager, commitments.params, parentCommitment),
                                     fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
                                     localOutputs = emptyList(),
-                                    lockTime = currentBlockHeight.toLong(),
+                                    lockTime = cmd.message.lockTime,
                                     dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
                                     targetFeerate = cmd.message.feerate
                                 )
@@ -396,7 +396,7 @@ data class Normal(
                                 sharedInput = sharedInput,
                                 fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
                                 localOutputs = spliceStatus.command.spliceOutputs,
-                                lockTime = currentBlockHeight.toLong(),
+                                lockTime = spliceStatus.spliceInit.lockTime,
                                 dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
                                 targetFeerate = spliceStatus.spliceInit.feerate
                             )
