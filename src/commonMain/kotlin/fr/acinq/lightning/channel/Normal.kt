@@ -34,7 +34,7 @@ data class Normal(
         return when (cmd) {
             is ChannelCommand.ExecuteCommand -> when {
                 cmd.command is Command.ForbiddenDuringSplice && spliceStatus !is SpliceStatus.None -> {
-                    val error = ForbiddenDuringSplice(channelId, cmd.command)
+                    val error = ForbiddenDuringSplice(channelId, cmd.command::class.simpleName)
                     return handleCommandError(cmd.command, error, channelUpdate)
                 }
                 else -> when (cmd.command) {
@@ -144,8 +144,14 @@ data class Normal(
                     }
                 }
             }
-            is ChannelCommand.MessageReceived -> {
-                when (cmd.message) {
+            is ChannelCommand.MessageReceived -> when {
+                cmd.message is ForbiddenMessageDuringSplice && spliceStatus !is SpliceStatus.None && spliceStatus !is SpliceStatus.Requested -> {
+                    // In case of a race between our splice_init and a forbidden message from our peer, we accept their message, because
+                    // we know they are going to reject our splice attempt
+                    val error = ForbiddenDuringSplice(channelId, cmd.message::class.simpleName)
+                    handleLocalError(cmd, error)
+                }
+                else -> when (cmd.message) {
                     is UpdateAddHtlc -> when (val result = commitments.receiveAdd(cmd.message)) {
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> {

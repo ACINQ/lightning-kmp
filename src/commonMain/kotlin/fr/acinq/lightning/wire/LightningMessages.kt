@@ -118,7 +118,7 @@ interface HasTimestamp : LightningMessage {
     val timestampSeconds: Long
 }
 
-interface UpdateMessage : LightningMessage
+interface UpdateMessage : LightningMessage, ForbiddenMessageDuringSplice
 
 interface HtlcSettlementMessage : UpdateMessage {
     val id: Long
@@ -142,6 +142,8 @@ interface HasSerialId : LightningMessage {
 interface HasChainHash : LightningMessage {
     val chainHash: ByteVector32
 }
+
+interface ForbiddenMessageDuringSplice : LightningMessage
 
 data class EncryptedChannelData(val data: ByteVector) {
     /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
@@ -964,7 +966,7 @@ data class UpdateAddHtlc(
     val paymentHash: ByteVector32,
     val cltvExpiry: CltvExpiry,
     val onionRoutingPacket: OnionRoutingPacket
-) : HtlcMessage, UpdateMessage, HasChannelId {
+) : HtlcMessage, UpdateMessage, HasChannelId, ForbiddenMessageDuringSplice {
     override val type: Long get() = UpdateAddHtlc.type
 
     override fun write(out: Output) {
@@ -1398,7 +1400,7 @@ data class Shutdown(
     override val channelId: ByteVector32,
     val scriptPubKey: ByteVector,
     val tlvStream: TlvStream<ShutdownTlv> = TlvStream.empty()
-) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData, ForbiddenMessageDuringSplice {
     override val type: Long get() = Shutdown.type
 
     override val channelData: EncryptedChannelData get() = tlvStream.get<ShutdownTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty

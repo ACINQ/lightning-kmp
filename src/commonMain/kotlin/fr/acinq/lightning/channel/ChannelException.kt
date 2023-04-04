@@ -88,5 +88,5 @@ data class RevocationSyncError                     (override val channelId: Byte
 data class InvalidFailureCode                      (override val channelId: ByteVector32) : ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 data class PleasePublishYourCommitment             (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")
 data class CommandUnavailableInThisState           (override val channelId: ByteVector32, val state: String) : ChannelException(channelId, "cannot execute command in state=$state")
-data class ForbiddenDuringSplice                   (override val channelId: ByteVector32, val command: Command.ForbiddenDuringSplice) : ChannelException(channelId, "cannot process ${command::class.simpleName} while splicing")
+data class ForbiddenDuringSplice                   (override val channelId: ByteVector32, val command: String?) : ChannelException(channelId, "cannot process $command while splicing")
 // @formatter:on
