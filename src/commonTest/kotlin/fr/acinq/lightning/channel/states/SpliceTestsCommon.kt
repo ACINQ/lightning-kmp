@@ -62,7 +62,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(commitment.remoteCommit.txid, remoteCommitTx.txid)
         assertEquals(0, commitment.remoteCommit.spec.htlcs.size, "this helper only supports remote-closing without htlcs")
 
-        assertIs<LNChannel<Closing>>(channel1)
+        assertIs<Closing>(channel1.state)
         assertEquals(1, actions1.findPublishTxs().size)
         val claimRemoteDelayedOutputTx = actions1.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimRemoteDelayedOutputTx)
         assertEquals(2, actions1.findWatches<WatchConfirmed>().size)
@@ -72,12 +72,12 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         // remote commit confirmed
         val (channel2, actions2) = channel1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(channel1.channelId, watchConfirmedCommit.event, channel1.currentBlockHeight, 42, remoteCommitTx)))
-        assertIs<LNChannel<Closing>>(channel2)
+        assertIs<Closing>(channel2.state)
         actions2.has<ChannelAction.Storage.StoreState>()
 
         // claim main delayed confirmed
         val (channel3, actionsAlice4) = channel2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(channel1.channelId, watchConfirmedClaimRemote.event, channel2.currentBlockHeight, 43, claimRemoteDelayedOutputTx)))
-        assertIs<LNChannel<Closed>>(channel3)
+        assertIs<Closed>(channel3.state)
         actionsAlice4.has<ChannelAction.Storage.StoreState>()
     }
 
@@ -99,6 +99,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val bobCommitTx1 = bob1.commitments.latest.localCommit.publishableTxs.commitTx.tx
         // remote commit detected
         val (alice2, actions2) = alice1.process(ChannelCommand.WatchReceived(WatchEventSpent(alice1.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx1)))
+        assertIs<Closing>(alice2.state)
         assertIs<LNChannel<Closing>>(alice2)
         remoteClose(alice2, actions2, alice1.commitments.active.first(), bobCommitTx1)
     }
@@ -124,7 +125,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         // alice detects the commit for the older commitment
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventSpent(alice2.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx1)))
         // alice attempts a local force close and in parallel puts a watch on the remote commit
-        assertIs<LNChannel<Closing>>(alice3)
+        assertIs<Closing>(alice3.state)
         assertEquals(2, actionsAlice3.findPublishTxs().size)
         val localCommit = actionsAlice3.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.CommitTx).also { assertEquals(alice2.commitments.latest.localCommit.publishableTxs.commitTx.tx.txid, it.txid) }
         val claimMainDelayed = actionsAlice3.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimLocalDelayedOutputTx)
@@ -135,6 +136,7 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         // the commit confirms
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice3.channelId, watchConfirmedRemoteCommit.event, alice3.currentBlockHeight, 43, bobCommitTx1)))
+        assertIs<Closing>(alice4.state)
         assertIs<LNChannel<Closing>>(alice4)
         // we clean up the commitments
         assertEquals(3, alice3.commitments.active.size)
