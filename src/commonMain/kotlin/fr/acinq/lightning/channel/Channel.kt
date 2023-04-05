@@ -97,9 +97,10 @@ sealed class ChannelAction {
                 ClaimHtlcDelayedOutputPenaltyTx,
                 ClosingTx,
             }
+
             constructor(txinfo: Transactions.TransactionWithInputInfo) : this(
                 tx = txinfo.tx,
-                txType = when(txinfo) {
+                txType = when (txinfo) {
                     is CommitTx -> Type.CommitTx
                     is HtlcTx.HtlcSuccessTx -> Type.HtlcSuccessTx
                     is HtlcTx.HtlcTimeoutTx -> Type.HtlcTimeoutTx
@@ -408,14 +409,23 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         w.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> spendLocalCurrent()
         w.tx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(w.tx, commitments.latest)
         w.tx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(w.tx, commitments.latest)
-        w.tx.txIn.any { it.outPoint.txid == commitments.latest.fundingTxId } -> handleRemoteSpentOther(w.tx)
+        w.tx.txIn.any { it.outPoint == commitments.latest.commitInput.outPoint } -> handleRemoteSpentOther(w.tx)
         else -> when (val commitment = commitments.resolveCommitment(w.tx)) {
             is Commitment -> {
-                logger.warning { "a commit tx for an older commitment has been published txid=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
-                spendLocalCurrent().run { copy(second = second + ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, w.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED))) }
+                logger.warning { "a commit tx for an older commitment has been published fundingTxId=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
+                // We try spending our latest commitment but we also watch their commitment: if it confirms, we will react by spending our corresponding outputs.
+                val watch = ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, w.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED))
+                spendLocalCurrent().run { copy(second = second + watch) }
             }
             else -> {
                 logger.warning { "unrecognized tx=${w.tx.txid}" }
+                // This case can happen in the following (harmless) scenario:
+                //  - we create and publish a splice transaction, then we go offline
+                //  - the transaction confirms while we are offline
+                //  - we restart and set a watch-confirmed for the splice transaction and a watch-spent for the previous funding transaction
+                //  - the watch-confirmed triggers first and we prune the previous funding transaction
+                //  - the watch-spent for the previous funding transaction triggers because of the splice transaction
+                //  - but we've already pruned the corresponding commitment: we should simply ignore the event
                 Pair(this@ChannelStateWithCommitments, listOf())
             }
         }
@@ -630,10 +640,6 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         } else {
             null
         }
-    }
-
-    companion object {
-        // this companion object is used by static extended function `fun ChannelStateWithCommitments.Companion.from` in Encryption.kt
     }
 }
 

@@ -440,8 +440,7 @@ class Peer(
                 val spliceCommand = Command.Splice.Request(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
-                    spliceOut = Command.Splice.Request.
-                    SpliceOut(amount, scriptPubKey),
+                    spliceOut = Command.Splice.Request.SpliceOut(amount, scriptPubKey),
                     feerate = feeratePerKw
                 )
                 send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))

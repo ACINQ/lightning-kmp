@@ -124,13 +124,13 @@ data class Closing(
                             // counterparty may attempt to spend its next commit tx at any time
                             handleRemoteSpentNext(watch.tx, commitments.latest)
                         }
-                        watch.tx.txIn.map { it.outPoint.txid }.contains(commitments.latest.fundingTxId) -> {
+                        watch.tx.txIn.map { it.outPoint }.contains(commitments.latest.commitInput.outPoint) -> {
                             // counterparty may attempt to spend a revoked commit tx at any time
                             handleRemoteSpentOther(watch.tx)
                         }
                         else -> when (val commitment = commitments.resolveCommitment(watch.tx)) {
                             is Commitment -> {
-                                logger.warning { "a commit tx for an older commitment has been published txid=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
+                                logger.warning { "a commit tx for an older commitment has been published fundingTxId=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
                                 Pair(this@Closing, listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED))))
                             }
                             else -> {
@@ -141,14 +141,15 @@ data class Closing(
                     }
                     watch is WatchEventConfirmed && watch.event is BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED -> when (val commitment = commitments.resolveCommitment(watch.tx)) {
                         is Commitment -> {
-                            logger.warning { "a commit tx for fundingTxIndex=${commitment.fundingTxIndex} fundingTxid=${commitment.fundingTxIndex} has been confirmed" }
+                            logger.warning { "a commit tx for fundingTxIndex=${commitment.fundingTxIndex} fundingTxId=${commitment.fundingTxId} has been confirmed" }
                             val commitments1 = commitments.copy(
                                 active = listOf(commitment),
                                 inactive = emptyList()
                             )
                             val newState = this@Closing.copy(commitments = commitments1)
+                            // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
                             when {
-                                watch.tx.txid == commitments1.latest.localCommit.publishableTxs.commitTx.tx.txid -> {
+                                watch.tx.txid == commitments1.latest.localCommit.publishableTxs.commitTx.tx.txid && commitments1.localCommitIndex == commitments.localCommitIndex -> {
                                     // our local commit has been published from the outside, it's unexpected but let's deal with it anyway
                                     newState.run { spendLocalCurrent() }
                                 }
