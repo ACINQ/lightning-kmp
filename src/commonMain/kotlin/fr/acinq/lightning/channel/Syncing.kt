@@ -148,8 +148,6 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                         }
                         else -> {
                             // normal case, our data is up-to-date
-
-                            var state1 = state
                             val actions = ArrayList<ChannelAction>()
 
                             // re-send channel_ready or splice_locked
@@ -175,11 +173,12 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                             }
 
                             // resume splice signing session if any
-                            if (state.spliceStatus is SpliceStatus.WaitingForSigs && state.spliceStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
+                            val spliceStatus1 = if (state.spliceStatus is SpliceStatus.WaitingForSigs && state.spliceStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
                                 // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                                 logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
                                 val commitSig = state.spliceStatus.session.remoteCommit.sign(keyManager, state.commitments.params, state.spliceStatus.session.commitInput)
                                 actions.add(ChannelAction.Message.Send(commitSig))
+                                state.spliceStatus
                             } else if (state.commitments.latest.fundingTxId == cmd.message.nextFundingTxId) {
                                 if (state.commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx) {
                                     if (state.commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
@@ -195,11 +194,14 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                     // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
                                     // recompute our tx_signatures, but instead we do nothing: they will shortly be notified that the funding tx has confirmed.
                                 }
+                                state.spliceStatus
                             } else if (cmd.message.nextFundingTxId != null) {
                                 // The fundingTxId must be for a splice attempt that we didn't store (we got disconnected before receiving their tx_complete)
                                 logger.info { "aborting obsolete splice attempt for fundingTxId=${cmd.message.nextFundingTxId}" }
-                                state1 = state.copy(spliceStatus = SpliceStatus.Aborted)
                                 actions.add(ChannelAction.Message.Send(TxAbort(state.channelId, RbfAttemptAborted(state.channelId).message)))
+                                SpliceStatus.Aborted
+                            } else {
+                                state.spliceStatus
                             }
 
                             try {
@@ -226,10 +228,10 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                 }
 
                                 logger.info { "switching to ${state::class.simpleName}" }
-                                Pair(state1.copy(commitments = commitments1), actions)
+                                Pair(state.copy(commitments = commitments1, spliceStatus = spliceStatus1), actions)
                             } catch (e: RevocationSyncError) {
                                 val error = Error(channelId, e.message)
-                                state1.run { spendLocalCurrent() }.run { copy(second = second + ChannelAction.Message.Send(error)) }
+                                state.run { spendLocalCurrent() }.run { copy(second = second + ChannelAction.Message.Send(error)) }
                             }
                         }
                     }
