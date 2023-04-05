@@ -195,7 +195,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                     // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
                                     // recompute our tx_signatures, but instead we do nothing: they will shortly be notified that the funding tx has confirmed.
                                 }
-                            } else {
+                            } else if (cmd.message.nextFundingTxId != null) {
                                 // The fundingTxId must be for a splice attempt that we didn't store (we got disconnected before receiving their tx_complete)
                                 logger.info { "aborting obsolete splice attempt for fundingTxId=${cmd.message.nextFundingTxId}" }
                                 state1 = state.copy(spliceStatus = SpliceStatus.Aborted)
