@@ -876,7 +876,7 @@ class Peer(
                         logger.info { "requesting splice-in using confirmed balance: $balance" }
                         val spliceCommand = Command.Splice.Request(
                             replyTo = CompletableDeferred(),
-                            spliceIn = Command.Splice.Request.SpliceIn(cmd.wallet, balance),
+                            spliceIn = Command.Splice.Request.SpliceIn(cmd.wallet),
                             spliceOut = null,
                             feerate = feerate
                         )

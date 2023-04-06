@@ -27,7 +27,7 @@ sealed class Command {
             val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
             val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 
-            data class SpliceIn(val wallet: WalletState, val additionalLocalFunding: Satoshi, val pushAmount: MilliSatoshi = 0.msat)
+            data class SpliceIn(val wallet: WalletState, val pushAmount: MilliSatoshi = 0.msat)
             data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
         }
 

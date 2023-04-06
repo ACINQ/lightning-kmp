@@ -180,8 +180,8 @@ data class Normal(
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@Normal.copy(commitments = result.value), listOf())
                     }
-                    is CommitSig -> when (spliceStatus) {
-                        is SpliceStatus.WaitingForSigs -> {
+                    is CommitSig -> when {
+                        spliceStatus is SpliceStatus.WaitingForSigs -> {
                             val (signingSession1, action) = spliceStatus.session.receiveCommitSig(keyManager, commitments.params, cmd.message, currentBlockHeight.toLong())
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
@@ -195,6 +195,12 @@ data class Normal(
                                 }
                                 is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(action, cmd.message.channelData)
                             }
+                        }
+                        commitments.latest.localFundingStatus.signedTx == null && cmd.message.batchSize == 1 -> {
+                            // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig that we receive before that should be ignored,
+                            // it's either a retransmission of a commit_sig we've already received or a bug that will eventually lead to a force-close anyway.
+                            logger.info { "ignoring commit_sig, we're still waiting for tx_signatures" }
+                            Pair(this@Normal, listOf())
                         }
                         // NB: in all other cases we process the commit_sig normally. We could do a full pattern matching on all splice statuses, but it would force us to handle
                         // corner cases like race condition between splice_init and a non-splice commit_sig
