@@ -599,7 +599,9 @@ data class InteractiveTxSession(
         val sharedOutput = sharedOutputs.first()
 
         val sharedInput = fundingParams.sharedInput?.let {
-            val remoteReserve = (fundingParams.fundingAmount / 100).max(fundingParams.dustLimit)
+            // To compute the remote reserve, we discard the local contribution. It's okay if they go below reserve because
+            // we added capacity to the channel with a splice-in.
+            val remoteReserve = ((fundingParams.fundingAmount - fundingParams.localContribution)/ 100).max(fundingParams.dustLimit)
             if (sharedOutput.remoteAmount < remoteReserve && remoteOnlyOutputs.isNotEmpty()) {
                 return InteractiveTxSessionAction.InvalidTxBelowReserve(fundingParams.channelId, sharedOutput.remoteAmount.truncateToSatoshi(), remoteReserve)
             }
