@@ -230,7 +230,36 @@ public class NativeSocket: NSObject {
 		
 		// NWConnection doesn't support startTLS (or SOCKS).
 		// So we have to manually code a workaround.
-		// Here's how it works:
+		// Here's the general idea:
+		//
+		// A. We have an existing connection to the remote host.
+		//
+		//    [us]*===========================*[server]
+		//        ^oldClientConnection
+		//
+		// B. We then create a new connection to ourself:
+		//
+		//    [us]*===========================*[also us]
+		//        ^newClientConnection        ^proxyConnection
+		//
+		//    Remember that there are two sides to every connection.
+		//    We're creating a connection to ourself, such that we will control both sides.
+		//
+		// C. We attach the connections together:
+		//
+		//    [us]*===========================*[us]*===========================*[server]
+		//        ^newClientConnection        ^    ^oldClientConnection
+		//                                    ^proxyConnection
+		//
+		//    - everything we read from the proxyConnection we forward to the oldClientConnection
+		//    - everything we read from the oldClientConnection we forward to the proxyConnection
+		//
+		// D. When we open the newClientConnection, we do so with the given TLS options.
+		//    So it will automatically execute the TLS handshake.
+		//    If it succeeds, then we hand the newClientConnection to the caller via the `success` callback.
+		//
+		//
+		// The code; step-by-step:
 		//
 		// 1. We start a listener to accept incoming connections.
 		//
@@ -278,7 +307,7 @@ public class NativeSocket: NSObject {
 			}
 		}
 		
-		let oldServerName: String = host
+		let oldServerName: String = tls.expectedHostName ?? host
 		let oldClientConnection: NWConnection = connection
 		var _newClientConnection: NWConnection? = nil
 		var _proxyConnection: NWConnection? = nil
@@ -431,32 +460,59 @@ public class NativeSocketTLS: NSObject {
 	
 	@objc public let disabled: Bool
 	@objc public let allowUnsafeCertificates: Bool
+	@objc public let expectedHostName: String?
 	@objc public let pinnedPublicKey: String?
 	
-	private init(disabled: Bool, allowUnsafeCertificates: Bool, pinnedPublicKey: String?) {
+	private init(
+		disabled: Bool,
+		allowUnsafeCertificates: Bool,
+		expectedHostName: String?,
+		pinnedPublicKey: String?
+	) {
 		self.disabled = disabled
 		self.allowUnsafeCertificates = allowUnsafeCertificates
+		self.expectedHostName = expectedHostName
 		self.pinnedPublicKey = pinnedPublicKey
 	}
 	
 	@objc
-	public class func trustedCertificates() -> NativeSocketTLS {
-		return NativeSocketTLS(disabled: false, allowUnsafeCertificates: false, pinnedPublicKey: nil)
+	public class func trustedCertificates(_ expectedHostName: String?) -> NativeSocketTLS {
+		return NativeSocketTLS(
+			disabled: false,
+			allowUnsafeCertificates: false,
+			expectedHostName: expectedHostName,
+			pinnedPublicKey: nil
+		)
 	}
 	
 	@objc
 	public class func pinnedPublicKey(_ str: String) -> NativeSocketTLS {
-		return NativeSocketTLS(disabled: false, allowUnsafeCertificates: false, pinnedPublicKey: str)
+		return NativeSocketTLS(
+			disabled: false,
+			allowUnsafeCertificates: false,
+			expectedHostName: nil,
+			pinnedPublicKey: str
+		)
 	}
 	
 	@objc
 	public class func allowUnsafeCertificates() -> NativeSocketTLS {
-		return NativeSocketTLS(disabled: false, allowUnsafeCertificates: true, pinnedPublicKey: nil)
+		return NativeSocketTLS(
+			disabled: false,
+			allowUnsafeCertificates: true,
+			expectedHostName: nil,
+			pinnedPublicKey: nil
+		)
 	}
 	
 	@objc
 	public class func disabled() -> NativeSocketTLS {
-		return NativeSocketTLS(disabled: true, allowUnsafeCertificates: false, pinnedPublicKey: nil)
+		return NativeSocketTLS(
+			disabled: true,
+			allowUnsafeCertificates: false,
+			expectedHostName: nil,
+			pinnedPublicKey: nil
+		)
 	}
 	
 	public func makeProtocolOptions(overrideServerName: String? = nil) -> NWProtocolTLS.Options? {
