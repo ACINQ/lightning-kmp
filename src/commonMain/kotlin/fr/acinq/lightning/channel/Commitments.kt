@@ -705,8 +705,10 @@ data class Commitments(
     }
 
     fun receiveCommit(commits: List<CommitSig>, keyManager: KeyManager, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
-        // first we make sure that we have exactly one commit_sig for each active commitment
-        if (commits.size != active.size) {
+        // We may receive more commit_sig than the number of active commitments, because there can be a race where we send splice_locked
+        // while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard the commit_sig that belong
+        // to commitments we deactivated.
+        if (commits.size < active.size) {
             return Either.Left(CommitSigCountMismatch(channelId, active.size, commits.size))
         }
         val active1 = active.zip(commits).map {
@@ -818,7 +820,7 @@ data class Commitments(
                 c.copy(remoteFundingStatus = RemoteFundingStatus.Locked)
             } else c
         }
-    
+
     /**
      * Commitments are considered inactive when they have been superseded by a newer commitment, but can still potentially
      * end up on-chain. This is a consequence of using zero-conf. Inactive commitments will be cleaned up by

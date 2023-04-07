@@ -261,29 +261,37 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigsAlice[1]))
         assertTrue(actionsBob6.isEmpty())
         val (bob7, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(commitSigsAlice[2]))
-        assertEquals(actionsBob7.size, 2)
+        assertEquals(actionsBob7.size, 3)
         val revokeAndAckBob = actionsBob7.findOutgoingMessage<RevokeAndAck>()
-        val commitSigBob = actionsBob7.findOutgoingMessage<CommitSig>()
+        actionsBob7.contains(ChannelAction.Message.SendToSelf(CMD_SIGN))
+        actionsBob7.has<ChannelAction.Storage.StoreState>()
+        val (bob8, actionsBob8) = bob7.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+        assertEquals(actionsBob8.size, 3)
+        val commitSigBob = actionsBob8.findOutgoingMessage<CommitSig>()
         assertEquals(commitSigBob.batchSize, 1)
+        actionsBob8.has<ChannelAction.Storage.StoreHtlcInfos>()
+        actionsBob8.has<ChannelAction.Storage.StoreState>()
         val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(revokeAndAckBob))
         assertEquals(actionsAlice6.size, 1)
         actionsAlice6.has<ChannelAction.Storage.StoreState>()
         val (alice7, actionsAlice7) = alice6.process(ChannelCommand.MessageReceived(commitSigBob))
         assertIs<LNChannel<Normal>>(alice7)
-        assertEquals(actionsAlice7.size, 1)
+        assertEquals(actionsAlice7.size, 2)
         val revokeAndAckAlice = actionsAlice7.findOutgoingMessage<RevokeAndAck>()
-        val (bob8, actionsBob8) = bob7.process(ChannelCommand.MessageReceived(revokeAndAckAlice))
-        assertIs<LNChannel<Normal>>(bob8)
-        assertEquals(actionsBob8.size, 1)
-        actionsBob8.has<ChannelAction.Storage.StoreState>()
+        actionsAlice7.has<ChannelAction.Storage.StoreState>()
+        val (bob9, actionsBob9) = bob8.process(ChannelCommand.MessageReceived(revokeAndAckAlice))
+        assertIs<LNChannel<Normal>>(bob9)
+        assertEquals(actionsBob9.size, 2)
+        actionsBob9.has<ChannelAction.ProcessIncomingHtlc>()
+        actionsBob9.has<ChannelAction.Storage.StoreState>()
 
         // Bob fulfills the HTLC.
-        val (alice8, bob9) = fulfillHtlc(htlc.id, preimage, alice7, bob8)
-        val (bob10, alice9) = crossSign(bob9, alice8, commitmentsCount = 1)
+        val (alice8, bob10) = fulfillHtlc(htlc.id, preimage, alice7, bob9)
+        val (bob11, alice9) = crossSign(bob10, alice8, commitmentsCount = 1)
         assertEquals(alice9.commitments.active.size, 1)
         alice9.commitments.inactive.forEach { assertTrue(it.localCommit.index < alice9.commitments.localCommitIndex) }
-        assertEquals(bob10.commitments.active.size, 1)
-        bob10.commitments.inactive.forEach { assertTrue(it.localCommit.index < bob10.commitments.localCommitIndex) }
+        assertEquals(bob11.commitments.active.size, 1)
+        bob11.commitments.inactive.forEach { assertTrue(it.localCommit.index < bob11.commitments.localCommitIndex) }
     }
 
     @Test
