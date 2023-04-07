@@ -87,8 +87,6 @@ object Deserialization {
     private fun Input.readNormal(): Normal = Normal(
         commitments = readCommitments(),
         shortChannelId = ShortChannelId(readNumber()),
-        buried = readBoolean(),
-        channelAnnouncement = readNullable { readLightningMessage() as ChannelAnnouncement },
         channelUpdate = readLightningMessage() as ChannelUpdate,
         remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate },
         localShutdown = readNullable { readLightningMessage() as Shutdown },

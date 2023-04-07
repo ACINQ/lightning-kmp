@@ -2,10 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
-import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
-import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -28,14 +25,6 @@ data class LegacyWaitForFundingLocked(
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is ChannelReady -> {
-                    // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
-                    val watchConfirmed = WatchConfirmed(
-                        this@LegacyWaitForFundingLocked.channelId,
-                        commitments.latest.commitInput.outPoint.txid,
-                        commitments.latest.commitInput.txOut.publicKeyScript,
-                        ANNOUNCEMENTS_MINCONF.toLong(),
-                        BITCOIN_FUNDING_DEEPLYBURIED
-                    )
                     // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
                     val initialChannelUpdate = Announcements.makeChannelUpdate(
                         staticParams.nodeParams.chainHash,
@@ -52,8 +41,6 @@ data class LegacyWaitForFundingLocked(
                     val nextState = Normal(
                         commitments.copy(remoteNextCommitInfo = Either.Right(cmd.message.nextPerCommitmentPoint)),
                         shortChannelId,
-                        buried = false,
-                        null,
                         initialChannelUpdate,
                         null,
                         null,
@@ -62,7 +49,6 @@ data class LegacyWaitForFundingLocked(
                         SpliceStatus.None
                     )
                     val actions = listOf(
-                        ChannelAction.Blockchain.SendWatch(watchConfirmed),
                         ChannelAction.Storage.StoreState(nextState),
                         ChannelAction.EmitEvent(ChannelEvents.Confirmed(nextState)),
                     )

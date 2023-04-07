@@ -6,7 +6,6 @@ import fr.acinq.lightning.utils.runTrying
 
 sealed class BitcoinEvent
 object BITCOIN_FUNDING_DEPTHOK : BitcoinEvent()
-object BITCOIN_FUNDING_DEEPLYBURIED : BitcoinEvent()
 object BITCOIN_FUNDING_SPENT : BitcoinEvent()
 object BITCOIN_OUTPUT_SPENT : BitcoinEvent()
 data class BITCOIN_TX_CONFIRMED(val tx: Transaction) : BitcoinEvent()

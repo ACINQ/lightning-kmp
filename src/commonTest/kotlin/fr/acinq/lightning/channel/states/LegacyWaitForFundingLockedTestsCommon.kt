@@ -2,7 +2,6 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEEPLYBURIED
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
@@ -65,10 +64,7 @@ class LegacyWaitForFundingLockedTestsCommon {
         // Our peer sends us funding_locked.
         val (state4, actions4) = state3.process(ChannelCommand.MessageReceived(ChannelReady(state.channelId, randomKey().publicKey())))
         assertIs<LNChannel<Normal>>(state4)
-        assertEquals(actions4.size, 3)
-        val watchDeeplyConfirmed = actions4.hasWatch<WatchConfirmed>()
-        assertEquals(watchDeeplyConfirmed.event, BITCOIN_FUNDING_DEEPLYBURIED)
-        assertEquals(watchDeeplyConfirmed.txId, fundingTx.txid)
+        assertEquals(actions4.size, 2)
         actions4.has<ChannelAction.Storage.StoreState>()
     }
 }

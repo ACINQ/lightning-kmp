@@ -644,9 +644,6 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
 }
 
 object Channel {
-    // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
-    const val ANNOUNCEMENTS_MINCONF = 6
-
     // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
     val MAX_FUNDING = 10.btc
     const val MAX_ACCEPTED_HTLCS = 483

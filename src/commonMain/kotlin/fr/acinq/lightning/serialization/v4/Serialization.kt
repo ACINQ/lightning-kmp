@@ -131,8 +131,6 @@ object Serialization {
     private fun Output.writeNormal(o: Normal) = o.run {
         writeCommitments(commitments)
         writeNumber(shortChannelId.toLong())
-        writeBoolean(buried)
-        writeNullable(channelAnnouncement) { writeLightningMessage(it) }
         writeLightningMessage(channelUpdate)
         writeNullable(remoteChannelUpdate) { writeLightningMessage(it) }
         writeNullable(localShutdown) { writeLightningMessage(it) }

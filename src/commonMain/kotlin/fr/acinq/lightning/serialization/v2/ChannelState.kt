@@ -498,8 +498,6 @@ internal data class Normal(
     override fun export() = fr.acinq.lightning.channel.Normal(
         commitments.export(),
         shortChannelId,
-        buried,
-        channelAnnouncement,
         channelUpdate,
         remoteChannelUpdate,
         localShutdown,

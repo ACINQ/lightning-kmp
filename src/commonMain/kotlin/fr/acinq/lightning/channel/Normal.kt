@@ -19,8 +19,6 @@ import fr.acinq.lightning.wire.*
 data class Normal(
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
-    val buried: Boolean,
-    val channelAnnouncement: ChannelAnnouncement?,
     val channelUpdate: ChannelUpdate,
     val remoteChannelUpdate: ChannelUpdate?,
     val localShutdown: Shutdown?,

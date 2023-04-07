@@ -213,8 +213,6 @@
         }
     },
     "shortChannelId": "400144x1x0",
-    "buried": false,
-    "channelAnnouncement": null,
     "channelUpdate": {
         "signature": "d2a23e7a1df70d9e18374b1bac20b13267bb9cea4016b69da729dbab8423bc9575381c5256f5f15fb116b9bc78d3ccc246f1925dfb341e7bc3595e975d9f0d47",
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",

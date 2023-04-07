@@ -2,7 +2,6 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.channel.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.lightning.channel.Channel.handleSync
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.utils.Either
@@ -211,26 +210,11 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                             try {
                                 val (commitments1, sendQueue1) = handleSync(cmd.message, state, keyManager, logger)
                                 actions.addAll(sendQueue1)
-
                                 // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
                                 state.localShutdown?.let {
                                     logger.debug { "re-sending local shutdown" }
                                     actions.add(ChannelAction.Message.Send(it))
                                 }
-
-                                if (!state.buried) {
-                                    // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
-                                    // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
-                                    val watchConfirmed = WatchConfirmed(
-                                        channelId,
-                                        state.commitments.latest.commitInput.outPoint.txid,
-                                        state.commitments.latest.commitInput.txOut.publicKeyScript,
-                                        ANNOUNCEMENTS_MINCONF.toLong(),
-                                        BITCOIN_FUNDING_DEEPLYBURIED
-                                    )
-                                    actions.add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
-                                }
-
                                 logger.info { "switching to ${state::class.simpleName}" }
                                 Pair(state.copy(commitments = commitments1, spliceStatus = spliceStatus1), actions)
                             } catch (e: RevocationSyncError) {
@@ -294,7 +278,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                     else -> state.run { handlePotentialForceClose(watch) }
                 }
                 is WatchEventConfirmed -> {
-                    if (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) {
+                    if (watch.event is BITCOIN_FUNDING_DEPTHOK) {
                         when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
                             is Either.Left -> Pair(this@Syncing, listOf())
                             is Either.Right -> {

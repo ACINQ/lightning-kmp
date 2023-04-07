@@ -220,11 +220,9 @@ object TestsHelper {
         val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
         assertIs<LNChannel<Normal>>(alice1)
-        assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(channelReadyAlice))
         assertIs<LNChannel<Normal>>(bob1)
-        assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
         val fundingTx = when (val fundingStatus = alice.commitments.latest.localFundingStatus) {
             is LocalFundingStatus.UnconfirmedFundingTx -> fundingStatus.sharedTx.tx.buildUnsignedTx()
