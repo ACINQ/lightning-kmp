@@ -105,11 +105,11 @@ data class Normal(
                         is SpliceStatus.None -> {
                             if (commitments.isIdle()) {
                                 val parentCommitment = commitments.active.first()
-                                val fundingContribution = InteractiveTxParams.computeLocalContribution(
+                                val fundingContribution = FundingContributions.computeSpliceContribution(
                                     isInitiator = true,
                                     commitment = parentCommitment,
-                                    spliceIn = cmd.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
-                                    spliceOut = cmd.command.spliceOutputs,
+                                    walletInputs = cmd.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                                    localOutputs = cmd.command.spliceOutputs,
                                     targetFeerate = cmd.command.feerate
                                 )
                                 if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < 0.msat) {
@@ -410,9 +410,9 @@ data class Normal(
                             when (val fundingContributions = FundingContributions.create(
                                 params = fundingParams,
                                 sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
-                                walletUtxos = spliceStatus.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                                walletInputs = spliceStatus.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
                                 localOutputs = spliceStatus.command.spliceOutputs,
-                                changePubKey = null // we're spending every funds available TODO: check this
+                                changePubKey = null // we don't want a change output: we're spending every funds available
                             )) {
                                 is Either.Left -> {
                                     logger.error { "could not create splice contributions: ${fundingContributions.value}" }
