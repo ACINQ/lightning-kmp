@@ -236,13 +236,6 @@ data class Commitment(
 
     fun isIdle(changes: CommitmentChanges): Boolean = hasNoPendingHtlcs() && changes.localChanges.all.isEmpty() && changes.remoteChanges.all.isEmpty()
 
-    /** The commitment is locked once we've sent and received splice_locked. */
-    fun ChannelContext.isLocked(): Boolean {
-        val localLocked = staticParams.useZeroConf || localFundingStatus is LocalFundingStatus.ConfirmedFundingTx
-        val remoteLocked = remoteFundingStatus == RemoteFundingStatus.Locked
-        return localLocked && remoteLocked
-    }
-
     fun timedOutOutgoingHtlcs(blockHeight: Long): Set<UpdateAddHtlc> {
         fun expired(add: UpdateAddHtlc) = blockHeight >= add.cltvExpiry.toLong()
 
@@ -825,14 +818,18 @@ data class Commitments(
                 c.copy(remoteFundingStatus = RemoteFundingStatus.Locked)
             } else c
         }
-
+    
     /**
      * Commitments are considered inactive when they have been superseded by a newer commitment, but can still potentially
      * end up on-chain. This is a consequence of using zero-conf. Inactive commitments will be cleaned up by
      * [pruneCommitments], when the next funding tx confirms.
      */
     private fun ChannelContext.deactivateCommitments(): Commitments {
-        return when (val lastLocked = active.find { it.run { isLocked() } }) {
+        return when (val lastLocked = active.find { commitment ->
+            val localLocked = staticParams.useZeroConf || commitment.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx
+            val remoteLocked = commitment.remoteFundingStatus == RemoteFundingStatus.Locked
+            localLocked && remoteLocked
+        }) {
             is Commitment -> {
                 // all commitments older than this one are inactive
                 val inactive1 = active.filter { it.fundingTxId != lastLocked.fundingTxId && it.fundingTxIndex <= lastLocked.fundingTxIndex }
