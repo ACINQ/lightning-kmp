@@ -88,8 +88,6 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param channelFlags channel flags used to temporarily enable or disable channels.
  * @param paymentRequestExpirySeconds our Bolt 11 invoices will only be valid for this duration.
  * @param multiPartPaymentExpirySeconds number of seconds we will wait to receive all parts of a multi-part payment.
- * @param minFundingSatoshis minimum channel size.
- * @param maxFundingSatoshis maximum channel size.
  * @param maxPaymentAttempts maximum number of retries when attempting an outgoing payment.
  * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
@@ -127,8 +125,6 @@ data class NodeParams(
     val channelFlags: Byte,
     val paymentRequestExpirySeconds: Long,
     val multiPartPaymentExpirySeconds: Long,
-    val minFundingSatoshis: Satoshi,
-    val maxFundingSatoshis: Satoshi,
     val maxPaymentAttempts: Int,
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,

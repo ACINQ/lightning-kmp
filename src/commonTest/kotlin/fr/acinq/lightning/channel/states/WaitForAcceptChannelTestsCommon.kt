@@ -77,16 +77,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice, _, accept) = init()
         val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(accept.copy(fundingAmount = (-1).sat)))
         val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, InvalidFundingAmount(accept.temporaryChannelId, (-1).sat, 0.sat, alice.staticParams.nodeParams.maxFundingSatoshis).message))
-        assertIs<LNChannel<Aborted>>(alice1)
-    }
-
-    @Test
-    fun `recv AcceptChannel -- funding too high`() {
-        val (alice, _, accept) = init(bobFundingAmount = 30_000_000.sat)
-        val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(accept))
-        val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, InvalidFundingAmount(accept.temporaryChannelId, 30_000_000.sat, 0.sat, alice.staticParams.nodeParams.maxFundingSatoshis).message))
+        assertEquals(error, Error(accept.temporaryChannelId, InvalidFundingAmount(accept.temporaryChannelId, (-1).sat).message))
         assertIs<LNChannel<Aborted>>(alice1)
     }
 

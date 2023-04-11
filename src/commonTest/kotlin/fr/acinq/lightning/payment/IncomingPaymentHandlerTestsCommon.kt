@@ -323,39 +323,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive pay-to-open payment with a funding amount too low`() = runSuspendTest {
-        val (paymentHandler, incomingPayment, paymentSecret) = run {
-            val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
-            val paymentHandler1 = IncomingPaymentHandler(paymentHandler.nodeParams.copy(minFundingSatoshis = 200_000.sat), paymentHandler.walletParams, paymentHandler.db)
-            Triple(paymentHandler1, incomingPayment, paymentSecret)
-        }
-
-        val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(defaultAmount, defaultAmount, paymentSecret))
-        // we make sure that the pay-to-open funding amount is invalid
-        assertTrue { payToOpenRequest.fundingSatoshis < paymentHandler.nodeParams.minFundingSatoshis }
-        val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
-
-        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-        result as IncomingPaymentHandler.ProcessAddResult.Rejected
-        assertEquals(incomingPayment, result.incomingPayment)
-        val expected = PayToOpenResponseCommand(
-            PayToOpenResponse(
-                payToOpenRequest.chainHash,
-                payToOpenRequest.paymentHash,
-                PayToOpenResponse.Result.Failure(
-                    OutgoingPaymentPacket.buildHtlcFailure(
-                        paymentHandler.nodeParams.nodePrivateKey,
-                        payToOpenRequest.paymentHash,
-                        payToOpenRequest.finalPacket,
-                        CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))
-                    ).right!!
-                )
-            )
-        )
-        assertEquals(setOf(expected), result.actions.toSet())
-    }
-
-    @Test
     fun `receive pay-to-open trampoline payment with an incorrect payment secret`() = runSuspendTest {
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         val trampolineHops = listOf(
@@ -1337,7 +1304,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         private suspend fun createFixture(invoiceAmount: MilliSatoshi?): Triple<IncomingPaymentHandler, IncomingPayment, ByteVector32> {
-            val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams.copy(minFundingSatoshis = 10.sat), TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+            val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
             val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, invoiceAmount)
             return Triple(paymentHandler, incomingPayment, paymentSecret)
         }

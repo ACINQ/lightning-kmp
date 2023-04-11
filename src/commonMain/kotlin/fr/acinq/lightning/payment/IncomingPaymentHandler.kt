@@ -4,12 +4,8 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.WalletParams
-import fr.acinq.lightning.PayToOpenEvents
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
@@ -364,10 +360,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             }
             paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
                 logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-            }
-            paymentPart is PayToOpenPart && paymentPart.payToOpenRequest.fundingSatoshis < nodeParams.minFundingSatoshis -> {
-                logger.warning { "received invalid funding amount for a pay-to-open: ${paymentPart.payToOpenRequest.fundingSatoshis}, min is ${nodeParams.minFundingSatoshis}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             else -> Either.Right(incomingPayment)
