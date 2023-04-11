@@ -705,10 +705,13 @@ data class Commitments(
     }
 
     fun receiveCommit(commits: List<CommitSig>, keyManager: KeyManager, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
-        // first we make sure that we have exactly one commit_sig for each active commitment
-        if (commits.size != active.size) {
+        // We may receive more commit_sig than the number of active commitments, because there can be a race where we send splice_locked
+        // while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard the commit_sig that belong
+        // to commitments we deactivated.
+        if (commits.size < active.size) {
             return Either.Left(CommitSigCountMismatch(channelId, active.size, commits.size))
         }
+        // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
         val active1 = active.zip(commits).map {
             when (val commitment1 = it.first.receiveCommit(keyManager, params, changes, it.second, log)) {
                 is Either.Left -> return Either.Left(commitment1.value)
@@ -792,7 +795,7 @@ data class Commitments(
                 )
                 val commitment = commitments1.all.find { it.fundingTxId == fundingTxId }!! // NB: this commitment might be pruned at the next line
                 val commitments2 = commitments1.run { deactivateCommitments() }.run { pruneCommitments() }
-                logger.info { "commitments active=${commitments2.active.map { it.fundingTxIndex}} inactive=${commitments2.inactive.map { it.fundingTxIndex}}" }
+                logger.info { "commitments active=${commitments2.active.map { it.fundingTxIndex }} inactive=${commitments2.inactive.map { it.fundingTxIndex }}" }
                 Either.Right(Pair(commitments2, commitment))
             }
             else -> {
@@ -805,7 +808,7 @@ data class Commitments(
     fun ChannelContext.updateLocalFundingStatus(fundingTxId: ByteVector32, status: LocalFundingStatus): Either<Commitments, Pair<Commitments, Commitment>> =
         updateFundingStatus(fundingTxId) { c: Commitment, _: Long ->
             if (c.fundingTxId == fundingTxId) {
-                logger.debug { "setting localFundingStatus=${status::class.simpleName} for funding fundingTxId=$fundingTxId" }
+                logger.debug { "setting localFundingStatus=${status::class.simpleName} for fundingTxId=$fundingTxId" }
                 c.copy(localFundingStatus = status)
             } else c
         }
@@ -825,14 +828,18 @@ data class Commitments(
      * [pruneCommitments], when the next funding tx confirms.
      */
     private fun ChannelContext.deactivateCommitments(): Commitments {
+        // When a commitment is locked, it implicitly locks all previous commitments.
+        // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
+        // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
+        // That's why we compute each index (local and remote) separately and stop at the first one that matches.
         val lastLocalLockedIndex: Long = active.firstOrNull { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }?.fundingTxIndex ?: -1
-        val lastRemoteLockedIndex: Long = active.firstOrNull { it.remoteFundingStatus is RemoteFundingStatus.Locked }?.fundingTxIndex ?: -1
+        val lastRemoteLockedIndex: Long = active.firstOrNull { it.remoteFundingStatus == RemoteFundingStatus.Locked }?.fundingTxIndex ?: -1
         val lastLockedIndex = min(lastLocalLockedIndex, lastRemoteLockedIndex)
         return when (val lastLocked = active.find { it.fundingTxIndex == lastLockedIndex }) {
             is Commitment -> {
                 // all commitments older than this one are inactive
                 val inactive1 = active.filter { it.fundingTxId != lastLocked.fundingTxId && it.fundingTxIndex <= lastLocked.fundingTxIndex }
-                inactive1.forEach { logger.info { "deactivating commitment fundingTxindex=${it.fundingTxIndex} fundingTxid=${it.fundingTxId}" } }
+                inactive1.forEach { logger.info { "deactivating commitment fundingTxIndex=${it.fundingTxIndex} fundingTxId=${it.fundingTxId}" } }
                 copy(
                     active = active - inactive1.toSet(),
                     inactive = inactive1 + inactive.toSet()
@@ -844,8 +851,8 @@ data class Commitments(
 
     /**
      * We can prune inactive commitments in two cases:
-     * - their funding tx has been permanently double-spent by the funding tx of a concurrent commitments (happens when using RBF)
-     * - their funding tx has been permanently spent by a splice tx
+     *  - their funding tx has been permanently double-spent by the funding tx of a concurrent commitment (happens when using RBF)
+     *  - their funding tx has been permanently spent by a splice tx
      */
     private fun ChannelContext.pruneCommitments(): Commitments {
         return when (val lastConfirmed = active.find { it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }) {
@@ -855,7 +862,7 @@ data class Commitments(
                 // NB: we cannot prune active commitments, even if we know that they have been double-spent, because our peer may not yet
                 // be aware of it, and will expect us to send commit_sig.
                 val pruned = inactive.filter { it.fundingTxId != lastConfirmed.fundingTxId && it.fundingTxIndex <= lastConfirmed.fundingTxIndex }
-                pruned.forEach { logger.info { "pruning commitment fundingTxindex=${it.fundingTxIndex} fundingTxId=${it.fundingTxId}" } }
+                pruned.forEach { logger.info { "pruning commitment fundingTxIndex=${it.fundingTxIndex} fundingTxId=${it.fundingTxId}" } }
                 copy(inactive = inactive - pruned.toSet())
             }
         }

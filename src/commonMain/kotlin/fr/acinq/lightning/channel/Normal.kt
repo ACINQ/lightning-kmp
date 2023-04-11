@@ -105,11 +105,11 @@ data class Normal(
                         is SpliceStatus.None -> {
                             if (commitments.isIdle()) {
                                 val parentCommitment = commitments.active.first()
-                                val fundingContribution = InteractiveTxParams.computeLocalContribution(
+                                val fundingContribution = FundingContributions.computeSpliceContribution(
                                     isInitiator = true,
                                     commitment = parentCommitment,
-                                    spliceIn = cmd.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
-                                    spliceOut = cmd.command.spliceOutputs,
+                                    walletInputs = cmd.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                                    localOutputs = cmd.command.spliceOutputs,
                                     targetFeerate = cmd.command.feerate
                                 )
                                 if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < 0.msat) {
@@ -180,8 +180,8 @@ data class Normal(
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@Normal.copy(commitments = result.value), listOf())
                     }
-                    is CommitSig -> when (spliceStatus) {
-                        is SpliceStatus.WaitingForSigs -> {
+                    is CommitSig -> when {
+                        spliceStatus is SpliceStatus.WaitingForSigs -> {
                             val (signingSession1, action) = spliceStatus.session.receiveCommitSig(keyManager, commitments.params, cmd.message, currentBlockHeight.toLong())
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
@@ -196,6 +196,12 @@ data class Normal(
                                 is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(action, cmd.message.channelData)
                             }
                         }
+                        commitments.latest.localFundingStatus.signedTx == null && cmd.message.batchSize == 1 -> {
+                            // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig that we receive before that should be ignored,
+                            // it's either a retransmission of a commit_sig we've already received or a bug that will eventually lead to a force-close anyway.
+                            logger.info { "ignoring commit_sig, we're still waiting for tx_signatures" }
+                            Pair(this@Normal, listOf())
+                        }
                         // NB: in all other cases we process the commit_sig normally. We could do a full pattern matching on all splice statuses, but it would force us to handle
                         // corner cases like race condition between splice_init and a non-splice commit_sig
                         else -> {
@@ -205,8 +211,8 @@ data class Normal(
                                     is Either.Right -> {
                                         val nextState = this@Normal.copy(commitments = result.value.first)
                                         val actions = mutableListOf<ChannelAction>()
-                                        actions.add(ChannelAction.Message.Send(result.value.second))
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
+                                        actions.add(ChannelAction.Message.Send(result.value.second))
                                         if (result.value.first.changes.localHasChanges()) {
                                             actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
                                         }
@@ -373,7 +379,7 @@ data class Normal(
                                 Pair(nextState, listOf(ChannelAction.Message.Send(SpliceAck(channelId, fundingParams.localContribution))))
                             } else {
                                 logger.info { "rejecting splice attempt: channel is not idle" }
-                                Pair(this@Normal, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceChannelNotIdle(channelId).message))))
+                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceChannelNotIdle(channelId).message))))
                             }
                         is SpliceStatus.Aborted -> {
                             logger.info { "rejecting splice attempt: our previous tx_abort was not acked" }
@@ -404,9 +410,9 @@ data class Normal(
                             when (val fundingContributions = FundingContributions.create(
                                 params = fundingParams,
                                 sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
-                                walletUtxos = spliceStatus.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                                walletInputs = spliceStatus.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
                                 localOutputs = spliceStatus.command.spliceOutputs,
-                                changePubKey = null // we're spending every funds available TODO: check this
+                                changePubKey = null // we don't want a change output: we're spending every funds available
                             )) {
                                 is Either.Left -> {
                                     logger.error { "could not create splice contributions: ${fundingContributions.value}" }
@@ -429,7 +435,7 @@ data class Normal(
                                                     interactiveTxSession,
                                                     localPushAmount = spliceStatus.spliceInit.pushAmount,
                                                     remotePushAmount = cmd.message.pushAmount,
-                                                    origins = emptyList()
+                                                    origins = spliceStatus.spliceInit.origins
                                                 )
                                             )
                                             Pair(nextState, listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
@@ -476,13 +482,14 @@ data class Normal(
                                         is Either.Right -> {
                                             val (session, commitSig) = signingSession.value
                                             logger.info { "splice funding tx created with txId=${session.fundingTx.txId}, ${session.fundingTx.tx.localInputs.size} local inputs, ${session.fundingTx.tx.remoteInputs.size} remote inputs, ${session.fundingTx.tx.localOutputs.size} local outputs and ${session.fundingTx.tx.remoteOutputs.size} remote outputs" }
-                                            // It is a bit early to declare the splice a success, signatures still need to be exchanged but the negotiation is finished. The splice be persisted and survive a restart, after
-                                            // which the replyTo will be voided.
+                                            // We cannot guarantee that the splice is successful: the only way to guarantee that is to wait for on-chain confirmations.
+                                            // It is likely that we will restart before the transaction is confirmed, in which case we will lose the replyTo and the ability to notify the caller.
+                                            // We should be able to resume the signing steps and complete the splice if we disconnect, so we optimistically notify the caller now.
                                             spliceStatus.replyTo?.complete(
-                                                Command.Splice.Response.Success(
+                                                Command.Splice.Response.Created(
                                                     channelId = channelId,
                                                     fundingTxIndex = session.fundingTxIndex,
-                                                    fundingTxId = interactiveTxAction.sharedTx.buildUnsignedTx().txid,
+                                                    fundingTxId = session.fundingTx.txId,
                                                     capacity = session.fundingParams.fundingAmount,
                                                     balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal
                                                 )
@@ -500,7 +507,7 @@ data class Normal(
                                 is InteractiveTxSessionAction.RemoteFailure -> {
                                     logger.warning { "interactive-tx failed: $interactiveTxAction" }
                                     spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.InteractiveTxSessionFailed(interactiveTxAction))
-                                    handleLocalError(cmd, DualFundingAborted(channelId, interactiveTxAction.toString()))
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, interactiveTxAction.toString()))))
                                 }
                             }
                         }
@@ -545,7 +552,7 @@ data class Normal(
                                     }
                                 }
                                 is FullySignedSharedTransaction -> {
-                                    logger.info { "ignoring duplicate remote funding signatures" }
+                                    logger.info { "ignoring duplicate remote funding signatures for txId=${cmd.message.txId}" }
                                     Pair(this@Normal, listOf())
                                 }
                             }
@@ -611,7 +618,16 @@ data class Normal(
             }
             is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
-                is WatchEventConfirmed -> updateFundingTxStatus(watch)
+                is WatchEventConfirmed -> {
+                    val (nextState, actions) = updateFundingTxStatus(watch)
+                    if (!staticParams.useZeroConf && nextState.commitments.active.any { it.fundingTxId == watch.tx.txid && it.fundingTxIndex > 0 }) {
+                        // We're not using 0-conf and a splice transaction is confirmed, so we send splice_locked.
+                        val spliceLocked = SpliceLocked(channelId, watch.tx.hash)
+                        Pair(nextState, actions + ChannelAction.Message.Send(spliceLocked))
+                    } else {
+                        Pair(nextState, actions)
+                    }
+                }
                 is WatchEventSpent -> handlePotentialForceClose(watch)
             }
             is ChannelCommand.Disconnected -> {
@@ -627,8 +643,10 @@ data class Normal(
                         } ?: logger.warning { "cannot find payment for $htlc" }
                     }
                 }
-                // if we are splicing and are earlyè in the process, then we cancel it
+                // If we are splicing and are early in the process, then we cancel it.
                 val spliceStatus1 = when (spliceStatus) {
+                    is SpliceStatus.None -> SpliceStatus.None
+                    is SpliceStatus.Aborted -> SpliceStatus.None
                     is SpliceStatus.Requested -> {
                         spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.Disconnected)
                         SpliceStatus.None
@@ -637,7 +655,7 @@ data class Normal(
                         spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.Disconnected)
                         SpliceStatus.None
                     }
-                    else -> spliceStatus
+                    is SpliceStatus.WaitingForSigs -> spliceStatus
                 }
                 // reset the commit_sig batch
                 sigStash = emptyList()
@@ -669,8 +687,9 @@ data class Normal(
     }
 
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
-    fun getUnsignedFundingTxId(): ByteVector32? = when (spliceStatus) {
-        is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.txId
+    fun getUnsignedFundingTxId(): ByteVector32? = when {
+        spliceStatus is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.txId
+        commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx && commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction -> commitments.latest.localFundingStatus.txId
         else -> null
     }
 

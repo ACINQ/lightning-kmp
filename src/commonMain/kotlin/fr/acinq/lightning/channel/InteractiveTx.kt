@@ -20,7 +20,7 @@ import kotlinx.coroutines.CompletableDeferred
 /** An input that is already shared between participants (e.g. the current funding output when doing a splice). */
 sealed class SharedFundingInput {
     abstract val info: Transactions.InputInfo
-    abstract val weight: Long
+    abstract val weight: Int
     abstract fun sign(keyManager: KeyManager, localParams: LocalParams, tx: Transaction): ByteVector64
 
     data class Multisig2of2(override val info: Transactions.InputInfo, val localFundingPubkey: PublicKey, val remoteFundingPubkey: PublicKey) : SharedFundingInput() {
@@ -32,7 +32,7 @@ sealed class SharedFundingInput {
         )
 
         // This value was computed assuming 73 bytes signatures (worst-case scenario).
-        override val weight: Long = Multisig2of2.weight
+        override val weight: Int = Multisig2of2.weight
 
         override fun sign(keyManager: KeyManager, localParams: LocalParams, tx: Transaction): ByteVector64 {
             val fundingKey = keyManager.channelKeys(localParams.fundingKeyPath).fundingPrivateKey
@@ -40,7 +40,7 @@ sealed class SharedFundingInput {
         }
 
         companion object {
-            const val weight: Long = 388
+            const val weight: Int = 388
         }
     }
 }
@@ -81,28 +81,8 @@ data class InteractiveTxParams(
     val fundingAmount: Satoshi = (sharedInput?.info?.txOut?.amount ?: 0.sat) + localContribution + remoteContribution
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
-
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity = if (isInitiator) 0 else 1
-
-    companion object {
-        fun computeLocalContribution(isInitiator: Boolean, commitment: Commitment, spliceIn: List<WalletState.Utxo>, spliceOut: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
-            val commonFieldsWeight = if (isInitiator) {
-                val dummyTx = Transaction(
-                    version = 2,
-                    txIn = emptyList(), // NB: we add the weight manually
-                    txOut = listOf(commitment.commitInput.txOut), // we're taking the previous output, it has the wrong amount but we don't care: only the weight matters to compute fees
-                    lockTime = 0
-                )
-                dummyTx.weight() + SharedFundingInput.Multisig2of2.weight
-            } else 0
-            val spliceInputsWeight = spliceIn.size * Transactions.p2wpkhInputWeight
-            val spliceOutputsWeight = spliceOut.sumOf { it.weight() }
-            val weight = commonFieldsWeight + spliceInputsWeight + spliceOutputsWeight
-            val fees = Transactions.weight2fee(targetFeerate, weight.toInt())
-            return spliceIn.map { it.amount }.sum() - spliceOut.map { it.amount }.sum() - fees
-        }
-    }
 }
 
 sealed class InteractiveTxInput {
@@ -170,60 +150,55 @@ sealed class FundingContributionFailure {
 /** Inputs and outputs we contribute to the funding transaction. */
 data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, val outputs: List<InteractiveTxOutput.Outgoing>) {
     companion object {
+        /** Compute our local splice contribution using all the funds available in our wallet. */
+        fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
+            val weight = computeWeightPaid(
+                isInitiator,
+                SharedFundingInput.Multisig2of2(commitment.commitInput, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey),
+                commitment.commitInput.txOut.publicKeyScript,
+                walletInputs,
+                localOutputs
+            )
+            val fees = Transactions.weight2fee(targetFeerate, weight)
+            return walletInputs.map { it.amount }.sum() - localOutputs.map { it.amount }.sum() - fees
+        }
+
         /**
-         * @param walletUtxos p2wpkh wallet inputs.
+         * @param walletInputs p2wpkh wallet inputs.
          */
-        fun create(params: InteractiveTxParams, walletUtxos: List<WalletState.Utxo>): Either<FundingContributionFailure, FundingContributions> = create(params, null, walletUtxos, listOf())
+        fun create(params: InteractiveTxParams, walletInputs: List<WalletState.Utxo>): Either<FundingContributionFailure, FundingContributions> = create(params, null, walletInputs, listOf())
 
         /**
          * @param sharedUtxo previous input shared between the two participants (e.g. previous funding output when splicing) and our corresponding balance.
-         * @param walletUtxos p2wpkh wallet inputs.
+         * @param walletInputs p2wpkh wallet inputs.
          * @param localOutputs outputs to be added to the shared transaction (e.g. splice-out).
          * @param changePubKey if provided, a corresponding p2wpkh change output will be created.
          */
         fun create(
             params: InteractiveTxParams,
             sharedUtxo: Pair<SharedFundingInput, SharedFundingInputBalances>?,
-            walletUtxos: List<WalletState.Utxo>,
+            walletInputs: List<WalletState.Utxo>,
             localOutputs: List<TxOut>,
             changePubKey: PublicKey? = null
         ): Either<FundingContributionFailure, FundingContributions> {
-            walletUtxos.forEach { (tx, txOutput) ->
+            walletInputs.forEach { (tx, txOutput) ->
                 if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
                 if (tx.txOut[txOutput].amount < params.dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, params.dustLimit))
                 if (!Script.isPay2wpkh(tx.txOut[txOutput].publicKeyScript.toByteArray())) return Either.Left(FundingContributionFailure.NonPay2wpkhInput(tx.txid, txOutput))
                 if (Transaction.write(tx).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(tx))
             }
             val previousFundingAmount = sharedUtxo?.second?.fundingAmount ?: 0.sat
-            val totalAmountIn = previousFundingAmount + walletUtxos.map { it.amount }.sum()
+            val totalAmountIn = previousFundingAmount + walletInputs.map { it.amount }.sum()
             val totalAmountOut = previousFundingAmount + params.localContribution + localOutputs.map { it.amount }.sum()
             if (totalAmountIn < totalAmountOut || params.fundingAmount < params.dustLimit) {
                 return Either.Left(FundingContributionFailure.NotEnoughFunding(params.localContribution, localOutputs.map { it.amount }.sum(), totalAmountIn))
             }
 
             // We compute the fees that we should pay in the shared transaction.
-            val dummyWalletWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, Scripts.der(Transactions.PlaceHolderSig, SigHash.SIGHASH_ALL))
-            val dummySignedWalletTxIn = walletUtxos.map { TxIn(it.outPoint, ByteVector.empty, 0, dummyWalletWitness) }
-            val dummyChangeTxOut = TxOut(params.localContribution, Script.pay2wpkh(Transactions.PlaceHolderPubKey))
-            val sharedTxOut = TxOut(params.fundingAmount, params.fundingPubkeyScript)
-            val (weightWithoutChange, weightWithChange) = when (params.isInitiator) {
-                true -> {
-                    // The initiator must add the shared input, the shared output and pay for the fees of the common transaction fields.
-                    val sharedInputWeight = sharedUtxo?.first?.weight?.toInt() ?: 0
-                    val w1 = Transaction(2, dummySignedWalletTxIn, localOutputs + listOf(sharedTxOut), 0).weight()
-                    val w2 = Transaction(2, dummySignedWalletTxIn, localOutputs + listOf(sharedTxOut, dummyChangeTxOut), 0).weight()
-                    Pair(w1 + sharedInputWeight, w2 + sharedInputWeight)
-                }
-                false -> {
-                    // The non-initiator only pays for the weights of their own inputs and outputs.
-                    val emptyTx = Transaction(2, listOf(), listOf(), 0)
-                    val w1 = Transaction(2, dummySignedWalletTxIn, localOutputs, 0).weight() - emptyTx.weight()
-                    val w2 = Transaction(2, dummySignedWalletTxIn, localOutputs + listOf(dummyChangeTxOut), 0).weight() - emptyTx.weight()
-                    Pair(w1, w2)
-                }
-            }
-            // If we're not the initiator, we don't return an error when we're unable to meet the desired feerate.
+            val weightWithoutChange = computeWeightPaid(params.isInitiator, sharedUtxo?.first, params.fundingPubkeyScript, walletInputs, localOutputs)
+            val weightWithChange = computeWeightPaid(params.isInitiator, sharedUtxo?.first, params.fundingPubkeyScript, walletInputs, localOutputs + listOf(TxOut(0.sat, Script.pay2wpkh(Transactions.PlaceHolderPubKey))))
             val feesWithoutChange = totalAmountIn - totalAmountOut
+            // If we're not the initiator, we don't return an error when we're unable to meet the desired feerate.
             if (params.isInitiator && feesWithoutChange < Transactions.weight2fee(params.targetFeerate, weightWithoutChange)) {
                 return Either.Left(FundingContributionFailure.NotEnoughFees(feesWithoutChange, Transactions.weight2fee(params.targetFeerate, weightWithoutChange)))
             }
@@ -248,16 +223,31 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 }
             }
             val sharedInput = sharedUtxo?.let { (i, balances) -> listOf(InteractiveTxInput.Shared(0, i.info.outPoint, 0xfffffffdU, balances.toLocal, balances.toRemote)) } ?: listOf()
-            val walletInputs = walletUtxos.map { i -> InteractiveTxInput.Local(0, i.previousTx, i.outputIndex.toLong(), 0xfffffffdU) }
+            val localInputs = walletInputs.map { i -> InteractiveTxInput.Local(0, i.previousTx, i.outputIndex.toLong(), 0xfffffffdU) }
             return if (params.isInitiator) {
-                Either.Right(sortFundingContributions(params, sharedInput + walletInputs, sharedOutput + nonChangeOutputs + changeOutput))
+                Either.Right(sortFundingContributions(params, sharedInput + localInputs, sharedOutput + nonChangeOutputs + changeOutput))
             } else {
-                Either.Right(sortFundingContributions(params, walletInputs, nonChangeOutputs + changeOutput))
+                Either.Right(sortFundingContributions(params, localInputs, nonChangeOutputs + changeOutput))
             }
         }
 
+        /** Compute the weight we need to pay on-chain fees for. */
+        private fun computeWeightPaid(isInitiator: Boolean, sharedInput: SharedFundingInput?, sharedOutputScript: ByteVector, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>): Int {
+            val walletInputsWeight = walletInputs.size * Transactions.p2wpkhInputWeight
+            val localOutputsWeight = localOutputs.sumOf { it.weight() }
+            return if (isInitiator) {
+                // The initiator must add the shared input, the shared output and pay for the fees of the common transaction fields.
+                val sharedInputWeight = sharedInput?.weight ?: 0
+                val dummyTx = Transaction(2, emptyList(), listOf(TxOut(0.sat, sharedOutputScript)), 0)
+                sharedInputWeight + walletInputsWeight + localOutputsWeight + dummyTx.weight()
+            } else {
+                // The non-initiator only pays for the weights of their own inputs and outputs.
+                walletInputsWeight + localOutputsWeight
+            }
+        }
+
+        /** We always randomize the order of inputs and outputs. */
         private fun sortFundingContributions(params: InteractiveTxParams, inputs: List<InteractiveTxInput.Outgoing>, outputs: List<InteractiveTxOutput.Outgoing>): FundingContributions {
-            // We always randomize the order of inputs and outputs.
             val sortedInputs = inputs.shuffled().mapIndexed { i, input ->
                 val serialId = 2 * i.toLong() + params.serialIdParity
                 when (input) {
@@ -601,7 +591,7 @@ data class InteractiveTxSession(
         val sharedInput = fundingParams.sharedInput?.let {
             // To compute the remote reserve, we discard the local contribution. It's okay if they go below reserve because
             // we added capacity to the channel with a splice-in.
-            val remoteReserve = ((fundingParams.fundingAmount - fundingParams.localContribution)/ 100).max(fundingParams.dustLimit)
+            val remoteReserve = ((fundingParams.fundingAmount - fundingParams.localContribution) / 100).max(fundingParams.dustLimit)
             if (sharedOutput.remoteAmount < remoteReserve && remoteOnlyOutputs.isNotEmpty()) {
                 return InteractiveTxSessionAction.InvalidTxBelowReserve(fundingParams.channelId, sharedOutput.remoteAmount.truncateToSatoshi(), remoteReserve)
             }

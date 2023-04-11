@@ -11,7 +11,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import kotlinx.coroutines.CompletableDeferred
@@ -25,16 +24,19 @@ sealed class Command {
                 require(spliceIn != null || spliceOut != null) { "there must be a splice-in or a splice-out" }
             }
 
-            val additionalLocalFunding: Satoshi = spliceIn?.additionalLocalFunding ?: 0.sat
             val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
             val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 
-            data class SpliceIn(val wallet: WalletState, val additionalLocalFunding: Satoshi, val pushAmount: MilliSatoshi = 0.msat)
+            data class SpliceIn(val wallet: WalletState, val pushAmount: MilliSatoshi = 0.msat)
             data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
         }
 
         sealed class Response {
-            data class Success(
+            /**
+             * This response doesn't fully guarantee that the splice will confirm, because our peer may potentially double-spend
+             * the splice transaction. Callers should wait for on-chain confirmations and handle double-spend events.
+             */
+            data class Created(
                 val channelId: ByteVector32,
                 val fundingTxIndex: Long,
                 val fundingTxId: ByteVector32,

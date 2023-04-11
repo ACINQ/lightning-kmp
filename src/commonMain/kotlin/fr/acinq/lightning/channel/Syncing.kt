@@ -161,12 +161,12 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                 // NB: there is a key difference between channel_ready and splice_locked:
                                 // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
                                 // - splice_locked: the commitment index can be updated as long as it is compatible with all splices, so
-                                //   we must keep sending our most recent splice_confirmed at each reconnection
+                                //   we must keep sending our most recent splice_locked at each reconnection
                                 state.commitments.active
                                     .filter { it.fundingTxIndex > 0L } // only consider splice txs
                                     .firstOrNull { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
                                     ?.let {
-                                        logger.debug { "re-sending SpliceLocked for fundingTxid=${it.fundingTxId}" }
+                                        logger.debug { "re-sending splice_locked for fundingTxId=${it.fundingTxId}" }
                                         val spliceLocked = SpliceLocked(channelId, it.fundingTxId.reversed())
                                         actions.add(ChannelAction.Message.Send(spliceLocked))
                                     }
@@ -183,7 +183,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                 if (state.commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx) {
                                     if (state.commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
                                         // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
-                                        logger.info { "re-sending commit_sig and tx_signatures for fundingTxIndex=${state.commitments.latest.fundingTxIndex} fundingTxId=${state.commitments.latest.fundingTxId}" }
+                                        logger.info { "re-sending commit_sig for fundingTxIndex=${state.commitments.latest.fundingTxIndex} fundingTxId=${state.commitments.latest.fundingTxId}" }
                                         val commitSig = state.commitments.latest.remoteCommit.sign(keyManager, state.commitments.params, state.commitments.latest.commitInput)
                                         actions.add(ChannelAction.Message.Send(commitSig))
                                     }
@@ -193,12 +193,13 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                     // The funding tx is confirmed, and they have not received our tx_signatures, but they must have received our commit_sig, otherwise they
                                     // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
                                     // recompute our tx_signatures, but instead we do nothing: they will shortly be notified that the funding tx has confirmed.
+                                    logger.warning { "cannot re-send tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}, transaction is already confirmed" }
                                 }
                                 state.spliceStatus
                             } else if (cmd.message.nextFundingTxId != null) {
                                 // The fundingTxId must be for a splice attempt that we didn't store (we got disconnected before receiving their tx_complete)
                                 logger.info { "aborting obsolete splice attempt for fundingTxId=${cmd.message.nextFundingTxId}" }
-                                actions.add(ChannelAction.Message.Send(TxAbort(state.channelId, RbfAttemptAborted(state.channelId).message)))
+                                actions.add(ChannelAction.Message.Send(TxAbort(state.channelId, SpliceAborted(state.channelId).message)))
                                 SpliceStatus.Aborted
                             } else {
                                 state.spliceStatus

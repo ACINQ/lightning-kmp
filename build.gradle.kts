@@ -11,7 +11,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.5.0-splice-SNAPSHOT"
+    version = "1.5.0-SNAPSHOT"
 
     repositories {
         mavenLocal()
