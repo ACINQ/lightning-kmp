@@ -900,7 +900,7 @@ class Peer(
                                 balance,
                                 utxos.size,
                                 utxos.size * Transactions.p2wpkhInputWeight,
-                                TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(cmd.maxFeeBasisPoints, cmd.maxFeeFloor), PleaseOpenChannelTlv.GrandParents(grandParents)))
+                                TlvStream(PleaseOpenChannelTlv.MaxFees(cmd.maxFeeBasisPoints, cmd.maxFeeFloor), PleaseOpenChannelTlv.GrandParents(grandParents))
                             )
                             logger.info { "sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }
                             sendToPeer(pleaseOpenChannel)

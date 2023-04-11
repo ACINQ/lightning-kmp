@@ -322,7 +322,7 @@ data class TxAddInput(
         null,
         sharedInput.index,
         sequence,
-        TlvStream(listOf(TxAddInputTlv.SharedInputTxId(sharedInput.txid)))
+        TlvStream(TxAddInputTlv.SharedInputTxId(sharedInput.txid))
     )
 
     override val type: Long get() = TxAddInput.type
@@ -462,7 +462,7 @@ data class TxSignatures(
         channelId,
         tx.hash,
         witnesses,
-        previousFundingSig?.let { TlvStream(listOf(TxSignaturesTlv.PreviousFundingTxSig(it))) } ?: TlvStream.empty()
+        previousFundingSig?.let { TlvStream(TxSignaturesTlv.PreviousFundingTxSig(it)) } ?: TlvStream.empty()
     )
 
     override val type: Long get() = TxSignatures.type
@@ -521,7 +521,7 @@ data class TxInitRbf(
     val feerate: FeeratePerKw,
     val tlvs: TlvStream<TxInitRbfTlv> = TlvStream.empty()
 ) : InteractiveTxMessage(), HasChannelId {
-    constructor(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi) : this(channelId, lockTime, feerate, TlvStream(listOf(TxInitRbfTlv.SharedOutputContributionTlv(fundingContribution))))
+    constructor(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi) : this(channelId, lockTime, feerate, TlvStream(TxInitRbfTlv.SharedOutputContributionTlv(fundingContribution)))
 
     val fundingContribution = tlvs.get<TxInitRbfTlv.SharedOutputContributionTlv>()?.amount ?: 0.sat
 
@@ -553,7 +553,7 @@ data class TxAckRbf(
     override val channelId: ByteVector32,
     val tlvs: TlvStream<TxAckRbfTlv> = TlvStream.empty()
 ) : InteractiveTxMessage(), HasChannelId {
-    constructor(channelId: ByteVector32, fundingContribution: Satoshi) : this(channelId, TlvStream(listOf(TxAckRbfTlv.SharedOutputContributionTlv(fundingContribution))))
+    constructor(channelId: ByteVector32, fundingContribution: Satoshi) : this(channelId, TlvStream(TxAckRbfTlv.SharedOutputContributionTlv(fundingContribution)))
 
     val fundingContribution = tlvs.get<TxAckRbfTlv.SharedOutputContributionTlv>()?.amount ?: 0.sat
 
@@ -863,7 +863,7 @@ data class SpliceInit(
         fundingContribution,
         lockTime,
         feerate,
-        TlvStream(listOf(ChannelTlv.PushAmountTlv(pushAmount)))
+        TlvStream(ChannelTlv.PushAmountTlv(pushAmount))
     )
 
     override fun write(out: Output) {
@@ -906,7 +906,7 @@ data class SpliceAck(
     constructor(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi) : this(
         channelId,
         fundingContribution,
-        TlvStream(listOf(ChannelTlv.PushAmountTlv(pushAmount)))
+        TlvStream(ChannelTlv.PushAmountTlv(pushAmount))
     )
 
     override fun write(out: Output) {

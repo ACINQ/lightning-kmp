@@ -504,7 +504,7 @@ object JsonSerializers {
     object GenericTlvSerializer
 
     @Serializable
-    data class TlvStreamSurrogate(val records: List<Tlv>, val unknown: List<GenericTlv> = listOf())
+    data class TlvStreamSurrogate(val records: Set<Tlv>, val unknown: Set<GenericTlv> = setOf())
     class TlvStreamSerializer<T : Tlv> : KSerializer<TlvStream<T>> {
         private val delegateSerializer = TlvStreamSurrogate.serializer()
         override val descriptor: SerialDescriptor = delegateSerializer.descriptor

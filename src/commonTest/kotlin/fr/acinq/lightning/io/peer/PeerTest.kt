@@ -50,7 +50,7 @@ class PeerTest : LightningTestSuite() {
         randomKey().publicKey(),
         randomKey().publicKey(),
         0.toByte(),
-        TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)))
+        TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
     )
 
     @Test
@@ -234,10 +234,8 @@ class PeerTest : LightningTestSuite() {
         alice.send(openAlice)
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
-                listOf(
-                    ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
-                )
+                ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
+                ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
             )
         )
         bob.forward(open)
@@ -293,10 +291,8 @@ class PeerTest : LightningTestSuite() {
         alice.send(openAlice)
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
-                listOf(
-                    ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
-                )
+                ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
+                ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee))
             )
         )
         bob.forward(open)
@@ -315,10 +311,8 @@ class PeerTest : LightningTestSuite() {
         alice.send(openAlice)
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
-                listOf(
-                    ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat))
-                )
+                ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
+                ChannelTlv.ChannelOriginTlv(ChannelOrigin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat))
             )
         )
         bob.forward(open)

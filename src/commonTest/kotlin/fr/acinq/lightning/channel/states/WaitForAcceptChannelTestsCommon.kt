@@ -57,7 +57,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel -- missing channel type`() {
         val (alice, _, accept) = init()
-        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream(listOf()))))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream.empty())))
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, MissingChannelType(accept.temporaryChannelId).message))
@@ -66,7 +66,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel -- invalid channel type`() {
         val (alice, _, accept) = init()
-        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.Standard))))))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.Standard)))))
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidChannelType(accept.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.Standard).message))

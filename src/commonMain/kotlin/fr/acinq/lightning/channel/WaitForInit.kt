@@ -46,7 +46,7 @@ object WaitForInit : ChannelState() {
                     secondPerCommitmentPoint = keyManager.commitmentPoint(cmd.localParams.channelKeys(keyManager).shaSeed, 1),
                     channelFlags = cmd.channelFlags,
                     tlvStream = TlvStream(
-                        buildList {
+                        buildSet {
                             add(ChannelTlv.ChannelTypeTlv(cmd.channelType))
                             if (cmd.pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(cmd.pushAmount))
                             if (cmd.channelOrigin != null) add(ChannelTlv.ChannelOriginTlv(cmd.channelOrigin))
