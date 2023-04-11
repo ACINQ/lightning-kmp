@@ -31,13 +31,13 @@ data class WaitForChannelReady(
                             Pair(this@WaitForChannelReady, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                         }
                         else -> {
-                            when (val res = commitments.updateLocalFundingStatus(fullySignedTx.signedTx.txid, commitments.latest.localFundingStatus.copy(sharedTx = fullySignedTx), logger)) {
+                            when (val res = commitments.run { updateLocalFundingStatus(fullySignedTx.signedTx.txid, commitments.latest.localFundingStatus.copy(sharedTx = fullySignedTx)) }) {
                                 is Either.Left -> Pair(this@WaitForChannelReady, listOf())
                                 is Either.Right -> {
                                     logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
                                     val nextState = this@WaitForChannelReady.copy(commitments = res.value.first)
                                     val actions = buildList {
-                                        add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
+                                        add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx, ChannelAction.Blockchain.PublishTx.Type.FundingTx))
                                         add(ChannelAction.Storage.StoreState(nextState))
                                     }
                                     Pair(nextState, actions)
@@ -90,7 +90,8 @@ data class WaitForChannelReady(
                     null,
                     null,
                     null,
-                    null
+                    null,
+                    SpliceStatus.None
                 )
                 val actions = listOf(
                     ChannelAction.Blockchain.SendWatch(watchConfirmed),

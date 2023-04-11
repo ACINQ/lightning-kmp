@@ -46,7 +46,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             // We use watch-spent on the outputs both parties can claim (htlc outputs).
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(2L, 3L, 4L, 5L).map { OutPoint(lcp.commitTx.txid, it) }.toSet())
-            val txs = actions.findTxs().toSet()
+            val txs = actions.findPublishTxs().toSet()
             assertEquals(txs, setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx) + lcp.htlcTxs.values.filterNotNull().map { it.tx } + lcp.claimHtlcDelayedTxs.map { it.tx }.toSet())
         }
 
@@ -74,7 +74,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             // We still watch the remaining unclaimed htlc outputs.
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(4L, 5L).map { OutPoint(lcp.commitTx.txid, it) }.toSet())
-            val txs = actions.findTxs()
+            val txs = actions.findPublishTxs()
             assertEquals(txs, lcp.htlcTimeoutTxs().map { it.tx } + lcp.claimHtlcDelayedTxs.drop(2).map { it.tx })
         }
 
@@ -117,7 +117,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             // We use watch-spent on the outputs both parties can claim (htlc outputs).
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(2L, 3L, 4L, 5L).map { OutPoint(rcp.commitTx.txid, it) }.toSet())
-            val txs = actions.findTxs().toSet()
+            val txs = actions.findPublishTxs().toSet()
             assertEquals(txs, setOf(rcp.claimMainOutputTx!!.tx) + rcp.claimHtlcTxs.values.filterNotNull().map { it.tx }.toSet())
         }
 
@@ -144,7 +144,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             // We still watch the remaining unclaimed htlc outputs.
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(3L, 5L).map { OutPoint(rcp.commitTx.txid, it) }.toSet())
-            val txs = actions.findTxs().toSet()
+            val txs = actions.findPublishTxs().toSet()
             assertEquals(txs, setOf(rcp.claimHtlcSuccessTxs().last().tx, rcp.claimHtlcTimeoutTxs().last().tx))
         }
 
@@ -186,7 +186,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             // We use watch-spent on the outputs both parties can claim (htlc outputs and the remote main output).
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(1L, 2L, 3L, 4L, 5L).map { OutPoint(rvk.commitTx.txid, it) }.toSet())
-            val txs = actions.findTxs().toSet()
+            val txs = actions.findPublishTxs().toSet()
             assertEquals(txs, setOf(rvk.claimMainOutputTx!!.tx, rvk.mainPenaltyTx!!.tx) + rvk.htlcPenaltyTxs.map { it.tx }.toSet())
         }
 
@@ -210,7 +210,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             // We still watch the remaining unclaimed outputs (htlc and remote main output).
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(1L, 4L, 5L).map { OutPoint(rvk.commitTx.txid, it) }.toSet())
-            val txs = actions.findTxs().toSet()
+            val txs = actions.findPublishTxs().toSet()
             assertEquals(txs, setOf(rvk.mainPenaltyTx!!.tx, rvk.htlcPenaltyTxs[2].tx, rvk.htlcPenaltyTxs[3].tx))
         }
 
@@ -244,7 +244,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             assertTrue(actions.findWatches<WatchConfirmed>().isEmpty())
             // NB: the channel, after calling Helpers.claimRevokedHtlcTxOutputs, will put a watch-spent on the htlc-txs.
             assertTrue(actions.findWatches<WatchSpent>().isEmpty())
-            assertEquals(actions.findTxs().toSet(), rvk4b.claimHtlcDelayedPenaltyTxs.map { it.tx }.toSet())
+            assertEquals(actions.findPublishTxs().toSet(), rvk4b.claimHtlcDelayedPenaltyTxs.map { it.tx }.toSet())
 
             // We claim one of the remaining outputs, they claim the other.
             val rvk5a = rvk4b.update(rvk4b.claimHtlcDelayedPenaltyTxs[0].tx)

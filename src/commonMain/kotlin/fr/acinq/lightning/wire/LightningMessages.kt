@@ -84,6 +84,9 @@ interface LightningMessage {
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
                 PleaseOpenChannelRejected.type -> PleaseOpenChannelRejected.read(stream)
+                SpliceInit.type -> SpliceInit.read(stream)
+                SpliceAck.type -> SpliceAck.read(stream)
+                SpliceLocked.type -> SpliceLocked.read(stream)
                 else -> UnknownMessage(code.toLong())
             }
         }
@@ -115,7 +118,7 @@ interface HasTimestamp : LightningMessage {
     val timestampSeconds: Long
 }
 
-interface UpdateMessage : LightningMessage
+interface UpdateMessage : LightningMessage, ForbiddenMessageDuringSplice
 
 interface HtlcSettlementMessage : UpdateMessage {
     val id: Long
@@ -139,6 +142,8 @@ interface HasSerialId : LightningMessage {
 interface HasChainHash : LightningMessage {
     val chainHash: ByteVector32
 }
+
+interface ForbiddenMessageDuringSplice : LightningMessage
 
 data class EncryptedChannelData(val data: ByteVector) {
     /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
@@ -841,6 +846,119 @@ data class ChannelReady(
     }
 }
 
+data class SpliceInit(
+    override val channelId: ByteVector32,
+    val fundingContribution: Satoshi,
+    val lockTime: Long,
+    val feerate: FeeratePerKw,
+    val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
+) : ChannelMessage, HasChannelId {
+    override val type: Long get() = SpliceInit.type
+    val requireConfirmedInputs: Boolean = tlvStream.get<ChannelTlv.RequireConfirmedInputsTlv>()?.let { true } ?: false
+    val pushAmount: MilliSatoshi = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
+    val origins: List<ChannelOrigin.PayToOpenOrigin> = tlvStream.get<ChannelTlv.ChannelOriginsTlv>()?.channelOrigins?.filterIsInstance<ChannelOrigin.PayToOpenOrigin>() ?: emptyList()
+
+    constructor(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, pushAmount: MilliSatoshi) : this(
+        channelId,
+        fundingContribution,
+        lockTime,
+        feerate,
+        TlvStream(listOf(ChannelTlv.PushAmountTlv(pushAmount)))
+    )
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeInt64(fundingContribution.toLong(), out)
+        LightningCodecs.writeU32(lockTime.toInt(), out)
+        LightningCodecs.writeU32(feerate.toLong().toInt(), out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
+    }
+
+    companion object : LightningMessageReader<SpliceInit> {
+        const val type: Long = 37000
+
+        @Suppress("UNCHECKED_CAST")
+        private val readers = mapOf(
+            ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.ChannelOriginsTlv.tag to ChannelTlv.ChannelOriginsTlv.Companion as TlvValueReader<ChannelTlv>
+        )
+
+        override fun read(input: Input): SpliceInit = SpliceInit(
+            channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
+            fundingContribution = Satoshi(LightningCodecs.int64(input)),
+            lockTime = LightningCodecs.u32(input).toLong(),
+            feerate = FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
+            tlvStream = TlvStreamSerializer(false, readers).read(input)
+        )
+    }
+}
+
+data class SpliceAck(
+    override val channelId: ByteVector32,
+    val fundingContribution: Satoshi,
+    val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
+) : ChannelMessage, HasChannelId {
+    override val type: Long get() = SpliceAck.type
+    val requireConfirmedInputs: Boolean = tlvStream.get<ChannelTlv.RequireConfirmedInputsTlv>()?.let { true } ?: false
+    val pushAmount: MilliSatoshi = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
+
+    constructor(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi) : this(
+        channelId,
+        fundingContribution,
+        TlvStream(listOf(ChannelTlv.PushAmountTlv(pushAmount)))
+    )
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeInt64(fundingContribution.toLong(), out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
+    }
+
+    companion object : LightningMessageReader<SpliceAck> {
+        const val type: Long = 37002
+
+        @Suppress("UNCHECKED_CAST")
+        private val readers = mapOf(
+            ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
+        )
+
+        override fun read(input: Input): SpliceAck = SpliceAck(
+            channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
+            fundingContribution = Satoshi(LightningCodecs.int64(input)),
+            tlvStream = TlvStreamSerializer(false, readers).read(input)
+        )
+    }
+}
+
+data class SpliceLocked(
+    override val channelId: ByteVector32,
+    val fundingTxHash: ByteVector32,
+    val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
+) : ChannelMessage, HasChannelId {
+    override val type: Long get() = SpliceLocked.type
+    val fundingTxId = fundingTxHash.reversed()
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeBytes(fundingTxHash, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
+    }
+
+    companion object : LightningMessageReader<SpliceLocked> {
+        const val type: Long = 37004
+
+        private val readers = emptyMap<Long, TlvValueReader<ChannelTlv>>()
+
+        override fun read(input: Input): SpliceLocked = SpliceLocked(
+            channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
+            fundingTxHash = ByteVector32(LightningCodecs.bytes(input, 32)),
+            tlvStream = TlvStreamSerializer(false, readers).read(input)
+        )
+    }
+}
+
 data class UpdateAddHtlc(
     override val channelId: ByteVector32,
     val id: Long,
@@ -848,7 +966,7 @@ data class UpdateAddHtlc(
     val paymentHash: ByteVector32,
     val cltvExpiry: CltvExpiry,
     val onionRoutingPacket: OnionRoutingPacket
-) : HtlcMessage, UpdateMessage, HasChannelId {
+) : HtlcMessage, UpdateMessage, HasChannelId, ForbiddenMessageDuringSplice {
     override val type: Long get() = UpdateAddHtlc.type
 
     override fun write(out: Output) {
@@ -968,6 +1086,8 @@ data class CommitSig(
     override val channelData: EncryptedChannelData get() = tlvStream.get<CommitSigTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): CommitSig = copy(tlvStream = tlvStream.addOrUpdate(CommitSigTlv.ChannelData(ecd)))
 
+    val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
+
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(signature, out)
@@ -980,7 +1100,10 @@ data class CommitSig(
         const val type: Long = 132
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>)
+        val readers = mapOf(
+            CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>,
+            CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>
+        )
 
         override fun read(input: Input): CommitSig {
             val channelId = ByteVector32(LightningCodecs.bytes(input, 32))
@@ -1277,7 +1400,7 @@ data class Shutdown(
     override val channelId: ByteVector32,
     val scriptPubKey: ByteVector,
     val tlvStream: TlvStream<ShutdownTlv> = TlvStream.empty()
-) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData, ForbiddenMessageDuringSplice {
     override val type: Long get() = Shutdown.type
 
     override val channelData: EncryptedChannelData get() = tlvStream.get<ShutdownTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty

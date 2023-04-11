@@ -433,6 +433,27 @@ class Peer(
         input.send(cmd)
     }
 
+    /**
+     * Do a splice out using any suitable channel
+     * @return  [Command.Splice.Companion.Result] if a splice was attempted, or {null} if no suitable
+     *          channel was found
+     */
+    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Command.Splice.Response? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .firstOrNull { it.commitments.availableBalanceForSend() > amount }
+            ?.let { channel ->
+                val spliceCommand = Command.Splice.Request(
+                    replyTo = CompletableDeferred(),
+                    spliceIn = null,
+                    spliceOut = Command.Splice.Request.SpliceOut(amount, scriptPubKey),
+                    feerate = feeratePerKw
+                )
+                send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
+                spliceCommand.replyTo.await()
+            }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun sendToPeer(msg: LightningMessage) {
         val encoded = LightningMessage.encode(msg)
@@ -492,7 +513,7 @@ class Peer(
                         when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                             is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
                             is OutgoingPaymentHandler.PreimageReceived -> logger.debug(mapOf("paymentId" to result.request.paymentId)) { "payment preimage received: ${result.preimage}" }
-                            null -> logger.debug{ "unknown payment" }
+                            null -> logger.debug { "unknown payment" }
                         }
                     }
 
@@ -722,13 +743,11 @@ class Peer(
                                 val fundingKeyPath = randomKeyPath(4)
                                 val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
                                 val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
-                                // We set our max-htlc-value-in-flight to the channel capacity to ensure we can empty our channels with a single htlc.
-                                val maxHtlcValueInFlight = msg.fundingAmount + fundingAmount
                                 val localParams = LocalParams(
                                     nodeParams.nodeId,
                                     fundingKeyPath,
                                     nodeParams.dustLimit,
-                                    maxHtlcValueInFlight.toMilliSatoshi().toLong(),
+                                    nodeParams.maxHtlcValueInFlightMsat,
                                     nodeParams.htlcMinimum,
                                     nodeParams.toRemoteDelayBlocks,
                                     nodeParams.maxAcceptedHtlcs,
@@ -856,22 +875,43 @@ class Peer(
             }
 
             cmd is RequestChannelOpen -> {
-                // We currently only support p2wpkh inputs.
-                val utxos = cmd.wallet.confirmedUtxos
                 val balance = cmd.wallet.confirmedBalance
-                val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
-                val pleaseOpenChannel = PleaseOpenChannel(
-                    nodeParams.chainHash,
-                    cmd.requestId,
-                    balance,
-                    utxos.size,
-                    utxos.size * Transactions.p2wpkhInputWeight,
-                    TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(cmd.maxFeeBasisPoints, cmd.maxFeeFloor), PleaseOpenChannelTlv.GrandParents(grandParents)))
-                )
-                logger.info { "sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }
-                sendToPeer(pleaseOpenChannel)
-                nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
-                channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
+                when (val channel = channels.values.firstOrNull { it is Normal }) {
+                    is ChannelStateWithCommitments -> {
+                        val feerate = onChainFeeratesFlow.filterNotNull().first().mutualCloseFeerate
+                        logger.info { "requesting splice-in using confirmed balance: $balance" }
+                        val spliceCommand = Command.Splice.Request(
+                            replyTo = CompletableDeferred(),
+                            spliceIn = Command.Splice.Request.SpliceIn(cmd.wallet),
+                            spliceOut = null,
+                            feerate = feerate
+                        )
+                        input.send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
+                    }
+                    else -> {
+                        if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is ErrorInformationLeak || it is Aborted }) {
+                            // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel
+                            val utxos = cmd.wallet.confirmedUtxos
+                            // Grand parents are supplied as a proof of migration
+                            val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
+                            val pleaseOpenChannel = PleaseOpenChannel(
+                                nodeParams.chainHash,
+                                cmd.requestId,
+                                balance,
+                                utxos.size,
+                                utxos.size * Transactions.p2wpkhInputWeight,
+                                TlvStream(listOf(PleaseOpenChannelTlv.MaxFees(cmd.maxFeeBasisPoints, cmd.maxFeeFloor), PleaseOpenChannelTlv.GrandParents(grandParents)))
+                            )
+                            logger.info { "sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }
+                            sendToPeer(pleaseOpenChannel)
+                            nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
+                            channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
+                        } else {
+                            // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet
+                            logger.info { "ignoring channel request, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
+                        }
+                    }
+                }
             }
 
             cmd is OpenChannel -> {

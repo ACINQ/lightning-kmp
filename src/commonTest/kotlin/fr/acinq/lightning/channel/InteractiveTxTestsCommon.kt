@@ -73,7 +73,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxA.sharedTx.localAmountIn, 145_000_000.msat)
         assertEquals(sharedTxA.sharedTx.remoteAmountIn, 100_000_000.msat)
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 245_000.sat)
-        assertEquals(sharedTxA.sharedTx.fees, 7760.sat)
+        assertEquals(sharedTxA.sharedTx.fees, 7800.sat)
         assertTrue(sharedTxB.sharedTx.localFees < sharedTxA.sharedTx.localFees)
 
         // Bob sends signatures first as he contributed less than Alice.
@@ -142,7 +142,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript && it.amount == fundingA + fundingB }, 1)
 
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 130_000.sat)
-        assertEquals(sharedTxA.sharedTx.fees, 3024.sat)
+        assertEquals(sharedTxA.sharedTx.fees, 3030.sat)
         assertTrue(sharedTxB.sharedTx.localFees < sharedTxA.sharedTx.localFees)
 
         // Alice sends signatures first as she contributed less than Bob.
@@ -200,7 +200,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript && it.amount == fundingA + fundingB }, 1)
 
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 350_000.sat)
-        assertEquals(sharedTxA.sharedTx.fees, 5040.sat)
+        assertEquals(sharedTxA.sharedTx.fees, 5050.sat)
         assertTrue(sharedTxA.sharedTx.remoteFees < sharedTxA.sharedTx.localFees)
 
         // Alice contributes more than Bob to the funding output, but Bob's inputs are bigger than Alice's, so Alice must sign first.
@@ -253,11 +253,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript && it.amount == fundingA }, 1)
 
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 200_000.sat)
-        assertEquals(sharedTxA.sharedTx.fees, 2205.sat)
-        assertEquals(sharedTxA.sharedTx.localFees, 2_205_000.msat)
+        assertEquals(sharedTxA.sharedTx.fees, 2215.sat)
+        assertEquals(sharedTxA.sharedTx.localFees, 2_215_000.msat)
         assertEquals(sharedTxA.sharedTx.remoteFees, 0.msat)
         assertEquals(sharedTxB.sharedTx.localFees, 0.msat)
-        assertEquals(sharedTxB.sharedTx.remoteFees, 2_205_000.msat)
+        assertEquals(sharedTxB.sharedTx.remoteFees, 2_215_000.msat)
 
         // Bob sends signatures first as he did not contribute at all.
         val signedTxB = sharedTxB.sharedTx.sign(LocalKeyManager(randomBytes64(), Block.RegtestGenesisBlock.hash), f.fundingParamsB, f.localParamsB)
@@ -326,11 +326,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 315_000.sat)
         assertNotNull(sharedTxA.sharedTx.sharedInput)
-        assertEquals(sharedTxA.sharedTx.localFees, 998_000.msat)
-        assertEquals(sharedTxA.sharedTx.remoteFees, 398_000.msat)
+        assertEquals(sharedTxA.sharedTx.localFees, 999_000.msat)
+        assertEquals(sharedTxA.sharedTx.remoteFees, 399_000.msat)
         assertNotNull(sharedTxB.sharedTx.sharedInput)
-        assertEquals(sharedTxB.sharedTx.localFees, 398_000.msat)
-        assertEquals(sharedTxB.sharedTx.remoteFees, 998_000.msat)
+        assertEquals(sharedTxB.sharedTx.localFees, 399_000.msat)
+        assertEquals(sharedTxB.sharedTx.remoteFees, 999_000.msat)
 
         // Bob sends signatures first as he contributed less than Alice.
         val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
@@ -551,11 +551,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         assertEquals(sharedTxA.sharedTx.totalAmountIn, 375_000.sat)
         assertNotNull(sharedTxA.sharedTx.sharedInput)
-        assertEquals(sharedTxA.sharedTx.localFees, 1_122_000.msat)
-        assertEquals(sharedTxA.sharedTx.remoteFees, 522_000.msat)
+        assertEquals(sharedTxA.sharedTx.localFees, 1_123_000.msat)
+        assertEquals(sharedTxA.sharedTx.remoteFees, 523_000.msat)
         assertNotNull(sharedTxB.sharedTx.sharedInput)
-        assertEquals(sharedTxB.sharedTx.localFees, 522_000.msat)
-        assertEquals(sharedTxB.sharedTx.remoteFees, 1_122_000.msat)
+        assertEquals(sharedTxB.sharedTx.localFees, 523_000.msat)
+        assertEquals(sharedTxB.sharedTx.remoteFees, 1_123_000.msat)
 
         // Bob sends signatures first as he did not contribute.
         val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)

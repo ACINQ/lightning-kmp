@@ -123,6 +123,7 @@
         },
         "active": [
             {
+                "fundingTxIndex": 0,
                 "localFundingStatus": {
                     "status": "unconfirmed",
                     "txId": "bdcd274e9bc89c621b30596e344389d28c3a92f820ef5a680ebfcb615b827c2f"
@@ -331,6 +332,8 @@
                 }
             }
         ],
+        "inactive": [
+        ],
         "payments": {
             "0": "7e780474-04b9-41db-94b9-7ef99349408f",
             "1": "683c4687-c4b7-4cb1-ac82-6808f57f4409"
@@ -365,5 +368,6 @@
     "remoteChannelUpdate": null,
     "localShutdown": null,
     "remoteShutdown": null,
-    "closingFeerates": null
+    "closingFeerates": null,
+    "spliceStatus": "None"
 }

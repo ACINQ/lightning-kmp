@@ -58,6 +58,7 @@
     JsonSerializers.SignedSharedTransactionSerializer::class,
     JsonSerializers.InteractiveTxSigningSessionSerializer::class,
     JsonSerializers.RbfStatusSerializer::class,
+    JsonSerializers.SpliceStatusSerializer::class,
     JsonSerializers.ChannelParamsSerializer::class,
     JsonSerializers.ChannelOriginSerializer::class,
     JsonSerializers.CommitmentChangesSerializer::class,
@@ -272,6 +273,8 @@ object JsonSerializers {
 
     @Serializer(forClass = RbfStatus::class)
     object RbfStatusSerializer
+
+    object SpliceStatusSerializer : StringSerializer<SpliceStatus>({ it::class.simpleName!! })
 
     @Serializer(forClass = ChannelParams::class)
     object ChannelParamsSerializer

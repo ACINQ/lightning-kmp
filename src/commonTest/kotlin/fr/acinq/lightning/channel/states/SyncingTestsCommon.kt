@@ -273,8 +273,8 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertIs<Syncing>(alice3.state)
         val aliceState3 = alice3.state.state
         assertIs<WaitForChannelReady>(aliceState3)
-        assertEquals(aliceState3.commitments.active.size, 1)
-        assertEquals(aliceState3.commitments.latest.fundingTxId, previousFundingTx.txid)
+        assertEquals(2, aliceState3.commitments.active.size)
+        assertIs<LocalFundingStatus.ConfirmedFundingTx>(aliceState3.commitments.active.last().localFundingStatus)
         assertEquals(actionsAlice3.size, 2)
         assertEquals(actionsAlice3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
         actionsAlice3.has<ChannelAction.Storage.StoreState>()
@@ -282,8 +282,8 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertIs<Syncing>(bob3.state)
         val bobState3 = bob3.state.state
         assertIs<WaitForChannelReady>(bobState3)
-        assertEquals(bobState3.commitments.active.size, 1)
-        assertEquals(bobState3.commitments.latest.fundingTxId, previousFundingTx.txid)
+        assertEquals(2, bobState3.commitments.active.size)
+        assertIs<LocalFundingStatus.ConfirmedFundingTx>(bobState3.commitments.active.last().localFundingStatus)
         assertEquals(actionsBob3.size, 2)
         assertEquals(actionsBob3.hasWatch<WatchSpent>().txId, previousFundingTx.txid)
         actionsBob3.has<ChannelAction.Storage.StoreState>()

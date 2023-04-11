@@ -14,7 +14,8 @@ import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.serialization.Encryption.from
-import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
+import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -78,7 +79,46 @@ sealed class ChannelAction {
 
     sealed class Blockchain : ChannelAction() {
         data class SendWatch(val watch: Watch) : Blockchain()
-        data class PublishTx(val tx: Transaction) : Blockchain()
+        data class PublishTx(val tx: Transaction, val txType: Type) : Blockchain() {
+            // region txType
+            enum class Type {
+                FundingTx,
+                CommitTx,
+                HtlcSuccessTx,
+                HtlcTimeoutTx,
+                ClaimHtlcSuccessTx,
+                ClaimHtlcTimeoutTx,
+                ClaimLocalAnchorOutputTx,
+                ClaimRemoteAnchorOutputTx,
+                ClaimLocalDelayedOutputTx,
+                ClaimRemoteDelayedOutputTx,
+                MainPenaltyTx,
+                HtlcPenaltyTx,
+                ClaimHtlcDelayedOutputPenaltyTx,
+                ClosingTx,
+            }
+
+            constructor(txinfo: Transactions.TransactionWithInputInfo) : this(
+                tx = txinfo.tx,
+                txType = when (txinfo) {
+                    is CommitTx -> Type.CommitTx
+                    is HtlcTx.HtlcSuccessTx -> Type.HtlcSuccessTx
+                    is HtlcTx.HtlcTimeoutTx -> Type.HtlcTimeoutTx
+                    is ClaimHtlcTx.ClaimHtlcSuccessTx -> Type.ClaimHtlcSuccessTx
+                    is ClaimHtlcTx.ClaimHtlcTimeoutTx -> Type.ClaimHtlcTimeoutTx
+                    is ClaimAnchorOutputTx.ClaimLocalAnchorOutputTx -> Type.ClaimLocalAnchorOutputTx
+                    is ClaimAnchorOutputTx.ClaimRemoteAnchorOutputTx -> Type.ClaimRemoteAnchorOutputTx
+                    is ClaimLocalDelayedOutputTx -> Type.ClaimLocalDelayedOutputTx
+                    is ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx -> Type.ClaimRemoteDelayedOutputTx
+                    is MainPenaltyTx -> Type.MainPenaltyTx
+                    is HtlcPenaltyTx -> Type.HtlcPenaltyTx
+                    is ClaimHtlcDelayedOutputPenaltyTx -> Type.ClaimHtlcDelayedOutputPenaltyTx
+                    is ClosingTx -> Type.ClosingTx
+                    is SpliceTx -> Type.FundingTx
+                }
+            )
+            // endregion
+        }
     }
 
     sealed class Storage : ChannelAction() {
@@ -253,7 +293,7 @@ sealed class ChannelState {
     }
 
     internal fun ChannelContext.doPublish(tx: ClosingTx, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
-        ChannelAction.Blockchain.PublishTx(tx.tx),
+        ChannelAction.Blockchain.PublishTx(tx),
         ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx.tx)))
     )
 
@@ -301,10 +341,12 @@ sealed class PersistedChannelState : ChannelState() {
         is ChannelStateWithCommitments -> {
             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
             val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommitIndex)
-            val tlvs: TlvStream<ChannelReestablishTlv> = when (state) {
-                is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
-                else -> TlvStream.empty()
+            val unsignedFundingTxId = when (state) {
+                is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()
+                is Normal -> state.getUnsignedFundingTxId() // a splice was in progress, we tell our peer that we are remembering it and are expecting signatures
+                else -> null
             }
+            val tlvs: TlvStream<ChannelReestablishTlv> = unsignedFundingTxId?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
             ChannelReestablish(
                 channelId = channelId,
                 nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,
@@ -334,10 +376,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
      * We also watch this funding transaction to be able to detect force-close attempts.
      */
     internal fun ChannelContext.acceptFundingTxConfirmed(w: WatchEventConfirmed): Either<Commitments, Triple<Commitments, Commitment, List<ChannelAction>>> {
+        logger.info { "funding txid=${w.tx.txid} was confirmed at blockHeight=${w.blockHeight} txIndex=${w.txIndex}" }
         val fundingStatus = LocalFundingStatus.ConfirmedFundingTx(w.tx)
-        return commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, logger).map { (commitments1, commitment) ->
-            val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-            Triple(commitments1, commitment, listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+        return commitments.run {
+            updateLocalFundingStatus(w.tx.txid, fundingStatus).map { (commitments1, commitment) ->
+                val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                Triple(commitments1, commitment, listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+            }
         }
     }
 
@@ -360,15 +405,29 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
      */
     internal fun ChannelContext.handlePotentialForceClose(w: WatchEventSpent): Pair<ChannelStateWithCommitments, List<ChannelAction>> = when {
         w.event != BITCOIN_FUNDING_SPENT -> Pair(this@ChannelStateWithCommitments, listOf())
-        commitments.active.any { it.fundingTxId == w.tx.txid } -> Pair(this@ChannelStateWithCommitments, listOf())
+        commitments.all.any { it.fundingTxId == w.tx.txid } -> Pair(this@ChannelStateWithCommitments, listOf()) // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
         w.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> spendLocalCurrent()
         w.tx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(w.tx, commitments.latest)
         w.tx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(w.tx, commitments.latest)
-        w.tx.txIn.any { it.outPoint.txid == commitments.latest.fundingTxId } -> handleRemoteSpentOther(w.tx)
-        else -> {
-            logger.warning { "unrecognized tx=${w.tx.txid}" }
-            // this was for another commitments
-            Pair(this@ChannelStateWithCommitments, listOf())
+        w.tx.txIn.any { it.outPoint == commitments.latest.commitInput.outPoint } -> handleRemoteSpentOther(w.tx)
+        else -> when (val commitment = commitments.resolveCommitment(w.tx)) {
+            is Commitment -> {
+                logger.warning { "a commit tx for an older commitment has been published fundingTxId=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
+                // We try spending our latest commitment but we also watch their commitment: if it confirms, we will react by spending our corresponding outputs.
+                val watch = ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, w.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED))
+                spendLocalCurrent().run { copy(second = second + watch) }
+            }
+            else -> {
+                logger.warning { "unrecognized tx=${w.tx.txid}" }
+                // This case can happen in the following (harmless) scenario:
+                //  - we create and publish a splice transaction, then we go offline
+                //  - the transaction confirms while we are offline
+                //  - we restart and set a watch-confirmed for the splice transaction and a watch-spent for the previous funding transaction
+                //  - the watch-confirmed triggers first and we prune the previous funding transaction
+                //  - the watch-spent for the previous funding transaction triggers because of the splice transaction
+                //  - but we've already pruned the corresponding commitment: we should simply ignore the event
+                Pair(this@ChannelStateWithCommitments, listOf())
+            }
         }
     }
 
@@ -564,6 +623,22 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     }
                 }
             }
+        }
+    }
+
+    // in Normal and Shutdown we aggregate sigs for splices before processing
+    var sigStash = emptyList<CommitSig>()
+
+    /** For splices we will send one commit_sig per active commitments. */
+    internal fun ChannelContext.aggregateSigs(commit: CommitSig): List<CommitSig>? {
+        sigStash = sigStash + commit
+        logger.debug { "received sig for batch of size=${commit.batchSize}" }
+        return if (sigStash.size == commit.batchSize) {
+            val sigs = sigStash
+            sigStash = emptyList()
+            sigs
+        } else {
+            null
         }
     }
 }

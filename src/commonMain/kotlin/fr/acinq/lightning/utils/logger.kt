@@ -81,6 +81,10 @@ fun ChannelState.mdc(): Map<String, Any> {
             is Syncing -> put("channelId", state.state.channelId)
             else -> {}
         }
+        when(state) {
+            is ChannelStateWithCommitments -> put("commitments", "active=${state.commitments.active.map { it.fundingTxIndex }} inactive=${state.commitments.inactive.map { it.fundingTxIndex }}")
+            else -> {}
+        }
     }
 }
 

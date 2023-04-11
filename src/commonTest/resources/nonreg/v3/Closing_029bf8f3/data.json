@@ -117,6 +117,7 @@
         },
         "active": [
             {
+                "fundingTxIndex": 0,
                 "localFundingStatus": {
                     "status": "unconfirmed",
                     "txId": "bdcd274e9bc89c621b30596e344389d28c3a92f820ef5a680ebfcb615b827c2f"
@@ -373,6 +374,8 @@
                     }
                 }
             }
+        ],
+        "inactive": [
         ],
         "payments": {
             "0": "63bcda18-e368-4b94-8f92-f584b22f5f39",

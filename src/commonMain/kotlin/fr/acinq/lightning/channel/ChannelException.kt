@@ -27,6 +27,7 @@ data class DustLimitTooLarge                       (override val channelId: Byte
 data class ToSelfDelayTooHigh                      (override val channelId: ByteVector32, val toSelfDelay: CltvExpiryDelta, val max: CltvExpiryDelta) : ChannelException(channelId, "unreasonable to_self_delay=$toSelfDelay (max=$max)")
 data class ChannelFundingError                     (override val channelId: ByteVector32) : ChannelException(channelId, "channel funding error")
 data class RbfAttemptAborted                       (override val channelId: ByteVector32) : ChannelException(channelId, "rbf attempt aborted")
+data class SpliceAborted                           (override val channelId: ByteVector32) : ChannelException(channelId, "splice aborted")
 data class DualFundingAborted                      (override val channelId: ByteVector32, val reason: String) : ChannelException(channelId, "dual funding aborted: $reason")
 data class UnexpectedInteractiveTxMessage          (override val channelId: ByteVector32, val msg: InteractiveTxMessage) : ChannelException(channelId, "unexpected interactive-tx message (${msg::class})")
 data class UnexpectedCommitSig                     (override val channelId: ByteVector32) : ChannelException(channelId, "unexpected commitment signatures (commit_sig)")
@@ -38,6 +39,9 @@ data class InvalidRbfTxAbortNotAcked               (override val channelId: Byte
 data class InvalidRbfTxConfirmed                   (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "no need to rbf, transaction is already confirmed with txId=$txId")
 data class InvalidRbfNonInitiator                  (override val channelId: ByteVector32) : ChannelException(channelId, "cannot initiate rbf: we're not the initiator of this interactive-tx attempt")
 data class InvalidRbfAttempt                       (override val channelId: ByteVector32) : ChannelException(channelId, "invalid rbf attempt")
+data class InvalidSpliceAlreadyInProgress          (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: the current splice attempt must be completed or aborted first")
+data class InvalidSpliceAbortNotAcked              (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: our previous tx_abort has not been acked")
+data class InvalidSpliceChannelNotIdle             (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: channel is not idle")
 data class NoMoreHtlcsClosingInProgress            (override val channelId: ByteVector32) : ChannelException(channelId, "cannot send new htlcs, closing in progress")
 data class NoMoreFeeUpdateClosingInProgress        (override val channelId: ByteVector32) : ChannelException(channelId, "cannot send new update_fee, closing in progress")
 data class ClosingAlreadyInProgress                (override val channelId: ByteVector32) : ChannelException(channelId, "closing already in progress")
@@ -84,4 +88,5 @@ data class RevocationSyncError                     (override val channelId: Byte
 data class InvalidFailureCode                      (override val channelId: ByteVector32) : ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 data class PleasePublishYourCommitment             (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")
 data class CommandUnavailableInThisState           (override val channelId: ByteVector32, val state: String) : ChannelException(channelId, "cannot execute command in state=$state")
+data class ForbiddenDuringSplice                   (override val channelId: ByteVector32, val command: String?) : ChannelException(channelId, "cannot process $command while splicing")
 // @formatter:on

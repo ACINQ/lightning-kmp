@@ -123,7 +123,7 @@ object WaitForInit : ChannelState() {
                                 // in all other cases we need to be ready for any type of closing
                                 val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()
                                 val actions = buildList {
-                                    addAll(unconfirmedFundingTxs.map { ChannelAction.Blockchain.PublishTx(it) })
+                                    addAll(unconfirmedFundingTxs.map { ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx) })
                                     addAll(fundingTxWatches.map { ChannelAction.Blockchain.SendWatch(it) })
                                     cmd.state.mutualClosePublished.forEach { addAll(doPublish(it, cmd.state.channelId)) }
                                     cmd.state.localCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
@@ -138,7 +138,7 @@ object WaitForInit : ChannelState() {
                     }
                     else -> {
                         val actions = buildList {
-                            addAll(unconfirmedFundingTxs.map { ChannelAction.Blockchain.PublishTx(it) })
+                            addAll(unconfirmedFundingTxs.map { ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx) })
                             addAll(fundingTxWatches.map { ChannelAction.Blockchain.SendWatch(it) })
                         }
                         Pair(Offline(cmd.state), actions)

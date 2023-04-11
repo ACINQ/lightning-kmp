@@ -108,6 +108,30 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
+    /** With rbfed splices we can have multiple origins*/
+    data class ChannelOriginsTlv(val channelOrigins: List<ChannelOrigin>) : ChannelTlv() {
+        override val tag: Long get() = ChannelOriginsTlv.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeU16(channelOrigins.size, out)
+            channelOrigins.forEach { ChannelOriginTlv(it).write(out) }
+        }
+
+        companion object : TlvValueReader<ChannelOriginsTlv> {
+            const val tag: Long = 0x47000009
+
+            override fun read(input: Input): ChannelOriginsTlv {
+                val size = LightningCodecs.u16(input)
+                val origins = buildList {
+                    for (i in 0 until size) {
+                        add(ChannelOriginTlv.read(input).channelOrigin)
+                    }
+                }
+                return ChannelOriginsTlv(origins)
+            }
+        }
+    }
+
     /** Amount that will be offered by the initiator of a dual-funded channel to the non-initiator. */
     data class PushAmountTlv(val amount: MilliSatoshi) : ChannelTlv() {
         override val tag: Long get() = PushAmountTlv.tag
@@ -142,6 +166,16 @@ sealed class CommitSigTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+
+    data class Batch(val size: Int) : CommitSigTlv() {
+        override val tag: Long get() = Batch.tag
+        override fun write(out: Output) = LightningCodecs.writeTU16(size, out)
+
+        companion object : TlvValueReader<Batch> {
+            const val tag: Long = 0x47010005
+            override fun read(input: Input): Batch = Batch(size = LightningCodecs.tu16(input))
         }
     }
 }

@@ -83,7 +83,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         run {
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
             assertIs<WaitForChannelReady>(bob2.state)
-            assertEquals(bob2.commitments.latest.fundingTxId, previousFundingTx.txid)
+            assertEquals(2, bob2.commitments.active.size)
+            assertIs<LocalFundingStatus.ConfirmedFundingTx>(bob2.commitments.active.find { it.fundingTxId == previousFundingTx.txid }?.localFundingStatus)
             val watch = actionsBob2.hasWatch<WatchSpent>()
             assertEquals(watch.event, BITCOIN_FUNDING_SPENT)
             assertEquals(watch.txId, previousFundingTx.txid)
@@ -92,7 +93,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         run {
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
             assertIs<WaitForChannelReady>(alice2.state)
-            assertEquals(alice2.commitments.latest.fundingTxId, previousFundingTx.txid)
+            assertEquals(2, alice2.commitments.active.size)
+            assertIs<LocalFundingStatus.ConfirmedFundingTx>(alice2.commitments.active.find { it.fundingTxId == previousFundingTx.txid }?.localFundingStatus)
             val watch = actionsAlice2.hasWatch<WatchSpent>()
             assertEquals(watch.event, BITCOIN_FUNDING_SPENT)
             assertEquals(watch.txId, previousFundingTx.txid)
@@ -107,7 +109,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (alice1, actions1) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice.state))
             assertIs<Offline>(alice1.state)
             assertEquals(actions1.size, 2)
-            actions1.hasTx(fundingTx)
+            actions1.hasPublishTx(fundingTx)
             assertEquals(actions1.findWatch<WatchConfirmed>().txId, fundingTx.txid)
             val (alice2, actions2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
             assertIs<Offline>(alice2.state)
@@ -121,7 +123,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (bob1, actions1) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob.state))
             assertIs<Offline>(bob1.state)
             assertEquals(actions1.size, 2)
-            actions1.hasTx(fundingTx)
+            actions1.hasPublishTx(fundingTx)
             assertEquals(actions1.findWatch<WatchConfirmed>().txId, fundingTx.txid)
             val (bob2, actions2) = bob1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
             assertIs<Offline>(bob2.state)
@@ -141,8 +143,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (alice2, actions2) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
             assertIs<Offline>(alice2.state)
             assertEquals(actions2.size, 4)
-            actions2.hasTx(previousFundingTx)
-            actions2.hasTx(fundingTx)
+            actions2.hasPublishTx(previousFundingTx)
+            actions2.hasPublishTx(fundingTx)
             assertEquals(actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(previousFundingTx.txid, fundingTx.txid))
             val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
             assertIs<Offline>(alice3.state)
@@ -156,8 +158,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (bob2, actions2) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob1.state))
             assertIs<Offline>(bob2.state)
             assertEquals(actions2.size, 4)
-            actions2.hasTx(previousFundingTx)
-            actions2.hasTx(fundingTx)
+            actions2.hasPublishTx(previousFundingTx)
+            actions2.hasPublishTx(fundingTx)
             assertEquals(actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(previousFundingTx.txid, fundingTx.txid))
             val (bob3, actions3) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
             assertIs<Offline>(bob3.state)
@@ -257,7 +259,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Error(bob.state.channelId, "oops")))
         assertIs<Closing>(bob1.state)
         assertNotNull(bob1.state.localCommitPublished)
-        actions1.hasTx(bob.state.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actions1.hasPublishTx(bob.state.commitments.latest.localCommit.publishableTxs.commitTx.tx)
         assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
     }
 
@@ -277,7 +279,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(Error(bob.state.channelId, "oops")))
             assertIs<Closing>(bob2.state)
             assertTrue(bob2.commitments.active.size > 1)
-            actions2.hasTx(commitTxBob2)
+            actions2.hasPublishTx(commitTxBob2)
             val lcp1 = bob2.state.localCommitPublished
             assertNotNull(lcp1)
             assertTrue(lcp1.commitTx.txIn.map { it.outPoint.txid }.contains(fundingTx.txid))
@@ -285,7 +287,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (bob3, actions3) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, previousFundingTx)))
             assertIs<Closing>(bob3.state)
             assertEquals(bob3.state.commitments.active.size, 1)
-            actions3.hasTx(commitTxBob1)
+            actions3.hasPublishTx(commitTxBob1)
             val lcp2 = bob3.state.localCommitPublished
             assertNotNull(lcp2)
             assertTrue(lcp2.commitTx.txIn.map { it.outPoint.txid }.contains(previousFundingTx.txid))
@@ -294,7 +296,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertIs<Closing>(bob4.state)
             assertNotNull(bob4.state.localCommitPublished)
             assertNotNull(bob4.state.remoteCommitPublished)
-            val claimMain = actions4.findTxs().first()
+            val claimMain = actions4.findPublishTxs().first()
             assertEquals(claimMain.txIn.first().outPoint.txid, commitTxAlice1.txid)
         }
         run {
@@ -302,7 +304,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (alice2, actions2) = alice1.process(ChannelCommand.MessageReceived(Error(alice.state.channelId, "oops")))
             assertIs<Closing>(alice2.state)
             assertTrue(alice2.commitments.active.size > 1)
-            actions2.hasTx(commitTxAlice2)
+            actions2.hasPublishTx(commitTxAlice2)
             val lcp1 = alice2.state.localCommitPublished
             assertNotNull(lcp1)
             assertTrue(lcp1.commitTx.txIn.map { it.outPoint.txid }.contains(fundingTx.txid))
@@ -310,7 +312,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, previousFundingTx)))
             assertIs<Closing>(alice3.state)
             assertEquals(alice3.commitments.active.size, 1)
-            actions3.hasTx(commitTxAlice1)
+            actions3.hasPublishTx(commitTxAlice1)
             val lcp2 = alice3.state.localCommitPublished
             assertNotNull(lcp2)
             assertTrue(lcp2.commitTx.txIn.map { it.outPoint.txid }.contains(previousFundingTx.txid))
@@ -319,7 +321,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertIs<Closing>(alice4.state)
             assertNotNull(alice4.state.localCommitPublished)
             assertNotNull(alice4.state.remoteCommitPublished)
-            val claimMain = actions4.findTxs().first()
+            val claimMain = actions4.findPublishTxs().first()
             assertEquals(claimMain.txIn.first().outPoint.txid, commitTxBob1.txid)
         }
     }
@@ -341,8 +343,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (state1, actions1) = state.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
             assertIs<Closing>(state1.state)
             assertNotNull(state1.state.localCommitPublished)
-            actions1.hasTx(state1.state.localCommitPublished!!.commitTx)
-            actions1.hasTx(state1.state.localCommitPublished!!.claimMainDelayedOutputTx!!.tx)
+            actions1.hasPublishTx(state1.state.localCommitPublished!!.commitTx)
+            actions1.hasPublishTx(state1.state.localCommitPublished!!.claimMainDelayedOutputTx!!.tx)
             assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
         }
     }
@@ -420,13 +422,13 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             assertNotNull(fundingTxAlice)
             val txSigsAlice = actionsAlice2.findOutgoingMessage<TxSignatures>()
             assertEquals(actionsAlice2.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEPTHOK)
-            actionsAlice2.hasTx(fundingTxAlice)
+            actionsAlice2.hasPublishTx(fundingTxAlice)
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(txSigsAlice))
             assertIs<LNChannel<WaitForFundingConfirmed>>(bob2)
             val fundingTxBob = bob2.state.latestFundingTx.signedTx
             assertNotNull(fundingTxBob)
-            actionsBob2.hasTx(fundingTxBob)
+            actionsBob2.hasPublishTx(fundingTxBob)
             actionsBob2.has<ChannelAction.Storage.StoreState>()
             assertEquals(fundingTxAlice.txid, fundingTxBob.txid)
             return Fixture(alice2, bob2, fundingTxAlice, walletAlice)

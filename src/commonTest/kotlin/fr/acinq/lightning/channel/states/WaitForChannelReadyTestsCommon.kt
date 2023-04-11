@@ -119,7 +119,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
             val (alice1, actions1) = alice.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
             assertIs<Closing>(alice1.state)
             assertNotNull(alice1.state.remoteCommitPublished)
-            assertEquals(1, actions1.findTxs().size)
+            assertEquals(1, actions1.findPublishTxs().size)
             assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
         }
         // alice publishes her commitment tx
@@ -128,7 +128,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
             val (bob1, actions1) = bob.process(ChannelCommand.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, aliceCommitTx)))
             assertIs<Closing>(bob1.state)
             assertNotNull(bob1.state.remoteCommitPublished)
-            assertEquals(1, actions1.findTxs().size)
+            assertEquals(1, actions1.findPublishTxs().size)
             assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
         }
     }
@@ -152,7 +152,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
             assertIs<Closing>(state1.state)
             assertNotNull(state1.state.localCommitPublished)
             assertNull(actions1.findOutgoingMessageOpt<Error>())
-            actions1.hasTx(commitTx)
+            actions1.hasPublishTx(commitTx)
             actions1.hasWatch<WatchConfirmed>()
         }
     }
@@ -178,7 +178,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
             assertNotNull(state1.state.localCommitPublished)
             val error = actions1.hasOutgoingMessage<Error>()
             assertEquals(ForcedLocalCommit(bob.channelId).message, error.toAscii())
-            actions1.hasTx(commitTx)
+            actions1.hasPublishTx(commitTx)
             actions1.hasWatch<WatchConfirmed>()
         }
     }

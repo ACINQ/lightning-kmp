@@ -138,6 +138,16 @@ object Serialization {
         writeNullable(localShutdown) { writeLightningMessage(it) }
         writeNullable(remoteShutdown) { writeLightningMessage(it) }
         writeNullable(closingFeerates) { writeClosingFeerates(it) }
+        when (spliceStatus) {
+            is SpliceStatus.WaitingForSigs -> {
+                write(0x01)
+                writeInteractiveTxSigningSession(spliceStatus.session)
+                writeCollection(spliceStatus.origins) { writeChannelOrigin(it) }
+            }
+            else -> {
+                write(0x00)
+            }
+        }
     }
 
     private fun Output.writeShuttingDown(o: ShuttingDown) = o.run {
@@ -327,6 +337,7 @@ object Serialization {
 
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
+        writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
         // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel cannot be used for payments.
         writeEither(localCommit,
@@ -420,6 +431,7 @@ object Serialization {
     }
 
     private fun Output.writeCommitment(o: Commitment) = o.run {
+        writeNumber(fundingTxIndex)
         when (localFundingStatus) {
             is LocalFundingStatus.UnconfirmedFundingTx -> {
                 write(0x00)
@@ -469,12 +481,20 @@ object Serialization {
         // When multiple commitments are active, htlcs are shared between all of these commitments, so we serialize them separately.
         // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
         val htlcs = buildSet {
+            // All active commitments have the same htlc set, so we only consider the first one
             addAll(active.first().localCommit.spec.htlcs)
             addAll(active.first().remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
             active.first().nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
+            // Each inactive commitment may have a distinct htlc set
+            inactive.forEach { c ->
+                addAll(c.localCommit.spec.htlcs)
+                addAll(c.remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
+                c.nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
+            }
         }
         writeCollection(htlcs) { writeDirectedHtlc(it) }
         writeCollection(active) { writeCommitment(it) }
+        writeCollection(inactive) { writeCommitment(it) }
         writeCollection(payments.entries) { entry ->
             writeNumber(entry.key)
             writeString(entry.value.toString())

@@ -8,7 +8,6 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 
@@ -39,13 +38,13 @@ data class WaitForFundingConfirmed(
                         Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                     }
                     else -> {
-                        when (val res = commitments.updateLocalFundingStatus(fullySignedTx.signedTx.txid, latestFundingTx.copy(sharedTx = fullySignedTx), logger)) {
+                        when (val res = commitments.run { updateLocalFundingStatus(fullySignedTx.signedTx.txid, latestFundingTx.copy(sharedTx = fullySignedTx)) }) {
                             is Either.Left -> Pair(this@WaitForFundingConfirmed, listOf())
                             is Either.Right -> {
                                 logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
                                 val nextState = this@WaitForFundingConfirmed.copy(commitments = res.value.first)
                                 val actions = buildList {
-                                    add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx))
+                                    add(ChannelAction.Blockchain.PublishTx(fullySignedTx.signedTx, ChannelAction.Blockchain.PublishTx.Type.FundingTx))
                                     add(ChannelAction.Storage.StoreState(nextState))
                                 }
                                 Pair(nextState, actions)
@@ -163,15 +162,18 @@ data class WaitForFundingConfirmed(
                     when (interactiveTxAction) {
                         is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus.copy(rbfSession1)), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
                         is InteractiveTxSessionAction.SignSharedTx -> {
+                            val replacedCommitment = commitments.latest
                             val signingSession = InteractiveTxSigningSession.create(
                                 keyManager,
                                 commitments.params,
                                 rbfSession1.fundingParams,
+                                fundingTxIndex = replacedCommitment.fundingTxIndex,
                                 interactiveTxAction.sharedTx,
                                 localPushAmount,
                                 remotePushAmount,
-                                commitments.latest.localCommit.spec.feerate,
-                                commitments.latest.remoteCommit.remotePerCommitmentPoint
+                                commitmentIndex = replacedCommitment.localCommit.index,
+                                replacedCommitment.localCommit.spec.feerate,
+                                replacedCommitment.remoteCommit.remotePerCommitmentPoint
                             )
                             when (signingSession) {
                                 is Either.Left -> {
@@ -210,7 +212,7 @@ data class WaitForFundingConfirmed(
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                         }
                         // No need to store their commit_sig, they will re-send it if we disconnect.
-                        InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.WaitingForSigs(signingSession1)), listOf())
+                        InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus.copy(session = signingSession1)), listOf())
                         is InteractiveTxSigningSessionAction.SendTxSigs -> sendRbfTxSigs(action, cmd.message.channelData)
                     }
                 }
@@ -296,7 +298,7 @@ data class WaitForFundingConfirmed(
         }
     }
 
-    private fun ChannelContext.sendRbfTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<ChannelState, List<ChannelAction>> {
+    private fun ChannelContext.sendRbfTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<WaitForFundingConfirmed, List<ChannelAction>> {
         logger.info { "rbf funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
         logger.info { "will wait for $fundingMinDepth confirmations" }
@@ -311,7 +313,7 @@ data class WaitForFundingConfirmed(
         )
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
+            action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
         }

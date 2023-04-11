@@ -60,14 +60,14 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         // alice accepts this proposition
         val (alice3, aliceActions3) = alice2.process(ChannelCommand.MessageReceived(bobCloseSig1))
         assertIs<LNChannel<Closing>>(alice3)
-        val mutualCloseTx = aliceActions3.findTxs().first()
+        val mutualCloseTx = aliceActions3.findPublishTxs().first()
         assertEquals(aliceActions3.findWatch<WatchConfirmed>().txId, mutualCloseTx.txid)
         assertEquals(mutualCloseTx.txOut.size, 2) // NB: anchors are removed from the closing tx
         val aliceCloseSig2 = aliceActions3.findOutgoingMessage<ClosingSigned>()
         assertEquals(aliceCloseSig2.feeSatoshis, bobCloseSig1.feeSatoshis)
         val (bob4, bobActions4) = bob3.process(ChannelCommand.MessageReceived(aliceCloseSig2))
         assertIs<LNChannel<Closing>>(bob4)
-        bobActions4.hasTx(mutualCloseTx)
+        bobActions4.hasPublishTx(mutualCloseTx)
         assertEquals(bobActions4.findWatch<WatchConfirmed>().txId, mutualCloseTx.txid)
         assertEquals(alice3.state.mutualClosePublished.map { it.tx }, listOf(mutualCloseTx))
         assertEquals(bob4.state.mutualClosePublished.map { it.tx }, listOf(mutualCloseTx))
@@ -126,12 +126,12 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val bobCloseSig1 = bobActions3.findOutgoingMessage<ClosingSigned>()
         assertNotNull(bobCloseSig1.tlvStream.get<ClosingSignedTlv.FeeRange>())
         assertEquals(aliceCloseSig1.feeSatoshis, bobCloseSig1.feeSatoshis)
-        val mutualCloseTx = bobActions3.findTxs().first()
+        val mutualCloseTx = bobActions3.findPublishTxs().first()
         assertEquals(mutualCloseTx.txOut.size, 2) // NB: anchors are removed from the closing tx
 
         val (alice3, aliceActions3) = alice2.process(ChannelCommand.MessageReceived(bobCloseSig1))
         assertIs<LNChannel<Closing>>(alice3)
-        aliceActions3.hasTx(mutualCloseTx)
+        aliceActions3.hasPublishTx(mutualCloseTx)
     }
 
     @Test
@@ -165,13 +165,13 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         // alice accepts this proposition
         val (alice3, aliceActions3) = alice2.process(ChannelCommand.MessageReceived(bobCloseSig))
         assertIs<LNChannel<Closing>>(alice3)
-        val mutualCloseTx = aliceActions3.findTxs().first()
+        val mutualCloseTx = aliceActions3.findPublishTxs().first()
         val aliceCloseSig2 = aliceActions3.findOutgoingMessage<ClosingSigned>()
         assertEquals(aliceCloseSig2.feeSatoshis, 2022.sat)
 
         val (bob4, bobActions4) = bob3.process(ChannelCommand.MessageReceived(aliceCloseSig2))
         assertIs<LNChannel<Closing>>(bob4)
-        bobActions4.hasTx(mutualCloseTx)
+        bobActions4.hasPublishTx(mutualCloseTx)
     }
 
     @Test
@@ -187,14 +187,14 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         // bob directly agrees because their fee estimator matches
         val (bob3, bobActions3) = bob2.process(ChannelCommand.MessageReceived(aliceCloseSig))
         assertIs<LNChannel<Closing>>(bob3)
-        val mutualCloseTx = bobActions3.findTxs().first()
+        val mutualCloseTx = bobActions3.findPublishTxs().first()
         val bobCloseSig = bobActions3.findOutgoingMessage<ClosingSigned>()
         assertEquals(bobCloseSig.feeSatoshis, aliceCloseSig.feeSatoshis)
 
         // alice accepts this proposition
         val (alice3, aliceActions3) = alice2.process(ChannelCommand.MessageReceived(bobCloseSig))
         assertIs<LNChannel<Closing>>(alice3)
-        aliceActions3.hasTx(mutualCloseTx)
+        aliceActions3.hasPublishTx(mutualCloseTx)
     }
 
     @Test
@@ -207,7 +207,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (_, bob2, aliceCloseSig) = mutualCloseBob(alice1, bob1)
         val (bob3, bobActions3) = bob2.process(ChannelCommand.MessageReceived(aliceCloseSig))
         assertIs<LNChannel<Closing>>(bob3)
-        val mutualCloseTx = bobActions3.findTxs().first()
+        val mutualCloseTx = bobActions3.findPublishTxs().first()
         assertEquals(bob3.state.mutualClosePublished.map { it.tx }, listOf(mutualCloseTx))
         assertEquals(bobActions3.findWatches<WatchConfirmed>().map { it.event }, listOf(BITCOIN_TX_CONFIRMED(mutualCloseTx)))
     }
@@ -255,7 +255,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (_, bobCloseSig4) = makeLegacyClosingSigned(alice2, bob2, aliceCloseSig4.feeSatoshis)
         val (alice6, actions6) = alice5.process(ChannelCommand.MessageReceived(bobCloseSig4))
         assertIs<LNChannel<Closing>>(alice6)
-        val mutualCloseTx = actions6.findTxs().first()
+        val mutualCloseTx = actions6.findPublishTxs().first()
         assertEquals(alice6.state.mutualClosePublished.size, 1)
         assertEquals(mutualCloseTx, alice6.state.mutualClosePublished.first().tx)
     }
@@ -302,7 +302,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (aliceCloseSig5, _) = makeLegacyClosingSigned(alice2, bob2, bobCloseSig4.feeSatoshis)
         val (bob7, actions7) = bob6.process(ChannelCommand.MessageReceived(aliceCloseSig5))
         assertIs<LNChannel<Closing>>(bob7)
-        val mutualCloseTx = actions7.findTxs().first()
+        val mutualCloseTx = actions7.findPublishTxs().first()
         assertEquals(bob7.state.mutualClosePublished.size, 1)
         assertEquals(mutualCloseTx, bob7.state.mutualClosePublished.first().tx)
     }
@@ -338,7 +338,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Closing>>(bob1)
         actions.hasOutgoingMessage<Error>()
         actions.hasWatch<WatchConfirmed>()
-        actions.findTxs().contains(bob.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actions.findPublishTxs().contains(bob.commitments.latest.localCommit.publishableTxs.commitTx.tx)
     }
 
     @Test
@@ -422,7 +422,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (alice4, aliceActions4) = alice3.process(ChannelCommand.WatchReceived(WatchEventSpent(alice3.channelId, BITCOIN_FUNDING_SPENT, firstMutualCloseTx.tx)))
         assertIs<LNChannel<Closing>>(alice4)
         aliceActions4.has<ChannelAction.Storage.StoreState>()
-        aliceActions4.hasTx(firstMutualCloseTx.tx)
+        aliceActions4.hasPublishTx(firstMutualCloseTx.tx)
         assertEquals(aliceActions4.hasWatch<WatchConfirmed>().txId, firstMutualCloseTx.tx.txid)
     }
 
@@ -439,7 +439,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (alice, _, _) = init()
         val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Closing>>(alice1)
-        actions.hasTx(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actions.hasPublishTx(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx)
         assertTrue(actions.findWatches<WatchConfirmed>().map { it.event }.contains(BITCOIN_TX_CONFIRMED(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx)))
     }
 

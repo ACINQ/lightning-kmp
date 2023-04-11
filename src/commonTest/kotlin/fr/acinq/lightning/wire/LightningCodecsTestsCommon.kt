@@ -383,6 +383,32 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `encode - decode splice messages`() {
+        val channelId = ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        val fundingTxHash = ByteVector32("24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566")
+        val testCases = listOf(
+            // @formatter:off
+            SpliceInit(channelId, 100_000.sat, 100, FeeratePerKw(2500.sat)) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000186a0 00000064 000009c4"),
+            SpliceInit(channelId, 150_000.sat, 100, FeeratePerKw(2500.sat), 25_000_000.msat) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000249f0 00000064 000009c4 fe4700000704017d7840"),
+            SpliceInit(channelId, 0.sat, 0, FeeratePerKw(500.sat)) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 00000000 000001f4"),
+            SpliceInit(channelId, (-50_000).sat, 0, FeeratePerKw(500.sat)) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff3cb0 00000000 000001f4"),
+            SpliceAck(channelId, 25_000.sat) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8"),
+            SpliceAck(channelId, 40_000.sat, 10_000_000.msat) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000009c40 fe4700000703989680"),
+            SpliceAck(channelId, 0.sat) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000"),
+            SpliceAck(channelId, (-25_000).sat) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff9e58"),
+            SpliceLocked(channelId, fundingTxHash) to ByteVector("908c aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"),
+            // @formatter:on
+        )
+        testCases.forEach { (message, bin) ->
+            val decoded = LightningMessage.decode(bin.toByteArray())
+            assertNotNull(decoded)
+            assertEquals(decoded, message)
+            val encoded = LightningMessage.encode(message)
+            assertEquals(encoded.byteVector(), bin)
+        }
+    }
+
+    @Test
     fun `encode - decode channel_reestablish`() {
         val channelId = ByteVector32("c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c")
         val commitmentSecret = PrivateKey.fromHex("34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55")

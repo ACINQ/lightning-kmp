@@ -93,7 +93,15 @@ object Deserialization {
         remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate },
         localShutdown = readNullable { readLightningMessage() as Shutdown },
         remoteShutdown = readNullable { readLightningMessage() as Shutdown },
-        closingFeerates = readNullable { readClosingFeerates() }
+        closingFeerates = readNullable { readClosingFeerates() },
+        spliceStatus = when (val discriminator = read()) {
+            0x00 -> SpliceStatus.None
+            0x01 -> SpliceStatus.WaitingForSigs(
+                session = readInteractiveTxSigningSession(),
+                origins = readCollection { readChannelOrigin() as ChannelOrigin.PayToOpenOrigin }.toList()
+            )
+            else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
+        }
     )
 
     private fun Input.readShuttingDown(): ShuttingDown = ShuttingDown(
@@ -274,6 +282,7 @@ object Deserialization {
 
     private fun Input.readInteractiveTxSigningSession(): InteractiveTxSigningSession = InteractiveTxSigningSession(
         fundingParams = readInteractiveTxParams(),
+        fundingTxIndex = readNumber(),
         fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
         localCommit = readEither(
             readLeft = {
@@ -371,6 +380,7 @@ object Deserialization {
     )
 
     private fun Input.readCommitment(htlcs: Set<DirectedHtlc>): Commitment = Commitment(
+        fundingTxIndex = readNumber(),
         localFundingStatus = when (val discriminator = read()) {
             0x00 -> LocalFundingStatus.UnconfirmedFundingTx(
                 sharedTx = readSignedSharedTransaction(),
@@ -427,6 +437,7 @@ object Deserialization {
         // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
         val htlcs = readCollection { readDirectedHtlc() }.toSet()
         val active = readCollection { readCommitment(htlcs) }.toList()
+        val inactive = readCollection { readCommitment(htlcs) }.toList()
         val payments = readCollection {
             readNumber() to UUID.fromString(readString())
         }.toMap()
@@ -441,7 +452,7 @@ object Deserialization {
             lastIndex = readNullable { readNumber() }
         )
         val remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
-        return Commitments(params, changes, active, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
+        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {

@@ -64,14 +64,9 @@ data class Closing(
                 when {
                     watch is WatchEventConfirmed && watch.event is BITCOIN_FUNDING_DEPTHOK -> {
                         when (val res = acceptFundingTxConfirmed(watch)) {
-                            is Either.Left -> Pair(this@Closing, listOf())
                             is Either.Right -> {
-                                val (commitments1, _, actions) = res.value
-                                if (commitments.latest.fundingTxId == watch.tx.txid) {
-                                    // The best funding tx candidate has been confirmed, we can forget alternative commitments.
-                                    val nextState = this@Closing.copy(commitments = commitments1)
-                                    Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
-                                } else {
+                                val (commitments1, commitment, actions) = res.value
+                                if (commitments.latest.fundingTxIndex == commitment.fundingTxIndex && commitments.latest.fundingTxId != commitment.fundingTxId) {
                                     // This is a corner case where:
                                     //  - the funding tx was RBF-ed
                                     //  - *and* we went to CLOSING before any funding tx got confirmed (probably due to a local or remote error)
@@ -83,15 +78,26 @@ data class Closing(
                                     //
                                     // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
                                     // to negotiate a mutual close.
+                                    // The best funding tx candidate has been confirmed, we can forget alternative commitments.
                                     logger.info { "channel was confirmed at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with a previous funding txid=${watch.tx.txid}" }
-                                    val (nextState, actions1) = this@Closing.copy(commitments = commitments1).run { spendLocalCurrent() }
+                                    val commitments2 = commitments1.copy(
+                                        active = listOf(commitment),
+                                        inactive = emptyList()
+                                    )
+                                    val (nextState, actions1) = this@Closing.copy(commitments = commitments2).run { spendLocalCurrent() }
                                     Pair(nextState, actions + actions1)
+                                } else {
+                                    // We're still on the same splice history, nothing to do
+                                    val nextState = this@Closing.copy(commitments = commitments1)
+                                    Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
+
                                 }
                             }
+                            is Either.Left -> Pair(this@Closing, listOf())
                         }
                     }
                     watch is WatchEventSpent && watch.event is BITCOIN_FUNDING_SPENT -> when {
-                        commitments.active.any { it.fundingTxId == watch.tx.txid } -> {
+                        commitments.all.any { it.fundingTxId == watch.tx.txid } -> {
                             // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
                             Pair(this@Closing, listOf())
                         }
@@ -103,7 +109,7 @@ data class Closing(
                             // at any time they can publish a closing tx with any sig we sent them
                             val closingTx = mutualCloseProposed.first { it.tx.txid == watch.tx.txid }.copy(tx = watch.tx)
                             val nextState = this@Closing.copy(mutualClosePublished = mutualClosePublished + listOf(closingTx))
-                            val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Blockchain.PublishTx(watch.tx))
+                            val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Blockchain.PublishTx(closingTx))
                             Pair(nextState, actions)
                         }
                         localCommitPublished?.commitTx == watch.tx || remoteCommitPublished?.commitTx == watch.tx || nextRemoteCommitPublished?.commitTx == watch.tx || futureRemoteCommitPublished?.commitTx == watch.tx -> {
@@ -118,13 +124,51 @@ data class Closing(
                             // counterparty may attempt to spend its next commit tx at any time
                             handleRemoteSpentNext(watch.tx, commitments.latest)
                         }
-                        watch.tx.txIn.map { it.outPoint.txid }.contains(commitments.latest.fundingTxId) -> {
+                        watch.tx.txIn.map { it.outPoint }.contains(commitments.latest.commitInput.outPoint) -> {
                             // counterparty may attempt to spend a revoked commit tx at any time
                             handleRemoteSpentOther(watch.tx)
                         }
+                        else -> when (val commitment = commitments.resolveCommitment(watch.tx)) {
+                            is Commitment -> {
+                                logger.warning { "a commit tx for an older commitment has been published fundingTxId=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
+                                Pair(this@Closing, listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED))))
+                            }
+                            else -> {
+                                logger.warning { "unrecognized tx=${watch.tx.txid}" }
+                                Pair(this@Closing, listOf())
+                            }
+                        }
+                    }
+                    watch is WatchEventConfirmed && watch.event is BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED -> when (val commitment = commitments.resolveCommitment(watch.tx)) {
+                        is Commitment -> {
+                            logger.warning { "a commit tx for fundingTxIndex=${commitment.fundingTxIndex} fundingTxId=${commitment.fundingTxId} has been confirmed" }
+                            val commitments1 = commitments.copy(
+                                active = listOf(commitment),
+                                inactive = emptyList()
+                            )
+                            val newState = this@Closing.copy(commitments = commitments1)
+                            // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
+                            when {
+                                watch.tx.txid == commitments1.latest.localCommit.publishableTxs.commitTx.tx.txid -> {
+                                    // our local commit has been published from the outside, it's unexpected but let's deal with it anyway
+                                    newState.run { spendLocalCurrent() }
+                                }
+                                watch.tx.txid == commitments1.latest.remoteCommit.txid && commitments1.remoteCommitIndex == commitments.remoteCommitIndex -> {
+                                    // counterparty may attempt to spend its last commit tx at any time
+                                    newState.run { handleRemoteSpentCurrent(watch.tx, commitments1.latest) }
+                                }
+                                watch.tx.txid == commitments1.latest.nextRemoteCommit?.commit?.txid && commitments1.remoteCommitIndex == commitments.remoteCommitIndex && commitments.remoteNextCommitInfo.isLeft -> {
+                                    // counterparty may attempt to spend its next commit tx at any time
+                                    newState.run { handleRemoteSpentNext(watch.tx, commitments1.latest) }
+                                }
+                                else -> {
+                                    // counterparty may attempt to spend a revoked commit tx at any time
+                                    newState.run { handleRemoteSpentOther(watch.tx) }
+                                }
+                            }
+                        }
                         else -> {
-                            logger.warning { "unrecognized tx=${watch.tx.txid}" }
-                            // this was for another commitments
+                            logger.warning { "unrecognized alternative commit tx=${watch.tx.txid}" }
                             Pair(this@Closing, listOf())
                         }
                     }
@@ -152,7 +196,7 @@ data class Closing(
                         val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
                             val (newRevokedCommitPublished, penaltyTxs) = claimRevokedHtlcTxOutputs(keyManager, commitments.params, rev, watch.tx, currentOnChainFeerates)
                             penaltyTxs.forEach {
-                                revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it.tx)
+                                revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
                                 revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
                             }
                             newRevokedCommitPublished

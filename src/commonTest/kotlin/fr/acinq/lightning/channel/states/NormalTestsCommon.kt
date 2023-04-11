@@ -6,6 +6,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelAction.Blockchain.PublishTx.Type
 import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcTimeoutTxs
@@ -1095,7 +1096,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice3.hasOutgoingMessage<Error>()
         assertEquals(2, actionsAlice3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice3.findWatches<WatchConfirmed>().count())
-        actionsAlice3.hasTx(tx)
+        actionsAlice3.hasPublishTx(tx)
     }
 
     @Test
@@ -1111,7 +1112,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice2.hasOutgoingMessage<Error>()
         assertEquals(2, actionsAlice2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
         assertEquals(2, actionsAlice2.findWatches<WatchConfirmed>().count())
-        actionsAlice2.hasTx(tx)
+        actionsAlice2.hasPublishTx(tx)
     }
 
     @Test
@@ -1179,7 +1180,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(UpdateFulfillHtlc(alice0.channelId, 42, randomBytes32())))
         assertIs<LNChannel<Closing>>(alice1)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
-        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(commitTx, actions1.hasPublishTx(Type.CommitTx))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
         val error = actions1.findOutgoingMessage<Error>()
@@ -1197,7 +1198,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice2, actions2) = alice1.process(ChannelCommand.MessageReceived(UpdateFulfillHtlc(alice1.channelId, htlc.id, r)))
         assertIs<LNChannel<Closing>>(alice2)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
-        assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(commitTx, actions2.hasPublishTx(Type.CommitTx))
         assertTrue(actions2.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
         val error = actions2.findOutgoingMessage<Error>()
@@ -1214,7 +1215,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice2, actions2) = alice1.process(ChannelCommand.MessageReceived(UpdateFulfillHtlc(alice0.channelId, htlc.id, ByteVector32.Zeroes)))
         assertIs<LNChannel<Closing>>(alice2)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
-        assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(commitTx, actions2.hasPublishTx(Type.CommitTx))
         assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
         assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().size)
         val error = actions2.findOutgoingMessage<Error>()
@@ -1308,7 +1309,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(UpdateFailHtlc(alice0.channelId, 42, ByteVector.empty)))
         assertIs<LNChannel<Closing>>(alice1)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
-        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(commitTx, actions1.hasPublishTx(Type.CommitTx))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
         val error = actions1.findOutgoingMessage<Error>()
@@ -1326,7 +1327,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice2, actions2) = alice1.process(ChannelCommand.MessageReceived(UpdateFailHtlc(alice1.channelId, htlc.id, ByteVector.empty)))
         assertIs<LNChannel<Closing>>(alice2)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
-        assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(commitTx, actions2.hasPublishTx(Type.CommitTx))
         assertTrue(actions2.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
         val error = actions2.findOutgoingMessage<Error>()
@@ -1358,7 +1359,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(UpdateFailMalformedHtlc(alice0.channelId, 42, ByteVector32.Zeroes, FailureMessage.BADONION)))
         assertIs<LNChannel<Closing>>(alice1)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(alice1.state)))
-        assertTrue(actions1.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(commitTx, actions1.hasPublishTx(Type.CommitTx))
         assertTrue(actions1.findWatches<WatchConfirmed>().isNotEmpty())
         assertTrue(actions1.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
         val error = actions1.findOutgoingMessage<Error>()
@@ -1376,7 +1377,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice2, actions2) = alice1.process(ChannelCommand.MessageReceived(UpdateFailMalformedHtlc(alice0.channelId, htlc.id, Sphinx.hash(htlc.onionRoutingPacket), 42)))
         assertIs<LNChannel<Closing>>(alice2)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
-        assertTrue(actions2.contains(ChannelAction.Blockchain.PublishTx(commitTx)))
+        assertEquals(commitTx, actions2.hasPublishTx(Type.CommitTx))
         assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().size) // commit tx + main delayed + htlc-timeout + htlc delayed
         assertEquals(4, actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().size)
         val error = actions2.findOutgoingMessage<Error>()
@@ -1415,7 +1416,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw.CommitmentFeerate * 4)
         val (bob2, actions) = bob1.process(ChannelCommand.MessageReceived(fee))
         assertIs<LNChannel<Closing>>(bob2)
-        actions.hasTx(commitTx)
+        actions.hasPublishTx(commitTx)
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 11_240.sat, reserve = 10_000.sat, fees = 26_580.sat).message)
@@ -1427,7 +1428,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(FeeratePerKw.CommitmentFeerate, bob.commitments.latest.localCommit.spec.feerate)
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(UpdateFee(bob.channelId, FeeratePerKw(252.sat))))
         assertIs<LNChannel<Closing>>(bob1)
-        actions.hasTx(bob.commitments.latest.localCommit.publishableTxs.commitTx.tx)
+        actions.hasPublishTx(bob.commitments.latest.localCommit.publishableTxs.commitTx.tx)
         actions.hasWatch<WatchConfirmed>()
         val error = actions.findOutgoingMessage<Error>()
         assertTrue(error.toAscii().contains("emote fee rate is too small: remoteFeeratePerKw=252"))
@@ -1952,7 +1953,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertNull(actions2.findOutgoingMessageOpt<Error>())
         assertNull(actions2.findOpt<ChannelAction.Storage.GetHtlcInfos>())
 
-        val claimTxs = actions2.findTxs()
+        val claimTxs = actions2.findPublishTxs()
         assertEquals(6, claimTxs.size)
         val mainOutputTx = claimTxs[0]
         val mainPenaltyTx = claimTxs[1]
@@ -2003,10 +2004,10 @@ class NormalTestsCommon : LightningTestSuite() {
         actions.hasOutgoingMessage<Error>()
         actions.has<ChannelAction.Storage.StoreState>()
         val lcp = alice3.state.localCommitPublished!!
-        actions.hasTx(lcp.commitTx)
+        actions.hasPublishTx(lcp.commitTx)
         assertEquals(1, lcp.htlcTimeoutTxs().size)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
-        assertEquals(4, actions.findTxs().size) // commit tx + main output + htlc-timeout + claim-htlc-delayed
+        assertEquals(4, actions.findPublishTxs().size) // commit tx + main output + htlc-timeout + claim-htlc-delayed
         assertEquals(3, actions.findWatches<WatchConfirmed>().size) // commit tx + main output + claim-htlc-delayed
         assertEquals(1, actions.findWatches<WatchSpent>().size) // htlc-timeout
     }
@@ -2025,7 +2026,7 @@ class NormalTestsCommon : LightningTestSuite() {
         Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first().tx, lcp.htlcSuccessTxs().first().tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.htlcSuccessTxs().first().tx, lcp.claimHtlcDelayedTxs.first().tx)
-        assertEquals(txs, actions.findTxs().toSet())
+        assertEquals(txs, actions.findPublishTxs().toSet())
         val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.claimHtlcDelayedTxs.first().tx).map { it.txid }.toSet()
         assertEquals(watchConfirmed, actions.findWatches<WatchConfirmed>().map { it.txId }.toSet())
         val watchSpent = setOf(lcp.htlcSuccessTxs().first().input.outPoint)
