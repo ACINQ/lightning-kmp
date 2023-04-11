@@ -861,12 +861,12 @@ data class Commitments(
     }
 
     /**
-     * We can prune inactive commitments in two cases:
+     * We can prune commitments in two cases:
      *  - their funding tx has been permanently double-spent by the funding tx of a concurrent commitment (happens when using RBF)
      *  - their funding tx has been permanently spent by a splice tx
      */
     private fun ChannelContext.pruneCommitments(): Commitments {
-        return when (val lastConfirmed = active.find { it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }) {
+        return when (val lastConfirmed = all.find { it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }) {
             null -> this@Commitments
             else -> {
                 // We can prune all other commitments with the same or lower funding index.
