@@ -48,7 +48,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
             }
             cmd is ChannelCommand.WatchReceived && state is ChannelStateWithCommitments -> when (val watch = cmd.watch) {
                 is WatchEventConfirmed -> {
-                    if (watch.event is BITCOIN_FUNDING_DEPTHOK || watch.event is BITCOIN_FUNDING_DEEPLYBURIED) {
+                    if (watch.event is BITCOIN_FUNDING_DEPTHOK) {
                         when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
                             is Either.Left -> Pair(this@Offline, listOf())
                             is Either.Right -> {

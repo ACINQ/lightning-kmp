@@ -170,8 +170,6 @@
         "remotePerCommitmentSecrets": "<redacted>"
     },
     "shortChannelId": "400144x1x0",
-    "buried": false,
-    "channelAnnouncement": null,
     "channelUpdate": {
         "signature": "56f0c4e423eaee2900b24ca45d1c4237aea3a7b17d4ef06b68cffea5e2a5c4a625389abb0be56386b9b0048b6c82b402c24732649b9235930594fb52083e82e8",
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",

@@ -19,8 +19,6 @@ import fr.acinq.lightning.wire.*
 data class Normal(
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
-    val buried: Boolean,
-    val channelAnnouncement: ChannelAnnouncement?,
     val channelUpdate: ChannelUpdate,
     val remoteChannelUpdate: ChannelUpdate?,
     val localShutdown: Shutdown?,
@@ -634,14 +632,10 @@ data class Normal(
                 // if we have pending unsigned outgoing htlcs, then we cancel them and advertise the fact that the channel is now disabled.
                 val failedHtlcs = mutableListOf<ChannelAction>()
                 val proposedHtlcs = commitments.changes.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
-                if (proposedHtlcs.isNotEmpty()) {
-                    logger.info { "updating channel_update announcement (reason=disabled)" }
-                    val channelUpdate = Announcements.disableChannel(channelUpdate, staticParams.nodeParams.nodePrivateKey, staticParams.remoteNodeId)
-                    proposedHtlcs.forEach { htlc ->
-                        commitments.payments[htlc.id]?.let { paymentId ->
-                            failedHtlcs.add(ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, htlc, ChannelAction.HtlcResult.Fail.Disconnected(channelUpdate)))
-                        } ?: logger.warning { "cannot find payment for $htlc" }
-                    }
+                proposedHtlcs.forEach { htlc ->
+                    commitments.payments[htlc.id]?.let { paymentId ->
+                        failedHtlcs.add(ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, htlc, ChannelAction.HtlcResult.Fail.Disconnected))
+                    } ?: logger.warning { "cannot find payment for $htlc" }
                 }
                 // If we are splicing and are early in the process, then we cancel it.
                 val spliceStatus1 = when (spliceStatus) {

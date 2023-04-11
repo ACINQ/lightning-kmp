@@ -55,15 +55,13 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         val (alice3, actions2) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
         assertEquals(alice, alice3)
-        assertEquals(2, actions2.size)
+        assertEquals(1, actions2.size)
         actions2.hasOutgoingMessage<ChannelReady>()
-        actions2.hasWatch<WatchConfirmed>()
 
         val (bob3, actions3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishA))
         assertEquals(bob, bob3)
-        assertEquals(2, actions3.size)
+        assertEquals(1, actions3.size)
         actions3.hasOutgoingMessage<ChannelReady>()
-        actions3.hasWatch<WatchConfirmed>()
     }
 
     @Test
@@ -402,17 +400,15 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         // Alice reprocesses the htlcs received from Bob.
         val (_, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishBob))
-        assertEquals(3, actionsAlice3.size)
+        assertEquals(2, actionsAlice3.size)
         val expectedHtlcsAlice = htlcs.drop(3).take(2).map { ChannelAction.ProcessIncomingHtlc(it) }
         assertEquals(expectedHtlcsAlice, actionsAlice3.filterIsInstance<ChannelAction.ProcessIncomingHtlc>())
-        actionsAlice3.hasWatch<WatchConfirmed>()
 
         // Bob reprocesses the htlcs received from Alice.
         val (_, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
-        assertEquals(4, actionsBob3.size)
+        assertEquals(3, actionsBob3.size)
         val expectedHtlcsBob = htlcs.take(3).map { ChannelAction.ProcessIncomingHtlc(it) }
         assertEquals(expectedHtlcsBob, actionsBob3.filterIsInstance<ChannelAction.ProcessIncomingHtlc>())
-        actionsBob3.hasWatch<WatchConfirmed>()
     }
 
     @Test
@@ -452,14 +448,13 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         // Bob resends htlc settlement messages to Alice and reprocesses unsettled htlcs.
         val (_, actionsBob) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
-        assertEquals(5, actionsBob.size)
+        assertEquals(4, actionsBob.size)
         val fail = actionsBob.hasOutgoingMessage<UpdateFailHtlc>()
         assertEquals(fail.id, htlcs[0].id)
         val fulfill = actionsBob.hasOutgoingMessage<UpdateFulfillHtlc>()
         assertEquals(fulfill.id, htlcs[1].id)
         actionsBob.hasOutgoingMessage<CommitSig>()
         assertEquals(listOf(ChannelAction.ProcessIncomingHtlc(htlcs[2])), actionsBob.filterIsInstance<ChannelAction.ProcessIncomingHtlc>())
-        actionsBob.hasWatch<WatchConfirmed>()
     }
 
     @Test

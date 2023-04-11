@@ -29,7 +29,6 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
-@ExperimentalUnsignedTypes
 class NormalTestsCommon : LightningTestSuite() {
 
     private val defaultAdd = CMD_ADD_HTLC(

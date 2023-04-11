@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
@@ -66,14 +67,14 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         val (alice, channelReadyAlice, bob, channelReadyBob) = init()
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
         assertIs<Normal>(alice1.state)
-        assertEquals(3, actionsAlice1.size)
+        assertEquals(2, actionsAlice1.size)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
-        assertEquals(actionsAlice1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
+        assertIs<ChannelEvents.Confirmed>(actionsAlice1.find<ChannelAction.EmitEvent>().event)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(channelReadyAlice))
         assertIs<Normal>(bob1.state)
-        assertEquals(3, actionsBob1.size)
+        assertEquals(2, actionsBob1.size)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
-        assertEquals(actionsBob1.findWatch<WatchConfirmed>().event, BITCOIN_FUNDING_DEEPLYBURIED)
+        assertIs<ChannelEvents.Confirmed>(actionsBob1.find<ChannelAction.EmitEvent>().event)
     }
 
     @Test
