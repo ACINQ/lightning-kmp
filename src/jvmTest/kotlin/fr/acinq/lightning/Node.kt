@@ -79,7 +79,7 @@ object Node {
     fun parseElectrumServerAddress(address: String): ServerAddress {
         val a = address.split(':')
         val tls = when (a.size) {
-            2 -> TcpSocket.TLS.TRUSTED_CERTIFICATES
+            2 -> TcpSocket.TLS.TRUSTED_CERTIFICATES()
             3 -> TcpSocket.TLS.UNSAFE_CERTIFICATES
             4 -> TcpSocket.TLS.PINNED_PUBLIC_KEY(a[3])
             else -> throw IllegalArgumentException("invalid server address=$address")

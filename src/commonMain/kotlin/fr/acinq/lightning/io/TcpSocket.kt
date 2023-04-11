@@ -30,7 +30,13 @@ interface TcpSocket {
         object DISABLED : TLS()
 
         /** Used for Electrum servers when expecting a valid certificate */
-        object TRUSTED_CERTIFICATES : TLS()
+        data class TRUSTED_CERTIFICATES(
+            /**
+             * Specify an expectedHostName when it's different than the `host` value you used
+             * within TcpSocket.Builder.connect(). This may be the case when using Tor.
+             */
+            val expectedHostName: String? = null
+        ) : TLS()
 
         /** Only used in unit tests */
         object UNSAFE_CERTIFICATES : TLS()
