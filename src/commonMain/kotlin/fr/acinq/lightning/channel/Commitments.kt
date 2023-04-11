@@ -711,6 +711,7 @@ data class Commitments(
         if (commits.size < active.size) {
             return Either.Left(CommitSigCountMismatch(channelId, active.size, commits.size))
         }
+        // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
         val active1 = active.zip(commits).map {
             when (val commitment1 = it.first.receiveCommit(keyManager, params, changes, it.second, log)) {
                 is Either.Left -> return Either.Left(commitment1.value)
@@ -832,7 +833,7 @@ data class Commitments(
         // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
         // That's why we compute each index (local and remote) separately and stop at the first one that matches.
         val lastLocalLockedIndex: Long = active.firstOrNull { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }?.fundingTxIndex ?: -1
-        val lastRemoteLockedIndex: Long = active.firstOrNull { it.remoteFundingStatus is RemoteFundingStatus.Locked }?.fundingTxIndex ?: -1
+        val lastRemoteLockedIndex: Long = active.firstOrNull { it.remoteFundingStatus == RemoteFundingStatus.Locked }?.fundingTxIndex ?: -1
         val lastLockedIndex = min(lastLocalLockedIndex, lastRemoteLockedIndex)
         return when (val lastLocked = active.find { it.fundingTxIndex == lastLockedIndex }) {
             is Commitment -> {
