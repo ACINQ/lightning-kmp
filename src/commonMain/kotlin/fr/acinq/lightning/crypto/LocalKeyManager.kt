@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.channel.ChannelKeys
 import fr.acinq.lightning.channel.RecoveredChannelKeys
+import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.transactions.Transactions
 
 data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
@@ -54,8 +55,19 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
         return Bitcoin.computeP2WpkhAddress(bip84PrivateKey(account, addressIndex).publicKey(), chainHash)
     }
 
+    override fun bip84Xpub(account: Long): String {
+        return DeterministicWallet.encode(
+            input = DeterministicWallet.publicKey(privateKey(bip84BasePath(chainHash) + hardened(account))),
+            prefix = when (chainHash) {
+                Block.LivenetGenesisBlock.hash -> DeterministicWallet.zpub
+                Block.TestnetGenesisBlock.hash -> DeterministicWallet.vpub
+                else -> throw IllegalArgumentException("unhandled chain hash $chainHash")
+            }
+        )
+    }
+
     override fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray> {
-        val priv = bip84PrivateKey(0, 0)
+        val priv = bip84PrivateKey(Peer.finalWalletAccount, 0)
         val pub = priv.publicKey()
         val script = Script.pay2wpkh(pub)
         return Pair(pub, Script.write(script))
@@ -126,6 +138,7 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
     }
 
     companion object {
+
         fun channelKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
             Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(48), hardened(1))
             Block.LivenetGenesisBlock.hash -> listOf(hardened(50), hardened(1))
