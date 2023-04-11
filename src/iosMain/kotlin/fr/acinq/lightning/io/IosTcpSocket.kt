@@ -160,8 +160,8 @@ fun TcpSocket.TLS.toNativeSocketTLS(): NativeSocketTLS {
     return when (this) {
         TcpSocket.TLS.DISABLED ->
             NativeSocketTLS.disabled()
-        TcpSocket.TLS.TRUSTED_CERTIFICATES ->
-            NativeSocketTLS.trustedCertificates()
+        is TcpSocket.TLS.TRUSTED_CERTIFICATES ->
+            NativeSocketTLS.trustedCertificates(this.expectedHostName)
         TcpSocket.TLS.UNSAFE_CERTIFICATES ->
             NativeSocketTLS.allowUnsafeCertificates()
         is TcpSocket.TLS.PINNED_PUBLIC_KEY ->
