@@ -126,14 +126,14 @@ object ChannelReadyTlvSerializer
 object ChannelReestablishTlvSerializer
 
 @Serializable
-data class TlvStreamSurrogate(val records: List<Tlv>, val unknown: List<GenericTlv> = listOf())
+data class TlvStreamSurrogate(val records: Set<Tlv>, val unknown: Set<GenericTlv> = setOf())
 class TlvStreamSerializer<T : Tlv> : KSerializer<TlvStream<T>> {
     private val delegateSerializer = TlvStreamSurrogate.serializer()
     override val descriptor: SerialDescriptor = delegateSerializer.descriptor
     override fun deserialize(decoder: Decoder): TlvStream<T> {
         val o = delegateSerializer.deserialize(decoder)
         @Suppress("UNCHECKED_CAST")
-        return TlvStream(o.records.map { it as T }, o.unknown)
+        return TlvStream(o.records.map { it as T }.toSet(), o.unknown)
     }
 
     override fun serialize(encoder: Encoder, value: TlvStream<T>) = TODO("Not yet implemented")

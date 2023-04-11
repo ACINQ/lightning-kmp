@@ -59,7 +59,7 @@ data class WaitForOpenChannel(
                                     firstPerCommitmentPoint = keyManager.commitmentPoint(keyManager.channelKeyPath(localParams, channelConfig), 0),
                                     secondPerCommitmentPoint = keyManager.commitmentPoint(keyManager.channelKeyPath(localParams, channelConfig), 1),
                                     tlvStream = TlvStream(
-                                        buildList {
+                                        buildSet {
                                             add(ChannelTlv.ChannelTypeTlv(channelFeatures.channelType))
                                             if (pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(pushAmount))
                                         }

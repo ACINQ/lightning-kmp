@@ -335,7 +335,7 @@ sealed class PersistedChannelState : ChannelState() {
                 nextRemoteRevocationNumber = 0,
                 yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
                 myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
-                TlvStream(listOf(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTx.txId.reversed())))
+                TlvStream(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTx.txId.reversed()))
             ).withChannelData(state.remoteChannelData, logger)
         }
         is ChannelStateWithCommitments -> {
@@ -346,7 +346,7 @@ sealed class PersistedChannelState : ChannelState() {
                 is Normal -> state.getUnsignedFundingTxId() // a splice was in progress, we tell our peer that we are remembering it and are expecting signatures
                 else -> null
             }
-            val tlvs: TlvStream<ChannelReestablishTlv> = unsignedFundingTxId?.let { TlvStream(listOf(ChannelReestablishTlv.NextFunding(it.reversed()))) } ?: TlvStream.empty()
+            val tlvs: TlvStream<ChannelReestablishTlv> = unsignedFundingTxId?.let { TlvStream(ChannelReestablishTlv.NextFunding(it.reversed())) } ?: TlvStream.empty()
             ChannelReestablish(
                 channelId = channelId,
                 nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,

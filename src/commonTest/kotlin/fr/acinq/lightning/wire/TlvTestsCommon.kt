@@ -139,33 +139,33 @@ class TlvTestsCommon : LightningTestSuite() {
     fun `encode - decode tlv stream`() {
         val testCases = listOf<Pair<ByteArray, TlvStream<TestTlv>>>(
             Pair(Hex.decode(""), TlvStream.empty()),
-            Pair(Hex.decode("21 00"), TlvStream(listOf(), listOf(GenericTlv(33, ByteVector.empty)))),
-            Pair(Hex.decode("fd0201 00"), TlvStream(listOf(), listOf(GenericTlv(513, ByteVector.empty)))),
-            Pair(Hex.decode("fd00fd 00"), TlvStream(listOf(), listOf(GenericTlv(253, ByteVector.empty)))),
-            Pair(Hex.decode("fd00ff 00"), TlvStream(listOf(), listOf(GenericTlv(255, ByteVector.empty)))),
-            Pair(Hex.decode("fe02000001 00"), TlvStream(listOf(), listOf(GenericTlv(33554433, ByteVector.empty)))),
-            Pair(Hex.decode("ff0200000000000001 00"), TlvStream(listOf(), listOf(GenericTlv(144115188075855873L, ByteVector.empty)))),
-            Pair(Hex.decode("01 00"), TlvStream(listOf(TestTlv.TestType1(0)))),
-            Pair(Hex.decode("01 01 01"), TlvStream(listOf(TestTlv.TestType1(1)))),
-            Pair(Hex.decode("01 01 2a"), TlvStream(listOf(TestTlv.TestType1(42)))),
-            Pair(Hex.decode("01 02 0100"), TlvStream(listOf(TestTlv.TestType1(256)))),
-            Pair(Hex.decode("01 03 010000"), TlvStream(listOf(TestTlv.TestType1(65536)))),
-            Pair(Hex.decode("01 04 01000000"), TlvStream(listOf(TestTlv.TestType1(16777216)))),
-            Pair(Hex.decode("01 05 0100000000"), TlvStream(listOf(TestTlv.TestType1(4294967296)))),
-            Pair(Hex.decode("01 06 010000000000"), TlvStream(listOf(TestTlv.TestType1(1099511627776)))),
-            Pair(Hex.decode("01 07 01000000000000"), TlvStream(listOf(TestTlv.TestType1(281474976710656)))),
-            Pair(Hex.decode("01 08 0100000000000000"), TlvStream(listOf(TestTlv.TestType1(72057594037927936)))),
-            Pair(Hex.decode("02 08 0000000000000226"), TlvStream(listOf(TestTlv.TestType2(ShortChannelId(550))))),
+            Pair(Hex.decode("21 00"), TlvStream(setOf(), setOf(GenericTlv(33, ByteVector.empty)))),
+            Pair(Hex.decode("fd0201 00"), TlvStream(setOf(), setOf(GenericTlv(513, ByteVector.empty)))),
+            Pair(Hex.decode("fd00fd 00"), TlvStream(setOf(), setOf(GenericTlv(253, ByteVector.empty)))),
+            Pair(Hex.decode("fd00ff 00"), TlvStream(setOf(), setOf(GenericTlv(255, ByteVector.empty)))),
+            Pair(Hex.decode("fe02000001 00"), TlvStream(setOf(), setOf(GenericTlv(33554433, ByteVector.empty)))),
+            Pair(Hex.decode("ff0200000000000001 00"), TlvStream(setOf(), setOf(GenericTlv(144115188075855873L, ByteVector.empty)))),
+            Pair(Hex.decode("01 00"), TlvStream(TestTlv.TestType1(0))),
+            Pair(Hex.decode("01 01 01"), TlvStream(TestTlv.TestType1(1))),
+            Pair(Hex.decode("01 01 2a"), TlvStream(TestTlv.TestType1(42))),
+            Pair(Hex.decode("01 02 0100"), TlvStream(TestTlv.TestType1(256))),
+            Pair(Hex.decode("01 03 010000"), TlvStream(TestTlv.TestType1(65536))),
+            Pair(Hex.decode("01 04 01000000"), TlvStream(TestTlv.TestType1(16777216))),
+            Pair(Hex.decode("01 05 0100000000"), TlvStream(TestTlv.TestType1(4294967296))),
+            Pair(Hex.decode("01 06 010000000000"), TlvStream(TestTlv.TestType1(1099511627776))),
+            Pair(Hex.decode("01 07 01000000000000"), TlvStream(TestTlv.TestType1(281474976710656))),
+            Pair(Hex.decode("01 08 0100000000000000"), TlvStream(TestTlv.TestType1(72057594037927936))),
+            Pair(Hex.decode("02 08 0000000000000226"), TlvStream(TestTlv.TestType2(ShortChannelId(550)))),
             Pair(
                 Hex.decode("03 31 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb 0000000000000231 0000000000000451"),
-                TlvStream(listOf(TestTlv.TestType3(PublicKey(ByteVector("023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb")), 561, 1105)))
+                TlvStream(TestTlv.TestType3(PublicKey(ByteVector("023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb")), 561, 1105))
             ),
-            Pair(Hex.decode("fd00fe 02 0226"), TlvStream(listOf(TestTlv.TestType254(550)))),
+            Pair(Hex.decode("fd00fe 02 0226"), TlvStream(TestTlv.TestType254(550))),
             Pair(
                 Hex.decode("01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451"),
-                TlvStream(listOf(TestTlv.TestType1(561), TestTlv.TestType2(ShortChannelId(1105)), TestTlv.TestType3(PublicKey(ByteVector("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")), 561, 1105)))
+                TlvStream(TestTlv.TestType1(561), TestTlv.TestType2(ShortChannelId(1105)), TestTlv.TestType3(PublicKey(ByteVector("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")), 561, 1105))
             ),
-            Pair(Hex.decode("01020231 0b020451 fd00fe02002a"), TlvStream(listOf(TestTlv.TestType1(561), TestTlv.TestType254(42)), listOf(GenericTlv(11, ByteVector("0451")))))
+            Pair(Hex.decode("01020231 0b020451 fd00fe02002a"), TlvStream(setOf(TestTlv.TestType1(561), TestTlv.TestType254(42)), setOf(GenericTlv(11, ByteVector("0451")))))
         )
 
         testCases.forEach {
@@ -279,7 +279,7 @@ class TlvTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode unordered tlv stream -- codec should sort appropriately`() {
-        val stream = TlvStream<TestTlv>(listOf(TestTlv.TestType254(42), TestTlv.TestType1(42)), listOf(GenericTlv(13, ByteVector("2a")), GenericTlv(11, ByteVector("2b"))))
+        val stream = TlvStream(setOf(TestTlv.TestType254(42), TestTlv.TestType1(42)), setOf(GenericTlv(13, ByteVector("2a")), GenericTlv(11, ByteVector("2b"))))
         val out1 = ByteArrayOutput()
         testTlvStreamSerializer.write(stream, out1)
         assertArrayEquals(Hex.decode("01012a 0b012b 0d012a fd00fe02002a"), out1.toByteArray())
@@ -291,16 +291,16 @@ class TlvTestsCommon : LightningTestSuite() {
     @Test
     fun `encode invalid tlv stream`() {
         // Unknown even type.
-        assertFails { TlvStream<TestTlv>(listOf(), listOf(GenericTlv(42, ByteVector("2a")))) }
-        assertFails { TlvStream<TestTlv>(listOf(TestTlv.TestType1(561), TestTlv.TestType2(ShortChannelId(1105))), listOf(GenericTlv(42, ByteVector("2a")))) }
+        assertFails { TlvStream(setOf<TestTlv>(), setOf(GenericTlv(42, ByteVector("2a")))) }
+        assertFails { TlvStream(setOf(TestTlv.TestType1(561), TestTlv.TestType2(ShortChannelId(1105))), setOf(GenericTlv(42, ByteVector("2a")))) }
         // Duplicate type.
-        assertFails { TlvStream<TestTlv>(listOf(TestTlv.TestType1(561), TestTlv.TestType1(1105))) }
-        assertFails { TlvStream<TestTlv>(listOf(TestTlv.TestType1(561)), listOf(GenericTlv(1, ByteVector("0451")))) }
+        assertFails { TlvStream<TestTlv>(TestTlv.TestType1(561), TestTlv.TestType1(1105)) }
+        assertFails { TlvStream<TestTlv>(setOf(TestTlv.TestType1(561)), setOf(GenericTlv(1, ByteVector("0451")))) }
     }
 
     @Test
     fun `get optional TLV field`() {
-        val stream = TlvStream<TestTlv>(listOf(TestTlv.TestType254(42), TestTlv.TestType1(42)), listOf(GenericTlv(13, ByteVector("2a")), GenericTlv(11, ByteVector("2b"))))
+        val stream = TlvStream(setOf(TestTlv.TestType254(42), TestTlv.TestType1(42)), setOf(GenericTlv(13, ByteVector("2a")), GenericTlv(11, ByteVector("2b"))))
         assertEquals(TestTlv.TestType254(42), stream.get<TestTlv.TestType254>())
         assertEquals(TestTlv.TestType1(42), stream.get<TestTlv.TestType1>())
         assertNull(stream.get<TestTlv.TestType2>())
@@ -308,19 +308,19 @@ class TlvTestsCommon : LightningTestSuite() {
 
     @Test
     fun `add TLV field to stream`() {
-        val stream = TlvStream<TestTlv>(listOf(TestTlv.TestType1(561), TestTlv.TestType254(1702)), listOf(GenericTlv(13, ByteVector("2a"))))
+        val stream = TlvStream(setOf(TestTlv.TestType1(561), TestTlv.TestType254(1702)), setOf(GenericTlv(13, ByteVector("2a"))))
         val updated = stream.addOrUpdate(TestTlv.TestType2(ShortChannelId(561)))
         assertEquals(TestTlv.TestType2(ShortChannelId(561)), updated.get<TestTlv.TestType2>())
-        val expected = TlvStream<TestTlv>(listOf(TestTlv.TestType1(561), TestTlv.TestType254(1702), TestTlv.TestType2(ShortChannelId(561))), listOf(GenericTlv(13, ByteVector("2a"))))
+        val expected = TlvStream(setOf(TestTlv.TestType1(561), TestTlv.TestType254(1702), TestTlv.TestType2(ShortChannelId(561))), setOf(GenericTlv(13, ByteVector("2a"))))
         assertEquals(updated, expected)
     }
 
     @Test
     fun `replace TLV field in stream`() {
-        val stream = TlvStream<TestTlv>(listOf(TestTlv.TestType1(561), TestTlv.TestType254(1702)), listOf(GenericTlv(13, ByteVector("2a"))))
+        val stream = TlvStream(setOf(TestTlv.TestType1(561), TestTlv.TestType254(1702)), setOf(GenericTlv(13, ByteVector("2a"))))
         val updated = stream.addOrUpdate(TestTlv.TestType1(562))
         assertEquals(TestTlv.TestType1(562), updated.get<TestTlv.TestType1>())
-        val expected = TlvStream<TestTlv>(listOf(TestTlv.TestType1(562), TestTlv.TestType254(1702)), listOf(GenericTlv(13, ByteVector("2a"))))
+        val expected = TlvStream(setOf(TestTlv.TestType1(562), TestTlv.TestType254(1702)), setOf(GenericTlv(13, ByteVector("2a"))))
         assertEquals(updated, expected)
     }
 

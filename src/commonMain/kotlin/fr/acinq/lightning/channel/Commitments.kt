@@ -695,7 +695,7 @@ data class Commitments(
         )
         val sigs1 = if (sigs.size > 1) {
             sigs.map { sig ->
-                sig.copy(tlvStream = sig.tlvStream.copy(records = buildList {
+                sig.copy(tlvStream = sig.tlvStream.copy(records = buildSet {
                     addAll(sig.tlvStream.records)
                     add(CommitSigTlv.Batch(sigs.size))
                 }))

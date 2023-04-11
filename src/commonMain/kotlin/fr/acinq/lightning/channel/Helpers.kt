@@ -415,7 +415,7 @@ object Helpers {
             val dustLimit = commitment.params.localParams.dustLimit.max(commitment.params.remoteParams.dustLimit)
             val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, dustLimit, closingFees.preferred, commitment.localCommit.spec)
             val localClosingSig = keyManager.sign(closingTx, commitment.params.localParams.channelKeys(keyManager).fundingPrivateKey)
-            val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(listOf(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max))))
+            val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
             return Pair(closingTx, closingSigned)
         }
 

@@ -102,7 +102,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv OpenChannel -- missing channel type`() {
         val (_, bob, open) = TestsHelper.init()
-        val open1 = open.copy(tlvStream = TlvStream(listOf()))
+        val open1 = open.copy(tlvStream = TlvStream.empty())
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, MissingChannelType(open.temporaryChannelId).message))
@@ -112,7 +112,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv OpenChannel -- invalid channel type`() {
         val (_, bob, open) = TestsHelper.init()
-        val open1 = open.copy(tlvStream = TlvStream(listOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.StaticRemoteKey))))
+        val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.StaticRemoteKey)))
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, ChannelType.SupportedChannelType.StaticRemoteKey).message))

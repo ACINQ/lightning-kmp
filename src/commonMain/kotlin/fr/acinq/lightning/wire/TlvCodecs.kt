@@ -83,7 +83,7 @@ class TlvStreamSerializer<T : Tlv>(private val lengthPrefixed: Boolean, private 
                 unknown.add(GenericTlv(tag, ByteVector(data)))
             }
         }
-        return TlvStream(records.toList(), unknown.toList())
+        return TlvStream(records.toSet(), unknown.toSet())
     }
 
     /**
@@ -130,7 +130,9 @@ class TlvStreamSerializer<T : Tlv>(private val lengthPrefixed: Boolean, private 
  * @param unknown unknown tlv records.
  * @tparam T the stream namespace is a trait extending the top-level tlv trait.
  */
-data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv> = listOf()) {
+data class TlvStream<T : Tlv>(val records: Set<T>, val unknown: Set<GenericTlv> = setOf()) {
+    constructor(vararg records: T) : this(records.toSet())
+
     init {
         val tags = records.map { it.tag } + unknown.map { it.tag }
         require(tags.size == tags.toSet().size) { "tlv stream contains duplicate tags" }
@@ -160,7 +162,7 @@ data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv
             } else {
                 it
             }
-        }
+        }.toSet()
         return if (found) {
             copy(records = updated)
         } else {
@@ -169,6 +171,6 @@ data class TlvStream<T : Tlv>(val records: List<T>, val unknown: List<GenericTlv
     }
 
     companion object {
-        fun <T : Tlv> empty() = TlvStream(listOf<T>(), listOf())
+        fun <T : Tlv> empty() = TlvStream(setOf<T>(), setOf())
     }
 }
