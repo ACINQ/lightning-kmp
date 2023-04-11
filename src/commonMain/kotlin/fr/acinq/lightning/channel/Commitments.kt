@@ -827,11 +827,14 @@ data class Commitments(
      * [pruneCommitments], when the next funding tx confirms.
      */
     private fun ChannelContext.deactivateCommitments(): Commitments {
-        return when (val lastLocked = active.find { commitment ->
-            val localLocked = staticParams.useZeroConf || commitment.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx
-            val remoteLocked = commitment.remoteFundingStatus == RemoteFundingStatus.Locked
-            localLocked && remoteLocked
-        }) {
+        // When a commitment is locked, it implicitly locks all previous commitments.
+        // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
+        // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
+        // That's why we compute each index (local and remote) separately and stop at the first one that matches.
+        val lastLocalLockedIndex: Long = active.firstOrNull { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }?.fundingTxIndex ?: -1
+        val lastRemoteLockedIndex: Long = active.firstOrNull { it.remoteFundingStatus is RemoteFundingStatus.Locked }?.fundingTxIndex ?: -1
+        val lastLockedIndex = min(lastLocalLockedIndex, lastRemoteLockedIndex)
+        return when (val lastLocked = active.find { it.fundingTxIndex == lastLockedIndex }) {
             is Commitment -> {
                 // all commitments older than this one are inactive
                 val inactive1 = active.filter { it.fundingTxId != lastLocked.fundingTxId && it.fundingTxIndex <= lastLocked.fundingTxIndex }

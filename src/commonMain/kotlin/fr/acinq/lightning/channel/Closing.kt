@@ -149,7 +149,7 @@ data class Closing(
                             val newState = this@Closing.copy(commitments = commitments1)
                             // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
                             when {
-                                watch.tx.txid == commitments1.latest.localCommit.publishableTxs.commitTx.tx.txid && commitments1.localCommitIndex == commitments.localCommitIndex -> {
+                                watch.tx.txid == commitments1.latest.localCommit.publishableTxs.commitTx.tx.txid -> {
                                     // our local commit has been published from the outside, it's unexpected but let's deal with it anyway
                                     newState.run { spendLocalCurrent() }
                                 }

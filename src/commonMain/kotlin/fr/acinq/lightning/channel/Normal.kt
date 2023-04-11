@@ -644,16 +644,18 @@ data class Normal(
                     }
                 }
                 // If we are splicing and are early in the process, then we cancel it.
-                val replyTo = when (spliceStatus) {
-                    is SpliceStatus.Requested -> spliceStatus.command.replyTo
-                    is SpliceStatus.InProgress -> spliceStatus.replyTo
-                    else -> null
-                }
-                replyTo?.complete(Command.Splice.Response.Failure.Disconnected)
-                // If we didn't reach the signatures exchange step, we implicitly abort the splice.
                 val spliceStatus1 = when (spliceStatus) {
+                    is SpliceStatus.None -> SpliceStatus.None
+                    is SpliceStatus.Aborted -> SpliceStatus.None
+                    is SpliceStatus.Requested -> {
+                        spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.Disconnected)
+                        SpliceStatus.None
+                    }
+                    is SpliceStatus.InProgress -> {
+                        spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.Disconnected)
+                        SpliceStatus.None
+                    }
                     is SpliceStatus.WaitingForSigs -> spliceStatus
-                    else -> SpliceStatus.None
                 }
                 // reset the commit_sig batch
                 sigStash = emptyList()
@@ -685,12 +687,10 @@ data class Normal(
     }
 
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
-    fun getUnsignedFundingTxId(): ByteVector32? = when (spliceStatus) {
-        is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.txId
-        else -> when (commitments.latest.localFundingStatus.signedTx) {
-            null -> commitments.latest.localFundingStatus.txId
-            else -> null
-        }
+    fun getUnsignedFundingTxId(): ByteVector32? = when {
+        spliceStatus is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.txId
+        commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx && commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction -> commitments.latest.localFundingStatus.txId
+        else -> null
     }
 
     override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
