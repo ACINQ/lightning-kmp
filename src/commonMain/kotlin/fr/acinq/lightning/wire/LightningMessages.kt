@@ -478,11 +478,9 @@ data class TxSignatures(
         LightningCodecs.writeBytes(txHash.toByteArray(), out)
         LightningCodecs.writeU16(witnesses.size, out)
         witnesses.forEach { witness ->
-            LightningCodecs.writeU16(witness.stack.size, out)
-            witness.stack.forEach { element ->
-                LightningCodecs.writeU16(element.size(), out)
-                LightningCodecs.writeBytes(element.toByteArray(), out)
-            }
+            val witnessData = ScriptWitness.write(witness)
+            LightningCodecs.writeU16(witnessData.size, out)
+            LightningCodecs.writeBytes(witnessData, out)
         }
         TlvStreamSerializer(false, readers).write(tlvs, out)
     }
@@ -500,15 +498,9 @@ data class TxSignatures(
             val channelId = LightningCodecs.bytes(input, 32).byteVector32()
             val txHash = LightningCodecs.bytes(input, 32).byteVector32()
             val witnessCount = LightningCodecs.u16(input)
-            val witnesses = ArrayList<ScriptWitness>(witnessCount)
-            for (i in 1..witnessCount) {
-                val stackSize = LightningCodecs.u16(input)
-                val stack = ArrayList<ByteVector>(stackSize)
-                for (j in 1..stackSize) {
-                    val elementSize = LightningCodecs.u16(input)
-                    stack += LightningCodecs.bytes(input, elementSize).byteVector()
-                }
-                witnesses += ScriptWitness(stack.toList())
+            val witnesses = (1..witnessCount).map {
+                val witnessSize = LightningCodecs.u16(input)
+                ScriptWitness.read(LightningCodecs.bytes(input, witnessSize))
             }
             return TxSignatures(channelId, txHash, witnesses, TlvStreamSerializer(false, readers).read(input))
         }
