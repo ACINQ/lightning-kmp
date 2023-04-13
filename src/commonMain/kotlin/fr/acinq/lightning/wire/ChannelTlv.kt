@@ -193,6 +193,16 @@ sealed class RevokeAndAckTlv : Tlv {
 }
 
 sealed class ChannelReestablishTlv : Tlv {
+    data class NextFunding(val txHash: ByteVector32) : ChannelReestablishTlv() {
+        override val tag: Long get() = NextFunding.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(txHash, out)
+
+        companion object : TlvValueReader<NextFunding> {
+            const val tag: Long = 0
+            override fun read(input: Input): NextFunding = NextFunding(LightningCodecs.bytes(input, 32).toByteVector32())
+        }
+    }
+
     data class ChannelData(val ecb: EncryptedChannelData) : ChannelReestablishTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
@@ -200,16 +210,6 @@ sealed class ChannelReestablishTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
-        }
-    }
-
-    data class NextFunding(val txHash: ByteVector32) : ChannelReestablishTlv() {
-        override val tag: Long get() = NextFunding.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(txHash, out)
-
-        companion object : TlvValueReader<NextFunding> {
-            const val tag: Long = 333
-            override fun read(input: Input): NextFunding = NextFunding(LightningCodecs.bytes(input, 32).toByteVector32())
         }
     }
 }
