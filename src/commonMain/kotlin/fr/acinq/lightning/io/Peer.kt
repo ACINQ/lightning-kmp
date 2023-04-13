@@ -9,7 +9,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.Databases
 import fr.acinq.lightning.db.IncomingPayment
@@ -642,7 +641,12 @@ class Peer(
     private suspend fun processEvent(cmd: PeerCommand) {
         when {
             cmd is BytesReceived -> {
-                val msg = LightningMessage.decode(cmd.data)
+                val msg = try {
+                    LightningMessage.decode(cmd.data)
+                } catch (e: Throwable) {
+                    logger.warning { "cannot deserialized message: ${cmd.data.byteVector().toHex()}" }
+                    return
+                }
                 logger.withMDC(msg.mdc()) { logger ->
                     msg.let { if (it !is Ping && it !is Pong) logger.info { "received $it" } }
                     when {
