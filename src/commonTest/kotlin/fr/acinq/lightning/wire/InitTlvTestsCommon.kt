@@ -15,7 +15,7 @@ class InitTlvTestsCommon : LightningTestSuite() {
         val keyManager = LocalKeyManager(MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector(), NodeParams.Chain.Testnet)
         val testCases = listOf(
             Pair(
-                first = keyManager.legacyNodeKey.publicKey,
+                first = keyManager.nodeKeys.legacyNodeKey.publicKey,
                 second = Hex.decode("fe47020001 61 0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc abc7feb0f7b2473552864bcbf76406aecee86ed6d29349392a8876ce4cb543ee5d67a7ea48248970c7605e2861e93ab2336c813a30d1376bd6d0eb6e619c8d9f")
             )
         )
@@ -39,7 +39,7 @@ class InitTlvTestsCommon : LightningTestSuite() {
             }.first()
             assertEquals(it.first, result.legacyNodeId)
             // signature is legacy public key signed with the regular private key
-            assertTrue { Crypto.verifySignature(Crypto.sha256(it.first.toUncompressedBin()), result.signature, keyManager.nodeKey.publicKey) }
+            assertTrue { Crypto.verifySignature(Crypto.sha256(it.first.toUncompressedBin()), result.signature, keyManager.nodeKeys.nodeKey.publicKey) }
         }
     }
 }

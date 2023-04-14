@@ -20,7 +20,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // the same seed, which could be a problem during an upgrade
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
         val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
-        assertEquals(keyManager.nodeId, PublicKey.fromHex("0392ea6e914abcee840dc8a763b02ba5ac47e0ac3fadcd5294f9516fe353882522"))
+        assertEquals(keyManager.nodeKeys.nodeKey.publicKey, PublicKey.fromHex("0392ea6e914abcee840dc8a763b02ba5ac47e0ac3fadcd5294f9516fe353882522"))
     }
 
     @Test
@@ -29,7 +29,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // the same seed, which could be a problem during migration from legacy to kmp
         val seed = MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector()
         val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
-        assertEquals(keyManager.legacyNodeKey.publicKey, PublicKey.fromHex("0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc"))
+        assertEquals(keyManager.nodeKeys.legacyNodeKey.publicKey, PublicKey.fromHex("0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc"))
     }
 
     @Test
@@ -60,7 +60,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
         val keyManager1 = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         val keyManager2 = LocalKeyManager(seed, NodeParams.Chain.Mainnet)
-        assertTrue { keyManager1.nodeId != keyManager2.nodeId }
+        assertTrue { keyManager1.nodeKeys.nodeKey.publicKey != keyManager2.nodeKeys.nodeKey.publicKey }
         val fundingKeyPath = KeyPath("1")
         val channelKeys1 = keyManager1.channelKeys(fundingKeyPath)
         val channelKeys2 = keyManager2.channelKeys(fundingKeyPath)

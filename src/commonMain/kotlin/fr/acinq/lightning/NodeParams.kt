@@ -133,8 +133,8 @@ data class NodeParams(
     val zeroConfPeers: Set<PublicKey>,
     val enableTrampolinePayment: Boolean,
 ) {
-    val nodePrivateKey get() = keyManager.nodeKey.privateKey
-    val nodeId get() = keyManager.nodeId
+    val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
+    val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
     val chainHash get() = chain.chainHash
 
     internal val _nodeEvents = MutableSharedFlow<NodeEvents>()

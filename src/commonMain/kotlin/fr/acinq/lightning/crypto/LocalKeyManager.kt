@@ -14,10 +14,11 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
 
     private val master = DeterministicWallet.generate(seed)
 
-    @Suppress("DEPRECATION")
-    override val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, eclairNodeKeyBasePath(chain))
-    override val nodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, nodeKeyBasePath(chain))
-    override val nodeId: PublicKey get() = nodeKey.publicKey
+    override val nodeKeys: KeyManager.NodeKeys = KeyManager.NodeKeys(
+        legacyNodeKey = @Suppress("DEPRECATION") derivePrivateKey(master, eclairNodeKeyBasePath(chain)),
+        nodeKey = derivePrivateKey(master, nodeKeyBasePath(chain)),
+    )
+
     private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
     private val bip84BasePath: KeyPath = bip84BasePath(chain)
 

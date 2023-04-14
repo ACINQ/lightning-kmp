@@ -33,7 +33,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         val fundingTx = Transaction.read("020000000100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0140420f0000000000220020f9aafa9be1212d0d373760c279f3817f9be707d674cae5f38bb31c1fd85c202900000000")
         assertEquals(state.commitments.latest.fundingTxId, fundingTx.txid)
         val ctx = ChannelContext(
-            StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.keyManager.nodeId),
+            StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.nodeParams.nodeId),
             TestConstants.defaultBlockHeight ,
             OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
             MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))

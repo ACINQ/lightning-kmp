@@ -39,7 +39,7 @@ object TestConstants {
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
-        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeId, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
+        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
             loggerFactory = LoggerFactory.default,
@@ -94,7 +94,7 @@ object TestConstants {
         val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
         val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
-        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeId, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
+        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
             loggerFactory = LoggerFactory.default,

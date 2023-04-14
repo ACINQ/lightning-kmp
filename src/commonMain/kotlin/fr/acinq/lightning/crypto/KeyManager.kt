@@ -4,10 +4,8 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo
 
 interface KeyManager {
-    /** The node key that the same seed would have produced on the legacy eclair-based Phoenix implementation on Android. Useful to automate the migration. */
-    val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey
-    val nodeKey: DeterministicWallet.ExtendedPrivateKey
-    val nodeId: PublicKey
+
+    val nodeKeys: NodeKeys
 
     fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey
 
@@ -60,6 +58,16 @@ interface KeyManager {
      * @return a signature generated with a private key generated from the input private key and the remote secret.
      */
     fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64
+
+    /**
+     * Keys used for the node. They are used to generate the node id, to secure communication with other peers, and
+     * to sign network-wide public announcements.
+     */
+    data class NodeKeys(
+        /** The node key that the same seed would have produced on the legacy eclair-based Phoenix implementation on Android. Useful to automate the migration. */
+        val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey,
+        val nodeKey: DeterministicWallet.ExtendedPrivateKey,
+    )
 
     /**
      * Secrets and keys for a given channel.

@@ -161,7 +161,7 @@ object TestsHelper {
         }
         val alice = LNChannel(
             ChannelContext(
-                StaticParams(aliceNodeParams, TestConstants.Bob.keyManager.nodeId),
+                StaticParams(aliceNodeParams, TestConstants.Bob.nodeParams.nodeId),
                 currentBlockHeight = currentHeight,
                 currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
                 logger = MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
@@ -170,7 +170,7 @@ object TestsHelper {
         )
         val bob = LNChannel(
             ChannelContext(
-                StaticParams(bobNodeParams, TestConstants.Alice.keyManager.nodeId),
+                StaticParams(bobNodeParams, TestConstants.Alice.nodeParams.nodeId),
                 currentBlockHeight = currentHeight,
                 currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
                 logger = MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
