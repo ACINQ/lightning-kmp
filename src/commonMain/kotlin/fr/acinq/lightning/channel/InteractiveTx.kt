@@ -78,7 +78,7 @@ data class InteractiveTxParams(
     constructor(channelId: ByteVector32, isInitiator: Boolean, localContribution: Satoshi, remoteContribution: Satoshi, remoteFundingPubKey: PublicKey, lockTime: Long, dustLimit: Satoshi, targetFeerate: FeeratePerKw) :
             this(channelId, isInitiator, localContribution, remoteContribution, null, remoteFundingPubKey, listOf(), lockTime, dustLimit, targetFeerate)
 
-    /** The amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
+    /** Amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
     val fundingAmount: Satoshi = (sharedInput?.info?.txOut?.amount ?: 0.sat) + localContribution + remoteContribution
     fun localFundingPubkey(channelKeys: KeyManager.ChannelKeys): PublicKey = channelKeys.fundingPubKey((sharedInput as? Multisig2of2)?.let { it.fundingTxIndex + 1 } ?: 0)
     fun fundingPubkeyScript(channelKeys: KeyManager.ChannelKeys): ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey(channelKeys), remoteFundingPubkey))).toByteVector()

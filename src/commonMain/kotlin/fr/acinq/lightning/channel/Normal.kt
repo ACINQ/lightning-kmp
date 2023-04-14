@@ -123,6 +123,7 @@ data class Normal(
                                         fundingContribution = fundingContribution,
                                         lockTime = currentBlockHeight.toLong(),
                                         feerate = cmd.command.feerate,
+                                        fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                         pushAmount = cmd.command.pushAmount
                                     )
                                     logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
@@ -351,7 +352,8 @@ data class Normal(
                                 val spliceAck = SpliceAck(
                                     channelId,
                                     fundingContribution = 0.sat, // only remote contributes to the splice
-                                    pushAmount = 0.msat
+                                    pushAmount = 0.msat,
+                                    fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                 )
                                 val fundingParams = InteractiveTxParams(
                                     channelId = channelId,
@@ -359,7 +361,7 @@ data class Normal(
                                     localContribution = spliceAck.fundingContribution,
                                     remoteContribution = cmd.message.fundingContribution,
                                     sharedInput = SharedFundingInput.Multisig2of2(parentCommitment),
-                                    remoteFundingPubkey = parentCommitment.remoteFundingPubkey, // TODO: same pubkey script as before
+                                    remoteFundingPubkey = cmd.message.fundingPubkey,
                                     localOutputs = emptyList(),
                                     lockTime = cmd.message.lockTime,
                                     dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
@@ -374,7 +376,7 @@ data class Normal(
                                     previousTxs = emptyList()
                                 )
                                 val nextState = this@Normal.copy(spliceStatus = SpliceStatus.InProgress(replyTo = null, session, localPushAmount = 0.msat, remotePushAmount = cmd.message.pushAmount, origins = cmd.message.origins))
-                                Pair(nextState, listOf(ChannelAction.Message.Send(SpliceAck(channelId, fundingParams.localContribution))))
+                                Pair(nextState, listOf(ChannelAction.Message.Send(spliceAck)))
                             } else {
                                 logger.info { "rejecting splice attempt: channel is not idle" }
                                 Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceChannelNotIdle(channelId).message))))
@@ -399,7 +401,7 @@ data class Normal(
                                 localContribution = spliceStatus.spliceInit.fundingContribution,
                                 remoteContribution = cmd.message.fundingContribution,
                                 sharedInput = sharedInput,
-                                remoteFundingPubkey = parentCommitment.remoteFundingPubkey, // TODO: same pubkey script as before
+                                remoteFundingPubkey = cmd.message.fundingPubkey,
                                 localOutputs = spliceStatus.command.spliceOutputs,
                                 lockTime = spliceStatus.spliceInit.lockTime,
                                 dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
