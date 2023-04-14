@@ -2,9 +2,7 @@ package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.lightning.channel.ChannelConfig
 import fr.acinq.lightning.channel.ChannelKeys
-import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.channel.RecoveredChannelKeys
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo
 
@@ -23,24 +21,6 @@ interface KeyManager {
     fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray>
 
     fun fundingPublicKey(keyPath: KeyPath): ExtendedPublicKey
-
-    fun revocationPoint(channelKeyPath: KeyPath): ExtendedPublicKey
-
-    fun delayedPaymentPoint(channelKeyPath: KeyPath): ExtendedPublicKey
-
-    fun htlcPoint(channelKeyPath: KeyPath): ExtendedPublicKey
-
-    fun commitmentSecret(channelKeyPath: KeyPath, index: Long): PrivateKey
-
-    fun commitmentPoint(channelKeyPath: KeyPath, index: Long): PublicKey
-
-    fun commitmentSecret(shaSeed: ByteVector32, index: Long): PrivateKey
-
-    fun commitmentPoint(shaSeed: ByteVector32, index: Long): PublicKey
-
-    fun channelKeyPath(fundingKeyPath: KeyPath, channelConfig: ChannelConfig): KeyPath
-
-    fun channelKeyPath(localParams: LocalParams, channelConfig: ChannelConfig): KeyPath
 
     /**
      *

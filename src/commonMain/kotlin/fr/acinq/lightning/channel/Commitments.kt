@@ -417,9 +417,9 @@ data class Commitment(
         // signatures are now optional in the commit message, and will be sent only if the other party is actually
         // receiving money i.e its commit tx has one output for them
         val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
-        val localPerCommitmentPoint = keyManager.commitmentPoint(params.localParams.channelKeys(keyManager).shaSeed, localCommit.index + 1)
-        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(keyManager.channelKeys(params.localParams.fundingKeyPath), localCommit.index + 1, params.localParams, params.remoteParams, commitInput, localPerCommitmentPoint, spec)
         val keys = params.localParams.channelKeys(keyManager)
+        val localPerCommitmentPoint = keys.commitmentPoint(localCommit.index + 1)
+        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(keys, localCommit.index + 1, params.localParams, params.remoteParams, commitInput, localPerCommitmentPoint, spec)
         val sig = Transactions.sign(localCommitTx, keys.fundingPrivateKey)
 
         log.info {
@@ -719,8 +719,9 @@ data class Commitments(
             }
         }
         // we will send our revocation preimage + our next revocation hash
-        val localPerCommitmentSecret = keyManager.commitmentSecret(params.localParams.channelKeys(keyManager).shaSeed, localCommitIndex)
-        val localNextPerCommitmentPoint = keyManager.commitmentPoint(params.localParams.channelKeys(keyManager).shaSeed, localCommitIndex + 2)
+        val keys = params.localParams.channelKeys(keyManager)
+        val localPerCommitmentSecret = keys.commitmentSecret(localCommitIndex)
+        val localNextPerCommitmentPoint = keys.commitmentPoint(localCommitIndex + 2)
         val revocation = RevokeAndAck(channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
         val commitments1 = copy(
             active = active1,

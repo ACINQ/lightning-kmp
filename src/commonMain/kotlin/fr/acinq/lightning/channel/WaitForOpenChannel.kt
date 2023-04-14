@@ -56,8 +56,8 @@ data class WaitForOpenChannel(
                                     paymentBasepoint = localParams.channelKeys(keyManager).paymentBasepoint,
                                     delayedPaymentBasepoint = localParams.channelKeys(keyManager).delayedPaymentBasepoint,
                                     htlcBasepoint = localParams.channelKeys(keyManager).htlcBasepoint,
-                                    firstPerCommitmentPoint = keyManager.commitmentPoint(keyManager.channelKeyPath(localParams, channelConfig), 0),
-                                    secondPerCommitmentPoint = keyManager.commitmentPoint(keyManager.channelKeyPath(localParams, channelConfig), 1),
+                                    firstPerCommitmentPoint = localParams.channelKeys(keyManager).commitmentPoint(0),
+                                    secondPerCommitmentPoint = localParams.channelKeys(keyManager).commitmentPoint(1),
                                     tlvStream = TlvStream(
                                         buildSet {
                                             add(ChannelTlv.ChannelTypeTlv(channelFeatures.channelType))

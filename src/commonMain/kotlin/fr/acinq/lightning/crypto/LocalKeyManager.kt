@@ -69,32 +69,16 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
 
     override fun fundingPublicKey(keyPath: KeyPath) = publicKey(internalKeyPath(keyPath, hardened(0)))
 
-    override fun revocationPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(1)))
+    private fun revocationPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(1)))
 
-    internal fun paymentPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(2)))
+    private fun paymentPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(2)))
 
-    override fun delayedPaymentPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(3)))
+    private fun delayedPaymentPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(3)))
 
-    override fun htlcPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(4)))
-
-    override fun commitmentSecret(channelKeyPath: KeyPath, index: Long) = commitmentSecret(shaSeed(channelKeyPath), index)
-
-    override fun commitmentPoint(channelKeyPath: KeyPath, index: Long) = commitmentPoint(shaSeed(channelKeyPath), index)
-
-    override fun commitmentSecret(shaSeed: ByteVector32, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed, index)
-
-    override fun commitmentPoint(shaSeed: ByteVector32, index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
-
-    override fun channelKeyPath(fundingKeyPath: KeyPath, channelConfig: ChannelConfig): KeyPath = when {
-        // deterministic mode: use the funding pubkey to compute the channel key path
-        channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath) -> channelKeyPath(fundingPublicKey(fundingKeyPath))
-        // legacy mode:  we reuse the funding key path as our channel key path
-        else -> fundingKeyPath
-    }
-
-    override fun channelKeyPath(localParams: LocalParams, channelConfig: ChannelConfig): KeyPath = channelKeyPath(localParams.fundingKeyPath, channelConfig)
+    private fun htlcPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(4)))
 
     override fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys {
+        // deterministic mode: use the funding pubkey to compute the channel key path
         val fundingPubKey = fundingPublicKey(fundingKeyPath)
         val recoveredChannelKeys = recoverChannelKeys(fundingPubKey.publicKey)
         return ChannelKeys(

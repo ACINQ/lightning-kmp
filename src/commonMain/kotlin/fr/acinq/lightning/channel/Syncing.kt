@@ -98,14 +98,14 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                 }
                 state is WaitForChannelReady -> {
                     logger.debug { "re-sending channel_ready" }
-                    val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                    val nextPerCommitmentPoint = state.commitments.params.localParams.channelKeys(keyManager).commitmentPoint(1)
                     val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                     val actions = listOf(ChannelAction.Message.Send(channelReady))
                     Pair(state, actions)
                 }
                 state is LegacyWaitForFundingLocked -> {
                     logger.debug { "re-sending channel_ready" }
-                    val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                    val nextPerCommitmentPoint = state.commitments.params.localParams.channelKeys(keyManager).commitmentPoint(1)
                     val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                     val actions = listOf(ChannelAction.Message.Send(channelReady))
                     Pair(state, actions)
@@ -115,7 +115,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                         !Helpers.checkLocalCommit(state.commitments, cmd.message.nextRemoteRevocationNumber) -> {
                             // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
                             // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
-                            if (keyManager.commitmentSecret(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, cmd.message.nextRemoteRevocationNumber - 1) == cmd.message.yourLastCommitmentSecret) {
+                            if (state.commitments.params.localParams.channelKeys(keyManager).commitmentSecret(cmd.message.nextRemoteRevocationNumber - 1) == cmd.message.yourLastCommitmentSecret) {
                                 // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
                                 // would punish us by taking all the funds in the channel
                                 logger.warning { "counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${state.commitments.localCommitIndex} theirCommitmentNumber=${cmd.message.nextRemoteRevocationNumber}" }
@@ -155,7 +155,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                             if (state.commitments.latest.fundingTxIndex == 0L && cmd.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommitIndex == 0L) {
                                 // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit channel_ready, otherwise it MUST NOT
                                 logger.debug { "re-sending channel_ready" }
-                                val nextPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                                val nextPerCommitmentPoint = state.commitments.params.localParams.channelKeys(keyManager).commitmentPoint(1)
                                 val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                                 actions.add(ChannelAction.Message.Send(channelReady))
                             } else {
@@ -285,7 +285,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                                 val nextState = when (state) {
                                     is WaitForFundingConfirmed -> {
                                         logger.info { "was confirmed while syncing at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with funding txid=${watch.tx.txid}" }
-                                        val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments1.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                                        val nextPerCommitmentPoint = commitments1.params.localParams.channelKeys(keyManager).commitmentPoint(1)
                                         val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
                                         val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.commitInput.outPoint.index.toInt())
                                         WaitForChannelReady(commitments1, shortChannelId, channelReady)

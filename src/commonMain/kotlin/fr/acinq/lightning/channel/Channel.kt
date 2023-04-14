@@ -40,7 +40,7 @@ sealed class ChannelCommand {
         val channelType: ChannelType.SupportedChannelType,
         val channelOrigin: ChannelOrigin? = null
     ) : ChannelCommand() {
-        fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = localParams.channelKeys(keyManager).temporaryChannelId
+        fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = keyManager.channelKeys(localParams.fundingKeyPath).temporaryChannelId
     }
 
     data class InitNonInitiator(
@@ -328,7 +328,7 @@ sealed class PersistedChannelState : ChannelState() {
 
     internal fun ChannelContext.createChannelReestablish(): HasEncryptedChannelData = when (val state = this@PersistedChannelState) {
         is WaitForFundingSigned -> {
-            val myFirstPerCommitmentPoint = keyManager.commitmentPoint(state.channelParams.localParams.channelKeys(keyManager).shaSeed, 0)
+            val myFirstPerCommitmentPoint = keyManager.channelKeys(state.channelParams.localParams.fundingKeyPath).commitmentPoint(0)
             ChannelReestablish(
                 channelId = channelId,
                 nextLocalCommitmentNumber = 1,
@@ -340,7 +340,7 @@ sealed class PersistedChannelState : ChannelState() {
         }
         is ChannelStateWithCommitments -> {
             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-            val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.params.localParams.channelKeys(keyManager).shaSeed, state.commitments.localCommitIndex)
+            val myCurrentPerCommitmentPoint = keyManager.channelKeys(state.commitments.params.localParams.fundingKeyPath).commitmentPoint(state.commitments.localCommitIndex)
             val unsignedFundingTxId = when (state) {
                 is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()
                 is Normal -> state.getUnsignedFundingTxId() // a splice was in progress, we tell our peer that we are remembering it and are expecting signatures
@@ -368,6 +368,8 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     override val channelId: ByteVector32 get() = commitments.channelId
     val isInitiator: Boolean get() = commitments.params.localParams.isInitiator
     val remoteNodeId: PublicKey get() = commitments.remoteNodeId
+
+    fun ChannelContext.channelKeys(): ChannelKeys = keyManager.channelKeys(commitments.params.localParams.fundingKeyPath)
 
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
@@ -689,8 +691,9 @@ object Channel {
                 channelReestablish.nextRemoteRevocationNumber + 1 -> {
                     // our last revocation got lost, let's resend it
                     log.debug { "re-sending last revocation" }
-                    val localPerCommitmentSecret = keyManager.commitmentSecret(d.commitments.params.localParams.channelKeys(keyManager).shaSeed, d.commitments.localCommitIndex - 1)
-                    val localNextPerCommitmentPoint = keyManager.commitmentPoint(d.commitments.params.localParams.channelKeys(keyManager).shaSeed, d.commitments.localCommitIndex + 1)
+                    val channelKeys = keyManager.channelKeys(d.commitments.params.localParams.fundingKeyPath)
+                    val localPerCommitmentSecret = channelKeys.commitmentSecret(d.commitments.localCommitIndex - 1)
+                    val localNextPerCommitmentPoint = channelKeys.commitmentPoint(d.commitments.localCommitIndex + 1)
                     val revocation = RevokeAndAck(commitments1.channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
                     sendQueue.add(ChannelAction.Message.Send(revocation))
                 }

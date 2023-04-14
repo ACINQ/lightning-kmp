@@ -358,8 +358,7 @@ class PeerTest : LightningTestSuite() {
         assertIs<Normal>(syncState.state)
         val commitments = (syncState.state as Normal).commitments
         val yourLastPerCommitmentSecret = ByteVector32.Zeroes
-        val channelKeyPath = peer.nodeParams.keyManager.channelKeyPath(commitments.params.localParams, commitments.params.channelConfig)
-        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.commitmentPoint(channelKeyPath, commitments.localCommitIndex)
+        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.channelKeys(commitments.params.localParams.fundingKeyPath).commitmentPoint(commitments.localCommitIndex)
 
         val channelReestablish = ChannelReestablish(
             channelId = syncState.state.channelId,

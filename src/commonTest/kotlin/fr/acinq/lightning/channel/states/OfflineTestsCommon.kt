@@ -34,14 +34,8 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         val bobCommitments = bob.commitments
         val aliceCommitments = alice.commitments
-        val bobCurrentPerCommitmentPoint = bob.ctx.keyManager.commitmentPoint(
-            bob.ctx.keyManager.channelKeyPath(bobCommitments.params.localParams, bobCommitments.params.channelConfig),
-            bobCommitments.localCommitIndex
-        )
-        val aliceCurrentPerCommitmentPoint = alice.ctx.keyManager.commitmentPoint(
-            alice.ctx.keyManager.channelKeyPath(aliceCommitments.params.localParams, aliceCommitments.params.channelConfig),
-            aliceCommitments.localCommitIndex
-        )
+        val bobCurrentPerCommitmentPoint = bobCommitments.params.localParams.channelKeys(bob.ctx.keyManager).commitmentPoint(bobCommitments.localCommitIndex)
+        val aliceCurrentPerCommitmentPoint = aliceCommitments.params.localParams.channelKeys(alice.ctx.keyManager).commitmentPoint(aliceCommitments.localCommitIndex)
 
         // alice didn't receive any update or sig
         assertEquals(
@@ -93,14 +87,8 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         val bobCommitments = bob0.commitments
         val aliceCommitments = alice0.commitments
-        val bobCurrentPerCommitmentPoint = bob0.ctx.keyManager.commitmentPoint(
-            bob0.ctx.keyManager.channelKeyPath(bobCommitments.params.localParams, bobCommitments.params.channelConfig),
-            bobCommitments.localCommitIndex
-        )
-        val aliceCurrentPerCommitmentPoint = alice0.ctx.keyManager.commitmentPoint(
-            alice0.ctx.keyManager.channelKeyPath(aliceCommitments.params.localParams, aliceCommitments.params.channelConfig),
-            aliceCommitments.localCommitIndex
-        )
+        val bobCurrentPerCommitmentPoint = bobCommitments.params.localParams.channelKeys(bob0.ctx.keyManager).commitmentPoint(bobCommitments.localCommitIndex)
+        val aliceCurrentPerCommitmentPoint = aliceCommitments.params.localParams.channelKeys(alice0.ctx.keyManager).commitmentPoint(aliceCommitments.localCommitIndex)
 
         // alice didn't receive any update or sig
         assertEquals(channelReestablishA, ChannelReestablish(alice0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
@@ -172,14 +160,8 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         val bobCommitments = bob0.commitments
         val aliceCommitments = alice0.commitments
-        val bobCurrentPerCommitmentPoint = bob0.ctx.keyManager.commitmentPoint(
-            bob0.ctx.keyManager.channelKeyPath(bobCommitments.params.localParams, bobCommitments.params.channelConfig),
-            bobCommitments.localCommitIndex
-        )
-        val aliceCurrentPerCommitmentPoint = alice0.ctx.keyManager.commitmentPoint(
-            alice0.ctx.keyManager.channelKeyPath(aliceCommitments.params.localParams, aliceCommitments.params.channelConfig),
-            aliceCommitments.localCommitIndex
-        )
+        val bobCurrentPerCommitmentPoint = bobCommitments.params.localParams.channelKeys(bob0.ctx.keyManager).commitmentPoint(bobCommitments.localCommitIndex)
+        val aliceCurrentPerCommitmentPoint = aliceCommitments.params.localParams.channelKeys(alice0.ctx.keyManager).commitmentPoint(aliceCommitments.localCommitIndex)
 
         // alice didn't receive any update or sig
         assertEquals(channelReestablishA, ChannelReestablish(alice0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))

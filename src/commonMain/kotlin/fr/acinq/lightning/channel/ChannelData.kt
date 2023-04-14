@@ -7,6 +7,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.Helpers.publishIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
+import fr.acinq.lightning.crypto.Generators
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
@@ -378,6 +379,8 @@ data class ChannelKeys(
     val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
     val revocationBasepoint: PublicKey = revocationKey.publicKey()
     val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
+    fun commitmentPoint(index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
+    fun commitmentSecret(index: Long): PrivateKey = Generators.perCommitSecret(shaSeed, index)
 }
 
 data class LocalParams(

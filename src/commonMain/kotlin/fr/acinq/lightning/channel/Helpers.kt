@@ -308,7 +308,7 @@ object Helpers {
             val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
             val fundingPubKey = channelKeys.fundingPubKey
             val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteParams.fundingPubKey)
-            val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, commitmentIndex)
+            val localPerCommitmentPoint = channelKeys.commitmentPoint(commitmentIndex)
             val localCommitTx = Commitments.makeLocalTxs(channelKeys, commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
             val remoteCommitTx = Commitments.makeRemoteTxs(keyManager, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec).first
 
@@ -468,7 +468,8 @@ object Helpers {
             val localCommit = commitment.localCommit
             val localParams = commitment.params.localParams
             require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current local commit tx" }
-            val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, commitment.localCommit.index)
+            val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
+            val localPerCommitmentPoint = channelKeys.commitmentPoint(commitment.localCommit.index)
             val localRevocationPubkey = Generators.revocationPubKey(commitment.params.remoteParams.revocationBasepoint, localPerCommitmentPoint)
             val localDelayedPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).delayedPaymentBasepoint, localPerCommitmentPoint)
             val feerateDelayed = feerates.claimMainFeerate

@@ -1608,10 +1608,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelReestablish`() {
         val (alice0, bob0, _) = initMutualClose()
-        val bobCurrentPerCommitmentPoint = bob0.ctx.keyManager.commitmentPoint(
-            bob0.ctx.keyManager.channelKeyPath(bob0.commitments.params.localParams, bob0.commitments.params.channelConfig),
-            bob0.commitments.localCommitIndex
-        )
+        val bobCurrentPerCommitmentPoint = bob0.commitments.params.localParams.channelKeys(bob0.ctx.keyManager).commitmentPoint(bob0.commitments.localCommitIndex)
         val channelReestablish = ChannelReestablish(bob0.channelId, 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint)
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(channelReestablish))
         assertIs<LNChannel<Closing>>(alice1)
