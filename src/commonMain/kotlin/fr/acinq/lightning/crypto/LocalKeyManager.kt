@@ -7,8 +7,8 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.NodeParams.Chain
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.crypto.Generators.derive
-import fr.acinq.lightning.crypto.Generators.deriveRevocation
+import fr.acinq.lightning.crypto.Bolt3Derivation.derive
+import fr.acinq.lightning.crypto.Bolt3Derivation.deriveRevocation
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.transactions.Transactions
 

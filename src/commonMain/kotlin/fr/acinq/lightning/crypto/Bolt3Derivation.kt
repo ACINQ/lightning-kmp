@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.PublicKey
 /**
  * BOLT 3 Key derivation scheme.
  */
-object Generators {
+object Bolt3Derivation {
 
     fun perCommitSecret(seed: ByteVector32, index: Long): PrivateKey = PrivateKey(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index))
 

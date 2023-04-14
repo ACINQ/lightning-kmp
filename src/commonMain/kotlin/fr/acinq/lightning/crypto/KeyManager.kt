@@ -59,8 +59,8 @@ interface KeyManager {
         val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
         val revocationBasepoint: PublicKey = revocationKey.publicKey()
         val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
-        fun commitmentPoint(index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
-        fun commitmentSecret(index: Long): PrivateKey = Generators.perCommitSecret(shaSeed, index)
+        fun commitmentPoint(index: Long): PublicKey = Bolt3Derivation.perCommitPoint(shaSeed, index)
+        fun commitmentSecret(index: Long): PrivateKey = Bolt3Derivation.perCommitSecret(shaSeed, index)
     }
 
 }

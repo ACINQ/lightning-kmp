@@ -8,8 +8,8 @@ import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
-import fr.acinq.lightning.crypto.Generators.derive
-import fr.acinq.lightning.crypto.Generators.deriveRevocation
+import fr.acinq.lightning.crypto.Bolt3Derivation.derive
+import fr.acinq.lightning.crypto.Bolt3Derivation.deriveRevocation
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
