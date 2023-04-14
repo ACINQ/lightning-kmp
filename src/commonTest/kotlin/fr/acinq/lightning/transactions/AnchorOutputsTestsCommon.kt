@@ -11,6 +11,7 @@ import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.channel.RemoteParams
 import fr.acinq.lightning.crypto.Generators
+import fr.acinq.lightning.crypto.Generators.derive
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
@@ -57,11 +58,11 @@ class AnchorOutputsTestsCommon {
     // From local_delayed_payment_basepoint_secret, local_per_commitment_point and local_delayed_payment_basepoint
     val local_delayed_privkey = PrivateKey.fromHex("adf3464ce9c2f230fd2582fda4c6965e4993ca5524e8c9580e3df0cf226981ad01")
 
-    val local_htlc_privkey = Generators.derivePrivKey(local_payment_basepoint_secret, local_per_commitment_point)
+    val local_htlc_privkey = local_payment_basepoint_secret.derive(local_per_commitment_point)
     val local_payment_privkey = local_payment_basepoint_secret
-    val local_delayed_payment_privkey = Generators.derivePrivKey(local_delayed_payment_basepoint_secret, local_per_commitment_point)
+    val local_delayed_payment_privkey = local_delayed_payment_basepoint_secret.derive(local_per_commitment_point)
 
-    val remote_htlc_privkey = Generators.derivePrivKey(remote_payment_basepoint_secret, local_per_commitment_point)
+    val remote_htlc_privkey = remote_payment_basepoint_secret.derive(local_per_commitment_point)
     val remote_payment_privkey = remote_payment_basepoint_secret
 
     val funding_tx =

@@ -17,7 +17,8 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.inputsAlreadySpent
-import fr.acinq.lightning.crypto.Generators
+import fr.acinq.lightning.crypto.Generators.derive
+import fr.acinq.lightning.crypto.Generators.deriveRevocation
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.*
@@ -470,8 +471,8 @@ object Helpers {
             require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current local commit tx" }
             val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
             val localPerCommitmentPoint = channelKeys.commitmentPoint(commitment.localCommit.index)
-            val localRevocationPubkey = Generators.revocationPubKey(commitment.params.remoteParams.revocationBasepoint, localPerCommitmentPoint)
-            val localDelayedPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).delayedPaymentBasepoint, localPerCommitmentPoint)
+            val localRevocationPubkey = commitment.params.remoteParams.revocationBasepoint.deriveRevocation(localPerCommitmentPoint)
+            val localDelayedPubkey = localParams.channelKeys(keyManager).delayedPaymentBasepoint.derive(localPerCommitmentPoint)
             val feerateDelayed = feerates.claimMainFeerate
 
             // first we will claim our main output as soon as the delay is over
@@ -560,10 +561,10 @@ object Helpers {
 
             val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
             val localPaymentPubkey = channelKeys.paymentBasepoint
-            val localHtlcPubkey = Generators.derivePubKey(channelKeys.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-            val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
-            val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(channelKeys.revocationBasepoint, remoteCommit.remotePerCommitmentPoint)
+            val localHtlcPubkey = channelKeys.htlcBasepoint.derive(remoteCommit.remotePerCommitmentPoint)
+            val remoteDelayedPaymentPubkey = remoteParams.delayedPaymentBasepoint.derive(remoteCommit.remotePerCommitmentPoint)
+            val remoteHtlcPubkey = remoteParams.htlcBasepoint.derive(remoteCommit.remotePerCommitmentPoint)
+            val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveRevocation(remoteCommit.remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
                 remoteParams.fundingPubKey,
                 localParams.channelKeys(keyManager).fundingPubKey,
@@ -699,8 +700,8 @@ object Helpers {
         fun LoggingContext.claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecret: PrivateKey, commitTx: Transaction, feerates: OnChainFeerates): RevokedCommitPublished {
             val localPaymentPoint = params.localParams.channelKeys(keyManager).paymentBasepoint
             val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey()
-            val remoteDelayedPaymentPubkey = Generators.derivePubKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(params.localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
+            val remoteDelayedPaymentPubkey = params.remoteParams.delayedPaymentBasepoint.derive(remotePerCommitmentPoint)
+            val remoteRevocationPubkey = params.localParams.channelKeys(keyManager).revocationBasepoint.deriveRevocation(remotePerCommitmentPoint)
 
             val feerateMain = feerates.claimMainFeerate
             // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
@@ -752,9 +753,9 @@ object Helpers {
             // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
             val feeratePenalty = feerates.fastFeerate
             val remotePerCommitmentPoint = revokedCommitPublished.remotePerCommitmentSecret.publicKey()
-            val remoteRevocationPubkey = Generators.revocationPubKey(params.localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
-            val remoteHtlcPubkey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-            val localHtlcPubkey = Generators.derivePubKey(params.localParams.channelKeys(keyManager).htlcBasepoint, remotePerCommitmentPoint)
+            val remoteRevocationPubkey = params.localParams.channelKeys(keyManager).revocationBasepoint.deriveRevocation(remotePerCommitmentPoint)
+            val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.derive(remotePerCommitmentPoint)
+            val localHtlcPubkey = params.localParams.channelKeys(keyManager).htlcBasepoint.derive(remotePerCommitmentPoint)
 
             // we retrieve the information needed to rebuild htlc scripts
             logger.info { "found ${htlcInfos.size} htlcs for txid=${revokedCommitPublished.commitTx.txid}" }
@@ -816,8 +817,8 @@ object Helpers {
                 logger.info { "looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
                 // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
                 val remotePerCommitmentPoint = revokedCommitPublished.remotePerCommitmentSecret.publicKey()
-                val remoteDelayedPaymentPubkey = Generators.derivePubKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-                val remoteRevocationPubkey = Generators.revocationPubKey(params.localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
+                val remoteDelayedPaymentPubkey = params.remoteParams.delayedPaymentBasepoint.derive(remotePerCommitmentPoint)
+                val remoteRevocationPubkey = params.localParams.channelKeys(keyManager).revocationBasepoint.deriveRevocation(remotePerCommitmentPoint)
 
                 // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
                 val feeratePenalty = feerates.fastFeerate

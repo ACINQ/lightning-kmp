@@ -7,6 +7,8 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.NodeParams.Chain
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.Generators.derive
+import fr.acinq.lightning.crypto.Generators.deriveRevocation
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.transactions.Transactions
 
@@ -96,12 +98,12 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
     }
 
     override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey, remotePoint: PublicKey, sigHash: Int): ByteVector64 {
-        val currentKey = Generators.derivePrivKey(privateKey, remotePoint)
+        val currentKey = privateKey.derive(remotePoint)
         return Transactions.sign(tx, currentKey, sigHash)
     }
 
     override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64 {
-        val currentKey = Generators.revocationPrivKey(privateKey, remoteSecret)
+        val currentKey = privateKey.deriveRevocation(remoteSecret)
         return Transactions.sign(tx, currentKey)
     }
 

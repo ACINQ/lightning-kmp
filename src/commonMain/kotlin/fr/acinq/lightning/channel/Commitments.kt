@@ -9,6 +9,8 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.crypto.Generators
+import fr.acinq.lightning.crypto.Generators.derive
+import fr.acinq.lightning.crypto.Generators.deriveRevocation
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
@@ -443,7 +445,7 @@ data class Commitment(
             return Either.Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
         }
         val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keys.htlcKey, localPerCommitmentPoint, SigHash.SIGHASH_ALL) }
-        val remoteHtlcPubkey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, localPerCommitmentPoint)
+        val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.derive(localPerCommitmentPoint)
         // combine the sigs to make signed txs
         val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->
             when (htlcTx) {
@@ -906,11 +908,11 @@ data class Commitments(
             localPerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
-            val localDelayedPaymentPubkey = Generators.derivePubKey(channelKeys.delayedPaymentBasepoint, localPerCommitmentPoint)
-            val localHtlcPubkey = Generators.derivePubKey(channelKeys.htlcBasepoint, localPerCommitmentPoint)
+            val localDelayedPaymentPubkey = channelKeys.delayedPaymentBasepoint.derive(localPerCommitmentPoint)
+            val localHtlcPubkey = channelKeys.htlcBasepoint.derive(localPerCommitmentPoint)
             val remotePaymentPubkey = remoteParams.paymentBasepoint
-            val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
-            val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
+            val remoteHtlcPubkey = remoteParams.htlcBasepoint.derive(localPerCommitmentPoint)
+            val localRevocationPubkey = remoteParams.revocationBasepoint.deriveRevocation(localPerCommitmentPoint)
             val localPaymentBasepoint = channelKeys.paymentBasepoint
             val outputs = makeCommitTxOutputs(
                 channelKeys.fundingPubKey,
@@ -938,10 +940,10 @@ data class Commitments(
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
             val localPaymentPubkey = localParams.channelKeys(keyManager).paymentBasepoint
-            val localHtlcPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).htlcBasepoint, remotePerCommitmentPoint)
-            val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-            val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
+            val localHtlcPubkey = localParams.channelKeys(keyManager).htlcBasepoint.derive(remotePerCommitmentPoint)
+            val remoteDelayedPaymentPubkey = remoteParams.delayedPaymentBasepoint.derive(remotePerCommitmentPoint)
+            val remoteHtlcPubkey = remoteParams.htlcBasepoint.derive(remotePerCommitmentPoint)
+            val remoteRevocationPubkey = localParams.channelKeys(keyManager).revocationBasepoint.deriveRevocation(remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
                 remoteParams.fundingPubKey,
                 localParams.channelKeys(keyManager).fundingPubKey,
