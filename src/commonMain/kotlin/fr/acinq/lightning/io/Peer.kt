@@ -2,7 +2,6 @@ package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
-import fr.acinq.lightning.Lightning.randomKeyPath
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.electrum.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
@@ -724,20 +723,7 @@ class Peer(
                                 logger.warning { "rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
                                 sendToPeer(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
                             } else {
-                                val fundingKeyPath = randomKeyPath(4)
-                                val closingPubkeyScript = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0)
-                                val localParams = LocalParams(
-                                    nodeParams.nodeId,
-                                    fundingKeyPath,
-                                    nodeParams.dustLimit,
-                                    nodeParams.maxHtlcValueInFlightMsat,
-                                    nodeParams.htlcMinimum,
-                                    nodeParams.toRemoteDelayBlocks,
-                                    nodeParams.maxAcceptedHtlcs,
-                                    false,
-                                    closingPubkeyScript,
-                                    features
-                                )
+                                val localParams = LocalParams(nodeParams, isInitiator = false)
                                 val state = WaitForInit
                                 val channelConfig = ChannelConfig.standard
                                 val (state1, actions1) = state.process(ChannelCommand.InitNonInitiator(msg.temporaryChannelId, fundingAmount, pushAmount, wallet, localParams, channelConfig, theirInit!!))
@@ -894,20 +880,7 @@ class Peer(
             }
 
             cmd is OpenChannel -> {
-                val fundingKeyPath = randomKeyPath(4)
-                val closingPubkeyScript = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0)
-                val localParams = LocalParams(
-                    nodeParams.nodeId,
-                    fundingKeyPath,
-                    nodeParams.dustLimit,
-                    nodeParams.maxHtlcValueInFlightMsat,
-                    nodeParams.htlcMinimum,
-                    nodeParams.toRemoteDelayBlocks,
-                    nodeParams.maxAcceptedHtlcs,
-                    true,
-                    closingPubkeyScript,
-                    features
-                )
+                val localParams = LocalParams(nodeParams, isInitiator = true)
                 val state = WaitForInit
                 val (state1, actions1) = state.process(
                     ChannelCommand.InitInitiator(

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.Helpers.publishIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
@@ -353,6 +354,19 @@ data class LocalParams(
     val defaultFinalScriptPubKey: ByteVector,
     val features: Features
 ) {
+    constructor(nodeParams: NodeParams, isInitiator: Boolean): this(
+        nodeId = nodeParams.nodeId,
+        fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key path end differently
+        dustLimit = nodeParams.dustLimit,
+        maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+        htlcMinimum = nodeParams.htlcMinimum,
+        toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
+        maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+        isInitiator = isInitiator,
+        defaultFinalScriptPubKey = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0), // the default closing address is the same for all channels
+        features = nodeParams.features
+    )
+
     fun channelKeys(keyManager: KeyManager) = keyManager.channelKeys(fundingKeyPath)
 }
 

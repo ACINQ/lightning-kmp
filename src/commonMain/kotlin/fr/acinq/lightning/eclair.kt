@@ -22,12 +22,6 @@ object Lightning {
     fun randomBytes64(): ByteVector64 = ByteVector64(randomBytes(64))
     fun randomKey(): PrivateKey = PrivateKey(randomBytes32())
 
-    fun randomKeyPath(length: Int): KeyPath {
-        val path = mutableListOf<Long>()
-        repeat(length) { path.add(secureRandom.nextLong()) }
-        return KeyPath(path)
-    }
-
     /**
      * @param baseFee fixed fee
      * @param proportionalFee proportional fee (millionths)

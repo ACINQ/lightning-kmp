@@ -7,7 +7,6 @@ import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.crypto.LocalKeyManager
-import fr.acinq.lightning.io.PeerChannels
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
@@ -79,14 +78,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        private val closingPubkeyScript = keyManager.finalOnChainWallet.pubkeyScript(0)
-
-        fun channelParams(finalScriptPubKey: ByteVector = closingPubkeyScript): LocalParams = PeerChannels.makeChannelParams(
-            nodeParams,
-            finalScriptPubKey,
-            isInitiator = true,
-            nodeParams.maxHtlcValueInFlightMsat.msat,
-        )
+        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = true)
     }
 
     object Bob {
@@ -117,14 +109,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        private val closingPubkeyScript = Alice.keyManager.finalOnChainWallet.pubkeyScript(0)
-
-        fun channelParams(finalScriptPubKey: ByteVector = closingPubkeyScript): LocalParams = PeerChannels.makeChannelParams(
-            nodeParams,
-            finalScriptPubKey,
-            isInitiator = false,
-            nodeParams.maxHtlcValueInFlightMsat.msat,
-        )
+        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = false)
     }
 
 }
