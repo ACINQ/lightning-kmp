@@ -57,12 +57,12 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
         return KeyPath.empty I next() I next() I next() I next() I next() I next() I next() I next() I last
     }
 
-    override fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys {
+    override fun channelKeys(fundingKeyPath: KeyPath): KeyManager.ChannelKeys {
         // deterministic mode: use the funding pubkey to compute the channel key path
         val fundingPrivateKey = privateKey(channelKeyBasePath I fundingKeyPath I hardened(0))
         // we use the recovery process even in the normal case, which guarantees it works when we need it
         val recoveredChannelKeys = recoverChannelKeys(fundingPrivateKey.publicKey())
-        return ChannelKeys(
+        return KeyManager.ChannelKeys(
             fundingKeyPath,
             fundingPrivateKey = fundingPrivateKey,
             paymentKey = recoveredChannelKeys.paymentKey,
@@ -102,6 +102,25 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
     override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64 {
         val currentKey = Generators.revocationPrivKey(privateKey, remoteSecret)
         return Transactions.sign(tx, currentKey)
+    }
+
+    /**
+     * Channel keys recovered from the channel's funding public key (note that we cannot recover the funding private key).
+     * These keys can be used to spend our outputs from a commit tx that has been published to the blockchain, without any other information than
+     * the node's seed ("backup less backup")
+     */
+    data class RecoveredChannelKeys(
+        val fundingPubKey: PublicKey,
+        val paymentKey: PrivateKey,
+        val delayedPaymentKey: PrivateKey,
+        val htlcKey: PrivateKey,
+        val revocationKey: PrivateKey,
+        val shaSeed: ByteVector32
+    ) {
+        val htlcBasepoint: PublicKey = htlcKey.publicKey()
+        val paymentBasepoint: PublicKey = paymentKey.publicKey()
+        val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
+        val revocationBasepoint: PublicKey = revocationKey.publicKey()
     }
 
     /**

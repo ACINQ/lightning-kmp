@@ -898,7 +898,7 @@ data class Commitments(
         const val HTLC_SUCCESS_WEIGHT = 706
 
         fun makeLocalTxs(
-            channelKeys: ChannelKeys,
+            channelKeys: KeyManager.ChannelKeys,
             commitTxNumber: Long,
             localParams: LocalParams,
             remoteParams: RemoteParams,

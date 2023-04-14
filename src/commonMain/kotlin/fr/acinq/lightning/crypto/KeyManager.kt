@@ -1,7 +1,6 @@
 package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.channel.ChannelKeys
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo
 
 interface KeyManager {
@@ -61,5 +60,28 @@ interface KeyManager {
      * @return a signature generated with a private key generated from the input private key and the remote secret.
      */
     fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64
+
+    /**
+     * Secrets and keys for a given channel.
+     * How these keys are generated depends on the [KeyManager] implementation.
+     */
+    data class ChannelKeys(
+        val fundingKeyPath: KeyPath,
+        val fundingPrivateKey: PrivateKey,
+        val paymentKey: PrivateKey,
+        val delayedPaymentKey: PrivateKey,
+        val htlcKey: PrivateKey,
+        val revocationKey: PrivateKey,
+        val shaSeed: ByteVector32
+    ) {
+        val fundingPubKey: PublicKey = fundingPrivateKey.publicKey()
+        val htlcBasepoint: PublicKey = htlcKey.publicKey()
+        val paymentBasepoint: PublicKey = paymentKey.publicKey()
+        val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
+        val revocationBasepoint: PublicKey = revocationKey.publicKey()
+        val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
+        fun commitmentPoint(index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
+        fun commitmentSecret(index: Long): PrivateKey = Generators.perCommitSecret(shaSeed, index)
+    }
 
 }

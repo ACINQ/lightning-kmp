@@ -96,6 +96,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.json.JsonSerializers.LongSerializer
 import fr.acinq.lightning.json.JsonSerializers.StringSerializer
@@ -414,7 +415,7 @@ object JsonSerializers {
     object CltvExpiryDeltaSerializer : LongSerializer<CltvExpiryDelta>({ it.toLong() })
     object FeeratePerKwSerializer : LongSerializer<FeeratePerKw>({ it.toLong() })
 
-    object ChannelKeysSerializer : SurrogateSerializer<ChannelKeys, KeyPath>(
+    object ChannelKeysSerializer : SurrogateSerializer<KeyManager.ChannelKeys, KeyPath>(
         transform = { it.fundingKeyPath },
         delegateSerializer = KeyPathSerializer
     )

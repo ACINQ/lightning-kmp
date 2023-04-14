@@ -6,7 +6,7 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.ChannelKeys
+import fr.acinq.lightning.crypto.KeyManager.ChannelKeys
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.channel.RemoteParams

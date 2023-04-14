@@ -369,7 +369,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     val isInitiator: Boolean get() = commitments.params.localParams.isInitiator
     val remoteNodeId: PublicKey get() = commitments.remoteNodeId
 
-    fun ChannelContext.channelKeys(): ChannelKeys = keyManager.channelKeys(commitments.params.localParams.fundingKeyPath)
+    fun ChannelContext.channelKeys(): KeyManager.ChannelKeys = keyManager.channelKeys(commitments.params.localParams.fundingKeyPath)
 
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 

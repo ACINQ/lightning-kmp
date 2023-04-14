@@ -3,7 +3,7 @@ package fr.acinq.lightning.crypto
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.channel.ChannelKeys
+import fr.acinq.lightning.crypto.KeyManager.ChannelKeys
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.toByteVector

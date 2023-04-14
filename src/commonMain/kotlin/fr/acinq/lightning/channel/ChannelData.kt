@@ -342,47 +342,6 @@ data class RevokedCommitPublished(
     }
 }
 
-/**
- * Channel keys recovered from the channel's funding public key (note that we cannot recover the funding private key).
- * These keys can be used to spend our outputs from a commit tx that has been published to the blockchain, without any other information than
- * the node's seed ("backup less backup")
- */
-data class RecoveredChannelKeys(
-    val fundingPubKey: PublicKey,
-    val paymentKey: PrivateKey,
-    val delayedPaymentKey: PrivateKey,
-    val htlcKey: PrivateKey,
-    val revocationKey: PrivateKey,
-    val shaSeed: ByteVector32
-) {
-    val htlcBasepoint: PublicKey = htlcKey.publicKey()
-    val paymentBasepoint: PublicKey = paymentKey.publicKey()
-    val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
-    val revocationBasepoint: PublicKey = revocationKey.publicKey()
-}
-
-/**
- * Channel secrets and keys, generated from a funding key BIP32 path
- */
-data class ChannelKeys(
-    val fundingKeyPath: KeyPath,
-    val fundingPrivateKey: PrivateKey,
-    val paymentKey: PrivateKey,
-    val delayedPaymentKey: PrivateKey,
-    val htlcKey: PrivateKey,
-    val revocationKey: PrivateKey,
-    val shaSeed: ByteVector32
-) {
-    val fundingPubKey: PublicKey = fundingPrivateKey.publicKey()
-    val htlcBasepoint: PublicKey = htlcKey.publicKey()
-    val paymentBasepoint: PublicKey = paymentKey.publicKey()
-    val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
-    val revocationBasepoint: PublicKey = revocationKey.publicKey()
-    val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
-    fun commitmentPoint(index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
-    fun commitmentSecret(index: Long): PrivateKey = Generators.perCommitSecret(shaSeed, index)
-}
-
 data class LocalParams(
     val nodeId: PublicKey,
     val fundingKeyPath: KeyPath,
