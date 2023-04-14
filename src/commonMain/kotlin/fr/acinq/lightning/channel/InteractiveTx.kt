@@ -27,7 +27,7 @@ sealed class SharedFundingInput {
 
         constructor(keyManager: KeyManager, params: ChannelParams, commitment: Commitment) : this(
             info = commitment.commitInput,
-            localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey,
+            localFundingPubkey = keyManager.channelKeys(params.localParams.fundingKeyPath).fundingPubKey,
             remoteFundingPubkey = params.remoteParams.fundingPubKey
         )
 

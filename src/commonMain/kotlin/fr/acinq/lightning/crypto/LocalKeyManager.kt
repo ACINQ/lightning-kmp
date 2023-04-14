@@ -1,7 +1,6 @@
 package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.crypto.Pack
@@ -14,30 +13,21 @@ import fr.acinq.lightning.transactions.Transactions
 data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager {
 
     private val master = DeterministicWallet.generate(seed)
+
     @Suppress("DEPRECATION")
     override val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, eclairNodeKeyBasePath(chain))
     override val nodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, nodeKeyBasePath(chain))
     override val nodeId: PublicKey get() = nodeKey.publicKey
+    private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
+    private val bip84BasePath: KeyPath = bip84BasePath(chain)
 
-    override fun toString(): String {
-        return "LocalKeyManager(seed=<redacted>,chain=$chain)"
-    }
+    override fun toString(): String = "LocalKeyManager(seed=<redacted>,chain=$chain)"
 
-    private fun internalKeyPath(channelKeyPath: List<Long>, index: Long): List<Long> = channelKeyBasePath(chain) + channelKeyPath + index
-
-    private fun internalKeyPath(channelKeyPath: KeyPath, index: Long): List<Long> = internalKeyPath(channelKeyPath.path, index)
-
-    fun privateKey(keyPath: KeyPath): DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, keyPath)
-
-    fun privateKey(keyPath: List<Long>): DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, keyPath)
-
-    private fun publicKey(keyPath: List<Long>): DeterministicWallet.ExtendedPublicKey = DeterministicWallet.publicKey(privateKey(keyPath))
-
-    private fun shaSeed(channelKeyPath: KeyPath) = ByteVector32(Crypto.sha256(privateKey(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value.concat(1.toByte())))
+    private fun privateKey(keyPath: KeyPath): PrivateKey = derivePrivateKey(master, keyPath).privateKey
 
     override fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey {
-        val path = bip84BasePath(chain) + hardened(account) + 0 + addressIndex
-        return derivePrivateKey(master, path).privateKey
+        val path = bip84BasePath I hardened(account) I 0 I addressIndex
+        return privateKey(path)
     }
 
     override fun bip84Address(account: Long, addressIndex: Long): String {
@@ -46,7 +36,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
 
     override fun bip84Xpub(account: Long): String {
         return DeterministicWallet.encode(
-            input = DeterministicWallet.publicKey(privateKey(bip84BasePath(chain) + hardened(account))),
+            input = DeterministicWallet.publicKey(derivePrivateKey(master, bip84BasePath I hardened(account))),
             prefix = when (chain) {
                 Chain.Testnet, Chain.Regtest -> DeterministicWallet.vpub
                 Chain.Mainnet -> DeterministicWallet.zpub
@@ -64,26 +54,17 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
     override fun newFundingKeyPath(isInitiator: Boolean): KeyPath {
         val last = hardened(if (isInitiator) 1 else 0)
         fun next() = secureRandom.nextInt().toLong() and 0xFFFFFFFF
-        return KeyPath(listOf(next(), next(), next(), next(), next(), next(), next(), next(), last))
+        return KeyPath.empty I next() I next() I next() I next() I next() I next() I next() I next() I last
     }
-
-    override fun fundingPublicKey(keyPath: KeyPath) = publicKey(internalKeyPath(keyPath, hardened(0)))
-
-    private fun revocationPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(1)))
-
-    private fun paymentPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(2)))
-
-    private fun delayedPaymentPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(3)))
-
-    private fun htlcPoint(channelKeyPath: KeyPath) = publicKey(internalKeyPath(channelKeyPath, hardened(4)))
 
     override fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys {
         // deterministic mode: use the funding pubkey to compute the channel key path
-        val fundingPubKey = fundingPublicKey(fundingKeyPath)
-        val recoveredChannelKeys = recoverChannelKeys(fundingPubKey.publicKey)
+        val fundingPrivateKey = privateKey(channelKeyBasePath I fundingKeyPath I hardened(0))
+        // we use the recovery process even in the normal case, which guarantees it works when we need it
+        val recoveredChannelKeys = recoverChannelKeys(fundingPrivateKey.publicKey())
         return ChannelKeys(
             fundingKeyPath,
-            fundingPrivateKey = privateKey(fundingPubKey.path).privateKey,
+            fundingPrivateKey = fundingPrivateKey,
             paymentKey = recoveredChannelKeys.paymentKey,
             delayedPaymentKey = recoveredChannelKeys.delayedPaymentKey,
             htlcKey = recoveredChannelKeys.htlcKey,
@@ -92,15 +73,20 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
         )
     }
 
-    override fun recoverChannelKeys(fundingPubKey: PublicKey): RecoveredChannelKeys {
-        val channelKeyPath = channelKeyPath(fundingPubKey)
+    /**
+     * generate channel-specific keys and secrets (note that we cannot re-compute the channel's funding private key)
+     * @params fundingPubKey funding public key
+     * @return channel keys and secrets
+     */
+    fun recoverChannelKeys(fundingPubKey: PublicKey): RecoveredChannelKeys {
+        val channelKeyPrefix = channelKeyBasePath I channelKeyPath(fundingPubKey)
         return RecoveredChannelKeys(
             fundingPubKey,
-            paymentKey = privateKey(paymentPoint(channelKeyPath).path).privateKey,
-            delayedPaymentKey = privateKey(delayedPaymentPoint(channelKeyPath).path).privateKey,
-            htlcKey = privateKey(htlcPoint(channelKeyPath).path).privateKey,
-            revocationKey = privateKey(revocationPoint(channelKeyPath).path).privateKey,
-            shaSeed = shaSeed(channelKeyPath)
+            paymentKey = privateKey(channelKeyPrefix I hardened(2)),
+            delayedPaymentKey = privateKey(channelKeyPrefix I hardened(3)),
+            htlcKey = privateKey(channelKeyPrefix I hardened(4)),
+            revocationKey = privateKey(channelKeyPrefix I hardened(1)),
+            shaSeed = privateKey(channelKeyPrefix I hardened(5)).value.concat(1).sha256()
         )
     }
 
@@ -136,7 +122,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
          * @return a BIP32 path
          */
         fun channelKeyPath(fundingPubKey: PublicKey): KeyPath {
-            val buffer = sha256(fundingPubKey.value)
+            val buffer = fundingPubKey.value.sha256().toByteArray()
 
             val path = sequence {
                 var i = 0
@@ -148,28 +134,30 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
             return KeyPath(path.take(8).toList())
         }
 
-        fun channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): KeyPath = channelKeyPath(fundingPubKey.publicKey)
-
         fun channelKeyBasePath(chain: Chain) = when (chain) {
-            Chain.Regtest, Chain.Testnet -> listOf(hardened(48), hardened(1))
-            Chain.Mainnet -> listOf(hardened(50), hardened(1))
+            Chain.Regtest, Chain.Testnet -> KeyPath.empty I hardened(48) I hardened(1)
+            Chain.Mainnet -> KeyPath.empty I hardened(50) I hardened(1)
         }
 
         /** Path for node keys generated by eclair-core */
         @Deprecated("used for backward-compat with eclair-core", replaceWith = ReplaceWith("nodeKeyBasePath(chain)"))
         fun eclairNodeKeyBasePath(chain: Chain) = when (chain) {
-            Chain.Regtest, Chain.Testnet -> listOf(hardened(46), hardened(0))
-            Chain.Mainnet -> listOf(hardened(47), hardened(0))
+            Chain.Regtest, Chain.Testnet -> KeyPath.empty I hardened(46) I hardened(0)
+            Chain.Mainnet -> KeyPath.empty I hardened(47) I hardened(0)
         }
 
         fun nodeKeyBasePath(chain: Chain) = when (chain) {
-            Chain.Regtest, Chain.Testnet -> listOf(hardened(48), hardened(0))
-            Chain.Mainnet -> listOf(hardened(50), hardened(0))
+            Chain.Regtest, Chain.Testnet -> KeyPath.empty I hardened(48) I hardened(0)
+            Chain.Mainnet -> KeyPath.empty I hardened(50) I hardened(0)
         }
 
         fun bip84BasePath(chain: Chain) = when (chain) {
-            Chain.Regtest, Chain.Testnet -> listOf(hardened(84), hardened(1))
-            Chain.Mainnet -> listOf(hardened(84), hardened(0))
+            Chain.Regtest, Chain.Testnet -> KeyPath.empty I hardened(84) I hardened(1)
+            Chain.Mainnet -> KeyPath.empty I hardened(84) I hardened(0)
         }
     }
 }
+
+infix fun KeyPath.I(index: Long): KeyPath = this.append(index)
+
+infix fun KeyPath.I(other: KeyPath): KeyPath = this.append(other)

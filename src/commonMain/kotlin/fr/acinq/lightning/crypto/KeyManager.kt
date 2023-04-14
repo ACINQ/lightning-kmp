@@ -1,9 +1,7 @@
 package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.lightning.channel.ChannelKeys
-import fr.acinq.lightning.channel.RecoveredChannelKeys
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo
 
 interface KeyManager {
@@ -20,8 +18,6 @@ interface KeyManager {
 
     fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray>
 
-    fun fundingPublicKey(keyPath: KeyPath): ExtendedPublicKey
-
     /**
      *
      * @param isInitiator true if we are the channel initiator
@@ -37,13 +33,6 @@ interface KeyManager {
      * @return channel keys and secrets
      */
     fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys
-
-    /**
-     * generate channel-specific keys and secrets (note that we cannot re-compute the channel's funding private key)
-     * @params fundingPubKey funding public key
-     * @return channel keys and secrets
-     */
-    fun recoverChannelKeys(fundingPubKey: PublicKey): RecoveredChannelKeys
 
     /**
      *

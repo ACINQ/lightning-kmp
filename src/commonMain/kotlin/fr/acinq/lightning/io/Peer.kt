@@ -730,8 +730,8 @@ class Peer(
                                 sendToPeer(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
                             } else {
                                 val fundingKeyPath = randomKeyPath(4)
-                                val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
-                                val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
+                                val fundingPubkey = nodeParams.keyManager.channelKeys(fundingKeyPath).fundingPubKey
+                                val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey)
                                 val localParams = LocalParams(
                                     nodeParams.nodeId,
                                     fundingKeyPath,
@@ -901,8 +901,8 @@ class Peer(
 
             cmd is OpenChannel -> {
                 val fundingKeyPath = randomKeyPath(4)
-                val fundingPubkey = nodeParams.keyManager.fundingPublicKey(fundingKeyPath)
-                val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey.publicKey)
+                val fundingPubkey = nodeParams.keyManager.channelKeys(fundingKeyPath).fundingPubKey
+                val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey)
                 val localParams = LocalParams(
                     nodeParams.nodeId,
                     fundingKeyPath,
