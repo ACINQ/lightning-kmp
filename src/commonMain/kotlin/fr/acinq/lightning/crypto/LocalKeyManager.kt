@@ -7,10 +7,6 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.NodeParams.Chain
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.crypto.Bolt3Derivation.derive
-import fr.acinq.lightning.crypto.Bolt3Derivation.deriveRevocation
-import fr.acinq.lightning.io.Peer
-import fr.acinq.lightning.transactions.Transactions
 
 data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager {
 
@@ -21,38 +17,12 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
         nodeKey = derivePrivateKey(master, nodeKeyBasePath(chain)),
     )
 
-    private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
-    private val bip84BasePath: KeyPath = bip84BasePath(chain)
+    override val finalOnChainWallet: KeyManager.Bip84OnChainKeys = KeyManager.Bip84OnChainKeys(chain, master, account = 0)
+    override val swapInOnChainWallet: KeyManager.Bip84OnChainKeys = KeyManager.Bip84OnChainKeys(chain, master, account = 1)
 
-    override fun toString(): String = "LocalKeyManager(seed=<redacted>,chain=$chain)"
+    private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
 
     private fun privateKey(keyPath: KeyPath): PrivateKey = derivePrivateKey(master, keyPath).privateKey
-
-    override fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey {
-        val path = bip84BasePath I hardened(account) I 0 I addressIndex
-        return privateKey(path)
-    }
-
-    override fun bip84Address(account: Long, addressIndex: Long): String {
-        return Bitcoin.computeP2WpkhAddress(bip84PrivateKey(account, addressIndex).publicKey(), chain.chainHash)
-    }
-
-    override fun bip84Xpub(account: Long): String {
-        return DeterministicWallet.encode(
-            input = DeterministicWallet.publicKey(derivePrivateKey(master, bip84BasePath I hardened(account))),
-            prefix = when (chain) {
-                Chain.Testnet, Chain.Regtest -> DeterministicWallet.vpub
-                Chain.Mainnet -> DeterministicWallet.zpub
-            }
-        )
-    }
-
-    override fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray> {
-        val priv = bip84PrivateKey(Peer.finalWalletAccount, 0)
-        val pub = priv.publicKey()
-        val script = Script.pay2wpkh(pub)
-        return Pair(pub, Script.write(script))
-    }
 
     override fun newFundingKeyPath(isInitiator: Boolean): KeyPath {
         val last = hardened(if (isInitiator) 1 else 0)
@@ -112,6 +82,8 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
         val revocationBasepoint: PublicKey = revocationKey.publicKey()
     }
 
+    override fun toString(): String = "LocalKeyManager(seed=<redacted>,chain=$chain)"
+
     /**
      * WARNING: If you change the paths below, keys will change (including your node id) even if the seed remains the same!!!
      * Note that the node path and the above channel path are on different branches so even if the
@@ -157,11 +129,6 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
         fun nodeKeyBasePath(chain: Chain) = when (chain) {
             Chain.Regtest, Chain.Testnet -> KeyPath.empty I hardened(48) I hardened(0)
             Chain.Mainnet -> KeyPath.empty I hardened(50) I hardened(0)
-        }
-
-        fun bip84BasePath(chain: Chain) = when (chain) {
-            Chain.Regtest, Chain.Testnet -> KeyPath.empty I hardened(84) I hardened(1)
-            Chain.Mainnet -> KeyPath.empty I hardened(84) I hardened(0)
         }
     }
 }

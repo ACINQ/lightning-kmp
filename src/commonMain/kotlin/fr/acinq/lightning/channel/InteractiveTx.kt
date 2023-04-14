@@ -303,7 +303,7 @@ data class SharedTransaction(
         val localSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
             localInputs
                 .find { input -> txIn.outPoint == OutPoint(input.previousTx, input.previousTxOutput) }
-                ?.let { input -> WalletState.signInput(keyManager, unsignedTx, i, input.previousTx.txOut[input.previousTxOutput.toInt()]).second }
+                ?.let { input -> WalletState.signInput(keyManager.swapInOnChainWallet, unsignedTx, i, input.previousTx.txOut[input.previousTxOutput.toInt()]).second }
         }.filterNotNull()
         return when (localSigs.size) {
             localInputs.size -> PartiallySignedSharedTransaction(this, TxSignatures(fundingParams.channelId, unsignedTx, localSigs, sharedSig))

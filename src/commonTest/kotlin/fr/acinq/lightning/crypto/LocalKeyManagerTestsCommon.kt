@@ -157,8 +157,8 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
         val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet)
-        assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKey), "KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d")
-        assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 1L).toBase58(Base58.Prefix.SecretKey), "Kxpf5b8p3qX56DKEe5NqWbNUP9MnqoRFzZwHRtsFqhzuvUJsYZCy")
+        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 0L).toBase58(Base58.Prefix.SecretKey), "KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d")
+        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).toBase58(Base58.Prefix.SecretKey), "Kxpf5b8p3qX56DKEe5NqWbNUP9MnqoRFzZwHRtsFqhzuvUJsYZCy")
     }
 
     @Test
@@ -166,10 +166,10 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // reference data was generated from electrum 4.1.5
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
-        assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTGhosGriPpuGA586jemcuH9pE9spwUmneMBmYYzrQEbY92DJrbo")
-        assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cQFUndrpAyMaE3HAsjMCXiT94MzfsABCREat1x7Qe3Mtq9KihD4V")
-        assertEquals(keyManager.bip84PrivateKey(account = 1L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTzDRh9ERGCwhBCifcnDxboJELpZBaj6Q9Kk8wEGasmDfoocscAb")
-        assertEquals(keyManager.bip84PrivateKey(account = 1L, addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cN87m7GuPSomDU8CgedBeQgcN2AGix9CkW3FDrCfrnM5XGcRAKcc")
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Testnet)
+        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTGhosGriPpuGA586jemcuH9pE9spwUmneMBmYYzrQEbY92DJrbo")
+        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cQFUndrpAyMaE3HAsjMCXiT94MzfsABCREat1x7Qe3Mtq9KihD4V")
+        assertEquals(keyManager.swapInOnChainWallet.privateKey(addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTzDRh9ERGCwhBCifcnDxboJELpZBaj6Q9Kk8wEGasmDfoocscAb")
+        assertEquals(keyManager.swapInOnChainWallet.privateKey(addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cN87m7GuPSomDU8CgedBeQgcN2AGix9CkW3FDrCfrnM5XGcRAKcc")
     }
 }

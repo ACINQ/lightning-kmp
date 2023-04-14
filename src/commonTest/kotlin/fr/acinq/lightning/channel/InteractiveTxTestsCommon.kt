@@ -11,7 +11,6 @@ import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.LocalKeyManager
-import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Scripts
@@ -1061,10 +1060,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val fundingScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(channelKeysA.fundingPubKey, channelKeysB.fundingPubKey))).byteVector()
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingAmountA, fundingAmountB, fundingScript, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingAmountB, fundingAmountA, fundingScript, lockTime, dustLimit, targetFeerate)
-            val walletA = createWallet(TestConstants.Alice.keyManager, utxosA)
+            val walletA = createWallet(TestConstants.Alice.keyManager.swapInOnChainWallet, utxosA)
             val contributionsA = FundingContributions.create(fundingParamsA, null, walletA.utxos, listOf(), randomKey().publicKey())
             assertNotNull(contributionsA.right)
-            val walletB = createWallet(TestConstants.Bob.keyManager, utxosB)
+            val walletB = createWallet(TestConstants.Bob.keyManager.swapInOnChainWallet, utxosB)
             val contributionsB = FundingContributions.create(fundingParamsB, null, walletB.utxos, listOf(), randomKey().publicKey())
             assertNotNull(contributionsB.right)
             return Fixture(channelId, TestConstants.Alice.keyManager, localParamsA, fundingParamsA, contributionsA.right!!, TestConstants.Bob.keyManager, localParamsB, fundingParamsB, contributionsB.right!!)
@@ -1122,10 +1121,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val sharedInputB = SharedFundingInput.Multisig2of2(inputInfo, channelKeysB.fundingPubKey, channelKeysA.fundingPubKey)
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingContributionA, fundingContributionB, sharedInputA, fundingScript, outputsA, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingContributionB, fundingContributionA, sharedInputB, fundingScript, outputsB, lockTime, dustLimit, targetFeerate)
-            val walletA = createWallet(TestConstants.Alice.keyManager, utxosA)
+            val walletA = createWallet(TestConstants.Alice.keyManager.swapInOnChainWallet, utxosA)
             val contributionsA = FundingContributions.create(fundingParamsA, Pair(sharedInputA, SharedFundingInputBalances(balanceA, balanceB)), walletA.utxos, outputsA, randomKey().publicKey())
             assertNotNull(contributionsA.right)
-            val walletB = createWallet(TestConstants.Bob.keyManager, utxosB)
+            val walletB = createWallet(TestConstants.Bob.keyManager.swapInOnChainWallet, utxosB)
             val contributionsB = FundingContributions.create(fundingParamsB, Pair(sharedInputB, SharedFundingInputBalances(balanceB, balanceA)), walletB.utxos, outputsB, randomKey().publicKey())
             assertNotNull(contributionsB.right)
             return Fixture(channelId, TestConstants.Alice.keyManager, localParamsA, fundingParamsA, contributionsA.right!!, TestConstants.Bob.keyManager, localParamsB, fundingParamsB, contributionsB.right!!)
@@ -1158,9 +1157,9 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             return action1
         }
 
-        private fun createWallet(keyManager: KeyManager, amounts: List<Satoshi>): WalletState {
-            val privateKey = keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
-            val address = keyManager.bip84Address(account = Peer.swapInWalletAccount, addressIndex = 0L)
+        private fun createWallet(onChainKeys: KeyManager.Bip84OnChainKeys, amounts: List<Satoshi>): WalletState {
+            val privateKey = onChainKeys.privateKey(addressIndex = 0)
+            val address = onChainKeys.address(addressIndex = 0L)
             val utxos = amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0))
                 val txOut = listOf(TxOut(amount, Script.pay2wpkh(privateKey.publicKey())), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))

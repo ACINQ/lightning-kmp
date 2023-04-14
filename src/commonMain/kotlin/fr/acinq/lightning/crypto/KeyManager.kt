@@ -1,18 +1,13 @@
 package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.DeterministicWallet.hardened
+import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.utils.toByteVector
 
 interface KeyManager {
 
     val nodeKeys: NodeKeys
-
-    fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey
-
-    fun bip84Address(account: Long, addressIndex: Long): String
-
-    fun bip84Xpub(account: Long): String
-
-    fun closingPubkeyScript(fundingPubKey: PublicKey): Pair<PublicKey, ByteArray>
 
     /**
      *
@@ -29,6 +24,10 @@ interface KeyManager {
      * @return channel keys and secrets
      */
     fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys
+
+    val finalOnChainWallet: Bip84OnChainKeys
+
+    val swapInOnChainWallet: Bip84OnChainKeys
 
     /**
      * Keys used for the node. They are used to generate the node id, to secure communication with other peers, and
@@ -61,6 +60,47 @@ interface KeyManager {
         val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
         fun commitmentPoint(index: Long): PublicKey = Bolt3Derivation.perCommitPoint(shaSeed, index)
         fun commitmentSecret(index: Long): PrivateKey = Bolt3Derivation.perCommitSecret(shaSeed, index)
+    }
+
+    data class Bip84OnChainKeys(
+        private val chain: NodeParams.Chain,
+        val account: Long,
+        val xpriv: DeterministicWallet.ExtendedPrivateKey
+    ) {
+        constructor(chain: NodeParams.Chain, master: DeterministicWallet.ExtendedPrivateKey, account: Long) : this(
+            chain, account,
+            xpriv = DeterministicWallet.derivePrivateKey(master, bip84BasePath(chain) I hardened(account))
+        )
+
+        fun privateKey(addressIndex: Long): PrivateKey {
+            return DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty I 0 I addressIndex).privateKey
+        }
+
+        fun pubkeyScript(addressIndex: Long): ByteVector {
+            val priv = privateKey(addressIndex)
+            val pub = priv.publicKey()
+            val script = Script.pay2wpkh(pub)
+            return Script.write(script).toByteVector()
+        }
+
+        fun address(addressIndex: Long): String {
+            return Bitcoin.computeP2WpkhAddress(privateKey(addressIndex).publicKey(), chain.chainHash)
+        }
+
+        val xpub: String = DeterministicWallet.encode(
+            input = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty I hardened(account))),
+            prefix = when (chain) {
+                NodeParams.Chain.Testnet, NodeParams.Chain.Regtest -> DeterministicWallet.vpub
+                NodeParams.Chain.Mainnet -> DeterministicWallet.zpub
+            }
+        )
+
+        companion object {
+            fun bip84BasePath(chain: NodeParams.Chain) = when (chain) {
+                NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty I hardened(84) I hardened(1)
+                NodeParams.Chain.Mainnet -> KeyPath.empty I hardened(84) I hardened(0)
+            }
+        }
     }
 
 }

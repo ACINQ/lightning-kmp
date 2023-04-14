@@ -79,9 +79,9 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        private val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
+        private val closingPubkeyScript = keyManager.finalOnChainWallet.pubkeyScript(0)
 
-        fun channelParams(finalScriptPubKey: ByteVector = ByteVector(closingPubKeyInfo.second)): LocalParams = PeerChannels.makeChannelParams(
+        fun channelParams(finalScriptPubKey: ByteVector = closingPubkeyScript): LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             finalScriptPubKey,
             isInitiator = true,
@@ -117,9 +117,9 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        private val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
+        private val closingPubkeyScript = Alice.keyManager.finalOnChainWallet.pubkeyScript(0)
 
-        fun channelParams(finalScriptPubKey: ByteVector = ByteVector(closingPubKeyInfo.second)): LocalParams = PeerChannels.makeChannelParams(
+        fun channelParams(finalScriptPubKey: ByteVector = closingPubkeyScript): LocalParams = PeerChannels.makeChannelParams(
             nodeParams,
             finalScriptPubKey,
             isInitiator = false,

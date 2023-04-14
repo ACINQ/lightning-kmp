@@ -107,11 +107,6 @@ class Peer(
     companion object {
         private const val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
-
-        /** Account number for the final wallet derivation path. */
-        val finalWalletAccount = 0L
-        /** Account number for the swap-in wallet derivation path. */
-        val swapInWalletAccount = 1L
     }
 
     var socketBuilder: TcpSocket.Builder? = socketBuilder
@@ -186,10 +181,10 @@ class Peer(
     }
 
     val finalWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "final")
-    val finalAddress: String = nodeParams.keyManager.bip84Address(account = Peer.finalWalletAccount, addressIndex = 0L).also { finalWallet.addAddress(it) }
+    val finalAddress: String = nodeParams.keyManager.finalOnChainWallet.address(addressIndex = 0L).also { finalWallet.addAddress(it) }
 
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
-    val swapInAddress: String = nodeParams.keyManager.bip84Address(account = Peer.swapInWalletAccount, addressIndex = 0L).also { swapInWallet.addAddress(it) }
+    val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.address(addressIndex = 0L).also { swapInWallet.addAddress(it) }
 
     init {
         launch {
@@ -730,8 +725,7 @@ class Peer(
                                 sendToPeer(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
                             } else {
                                 val fundingKeyPath = randomKeyPath(4)
-                                val fundingPubkey = nodeParams.keyManager.channelKeys(fundingKeyPath).fundingPubKey
-                                val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey)
+                                val closingPubkeyScript = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0)
                                 val localParams = LocalParams(
                                     nodeParams.nodeId,
                                     fundingKeyPath,
@@ -741,7 +735,7 @@ class Peer(
                                     nodeParams.toRemoteDelayBlocks,
                                     nodeParams.maxAcceptedHtlcs,
                                     false,
-                                    closingPubkeyScript.toByteVector(),
+                                    closingPubkeyScript,
                                     features
                                 )
                                 val state = WaitForInit
@@ -901,8 +895,7 @@ class Peer(
 
             cmd is OpenChannel -> {
                 val fundingKeyPath = randomKeyPath(4)
-                val fundingPubkey = nodeParams.keyManager.channelKeys(fundingKeyPath).fundingPubKey
-                val (_, closingPubkeyScript) = nodeParams.keyManager.closingPubkeyScript(fundingPubkey)
+                val closingPubkeyScript = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0)
                 val localParams = LocalParams(
                     nodeParams.nodeId,
                     fundingKeyPath,
@@ -912,7 +905,7 @@ class Peer(
                     nodeParams.toRemoteDelayBlocks,
                     nodeParams.maxAcceptedHtlcs,
                     true,
-                    closingPubkeyScript.toByteVector(),
+                    closingPubkeyScript,
                     features
                 )
                 val state = WaitForInit
