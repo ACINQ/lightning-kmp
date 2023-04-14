@@ -32,7 +32,7 @@ data class Negotiating(
             cmd is ChannelCommand.MessageReceived && cmd.message is ClosingSigned -> {
                 val remoteClosingFee = cmd.message.feeSatoshis
                 logger.info { "received closing fee=$remoteClosingFee" }
-                when (val result = Helpers.Closing.checkClosingSignature(keyManager, commitments.latest, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), cmd.message.feeSatoshis, cmd.message.signature)) {
+                when (val result = Helpers.Closing.checkClosingSignature(channelKeys(), commitments.latest, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), cmd.message.feeSatoshis, cmd.message.signature)) {
                     is Either.Left -> handleLocalError(cmd, result.value)
                     is Either.Right -> {
                         val (signedClosingTx, closingSignedRemoteFees) = result.value
@@ -74,7 +74,7 @@ data class Negotiating(
                                             completeMutualClose(signedClosingTx, closingSignedRemoteFees)
                                         } else {
                                             val (closingTx, closingSigned) = Helpers.Closing.makeClosingTx(
-                                                keyManager,
+                                                channelKeys(),
                                                 commitments.latest,
                                                 localShutdown.scriptPubKey.toByteArray(),
                                                 remoteShutdown.scriptPubKey.toByteArray(),
@@ -100,7 +100,7 @@ data class Negotiating(
                                             val localClosingFees = Helpers.Closing.firstClosingFee(commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, ourFeeRange)
                                             val nextPreferredFee = Helpers.Closing.nextClosingFee(lastLocalClosingSigned?.feeSatoshis ?: localClosingFees.preferred, remoteClosingFee)
                                             Helpers.Closing.makeClosingTx(
-                                                keyManager,
+                                                channelKeys(),
                                                 commitments.latest,
                                                 localShutdown.scriptPubKey.toByteArray(),
                                                 remoteShutdown.scriptPubKey.toByteArray(),

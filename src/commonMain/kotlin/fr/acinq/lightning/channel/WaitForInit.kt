@@ -25,6 +25,7 @@ object WaitForInit : ChannelState() {
                 Pair(nextState, listOf())
             }
             cmd is ChannelCommand.InitInitiator && isValidChannelType(cmd.channelType) -> {
+                val channelKeys = keyManager.channelKeys(cmd.localParams.fundingKeyPath)
                 val open = OpenDualFundedChannel(
                     chainHash = staticParams.nodeParams.chainHash,
                     temporaryChannelId = cmd.temporaryChannelId(keyManager),
@@ -37,13 +38,13 @@ object WaitForInit : ChannelState() {
                     toSelfDelay = cmd.localParams.toSelfDelay,
                     maxAcceptedHtlcs = cmd.localParams.maxAcceptedHtlcs,
                     lockTime = currentBlockHeight.toLong(),
-                    fundingPubkey = cmd.localParams.channelKeys(keyManager).fundingPubKey,
-                    revocationBasepoint = cmd.localParams.channelKeys(keyManager).revocationBasepoint,
-                    paymentBasepoint = cmd.localParams.channelKeys(keyManager).paymentBasepoint,
-                    delayedPaymentBasepoint = cmd.localParams.channelKeys(keyManager).delayedPaymentBasepoint,
-                    htlcBasepoint = cmd.localParams.channelKeys(keyManager).htlcBasepoint,
-                    firstPerCommitmentPoint = cmd.localParams.channelKeys(keyManager).commitmentPoint(0),
-                    secondPerCommitmentPoint = cmd.localParams.channelKeys(keyManager).commitmentPoint(1),
+                    fundingPubkey = channelKeys.fundingPubKey,
+                    revocationBasepoint = channelKeys.revocationBasepoint,
+                    paymentBasepoint = channelKeys.paymentBasepoint,
+                    delayedPaymentBasepoint = channelKeys.delayedPaymentBasepoint,
+                    htlcBasepoint = channelKeys.htlcBasepoint,
+                    firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
+                    secondPerCommitmentPoint = channelKeys.commitmentPoint(1),
                     channelFlags = cmd.channelFlags,
                     tlvStream = TlvStream(
                         buildSet {

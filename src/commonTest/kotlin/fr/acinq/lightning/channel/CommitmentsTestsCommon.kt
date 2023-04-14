@@ -43,6 +43,9 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- success case`() {
         val (alice, bob) = reachNormal()
 
+        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
+        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
+
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
         val p = 42_000_000.msat // a->b payment
@@ -67,11 +70,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc1.availableBalanceForSend(), b)
         assertEquals(bc1.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac2, commit1) = ac1.sendCommit(alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac2, commit1) = ac1.sendCommit(aliceKeys, logger).right!!
         assertEquals(ac2.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
-        val (bc2, revocation1) = bc1.receiveCommit(commit1, bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc2, revocation1) = bc1.receiveCommit(commit1, bobKeys, logger).right!!
         assertEquals(bc2.availableBalanceForSend(), b)
         assertEquals(bc2.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -79,11 +82,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
-        val (bc3, commit2) = bc2.sendCommit(bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc3, commit2) = bc2.sendCommit(bobKeys, logger).right!!
         assertEquals(bc3.availableBalanceForSend(), b)
         assertEquals(bc3.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac4, revocation2) = ac3.receiveCommit(commit2, alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac4, revocation2) = ac3.receiveCommit(commit2, aliceKeys, logger).right!!
         assertEquals(ac4.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac4.availableBalanceForReceive(), b)
 
@@ -100,11 +103,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b + p)
 
-        val (bc6, commit3) = bc5.sendCommit(bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc6, commit3) = bc5.sendCommit(bobKeys, logger).right!!
         assertEquals(bc6.availableBalanceForSend(), b + p)
         assertEquals(bc6.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac6, revocation3) = ac5.receiveCommit(commit3, alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac6, revocation3) = ac5.receiveCommit(commit3, aliceKeys, logger).right!!
         assertEquals(ac6.availableBalanceForSend(), a - p)
         assertEquals(ac6.availableBalanceForReceive(), b + p)
 
@@ -112,11 +115,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc7.availableBalanceForSend(), b + p)
         assertEquals(bc7.availableBalanceForReceive(), a - p)
 
-        val (ac7, commit4) = ac6.sendCommit(alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac7, commit4) = ac6.sendCommit(aliceKeys, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a - p)
         assertEquals(ac7.availableBalanceForReceive(), b + p)
 
-        val (bc8, revocation4) = bc7.receiveCommit(commit4, bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc8, revocation4) = bc7.receiveCommit(commit4, bobKeys, logger).right!!
         assertEquals(bc8.availableBalanceForSend(), b + p)
         assertEquals(bc8.availableBalanceForReceive(), a - p)
 
@@ -128,6 +131,9 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     @Test
     fun `correct values for availableForSend - availableForReceive -- failure case`() {
         val (alice, bob) = reachNormal()
+
+        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
+        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
 
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
@@ -153,11 +159,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc1.availableBalanceForSend(), b)
         assertEquals(bc1.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac2, commit1) = ac1.sendCommit(alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac2, commit1) = ac1.sendCommit(aliceKeys, logger).right!!
         assertEquals(ac2.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
-        val (bc2, revocation1) = bc1.receiveCommit(commit1, bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc2, revocation1) = bc1.receiveCommit(commit1, bobKeys, logger).right!!
         assertEquals(bc2.availableBalanceForSend(), b)
         assertEquals(bc2.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -165,11 +171,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
-        val (bc3, commit2) = bc2.sendCommit(bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc3, commit2) = bc2.sendCommit(bobKeys, logger).right!!
         assertEquals(bc3.availableBalanceForSend(), b)
         assertEquals(bc3.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac4, revocation2) = ac3.receiveCommit(commit2, alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac4, revocation2) = ac3.receiveCommit(commit2, aliceKeys, logger).right!!
         assertEquals(ac4.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac4.availableBalanceForReceive(), b)
 
@@ -186,11 +192,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b)
 
-        val (bc6, commit3) = bc5.sendCommit(bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc6, commit3) = bc5.sendCommit(bobKeys, logger).right!!
         assertEquals(bc6.availableBalanceForSend(), b)
         assertEquals(bc6.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac6, revocation3) = ac5.receiveCommit(commit3, alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac6, revocation3) = ac5.receiveCommit(commit3, aliceKeys, logger).right!!
         assertEquals(ac6.availableBalanceForSend(), a)
         assertEquals(ac6.availableBalanceForReceive(), b)
 
@@ -198,11 +204,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc7.availableBalanceForSend(), b)
         assertEquals(bc7.availableBalanceForReceive(), a)
 
-        val (ac7, commit4) = ac6.sendCommit(alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac7, commit4) = ac6.sendCommit(aliceKeys, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a)
         assertEquals(ac7.availableBalanceForReceive(), b)
 
-        val (bc8, revocation4) = bc7.receiveCommit(commit4, bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc8, revocation4) = bc7.receiveCommit(commit4, bobKeys, logger).right!!
         assertEquals(bc8.availableBalanceForSend(), b)
         assertEquals(bc8.availableBalanceForReceive(), a)
 
@@ -214,6 +220,9 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     @Test
     fun `correct values for availableForSend - availableForReceive -- multiple htlcs`() {
         val (alice, bob) = reachNormal()
+
+        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
+        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
 
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
@@ -260,11 +269,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b - p3)
 
-        val (ac4, commit1) = ac3.sendCommit(alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac4, commit1) = ac3.sendCommit(aliceKeys, logger).right!!
         assertEquals(ac4.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac4.availableBalanceForReceive(), b - p3)
 
-        val (bc4, revocation1) = bc3.receiveCommit(commit1, bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc4, revocation1) = bc3.receiveCommit(commit1, bobKeys, logger).right!!
         assertEquals(bc4.availableBalanceForSend(), b - p3)
         assertEquals(bc4.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
@@ -272,11 +281,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b - p3)
 
-        val (bc5, commit2) = bc4.sendCommit(bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc5, commit2) = bc4.sendCommit(bobKeys, logger).right!!
         assertEquals(bc5.availableBalanceForSend(), b - p3)
         assertEquals(bc5.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-        val (ac6, revocation2) = ac5.receiveCommit(commit2, alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac6, revocation2) = ac5.receiveCommit(commit2, aliceKeys, logger).right!!
         assertEquals(ac6.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // alice has acknowledged b's hltc so it needs to pay the fee for it
         assertEquals(ac6.availableBalanceForReceive(), b - p3)
 
@@ -284,11 +293,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc6.availableBalanceForSend(), b - p3)
         assertEquals(bc6.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-        val (ac7, commit3) = ac6.sendCommit(alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac7, commit3) = ac6.sendCommit(aliceKeys, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
         assertEquals(ac7.availableBalanceForReceive(), b - p3)
 
-        val (bc7, revocation3) = bc6.receiveCommit(commit3, bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc7, revocation3) = bc6.receiveCommit(commit3, bobKeys, logger).right!!
         assertEquals(bc7.availableBalanceForSend(), b - p3)
         assertEquals(bc7.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
@@ -323,11 +332,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc10.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc10.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // the fee for p3 disappears
 
-        val (ac12, commit4) = ac11.sendCommit(alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac12, commit4) = ac11.sendCommit(aliceKeys, logger).right!!
         assertEquals(ac12.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
         assertEquals(ac12.availableBalanceForReceive(), b + p1 - p3)
 
-        val (bc11, revocation4) = bc10.receiveCommit(commit4, bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc11, revocation4) = bc10.receiveCommit(commit4, bobKeys, logger).right!!
         assertEquals(bc11.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc11.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
@@ -335,11 +344,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac13.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
         assertEquals(ac13.availableBalanceForReceive(), b + p1 - p3)
 
-        val (bc12, commit5) = bc11.sendCommit(bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc12, commit5) = bc11.sendCommit(bobKeys, logger).right!!
         assertEquals(bc12.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc12.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
-        val (ac14, revocation5) = ac13.receiveCommit(commit5, alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac14, revocation5) = ac13.receiveCommit(commit5, aliceKeys, logger).right!!
         assertEquals(ac14.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac14.availableBalanceForReceive(), b + p1 - p3)
 
@@ -347,11 +356,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc13.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc13.availableBalanceForReceive(), a - p1 + p3)
 
-        val (ac15, commit6) = ac14.sendCommit(alice.staticParams.nodeParams.keyManager, logger).right!!
+        val (ac15, commit6) = ac14.sendCommit(aliceKeys, logger).right!!
         assertEquals(ac15.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac15.availableBalanceForReceive(), b + p1 - p3)
 
-        val (bc14, revocation6) = bc13.receiveCommit(commit6, bob.staticParams.nodeParams.keyManager, logger).right!!
+        val (bc14, revocation6) = bc13.receiveCommit(commit6, bobKeys, logger).right!!
         assertEquals(bc14.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc14.availableBalanceForReceive(), a - p1 + p3)
 

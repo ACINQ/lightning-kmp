@@ -194,7 +194,7 @@ data class Closing(
 
                         val revokedCommitPublishActions = mutableListOf<ChannelAction>()
                         val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
-                            val (newRevokedCommitPublished, penaltyTxs) = claimRevokedHtlcTxOutputs(keyManager, commitments.params, rev, watch.tx, currentOnChainFeerates)
+                            val (newRevokedCommitPublished, penaltyTxs) = claimRevokedHtlcTxOutputs(channelKeys(), commitments.params, rev, watch.tx, currentOnChainFeerates)
                             penaltyTxs.forEach {
                                 revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
                                 revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.tx, it.input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT))
@@ -286,7 +286,7 @@ data class Closing(
             is ChannelCommand.GetHtlcInfosResponse -> {
                 val index = revokedCommitPublished.indexOfFirst { it.commitTx.txid == cmd.revokedCommitTxId }
                 if (index >= 0) {
-                    val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(keyManager, commitments.params, revokedCommitPublished[index], currentOnChainFeerates, cmd.htlcInfos)
+                    val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(channelKeys(), commitments.params, revokedCommitPublished[index], currentOnChainFeerates, cmd.htlcInfos)
                     val nextState = copy(revokedCommitPublished = revokedCommitPublished.updated(index, revokedCommitPublished1))
                     val actions = buildList {
                         add(ChannelAction.Storage.StoreState(nextState))
@@ -326,14 +326,14 @@ data class Closing(
                         logger.info { "got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
                         val commitments1 = result.value.first
                         val localCommitPublished1 = localCommitPublished?.let {
-                            claimCurrentLocalCommitTxOutputs(keyManager, commitments1.latest, it.commitTx, currentOnChainFeerates)
+                            claimCurrentLocalCommitTxOutputs(channelKeys(), commitments1.latest, it.commitTx, currentOnChainFeerates)
                         }
                         val remoteCommitPublished1 = remoteCommitPublished?.let {
-                            claimRemoteCommitTxOutputs(keyManager, commitments1.latest, commitments1.latest.remoteCommit, it.commitTx, currentOnChainFeerates)
+                            claimRemoteCommitTxOutputs(channelKeys(), commitments1.latest, commitments1.latest.remoteCommit, it.commitTx, currentOnChainFeerates)
                         }
                         val nextRemoteCommitPublished1 = nextRemoteCommitPublished?.let {
                             val remoteCommit = commitments1.latest.nextRemoteCommit?.commit ?: error("next remote commit must be defined")
-                            claimRemoteCommitTxOutputs(keyManager, commitments1.latest, remoteCommit, it.commitTx, currentOnChainFeerates)
+                            claimRemoteCommitTxOutputs(channelKeys(), commitments1.latest, remoteCommit, it.commitTx, currentOnChainFeerates)
                         }
                         val republishList = buildList {
                             val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()

@@ -42,6 +42,7 @@ data class WaitForOpenChannel(
                             is Either.Right -> {
                                 val channelFeatures = res.value
                                 val minimumDepth = if (staticParams.useZeroConf) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
+                                val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
                                 val accept = AcceptDualFundedChannel(
                                     temporaryChannelId = open.temporaryChannelId,
                                     fundingAmount = fundingAmount,
@@ -51,13 +52,13 @@ data class WaitForOpenChannel(
                                     minimumDepth = minimumDepth.toLong(),
                                     toSelfDelay = localParams.toSelfDelay,
                                     maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-                                    fundingPubkey = localParams.channelKeys(keyManager).fundingPubKey,
-                                    revocationBasepoint = localParams.channelKeys(keyManager).revocationBasepoint,
-                                    paymentBasepoint = localParams.channelKeys(keyManager).paymentBasepoint,
-                                    delayedPaymentBasepoint = localParams.channelKeys(keyManager).delayedPaymentBasepoint,
-                                    htlcBasepoint = localParams.channelKeys(keyManager).htlcBasepoint,
-                                    firstPerCommitmentPoint = localParams.channelKeys(keyManager).commitmentPoint(0),
-                                    secondPerCommitmentPoint = localParams.channelKeys(keyManager).commitmentPoint(1),
+                                    fundingPubkey = channelKeys.fundingPubKey,
+                                    revocationBasepoint = channelKeys.revocationBasepoint,
+                                    paymentBasepoint = channelKeys.paymentBasepoint,
+                                    delayedPaymentBasepoint = channelKeys.delayedPaymentBasepoint,
+                                    htlcBasepoint = channelKeys.htlcBasepoint,
+                                    firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
+                                    secondPerCommitmentPoint = channelKeys.commitmentPoint(1),
                                     tlvStream = TlvStream(
                                         buildSet {
                                             add(ChannelTlv.ChannelTypeTlv(channelFeatures.channelType))
@@ -80,7 +81,7 @@ data class WaitForOpenChannel(
                                     features = Features(remoteInit.features)
                                 )
                                 val channelId = computeChannelId(open, accept)
-                                val localFundingPubkey = localParams.channelKeys(keyManager).fundingPubKey
+                                val localFundingPubkey = channelKeys.fundingPubKey
                                 val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                                 val dustLimit = open.dustLimit.max(localParams.dustLimit)
                                 val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, dustLimit, open.fundingFeerate)
