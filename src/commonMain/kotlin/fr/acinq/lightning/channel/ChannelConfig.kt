@@ -28,6 +28,11 @@ sealed class ChannelConfigOption {
 
 data class ChannelConfig(val options: Set<ChannelConfigOption>) {
 
+    init {
+        /** This option has always been enabled */
+        require(hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
+    }
+
     fun hasOption(option: ChannelConfigOption): Boolean = options.contains(option)
 
     fun toByteArray(): ByteArray {

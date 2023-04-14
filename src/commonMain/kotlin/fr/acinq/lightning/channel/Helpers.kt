@@ -305,10 +305,11 @@ object Helpers {
                 }
             }
 
-            val fundingPubKey = localParams.channelKeys(keyManager).fundingPubKey
+            val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
+            val fundingPubKey = channelKeys.fundingPubKey
             val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteParams.fundingPubKey)
             val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, commitmentIndex)
-            val localCommitTx = Commitments.makeLocalTxs(keyManager.channelKeys(localParams.fundingKeyPath), commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
+            val localCommitTx = Commitments.makeLocalTxs(channelKeys, commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
             val remoteCommitTx = Commitments.makeRemoteTxs(keyManager, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec).first
 
             return Either.Right(PairOfCommitTxs(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
@@ -556,12 +557,12 @@ object Helpers {
             )
             require(remoteCommitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current remote commit tx" }
 
-            val channelKeyPath = keyManager.channelKeyPath(localParams, commitment.params.channelConfig)
-            val localPaymentPubkey = keyManager.paymentPoint(channelKeyPath).publicKey
-            val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+            val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
+            val localPaymentPubkey = channelKeys.paymentBasepoint
+            val localHtlcPubkey = Generators.derivePubKey(channelKeys.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
             val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+            val remoteRevocationPubkey = Generators.revocationPubKey(channelKeys.revocationBasepoint, remoteCommit.remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
                 remoteParams.fundingPubKey,
                 localParams.channelKeys(keyManager).fundingPubKey,
@@ -676,11 +677,11 @@ object Helpers {
         fun getRemotePerCommitmentSecret(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, tx: Transaction): Pair<PrivateKey, Long>? {
             // a valid tx will always have at least one input, but this ensures we don't throw in tests
             val sequence = tx.txIn.first().sequence
-            val channelKeyPath = keyManager.channelKeyPath(params.localParams, params.channelConfig)
+            val channelKeys = keyManager.channelKeys(params.localParams.fundingKeyPath)
             val obscuredTxNumber = Transactions.decodeTxNumber(sequence, tx.lockTime)
-            val localPaymentPoint = keyManager.paymentPoint(channelKeyPath)
+            val localPaymentPoint = channelKeys.paymentBasepoint
             // this tx has been published by remote, so we need to invert local/remote params
-            val commitmentNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isInitiator, params.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
+            val commitmentNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isInitiator, params.remoteParams.paymentBasepoint, localPaymentPoint)
             if (commitmentNumber > 0xffffffffffffL) {
                 // txNumber must be lesser than 48 bits long
                 return null

@@ -26,8 +26,6 @@ interface KeyManager {
 
     fun revocationPoint(channelKeyPath: KeyPath): ExtendedPublicKey
 
-    fun paymentPoint(channelKeyPath: KeyPath): ExtendedPublicKey
-
     fun delayedPaymentPoint(channelKeyPath: KeyPath): ExtendedPublicKey
 
     fun htlcPoint(channelKeyPath: KeyPath): ExtendedPublicKey
