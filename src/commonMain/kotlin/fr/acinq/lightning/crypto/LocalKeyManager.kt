@@ -93,20 +93,6 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
         )
     }
 
-    override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey): ByteVector64 {
-        return Transactions.sign(tx, privateKey)
-    }
-
-    override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey, remotePoint: PublicKey, sigHash: Int): ByteVector64 {
-        val currentKey = privateKey.derive(remotePoint)
-        return Transactions.sign(tx, currentKey, sigHash)
-    }
-
-    override fun sign(tx: Transactions.TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64 {
-        val currentKey = privateKey.deriveRevocation(remoteSecret)
-        return Transactions.sign(tx, currentKey)
-    }
-
     /**
      * Channel keys recovered from the channel's funding public key (note that we cannot recover the funding private key).
      * These keys can be used to spend our outputs from a commit tx that has been published to the blockchain, without any other information than

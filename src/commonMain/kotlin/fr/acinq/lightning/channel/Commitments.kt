@@ -8,7 +8,6 @@ import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
-import fr.acinq.lightning.crypto.Generators
 import fr.acinq.lightning.crypto.Generators.derive
 import fr.acinq.lightning.crypto.Generators.deriveRevocation
 import fr.acinq.lightning.crypto.KeyManager
@@ -99,10 +98,10 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: Byt
     fun sign(keyManager: KeyManager, params: ChannelParams, commitInput: Transactions.InputInfo): CommitSig {
         val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(keyManager, index, params.localParams, params.remoteParams, commitInput, remotePerCommitmentPoint, spec)
         val channelKeys = params.localParams.channelKeys(keyManager)
-        val sig = keyManager.sign(remoteCommitTx, channelKeys.fundingPrivateKey)
+        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingPrivateKey)
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val sortedHtlcsTxs = htlcTxs.sortedBy { it.input.outPoint.index }
-        val htlcSigs = sortedHtlcsTxs.map { keyManager.sign(it, channelKeys.htlcKey, remotePerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+        val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.derive(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
         return CommitSig(params.channelId, sig, htlcSigs.toList())
     }
 }
@@ -387,11 +386,11 @@ data class Commitment(
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
         val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index + 1, params.localParams, params.remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = keyManager.sign(remoteCommitTx, params.localParams.channelKeys(keyManager).fundingPrivateKey)
+        val sig = Transactions.sign(remoteCommitTx, params.localParams.channelKeys(keyManager).fundingPrivateKey)
 
         val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, params.localParams.channelKeys(keyManager).htlcKey, remoteNextPerCommitmentPoint, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+        val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, params.localParams.channelKeys(keyManager).htlcKey.derive(remoteNextPerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         log.info {
@@ -444,7 +443,7 @@ data class Commitment(
         if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
             return Either.Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
         }
-        val htlcSigs = sortedHtlcTxs.map { keyManager.sign(it, keys.htlcKey, localPerCommitmentPoint, SigHash.SIGHASH_ALL) }
+        val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, keys.htlcKey.derive(localPerCommitmentPoint), SigHash.SIGHASH_ALL) }
         val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.derive(localPerCommitmentPoint)
         // combine the sigs to make signed txs
         val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->

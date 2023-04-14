@@ -53,7 +53,7 @@ class RecoveryTestsCommon {
             )
             return when (mainTx) {
                 is Transactions.TxResult.Success -> {
-                    val sig = keyManager.sign(mainTx.result, channelKeys.paymentKey)
+                    val sig = Transactions.sign(mainTx.result, channelKeys.paymentKey)
                     val signedTx = Transactions.addSigs(mainTx.result, sig).tx
                     Transaction.correctlySpends(signedTx, commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
                     signedTx

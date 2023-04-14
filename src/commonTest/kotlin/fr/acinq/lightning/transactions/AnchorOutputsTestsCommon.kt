@@ -6,19 +6,16 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.crypto.KeyManager.ChannelKeys
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.channel.RemoteParams
-import fr.acinq.lightning.crypto.Generators
 import fr.acinq.lightning.crypto.Generators.derive
-import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.crypto.KeyManager.ChannelKeys
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.kodein.memory.file.FileSystem
@@ -225,7 +222,6 @@ class AnchorOutputsTestsCommon {
         }
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
     companion object {
         @kotlinx.serialization.Serializable
         data class HtlcDesc(val RemoteSigHex: String, val ResolutionTxHex: String) {

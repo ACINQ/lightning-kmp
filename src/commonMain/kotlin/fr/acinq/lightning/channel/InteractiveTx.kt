@@ -36,7 +36,7 @@ sealed class SharedFundingInput {
 
         override fun sign(keyManager: KeyManager, localParams: LocalParams, tx: Transaction): ByteVector64 {
             val fundingKey = keyManager.channelKeys(localParams.fundingKeyPath).fundingPrivateKey
-            return keyManager.sign(Transactions.TransactionWithInputInfo.SpliceTx(info, tx), fundingKey)
+            return Transactions.sign(Transactions.TransactionWithInputInfo.SpliceTx(info, tx), fundingKey)
         }
 
         companion object {
@@ -692,7 +692,7 @@ data class InteractiveTxSigningSession(
         return when (localCommit) {
             is Either.Left -> {
                 val fundingPubKey = channelParams.localParams.channelKeys(keyManager).fundingPubKey
-                val localSigOfLocalTx = keyManager.sign(localCommit.value.commitTx, channelParams.localParams.channelKeys(keyManager).fundingPrivateKey)
+                val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, channelParams.localParams.channelKeys(keyManager).fundingPrivateKey)
                 val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingPubKey, channelParams.remoteParams.fundingPubKey, localSigOfLocalTx, remoteCommitSig.signature)
                 when (Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
@@ -757,7 +757,7 @@ data class InteractiveTxSigningSession(
                 fundingTxHash = unsignedTx.hash, fundingTxOutputIndex = sharedOutputIndex,
                 remotePerCommitmentPoint
             ).flatMap { firstCommitTx ->
-                val localSigOfRemoteTx = keyManager.sign(firstCommitTx.remoteCommitTx, channelParams.localParams.channelKeys(keyManager).fundingPrivateKey)
+                val localSigOfRemoteTx = Transactions.sign(firstCommitTx.remoteCommitTx, channelParams.localParams.channelKeys(keyManager).fundingPrivateKey)
                 val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf())
                 when (val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams)) {
                     null -> Either.Left(ChannelFundingError(channelParams.channelId))

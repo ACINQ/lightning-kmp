@@ -416,7 +416,7 @@ object Helpers {
             require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitment.params.localParams.dustLimit.max(commitment.params.remoteParams.dustLimit)
             val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, dustLimit, closingFees.preferred, commitment.localCommit.spec)
-            val localClosingSig = keyManager.sign(closingTx, commitment.params.localParams.channelKeys(keyManager).fundingPrivateKey)
+            val localClosingSig = Transactions.sign(closingTx, commitment.params.localParams.channelKeys(keyManager).fundingPrivateKey)
             val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
             return Pair(closingTx, closingSigned)
         }
@@ -487,7 +487,7 @@ object Helpers {
                     feerateDelayed
                 )
             }?.let {
-                val sig = keyManager.sign(it, localParams.channelKeys(keyManager).delayedPaymentKey, localPerCommitmentPoint, SigHash.SIGHASH_ALL)
+                val sig = Transactions.sign(it, localParams.channelKeys(keyManager).delayedPaymentKey.derive(localPerCommitmentPoint), SigHash.SIGHASH_ALL)
                 Transactions.addSigs(it, sig)
             }
 
@@ -521,7 +521,7 @@ object Helpers {
                         feerateDelayed
                     )
                 }?.let {
-                    val sig = keyManager.sign(it, localParams.channelKeys(keyManager).delayedPaymentKey, localPerCommitmentPoint, SigHash.SIGHASH_ALL)
+                    val sig = Transactions.sign(it, localParams.channelKeys(keyManager).delayedPaymentKey.derive(localPerCommitmentPoint), SigHash.SIGHASH_ALL)
                     Transactions.addSigs(it, sig)
                 }
             }
@@ -608,7 +608,7 @@ object Helpers {
                                 null -> Pair(claimHtlcTx.input.outPoint, null)
                                 // incoming htlc for which we have the preimage: we can spend it directly
                                 else -> {
-                                    val sig = keyManager.sign(claimHtlcTx, localParams.channelKeys(keyManager).htlcKey, remoteCommit.remotePerCommitmentPoint, SigHash.SIGHASH_ALL)
+                                    val sig = Transactions.sign(claimHtlcTx, localParams.channelKeys(keyManager).htlcKey.derive(remoteCommit.remotePerCommitmentPoint), SigHash.SIGHASH_ALL)
                                     Pair(claimHtlcTx.input.outPoint, Transactions.addSigs(claimHtlcTx, sig, preimage))
                                 }
                             }
@@ -629,7 +629,7 @@ object Helpers {
                                 feerateClaimHtlc
                             )
                         }?.let { claimHtlcTx ->
-                            val sig = keyManager.sign(claimHtlcTx, localParams.channelKeys(keyManager).htlcKey, remoteCommit.remotePerCommitmentPoint, SigHash.SIGHASH_ALL)
+                            val sig = Transactions.sign(claimHtlcTx, localParams.channelKeys(keyManager).htlcKey.derive(remoteCommit.remotePerCommitmentPoint), SigHash.SIGHASH_ALL)
                             Pair(claimHtlcTx.input.outPoint, Transactions.addSigs(claimHtlcTx, sig))
                         }
                     }
@@ -658,7 +658,7 @@ object Helpers {
                     claimMainFeerate
                 )
             }?.let {
-                val sig = keyManager.sign(it, params.localParams.channelKeys(keyManager).paymentKey)
+                val sig = Transactions.sign(it, params.localParams.channelKeys(keyManager).paymentKey)
                 Transactions.addSigs(it, sig)
             }
 
@@ -717,7 +717,7 @@ object Helpers {
                     feerateMain
                 )
             }?.let {
-                val sig = keyManager.sign(it, params.localParams.channelKeys(keyManager).paymentKey)
+                val sig = Transactions.sign(it, params.localParams.channelKeys(keyManager).paymentKey)
                 Transactions.addSigs(it, sig)
             }
 
@@ -733,7 +733,7 @@ object Helpers {
                     feeratePenalty
                 )
             }?.let {
-                val sig = keyManager.sign(it, params.localParams.channelKeys(keyManager).revocationKey, remotePerCommitmentSecret)
+                val sig = Transactions.sign(it, params.localParams.channelKeys(keyManager).revocationKey.deriveRevocation(remotePerCommitmentSecret))
                 Transactions.addSigs(it, sig)
             }
 
@@ -778,7 +778,7 @@ object Helpers {
                             feeratePenalty
                         )
                     }?.let { htlcPenaltyTx ->
-                        val sig = keyManager.sign(htlcPenaltyTx, params.localParams.channelKeys(keyManager).revocationKey, revokedCommitPublished.remotePerCommitmentSecret)
+                        val sig = Transactions.sign(htlcPenaltyTx, params.localParams.channelKeys(keyManager).revocationKey.deriveRevocation(revokedCommitPublished.remotePerCommitmentSecret))
                         Transactions.addSigs(htlcPenaltyTx, sig, remoteRevocationPubkey)
                     }
                 }
@@ -835,7 +835,7 @@ object Helpers {
                     generateTx("claim-htlc-delayed-penalty") {
                         claimDelayedOutputPenaltyTx
                     }?.let {
-                        val sig = keyManager.sign(it, params.localParams.channelKeys(keyManager).revocationKey, revokedCommitPublished.remotePerCommitmentSecret)
+                        val sig = Transactions.sign(it, params.localParams.channelKeys(keyManager).revocationKey.deriveRevocation(revokedCommitPublished.remotePerCommitmentSecret))
                         val signedTx = Transactions.addSigs(it, sig)
                         // we need to make sure that the tx is indeed valid
                         when (runTrying { Transaction.correctlySpends(signedTx.tx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
