@@ -1,10 +1,11 @@
 package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelConfig
+import fr.acinq.lightning.channel.ChannelKeys
+import fr.acinq.lightning.channel.LocalParams
+import fr.acinq.lightning.channel.RecoveredChannelKeys
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo
 
 interface KeyManager {
@@ -39,14 +40,9 @@ interface KeyManager {
 
     fun commitmentPoint(shaSeed: ByteVector32, index: Long): PublicKey
 
-    fun channelKeyPath(fundingKeyPath: KeyPath, channelConfig: ChannelConfig): KeyPath = when {
-        // deterministic mode: use the funding pubkey to compute the channel key path
-        channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath) -> channelKeyPath(fundingPublicKey(fundingKeyPath))
-        // legacy mode:  we reuse the funding key path as our channel key path
-        else -> fundingKeyPath
-    }
+    fun channelKeyPath(fundingKeyPath: KeyPath, channelConfig: ChannelConfig): KeyPath
 
-    fun channelKeyPath(localParams: LocalParams, channelConfig: ChannelConfig): KeyPath = channelKeyPath(localParams.fundingKeyPath, channelConfig)
+    fun channelKeyPath(localParams: LocalParams, channelConfig: ChannelConfig): KeyPath
 
     /**
      *
@@ -99,30 +95,4 @@ interface KeyManager {
      */
     fun sign(tx: TransactionWithInputInfo, privateKey: PrivateKey, remoteSecret: PrivateKey): ByteVector64
 
-    companion object {
-        /**
-         * Create a BIP32 path from a public key. This path will be used to derive channel keys.
-         * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when've you've lost your data:
-         * - connect to your peer and use DLP to get them to publish their remote commit tx
-         * - retrieve the commit tx from the bitcoin network, extract your funding pubkey from its witness data
-         * - recompute your channel keys and spend your output
-         *
-         * @param fundingPubKey funding public key
-         * @return a BIP32 path
-         */
-        fun channelKeyPath(fundingPubKey: PublicKey): KeyPath {
-            val buffer = sha256(fundingPubKey.value)
-
-            val path = sequence {
-                var i = 0
-                while (true) {
-                    yield(Pack.int32BE(buffer, i).toUInt().toLong())
-                    i += 4
-                }
-            }
-            return KeyPath(path.take(8).toList())
-        }
-
-        fun channelKeyPath(fundingPubKey: ExtendedPublicKey): KeyPath = channelKeyPath(fundingPubKey.publicKey)
-    }
 }

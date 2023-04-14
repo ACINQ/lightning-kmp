@@ -38,7 +38,7 @@ object TestConstants {
         private val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
-        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeId, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
@@ -93,7 +93,7 @@ object TestConstants {
         private val entropy = Hex.decode("0202020202020202020202020202020202020202020202020202020202020202")
         val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
-        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeId, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,

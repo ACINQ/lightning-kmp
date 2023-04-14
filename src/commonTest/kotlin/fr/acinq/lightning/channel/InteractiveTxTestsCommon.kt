@@ -5,6 +5,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -260,7 +261,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.remoteFees, 2_215_000.msat)
 
         // Bob sends signatures first as he did not contribute at all.
-        val signedTxB = sharedTxB.sharedTx.sign(LocalKeyManager(randomBytes64(), Block.RegtestGenesisBlock.hash), f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(LocalKeyManager(randomBytes64(), NodeParams.Chain.Regtest), f.fundingParamsB, f.localParamsB)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.witnesses.size, 0)
 

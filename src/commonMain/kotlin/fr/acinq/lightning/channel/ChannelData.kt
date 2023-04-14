@@ -342,7 +342,7 @@ data class RevokedCommitPublished(
 }
 
 /**
- * Channel keys recovered from the channel's funding public key (note that we obviously cannot recover the funding private key)
+ * Channel keys recovered from the channel's funding public key (note that we cannot recover the funding private key).
  * These keys can be used to spend our outputs from a commit tx that has been published to the blockchain, without any other information than
  * the node's seed ("backup less backup")
  */

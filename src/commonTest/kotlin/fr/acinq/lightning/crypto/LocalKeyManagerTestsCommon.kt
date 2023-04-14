@@ -2,6 +2,7 @@ package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.ChannelConfig
 import fr.acinq.lightning.channel.ChannelKeys
 import fr.acinq.lightning.tests.TestConstants
@@ -18,7 +19,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // if this test breaks it means that we will generate a different node id from
         // the same seed, which could be a problem during an upgrade
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-        val keyManager = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         assertEquals(keyManager.nodeId, PublicKey.fromHex("0392ea6e914abcee840dc8a763b02ba5ac47e0ac3fadcd5294f9516fe353882522"))
     }
 
@@ -27,14 +28,14 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // if this test breaks it means that we will generate a different legacy node id from
         // the same seed, which could be a problem during migration from legacy to kmp
         val seed = MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector()
-        val keyManager = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         assertEquals(keyManager.legacyNodeKey.publicKey, PublicKey.fromHex("0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc"))
     }
 
     @Test
     fun `generate the same secrets from the same seed`() {
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-        val keyManager = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         assertEquals(keyManager.nodeId, PublicKey.fromHex("0392ea6e914abcee840dc8a763b02ba5ac47e0ac3fadcd5294f9516fe353882522"))
         val keyPath = KeyPath("m/1'/2'/3'/4'")
         assertEquals(keyManager.commitmentSecret(keyPath, 0).value, ByteVector32.fromValidHex("1de1a344a80a6d3416cf11cf1803cb1c01c04506bf9344ba0c17f2867658e796"))
@@ -50,7 +51,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `generate channel keys`() {
         val seed = ByteVector("aeb3e9b5642cd4523e9e09164047f60adb413633549c3c6189192921311894d501")
-        val keyManager = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         val fundingKeyPath = makefundingKeyPath(ByteVector("06535806c1aa73971ec4877a5e2e684fa636136c073810f190b63eefc58ca488"), isInitiator = false)
         val channelKeys = keyManager.channelKeys(fundingKeyPath)
 
@@ -73,8 +74,8 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `generate different node ids from the same seed on different chains`() {
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-        val keyManager1 = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
-        val keyManager2 = LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+        val keyManager1 = LocalKeyManager(seed, NodeParams.Chain.Regtest)
+        val keyManager2 = LocalKeyManager(seed, NodeParams.Chain.Mainnet)
         assertTrue { keyManager1.nodeId != keyManager2.nodeId }
         val keyPath = KeyPath("1")
         assertTrue(keyManager1.fundingPublicKey(keyPath) != keyManager2.fundingPublicKey(keyPath))
@@ -86,7 +87,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // if this test fails it means that we don't generate the same channel key path from the same funding pubkey, which
         // will break existing channels !
         val pub = PrivateKey(ByteVector32.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
-        val keyPath = KeyManager.channelKeyPath(pub)
+        val keyPath = LocalKeyManager.channelKeyPath(pub)
         assertEquals(keyPath.toString(), "m/1909530642'/1080788911/847211985'/1791010671/1303008749'/34154019'/723973395/767609665")
     }
 
@@ -99,7 +100,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `test vectors -- testnet + initiator`() {
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-        val keyManager = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         val fundingKeyPath = makefundingKeyPath(ByteVector("be4fa97c62b9f88437a3be577b31eb48f2165c7bc252194a15ff92d995778cfb"), isInitiator = true)
         val fundingPub = keyManager.fundingPublicKey(fundingKeyPath)
 
@@ -117,7 +118,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `test vectors -- testnet + non-initiator`() {
         val seed = ByteVector("aeb3e9b5642cd4523e9e09164047f60adb413633549c3c6189192921311894d501")
-        val keyManager = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         val fundingKeyPath = makefundingKeyPath(ByteVector("06535806c1aa73971ec4877a5e2e684fa636136c073810f190b63eefc58ca488"), isInitiator = false)
         val fundingPub = keyManager.fundingPublicKey(fundingKeyPath)
 
@@ -135,7 +136,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `test vectors -- mainnet + initiator`() {
         val seed = ByteVector("d8d5431487c2b19ee6486aad6c3bdfb99d10b727bade7fa848e2ab7901c15bff01")
-        val keyManager = LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet)
         val fundingKeyPath = makefundingKeyPath(ByteVector("ec1c41cd6be2b6e4ef46c1107f6c51fbb2066d7e1f7720bde4715af233ae1322"), isInitiator = true)
         val fundingPub = keyManager.fundingPublicKey(fundingKeyPath)
 
@@ -153,7 +154,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `test vectors -- mainnet + non-initiator`() {
         val seed = ByteVector("4b809dd593b36131c454d60c2f7bdfd49d12ec455e5b657c47a9ca0f5dfc5eef01")
-        val keyManager = LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet)
         val fundingKeyPath = makefundingKeyPath(ByteVector("2b4f045be5303d53f9d3a84a1e70c12251168dc29f300cf9cece0ec85cd8182b"), isInitiator = false)
         val fundingPub = keyManager.fundingPublicKey(fundingKeyPath)
 
@@ -173,7 +174,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // basic test taken from https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
-        val keyManager = LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet)
         assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKey), "KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d")
         assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 1L).toBase58(Base58.Prefix.SecretKey), "Kxpf5b8p3qX56DKEe5NqWbNUP9MnqoRFzZwHRtsFqhzuvUJsYZCy")
     }
@@ -183,7 +184,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // reference data was generated from electrum 4.1.5
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
-        val keyManager = LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
         assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTGhosGriPpuGA586jemcuH9pE9spwUmneMBmYYzrQEbY92DJrbo")
         assertEquals(keyManager.bip84PrivateKey(account = 0L, addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cQFUndrpAyMaE3HAsjMCXiT94MzfsABCREat1x7Qe3Mtq9KihD4V")
         assertEquals(keyManager.bip84PrivateKey(account = 1L, addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTzDRh9ERGCwhBCifcnDxboJELpZBaj6Q9Kk8wEGasmDfoocscAb")

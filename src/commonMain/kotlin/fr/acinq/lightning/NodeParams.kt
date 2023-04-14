@@ -208,8 +208,6 @@ data class NodeParams(
         channelFlags = 1,
         paymentRequestExpirySeconds = 3600,
         multiPartPaymentExpirySeconds = 60,
-        minFundingSatoshis = 20_000.sat,
-        maxFundingSatoshis = 21_000_000_000_00000.sat,
         maxPaymentAttempts = 5,
         enableTrampolinePayment = true,
         zeroConfPeers = emptySet(),
@@ -225,5 +223,7 @@ data class NodeParams(
         fun isTestnet(): Boolean = this is Testnet
 
         val chainHash by lazy { genesis.hash }
+
+        override fun toString(): String = name
     }
 }

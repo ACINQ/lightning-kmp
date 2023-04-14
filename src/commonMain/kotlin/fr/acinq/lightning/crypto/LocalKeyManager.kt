@@ -1,26 +1,29 @@
 package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.hardened
+import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Lightning.secureRandom
-import fr.acinq.lightning.channel.ChannelKeys
-import fr.acinq.lightning.channel.RecoveredChannelKeys
+import fr.acinq.lightning.NodeParams.Chain
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.transactions.Transactions
 
-data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : KeyManager {
+data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager {
 
     private val master = DeterministicWallet.generate(seed)
-    override val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, eclairNodeKeyBasePath(chainHash))
-    override val nodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, nodeKeyBasePath(chainHash))
+    @Suppress("DEPRECATION")
+    override val legacyNodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, eclairNodeKeyBasePath(chain))
+    override val nodeKey: DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, nodeKeyBasePath(chain))
     override val nodeId: PublicKey get() = nodeKey.publicKey
 
     override fun toString(): String {
-        return "LocalKeyManager(seed=xxx,chainHash=$chainHash)"
+        return "LocalKeyManager(seed=<redacted>,chain=$chain)"
     }
 
-    private fun internalKeyPath(channelKeyPath: List<Long>, index: Long): List<Long> = channelKeyBasePath(chainHash) + channelKeyPath + index
+    private fun internalKeyPath(channelKeyPath: List<Long>, index: Long): List<Long> = channelKeyBasePath(chain) + channelKeyPath + index
 
     private fun internalKeyPath(channelKeyPath: KeyPath, index: Long): List<Long> = internalKeyPath(channelKeyPath.path, index)
 
@@ -33,21 +36,20 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
     private fun shaSeed(channelKeyPath: KeyPath) = ByteVector32(Crypto.sha256(privateKey(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value.concat(1.toByte())))
 
     override fun bip84PrivateKey(account: Long, addressIndex: Long): PrivateKey {
-        val path = bip84BasePath(chainHash) + hardened(account) + 0 + addressIndex
+        val path = bip84BasePath(chain) + hardened(account) + 0 + addressIndex
         return derivePrivateKey(master, path).privateKey
     }
 
     override fun bip84Address(account: Long, addressIndex: Long): String {
-        return Bitcoin.computeP2WpkhAddress(bip84PrivateKey(account, addressIndex).publicKey(), chainHash)
+        return Bitcoin.computeP2WpkhAddress(bip84PrivateKey(account, addressIndex).publicKey(), chain.chainHash)
     }
 
     override fun bip84Xpub(account: Long): String {
         return DeterministicWallet.encode(
-            input = DeterministicWallet.publicKey(privateKey(bip84BasePath(chainHash) + hardened(account))),
-            prefix = when (chainHash) {
-                Block.LivenetGenesisBlock.hash -> DeterministicWallet.zpub
-                Block.TestnetGenesisBlock.hash -> DeterministicWallet.vpub
-                else -> throw IllegalArgumentException("unhandled chain hash $chainHash")
+            input = DeterministicWallet.publicKey(privateKey(bip84BasePath(chain) + hardened(account))),
+            prefix = when (chain) {
+                Chain.Testnet, Chain.Regtest -> DeterministicWallet.vpub
+                Chain.Mainnet -> DeterministicWallet.zpub
             }
         )
     }
@@ -83,22 +85,31 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
 
     override fun commitmentPoint(shaSeed: ByteVector32, index: Long): PublicKey = Generators.perCommitPoint(shaSeed, index)
 
+    override fun channelKeyPath(fundingKeyPath: KeyPath, channelConfig: ChannelConfig): KeyPath = when {
+        // deterministic mode: use the funding pubkey to compute the channel key path
+        channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath) -> channelKeyPath(fundingPublicKey(fundingKeyPath))
+        // legacy mode:  we reuse the funding key path as our channel key path
+        else -> fundingKeyPath
+    }
+
+    override fun channelKeyPath(localParams: LocalParams, channelConfig: ChannelConfig): KeyPath = channelKeyPath(localParams.fundingKeyPath, channelConfig)
+
     override fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys {
         val fundingPubKey = fundingPublicKey(fundingKeyPath)
         val recoveredChannelKeys = recoverChannelKeys(fundingPubKey.publicKey)
         return ChannelKeys(
             fundingKeyPath,
-            privateKey(fundingPubKey.path).privateKey,
-            recoveredChannelKeys.paymentKey,
-            recoveredChannelKeys.delayedPaymentKey,
-            recoveredChannelKeys.htlcKey,
-            recoveredChannelKeys.revocationKey,
-            recoveredChannelKeys.shaSeed
+            fundingPrivateKey = privateKey(fundingPubKey.path).privateKey,
+            paymentKey = recoveredChannelKeys.paymentKey,
+            delayedPaymentKey = recoveredChannelKeys.delayedPaymentKey,
+            htlcKey = recoveredChannelKeys.htlcKey,
+            revocationKey = recoveredChannelKeys.revocationKey,
+            shaSeed = recoveredChannelKeys.shaSeed
         )
     }
 
     override fun recoverChannelKeys(fundingPubKey: PublicKey): RecoveredChannelKeys {
-        val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
+        val channelKeyPath = channelKeyPath(fundingPubKey)
         return RecoveredChannelKeys(
             fundingPubKey,
             paymentKey = privateKey(paymentPoint(channelKeyPath).path).privateKey,
@@ -123,34 +134,58 @@ data class LocalKeyManager(val seed: ByteVector, val chainHash: ByteVector32) : 
         return Transactions.sign(tx, currentKey)
     }
 
+    /**
+     * WARNING: If you change the paths below, keys will change (including your node id) even if the seed remains the same!!!
+     * Note that the node path and the above channel path are on different branches so even if the
+     * node key is compromised there is no way to retrieve the wallet keys
+     */
     companion object {
 
-        fun channelKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
-            Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(48), hardened(1))
-            Block.LivenetGenesisBlock.hash -> listOf(hardened(50), hardened(1))
-            else -> throw IllegalArgumentException("unknown chain hash $chainHash")
+        /**
+         * Create a BIP32 path from a public key. This path will be used to derive channel keys.
+         * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when've you've lost your data:
+         * - connect to your peer and use DLP to get them to publish their remote commit tx
+         * - retrieve the commit tx from the bitcoin network, extract your funding pubkey from its witness data
+         * - recompute your channel keys and spend your output
+         *
+         * @param fundingPubKey funding public key
+         * @return a BIP32 path
+         */
+        fun channelKeyPath(fundingPubKey: PublicKey): KeyPath {
+            val buffer = sha256(fundingPubKey.value)
+
+            val path = sequence {
+                var i = 0
+                while (true) {
+                    yield(Pack.int32BE(buffer, i).toUInt().toLong())
+                    i += 4
+                }
+            }
+            return KeyPath(path.take(8).toList())
+        }
+
+        fun channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): KeyPath = channelKeyPath(fundingPubKey.publicKey)
+
+        fun channelKeyBasePath(chain: Chain) = when (chain) {
+            Chain.Regtest, Chain.Testnet -> listOf(hardened(48), hardened(1))
+            Chain.Mainnet -> listOf(hardened(50), hardened(1))
         }
 
         /** Path for node keys generated by eclair-core */
-        fun eclairNodeKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
-            Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(46), hardened(0))
-            Block.LivenetGenesisBlock.hash -> listOf(hardened(47), hardened(0))
-            else -> throw IllegalArgumentException("unknown chain hash $chainHash")
+        @Deprecated("used for backward-compat with eclair-core", replaceWith = ReplaceWith("nodeKeyBasePath(chain)"))
+        fun eclairNodeKeyBasePath(chain: Chain) = when (chain) {
+            Chain.Regtest, Chain.Testnet -> listOf(hardened(46), hardened(0))
+            Chain.Mainnet -> listOf(hardened(47), hardened(0))
         }
 
-        // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
-        // Note that the node path and the above channel path are on different branches so even if the
-        // node key is compromised there is no way to retrieve the wallet keys
-        fun nodeKeyBasePath(chainHash: ByteVector32) = when (chainHash) {
-            Block.RegtestGenesisBlock.hash, Block.TestnetGenesisBlock.hash -> listOf(hardened(48), hardened(0))
-            Block.LivenetGenesisBlock.hash -> listOf(hardened(50), hardened(0))
-            else -> throw IllegalArgumentException("unknown chain hash $chainHash")
+        fun nodeKeyBasePath(chain: Chain) = when (chain) {
+            Chain.Regtest, Chain.Testnet -> listOf(hardened(48), hardened(0))
+            Chain.Mainnet -> listOf(hardened(50), hardened(0))
         }
 
-        fun bip84BasePath(chainHash: ByteVector32) = when (chainHash) {
-            Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> listOf(hardened(84), hardened(1))
-            Block.LivenetGenesisBlock.hash -> listOf(hardened(84), hardened(0))
-            else -> throw IllegalArgumentException("unknown chain hash $chainHash")
+        fun bip84BasePath(chain: Chain) = when (chain) {
+            Chain.Regtest, Chain.Testnet -> listOf(hardened(84), hardened(1))
+            Chain.Mainnet -> listOf(hardened(84), hardened(0))
         }
     }
 }
