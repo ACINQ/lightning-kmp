@@ -52,7 +52,7 @@ data class WaitForOpenChannel(
                                     minimumDepth = minimumDepth.toLong(),
                                     toSelfDelay = localParams.toSelfDelay,
                                     maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-                                    fundingPubkey = channelKeys.fundingPubKey,
+                                    fundingPubkey = channelKeys.fundingPubKey(0),
                                     revocationBasepoint = channelKeys.revocationBasepoint,
                                     paymentBasepoint = channelKeys.paymentBasepoint,
                                     delayedPaymentBasepoint = channelKeys.delayedPaymentBasepoint,
@@ -81,7 +81,7 @@ data class WaitForOpenChannel(
                                     features = Features(remoteInit.features)
                                 )
                                 val channelId = computeChannelId(open, accept)
-                                val localFundingPubkey = channelKeys.fundingPubKey
+                                val localFundingPubkey = channelKeys.fundingPubKey(0)
                                 val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                                 val dustLimit = open.dustLimit.max(localParams.dustLimit)
                                 val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, dustLimit, open.fundingFeerate)

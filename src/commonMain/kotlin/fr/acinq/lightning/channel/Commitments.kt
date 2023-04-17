@@ -96,9 +96,9 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishabl
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey) {
-    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, commitInput: Transactions.InputInfo): CommitSig {
-        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, index, params.localParams, params.remoteParams, commitInput, remotePerCommitmentPoint, spec)
-        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingPrivateKey)
+    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long, commitInput: Transactions.InputInfo): CommitSig {
+        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, index, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, commitInput, remotePerCommitmentPoint, spec)
+        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingPrivateKey(fundingTxIndex))
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val sortedHtlcsTxs = htlcTxs.sortedBy { it.input.outPoint.index }
         val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.derive(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
@@ -385,8 +385,8 @@ data class Commitment(
     fun sendCommit(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, log: MDCLogger): Pair<Commitment, CommitSig> {
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
-        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, remoteCommit.index + 1, params.localParams, params.remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingPrivateKey)
+        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, commitInput, remoteNextPerCommitmentPoint, spec)
+        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingPrivateKey(fundingTxIndex))
 
         val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
@@ -420,8 +420,8 @@ data class Commitment(
         val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
         val keys = channelKeys
         val localPerCommitmentPoint = keys.commitmentPoint(localCommit.index + 1)
-        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(keys, localCommit.index + 1, params.localParams, params.remoteParams, commitInput, localPerCommitmentPoint, spec)
-        val sig = Transactions.sign(localCommitTx, keys.fundingPrivateKey)
+        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(keys, commitTxNumber = localCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, commitInput, localPerCommitmentPoint, spec)
+        val sig = Transactions.sign(localCommitTx, keys.fundingPrivateKey(fundingTxIndex))
 
         log.info {
             val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
@@ -430,7 +430,7 @@ data class Commitment(
         }
 
         // no need to compute htlc sigs if commit sig doesn't check out
-        val signedCommitTx = Transactions.addSigs(localCommitTx, keys.fundingPubKey, params.remoteParams.fundingPubKey, sig, commit.signature)
+        val signedCommitTx = Transactions.addSigs(localCommitTx, keys.fundingPubKey(fundingTxIndex), params.remoteParams.fundingPubKey, sig, commit.signature)
         when (val check = Transactions.checkSpendable(signedCommitTx)) {
             is Try.Failure -> {
                 log.error(check.error) { "remote signature $commit is invalid" }
@@ -902,6 +902,7 @@ data class Commitments(
             commitTxNumber: Long,
             localParams: LocalParams,
             remoteParams: RemoteParams,
+            fundingTxIndex: Long,
             commitmentInput: Transactions.InputInfo,
             localPerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
@@ -913,7 +914,7 @@ data class Commitments(
             val localRevocationPubkey = remoteParams.revocationBasepoint.deriveRevocation(localPerCommitmentPoint)
             val localPaymentBasepoint = channelKeys.paymentBasepoint
             val outputs = makeCommitTxOutputs(
-                channelKeys.fundingPubKey,
+                channelKeys.fundingPubKey(fundingTxIndex),
                 remoteParams.fundingPubKey,
                 localParams.isInitiator,
                 localParams.dustLimit,
@@ -932,8 +933,11 @@ data class Commitments(
 
         fun makeRemoteTxs(
             channelKeys: KeyManager.ChannelKeys,
-            commitTxNumber: Long, localParams: LocalParams,
-            remoteParams: RemoteParams, commitmentInput: Transactions.InputInfo,
+            commitTxNumber: Long,
+            localParams: LocalParams,
+            remoteParams: RemoteParams,
+            fundingTxIndex: Long,
+            commitmentInput: Transactions.InputInfo,
             remotePerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
@@ -944,7 +948,7 @@ data class Commitments(
             val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveRevocation(remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
                 remoteParams.fundingPubKey,
-                channelKeys.fundingPubKey,
+                channelKeys.fundingPubKey(fundingTxIndex),
                 !localParams.isInitiator,
                 remoteParams.dustLimit,
                 remoteRevocationPubkey,

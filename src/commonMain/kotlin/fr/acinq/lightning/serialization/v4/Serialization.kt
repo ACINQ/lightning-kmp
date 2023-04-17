@@ -238,7 +238,7 @@ object Serialization {
         is SharedFundingInput.Multisig2of2 -> {
             write(0x01)
             writeInputInfo(i.info)
-            writePublicKey(i.localFundingPubkey)
+            writeNumber(i.fundingTxIndex)
             writePublicKey(i.remoteFundingPubkey)
         }
     }

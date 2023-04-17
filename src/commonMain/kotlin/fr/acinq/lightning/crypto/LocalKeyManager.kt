@@ -30,10 +30,10 @@ import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
  *   (*) The initial funding tx is computed differently for historical reasons.
  *
  *  others channel keys (payment, revocation, htlc, etc.):
- *       50' / 1' / <channelKeyPath> / <1-5> / <index>
+ *       50' / 1' / <channelKeyPath> / <1'-5'> / <index>
  *
  *  bip-84 on-chain keys:
- *       84' / 0' / <account> / <0 or 1 > / <index>
+ *       84' / 0' / <account'> / <0 or 1 > / <index>
  *
  * ```
  *
@@ -68,13 +68,17 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
     }
 
     override fun channelKeys(fundingKeyPath: KeyPath): KeyManager.ChannelKeys {
-        // deterministic mode: use the funding pubkey to compute the channel key path
-        val fundingPrivateKey = privateKey(channelKeyBasePath I fundingKeyPath I hardened(0))
-        // we use the recovery process even in the normal case, which guarantees it works when we need it
-        val recoveredChannelKeys = recoverChannelKeys(fundingPrivateKey.publicKey())
+        // We use a different funding key for each splice, with a derivation based on the fundingTxIndex,
+        // but the initial funding tx (with index 0) is computed differently for backwards compatibility.
+        val initialFundingTx = privateKey(channelKeyBasePath I fundingKeyPath I hardened(0))
+        val masterFundingPrivateKey = derivePrivateKey(master, channelKeyBasePath I fundingKeyPath I hardened(6))
+        // We use the funding pubkey to compute the channel key path, and we use the recovery process even
+        // in the normal case, which guarantees it works when we need it
+        val recoveredChannelKeys = recoverChannelKeys(initialFundingTx.publicKey())
         return KeyManager.ChannelKeys(
             fundingKeyPath,
-            fundingPrivateKey = fundingPrivateKey,
+            initialFundingPrivateKey = initialFundingTx,
+            masterFundingPrivateKey = masterFundingPrivateKey,
             paymentKey = recoveredChannelKeys.paymentKey,
             delayedPaymentKey = recoveredChannelKeys.delayedPaymentKey,
             htlcKey = recoveredChannelKeys.htlcKey,

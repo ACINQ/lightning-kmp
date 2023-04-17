@@ -31,7 +31,7 @@ data class WaitForFundingConfirmed(
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> when (latestFundingTx.sharedTx) {
-                is PartiallySignedSharedTransaction -> when (val fullySignedTx = latestFundingTx.sharedTx.addRemoteSigs(latestFundingTx.fundingParams, cmd.message)) {
+                is PartiallySignedSharedTransaction -> when (val fullySignedTx = latestFundingTx.sharedTx.addRemoteSigs(channelKeys(), latestFundingTx.fundingParams, cmd.message)) {
                     null -> {
                         logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                         // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
@@ -54,7 +54,7 @@ data class WaitForFundingConfirmed(
                 }
                 is FullySignedSharedTransaction -> when (rbfStatus) {
                     is RbfStatus.WaitingForSigs -> {
-                        when (val action = rbfStatus.session.receiveTxSigs(cmd.message, currentBlockHeight.toLong())) {
+                        when (val action = rbfStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight.toLong())) {
                             is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                 logger.warning { "rbf attempt failed: ${action.reason.message}" }
                                 Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))

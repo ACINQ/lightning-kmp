@@ -21,7 +21,7 @@ data class WaitForChannelReady(
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> when (commitments.latest.localFundingStatus) {
                 is LocalFundingStatus.UnconfirmedFundingTx -> when (commitments.latest.localFundingStatus.sharedTx) {
-                    is PartiallySignedSharedTransaction -> when (val fullySignedTx = commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
+                    is PartiallySignedSharedTransaction -> when (val fullySignedTx = commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(channelKeys(), commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
                         null -> {
                             logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                             // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.

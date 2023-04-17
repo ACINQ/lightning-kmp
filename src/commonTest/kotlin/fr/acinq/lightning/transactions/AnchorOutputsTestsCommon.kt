@@ -30,6 +30,7 @@ import kotlin.test.assertTrue
 
 class AnchorOutputsTestsCommon {
     val local_funding_privkey = PrivateKey.fromHex("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
+    val local_master_funding_privkey = DeterministicWallet.generate(randomBytes32()) // unused
     val local_funding_pubkey = PublicKey.fromHex(" 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb")
     val remote_funding_pubkey = PublicKey.fromHex("030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c1")
     val local_privkey = PrivateKey.fromHex("bb13b121cdc357cd2e608b0aea294afca36e2b34cf958e2e6451a2f27469449101")
@@ -86,7 +87,7 @@ class AnchorOutputsTestsCommon {
 
     // high level tests which calls Commitments methods to generate transactions
     private fun runHighLevelTest(testCase: TestCase) {
-        val channelKeys = ChannelKeys(KeyPath.empty, local_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32())
+        val channelKeys = ChannelKeys(KeyPath.empty, local_funding_privkey, local_master_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32())
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
             KeyPath.empty,
@@ -138,6 +139,7 @@ class AnchorOutputsTestsCommon {
         val (commitTx, htlcTxs) = Commitments.makeLocalTxs(
             channelKeys,
             42, localParams, remoteParams,
+            fundingTxIndex = 0,
             Transactions.InputInfo(OutPoint(funding_tx, 0), funding_tx.txOut[0], Scripts.multiSig2of2(local_funding_pubkey, remote_funding_pubkey)),
             local_per_commitment_point,
             spec

@@ -39,17 +39,20 @@ interface KeyManager {
     /**
      * Secrets and keys for a given channel.
      * How these keys are generated depends on the [KeyManager] implementation.
+     * The initial funding key is treated differently for backwards compatibility.
      */
     data class ChannelKeys(
         val fundingKeyPath: KeyPath,
-        val fundingPrivateKey: PrivateKey,
+        private val initialFundingPrivateKey: PrivateKey,
+        private val masterFundingPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         val paymentKey: PrivateKey,
         val delayedPaymentKey: PrivateKey,
         val htlcKey: PrivateKey,
         val revocationKey: PrivateKey,
         val shaSeed: ByteVector32
     ) {
-        val fundingPubKey: PublicKey = fundingPrivateKey.publicKey()
+        fun fundingPrivateKey(index: Long): PrivateKey = if (index == 0L) initialFundingPrivateKey else DeterministicWallet.derivePrivateKey(masterFundingPrivateKey, index).privateKey
+        fun fundingPubKey(index: Long): PublicKey = if (index == 0L) initialFundingPrivateKey.publicKey() else fundingPrivateKey(index).publicKey()
         val htlcBasepoint: PublicKey = htlcKey.publicKey()
         val paymentBasepoint: PublicKey = paymentKey.publicKey()
         val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
