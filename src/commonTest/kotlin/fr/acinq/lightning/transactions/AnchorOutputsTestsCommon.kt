@@ -102,7 +102,6 @@ class AnchorOutputsTestsCommon {
             0.msat,
             CltvExpiryDelta(144),
             1000,
-            remote_funding_pubkey,
             remote_revocation_basepoint,
             remote_payment_privkey.publicKey(),
             PrivateKey.fromHex("444444444444444444444444444444444444444444444444444444444444444401").publicKey(),
@@ -140,6 +139,7 @@ class AnchorOutputsTestsCommon {
             channelKeys,
             42, localParams, remoteParams,
             fundingTxIndex = 0,
+            remote_funding_pubkey,
             Transactions.InputInfo(OutPoint(funding_tx, 0), funding_tx.txOut[0], Scripts.multiSig2of2(local_funding_pubkey, remote_funding_pubkey)),
             local_per_commitment_point,
             spec

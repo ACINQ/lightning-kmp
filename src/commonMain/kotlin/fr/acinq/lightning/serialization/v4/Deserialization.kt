@@ -196,7 +196,7 @@ object Deserialization {
         localContribution = readNumber().sat,
         remoteContribution = readNumber().sat,
         sharedInput = readNullable { readSharedFundingInput() },
-        fundingPubkeyScript = readDelimitedByteArray().toByteVector(),
+        remoteFundingPubkey = readPublicKey(),
         localOutputs = readCollection { TxOut.read(readDelimitedByteArray()) }.toList(),
         lockTime = readNumber(),
         dustLimit = readNumber().sat,
@@ -352,7 +352,6 @@ object Deserialization {
             htlcMinimum = readNumber().msat,
             toSelfDelay = CltvExpiryDelta(readNumber().toInt()),
             maxAcceptedHtlcs = readNumber().toInt(),
-            fundingPubKey = readPublicKey(),
             revocationBasepoint = readPublicKey(),
             paymentBasepoint = readPublicKey(),
             delayedPaymentBasepoint = readPublicKey(),
@@ -379,6 +378,7 @@ object Deserialization {
 
     private fun Input.readCommitment(htlcs: Set<DirectedHtlc>): Commitment = Commitment(
         fundingTxIndex = readNumber(),
+        remoteFundingPubkey = readPublicKey(),
         localFundingStatus = when (val discriminator = read()) {
             0x00 -> LocalFundingStatus.UnconfirmedFundingTx(
                 sharedTx = readSignedSharedTransaction(),
