@@ -377,7 +377,6 @@ data class RemoteParams(
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    val fundingPubKey: PublicKey,
     val revocationBasepoint: PublicKey,
     val paymentBasepoint: PublicKey,
     val delayedPaymentBasepoint: PublicKey,

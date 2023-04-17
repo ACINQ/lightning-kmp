@@ -73,7 +73,6 @@ data class WaitForOpenChannel(
                                     htlcMinimum = open.htlcMinimum,
                                     toSelfDelay = open.toSelfDelay,
                                     maxAcceptedHtlcs = open.maxAcceptedHtlcs,
-                                    fundingPubKey = open.fundingPubkey,
                                     revocationBasepoint = open.revocationBasepoint,
                                     paymentBasepoint = open.paymentBasepoint,
                                     delayedPaymentBasepoint = open.delayedPaymentBasepoint,
@@ -81,17 +80,16 @@ data class WaitForOpenChannel(
                                     features = Features(remoteInit.features)
                                 )
                                 val channelId = computeChannelId(open, accept)
-                                val localFundingPubkey = channelKeys.fundingPubKey(0)
-                                val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
+                                val remoteFundingPubkey = open.fundingPubkey
                                 val dustLimit = open.dustLimit.max(localParams.dustLimit)
-                                val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, dustLimit, open.fundingFeerate)
-                                when (val fundingContributions = FundingContributions.create(fundingParams, wallet.confirmedUtxos)) {
+                                val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, remoteFundingPubkey, open.lockTime, dustLimit, open.fundingFeerate)
+                                when (val fundingContributions = FundingContributions.create(channelKeys, fundingParams, wallet.confirmedUtxos)) {
                                     is Either.Left -> {
                                         logger.error { "could not fund channel: ${fundingContributions.value}" }
                                         Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                     }
                                     is Either.Right -> {
-                                        val interactiveTxSession = InteractiveTxSession(fundingParams, 0.msat, 0.msat, fundingContributions.value)
+                                        val interactiveTxSession = InteractiveTxSession(channelKeys, fundingParams, 0.msat, 0.msat, fundingContributions.value)
                                         val nextState = WaitForFundingCreated(
                                             localParams,
                                             remoteParams,

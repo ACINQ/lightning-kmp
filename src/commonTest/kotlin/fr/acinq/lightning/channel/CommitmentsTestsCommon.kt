@@ -486,7 +486,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             )
             val remoteParams = RemoteParams(
                 randomKey().publicKey(), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50,
-                randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(),
+                randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(),
                 Features.empty
             )
             val fundingAmount = (toLocal + toRemote).truncateToSatoshi()
@@ -512,6 +512,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 active = listOf(
                     Commitment(
                         fundingTxIndex = 0,
+                        remoteFundingPubkey = randomKey().publicKey(),
                         LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
@@ -531,7 +532,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 localNodeId, KeyPath("42"), 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
-                remoteNodeId, 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty
+                remoteNodeId, 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty
             )
             val fundingAmount = (toLocal + toRemote).truncateToSatoshi()
             val dummyFundingScript = Scripts.multiSig2of2(randomKey().publicKey(), randomKey().publicKey())
@@ -556,6 +557,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 active = listOf(
                     Commitment(
                         fundingTxIndex = 0,
+                        remoteFundingPubkey = randomKey().publicKey(),
                         LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),

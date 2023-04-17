@@ -358,14 +358,15 @@ data class Normal(
                                     isInitiator = false,
                                     localContribution = spliceAck.fundingContribution,
                                     remoteContribution = cmd.message.fundingContribution,
-                                    sharedInput = SharedFundingInput.Multisig2of2(commitments.params, parentCommitment),
-                                    fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
+                                    sharedInput = SharedFundingInput.Multisig2of2(parentCommitment),
+                                    remoteFundingPubkey = parentCommitment.remoteFundingPubkey, // TODO: same pubkey script as before
                                     localOutputs = emptyList(),
                                     lockTime = cmd.message.lockTime,
                                     dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
                                     targetFeerate = cmd.message.feerate
                                 )
                                 val session = InteractiveTxSession(
+                                    channelKeys(),
                                     fundingParams,
                                     previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                     previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
@@ -391,20 +392,21 @@ data class Normal(
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
                             val parentCommitment = commitments.active.first()
-                            val sharedInput = SharedFundingInput.Multisig2of2(commitments.params, parentCommitment)
+                            val sharedInput = SharedFundingInput.Multisig2of2(parentCommitment)
                             val fundingParams = InteractiveTxParams(
                                 channelId = channelId,
                                 isInitiator = true,
                                 localContribution = spliceStatus.spliceInit.fundingContribution,
                                 remoteContribution = cmd.message.fundingContribution,
                                 sharedInput = sharedInput,
-                                fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
+                                remoteFundingPubkey = parentCommitment.remoteFundingPubkey, // TODO: same pubkey script as before
                                 localOutputs = spliceStatus.command.spliceOutputs,
                                 lockTime = spliceStatus.spliceInit.lockTime,
                                 dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
                                 targetFeerate = spliceStatus.spliceInit.feerate
                             )
                             when (val fundingContributions = FundingContributions.create(
+                                channelKeys = channelKeys(),
                                 params = fundingParams,
                                 sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
                                 walletInputs = spliceStatus.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
@@ -419,6 +421,7 @@ data class Normal(
                                 is Either.Right -> {
                                     // The splice initiator always sends the first interactive-tx message.
                                     val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
+                                        channelKeys(),
                                         fundingParams,
                                         previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                         previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
