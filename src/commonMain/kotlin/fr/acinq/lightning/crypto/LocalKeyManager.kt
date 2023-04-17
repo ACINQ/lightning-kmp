@@ -8,6 +8,36 @@ import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.NodeParams.Chain
 import fr.acinq.lightning.channel.*
 
+/**
+ * An implementation of [KeyManager] that supports deterministic derivation for [KeyManager.ChannelKeys] based
+ * on the initial funding pubkey.
+ *
+ * Specifically, for channel keys there are two paths:
+ *   - `fundingKeyPath`: chosen at random using [newFundingKeyPath]
+ *   - `channelKeyPath`: computed from `fundingKeyPath` using [channelKeyPath]
+ *
+ * The resulting paths looks like so on mainnet:
+ * ```
+ *  node key:
+ *       50' / 0'
+ *
+ *  funding keys:
+ *   - initial funding tx (*):
+ *       50' / 1' / <fundingKeyPath> / <0' or 1'> / 0'
+ *   - splice funding txs (index > 0):
+ *       50' / 1' / <fundingKeyPath> / <0' or 1'> / 6' / <index>
+ *   (*) The initial funding tx is computed differently for historical reasons.
+ *
+ *  others channel keys (payment, revocation, htlc, etc.):
+ *       50' / 1' / <channelKeyPath> / <1-5> / <index>
+ *
+ *  bip-84 on-chain keys:
+ *       84' / 0' / <account> / <0 or 1 > / <index>
+ *
+ * ```
+ *
+ * @param seed seed from which the channel keys will be derived
+ */
 data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager {
 
     private val master = DeterministicWallet.generate(seed)
@@ -22,7 +52,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
 
     private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
 
-    private fun privateKey(keyPath: KeyPath): PrivateKey = derivePrivateKey(master, keyPath).privateKey
+    override fun privateKey(keyPath: KeyPath): PrivateKey = derivePrivateKey(master, keyPath).privateKey
 
     override fun newFundingKeyPath(isInitiator: Boolean): KeyPath {
         val last = hardened(if (isInitiator) 1 else 0)

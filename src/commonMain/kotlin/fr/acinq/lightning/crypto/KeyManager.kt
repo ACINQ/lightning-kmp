@@ -10,16 +10,13 @@ interface KeyManager {
     val nodeKeys: NodeKeys
 
     /**
-     *
+     * Picks a random funding key path for a new channel.
      * @param isInitiator true if we are the channel initiator
-     * @return a partial key path for a new funding public key. This key path will be extended:
-     *         - with a specific "chain" prefix
-     *         - with a specific "funding pubkey" suffix
      */
     fun newFundingKeyPath(isInitiator: Boolean): KeyPath
 
     /**
-     * generate channel-specific keys and secrets
+     * Generate channel-specific keys and secrets
      * @params fundingKeyPath funding public key BIP32 path
      * @return channel keys and secrets
      */
@@ -28,6 +25,12 @@ interface KeyManager {
     val finalOnChainWallet: Bip84OnChainKeys
 
     val swapInOnChainWallet: Bip84OnChainKeys
+
+    /**
+     * This method offers direct access to the master key derivation. It should only be used for some advanced usage
+     * like (LNURL-auth, data encryption.
+     */
+    fun privateKey(keyPath: KeyPath): PrivateKey
 
     /**
      * Keys used for the node. They are used to generate the node id, to secure communication with other peers, and
