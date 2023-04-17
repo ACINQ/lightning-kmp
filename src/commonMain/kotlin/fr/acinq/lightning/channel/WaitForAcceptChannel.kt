@@ -50,7 +50,7 @@ data class WaitForAcceptChannel(
                             features = Features(init.remoteInit.features)
                         )
                         val channelId = computeChannelId(lastSent, accept)
-                        val localFundingPubkey = keyManager.channelKeys(init.localParams.fundingKeyPath).fundingPubKey
+                        val localFundingPubkey = keyManager.channelKeys(init.localParams.fundingKeyPath).fundingPubKey(0)
                         val fundingPubkeyScript = ByteVector(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey))))
                         val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
                         val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, fundingPubkeyScript, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)

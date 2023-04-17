@@ -8,7 +8,6 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
-import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
@@ -359,7 +358,7 @@ data class Normal(
                                     isInitiator = false,
                                     localContribution = spliceAck.fundingContribution,
                                     remoteContribution = cmd.message.fundingContribution,
-                                    sharedInput = SharedFundingInput.Multisig2of2(channelKeys(), commitments.params, parentCommitment),
+                                    sharedInput = SharedFundingInput.Multisig2of2(commitments.params, parentCommitment),
                                     fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
                                     localOutputs = emptyList(),
                                     lockTime = cmd.message.lockTime,
@@ -392,7 +391,7 @@ data class Normal(
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
                             val parentCommitment = commitments.active.first()
-                            val sharedInput = SharedFundingInput.Multisig2of2(channelKeys(), commitments.params, parentCommitment)
+                            val sharedInput = SharedFundingInput.Multisig2of2(commitments.params, parentCommitment)
                             val fundingParams = InteractiveTxParams(
                                 channelId = channelId,
                                 isInitiator = true,
@@ -516,7 +515,7 @@ data class Normal(
                     }
                     is TxSignatures -> when (spliceStatus) {
                         is SpliceStatus.WaitingForSigs -> {
-                            when (val action = spliceStatus.session.receiveTxSigs(cmd.message, currentBlockHeight.toLong())) {
+                            when (val action = spliceStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight.toLong())) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                     logger.warning { "splice attempt failed: ${action.reason.message}" }
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
@@ -527,7 +526,7 @@ data class Normal(
                         }
                         else -> when (commitments.latest.localFundingStatus) {
                             is LocalFundingStatus.UnconfirmedFundingTx -> when (commitments.latest.localFundingStatus.sharedTx) {
-                                is PartiallySignedSharedTransaction -> when (val fullySignedTx = commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
+                                is PartiallySignedSharedTransaction -> when (val fullySignedTx = commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(channelKeys(), commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
                                     null -> {
                                         logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                                         logger.warning { "tx=${commitments.latest.localFundingStatus.sharedTx}" }

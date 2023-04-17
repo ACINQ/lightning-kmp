@@ -23,11 +23,11 @@ sealed class SharedFundingInput {
     abstract val weight: Int
     abstract fun sign(channelKeys: KeyManager.ChannelKeys, tx: Transaction): ByteVector64
 
-    data class Multisig2of2(override val info: Transactions.InputInfo, val localFundingPubkey: PublicKey, val remoteFundingPubkey: PublicKey) : SharedFundingInput() {
+    data class Multisig2of2(override val info: Transactions.InputInfo, val fundingTxIndex: Long, val remoteFundingPubkey: PublicKey) : SharedFundingInput() {
 
-        constructor(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, commitment: Commitment) : this(
+        constructor(params: ChannelParams, commitment: Commitment) : this(
             info = commitment.commitInput,
-            localFundingPubkey = channelKeys.fundingPubKey,
+            fundingTxIndex = commitment.fundingTxIndex,
             remoteFundingPubkey = params.remoteParams.fundingPubKey
         )
 
@@ -35,7 +35,7 @@ sealed class SharedFundingInput {
         override val weight: Int = Multisig2of2.weight
 
         override fun sign(channelKeys: KeyManager.ChannelKeys, tx: Transaction): ByteVector64 {
-            val fundingKey = channelKeys.fundingPrivateKey
+            val fundingKey = channelKeys.fundingKey(fundingTxIndex)
             return Transactions.sign(Transactions.TransactionWithInputInfo.SpliceTx(info, tx), fundingKey)
         }
 
@@ -154,7 +154,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
             val weight = computeWeightPaid(
                 isInitiator,
-                SharedFundingInput.Multisig2of2(commitment.commitInput, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey),
+                SharedFundingInput.Multisig2of2(commitment.commitInput, 0, Transactions.PlaceHolderPubKey),
                 commitment.commitInput.txOut.publicKeyScript,
                 walletInputs,
                 localOutputs
@@ -324,7 +324,7 @@ data class PartiallySignedSharedTransaction(override val tx: SharedTransaction, 
     override val txId: ByteVector32 = localSigs.txId
     override val signedTx = null
 
-    fun addRemoteSigs(fundingParams: InteractiveTxParams, remoteSigs: TxSignatures): FullySignedSharedTransaction? {
+    fun addRemoteSigs(channelKeys: KeyManager.ChannelKeys, fundingParams: InteractiveTxParams, remoteSigs: TxSignatures): FullySignedSharedTransaction? {
         if (localSigs.witnesses.size != tx.localInputs.size) {
             return null
         }
@@ -339,7 +339,7 @@ data class PartiallySignedSharedTransaction(override val tx: SharedTransaction, 
                 is SharedFundingInput.Multisig2of2 -> Scripts.witness2of2(
                     localSigs.previousFundingTxSig ?: return null,
                     remoteSigs.previousFundingTxSig ?: return null,
-                    it.localFundingPubkey,
+                    channelKeys.fundingPubKey(it.fundingTxIndex),
                     it.remoteFundingPubkey,
                 )
             }
@@ -691,8 +691,8 @@ data class InteractiveTxSigningSession(
     fun receiveCommitSig(channelKeys: KeyManager.ChannelKeys, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
         return when (localCommit) {
             is Either.Left -> {
-                val fundingPubKey = channelKeys.fundingPubKey
-                val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, channelKeys.fundingPrivateKey)
+                val fundingPubKey = channelKeys.fundingPubKey(fundingTxIndex)
+                val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, channelKeys.fundingKey(fundingTxIndex))
                 val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingPubKey, channelParams.remoteParams.fundingPubKey, localSigOfLocalTx, remoteCommitSig.signature)
                 when (Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
@@ -713,10 +713,10 @@ data class InteractiveTxSigningSession(
         }
     }
 
-    fun receiveTxSigs(remoteTxSigs: TxSignatures, currentBlockHeight: Long): InteractiveTxSigningSessionAction {
+    fun receiveTxSigs(channelKeys: KeyManager.ChannelKeys, remoteTxSigs: TxSignatures, currentBlockHeight: Long): InteractiveTxSigningSessionAction {
         return when (localCommit) {
             is Either.Left -> InteractiveTxSigningSessionAction.AbortFundingAttempt(UnexpectedFundingSignatures(fundingParams.channelId))
-            is Either.Right -> when (val fullySignedTx = fundingTx.addRemoteSigs(fundingParams, remoteTxSigs)) {
+            is Either.Right -> when (val fullySignedTx = fundingTx.addRemoteSigs(channelKeys, fundingParams, remoteTxSigs)) {
                 null -> InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidFundingSignature(fundingParams.channelId, fundingTx.txId))
                 else -> {
                     val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fullySignedTx, fundingParams, currentBlockHeight)
@@ -755,10 +755,10 @@ data class InteractiveTxSigningSession(
                 toRemote = sharedTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount,
                 commitmentIndex = commitmentIndex,
                 commitTxFeerate,
-                fundingTxHash = unsignedTx.hash, fundingTxOutputIndex = sharedOutputIndex,
+                fundingTxIndex = fundingTxIndex, fundingTxHash = unsignedTx.hash, fundingTxOutputIndex = sharedOutputIndex,
                 remotePerCommitmentPoint
             ).flatMap { firstCommitTx ->
-                val localSigOfRemoteTx = Transactions.sign(firstCommitTx.remoteCommitTx, channelKeys.fundingPrivateKey)
+                val localSigOfRemoteTx = Transactions.sign(firstCommitTx.remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
                 val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf())
                 when (val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams)) {
                     null -> Either.Left(ChannelFundingError(channelParams.channelId))

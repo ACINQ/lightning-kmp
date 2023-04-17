@@ -184,7 +184,7 @@ object Deserialization {
     private fun Input.readSharedFundingInput(): SharedFundingInput = when (val discriminator = read()) {
         0x01 -> SharedFundingInput.Multisig2of2(
             info = readInputInfo(),
-            localFundingPubkey = readPublicKey(),
+            fundingTxIndex = readNumber(),
             remoteFundingPubkey = readPublicKey(),
         )
         else -> error("unknown discriminator $discriminator for class ${SharedFundingInput::class}")

@@ -57,7 +57,7 @@ data class WaitForFundingSigned(
                 }
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> {
-                when (val action = signingSession.receiveTxSigs(cmd.message, currentBlockHeight.toLong())) {
+                when (val action = signingSession.receiveTxSigs(channelParams.localParams.channelKeys(keyManager), cmd.message, currentBlockHeight.toLong())) {
                     is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
                     InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingSigned, listOf())
                     is InteractiveTxSigningSessionAction.SendTxSigs -> sendTxSigs(action, cmd.message.channelData)

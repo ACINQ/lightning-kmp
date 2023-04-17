@@ -86,7 +86,7 @@ class AnchorOutputsTestsCommon {
 
     // high level tests which calls Commitments methods to generate transactions
     private fun runHighLevelTest(testCase: TestCase) {
-        val channelKeys = ChannelKeys(KeyPath.empty, local_funding_privkey, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32())
+        val channelKeys = ChannelKeys(KeyPath.empty, { local_funding_privkey }, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32(),)
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
             KeyPath.empty,
@@ -138,6 +138,7 @@ class AnchorOutputsTestsCommon {
         val (commitTx, htlcTxs) = Commitments.makeLocalTxs(
             channelKeys,
             42, localParams, remoteParams,
+            fundingTxIndex = 0,
             Transactions.InputInfo(OutPoint(funding_tx, 0), funding_tx.txOut[0], Scripts.multiSig2of2(local_funding_pubkey, remote_funding_pubkey)),
             local_per_commitment_point,
             spec

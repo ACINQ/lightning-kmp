@@ -38,7 +38,7 @@ object WaitForInit : ChannelState() {
                     toSelfDelay = cmd.localParams.toSelfDelay,
                     maxAcceptedHtlcs = cmd.localParams.maxAcceptedHtlcs,
                     lockTime = currentBlockHeight.toLong(),
-                    fundingPubkey = channelKeys.fundingPubKey,
+                    fundingPubkey = channelKeys.fundingPubKey(0),
                     revocationBasepoint = channelKeys.revocationBasepoint,
                     paymentBasepoint = channelKeys.paymentBasepoint,
                     delayedPaymentBasepoint = channelKeys.delayedPaymentBasepoint,
