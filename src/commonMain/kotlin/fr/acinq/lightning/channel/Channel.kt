@@ -140,7 +140,7 @@ sealed class ChannelAction {
             data class ViaSpliceOut(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
             data class ViaClose(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: Type) : StoreOutgoingPayment() { enum class Type { Mutual, Local, Remote, Revoked, Other; } }
         }
-        data class SetConfirmationStatus(val txId: ByteVector32, val status: ConfirmationStatus) : Storage() { enum class ConfirmationStatus { NOT_LOCKED, LOCKED } }
+        data class SetConfirmed(val txId: ByteVector32) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -457,7 +457,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                 val actions = buildList {
                     if (!commitments.all.find { it.fundingTxId == commitment.fundingTxId }!!.run { isLocked() } && commitment.run { isLocked() }) {
-                        add(ChannelAction.Storage.SetConfirmationStatus(commitment.fundingTxId, ChannelAction.Storage.SetConfirmationStatus.ConfirmationStatus.LOCKED))
+                        add(ChannelAction.Storage.SetConfirmed(commitment.fundingTxId))
                     }
                     add(ChannelAction.Blockchain.SendWatch(watchSpent))
                 }

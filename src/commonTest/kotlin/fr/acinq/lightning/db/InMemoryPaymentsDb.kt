@@ -14,7 +14,7 @@ class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, IncomingPayment>()
     private val outgoing = mutableMapOf<UUID, LightningOutgoingPayment>()
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
-    override suspend fun setConfirmationStatus(txId: ByteVector32, status: PaymentsDb.ConfirmationStatus) {}
+    override suspend fun setConfirmed(txId: ByteVector32) {}
 
     override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long) {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
@@ -24,7 +24,7 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: Set<IncomingPayment.ReceivedWith>, receivedAt: Long) {
+    override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
             else -> incoming[paymentHash] = run {
@@ -37,7 +37,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: Set<IncomingPayment.ReceivedWith>, createdAt: Long, receivedAt: Long) {
+    override suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: List<IncomingPayment.ReceivedWith>, createdAt: Long, receivedAt: Long) {
         val paymentHash = preimage.sha256()
         incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Received(receivedWith, receivedAt), createdAt)
     }

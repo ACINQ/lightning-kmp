@@ -11,7 +11,6 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
-import fr.acinq.lightning.db.PaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.router.ChannelHop
@@ -145,7 +144,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         assertEquals(result.incomingPayment.received, result.received)
         assertEquals(defaultAmount, result.received.amount)
-        assertEquals(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = defaultAmount, channelId = channelId, htlcId = 12)), result.received.receivedWith)
+        assertEquals(listOf(IncomingPayment.ReceivedWith.LightningPayment(amount = defaultAmount, channelId = channelId, htlcId = 12)), result.received.receivedWith)
 
         checkDbPayment(result.incomingPayment, paymentHandler.db)
     }
@@ -189,7 +188,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 assertEquals(amountOrigin.serviceFee, part.serviceFee)
                 assertEquals(amountOrigin.miningFee, part.miningFee)
                 assertEquals(channelId, part.channelId)
-                assertEquals(PaymentsDb.ConfirmationStatus.NOT_LOCKED, part.status)
+                assertNull(part.confirmedAt)
             }
             assertEquals(amountOrigin.amount, dbPayment.received?.amount)
             assertEquals(amountOrigin.serviceFee, dbPayment.received?.fees)
@@ -443,7 +442,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             assertEquals(totalAmount, result.received.amount)
-            assertEquals(expectedReceivedWith.toSet(), result.received.receivedWith)
+            assertEquals(expectedReceivedWith, result.received.receivedWith)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
@@ -481,7 +480,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             assertEquals(totalAmount, result.received.amount)
-            assertEquals(expectedReceivedWith.toSet(), result.received.receivedWith)
+            assertEquals(expectedReceivedWith, result.received.receivedWith)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
@@ -1188,7 +1187,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             timestampSeconds = 100
         )
         paymentHandler.db.receivePayment(
-            paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), status = PaymentsDb.ConfirmationStatus.NOT_LOCKED)),
+            paidInvoice.paymentHash, receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null)),
             receivedAt = 101
         ) // simulate incoming payment being paid before it expired
 

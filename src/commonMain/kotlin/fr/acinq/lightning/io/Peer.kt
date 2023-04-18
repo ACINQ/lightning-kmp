@@ -511,7 +511,8 @@ class Peer(
                                         address = action.address,
                                         miningFees = action.miningFees,
                                         txId = action.txId,
-                                        createdAt = currentTimestampMillis()
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null
                                     )
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
                                     ChannelCloseOutgoingPayment(
@@ -537,15 +538,9 @@ class Peer(
                         _eventsFlow.emit(ChannelClosing(channelId))
                     }
 
-                    action is ChannelAction.Storage.SetConfirmationStatus -> {
-                        logger.info { "storing txid status $action" }
-                        db.payments.setConfirmationStatus(
-                            txId = action.txId,
-                            status = when (action.status) {
-                                ChannelAction.Storage.SetConfirmationStatus.ConfirmationStatus.NOT_LOCKED -> PaymentsDb.ConfirmationStatus.NOT_LOCKED
-                                ChannelAction.Storage.SetConfirmationStatus.ConfirmationStatus.LOCKED -> PaymentsDb.ConfirmationStatus.LOCKED
-                            }
-                        )
+                    action is ChannelAction.Storage.SetConfirmed -> {
+                        logger.info { "setting status confirmed for txid=${action.txId}" }
+                        db.payments.setConfirmed(action.txId)
                     }
 
                     action is ChannelAction.Storage.GetHtlcInfos -> {

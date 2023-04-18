@@ -9,7 +9,6 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
-import fr.acinq.lightning.db.PaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
@@ -108,15 +107,14 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     suspend fun process(channelId: ByteVector32, action: ChannelAction.Storage.StoreIncomingPayment) {
         when (action) {
             is ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel -> {
-                val receivedWith = setOf(
+                val receivedWith = listOf(
                     IncomingPayment.ReceivedWith.NewChannel(
-                        id = UUID.randomUUID(),
                         amount = action.amount,
                         serviceFee = action.serviceFee,
                         miningFee = action.miningFee,
                         channelId = channelId,
                         txId = action.txId,
-                        status = PaymentsDb.ConfirmationStatus.NOT_LOCKED
+                        confirmedAt = null
                     )
                 )
                 when (action.origin) {
@@ -133,15 +131,14 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 }
             }
             is ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn -> {
-                val receivedWith = setOf(
+                val receivedWith = listOf(
                     IncomingPayment.ReceivedWith.SpliceIn(
-                        id = UUID.randomUUID(),
                         amount = action.amount,
                         serviceFee = action.serviceFee,
                         miningFee = action.miningFee,
                         channelId = channelId,
                         txId = action.txId,
-                        status = PaymentsDb.ConfirmationStatus.NOT_LOCKED
+                        confirmedAt = null
                     )
                 )
                 when (action.origin) {
@@ -329,7 +326,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             }.unzip()
                             pending.remove(paymentPart.paymentHash)
 
-                            val received = IncomingPayment.Received(receivedWith = receivedWith.filterNotNull().toSet())
+                            val received = IncomingPayment.Received(receivedWith = receivedWith.filterNotNull())
 
                             db.receivePayment(paymentPart.paymentHash, received.receivedWith)
 

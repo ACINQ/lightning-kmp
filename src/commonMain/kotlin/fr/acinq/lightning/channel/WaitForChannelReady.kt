@@ -82,7 +82,7 @@ data class WaitForChannelReady(
                 )
                 val actions = listOf(
                     ChannelAction.Storage.StoreState(nextState),
-                    ChannelAction.Storage.SetConfirmationStatus(commitments.latest.commitInput.outPoint.txid, ChannelAction.Storage.SetConfirmationStatus.ConfirmationStatus.LOCKED),
+                    ChannelAction.Storage.SetConfirmed(commitments.latest.commitInput.outPoint.txid),
                     ChannelAction.EmitEvent(ChannelEvents.Confirmed(nextState)),
                 )
                 Pair(nextState, actions)
