@@ -64,8 +64,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         verifyCommits(alice2.state.signingSession, bob3.state.signingSession, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount, TestConstants.alicePushAmount)
     }
 
@@ -89,8 +89,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         verifyCommits(
             alice2.state.signingSession,
             bob3.state.signingSession,
@@ -120,8 +120,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         verifyCommits(alice2.state.signingSession, bob3.state.signingSession, balanceAlice = 10_000_000.msat, balanceBob = 1_500_000_000.msat)
     }
 
@@ -145,8 +145,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
         verifyCommits(alice2.state.signingSession, bob3.state.signingSession, TestConstants.aliceFundingAmount.toMilliSatoshi(), TestConstants.bobFundingAmount.toMilliSatoshi())
     }
 

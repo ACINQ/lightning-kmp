@@ -36,7 +36,8 @@ data class WaitForOpenChannel(
                         val open = cmd.message
                         when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open)) {
                             is Either.Right -> {
-                                val (channelType, channelFeatures) = res.value
+                                val channelType = res.value
+                                val channelFeatures = ChannelFeatures(channelType, localFeatures = localParams.features, remoteFeatures = remoteInit.features)
                                 val minimumDepth = if (staticParams.useZeroConf) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                                 val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
                                 val accept = AcceptDualFundedChannel(

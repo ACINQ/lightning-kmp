@@ -12,9 +12,28 @@ import fr.acinq.secp256k1.Hex
  */
 data class ChannelFeatures(val features: Set<Feature>) {
 
+    /**
+     * Main constructor, to be used when a new channel is created. Features from the channel type are included, but
+     * we also add other permanent features from the init messages.
+     */
+    constructor(channelType: ChannelType, localFeatures: Features, remoteFeatures: Features) : this(
+        buildSet {
+            addAll(channelType.features)
+            addAll(permanentChannelFeatures.filter { Features.canUseFeature(localFeatures, remoteFeatures, it) })
+        }
+    )
+
     fun hasFeature(feature: Feature): Boolean = features.contains(feature)
 
     override fun toString(): String = features.joinToString(",")
+
+    companion object {
+        /**
+         * In addition to channel types features, the following features will be added to the permanent channel features if they
+         * are supported by both peers.
+         */
+        private val permanentChannelFeatures = setOf(Feature.DualFunding)
+    }
 
 }
 

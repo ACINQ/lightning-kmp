@@ -30,7 +30,8 @@ data class WaitForAcceptChannel(
                 val accept = cmd.message
                 when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, init, lastSent, accept)) {
                     is Either.Right -> {
-                        val channelFeatures = res.value
+                        val channelType = res.value
+                        val channelFeatures = ChannelFeatures(channelType, localFeatures = init.localParams.features, remoteFeatures = init.remoteInit.features)
                         val remoteParams = RemoteParams(
                             nodeId = staticParams.remoteNodeId,
                             dustLimit = accept.dustLimit,
