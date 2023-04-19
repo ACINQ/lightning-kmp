@@ -192,7 +192,7 @@ data class Normal(
                                 is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
                             }
                         }
-                        commitments.latest.localFundingStatus.signedTx == null && cmd.message.batchSize == 1 -> {
+                        commitments.params.channelFeatures.hasFeature(Feature.DualFunding) && commitments.latest.localFundingStatus.signedTx == null && cmd.message.batchSize == 1 -> {
                             // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig that we receive before that should be ignored,
                             // it's either a retransmission of a commit_sig we've already received or a bug that will eventually lead to a force-close anyway.
                             logger.info { "ignoring commit_sig, we're still waiting for tx_signatures" }
