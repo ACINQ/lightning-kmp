@@ -37,7 +37,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(add))
         assertIs<LNChannel<ShuttingDown>>(bob1)
         assertTrue(actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) })
-        assertEquals(bob1.commitments.params.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(bob1.commitments.params.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
     }
 
     @Test
@@ -47,7 +47,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(add))
         assertIs<LNChannel<ShuttingDown>>(bob1)
         assertTrue(actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) })
-        assertEquals(bob1.commitments.params.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
+        assertEquals(bob1.commitments.params.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
     }
 
     @Test

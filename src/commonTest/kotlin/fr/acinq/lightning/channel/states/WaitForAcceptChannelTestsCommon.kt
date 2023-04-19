@@ -25,7 +25,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val txAddInput = actions1.findOutgoingMessage<TxAddInput>()
         assertNotEquals(txAddInput.channelId, accept.temporaryChannelId)
         assertEquals(alice1.channelId, txAddInput.channelId)
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
     }
 
     @Test
@@ -36,7 +36,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         assertEquals(ChannelEvents.Creating(alice1.state), actions1.find<ChannelAction.EmitEvent>().event)
     }
 
@@ -50,7 +50,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(alice1.state), actions1.find<ChannelAction.EmitEvent>().event)
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
     }
 
     @Test

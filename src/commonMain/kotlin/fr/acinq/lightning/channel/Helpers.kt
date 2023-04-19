@@ -52,7 +52,7 @@ object Helpers {
     }
 
     /** Called by the non-initiator. */
-    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel): Either<ChannelException, Pair<ChannelType, ChannelFeatures>> {
+    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel): Either<ChannelException, ChannelType> {
         // NB: we only accept channels from peers who support explicit channel type negotiation.
         val channelType = open.channelType ?: return Either.Left(MissingChannelType(open.temporaryChannelId))
         if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve).contains(channelType)) {
@@ -97,13 +97,11 @@ object Helpers {
             return Either.Left(FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw.CommitmentFeerate, open.commitmentFeerate))
         }
 
-        val channelFeatures = ChannelFeatures(channelType.features)
-
-        return Either.Right(channelType to channelFeatures)
+        return Either.Right(channelType)
     }
 
     /** Called by the initiator. */
-    fun validateParamsInitiator(nodeParams: NodeParams, init: ChannelCommand.InitInitiator, open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): Either<ChannelException, ChannelFeatures> {
+    fun validateParamsInitiator(nodeParams: NodeParams, init: ChannelCommand.InitInitiator, open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): Either<ChannelException, ChannelType> {
         require(open.channelType != null) { "we should have sent a channel type in open_channel" }
         if (accept.channelType == null) {
             // We only open channels to peers who support explicit channel type negotiation.
@@ -138,9 +136,7 @@ object Helpers {
             return Either.Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks))
         }
 
-        val channelFeatures = ChannelFeatures(init.channelType.features)
-
-        return Either.Right(channelFeatures)
+        return Either.Right(init.channelType)
     }
 
     /**
