@@ -179,15 +179,19 @@ interface HasEncryptedChannelData : HasChannelId {
 
 interface ChannelMessage
 
-data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
+data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
     val networks = tlvs.get<InitTlv.Networks>()?.chainHashes ?: listOf()
+
+    constructor(features: Features, chainHashs: List<ByteVector32>) : this(features, TlvStream(InitTlv.Networks(chainHashs)))
 
     override val type: Long get() = Init.type
 
     override fun write(out: Output) {
         LightningCodecs.writeU16(0, out)
-        LightningCodecs.writeU16(features.size(), out)
-        LightningCodecs.writeBytes(features, out)
+        features.toByteArray().let {
+            LightningCodecs.writeU16(it.size, out)
+            LightningCodecs.writeBytes(it, out)
+        }
         val tlvReaders = HashMap<Long, TlvValueReader<InitTlv>>()
         @Suppress("UNCHECKED_CAST")
         tlvReaders[InitTlv.Networks.tag] = InitTlv.Networks.Companion as TlvValueReader<InitTlv>
@@ -207,7 +211,7 @@ data class Init(val features: ByteVector, val tlvs: TlvStream<InitTlv> = TlvStre
             val localFeatures = LightningCodecs.bytes(input, lflen)
             val len = max(gflen, lflen)
             // merge features together
-            val features = ByteVector(globalFeatures.leftPaddedCopyOf(len).or(localFeatures.leftPaddedCopyOf(len)))
+            val features = Features(ByteVector(globalFeatures.leftPaddedCopyOf(len).or(localFeatures.leftPaddedCopyOf(len))))
             val tlvReaders = HashMap<Long, TlvValueReader<InitTlv>>()
             @Suppress("UNCHECKED_CAST")
             tlvReaders[InitTlv.Networks.tag] = InitTlv.Networks.Companion as TlvValueReader<InitTlv>

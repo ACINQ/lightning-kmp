@@ -339,8 +339,8 @@ class SyncingTestsCommon : LightningTestSuite() {
             assertIs<Offline>(bob1.state)
             assertTrue(actionsBob1.isEmpty())
 
-            val aliceInit = Init(ByteVector(alice1.commitments.params.localParams.features.toByteArray()))
-            val bobInit = Init(ByteVector(bob1.commitments.params.localParams.features.toByteArray()))
+            val aliceInit = Init(alice1.commitments.params.localParams.features)
+            val bobInit = Init(bob1.commitments.params.localParams.features)
             assertFalse(bob1.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
 
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
@@ -364,13 +364,13 @@ class SyncingTestsCommon : LightningTestSuite() {
                 is WaitForFundingSigned -> alice.state.channelParams.localParams.features
                 is ChannelStateWithCommitments -> alice.state.commitments.params.localParams.features
             }
-            val aliceInit = Init(ByteVector(aliceFeatures.toByteArray()))
+            val aliceInit = Init(aliceFeatures)
             assertTrue(aliceFeatures.hasFeature(Feature.ChannelBackupProvider))
             val bobFeatures = when (bob.state) {
                 is WaitForFundingSigned -> bob.state.channelParams.localParams.features
                 is ChannelStateWithCommitments -> bob.state.commitments.params.localParams.features
             }
-            val bobInit = Init(ByteVector(bobFeatures.toByteArray()))
+            val bobInit = Init(bobFeatures)
             assertTrue(bobFeatures.hasFeature(Feature.ChannelBackupClient))
 
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))

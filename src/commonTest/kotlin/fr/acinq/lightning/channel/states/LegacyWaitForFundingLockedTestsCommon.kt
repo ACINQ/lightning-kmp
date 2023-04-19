@@ -44,8 +44,8 @@ class LegacyWaitForFundingLockedTestsCommon {
         assertEquals(watchConfirmed.event, BITCOIN_FUNDING_DEPTHOK)
         assertEquals(watchConfirmed.txId, fundingTx.txid)
         // Reconnect to our peer.
-        val localInit = Init(state.commitments.params.localParams.features.toByteArray().byteVector())
-        val remoteInit = Init(state.commitments.params.remoteParams.features.toByteArray().byteVector())
+        val localInit = Init(state.commitments.params.localParams.features)
+        val remoteInit = Init(state.commitments.params.remoteParams.features)
         val (state2, actions2) = state1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<LNChannel<Syncing>>(state2)
         assertTrue(actions2.isEmpty())

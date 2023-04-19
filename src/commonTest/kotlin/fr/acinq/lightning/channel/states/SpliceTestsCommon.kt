@@ -905,8 +905,8 @@ class SpliceTestsCommon : LightningTestSuite() {
             assertIs<Offline>(bob1.state)
             assertTrue(actionsBob1.isEmpty())
 
-            val aliceInit = Init(ByteVector(alice1.commitments.params.localParams.features.toByteArray()))
-            val bobInit = Init(ByteVector(bob1.commitments.params.localParams.features.toByteArray()))
+            val aliceInit = Init(alice1.commitments.params.localParams.features)
+            val bobInit = Init(bob1.commitments.params.localParams.features)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
             assertIs<LNChannel<Syncing>>(alice2)
             val channelReestablish = actionsAlice2.findOutgoingMessage<ChannelReestablish>()

@@ -22,8 +22,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
         val (alice1, bob1) = disconnect(alice, bob)
 
-        val localInit = Init(ByteVector(alice.commitments.params.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bob.commitments.params.localParams.features.toByteArray()))
+        val localInit = Init(alice.commitments.params.localParams.features)
+        val remoteInit = Init(bob.commitments.params.localParams.features)
 
         val (alice2, actions) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice2.state)
@@ -75,8 +75,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         }
 
         val (alice1, bob1) = disconnect(alice0, bob0)
-        val localInit = Init(ByteVector(alice0.commitments.params.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bob0.commitments.params.localParams.features.toByteArray()))
+        val localInit = Init(alice0.commitments.params.localParams.features)
+        val remoteInit = Init(bob0.commitments.params.localParams.features)
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice2.state)
@@ -148,8 +148,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         }
 
         val (alice1, bob1) = disconnect(alice0, bob0)
-        val localInit = Init(ByteVector(alice0.commitments.params.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bob0.commitments.params.localParams.features.toByteArray()))
+        val localInit = Init(alice0.commitments.params.localParams.features)
+        val remoteInit = Init(bob0.commitments.params.localParams.features)
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice2.state)
@@ -211,8 +211,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         }
 
         val (alice1, bob1) = disconnect(alice0, bob0)
-        val initA = Init(ByteVector(alice0.commitments.params.localParams.features.toByteArray()))
-        val initB = Init(ByteVector(bob0.commitments.params.localParams.features.toByteArray()))
+        val initA = Init(alice0.commitments.params.localParams.features)
+        val initB = Init(bob0.commitments.params.localParams.features)
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(initA, initB))
         assertIs<Syncing>(alice2.state)
         val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
@@ -276,8 +276,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         // we manually replace alice's state with an older one
         val alice1 = aliceTmp1.copy(state = Offline(aliceOld.state))
 
-        val localInit = Init(ByteVector(alice.commitments.params.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bob.commitments.params.localParams.features.toByteArray()))
+        val localInit = Init(alice.commitments.params.localParams.features)
+        val remoteInit = Init(bob.commitments.params.localParams.features)
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice2.state)
@@ -317,8 +317,8 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         // We simulate a disconnection followed by a reconnection.
         val (alice1, bob1) = disconnect(alice0, bob0)
-        val localInit = Init(ByteVector(alice0.commitments.params.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bob0.commitments.params.localParams.features.toByteArray()))
+        val localInit = Init(alice0.commitments.params.localParams.features)
+        val remoteInit = Init(bob0.commitments.params.localParams.features)
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice2.state)
         actionsAlice2.findOutgoingMessage<ChannelReestablish>()
@@ -369,8 +369,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         actions1.hasWatch<WatchSpent>()
         assertIs<Offline>(alice1.state)
 
-        val localInit = Init(ByteVector(alice.commitments.params.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bob.commitments.params.localParams.features.toByteArray()))
+        val localInit = Init(alice.commitments.params.localParams.features)
+        val remoteInit = Init(bob.commitments.params.localParams.features)
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice2.state)
@@ -419,8 +419,8 @@ class OfflineTestsCommon : LightningTestSuite() {
 
         // Alice and Bob are disconnected.
         val (alice1, bob1) = disconnect(alice, bob)
-        val aliceInit = Init(ByteVector(alice.commitments.params.localParams.features.toByteArray()))
-        val bobInit = Init(ByteVector(bob.commitments.params.localParams.features.toByteArray()))
+        val aliceInit = Init(alice.commitments.params.localParams.features)
+        val bobInit = Init(bob.commitments.params.localParams.features)
 
         val (alice2, actionsAlice) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
         val (bob2, _) = bob1.process(ChannelCommand.Connected(bobInit, aliceInit))
@@ -444,8 +444,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal()
         assertTrue(bob.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
         val (alice1, bob1) = disconnect(alice, bob)
-        val localInit = Init(ByteVector(alice.commitments.params.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bob.commitments.params.localParams.features.toByteArray()))
+        val localInit = Init(alice.commitments.params.localParams.features)
+        val remoteInit = Init(bob.commitments.params.localParams.features)
 
         val (alice2, actions) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice2.state)
@@ -653,8 +653,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<Offline>(alice1.state)
         val (alice2, _) = LNChannel(alice1.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state.state))
         assertIs<Offline>(alice2.state)
-        val aliceInit = Init(ByteVector((alice.state as WaitForFundingSigned).channelParams.localParams.features.toByteArray()))
-        val bobInit = Init(ByteVector((bob.state as WaitForFundingCreated).localParams.features.toByteArray()))
+        val aliceInit = Init((alice.state as WaitForFundingSigned).channelParams.localParams.features)
+        val bobInit = Init((bob.state as WaitForFundingCreated).localParams.features)
         val (alice3, actions3) = alice2.process(ChannelCommand.Connected(aliceInit, bobInit))
         assertIs<Syncing>(alice3.state)
         assertEquals(alice.state, alice3.state.state)
@@ -690,8 +690,8 @@ class OfflineTestsCommon : LightningTestSuite() {
             Triple(alice5, bob4, (alice5.state.rbfStatus as RbfStatus.WaitingForSigs).session.fundingTx.txId)
         }
 
-        val aliceInit = Init(ByteVector(alice.commitments.params.localParams.features.toByteArray()))
-        val bobInit = Init(ByteVector(bob.commitments.params.localParams.features.toByteArray()))
+        val aliceInit = Init(alice.commitments.params.localParams.features)
+        val bobInit = Init(bob.commitments.params.localParams.features)
 
         // Bob has not received Alice's tx_complete, so he's not storing the RBF attempt.
         val (bob1, _) = bob.process(ChannelCommand.Disconnected)

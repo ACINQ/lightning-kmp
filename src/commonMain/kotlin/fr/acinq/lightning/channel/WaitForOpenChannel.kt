@@ -1,15 +1,11 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Script
 import fr.acinq.lightning.ChannelEvents
-import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
-import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
@@ -77,7 +73,7 @@ data class WaitForOpenChannel(
                                     paymentBasepoint = open.paymentBasepoint,
                                     delayedPaymentBasepoint = open.delayedPaymentBasepoint,
                                     htlcBasepoint = open.htlcBasepoint,
-                                    features = Features(remoteInit.features)
+                                    features = remoteInit.features
                                 )
                                 val channelId = computeChannelId(open, accept)
                                 val remoteFundingPubkey = open.fundingPubkey
