@@ -181,8 +181,8 @@ object TestsHelper {
         val channelFlags = 0.toByte()
         val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures)
         val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures)
-        val aliceInit = Init(aliceFeatures.toByteArray().toByteVector())
-        val bobInit = Init(bobFeatures.toByteArray().toByteVector())
+        val aliceInit = Init(aliceFeatures)
+        val bobInit = Init(bobFeatures)
         val (alice1, actionsAlice1) = alice.process(
             ChannelCommand.InitInitiator(
                 aliceFundingAmount,

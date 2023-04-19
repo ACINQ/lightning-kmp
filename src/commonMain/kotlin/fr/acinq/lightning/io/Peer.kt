@@ -153,7 +153,7 @@ class Peer(
 
     private val features = nodeParams.features
 
-    private val ourInit = Init(features.initFeatures().toByteArray().toByteVector(), initTlvStream)
+    private val ourInit = Init(features.initFeatures(), initTlvStream)
     private var theirInit: Init? = null
 
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
@@ -634,9 +634,8 @@ class Peer(
                         }
 
                         msg is Init -> {
-                            val theirFeatures = Features(msg.features)
-                            logger.info { "peer is using features $theirFeatures" }
-                            when (val error = Features.validateFeatureGraph(features)) {
+                            logger.info { "peer is using features ${msg.features}" }
+                            when (val error = Features.validateFeatureGraph(msg.features)) {
                                 is Features.Companion.FeatureException -> {
                                     logger.error(error) { "feature validation error" }
                                     // TODO: disconnect peer

@@ -65,9 +65,9 @@ suspend fun newPeers(
     }
 
     // Initialize Bob with Alice's features
-    bob.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.first.features.initFeatures().toByteArray().toByteVector()))))
+    bob.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.first.features.initFeatures()))))
     // Initialize Alice with Bob's features
-    alice.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.second.features.initFeatures().toByteArray().toByteVector()))))
+    alice.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.second.features.initFeatures()))))
 
     // TODO update to depend on the initChannels size
     if (initChannels.isNotEmpty()) {
@@ -123,7 +123,7 @@ suspend fun CoroutineScope.newPeer(
 
     remotedNodeChannelState?.let { state ->
         // send Init from remote node
-        val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures().toByteArray().toByteVector())
+        val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures())
 
         val initMsg = LightningMessage.encode(theirInit)
         peer.send(BytesReceived(initMsg))

@@ -60,9 +60,9 @@ class PeerTest : LightningTestSuite() {
         val bob = buildPeer(this, TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams)
 
         // start Init for Alice
-        alice.send(BytesReceived(LightningMessage.encode(Init(features = TestConstants.Bob.nodeParams.features.toByteArray().toByteVector()))))
+        alice.send(BytesReceived(LightningMessage.encode(Init(features = TestConstants.Bob.nodeParams.features))))
         // start Init for Bob
-        bob.send(BytesReceived(LightningMessage.encode(Init(features = TestConstants.Alice.nodeParams.features.toByteArray().toByteVector()))))
+        bob.send(BytesReceived(LightningMessage.encode(Init(features = TestConstants.Alice.nodeParams.features))))
 
         // Wait until the Peer is ready
         alice.expectStatus(Connection.ESTABLISHED)
@@ -342,7 +342,7 @@ class PeerTest : LightningTestSuite() {
         assertIs<Offline>(initChannels.values.first())
 
         // send Init from remote node
-        val theirInit = Init(features = bob0.staticParams.nodeParams.features.toByteArray().toByteVector())
+        val theirInit = Init(features = bob0.staticParams.nodeParams.features)
         val initMsg = LightningMessage.encode(theirInit)
         peer.send(BytesReceived(initMsg))
         // Wait until the Peer is ready

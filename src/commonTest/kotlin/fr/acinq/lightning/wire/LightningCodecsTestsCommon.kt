@@ -193,42 +193,47 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode - decode init message`() {
-        data class TestCase(val encoded: ByteVector, val rawFeatures: ByteVector, val networks: List<ByteVector32>, val valid: Boolean, val reEncoded: ByteVector? = null)
+        data class TestCase(val encoded: ByteVector, val decoded: Init?, val reEncoded: ByteVector? = null)
 
         val chainHash1 = ByteVector32.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101")
         val chainHash2 = ByteVector32.fromValidHex("0202020202020202020202020202020202020202020202020202020202020202")
 
         val testCases = listOf(
-            TestCase(ByteVector("0000 0000"), ByteVector(""), listOf(), true), // no features
-            TestCase(ByteVector("0000 0002088a"), ByteVector("088a"), listOf(), true), // no global features
-            TestCase(ByteVector("00020200 0000"), ByteVector("0200"), listOf(), true, ByteVector("0000 00020200")), // no local features
-            TestCase(ByteVector("00020200 0002088a"), ByteVector("0a8a"), listOf(), true, ByteVector("0000 00020a8a")), // local and global - no conflict - same size
-            TestCase(ByteVector("00020200 0003020002"), ByteVector("020202"), listOf(), true, ByteVector("0000 0003020202")), // local and global - no conflict - different sizes
-            TestCase(ByteVector("00020a02 0002088a"), ByteVector("0a8a"), listOf(), true, ByteVector("0000 00020a8a")), // local and global - conflict - same size
-            TestCase(ByteVector("00022200 000302aaa2"), ByteVector("02aaa2"), listOf(), true, ByteVector("0000 000302aaa2")), // local and global - conflict - different sizes
-            TestCase(ByteVector("0000 0002088a 03012a05022aa2"), ByteVector("088a"), listOf(), true), // unknown odd records
-            TestCase(ByteVector("0000 0002088a 03012a04022aa2"), ByteVector("088a"), listOf(), false), // unknown even records
-            TestCase(ByteVector("0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101"), ByteVector("088a"), listOf(), false), // invalid tlv stream
-            TestCase(ByteVector("0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101"), ByteVector("088a"), listOf(chainHash1), true), // single network
+            TestCase(ByteVector("0000 0000"), Init(Features.empty)), // no features
+            TestCase(ByteVector("0000 0002088a"), Init(Features(ByteVector("088a")))), // no global features
+            TestCase(ByteVector("00020200 0000"), Init(Features(ByteVector("0200"))), ByteVector("0000 00020200")), // no local features
+            TestCase(ByteVector("00020200 0002088a"), Init(Features(ByteVector("0a8a"))), ByteVector("0000 00020a8a")), // local and global - no conflict - same size
+            TestCase(ByteVector("00020200 0003020002"), Init(Features(ByteVector("020202"))), ByteVector("0000 0003020202")), // local and global - no conflict - different sizes
+            TestCase(ByteVector("00020a02 0002088a"), Init(Features(ByteVector("0a8a"))), ByteVector("0000 00020a8a")), // local and global - conflict - same size
+            TestCase(ByteVector("00022200 000302aaa2"), Init(Features(ByteVector("02aaa2"))), ByteVector("0000 000302aaa2")), // local and global - conflict - different sizes
+            TestCase(
+                ByteVector("0000 0002088a 03012a05022aa2"),
+                Init(Features(ByteVector("088a")), tlvs = TlvStream(records = emptySet(), unknown = setOf(GenericTlv(3, ByteVector("2a")), GenericTlv(5, ByteVector("2aa2")))))
+            ), // unknown odd records
+            TestCase(ByteVector("0000 0002088a 03012a04022aa2"), decoded = null), // unknown even records
+            TestCase(ByteVector("0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101"), decoded = null), // invalid tlv stream
+            TestCase(ByteVector("0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101"), Init(Features(ByteVector("088a")), listOf(chainHash1))), // single network
             TestCase(
                 ByteVector("0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202"),
-                ByteVector("088a"),
-                listOf(chainHash1, chainHash2),
-                true
+                Init(Features(ByteVector("088a")), listOf(chainHash1, chainHash2))
             ), // multiple networks
-            TestCase(ByteVector("0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010103012a"), ByteVector("088a"), listOf(chainHash1), true), // network and unknown odd records
-            TestCase(ByteVector("0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010102012a"), ByteVector("088a"), listOf(), false) // network and unknown even records
+            TestCase(
+                ByteVector("0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010103012a"),
+                Init(Features(ByteVector("088a")), tlvs = TlvStream(records = setOf(InitTlv.Networks(listOf(chainHash1))), unknown = setOf(GenericTlv(3, ByteVector("2a")))))
+            ), // network and unknown odd records
+            TestCase(ByteVector("0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010102012a"), decoded = null), // network and unknown even records
         )
 
         for (testCase in testCases) {
-            val result = kotlin.runCatching {
-                val init = Init.read(testCase.encoded.toByteArray())
-                assertEquals(testCase.rawFeatures, init.features)
-                assertEquals(testCase.networks, init.networks)
-                val encoded = init.write()
+            val result = kotlin.runCatching { Init.read(testCase.encoded.toByteArray()) }
+            if (testCase.decoded == null) {
+                assertTrue(result.isFailure, testCase.toString())
+            } else {
+                val decoded = result.getOrNull()!!
+                assertEquals(testCase.decoded, decoded)
+                val encoded = decoded.write()
                 assertEquals(testCase.reEncoded ?: testCase.encoded, ByteVector(encoded), testCase.toString())
             }
-            assertEquals(result.isFailure, !testCase.valid, testCase.toString())
         }
     }
 

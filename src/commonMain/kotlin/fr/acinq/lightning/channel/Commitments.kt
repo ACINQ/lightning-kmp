@@ -42,8 +42,8 @@ data class ChannelParams(
     }
 
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
-        localParams = localParams.copy(features = Features(localInit.features)),
-        remoteParams = remoteParams.copy(features = Features(remoteInit.features))
+        localParams = localParams.copy(features = localInit.features),
+        remoteParams = remoteParams.copy(features = remoteInit.features)
     )
 }
 
