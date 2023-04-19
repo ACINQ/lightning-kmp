@@ -24,7 +24,7 @@ object WaitForInit : ChannelState() {
                 )
                 Pair(nextState, listOf())
             }
-            cmd is ChannelCommand.InitInitiator && isValidChannelType(cmd.channelType) -> {
+            cmd is ChannelCommand.InitInitiator -> {
                 val channelKeys = keyManager.channelKeys(cmd.localParams.fundingKeyPath)
                 val open = OpenDualFundedChannel(
                     chainHash = staticParams.nodeParams.chainHash,
@@ -56,10 +56,6 @@ object WaitForInit : ChannelState() {
                 )
                 val nextState = WaitForAcceptChannel(cmd, open)
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
-            }
-            cmd is ChannelCommand.InitInitiator -> {
-                logger.warning { "cannot open channel with invalid channel_type=${cmd.channelType.name}" }
-                Pair(Aborted, listOf())
             }
             cmd is ChannelCommand.Restore && cmd.state is Closing && cmd.state.commitments.nothingAtStake() -> {
                 logger.info { "we have nothing at stake, going straight to CLOSED" }
@@ -148,14 +144,6 @@ object WaitForInit : ChannelState() {
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
             else -> unhandled(cmd)
-        }
-    }
-
-    private fun isValidChannelType(channelType: ChannelType.SupportedChannelType): Boolean {
-        return when (channelType) {
-            ChannelType.SupportedChannelType.AnchorOutputs -> true
-            ChannelType.SupportedChannelType.AnchorOutputsZeroReserve -> true
-            else -> false
         }
     }
 

@@ -1,6 +1,9 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.lightning.Feature
+import fr.acinq.lightning.FeatureSupport
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.ChannelOrigin
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.crypto.assertArrayEquals
@@ -18,8 +21,8 @@ class OpenTlvTestsCommon : LightningTestSuite() {
     @Test
     fun `channel type TLV`() {
         val testCases = listOf(
-            Pair(ChannelType.SupportedChannelType.Standard, Hex.decode("0100")),
-            Pair(ChannelType.SupportedChannelType.StaticRemoteKey, Hex.decode("01021000")),
+            Pair(ChannelType.UnsupportedChannelType(Features.empty), Hex.decode("0100")),
+            Pair(ChannelType.UnsupportedChannelType(Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory)), Hex.decode("01021000")),
             Pair(ChannelType.SupportedChannelType.AnchorOutputs, Hex.decode("0103101000")),
             Pair(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, Hex.decode("01110100000000000000000000000000101000")),
         )

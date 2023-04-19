@@ -38,7 +38,6 @@ data class ChannelParams(
     val channelFlags: Byte
 ) {
     init {
-        require(channelFeatures.hasFeature(Feature.AnchorOutputs)) { "invalid channel type: ${channelFeatures.channelType.name}" }
         require(channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath)) { "FundingPubKeyBasedChannelKeyPath option must be enabled"}
     }
 
