@@ -12,13 +12,6 @@ import fr.acinq.secp256k1.Hex
  */
 data class ChannelFeatures(val features: Set<Feature>) {
 
-    val channelType: ChannelType.SupportedChannelType = when {
-        features.contains(Feature.AnchorOutputs) && features.contains(Feature.ZeroReserveChannels) -> ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
-        features.contains(Feature.AnchorOutputs) -> ChannelType.SupportedChannelType.AnchorOutputs
-        features.contains(Feature.StaticRemoteKey) -> ChannelType.SupportedChannelType.StaticRemoteKey
-        else -> ChannelType.SupportedChannelType.Standard
-    }
-
     fun hasFeature(feature: Feature): Boolean = features.contains(feature)
 
     override fun toString(): String = features.joinToString(",")
@@ -36,16 +29,6 @@ sealed class ChannelType {
     sealed class SupportedChannelType : ChannelType() {
 
         fun toFeatures(): Features = Features(features.associateWith { FeatureSupport.Mandatory })
-
-        object Standard : SupportedChannelType() {
-            override val name: String get() = "standard"
-            override val features: Set<Feature> get() = setOf()
-        }
-
-        object StaticRemoteKey : SupportedChannelType() {
-            override val name: String get() = "static_remotekey"
-            override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey)
-        }
 
         object AnchorOutputs : SupportedChannelType() {
             override val name: String get() = "anchor_outputs"
@@ -71,8 +54,6 @@ sealed class ChannelType {
             // @formatter:off
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory, Feature.ZeroReserveChannels to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputsZeroReserve
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputs
-            Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory) -> SupportedChannelType.StaticRemoteKey
-            Features.empty -> SupportedChannelType.Standard
             else -> UnsupportedChannelType(features)
             // @formatter:on
         }

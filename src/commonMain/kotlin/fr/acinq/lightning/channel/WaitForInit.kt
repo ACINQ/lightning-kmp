@@ -24,7 +24,7 @@ object WaitForInit : ChannelState() {
                 )
                 Pair(nextState, listOf())
             }
-            cmd is ChannelCommand.InitInitiator && isValidChannelType(cmd.channelType) -> {
+            cmd is ChannelCommand.InitInitiator -> {
                 val channelKeys = keyManager.channelKeys(cmd.localParams.fundingKeyPath)
                 val open = OpenDualFundedChannel(
                     chainHash = staticParams.nodeParams.chainHash,
@@ -148,14 +148,6 @@ object WaitForInit : ChannelState() {
             }
             cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
             else -> unhandled(cmd)
-        }
-    }
-
-    private fun isValidChannelType(channelType: ChannelType.SupportedChannelType): Boolean {
-        return when (channelType) {
-            ChannelType.SupportedChannelType.AnchorOutputs -> true
-            ChannelType.SupportedChannelType.AnchorOutputsZeroReserve -> true
-            else -> false
         }
     }
 

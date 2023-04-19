@@ -40,7 +40,7 @@ data class WaitForOpenChannel(
                         val open = cmd.message
                         when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open)) {
                             is Either.Right -> {
-                                val channelFeatures = res.value
+                                val (channelType, channelFeatures) = res.value
                                 val minimumDepth = if (staticParams.useZeroConf) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                                 val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
                                 val accept = AcceptDualFundedChannel(
@@ -61,7 +61,7 @@ data class WaitForOpenChannel(
                                     secondPerCommitmentPoint = channelKeys.commitmentPoint(1),
                                     tlvStream = TlvStream(
                                         buildSet {
-                                            add(ChannelTlv.ChannelTypeTlv(channelFeatures.channelType))
+                                            add(ChannelTlv.ChannelTypeTlv(channelType))
                                             if (pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(pushAmount))
                                         }
                                     ),

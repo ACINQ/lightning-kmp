@@ -3,13 +3,11 @@ package fr.acinq.lightning.wire
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Features
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.channel.Origin
@@ -302,7 +300,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val defaultEncoded = ByteVector("0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
         val testCases = listOf(
             defaultAccept to defaultEncoded,
-            defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.StaticRemoteKey))) to (defaultEncoded + ByteVector("01021000")),
+            defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.UnsupportedChannelType(Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory))))) to (defaultEncoded + ByteVector("01021000")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector("01abcdef")), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))) to (defaultEncoded + ByteVector("000401abcdef 0103101000")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(1729.msat))) to (defaultEncoded + ByteVector("0103101000 fe470000070206c1")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequireConfirmedInputsTlv)) to (defaultEncoded + ByteVector("0103101000 0200")),

@@ -52,7 +52,7 @@ object Helpers {
     }
 
     /** Called by the non-initiator. */
-    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel): Either<ChannelException, ChannelFeatures> {
+    fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel): Either<ChannelException, Pair<ChannelType, ChannelFeatures>> {
         // NB: we only accept channels from peers who support explicit channel type negotiation.
         val channelType = open.channelType ?: return Either.Left(MissingChannelType(open.temporaryChannelId))
         if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve).contains(channelType)) {
@@ -97,7 +97,9 @@ object Helpers {
             return Either.Left(FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw.CommitmentFeerate, open.commitmentFeerate))
         }
 
-        return Either.Right(ChannelFeatures(channelType.features))
+        val channelFeatures = ChannelFeatures(channelType.features)
+
+        return Either.Right(channelType to channelFeatures)
     }
 
     /** Called by the initiator. */
@@ -136,7 +138,9 @@ object Helpers {
             return Either.Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks))
         }
 
-        return Either.Right(ChannelFeatures(init.channelType.features))
+        val channelFeatures = ChannelFeatures(init.channelType.features)
+
+        return Either.Right(channelFeatures)
     }
 
     /**
