@@ -1,12 +1,9 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Script
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
-import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.AcceptDualFundedChannel
