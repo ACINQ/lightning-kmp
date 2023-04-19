@@ -831,11 +831,22 @@ data class Commitments(
         // When a commitment is locked, it implicitly locks all previous commitments.
         // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
         // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
-        // That's why we compute each index (local and remote) separately and stop at the first one that matches.
-        val lastLocalLockedIndex: Long = active.firstOrNull { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }?.fundingTxIndex ?: -1
-        val lastRemoteLockedIndex: Long = active.firstOrNull { it.remoteFundingStatus == RemoteFundingStatus.Locked }?.fundingTxIndex ?: -1
-        val lastLockedIndex = min(lastLocalLockedIndex, lastRemoteLockedIndex)
-        return when (val lastLocked = active.find { it.fundingTxIndex == lastLockedIndex }) {
+        // That's why we look at locked commitments separately and then select the one with the oldest fundingTxIndex.
+        val lastLocalLocked = active.find { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
+        val lastRemoteLocked = active.find { it.remoteFundingStatus == RemoteFundingStatus.Locked }
+        val lastLocked = when {
+            // We select the locked commitment with the smaller value for fundingTxIndex, but both have to be defined.
+            // If both have the same fundingTxIndex, they must actually be the same commitment, because:
+            //  - we only allow RBF attempts when we're not using zero-conf
+            //  - transactions with the same fundingTxIndex double-spend each other, so only one of them can confirm
+            //  - we don't allow creating a splice on top of an unconfirmed transaction that has RBF attempts (because it
+            //    would become invalid if another of the RBF attempts end up being confirmed)
+            lastLocalLocked != null && lastRemoteLocked != null -> listOf(lastLocalLocked, lastRemoteLocked).minByOrNull { it.fundingTxIndex }
+            // Special case for the initial funding tx, we only require a local lock because channel_ready doesn't explicitly reference a funding tx.
+            lastLocalLocked != null && lastLocalLocked.fundingTxIndex == 0L -> lastLocalLocked
+            else -> null
+        }
+        return when (lastLocked) {
             is Commitment -> {
                 // all commitments older than this one are inactive
                 val inactive1 = active.filter { it.fundingTxId != lastLocked.fundingTxId && it.fundingTxIndex <= lastLocked.fundingTxIndex }
