@@ -65,37 +65,9 @@ sealed class PaymentCommand : PeerCommand()
 data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: Either<String, ByteVector32>, val expirySeconds: Long? = null, val result: CompletableDeferred<PaymentRequest>) : PaymentCommand()
 private object CheckPaymentsTimeout : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
-
-interface SendPayment {
-    val paymentId: UUID
-    val amount: MilliSatoshi
-    val recipient: PublicKey
-    val details: LightningOutgoingPayment.Details
-    val trampolineFeesOverride: List<TrampolineFees>?
-    val paymentRequest: PaymentRequest
-    val paymentHash: ByteVector32 get() = details.paymentHash
+data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
+    val paymentHash: ByteVector32 = paymentRequest.paymentHash
 }
-
-data class SendPaymentNormal(
-    override val paymentId: UUID,
-    override val amount: MilliSatoshi,
-    override val recipient: PublicKey,
-    override val details: LightningOutgoingPayment.Details.Normal,
-    override val trampolineFeesOverride: List<TrampolineFees>? = null
-) : PaymentCommand(), SendPayment {
-    override val paymentRequest = details.paymentRequest
-}
-
-data class SendPaymentSwapOut(
-    override val paymentId: UUID,
-    override val amount: MilliSatoshi,
-    override val recipient: PublicKey,
-    override val details: LightningOutgoingPayment.Details.SwapOut,
-    override val trampolineFeesOverride: List<TrampolineFees>? = null
-) : PaymentCommand(), SendPayment {
-    override val paymentRequest = details.paymentRequest
-}
-
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
 sealed class PeerEvent
@@ -106,9 +78,9 @@ data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentF
 data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
-data class SendSwapOutRequest(val amount: Satoshi, val bitcoinAddress: String, val feePerKw: Long) : PeerCommand()
-data class SwapOutResponseEvent(val swapOutResponse: SwapOutResponse) : PeerEvent()
-
+/**
+ * Useful to handle transparent migration on Phoenix Android between eclair-core and lightning-kmp.
+ */
 data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerEvent()
 
 /**
@@ -847,11 +819,6 @@ class Peer(
                             processIncomingPayment(Either.Left(msg))
                         }
 
-                        msg is SwapOutResponse -> {
-                            logger.info { "received ${msg::class.simpleName} amount=${msg.amount} fee=${msg.fee} invoice=${msg.paymentRequest}" }
-                            _eventsFlow.emit(SwapOutResponseEvent(msg))
-                        }
-
                         msg is PhoenixAndroidLegacyInfo -> {
                             logger.info { "received ${msg::class.simpleName} hasChannels=${msg.hasChannels}" }
                             _eventsFlow.emit(PhoenixAndroidLegacyInfoEvent(msg))
@@ -1006,12 +973,6 @@ class Peer(
             cmd is CheckPaymentsTimeout -> {
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
-            }
-
-            cmd is SendSwapOutRequest -> {
-                val msg = SwapOutRequest(nodeParams.chainHash, cmd.amount, cmd.bitcoinAddress, cmd.feePerKw)
-                logger.info { "sending ${msg::class.simpleName}" }
-                sendToPeer(msg)
             }
 
             cmd is WrappedChannelCommand && cmd.channelId == ByteVector32.Zeroes -> {

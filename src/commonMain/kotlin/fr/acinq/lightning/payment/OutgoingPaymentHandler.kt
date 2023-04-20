@@ -9,8 +9,6 @@ import fr.acinq.lightning.db.HopDesc
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.SendPayment
-import fr.acinq.lightning.io.SendPaymentNormal
-import fr.acinq.lightning.io.SendPaymentSwapOut
 import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop
@@ -70,7 +68,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         return when (val result = routeCalculation.findRoutes(request.paymentId, trampolineAmount, channels)) {
             is Either.Left -> {
                 logger.warning { "payment failed: ${result.value}" }
-                db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.details))
+                db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentRequest))
                 val finalFailure = result.value
                 db.completeOutgoingPaymentOffchain(request.paymentId, finalFailure)
                 Failure(request, finalFailure.toPaymentFailure())
@@ -80,7 +78,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 val trampolinePaymentSecret = Lightning.randomBytes32()
                 val trampolinePayload = PaymentAttempt.TrampolinePayload(trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolinePacket)
                 val childPayments = createChildPayments(request, result.value, trampolinePayload)
-                db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, childPayments.map { it.first }, LightningOutgoingPayment.Status.Pending))
+                db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, LightningOutgoingPayment.Details.Normal(request.paymentRequest), childPayments.map { it.first }, LightningOutgoingPayment.Status.Pending))
                 val payment = PaymentAttempt.PaymentInProgress(request, 0, trampolinePayload, childPayments.associate { it.first.id to Pair(it.first, it.second) }, setOf(), listOf())
                 pending[request.paymentId] = payment
                 Progress(request, payment.fees, childPayments.map { it.third })
@@ -223,8 +221,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     logger.warning { "payment failed: ${FinalFailure.WalletRestarted}" }
                     db.completeOutgoingPaymentOffchain(payment.id, FinalFailure.WalletRestarted)
                     val request = when (payment.details) {
-                        is LightningOutgoingPayment.Details.Normal -> SendPaymentNormal(payment.id, payment.recipientAmount, payment.recipient, payment.details)
-                        is LightningOutgoingPayment.Details.SwapOut -> SendPaymentSwapOut(payment.id, payment.recipientAmount, payment.recipient, payment.details)
+                        is LightningOutgoingPayment.Details.Normal -> SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details.paymentRequest)
                         else -> {
                             logger.debug { "cannot recreate send-payment-request failure from db data with details=${payment.details}" }
                             return null
@@ -270,7 +267,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             logger.info { "payment successfully sent (fees=${updated.fees})" }
             db.completeOutgoingPaymentOffchain(payment.request.paymentId, preimage)
             val r = payment.request
-            Success(r, LightningOutgoingPayment(r.paymentId, r.amount, r.recipient, r.details, updated.parts, LightningOutgoingPayment.Status.Completed.Succeeded.OffChain(preimage)), preimage)
+            Success(r, LightningOutgoingPayment(r.paymentId, r.amount, r.recipient, LightningOutgoingPayment.Details.Normal(r.paymentRequest), updated.parts, LightningOutgoingPayment.Status.Completed.Succeeded.OffChain(preimage)), preimage)
         } else {
             PreimageReceived(payment.request, preimage)
         }
@@ -288,8 +285,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 db.completeOutgoingLightningPart(partId, preimage)
                 // We try to re-create the request from what we have in the DB.
                 val request = when (payment.details) {
-                    is LightningOutgoingPayment.Details.Normal -> SendPaymentNormal(payment.id, payment.recipientAmount, payment.recipient, payment.details)
-                    is LightningOutgoingPayment.Details.SwapOut -> SendPaymentSwapOut(payment.id, payment.recipientAmount, payment.recipient, payment.details)
+                    is LightningOutgoingPayment.Details.Normal -> SendPayment(payment.id, payment.recipientAmount, payment.recipient, payment.details.paymentRequest)
                     else -> {
                         logger.warning { "cannot recreate send-payment-request fulfill from db data with details=${payment.details}" }
                         return null
@@ -452,7 +448,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 val result = if (updated.isComplete()) {
                     logger.info { "payment successfully sent (fees=${updated.fees})" }
                     db.completeOutgoingPaymentOffchain(request.paymentId, preimage)
-                    Success(request, LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.details, parts, LightningOutgoingPayment.Status.Completed.Succeeded.OffChain(preimage)), preimage)
+                    Success(request, LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, LightningOutgoingPayment.Details.Normal(request.paymentRequest), parts, LightningOutgoingPayment.Status.Completed.Succeeded.OffChain(preimage)), preimage)
                 } else {
                     null
                 }

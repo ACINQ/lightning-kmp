@@ -76,8 +76,6 @@ interface OutgoingPaymentsDb {
     suspend fun listLightningOutgoingPayments(paymentHash: ByteVector32): List<LightningOutgoingPayment>
 }
 
-enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing }
-
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
     /** Absolute time in milliseconds since UNIX epoch when the payment was created. */
@@ -136,13 +134,6 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
         /** Trust-less swap-in based on dual funding. */
         data class DualSwapIn(val localInputs: Set<OutPoint>) : Origin()
-
-        fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
-            is Invoice -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
-            is KeySend -> filters.isEmpty() || filters.contains(PaymentTypeFilter.KeySend)
-            is SwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
-            is DualSwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
-        }
     }
 
     data class Received(val receivedWith: Set<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
@@ -220,7 +211,7 @@ data class LightningOutgoingPayment(
 ) : OutgoingPayment() {
 
     /** Create an outgoing payment in a pending status, without any parts yet. */
-    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)
+    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, invoice: PaymentRequest) : this(id, amount, recipient, Details.Normal(invoice), listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
 
@@ -275,7 +266,11 @@ data class LightningOutgoingPayment(
             override val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
         }
 
-        /** Swap-out payments send a lightning payment to a swap server, which will send an on-chain transaction to a given address. The swap-out fee is taken by the swap server to cover the miner fee. */
+        /**
+         * Backward compatibility code for legacy trusted swap-out.
+         * Swap-out payments send a lightning payment to a swap server, which will send an on-chain transaction to a given address.
+         * The swap-out fee is taken by the swap server to cover the miner fee.
+         */
         data class SwapOut(val address: String, val paymentRequest: PaymentRequest, val swapOutFee: Satoshi) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
@@ -293,12 +288,6 @@ data class LightningOutgoingPayment(
             override val paymentHash: ByteVector32 = channelId.sha256()
         }
 
-        fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
-            is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
-            is KeySend -> filters.isEmpty() || filters.contains(PaymentTypeFilter.KeySend)
-            is SwapOut -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapOut)
-            is ChannelClosing -> filters.isEmpty() || filters.contains(PaymentTypeFilter.ChannelClosing)
-        }
     }
 
     sealed class Status {

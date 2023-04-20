@@ -79,8 +79,6 @@ interface LightningMessage {
                 PayToOpenResponse.type -> PayToOpenResponse.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
-                SwapOutRequest.type -> SwapOutRequest.read(stream)
-                SwapOutResponse.type -> SwapOutResponse.read(stream)
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
                 PleaseOpenChannelRejected.type -> PleaseOpenChannelRejected.read(stream)
@@ -1606,68 +1604,6 @@ data class FCMToken(val token: ByteVector) : LightningMessage {
 object UnsetFCMToken : LightningMessage {
     override val type: Long get() = 35019
     override fun write(out: Output) {}
-}
-
-data class SwapOutRequest(
-    override val chainHash: ByteVector32,
-    val amount: Satoshi,
-    val bitcoinAddress: String,
-    val feePerKw: Long
-) : LightningMessage, HasChainHash {
-    override val type: Long get() = SwapOutRequest.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(chainHash, out)
-        LightningCodecs.writeU64(amount.toLong(), out)
-        val addressBytes = bitcoinAddress.encodeToByteArray()
-        LightningCodecs.writeU16(addressBytes.size, out)
-        LightningCodecs.writeBytes(addressBytes, out)
-        LightningCodecs.writeU32(feePerKw.toInt(), out)
-    }
-
-    companion object : LightningMessageReader<SwapOutRequest> {
-        const val type: Long = 35011
-
-        override fun read(input: Input): SwapOutRequest {
-            return SwapOutRequest(
-                chainHash = LightningCodecs.bytes(input, 32).toByteVector32(),
-                amount = Satoshi(LightningCodecs.u64(input)),
-                bitcoinAddress = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString(),
-                feePerKw = LightningCodecs.u32(input).toLong(),
-            )
-        }
-    }
-}
-
-data class SwapOutResponse(
-    override val chainHash: ByteVector32,
-    val amount: Satoshi,
-    val fee: Satoshi,
-    val paymentRequest: String
-) : LightningMessage, HasChainHash {
-    override val type: Long get() = SwapOutResponse.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(chainHash, out)
-        LightningCodecs.writeU64(amount.toLong(), out)
-        LightningCodecs.writeU64(fee.toLong(), out)
-        val paymentRequestBytes = paymentRequest.encodeToByteArray()
-        LightningCodecs.writeU16(paymentRequestBytes.size, out)
-        LightningCodecs.writeBytes(paymentRequestBytes, out)
-    }
-
-    companion object : LightningMessageReader<SwapOutResponse> {
-        const val type: Long = 35013
-
-        override fun read(input: Input): SwapOutResponse {
-            return SwapOutResponse(
-                chainHash = ByteVector32(LightningCodecs.bytes(input, 32)),
-                amount = Satoshi(LightningCodecs.u64(input)),
-                fee = Satoshi(LightningCodecs.u64(input)),
-                paymentRequest = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
-            )
-        }
-    }
 }
 
 data class PhoenixAndroidLegacyInfo(

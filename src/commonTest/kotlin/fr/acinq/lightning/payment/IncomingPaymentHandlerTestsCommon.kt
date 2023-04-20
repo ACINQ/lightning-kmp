@@ -11,7 +11,6 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
-import fr.acinq.lightning.db.PaymentTypeFilter
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.router.ChannelHop
@@ -21,7 +20,6 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import kotlinx.coroutines.delay
 import kotlin.test.*
 
 class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
