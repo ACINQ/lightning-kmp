@@ -27,12 +27,6 @@ interface KeyManager {
     val swapInOnChainWallet: Bip84OnChainKeys
 
     /**
-     * This method offers direct access to the master key derivation. It should only be used for some advanced usage
-     * like (LNURL-auth, data encryption.
-     */
-    fun privateKey(keyPath: KeyPath): PrivateKey
-
-    /**
      * Keys used for the node. They are used to generate the node id, to secure communication with other peers, and
      * to sign network-wide public announcements.
      */

@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.NodeParams.Chain
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
 
 /**
  * An implementation of [KeyManager] that supports deterministic derivation for [KeyManager.ChannelKeys] based
@@ -52,7 +53,13 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
 
     private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
 
-    override fun privateKey(keyPath: KeyPath): PrivateKey = derivePrivateKey(master, keyPath).privateKey
+    /**
+     * This method offers direct access to the master key derivation. It should only be used for some advanced usage
+     * like (LNURL-auth, data encryption.
+     */
+    fun derivePrivateKey(keyPath: KeyPath): DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, keyPath)
+
+    fun privateKey(keyPath: KeyPath): PrivateKey = derivePrivateKey(master, keyPath).privateKey
 
     override fun newFundingKeyPath(isInitiator: Boolean): KeyPath {
         val last = hardened(if (isInitiator) 1 else 0)
