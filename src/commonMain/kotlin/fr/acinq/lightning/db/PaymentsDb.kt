@@ -78,7 +78,7 @@ interface OutgoingPaymentsDb {
     suspend fun completeOutgoingPaymentOffchain(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis())
 
     /** Add new partial payments to a pending outgoing payment. */
-    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.LightningPart>)
+    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>)
 
     /** Mark an outgoing payment part as failed. */
     suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
@@ -248,7 +248,7 @@ data class LightningOutgoingPayment(
     val paymentHash: ByteVector32 = details.paymentHash
 
     @Suppress("MemberVisibilityCanBePrivate")
-    val routingFee = parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+    val routingFee = parts.filter { it.status is Part.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
 
     override val completedAt: Long? = (status as? Status.Completed)?.completedAt
 
@@ -313,15 +313,6 @@ data class LightningOutgoingPayment(
     }
 
     /**
-     * An outgoing payment is an abstraction ; it is actually settled through one or several child payments that are
-     * done over Lightning, or through on-chain transactions.
-     */
-    sealed class Part {
-        abstract val id: UUID
-        abstract val createdAt: Long
-    }
-
-    /**
      * A child payment sent by this node (partial payment of the total amount). This payment has a status and can fail.
      *
      * @param id internal payment identifier.
@@ -330,13 +321,13 @@ data class LightningOutgoingPayment(
      * @param status current status of the payment.
      * @param createdAt absolute time in milliseconds since UNIX epoch when the payment was created.
      */
-    data class LightningPart(
-        override val id: UUID,
+    data class Part(
+        val id: UUID,
         val amount: MilliSatoshi,
         val route: List<HopDesc>,
         val status: Status,
-        override val createdAt: Long = currentTimestampMillis()
-    ) : Part() {
+        val createdAt: Long = currentTimestampMillis()
+    ) {
         sealed class Status {
             object Pending : Status()
             data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
