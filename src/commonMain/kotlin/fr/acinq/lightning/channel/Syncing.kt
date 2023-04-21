@@ -20,7 +20,6 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
     val channelId = state.channelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "syncing processing ${cmd::class}" }
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is ChannelReestablish -> when {
                 waitForTheirReestablishMessage -> {
