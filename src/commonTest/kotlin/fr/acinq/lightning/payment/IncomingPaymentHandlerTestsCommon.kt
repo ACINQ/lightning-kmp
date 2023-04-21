@@ -11,7 +11,6 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
-import fr.acinq.lightning.db.PaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.router.ChannelHop
@@ -145,7 +144,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         assertEquals(result.incomingPayment.received, result.received)
         assertEquals(defaultAmount, result.received.amount)
-        assertEquals(setOf(IncomingPayment.ReceivedWith.LightningPayment(amount = defaultAmount, channelId = channelId, htlcId = 12)), result.received.receivedWith)
+        assertEquals(listOf(IncomingPayment.ReceivedWith.LightningPayment(amount = defaultAmount, channelId = channelId, htlcId = 12)), result.received.receivedWith)
 
         checkDbPayment(result.incomingPayment, paymentHandler.db)
     }
@@ -372,33 +371,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(setOf(expected), result.actions.toSet())
     }
 
-//    @Test
-//    fun `process incoming amount with pay-to-open origin -- new channel`() = runSuspendTest {
-//        val preimage = randomBytes32()
-//        val channelId = randomBytes32()
-//        val amountOrigin = ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel(
-//            amount = 15_000_000.msat,
-//            serviceFee = 1_000_000.msat,
-//            miningFee = 500.sat,
-//            localInputs = emptySet(),
-//            txId = randomBytes32(),
-//            origin = Origin.PayToOpenOrigin(amount = 15_000_000.msat, paymentHash = preimage.sha256(), serviceFee = 1_000_000.msat)
-//        )
-//        val handler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
-//        // simulate payment processed as a pay-to-open
-//        handler.db.addIncomingPayment(preimage, IncomingPayment.Origin.KeySend)
-//        val newChannelUUID = UUID.randomUUID()
-//        handler.db.receivePayment(preimage.sha256(), receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = null)))
-//        // process the amount origin which must reconcile with the existing line in the database
-//        handler.process(channelId, amountOrigin)
-//        val dbPayment = handler.db.getIncomingPayment(preimage.sha256())
-//        assertNotNull(dbPayment)
-//        assertIs<IncomingPayment.Origin.KeySend>(dbPayment.origin)
-//        assertEquals(setOf(IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = channelId)), dbPayment.received?.receivedWith)
-//        assertEquals(15_000_000.msat, dbPayment.received?.amount)
-//        assertEquals(1_000_000.msat, dbPayment.received?.fees)
-//    }
-
     @Test
     fun `receive multipart payment with multiple HTLCs via same channel`() = runSuspendTest {
         val channelId = randomBytes32()
@@ -434,7 +406,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             assertEquals(totalAmount, result.received.amount)
-            assertEquals(expectedReceivedWith.toSet(), result.received.receivedWith)
+            assertEquals(expectedReceivedWith, result.received.receivedWith)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
@@ -472,93 +444,93 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             assertEquals(totalAmount, result.received.amount)
-            assertEquals(expectedReceivedWith.toSet(), result.received.receivedWith)
+            assertEquals(expectedReceivedWith, result.received.receivedWith)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
 
-//    @Test
-//    fun `receive multipart payment via pay-to-open`() = runSuspendTest {
-//        val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
-//        val (fee1, fee2) = Pair(amount1 * 0.1, amount2 * 0.1)
-//        val totalAmount = amount1 + amount2
-//        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
-//
-//        // Step 1 of 2:
-//        // - Alice sends first multipart htlc to Bob
-//        // - Bob doesn't accept the MPP set yet
-//        run {
-//            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount1, totalAmount, paymentSecret))
-//            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
-//            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
-//            assertTrue { result.actions.isEmpty() }
-//        }
-//
-//        // Step 2 of 2:
-//        // - Alice sends second multipart htlc to Bob
-//        // - Bob now accepts the MPP set
-//        run {
-//            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret))
-//            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
-//            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
-//            result as IncomingPaymentHandler.ProcessAddResult.Accepted
-//            val (id1, id2) = result.received.receivedWith.map { (it as IncomingPayment.ReceivedWith.NewChannel).id }
-//            val (expectedActions, expectedReceivedWith) = setOf(
-//                PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-//                        to IncomingPayment.ReceivedWith.NewChannel(id = id1, amount1 - fee1, fee1, channelId = null),
-//                PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-//                        to IncomingPayment.ReceivedWith.NewChannel(id = id2, amount2 - fee2, fee2, channelId = null)
-//            ).unzip()
-//            assertEquals(expectedActions.toSet(), result.actions.toSet())
-//            val expectedFees = 15_000.msat // 10% of 150_000 msat
-//            assertEquals(totalAmount - expectedFees, result.received.amount)
-//            assertEquals(expectedFees, result.received.fees)
-//            assertEquals(expectedReceivedWith.toSet(), result.received.receivedWith)
-//            checkDbPayment(result.incomingPayment, paymentHandler.db)
-//        }
-//    }
+    @Test
+    fun `receive multipart payment via pay-to-open`() = runSuspendTest {
+        val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
+        val (fee1, fee2) = Pair(amount1 * 0.1, amount2 * 0.1)
+        val totalAmount = amount1 + amount2
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
-//    @Test
-//    fun `receive multipart payment with a mix of HTLC and pay-to-open`() = runSuspendTest {
-//        val channelId = randomBytes32()
-//        val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
-//        val fee2 = amount2 * 0.1
-//        val totalAmount = amount1 + amount2
-//        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
-//
-//        // Step 1 of 2:
-//        // - Alice sends first multipart htlc to Bob
-//        // - Bob doesn't accept the MPP set yet
-//        run {
-//            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
-//            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
-//            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
-//            assertTrue { result.actions.isEmpty() }
-//        }
-//
-//        // Step 2 of 2:
-//        // - Alice sends second multipart htlc to Bob
-//        // - Bob now accepts the MPP set
-//        run {
-//            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret))
-//            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
-//            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
-//            result as IncomingPaymentHandler.ProcessAddResult.Accepted
-//            val newChannelUUID = result.received.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.NewChannel>().first().id
-//            val (expectedActions, expectedReceivedWith) = setOf(
-//                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.preimage, commit = true)))
-//                        to IncomingPayment.ReceivedWith.LightningPayment(amount1, channelId, 0),
-//                PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-//                        to IncomingPayment.ReceivedWith.NewChannel(id = newChannelUUID, amount2 - fee2, fee2, channelId = null),
-//            ).unzip()
-//            assertEquals(expectedActions.toSet(), result.actions.toSet())
-//            val expectedFees = 5_000.msat // 10% of the amount sent via pay-to-open (50 000 msat)
-//            assertEquals(totalAmount - expectedFees, result.received.amount)
-//            assertEquals(expectedFees, result.received.fees)
-//            assertEquals(expectedReceivedWith.toSet(), result.received.receivedWith)
-//            checkDbPayment(result.incomingPayment, paymentHandler.db)
-//        }
-//    }
+        // Step 1 of 2:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount1, totalAmount, paymentSecret))
+            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertTrue { result.actions.isEmpty() }
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob now accepts the MPP set
+        run {
+            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret))
+            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+
+            // expected amount is correct and includes the pay-to-open fee
+            assertEquals(amount1 - fee1 + amount2 - fee2, result.received.expectedAmount)
+
+            assertEquals(result.actions, listOf(
+                PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))),
+                PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))),
+            ))
+
+            // but pay-to-open parts are not yet provided
+            assertTrue { result.received.receivedWith.isEmpty() }
+            assertEquals(0.msat, result.received.fees)
+
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
+    }
+
+    @Test
+    fun `receive multipart payment with a mix of HTLC and pay-to-open`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
+        val fee2 = amount2 * 0.1
+        val totalAmount = amount1 + amount2
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
+
+        // Step 1 of 2:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
+            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertTrue { result.actions.isEmpty() }
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob now accepts the MPP set
+        run {
+            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret))
+            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+
+            // expected amount is correct and includes the pay-to-open fee
+            assertEquals(amount1 + amount2 - fee2, result.received.expectedAmount)
+
+            assertEquals(2, result.actions.size)
+            assertContains(result.actions, WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.preimage, commit = true))))
+            assertContains(result.actions, PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))))
+
+            // the pay-to-open part is not yet provided
+            assertEquals(1, result.received.receivedWith.size)
+            assertContains(result.received.receivedWith, IncomingPayment.ReceivedWith.LightningPayment(amount1, channelId, 0))
+            assertEquals(0.msat, result.received.fees)
+
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
+    }
 
     @Test
     fun `receive multipart payment with a mix of HTLC and pay-to-open -- total amount too low`() = runSuspendTest {
@@ -827,7 +799,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `invoice expired`() = runSuspendTest {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val (incomingPayment, paymentSecret) = makeIncomingPayment(
             payee = paymentHandler,
             amount = defaultAmount,
@@ -1164,7 +1136,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `purge expired incoming payments`() = runSuspendTest {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
 
         // create incoming payment that has expired and not been paid
         val expiredInvoice = paymentHandler.createInvoice(
@@ -1179,7 +1151,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             timestampSeconds = 100
         )
         paymentHandler.db.receivePayment(
-            paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null)),
+            paidInvoice.paymentHash,
+            expectedAmount = 15_000_000.msat,
+            receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null)),
             receivedAt = 101
         ) // simulate incoming payment being paid before it expired
 
@@ -1285,7 +1259,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         private suspend fun createFixture(invoiceAmount: MilliSatoshi?): Triple<IncomingPaymentHandler, IncomingPayment, ByteVector32> {
-            val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+            val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
             val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, invoiceAmount)
             return Triple(paymentHandler, incomingPayment, paymentSecret)
         }

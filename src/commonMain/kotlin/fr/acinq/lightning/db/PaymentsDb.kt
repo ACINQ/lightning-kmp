@@ -34,7 +34,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
-    suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long = currentTimestampMillis())
+    suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long = currentTimestampMillis()): IncomingPayment
 
     /** Get information about an incoming payment (paid or not) for the given payment hash, if any. */
     suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
@@ -43,16 +43,19 @@ interface IncomingPaymentsDb {
      * Mark an incoming payment as received (paid).
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      *
+     * There is a duplication between the `expectedAmount` parameter and the sum of the [IncomingPayment.ReceivedWith], because with pay-to-open,
+     * there is a delay before we receive the parts. In such case, the method will be called twice: first with a non-zero amount
+     * and no payment parts, and second with a zero amount and one [IncomingPayment.ReceivedWith.OnChainIncomingPayment] part.
+     *
      * This method is additive:
+     * - amount must be added to the existing amount in the database.
      * - receivedWith set is appended to the existing set in database.
      * - receivedAt must be updated in database.
      *
-     * @param receivedWith is a set containing the payment parts holding the incoming amount, its aggregated amount should be equal to the amount param.
+     * @param expectedAmount The amount that we know will be received.
+     * @param receivedWith Is a set containing the payment parts holding the incoming amount, its aggregated amount should be equal to the amount param.
      */
-    suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: Set<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
-
-    /** Simultaneously add and receive a payment. Use this method when receiving a spontaneous payment, for example a swap-in payment. */
-    suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: Set<IncomingPayment.ReceivedWith>, createdAt: Long = currentTimestampMillis(), receivedAt: Long = currentTimestampMillis())
+    suspend fun receivePayment(paymentHash: ByteVector32, expectedAmount: MilliSatoshi, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
@@ -75,7 +78,7 @@ interface OutgoingPaymentsDb {
     suspend fun completeOutgoingPaymentOffchain(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis())
 
     /** Add new partial payments to a pending outgoing payment. */
-    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.LightningPart>)
+    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>)
 
     /** Mark an outgoing payment part as failed. */
     suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
@@ -134,7 +137,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     override val fees: MilliSatoshi = received?.fees ?: 0.msat
 
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
-    override val amount: MilliSatoshi = received?.amount ?: 0.msat
+    override val amount: MilliSatoshi = received?.amount?.takeIf { it > 0.msat } ?: received?.expectedAmount ?: 0.msat
 
     sealed class Origin {
         /** A normal, invoice-based lightning payment. */
@@ -150,7 +153,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         data class OnChain(val txid: ByteVector32, val localInputs: Set<OutPoint>) : Origin()
     }
 
-    data class Received(val receivedWith: Set<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
+    data class Received(val expectedAmount: MilliSatoshi, val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
         /** Total amount received after applying the fees. */
         val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
 
@@ -243,7 +246,7 @@ data class LightningOutgoingPayment(
     val paymentHash: ByteVector32 = details.paymentHash
 
     @Suppress("MemberVisibilityCanBePrivate")
-    val routingFee = parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+    val routingFee = parts.filter { it.status is Part.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
 
     override val completedAt: Long? = (status as? Status.Completed)?.completedAt
 
@@ -308,15 +311,6 @@ data class LightningOutgoingPayment(
     }
 
     /**
-     * An outgoing payment is an abstraction ; it is actually settled through one or several child payments that are
-     * done over Lightning, or through on-chain transactions.
-     */
-    sealed class Part {
-        abstract val id: UUID
-        abstract val createdAt: Long
-    }
-
-    /**
      * A child payment sent by this node (partial payment of the total amount). This payment has a status and can fail.
      *
      * @param id internal payment identifier.
@@ -325,13 +319,13 @@ data class LightningOutgoingPayment(
      * @param status current status of the payment.
      * @param createdAt absolute time in milliseconds since UNIX epoch when the payment was created.
      */
-    data class LightningPart(
-        override val id: UUID,
+    data class Part(
+        val id: UUID,
         val amount: MilliSatoshi,
         val route: List<HopDesc>,
         val status: Status,
-        override val createdAt: Long = currentTimestampMillis()
-    ) : Part() {
+        val createdAt: Long = currentTimestampMillis()
+    ) {
         sealed class Status {
             object Pending : Status()
             data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
@@ -364,7 +358,7 @@ data class SpliceOutgoingPayment(
     override val miningFees: Satoshi,
     override val txId: ByteVector32,
     override val createdAt: Long,
-    override val confirmedAt: Long? = null
+    override val confirmedAt: Long?
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()

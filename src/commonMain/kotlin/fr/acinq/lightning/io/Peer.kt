@@ -143,7 +143,7 @@ class Peer(
     val eventsFlow: SharedFlow<PeerEvent> get() = _eventsFlow.asSharedFlow()
 
     // encapsulates logic for validating incoming payments
-    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, walletParams, db.payments)
+    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments)
 
     // encapsulates logic for sending payments
     private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, walletParams, db.payments)
@@ -516,7 +516,8 @@ class Peer(
                                         address = action.address,
                                         miningFees = action.miningFees,
                                         txId = action.txId,
-                                        createdAt = currentTimestampMillis()
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null
                                     )
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
                                     ChannelCloseOutgoingPayment(
