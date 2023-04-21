@@ -367,7 +367,7 @@ data class LocalParams(
         maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
         isInitiator = isInitiator,
         defaultFinalScriptPubKey = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0), // the default closing address is the same for all channels
-        features = nodeParams.features
+        features = nodeParams.features.initFeatures()
     )
 
     fun channelKeys(keyManager: KeyManager) = keyManager.channelKeys(fundingKeyPath)
