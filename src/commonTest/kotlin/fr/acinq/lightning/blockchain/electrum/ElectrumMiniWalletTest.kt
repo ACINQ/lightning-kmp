@@ -30,6 +30,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         assertEquals(0, walletState.utxos.size)
         assertEquals(0.sat, walletState.totalBalance)
 
+        wallet.stop()
         client.stop()
     }
 
@@ -46,6 +47,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         assertEquals(6, walletState.utxos.size)
         assertEquals(30_000_000.sat, walletState.totalBalance)
 
+        wallet.stop()
         client.stop()
     }
 
@@ -97,6 +99,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
             }.toSet()
         )
 
+        wallet.stop()
         client.stop()
     }
 
@@ -117,5 +120,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         assertEquals(4, walletState1.parentTxs.size)
         assertEquals(6, walletState2.parentTxs.size)
 
+        wallet1.stop()
+        wallet2.stop()
+        client.stop()
     }
 }

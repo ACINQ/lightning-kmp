@@ -158,6 +158,7 @@ class ElectrumClient(
         var requestId = 0
 
         // reset mailbox
+        mailbox.cancel(CancellationException("connection in progress"))
         mailbox = Channel()
 
         suspend fun ping() {
