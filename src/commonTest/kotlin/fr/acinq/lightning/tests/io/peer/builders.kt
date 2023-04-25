@@ -170,7 +170,8 @@ fun buildPeer(
     val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = currentTip
     peer.onChainFeeratesFlow.value = OnChainFeerates(
-        mutualCloseFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
+        fundingFeerate = FeeratePerKw(FeeratePerByte(5.sat)),
+        mutualCloseFeerate = FeeratePerKw(FeeratePerByte(10.sat)),
         claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
         fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
     )

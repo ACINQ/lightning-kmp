@@ -14,7 +14,6 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
     val channelId = state.channelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "offline processing ${cmd::class}" }
         return when {
             cmd is ChannelCommand.Connected -> {
                 when {
