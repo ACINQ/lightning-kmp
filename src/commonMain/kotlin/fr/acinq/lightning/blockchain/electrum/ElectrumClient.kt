@@ -64,11 +64,12 @@ class ElectrumClient(
 
     private var mailbox = Channel<Action>()
 
+    private val statusJob: Job
     private var runJob: Job? = null
 
     init {
         logger.info { "initializing electrum client" }
-        launch {
+        statusJob = launch {
             fun convert(input: ElectrumConnectionStatus): Connection = when (input) {
                 is ElectrumConnectionStatus.Connecting -> Connection.ESTABLISHING
                 is ElectrumConnectionStatus.Connected -> Connection.ESTABLISHED
@@ -236,11 +237,13 @@ class ElectrumClient(
 
     suspend fun estimateFees(confirmations: Int): EstimateFeeResponse = rpcCall(EstimateFees(confirmations))
 
+    /** Stop this instance for good, the client cannot be used after it has been closed. */
     fun stop() {
         logger.info { "electrum client stopping" }
         // NB: disconnecting cancels the output channel
         disconnect()
-        // Cancel event consumer
+        // Cancel coroutine jobs
+        statusJob.cancel()
         runJob?.cancel()
         // Cancel event channel
         mailbox.cancel()

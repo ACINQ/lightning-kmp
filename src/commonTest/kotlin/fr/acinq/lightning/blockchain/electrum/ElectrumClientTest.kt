@@ -2,18 +2,12 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import org.kodein.log.LoggerFactory
 import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 
