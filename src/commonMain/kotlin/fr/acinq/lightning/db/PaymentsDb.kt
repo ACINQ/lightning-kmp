@@ -9,10 +9,7 @@ import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.FailureMessage
 
-interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
-    /** List sent and received payments (with most recent payments first). */
-    suspend fun listPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<WalletPayment>
-}
+interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
@@ -40,12 +37,6 @@ interface IncomingPaymentsDb {
      * or if the payment has not received any payment parts yet, then this method is a no-op. */
     suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32)
 
-    /** List received payments (with most recent payments first). */
-    suspend fun listReceivedPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
-
-    /** List incoming payments (with the most recent payments first). */
-    suspend fun listIncomingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<IncomingPayment>
-
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
 
@@ -58,10 +49,10 @@ interface OutgoingPaymentsDb {
     suspend fun addOutgoingPayment(outgoingPayment: OutgoingPayment)
 
     /** Get information about an outgoing payment (settled or not). */
-    suspend fun getOutgoingPayment(id: UUID): OutgoingPayment?
+    suspend fun getLightningOutgoingPayment(id: UUID): LightningOutgoingPayment?
 
     /** Mark an outgoing payment as completed for closing a Lightning channel on-chain with a list of on-chain txs. */
-    suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<OutgoingPayment.ClosingTxPart>, completedAt: Long = currentTimestampMillis())
+    suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<LightningOutgoingPayment.ClosingTxPart>, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment as completed over Lightning. */
     suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
@@ -70,7 +61,7 @@ interface OutgoingPaymentsDb {
     suspend fun completeOutgoingPaymentOffchain(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis())
 
     /** Add new partial payments to a pending outgoing payment. */
-    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<OutgoingPayment.LightningPart>)
+    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.LightningPart>)
 
     /** Mark an outgoing payment part as failed. */
     suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
@@ -79,39 +70,19 @@ interface OutgoingPaymentsDb {
     suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
 
     /** Get information about an outgoing payment from the id of one of its parts. */
-    suspend fun getOutgoingPaymentFromPartId(partId: UUID): OutgoingPayment?
+    suspend fun getLightningOutgoingPaymentFromPartId(partId: UUID): LightningOutgoingPayment?
 
     /** List all the outgoing payment attempts that tried to pay the given payment hash. */
-    suspend fun listOutgoingPayments(paymentHash: ByteVector32): List<OutgoingPayment>
-
-    /** List outgoing payments (with most recent payments first). */
-    suspend fun listOutgoingPayments(count: Int, skip: Int, filters: Set<PaymentTypeFilter> = setOf()): List<OutgoingPayment>
+    suspend fun listLightningOutgoingPayments(paymentHash: ByteVector32): List<LightningOutgoingPayment>
 }
-
-enum class PaymentTypeFilter { Normal, KeySend, SwapIn, SwapOut, ChannelClosing }
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
-    /** Absolute time in milliseconds since UNIX epoch when the payment was completed. */
-    fun completedAt(): Long = when (this) {
-        is IncomingPayment -> {
-            when (val received = received) {
-                null -> 0
-                else -> {
-                    if (received.receivedWith.all {
-                        when (it) {
-                            is IncomingPayment.ReceivedWith.NewChannel -> it.confirmed
-                            else -> true
-                        }
-                    }) received.receivedAt else 0
-                }
-            }
-        }
-        is OutgoingPayment -> when (status) {
-            is OutgoingPayment.Status.Completed -> status.completedAt
-            else -> 0
-        }
-    }
+    /** Absolute time in milliseconds since UNIX epoch when the payment was created. */
+    abstract val createdAt: Long
+
+    /** Absolute time in milliseconds since UNIX epoch when the payment was completed. May be null. */
+    abstract val completedAt: Long?
 
     /** Fees applied to complete this payment. */
     abstract val fees: MilliSatoshi
@@ -119,7 +90,7 @@ sealed class WalletPayment {
     /**
      * The actual amount that has been sent or received:
      * - for outgoing payments, the fee is included. This is what left the wallet;
-     * - for incoming payments, the is the amount AFTER the fees are applied. This is what went into the wallet.
+     * - for incoming payments, this is the amount AFTER the fees are applied. This is what went into the wallet.
      */
     abstract val amount: MilliSatoshi
 }
@@ -133,10 +104,17 @@ sealed class WalletPayment {
  * @param received funds received for this payment, null if no funds have been received yet.
  * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
  */
-data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
+data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, override val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
     constructor(preimage: ByteVector32, origin: Origin) : this(preimage, origin, null, currentTimestampMillis())
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
+
+    /** Returns the receivedAt timestamp if available. If any NewChannels parts have NOT yet confirmed, always returns null. */
+    override val completedAt: Long? = if (received?.receivedWith?.filterIsInstance<ReceivedWith.NewChannel>()?.any { !it.confirmed } == true) {
+        null
+    } else {
+        received?.receivedAt
+    }
 
     /** Total fees paid to receive this payment. */
     override val fees: MilliSatoshi = received?.fees ?: 0.msat
@@ -156,13 +134,6 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
         /** Trust-less swap-in based on dual funding. */
         data class DualSwapIn(val localInputs: Set<OutPoint>) : Origin()
-
-        fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
-            is Invoice -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
-            is KeySend -> filters.isEmpty() || filters.contains(PaymentTypeFilter.KeySend)
-            is SwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
-            is DualSwapIn -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapIn)
-        }
     }
 
     data class Received(val receivedWith: Set<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
@@ -213,6 +184,10 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     fun isExpired(): Boolean = origin is Origin.Invoice && origin.paymentRequest.isExpired()
 }
 
+sealed class OutgoingPayment : WalletPayment() {
+    abstract val id: UUID
+}
+
 /**
  * An outgoing payment sent by this node.
  * The payment may be split in multiple parts, which may fail, be retried, and then either succeed or fail.
@@ -225,23 +200,25 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
  * @param parts list of partial child payments that have actually been sent.
  * @param status current status of the payment.
  */
-data class OutgoingPayment(
-    val id: UUID,
+data class LightningOutgoingPayment(
+    override val id: UUID,
     val recipientAmount: MilliSatoshi,
     val recipient: PublicKey,
     val details: Details,
     val parts: List<Part>,
     val status: Status,
-    val createdAt: Long = currentTimestampMillis()
-) : WalletPayment() {
+    override val createdAt: Long = currentTimestampMillis()
+) : OutgoingPayment() {
 
     /** Create an outgoing payment in a pending status, without any parts yet. */
-    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, details: Details) : this(id, amount, recipient, details, listOf(), Status.Pending)
+    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, invoice: PaymentRequest) : this(id, amount, recipient, Details.Normal(invoice), listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
 
     @Suppress("MemberVisibilityCanBePrivate")
     val routingFee = parts.filterIsInstance<LightningPart>().filter { it.status is LightningPart.Status.Succeeded }.map { it.amount }.sum() - recipientAmount
+
+    override val completedAt: Long? = (status as? Status.Completed)?.completedAt
 
     /** This is the total fees that have been paid to make the payment work. It includes the LN routing fees, the fee for the swap-out service, the mining fees for closing a channel. */
     override val fees: MilliSatoshi = when (status) {
@@ -289,7 +266,11 @@ data class OutgoingPayment(
             override val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
         }
 
-        /** Swap-out payments send a lightning payment to a swap server, which will send an on-chain transaction to a given address. The swap-out fee is taken by the swap server to cover the miner fee. */
+        /**
+         * Backward compatibility code for legacy trusted swap-out.
+         * Swap-out payments send a lightning payment to a swap server, which will send an on-chain transaction to a given address.
+         * The swap-out fee is taken by the swap server to cover the miner fee.
+         */
         data class SwapOut(val address: String, val paymentRequest: PaymentRequest, val swapOutFee: Satoshi) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
@@ -307,12 +288,6 @@ data class OutgoingPayment(
             override val paymentHash: ByteVector32 = channelId.sha256()
         }
 
-        fun matchesFilters(filters: Set<PaymentTypeFilter>): Boolean = when (this) {
-            is Normal -> filters.isEmpty() || filters.contains(PaymentTypeFilter.Normal)
-            is KeySend -> filters.isEmpty() || filters.contains(PaymentTypeFilter.KeySend)
-            is SwapOut -> filters.isEmpty() || filters.contains(PaymentTypeFilter.SwapOut)
-            is ChannelClosing -> filters.isEmpty() || filters.contains(PaymentTypeFilter.ChannelClosing)
-        }
     }
 
     sealed class Status {

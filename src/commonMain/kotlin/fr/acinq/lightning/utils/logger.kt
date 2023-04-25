@@ -1,6 +1,7 @@
 package fr.acinq.lightning.utils
 
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.payment.PaymentPart
@@ -60,7 +61,7 @@ fun SendPayment.mdc(): Map<String, Any> = mapOf(
     "recipient" to recipient
 )
 
-fun OutgoingPayment.mdc(): Map<String, Any> = mapOf(
+fun LightningOutgoingPayment.mdc(): Map<String, Any> = mapOf(
     "paymentId" to id,
     "paymentHash" to paymentHash,
     "amount" to amount,

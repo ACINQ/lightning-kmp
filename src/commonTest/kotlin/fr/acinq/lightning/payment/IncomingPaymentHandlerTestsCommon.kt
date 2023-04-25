@@ -11,7 +11,6 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
-import fr.acinq.lightning.db.PaymentTypeFilter
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.router.ChannelHop
@@ -23,6 +22,7 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.delay
 import kotlin.test.*
+import kotlin.time.Duration.Companion.milliseconds
 
 class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
@@ -1196,7 +1196,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
 
         // create incoming payment that has expired and been paid
-        delay(100)
+        delay(100.milliseconds)
         val paidInvoice = paymentHandler.createInvoice(
             defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expirySeconds = 3600,
             timestampSeconds = 100
@@ -1207,18 +1207,20 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         ) // simulate incoming payment being paid before it expired
 
         // create unexpired payment
-        delay(100)
+        delay(100.milliseconds)
         val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("unexpired"), listOf(), expirySeconds = 3600)
 
         val unexpiredPayment = paymentHandler.db.getIncomingPayment(unexpiredInvoice.paymentHash)!!
         val paidPayment = paymentHandler.db.getIncomingPayment(paidInvoice.paymentHash)!!
         val expiredPayment = paymentHandler.db.getIncomingPayment(expiredInvoice.paymentHash)!!
 
-        assertEquals(paymentHandler.db.listIncomingPayments(5, 0, setOf(PaymentTypeFilter.Normal)), listOf(unexpiredPayment, paidPayment, expiredPayment))
-        assertEquals(paymentHandler.db.listExpiredPayments(), listOf(expiredPayment))
+        val db = paymentHandler.db
+        assertIs<InMemoryPaymentsDb>(db)
+        assertEquals(db.listIncomingPayments(5, 0), listOf(unexpiredPayment, paidPayment, expiredPayment))
+        assertEquals(db.listExpiredPayments(), listOf(expiredPayment))
         assertEquals(paymentHandler.purgeExpiredPayments(), 1)
-        assertEquals(paymentHandler.db.listExpiredPayments(), emptyList())
-        assertEquals(paymentHandler.db.listIncomingPayments(5, 0, setOf(PaymentTypeFilter.Normal)), listOf(unexpiredPayment, paidPayment))
+        assertEquals(db.listExpiredPayments(), emptyList())
+        assertEquals(db.listIncomingPayments(5, 0), listOf(unexpiredPayment, paidPayment))
     }
 
     companion object {
