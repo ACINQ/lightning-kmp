@@ -20,7 +20,9 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.delay
 import kotlin.test.*
+import kotlin.time.Duration.Companion.milliseconds
 
 class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
@@ -1183,41 +1185,43 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
     }
 
-//    @Test
-//    fun `purge expired incoming payments`() = runSuspendTest {
-//        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
-//
-//        // create incoming payment that has expired and not been paid
-//        val expiredInvoice = paymentHandler.createInvoice(
-//            randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expirySeconds = 3600,
-//            timestampSeconds = 1
-//        )
-//
-//        // create incoming payment that has expired and been paid
-//        delay(100)
-//        val paidInvoice = paymentHandler.createInvoice(
-//            defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expirySeconds = 3600,
-//            timestampSeconds = 100
-//        )
-//        paymentHandler.db.receivePayment(
-//            paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = null)),
-//            receivedAt = 101
-//        ) // simulate incoming payment being paid before it expired
-//
-//        // create unexpired payment
-//        delay(100)
-//        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("unexpired"), listOf(), expirySeconds = 3600)
-//
-//        val unexpiredPayment = paymentHandler.db.getIncomingPayment(unexpiredInvoice.paymentHash)!!
-//        val paidPayment = paymentHandler.db.getIncomingPayment(paidInvoice.paymentHash)!!
-//        val expiredPayment = paymentHandler.db.getIncomingPayment(expiredInvoice.paymentHash)!!
-//
-//        assertEquals(paymentHandler.db.listIncomingPayments(5, 0, setOf(PaymentTypeFilter.Normal)), listOf(unexpiredPayment, paidPayment, expiredPayment))
-//        assertEquals(paymentHandler.db.listExpiredPayments(), listOf(expiredPayment))
-//        assertEquals(paymentHandler.purgeExpiredPayments(), 1)
-//        assertEquals(paymentHandler.db.listExpiredPayments(), emptyList())
-//        assertEquals(paymentHandler.db.listIncomingPayments(5, 0, setOf(PaymentTypeFilter.Normal)), listOf(unexpiredPayment, paidPayment))
-//    }
+    @Test
+    fun `purge expired incoming payments`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+
+        // create incoming payment that has expired and not been paid
+        val expiredInvoice = paymentHandler.createInvoice(
+            randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expirySeconds = 3600,
+            timestampSeconds = 1
+        )
+
+        // create incoming payment that has expired and been paid
+        delay(100.milliseconds)
+        val paidInvoice = paymentHandler.createInvoice(
+            defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expirySeconds = 3600,
+            timestampSeconds = 100
+        )
+        paymentHandler.db.receivePayment(
+            paidInvoice.paymentHash, receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = 15_000_000.msat, serviceFee = 1_000_000.msat, channelId = null)),
+            receivedAt = 101
+        ) // simulate incoming payment being paid before it expired
+
+        // create unexpired payment
+        delay(100.milliseconds)
+        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("unexpired"), listOf(), expirySeconds = 3600)
+
+        val unexpiredPayment = paymentHandler.db.getIncomingPayment(unexpiredInvoice.paymentHash)!!
+        val paidPayment = paymentHandler.db.getIncomingPayment(paidInvoice.paymentHash)!!
+        val expiredPayment = paymentHandler.db.getIncomingPayment(expiredInvoice.paymentHash)!!
+
+        val db = paymentHandler.db
+        assertIs<InMemoryPaymentsDb>(db)
+        assertEquals(db.listIncomingPayments(5, 0), listOf(unexpiredPayment, paidPayment, expiredPayment))
+        assertEquals(db.listExpiredPayments(), listOf(expiredPayment))
+        assertEquals(paymentHandler.purgeExpiredPayments(), 1)
+        assertEquals(db.listExpiredPayments(), emptyList())
+        assertEquals(db.listIncomingPayments(5, 0), listOf(unexpiredPayment, paidPayment))
+    }
 
     companion object {
         val defaultPreimage = randomBytes32()
