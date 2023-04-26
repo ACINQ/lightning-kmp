@@ -231,8 +231,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     }
                 } else {
                     val payment = pending[paymentPart.paymentHash]?.add(paymentPart) ?: PendingPayment(paymentPart)
-                    val payToOpenMinAmount = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenMinAmountMsat }.firstOrNull()
-                    val payToOpenAmount = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.amountMsat }.sum()
                     when {
                         paymentPart.totalAmount != payment.totalAmount -> {
                             // Bolt 04:
@@ -253,31 +251,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             pending[paymentPart.paymentHash] = payment
                             return ProcessAddResult.Pending(incomingPayment)
                         }
-                        payToOpenMinAmount != null && payToOpenAmount < payToOpenMinAmount -> {
-                            // Because of the cost of opening a new channel, there is a minimum amount for incoming payments to trigger
-                            // a pay-to-open. Given that the total amount of a payment is included in each payment part, we could have
-                            // rejected pay-to-open parts as they arrived, but it would have caused two issues:
-                            // - in case there is a mix of htlc parts and pay-to-open parts, the htlc parts would have been accepted and we
-                            // would have waited for a timeout before failing them (since the payment would never complete)
-                            // - if we rejected each pay-to-open part individually, we wouldn't have been able to emit a single event
-                            //   regarding the failed pay-to-open
-                            // That is why, instead, we wait for all parts to arrive. Then, if there is at least one pay-to-open part, and if
-                            // the total received amount is less than the minimum amount required for a pay-to-open, we fail the payment.
-                            logger.warning { "amount too low for a pay-to-open: $payToOpenAmount, min is $payToOpenMinAmount" }
-                            val actions = payment.parts.map { part ->
-                                val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
-                                when (part) {
-                                    is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
-                                    is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
-                                }
-                            }
-                            pending.remove(paymentPart.paymentHash)
-                            return ProcessAddResult.Rejected(actions, incomingPayment)
-                        }
                         else -> {
-                            if (payToOpenMinAmount != null) {
+                            if (payment.parts.filterIsInstance<PayToOpenPart>().isNotEmpty()) {
                                 val payToOpenFee = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenFeeSatoshis }.sum().toMilliSatoshi()
-                                nodeParams.liquidityPolicy.maybeReject(payment.amountReceived, payToOpenFee, LiquidityEvents.Source.OffChainPayment)?.let { rejected ->
+                                // We consider the total amount received (not only the pay-to-open parts) to evaluate whether or not to accept the payment
+                                nodeParams.liquidityPolicy.maybeReject(payment.amountReceived, payToOpenFee, LiquidityEvents.Source.OffChainPayment, logger)?.let { rejected ->
                                     logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
                                     nodeParams._nodeEvents.emit(rejected)
                                     val actions = payment.parts.map { part ->

@@ -17,7 +17,7 @@ import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
 data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
-    /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent*/
+    /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent */
     val consistent: Boolean = addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
     val utxos: List<Utxo> = addresses
         .flatMap { it.value }

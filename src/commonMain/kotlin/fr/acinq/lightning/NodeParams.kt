@@ -214,7 +214,7 @@ data class NodeParams(
         enableTrampolinePayment = true,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
-        liquidityPolicy = LiquidityPolicy.Auto(100, 3000.sat)
+        liquidityPolicy = LiquidityPolicy.Auto(maxAbsoluteFee = 1_500.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */)
     )
 
     sealed class Chain(val name: String, private val genesis: Block) {

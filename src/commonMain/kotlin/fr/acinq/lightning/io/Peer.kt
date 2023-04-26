@@ -209,14 +209,14 @@ class Peer(
                     // reservedUtxos are part of a previously issued RequestChannelOpen command
                     val availableWallet = wallet.minus(reservedUtxos)
                     val balance = availableWallet.confirmedBalance
-                    logger.info { "swap-in wallet balance: $balance, ${availableWallet.unconfirmedBalance} unconfirmed" }
-                    if (balance >= 10_000.sat) {
+                    logger.info { "swap-in wallet balance: confirmed=$balance, unconfirmed=${availableWallet.unconfirmedBalance}" }
+                    if (balance > 0.sat) {
                         logger.info { "swap-in wallet: requesting channel using confirmed balance: $balance" }
                         input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet))
                         reservedUtxos.union(availableWallet.confirmedUtxos)
                     } else {
                         reservedUtxos
-                    }.intersect(wallet.utxos) // drop utxos no longer in wallet
+                    }.intersect(wallet.utxos.toSet()) // drop utxos no longer in wallet
                 }
         }
         launch {
@@ -706,13 +706,13 @@ class Peer(
                             val (wallet, fundingAmount, pushAmount) = when (val origin = msg.origin) {
                                 is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
-                                        val totalFee = origin.serviceFee + origin.miningFee.toMilliSatoshi()
-                                        nodeParams.liquidityPolicy.maybeReject(request.wallet.confirmedBalance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet)?.let { rejected ->
-                                            logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
-                                            nodeParams._nodeEvents.emit(rejected)
-                                            sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
-                                            return@withMDC
-                                        }
+                                        val totalFee = origin.serviceFee + origin.miningFee.toMilliSatoshi() - msg.pushAmount
+                                        nodeParams.liquidityPolicy.maybeReject(request.wallet.confirmedBalance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
+                                                logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
+                                                nodeParams._nodeEvents.emit(rejected)
+                                                sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
+                                                return@withMDC
+                                            }
                                         val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                         val fundingAmount = request.wallet.confirmedBalance - fundingFee
@@ -858,11 +858,11 @@ class Peer(
                         logger.info { "requesting splice-in using confirmed balance=$balance feerate=$feerate" }
 
                         val feeEstimate = Transactions.weight2fee(feerate, 610 + cmd.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
-                        nodeParams.liquidityPolicy.maybeReject(cmd.wallet.confirmedBalance.toMilliSatoshi(), feeEstimate.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet)?.let { rejected ->
-                            logger.info { "rejecting splice: reason=${rejected.reason}" }
-                            nodeParams._nodeEvents.emit(rejected)
-                            return
-                        }
+                        nodeParams.liquidityPolicy.maybeReject(cmd.wallet.confirmedBalance.toMilliSatoshi(), feeEstimate.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
+                                logger.info { "rejecting splice: reason=${rejected.reason}" }
+                                nodeParams._nodeEvents.emit(rejected)
+                                return
+                            }
 
                         val spliceCommand = Command.Splice.Request(
                             replyTo = CompletableDeferred(),
