@@ -215,35 +215,26 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertTrue(result2.received.receivedWith.isEmpty())
     }
 
-//    @Test
-//    fun `receive pay-to-open payment with two unevenly-split HTLCs`() = runSuspendTest {
-//        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
-//        checkDbPayment(incomingPayment, paymentHandler.db)
-//        val payToOpenRequest1 = makePayToOpenRequest(incomingPayment, makeMppPayload(40_000.msat, defaultAmount, paymentSecret))
-//        val payToOpenRequest2 = makePayToOpenRequest(incomingPayment, makeMppPayload(60_000.msat, defaultAmount, paymentSecret))
-//
-//        val result1 = paymentHandler.process(payToOpenRequest1, TestConstants.defaultBlockHeight)
-//        assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result1)
-//        val result2 = paymentHandler.process(payToOpenRequest2, TestConstants.defaultBlockHeight)
-//        assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result2)
-//
-//        val expected = PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest1.chainHash, payToOpenRequest1.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-//        assertEquals(setOf(expected), (result1.actions + result2.actions).toSet())
-//
-//        val expectedFees = defaultAmount * 0.1 // 10% fees
-//        assertEquals(defaultAmount - expectedFees, result2.received.amount)
-//        assertEquals(expectedFees, result2.received.fees)
-//
-//        val (id1, id2) = result2.received.receivedWith.map { (it as IncomingPayment.ReceivedWith.NewChannel).id }
-//        assertEquals(
-//            setOf(
-//                makeReceivedWithNewChannel(payToOpenRequest1, uuid = id1),
-//                makeReceivedWithNewChannel(payToOpenRequest2, uuid = id2)
-//            ), result2.received.receivedWith
-//        )
-//
-//        checkDbPayment(result2.incomingPayment, paymentHandler.db)
-//    }
+    @Test
+    fun `receive pay-to-open payment with two unevenly-split HTLCs`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
+        checkDbPayment(incomingPayment, paymentHandler.db)
+        val payToOpenRequest1 = makePayToOpenRequest(incomingPayment, makeMppPayload(40_000.msat, defaultAmount, paymentSecret))
+        val payToOpenRequest2 = makePayToOpenRequest(incomingPayment, makeMppPayload(60_000.msat, defaultAmount, paymentSecret))
+
+        val result1 = paymentHandler.process(payToOpenRequest1, TestConstants.defaultBlockHeight)
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result1)
+        assertEquals(emptyList(), result1.actions)
+        val result2 = paymentHandler.process(payToOpenRequest2, TestConstants.defaultBlockHeight)
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result2)
+        val payToOpenResponse = PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest1.chainHash, payToOpenRequest1.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
+        assertEquals(listOf(payToOpenResponse, payToOpenResponse), result2.actions)
+
+        assertEquals(0.msat, result2.received.amount)
+        assertEquals(0.msat, result2.received.fees)
+
+        checkDbPayment(result2.incomingPayment, paymentHandler.db)
+    }
 
     @Test
     fun `receive pay-to-open payment with an unknown payment hash`() = runSuspendTest {
@@ -1252,13 +1243,15 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             return PaymentOnion.FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, null)
         }
 
+        const val payToOpenFeerate = 0.1
+
         private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: PaymentOnion.FinalPayload, payToOpenMinAmount: MilliSatoshi = 10_000.msat): PayToOpenRequest {
             return PayToOpenRequest(
                 chainHash = ByteVector32.Zeroes,
                 fundingSatoshis = 100_000.sat,
                 amountMsat = finalPayload.amount,
                 payToOpenMinAmountMsat = payToOpenMinAmount,
-                payToOpenFeeSatoshis = finalPayload.amount.truncateToSatoshi() * 0.1, // 10%
+                payToOpenFeeSatoshis = finalPayload.amount.truncateToSatoshi() * payToOpenFeerate, // 10%
                 paymentHash = incomingPayment.paymentHash,
                 expireAt = Long.MAX_VALUE,
                 finalPacket = OutgoingPaymentPacket.buildPacket(
@@ -1276,10 +1269,10 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret)
         }
 
-//        private fun makeReceivedWithNewChannel(payToOpen: PayToOpenRequest, uuid: UUID, feeRatio: Double = 0.1): IncomingPayment.ReceivedWith.NewChannel {
-//            val fee = payToOpen.amountMsat * feeRatio
-//            return IncomingPayment.ReceivedWith.NewChannel(id = uuid, amount = payToOpen.amountMsat - fee, serviceFee = fee, channelId = null)
-//        }
+        private fun makeReceivedWithNewChannel(payToOpen: PayToOpenRequest, feeRatio: Double = 0.1): IncomingPayment.ReceivedWith.NewChannel {
+            val fee = payToOpen.amountMsat * feeRatio
+            return IncomingPayment.ReceivedWith.NewChannel(amount = payToOpen.amountMsat - fee, serviceFee = fee, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null)
+        }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {
             val dbPayment = db.getIncomingPayment(incomingPayment.paymentHash)!!
