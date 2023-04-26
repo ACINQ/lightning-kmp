@@ -2,19 +2,19 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.utils.ServerAddress
+import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import org.kodein.log.LoggerFactory
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class ElectrumClientTest : LightningTestSuite() {
@@ -40,44 +40,51 @@ class ElectrumClientTest : LightningTestSuite() {
     )
         .map { it.toByteVector32() }
 
-    @Test
-    fun `connect to an electrumx mainnet server`() = runSuspendTest(timeout = 15.seconds) { connectToMainnetServer().stop() }
+    private fun runTest(test: suspend CoroutineScope.(ElectrumClient) -> Unit) = runSuspendTest(timeout = 15.seconds) {
+        val client = connectToMainnetServer()
+
+        client.connectionState.first { it is Connection.CLOSED }
+        client.connectionState.first { it is Connection.ESTABLISHING }
+        client.connectionState.first { it is Connection.ESTABLISHED }
+
+        test(client)
+    }
 
     @Test
-    fun `estimate fees`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `connect to an electrumx mainnet server`() = runTest { client ->
+        client.stop()
+    }
+
+    @Test
+    fun `estimate fees`() = runTest { client ->
         val response = client.estimateFees(3)
         assertTrue { response.feerate!! >= FeeratePerKw.MinimumFeeratePerKw }
         client.stop()
     }
 
     @Test
-    fun `get transaction id from position`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `get transaction id from position`() = runTest { client ->
         val response = client.rpcCall<GetTransactionIdFromPositionResponse>(GetTransactionIdFromPosition(height, position))
         assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position), response)
         client.stop()
     }
 
     @Test
-    fun `get transaction id from position with merkle proof`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `get transaction id from position with merkle proof`() = runTest { client ->
         val response = client.rpcCall<GetTransactionIdFromPositionResponse>(GetTransactionIdFromPosition(height, position, merkle = true))
         assertEquals(GetTransactionIdFromPositionResponse(referenceTx.txid, height, position, merkleProof), response)
         client.stop()
     }
 
     @Test
-    fun `get transaction`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `get transaction`() = runTest { client ->
         val tx = client.getTx(referenceTx.txid)
         assertEquals(referenceTx, tx)
         client.stop()
     }
 
     @Test
-    fun `get header`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `get header`() = runTest { client ->
         val response = client.rpcCall<GetHeaderResponse>(GetHeader(100000))
         assertEquals(
             Hex.decode("000000000003ba27aa200b1cecaad478d2b00432346c3f1f3986da1afd33e506").byteVector32(),
@@ -87,8 +94,7 @@ class ElectrumClientTest : LightningTestSuite() {
     }
 
     @Test
-    fun `get headers`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `get headers`() = runTest { client ->
         val start = (500000 / 2016) * 2016
         val response = client.rpcCall<GetHeadersResponse>(GetHeaders(start, 2016))
         assertEquals(start, response.start_height)
@@ -97,8 +103,7 @@ class ElectrumClientTest : LightningTestSuite() {
     }
 
     @Test
-    fun `get merkle tree`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `get merkle tree`() = runTest { client ->
         val merkle = client.getMerkle(referenceTx.txid, 500000)
 
         assertEquals(referenceTx.txid, merkle.txid)
@@ -113,40 +118,35 @@ class ElectrumClientTest : LightningTestSuite() {
     }
 
     @Test
-    fun `header subscription`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `header subscription`() = runTest { client ->
         val response = client.startHeaderSubscription()
         require(BlockHeader.checkProofOfWork(response.header))
         client.stop()
     }
 
     @Test
-    fun `scripthash subscription`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `scripthash subscription`() = runTest { client ->
         val response = client.startScriptHashSubscription(scriptHash)
         assertNotEquals("", response.status)
         client.stop()
     }
 
     @Test
-    fun `get scripthash history`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `get scripthash history`() = runTest { client ->
         val history = client.getScriptHashHistory(scriptHash)
         assertTrue { history.contains(TransactionHistoryItem(500000, referenceTx.txid)) }
         client.stop()
     }
 
     @Test
-    fun `list script unspents`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `list script unspents`() = runTest { client ->
         val response = client.getScriptHashUnspents(scriptHash)
         assertTrue { response.isEmpty() }
         client.stop()
     }
 
     @Test
-    fun `client multiplexing`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToMainnetServer()
+    fun `client multiplexing`() = runTest { client ->
 
         val txids = listOf(
             ByteVector32("c1e943938e0bf2e9e6feefe22af0466514a58e9f7ed0f7ada6fd8e6dbeca0742"),

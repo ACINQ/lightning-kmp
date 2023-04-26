@@ -6,6 +6,7 @@ import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toByteVector
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -130,6 +131,9 @@ class ElectrumMiniWallet(
             mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
         }
     }
+
+    private val job: Job
+
     init {
         suspend fun WalletState.processSubscriptionResponse(msg: ScriptHashSubscriptionResponse): WalletState {
             val bitcoinAddress = scriptHashes[msg.scriptHash]
@@ -152,47 +156,55 @@ class ElectrumMiniWallet(
             }
         }
 
-        suspend fun subscribe(bitcoinAddress: String): Triple<ByteVector32, String, ScriptHashSubscriptionResponse> {
+        /**
+         * Attempts to subscribe to changes affecting a given bitcoin address.
+         * Depending on the status of the electrum connection, the subscription may or may not be sent to a server.
+         * It is the responsibility of the caller to resubscribe on reconnection.
+         */
+        suspend fun subscribe(bitcoinAddress: String): Pair<ByteVector32, String> {
             val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
             val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
-            logger.info { "subscribing to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
-            val response = client.startScriptHashSubscription(scriptHash)
-            return Triple(scriptHash, bitcoinAddress, response)
+            kotlin.runCatching { client.startScriptHashSubscription(scriptHash) }
+                .map { response ->
+                logger.info { "subscribed to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
+                _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
+            }
+            return scriptHash to bitcoinAddress
         }
 
-        launch {
-            // listen to connection events
-            client.connectionState.filterIsInstance<Connection.ESTABLISHED>().collect { mailbox.send(WalletCommand.Companion.ElectrumConnected) }
-        }
-        launch {
-            // listen to subscriptions events
-            client.notifications.collect { mailbox.send(WalletCommand.Companion.ElectrumNotification(it)) }
-        }
-        launch {
-            mailbox.consumeAsFlow().collect {
-                when (it) {
-                    is WalletCommand.Companion.ElectrumConnected -> {
-                        logger.mdcinfo { "electrum connected" }
-                        scriptHashes.values.forEach { scriptHash ->
-                            val (_, _, response) = subscribe(scriptHash)
-                            _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
+        job = launch {
+            launch {
+                // listen to connection events
+                client.connectionState.filterIsInstance<Connection.ESTABLISHED>().collect { mailbox.send(WalletCommand.Companion.ElectrumConnected) }
+            }
+            launch {
+                // listen to subscriptions events
+                client.notifications.collect { mailbox.send(WalletCommand.Companion.ElectrumNotification(it)) }
+            }
+            launch {
+                mailbox.consumeAsFlow().collect {
+                    when (it) {
+                        is WalletCommand.Companion.ElectrumConnected -> {
+                            logger.mdcinfo { "electrum connected" }
+                            scriptHashes.values.forEach { scriptHash -> subscribe(scriptHash) }
                         }
-                    }
 
-                    is WalletCommand.Companion.ElectrumNotification -> {
-                        if (it.msg is ScriptHashSubscriptionResponse) {
-                            _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
+                        is WalletCommand.Companion.ElectrumNotification -> {
+                            if (it.msg is ScriptHashSubscriptionResponse) {
+                                _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
+                            }
                         }
-                    }
 
-                    is WalletCommand.Companion.AddAddress -> {
-                        logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
-                        val (scriptHash, address, response) = subscribe(it.bitcoinAddress)
-                        scriptHashes = scriptHashes + (scriptHash to address)
-                        _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
+                        is WalletCommand.Companion.AddAddress -> {
+                            logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
+                            val (scriptHash, address) = subscribe(it.bitcoinAddress)
+                            scriptHashes = scriptHashes + (scriptHash to address)
+                        }
                     }
                 }
             }
         }
     }
+
+    fun stop() = job.cancel()
 }
