@@ -121,9 +121,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     is Origin.PayToOpenOrigin ->
                         db.receivePayment(
                             paymentHash = action.origin.paymentHash,
-                            receivedWith = receivedWith
-                        )
-                    else -> db.addAndReceivePayment(
+                            expectedAmount = 0.msat, // amount was already set before
+                            receivedWith = receivedWith)
+                    else ->
+                        db.addAndReceivePayment(
                         preimage = randomBytes32(), // not used, placeholder
                         origin = IncomingPayment.Origin.OnChain(action.txId, action.localInputs),
                         receivedWith = receivedWith
@@ -145,6 +146,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     is Origin.PayToOpenOrigin ->
                         db.receivePayment(
                             paymentHash = action.origin.paymentHash,
+                            expectedAmount = 0.msat, // amount was already set before
                             receivedWith = receivedWith
                         )
                     else -> db.addAndReceivePayment(
@@ -304,9 +306,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                             }.unzip()
                             pending.remove(paymentPart.paymentHash)
 
-                            val received = IncomingPayment.Received(receivedWith = receivedWith.filterNotNull())
+                            val received = IncomingPayment.Received(expectedAmount = payment.parts.map { it.amount }.sum(), receivedWith = receivedWith.filterNotNull())
 
-                            db.receivePayment(paymentPart.paymentHash, received.receivedWith)
+                            db.receivePayment(paymentPart.paymentHash, expectedAmount = received.expectedAmount, received.receivedWith)
 
                             return ProcessAddResult.Accepted(actions, incomingPayment.copy(received = received), received)
                         }

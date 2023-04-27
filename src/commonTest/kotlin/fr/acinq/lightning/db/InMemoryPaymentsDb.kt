@@ -2,11 +2,13 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.FailureMessage
 
@@ -24,14 +26,16 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long) {
+    override suspend fun receivePayment(paymentHash: ByteVector32, expectedAmount: MilliSatoshi, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
             else -> incoming[paymentHash] = run {
-                payment.copy(received = IncomingPayment.Received(
-                    receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
-                    receivedAt = receivedAt
-                )
+                payment.copy(
+                    received = IncomingPayment.Received(
+                        expectedAmount = expectedAmount,
+                        receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
+                        receivedAt = receivedAt
+                    )
                 )
             }
         }
@@ -39,7 +43,7 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: List<IncomingPayment.ReceivedWith>, createdAt: Long, receivedAt: Long) {
         val paymentHash = preimage.sha256()
-        incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Received(receivedWith, receivedAt), createdAt)
+        incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Received(expectedAmount = receivedWith.map { it.amount }.sum(), receivedWith, receivedAt), createdAt)
     }
 
     fun listIncomingPayments(count: Int, skip: Int): List<IncomingPayment> =

@@ -28,7 +28,8 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertEquals(incoming, pending)
 
         db.receivePayment(
-            pr.paymentHash, listOf(
+            pr.paymentHash, expectedAmount = 200_000.msat,
+            listOf(
                 IncomingPayment.ReceivedWith.LightningPayment(
                     amount = 200_000.msat,
                     channelId = channelId,
@@ -40,7 +41,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertNotNull(received)
         assertEquals(
             pending.copy(
-                received = IncomingPayment.Received(
+                received = IncomingPayment.Received(expectedAmount = 200_000.msat,
                     listOf(
                         IncomingPayment.ReceivedWith.LightningPayment(
                             amount = 200_000.msat,
@@ -66,7 +67,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertEquals(incoming, pending)
 
         db.receivePayment(
-            pr.paymentHash, listOf(
+            pr.paymentHash, expectedAmount = 199_000.msat, listOf(
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 57_000.msat, channelId = channelId1, htlcId = 1L),
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 43_000.msat, channelId = channelId2, htlcId = 54L),
                 IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, serviceFee = 1_000.msat, miningFee = 0.sat, txId = randomBytes32(), confirmedAt = null)
@@ -91,7 +92,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
 
         db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
         db.receivePayment(
-            pr.paymentHash, listOf(
+            pr.paymentHash, expectedAmount = 200_000.msat, listOf(
                 IncomingPayment.ReceivedWith.LightningPayment(
                     amount = 200_000.msat,
                     channelId = channelId,
@@ -105,7 +106,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertEquals(200_000.msat, received1.amount)
 
         db.receivePayment(
-            pr.paymentHash, listOf(
+            pr.paymentHash, expectedAmount = 100_000.msat, listOf(
                 IncomingPayment.ReceivedWith.LightningPayment(
                     amount = 100_000.msat,
                     channelId = channelId,
@@ -139,7 +140,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val (db, preimage, pr) = createFixture()
         db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
         db.receivePayment(
-            pr.paymentHash, listOf(
+            pr.paymentHash, expectedAmount = 500_000.msat, listOf(
                 IncomingPayment.ReceivedWith.NewChannel(
                     amount = 500_000.msat,
                     serviceFee = 15_000.msat,

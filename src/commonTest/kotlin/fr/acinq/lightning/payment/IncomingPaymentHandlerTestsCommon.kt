@@ -1031,7 +1031,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             timestampSeconds = 100
         )
         paymentHandler.db.receivePayment(
-            paidInvoice.paymentHash, receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null)),
+            paidInvoice.paymentHash,
+            expectedAmount = 15_000_000.msat,
+            receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null)),
             receivedAt = 101
         ) // simulate incoming payment being paid before it expired
 
