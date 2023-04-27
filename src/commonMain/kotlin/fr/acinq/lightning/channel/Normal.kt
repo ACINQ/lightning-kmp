@@ -580,10 +580,12 @@ data class Normal(
                         }
                         is SpliceStatus.WaitingForSigs -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
-                            Pair(
-                                this@Normal.copy(spliceStatus = SpliceStatus.None),
-                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                            val nextState = this@Normal.copy(spliceStatus = SpliceStatus.None)
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message))
                             )
+                            Pair(nextState, actions)
                         }
                         is SpliceStatus.Aborted -> {
                             logger.info { "our peer acked our previous tx_abort" }
