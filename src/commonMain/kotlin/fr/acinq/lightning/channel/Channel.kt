@@ -128,8 +128,11 @@ sealed class ChannelAction {
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
         /** Payment received through on-chain operations (channel creation or splice-in) */
         sealed class StoreIncomingPayment : Storage() {
-            data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val localInputs: Set<OutPoint>, val txId: ByteVector32, val origin: Origin?) : StoreIncomingPayment()
-            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val localInputs: Set<OutPoint>, val txId: ByteVector32, val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
+            abstract val origin: Origin?
+            abstract val txId: ByteVector32
+            abstract val localInputs: Set<OutPoint>
+            data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin?) : StoreIncomingPayment()
+            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
         }
         /** Payment received through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {

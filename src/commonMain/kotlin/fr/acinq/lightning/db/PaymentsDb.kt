@@ -34,7 +34,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
-    suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long = currentTimestampMillis())
+    suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long = currentTimestampMillis()): IncomingPayment
 
     /** Get information about an incoming payment (paid or not) for the given payment hash, if any. */
     suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
@@ -56,9 +56,6 @@ interface IncomingPaymentsDb {
      * @param receivedWith Is a set containing the payment parts holding the incoming amount, its aggregated amount should be equal to the amount param.
      */
     suspend fun receivePayment(paymentHash: ByteVector32, expectedAmount: MilliSatoshi, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
-
-    /** Simultaneously add and receive a payment. Use this method when receiving a spontaneous payment, for example a swap-in payment. */
-    suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: List<IncomingPayment.ReceivedWith>, createdAt: Long = currentTimestampMillis(), receivedAt: Long = currentTimestampMillis())
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>

@@ -493,7 +493,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
         // The invoice comes from Bob, our direct peer (and trampoline node).
         val preimage = randomBytes32()
-        val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
+        val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, Either.Left("phoenix to phoenix"), listOf())
         val payment = SendPayment(UUID.randomUUID(), 300_000.msat, invoice.nodeId, invoice)
 

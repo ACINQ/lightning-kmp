@@ -158,25 +158,6 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `simultaneously add and receive incoming payment`() = runSuspendTest {
-        val db = InMemoryPaymentsDb()
-        val preimage = randomBytes32()
-        val channelId = randomBytes32()
-        val origin = IncomingPayment.Origin.OnChain(randomBytes32(), setOf(OutPoint(randomBytes32(), 3)))
-        val receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 50_000_000.msat, serviceFee = 1_234.msat, miningFee = 0.sat, channelId = channelId, txId = randomBytes32(), confirmedAt = null))
-        assertNull(db.getIncomingPayment(randomBytes32()))
-
-        db.addAndReceivePayment(preimage = preimage, origin = origin, receivedWith = receivedWith)
-        val payment = db.getIncomingPayment(Crypto.sha256(preimage).toByteVector32())
-        assertNotNull(payment)
-        assertEquals(origin, payment.origin)
-        assertNotNull(payment.received)
-        assertEquals(receivedWith, payment.received?.receivedWith)
-        assertEquals(50_000_000.msat, payment.amount)
-        assertEquals(1234.msat, payment.fees)
-    }
-
-    @Test
     fun `reject duplicate payment hash`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr))

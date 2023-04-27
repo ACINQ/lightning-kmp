@@ -679,7 +679,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `invoice expired`() = runSuspendTest {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val (incomingPayment, paymentSecret) = makeIncomingPayment(
             payee = paymentHandler,
             amount = defaultAmount,
@@ -1016,7 +1016,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `purge expired incoming payments`() = runSuspendTest {
-        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
 
         // create incoming payment that has expired and not been paid
         val expiredInvoice = paymentHandler.createInvoice(
@@ -1139,7 +1139,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         private suspend fun createFixture(invoiceAmount: MilliSatoshi?): Triple<IncomingPaymentHandler, IncomingPayment, ByteVector32> {
-            val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams, InMemoryPaymentsDb())
+            val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
             val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, invoiceAmount)
             return Triple(paymentHandler, incomingPayment, paymentSecret)
         }

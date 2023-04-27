@@ -35,7 +35,7 @@ data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val fi
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
 }
 
-class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: IncomingPaymentsDb) {
+class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb) {
 
     sealed class ProcessAddResult {
         abstract val actions: List<PeerCommand>
@@ -105,57 +105,45 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
      * - for a swap-in origin, a new incoming payment must be created. We use a random.
      */
     suspend fun process(channelId: ByteVector32, action: ChannelAction.Storage.StoreIncomingPayment) {
-        when (action) {
-            is ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel -> {
-                val receivedWith = listOf(
-                    IncomingPayment.ReceivedWith.NewChannel(
-                        amount = action.amount,
-                        serviceFee = action.serviceFee,
-                        miningFee = action.miningFee,
-                        channelId = channelId,
-                        txId = action.txId,
-                        confirmedAt = null
-                    )
+        val receivedWith = when (action) {
+            is ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel ->
+                IncomingPayment.ReceivedWith.NewChannel(
+                    amount = action.amount,
+                    serviceFee = action.serviceFee,
+                    miningFee = action.miningFee,
+                    channelId = channelId,
+                    txId = action.txId,
+                    confirmedAt = null
                 )
-                when (action.origin) {
-                    is Origin.PayToOpenOrigin ->
-                        db.receivePayment(
-                            paymentHash = action.origin.paymentHash,
-                            expectedAmount = 0.msat, // amount was already set before
-                            receivedWith = receivedWith)
-                    else ->
-                        db.addAndReceivePayment(
-                        preimage = randomBytes32(), // not used, placeholder
-                        origin = IncomingPayment.Origin.OnChain(action.txId, action.localInputs),
-                        receivedWith = receivedWith
-                    )
-                }
-            }
-            is ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn -> {
-                val receivedWith = listOf(
-                    IncomingPayment.ReceivedWith.SpliceIn(
-                        amount = action.amount,
-                        serviceFee = action.serviceFee,
-                        miningFee = action.miningFee,
-                        channelId = channelId,
-                        txId = action.txId,
-                        confirmedAt = null
-                    )
+            is ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn ->
+                IncomingPayment.ReceivedWith.SpliceIn(
+                    amount = action.amount,
+                    serviceFee = action.serviceFee,
+                    miningFee = action.miningFee,
+                    channelId = channelId,
+                    txId = action.txId,
+                    confirmedAt = null
                 )
-                when (action.origin) {
-                    is Origin.PayToOpenOrigin ->
-                        db.receivePayment(
-                            paymentHash = action.origin.paymentHash,
-                            expectedAmount = 0.msat, // amount was already set before
-                            receivedWith = receivedWith
-                        )
-                    else -> db.addAndReceivePayment(
-                        preimage = randomBytes32(), // not used, placeholder
-                        origin = IncomingPayment.Origin.OnChain(action.txId, action.localInputs),
-                        receivedWith = receivedWith
-                    )
-                }
-
+        }
+        when (val origin = action.origin) {
+            is Origin.PayToOpenOrigin ->
+                // there already is a corresponding Lightning invoice in the db
+                db.receivePayment(
+                    paymentHash = origin.paymentHash,
+                    expectedAmount = 0.msat, // amount was already set before
+                    receivedWith = listOf(receivedWith)
+                )
+            else -> {
+                // this is a swap, there was no pre-existing invoice, we need to create a fake one
+                val incomingPayment = db.addIncomingPayment(
+                    preimage = randomBytes32(), // not used, placeholder
+                    origin = IncomingPayment.Origin.OnChain(action.txId, action.localInputs)
+                )
+                db.receivePayment(
+                    paymentHash = incomingPayment.paymentHash,
+                    expectedAmount = receivedWith.amount,
+                    receivedWith = listOf(receivedWith)
+                )
             }
         }
     }

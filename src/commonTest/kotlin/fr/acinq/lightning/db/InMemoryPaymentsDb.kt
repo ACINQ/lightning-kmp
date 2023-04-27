@@ -8,7 +8,6 @@ import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
-import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.FailureMessage
 
@@ -18,10 +17,12 @@ class InMemoryPaymentsDb : PaymentsDb {
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
     override suspend fun setConfirmed(txId: ByteVector32) {}
 
-    override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long) {
+    override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long): IncomingPayment {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
         require(!incoming.contains(paymentHash)) { "an incoming payment for $paymentHash already exists" }
-        incoming[paymentHash] = IncomingPayment(preimage, origin, null, createdAt)
+        val incomingPayment = IncomingPayment(preimage, origin, null, createdAt)
+        incoming[paymentHash] = incomingPayment
+        return incomingPayment
     }
 
     override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? = incoming[paymentHash]
@@ -39,11 +40,6 @@ class InMemoryPaymentsDb : PaymentsDb {
                 )
             }
         }
-    }
-
-    override suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: List<IncomingPayment.ReceivedWith>, createdAt: Long, receivedAt: Long) {
-        val paymentHash = preimage.sha256()
-        incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Received(expectedAmount = receivedWith.map { it.amount }.sum(), receivedWith, receivedAt), createdAt)
     }
 
     fun listIncomingPayments(count: Int, skip: Int): List<IncomingPayment> =
