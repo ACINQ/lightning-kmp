@@ -181,6 +181,7 @@ data class Normal(
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                     logger.warning { "splice attempt failed: ${action.reason.message}" }
+                                    logger.warning { "funding tx was txId=${spliceStatus.session.fundingTx.txId} tx=${spliceStatus.session.fundingTx.tx.buildUnsignedTx()}" }
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                                 }
                                 // No need to store their commit_sig, they will re-send it if we disconnect.
