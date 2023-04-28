@@ -608,13 +608,10 @@ data class Normal(
                         when (val res = commitments.run { updateRemoteFundingStatus(cmd.message.fundingTxId) }) {
                             is Either.Left -> Pair(this@Normal, emptyList())
                             is Either.Right -> {
-                                val (commitments1, commitment) = res.value
+                                val (commitments1, _) = res.value
                                 val nextState = this@Normal.copy(commitments = commitments1)
                                 val actions = buildList {
-                                    // remote will re-emit splice_locked at reconnection, we only emit the event if the commitment is locked for the first time
-                                    if (!commitments.all.find { it.fundingTxId == commitment.fundingTxId }!!.run { isLocked() } && commitment.run { isLocked() }) {
-                                        add(ChannelAction.Storage.SetConfirmed(commitment.fundingTxId))
-                                    }
+                                    newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetConfirmed(it.fundingTxId)) }
                                     add(ChannelAction.Storage.StoreState(nextState))
                                 }
                                 Pair(nextState, actions)

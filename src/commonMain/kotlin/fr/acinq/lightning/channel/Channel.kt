@@ -459,9 +459,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             updateLocalFundingStatus(w.tx.txid, fundingStatus).map { (commitments1, commitment) ->
                 val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                 val actions = buildList {
-                    if (!commitments.all.find { it.fundingTxId == commitment.fundingTxId }!!.run { isLocked() } && commitment.run { isLocked() }) {
-                        add(ChannelAction.Storage.SetConfirmed(commitment.fundingTxId))
-                    }
+                    newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetConfirmed(it.fundingTxId)) }
                     add(ChannelAction.Blockchain.SendWatch(watchSpent))
                 }
                 Triple(commitments1, commitment, actions)
@@ -481,6 +479,17 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
             }
         }
+    }
+
+    /**
+     * List [Commitment] that have been locked by both sides for the first time. It is more complicated that it may seem, because:
+     * - remote will re-emit splice_locked at reconnection
+     * - a splice_locked implicitly applies to all previous splices, and they may be pruned instantly
+     */
+    internal fun ChannelContext.newlyLocked(before: Commitments, after: Commitments): List<Commitment> {
+        val lastLockedBefore = before.run { lastLocked() }?.fundingTxIndex ?: -1
+        val lastLockedAfter = after.run { lastLocked() }?.fundingTxIndex ?: -1
+        return commitments.all.filter { it.fundingTxIndex > 0 && it.fundingTxIndex > lastLockedBefore && it.fundingTxIndex <= lastLockedAfter }
     }
 
     /**
