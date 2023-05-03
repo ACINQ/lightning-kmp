@@ -49,7 +49,7 @@ data class Syncing(val state: PersistedChannelState, val waitForTheirReestablish
                     val channelReestablish = nextState.run { createChannelReestablish() }
                     val actions = buildList {
                         if (nextState != state) {
-                            // we just restored from backup
+                            // we just restored from a more recent backup
                             add(ChannelAction.Storage.StoreState(nextState))
                         }
                        add(ChannelAction.Message.Send(channelReestablish))

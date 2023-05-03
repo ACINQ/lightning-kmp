@@ -19,11 +19,11 @@ class OfflineTestsCommon : LightningTestSuite() {
 
     @Test
     fun `handle disconnect - connect events -- no messages sent yet`() {
-        val (alice, bob) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
+        val (alice, bob) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient).initFeatures())
         val (alice1, bob1) = disconnect(alice, bob)
 
-        val localInit = Init(alice.commitments.params.localParams.features)
-        val remoteInit = Init(bob.commitments.params.localParams.features)
+        val localInit = Init(alice.commitments.params.localParams.features.initFeatures())
+        val remoteInit = Init(bob.commitments.params.localParams.features.initFeatures())
 
         val (alice2, actions) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice2.state)
@@ -653,8 +653,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<Offline>(alice1.state)
         val (alice2, _) = LNChannel(alice1.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state.state))
         assertIs<Offline>(alice2.state)
-        val aliceInit = Init((alice.state as WaitForFundingSigned).channelParams.localParams.features)
-        val bobInit = Init((bob.state as WaitForFundingCreated).localParams.features)
+        val aliceInit = Init((alice.state as WaitForFundingSigned).channelParams.localParams.features.initFeatures())
+        val bobInit = Init((bob.state as WaitForFundingCreated).localParams.features.initFeatures())
         val (alice3, actions3) = alice2.process(ChannelCommand.Connected(aliceInit, bobInit))
         assertIs<Syncing>(alice3.state)
         assertEquals(alice.state, alice3.state.state)
