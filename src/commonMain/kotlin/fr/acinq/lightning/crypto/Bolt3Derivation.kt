@@ -19,7 +19,7 @@ object Bolt3Derivation {
         return secret + (PrivateKey(sha256(perCommitPoint.value + secret.publicKey().value)))
     }
 
-    fun PrivateKey.derive(perCommitPoint: PublicKey): PrivateKey = derivePrivKey(this, perCommitPoint)
+    fun PrivateKey.deriveForCommitment(perCommitPoint: PublicKey): PrivateKey = derivePrivKey(this, perCommitPoint)
 
     private fun derivePubKey(basePoint: PublicKey, perCommitPoint: PublicKey): PublicKey {
         //pubkey = basepoint + SHA256(per-commitment-point || basepoint)*G
@@ -27,7 +27,7 @@ object Bolt3Derivation {
         return basePoint + a.publicKey()
     }
 
-    fun PublicKey.derive(perCommitPoint: PublicKey): PublicKey = derivePubKey(this, perCommitPoint)
+    fun PublicKey.deriveForCommitment(perCommitPoint: PublicKey): PublicKey = derivePubKey(this, perCommitPoint)
 
     private fun revocationPubKey(basePoint: PublicKey, perCommitPoint: PublicKey): PublicKey {
         val a = PrivateKey(sha256(basePoint.value + perCommitPoint.value))
@@ -35,7 +35,7 @@ object Bolt3Derivation {
         return (basePoint * a) + (perCommitPoint * b)
     }
 
-    fun PublicKey.deriveRevocation(perCommitPoint: PublicKey): PublicKey = revocationPubKey(this, perCommitPoint)
+    fun PublicKey.deriveForRevocation(perCommitPoint: PublicKey): PublicKey = revocationPubKey(this, perCommitPoint)
 
     private fun revocationPrivKey(secret: PrivateKey, perCommitSecret: PrivateKey): PrivateKey {
         val a = PrivateKey(sha256(secret.publicKey().value + perCommitSecret.publicKey().value))
@@ -43,6 +43,6 @@ object Bolt3Derivation {
         return (secret * a) + (perCommitSecret * b)
     }
 
-    fun PrivateKey.deriveRevocation(perCommitSecret: PrivateKey): PrivateKey = revocationPrivKey(this, perCommitSecret)
+    fun PrivateKey.deriveForRevocation(perCommitSecret: PrivateKey): PrivateKey = revocationPrivKey(this, perCommitSecret)
 
 }
