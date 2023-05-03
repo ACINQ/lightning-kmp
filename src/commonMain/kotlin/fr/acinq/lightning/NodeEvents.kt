@@ -5,9 +5,9 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.channel.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.Normal
 import fr.acinq.lightning.channel.WaitForFundingCreated
-import fr.acinq.lightning.wire.PayToOpenRequest
 import fr.acinq.lightning.wire.PleaseOpenChannel
 import fr.acinq.lightning.wire.PleaseOpenChannelFailure
+import kotlinx.coroutines.CompletableDeferred
 
 sealed interface NodeEvents
 
@@ -23,13 +23,19 @@ sealed interface ChannelEvents : NodeEvents {
     data class Confirmed(val state: Normal) : ChannelEvents
 }
 
-sealed interface PayToOpenEvents : NodeEvents {
-    val paymentHash: ByteVector32
-    /** Total incoming amount, incoming htlcs parts. */
-    val totalAmount: MilliSatoshi
-    /** Total amount for pay-to-open parts. */
-    val payToOpenAmount: MilliSatoshi
-    sealed class Rejected: PayToOpenEvents {
-        data class BelowMin(override val paymentHash: ByteVector32, override val totalAmount: MilliSatoshi, override val payToOpenAmount: MilliSatoshi, val payToOpenMinAmount: MilliSatoshi): Rejected()
+sealed interface LiquidityEvents : NodeEvents {
+    val amount: MilliSatoshi
+    val fee: MilliSatoshi
+    val source: Source
+
+    enum class Source { OnChainWallet, OffChainPayment }
+    data class Rejected(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val reason: Reason) : LiquidityEvents {
+        sealed class Reason {
+            object PolicySetToDisabled : Reason()
+            object RejectedByUser : Reason()
+            data class TooExpensive(val maxAllowed: MilliSatoshi, val actual: MilliSatoshi) : Reason()
+        }
     }
+
+    data class ApprovalRequested(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val replyTo: CompletableDeferred<Boolean>) : LiquidityEvents
 }

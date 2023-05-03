@@ -7,6 +7,7 @@ import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -132,6 +133,7 @@ data class NodeParams(
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
     val enableTrampolinePayment: Boolean,
+    val liquidityPolicy: LiquidityPolicy
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
@@ -212,6 +214,7 @@ data class NodeParams(
         enableTrampolinePayment = true,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
+        liquidityPolicy = LiquidityPolicy.Auto(maxAbsoluteFee = 1_500.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */)
     )
 
     sealed class Chain(val name: String, private val genesis: Block) {
