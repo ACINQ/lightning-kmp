@@ -66,11 +66,11 @@ interface KeyManager {
     ) {
         constructor(chain: NodeParams.Chain, master: DeterministicWallet.ExtendedPrivateKey, account: Long) : this(
             chain, account,
-            xpriv = DeterministicWallet.derivePrivateKey(master, bip84BasePath(chain) I hardened(account))
+            xpriv = DeterministicWallet.derivePrivateKey(master, bip84BasePath(chain) / hardened(account))
         )
 
         fun privateKey(addressIndex: Long): PrivateKey {
-            return DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty I 0 I addressIndex).privateKey
+            return DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty / 0 / addressIndex).privateKey
         }
 
         fun pubkeyScript(addressIndex: Long): ByteVector {
@@ -85,7 +85,7 @@ interface KeyManager {
         }
 
         val xpub: String = DeterministicWallet.encode(
-            input = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty I hardened(account))),
+            input = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty / hardened(account))),
             prefix = when (chain) {
                 NodeParams.Chain.Testnet, NodeParams.Chain.Regtest -> DeterministicWallet.vpub
                 NodeParams.Chain.Mainnet -> DeterministicWallet.zpub
@@ -94,8 +94,8 @@ interface KeyManager {
 
         companion object {
             fun bip84BasePath(chain: NodeParams.Chain) = when (chain) {
-                NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty I hardened(84) I hardened(1)
-                NodeParams.Chain.Mainnet -> KeyPath.empty I hardened(84) I hardened(0)
+                NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty / hardened(84) / hardened(1)
+                NodeParams.Chain.Mainnet -> KeyPath.empty / hardened(84) / hardened(0)
             }
         }
     }
