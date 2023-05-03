@@ -61,12 +61,17 @@ interface KeyManager {
 
     data class Bip84OnChainKeys(
         private val chain: NodeParams.Chain,
-        val account: Long,
-        val xpriv: DeterministicWallet.ExtendedPrivateKey
+        private val master: DeterministicWallet.ExtendedPrivateKey,
+        val account: Long
     ) {
-        constructor(chain: NodeParams.Chain, master: DeterministicWallet.ExtendedPrivateKey, account: Long) : this(
-            chain, account,
-            xpriv = DeterministicWallet.derivePrivateKey(master, bip84BasePath(chain) / hardened(account))
+        private val xpriv = DeterministicWallet.derivePrivateKey(master, bip84BasePath(chain) / hardened(account))
+
+        val xpub: String = DeterministicWallet.encode(
+            input = DeterministicWallet.publicKey(xpriv),
+            prefix = when (chain) {
+                NodeParams.Chain.Testnet, NodeParams.Chain.Regtest -> DeterministicWallet.vpub
+                NodeParams.Chain.Mainnet -> DeterministicWallet.zpub
+            }
         )
 
         fun privateKey(addressIndex: Long): PrivateKey {
@@ -83,14 +88,6 @@ interface KeyManager {
         fun address(addressIndex: Long): String {
             return Bitcoin.computeP2WpkhAddress(privateKey(addressIndex).publicKey(), chain.chainHash)
         }
-
-        val xpub: String = DeterministicWallet.encode(
-            input = DeterministicWallet.publicKey(xpriv),
-            prefix = when (chain) {
-                NodeParams.Chain.Testnet, NodeParams.Chain.Regtest -> DeterministicWallet.vpub
-                NodeParams.Chain.Mainnet -> DeterministicWallet.zpub
-            }
-        )
 
         companion object {
             fun bip84BasePath(chain: NodeParams.Chain) = when (chain) {
