@@ -85,7 +85,7 @@ interface KeyManager {
         }
 
         val xpub: String = DeterministicWallet.encode(
-            input = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty / hardened(account))),
+            input = DeterministicWallet.publicKey(xpriv),
             prefix = when (chain) {
                 NodeParams.Chain.Testnet, NodeParams.Chain.Regtest -> DeterministicWallet.vpub
                 NodeParams.Chain.Mainnet -> DeterministicWallet.zpub
