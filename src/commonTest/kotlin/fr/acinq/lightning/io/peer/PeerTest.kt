@@ -17,8 +17,10 @@ import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.io.*
+import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.router.Announcements
+import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -27,6 +29,7 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.encodeToString
 import kotlin.test.*
 
 class PeerTest : LightningTestSuite() {
@@ -392,6 +395,82 @@ class PeerTest : LightningTestSuite() {
         val unknownChannelReestablish = ChannelReestablish(randomBytes32(), 1, 0, randomKey(), randomKey().publicKey())
         alice.send(BytesReceived(LightningMessage.encode(unknownChannelReestablish)))
         alice2bob.expect<Error>()
+    }
+
+    @Test
+    fun `recover channel`() = runSuspendTest {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
+        assertIs<LNChannel<Normal>>(alice1)
+
+        val peer = buildPeer(
+            this,
+            bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
+            TestConstants.Bob.walletParams,
+            databases = InMemoryDatabases(), // NB: empty database
+            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+        )
+
+        // send Init from remote node
+        val theirInit = Init(features = alice0.staticParams.nodeParams.features)
+        val initMsg = LightningMessage.encode(theirInit)
+        peer.send(BytesReceived(initMsg))
+        // Wait until the Peer is ready
+        peer.expectStatus(Connection.ESTABLISHED)
+
+        val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
+        assertFalse(aliceReestablish.channelData.isEmpty())
+
+        peer.send(BytesReceived(LightningMessage.encode(aliceReestablish)))
+
+        // Wait until the channels are Syncing
+        val restoredChannel = peer.channelsFlow
+            .first { it.size == 1 }
+            .values
+            .first()
+        assertIs<Normal>(restoredChannel)
+
+        assertContains(peer.db.channels.listLocalChannels(), restoredChannel)
+    }
+
+    @Test
+    fun `recover channel -- outdated local data`() = runSuspendTest {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
+        assertIs<LNChannel<Normal>>(alice1)
+
+        val peer = buildPeer(
+            this,
+            bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
+            TestConstants.Bob.walletParams,
+            databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(bob0.state) }, // NB: outdated channel data
+            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+        )
+
+        // send Init from remote node
+        val theirInit = Init(features = alice0.staticParams.nodeParams.features)
+        val initMsg = LightningMessage.encode(theirInit)
+        peer.send(BytesReceived(initMsg))
+        // Wait until the Peer is ready
+        peer.expectStatus(Connection.ESTABLISHED)
+
+        val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
+        assertFalse(aliceReestablish.channelData.isEmpty())
+
+        peer.send(BytesReceived(LightningMessage.encode(aliceReestablish)))
+
+        peer.channelsFlow
+
+        // Wait until the channels are Syncing
+        val restoredChannel = peer.channelsFlow
+            .first { it.size == 1 && it.values.first() is Normal }
+            .values
+            .first()
+        assertIs<Normal>(restoredChannel)
+
+        assertContains(peer.db.channels.listLocalChannels(), restoredChannel)
     }
 
     @Test
