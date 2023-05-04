@@ -140,7 +140,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         val aliceCommitTx = alice.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val unknownTx = Transaction(2, aliceCommitTx.txIn, listOf(), 0)
         val (alice1, actions1) = alice.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, unknownTx)))
-        assertIs<ErrorInformationLeak>(alice1.state)
+        assertEquals(alice.state, alice1.state)
         assertTrue(actions1.isEmpty())
     }
 
