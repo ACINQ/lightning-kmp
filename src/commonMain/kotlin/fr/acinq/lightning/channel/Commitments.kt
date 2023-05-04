@@ -418,10 +418,9 @@ data class Commitment(
         // signatures are now optional in the commit message, and will be sent only if the other party is actually
         // receiving money i.e its commit tx has one output for them
         val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
-        val keys = channelKeys
-        val localPerCommitmentPoint = keys.commitmentPoint(localCommit.index + 1)
-        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(keys, localCommit.index + 1, params.localParams, params.remoteParams, commitInput, localPerCommitmentPoint, spec)
-        val sig = Transactions.sign(localCommitTx, keys.fundingPrivateKey)
+        val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommit.index + 1)
+        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(channelKeys, localCommit.index + 1, params.localParams, params.remoteParams, commitInput, localPerCommitmentPoint, spec)
+        val sig = Transactions.sign(localCommitTx, channelKeys.fundingPrivateKey)
 
         log.info {
             val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
@@ -430,7 +429,7 @@ data class Commitment(
         }
 
         // no need to compute htlc sigs if commit sig doesn't check out
-        val signedCommitTx = Transactions.addSigs(localCommitTx, keys.fundingPubKey, params.remoteParams.fundingPubKey, sig, commit.signature)
+        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey, params.remoteParams.fundingPubKey, sig, commit.signature)
         when (val check = Transactions.checkSpendable(signedCommitTx)) {
             is Try.Failure -> {
                 log.error(check.error) { "remote signature $commit is invalid" }
@@ -443,7 +442,7 @@ data class Commitment(
         if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
             return Either.Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
         }
-        val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, keys.htlcKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL) }
+        val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL) }
         val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.deriveForCommitment(localPerCommitmentPoint)
         // combine the sigs to make signed txs
         val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->
