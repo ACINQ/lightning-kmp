@@ -416,7 +416,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val testCases = listOf(
             // @formatter:off
             ChannelReestablish(channelId, 242842, 42, commitmentSecret, commitmentPoint) to ByteVector("0088 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 000000000003b49a 000000000000002a 34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55 02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867"),
-            ChannelReestablish(channelId, 242842, 42, commitmentSecret, commitmentPoint, TlvStream(ChannelReestablishTlv.NextFunding(fundingTxHash))) to ByteVector("0088 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 000000000003b49a 000000000000002a 34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55 02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867 fd014d 20 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566")
+            ChannelReestablish(channelId, 242842, 42, commitmentSecret, commitmentPoint, TlvStream(ChannelReestablishTlv.NextFunding(fundingTxHash))) to ByteVector("0088 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 000000000003b49a 000000000000002a 34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55 02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867 00 20 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566")
             // @formatter:on
         )
         testCases.forEach { (message, bin) ->
