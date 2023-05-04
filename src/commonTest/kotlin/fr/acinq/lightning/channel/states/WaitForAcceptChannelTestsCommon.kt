@@ -108,7 +108,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         // we don't want their dust limit to be below 354
         val lowDustLimitSatoshis = 353.sat
         // but we only enforce it on mainnet
-        val aliceMainnet = alice.copy(ctx = alice.ctx.copy(staticParams = alice.ctx.staticParams.copy(nodeParams = alice.staticParams.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash))))
+        val aliceMainnet = alice.copy(ctx = alice.ctx.copy(staticParams = alice.ctx.staticParams.copy(nodeParams = alice.staticParams.nodeParams.copy(chain = NodeParams.Chain.Mainnet))))
         val (alice1, actions1) = aliceMainnet.process(ChannelCommand.MessageReceived(accept.copy(dustLimit = lowDustLimitSatoshis)))
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()

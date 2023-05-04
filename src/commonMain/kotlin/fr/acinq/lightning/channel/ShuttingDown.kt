@@ -39,14 +39,14 @@ data class ShuttingDown(
                         is Either.Right -> Pair(this@ShuttingDown.copy(commitments = result.value), listOf())
                     }
                     is CommitSig -> when (val sigs = aggregateSigs(cmd.message)) {
-                        is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, keyManager, logger)) {
+                        is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, channelKeys(), logger)) {
                             is Either.Left -> handleLocalError(cmd, result.value)
                             is Either.Right -> {
                                 val (commitments1, revocation) = result.value
                                 when {
                                     commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.params.localParams.isInitiator -> {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
-                                            keyManager,
+                                            channelKeys(),
                                             commitments1.latest,
                                             localShutdown.scriptPubKey.toByteArray(),
                                             remoteShutdown.scriptPubKey.toByteArray(),
@@ -94,7 +94,7 @@ data class ShuttingDown(
                             when {
                                 commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.params.localParams.isInitiator -> {
                                     val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
-                                        keyManager,
+                                        channelKeys(),
                                         commitments1.latest,
                                         localShutdown.scriptPubKey.toByteArray(),
                                         remoteShutdown.scriptPubKey.toByteArray(),
@@ -147,7 +147,7 @@ data class ShuttingDown(
                     logger.debug { "already in the process of signing, will sign again as soon as possible" }
                     Pair(this@ShuttingDown, listOf())
                 }
-                cmd.command is CMD_SIGN -> when (val result = commitments.sendCommit(keyManager, logger)) {
+                cmd.command is CMD_SIGN -> when (val result = commitments.sendCommit(channelKeys(), logger)) {
                     is Either.Left -> handleCommandError(cmd.command, result.value)
                     is Either.Right -> {
                         val commitments1 = result.value.first

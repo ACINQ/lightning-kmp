@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sum
-import fr.acinq.lightning.utils.toByteVector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -54,9 +53,9 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
 
         /** Sign the given input if we have the corresponding private key (only works for P2WPKH scripts). */
-        fun signInput(keyManager: KeyManager, tx: Transaction, index: Int, parentTxOut: TxOut?): Pair<Transaction, ScriptWitness?> {
+        fun signInput(onChainKeys: KeyManager.Bip84OnChainKeys, tx: Transaction, index: Int, parentTxOut: TxOut?): Pair<Transaction, ScriptWitness?> {
             val witness = parentTxOut
-                ?.let { script2PrivateKey(keyManager, it.publicKeyScript) }
+                ?.let { script2PrivateKey(onChainKeys, it.publicKeyScript) }
                 ?.let { privateKey ->
                     // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
                     // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
@@ -80,10 +79,12 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         }
 
         /** Find the private key corresponding to this script, assuming this is a p2wpkh owned by us. */
-        private fun script2PrivateKey(keyManager: KeyManager, publicKeyScript: ByteVector): PrivateKey? {
-            val priv = keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
-            val script = Script.write(Script.pay2wpkh(priv.publicKey())).toByteVector()
-            return if (script == publicKeyScript) priv else null
+        private fun script2PrivateKey(onChainKeys: KeyManager.Bip84OnChainKeys, publicKeyScript: ByteVector): PrivateKey? {
+            // TODO: for now we only use the first address with index 0
+            for (addressIndex in 0L..0L) {
+                if (onChainKeys.pubkeyScript(addressIndex) == publicKeyScript) return onChainKeys.privateKey(addressIndex)
+            }
+            return null
         }
     }
 }

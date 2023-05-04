@@ -17,7 +17,8 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.inputsAlreadySpent
-import fr.acinq.lightning.crypto.Generators
+import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
+import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForRevocation
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.*
@@ -277,7 +278,7 @@ object Helpers {
          * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
          */
         fun makeCommitTxsWithoutHtlcs(
-            keyManager: KeyManager,
+            channelKeys: KeyManager.ChannelKeys,
             channelId: ByteVector32,
             localParams: LocalParams,
             remoteParams: RemoteParams,
@@ -305,11 +306,11 @@ object Helpers {
                 }
             }
 
-            val fundingPubKey = localParams.channelKeys(keyManager).fundingPubKey
+            val fundingPubKey = channelKeys.fundingPubKey
             val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteParams.fundingPubKey)
-            val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, commitmentIndex)
-            val localCommitTx = Commitments.makeLocalTxs(keyManager.channelKeys(localParams.fundingKeyPath), commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
-            val remoteCommitTx = Commitments.makeRemoteTxs(keyManager, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec).first
+            val localPerCommitmentPoint = channelKeys.commitmentPoint(commitmentIndex)
+            val localCommitTx = Commitments.makeLocalTxs(channelKeys, commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
+            val remoteCommitTx = Commitments.makeRemoteTxs(channelKeys, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec).first
 
             return Either.Right(PairOfCommitTxs(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
         }
@@ -392,18 +393,18 @@ object Helpers {
         fun nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
 
         fun makeFirstClosingTx(
-            keyManager: KeyManager,
+            channelKeys: KeyManager.ChannelKeys,
             commitment: FullCommitment,
             localScriptPubkey: ByteArray,
             remoteScriptPubkey: ByteArray,
             requestedFeerate: ClosingFeerates
         ): Pair<ClosingTx, ClosingSigned> {
             val closingFees = firstClosingFee(commitment, localScriptPubkey, remoteScriptPubkey, requestedFeerate)
-            return makeClosingTx(keyManager, commitment, localScriptPubkey, remoteScriptPubkey, closingFees)
+            return makeClosingTx(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey, closingFees)
         }
 
         fun makeClosingTx(
-            keyManager: KeyManager,
+            channelKeys: KeyManager.ChannelKeys,
             commitment: FullCommitment,
             localScriptPubkey: ByteArray,
             remoteScriptPubkey: ByteArray,
@@ -414,22 +415,22 @@ object Helpers {
             require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitment.params.localParams.dustLimit.max(commitment.params.remoteParams.dustLimit)
             val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, dustLimit, closingFees.preferred, commitment.localCommit.spec)
-            val localClosingSig = keyManager.sign(closingTx, commitment.params.localParams.channelKeys(keyManager).fundingPrivateKey)
+            val localClosingSig = Transactions.sign(closingTx, channelKeys.fundingPrivateKey)
             val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
             return Pair(closingTx, closingSigned)
         }
 
         fun checkClosingSignature(
-            keyManager: KeyManager,
+            channelKeys: KeyManager.ChannelKeys,
             commitment: FullCommitment,
             localScriptPubkey: ByteArray,
             remoteScriptPubkey: ByteArray,
             remoteClosingFee: Satoshi,
             remoteClosingSig: ByteVector64
         ): Either<ChannelException, Pair<ClosingTx, ClosingSigned>> {
-            val (closingTx, closingSigned) = makeClosingTx(keyManager, commitment, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee))
+            val (closingTx, closingSigned) = makeClosingTx(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee))
             return if (checkClosingDustAmounts(closingTx)) {
-                val signedClosingTx = Transactions.addSigs(closingTx, commitment.params.localParams.channelKeys(keyManager).fundingPubKey, commitment.params.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
+                val signedClosingTx = Transactions.addSigs(closingTx, channelKeys.fundingPubKey, commitment.params.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
                 when (Transactions.checkSpendable(signedClosingTx)) {
                     is Try.Success -> Either.Right(Pair(signedClosingTx, closingSigned))
                     is Try.Failure -> Either.Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
@@ -463,13 +464,13 @@ object Helpers {
          * @param commitment our commitment data, which includes payment preimages.
          * @return a list of transactions (one per output that we can claim).
          */
-        fun LoggingContext.claimCurrentLocalCommitTxOutputs(keyManager: KeyManager, commitment: FullCommitment, tx: Transaction, feerates: OnChainFeerates): LocalCommitPublished {
+        fun LoggingContext.claimCurrentLocalCommitTxOutputs(channelKeys: KeyManager.ChannelKeys, commitment: FullCommitment, tx: Transaction, feerates: OnChainFeerates): LocalCommitPublished {
             val localCommit = commitment.localCommit
             val localParams = commitment.params.localParams
             require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current local commit tx" }
-            val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeys(keyManager).shaSeed, commitment.localCommit.index)
-            val localRevocationPubkey = Generators.revocationPubKey(commitment.params.remoteParams.revocationBasepoint, localPerCommitmentPoint)
-            val localDelayedPubkey = Generators.derivePubKey(localParams.channelKeys(keyManager).delayedPaymentBasepoint, localPerCommitmentPoint)
+            val localPerCommitmentPoint = channelKeys.commitmentPoint(commitment.localCommit.index)
+            val localRevocationPubkey = commitment.params.remoteParams.revocationBasepoint.deriveForRevocation(localPerCommitmentPoint)
+            val localDelayedPubkey = channelKeys.delayedPaymentBasepoint.deriveForCommitment(localPerCommitmentPoint)
             val feerateDelayed = feerates.claimMainFeerate
 
             // first we will claim our main output as soon as the delay is over
@@ -484,7 +485,7 @@ object Helpers {
                     feerateDelayed
                 )
             }?.let {
-                val sig = keyManager.sign(it, localParams.channelKeys(keyManager).delayedPaymentKey, localPerCommitmentPoint, SigHash.SIGHASH_ALL)
+                val sig = Transactions.sign(it, channelKeys.delayedPaymentKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL)
                 Transactions.addSigs(it, sig)
             }
 
@@ -518,7 +519,7 @@ object Helpers {
                         feerateDelayed
                     )
                 }?.let {
-                    val sig = keyManager.sign(it, localParams.channelKeys(keyManager).delayedPaymentKey, localPerCommitmentPoint, SigHash.SIGHASH_ALL)
+                    val sig = Transactions.sign(it, channelKeys.delayedPaymentKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL)
                     Transactions.addSigs(it, sig)
                 }
             }
@@ -541,12 +542,12 @@ object Helpers {
          * @param tx the remote commitment transaction that has just been published.
          * @return a list of transactions (one per output that we can claim).
          */
-        fun LoggingContext.claimRemoteCommitTxOutputs(keyManager: KeyManager, commitment: FullCommitment, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnChainFeerates): RemoteCommitPublished {
+        fun LoggingContext.claimRemoteCommitTxOutputs(channelKeys: KeyManager.ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, tx: Transaction, feerates: OnChainFeerates): RemoteCommitPublished {
             val localParams = commitment.params.localParams
             val remoteParams = commitment.params.remoteParams
             val commitInput = commitment.commitInput
             val (remoteCommitTx, _) = Commitments.makeRemoteTxs(
-                keyManager,
+                channelKeys,
                 remoteCommit.index,
                 localParams,
                 remoteParams,
@@ -556,15 +557,14 @@ object Helpers {
             )
             require(remoteCommitTx.tx.txid == tx.txid) { "txid mismatch, provided tx is not the current remote commit tx" }
 
-            val channelKeyPath = keyManager.channelKeyPath(localParams, commitment.params.channelConfig)
-            val localPaymentPubkey = keyManager.paymentPoint(channelKeyPath).publicKey
-            val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
-            val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
-            val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+            val localPaymentPubkey = channelKeys.paymentBasepoint
+            val localHtlcPubkey = channelKeys.htlcBasepoint.deriveForCommitment(remoteCommit.remotePerCommitmentPoint)
+            val remoteDelayedPaymentPubkey = remoteParams.delayedPaymentBasepoint.deriveForCommitment(remoteCommit.remotePerCommitmentPoint)
+            val remoteHtlcPubkey = remoteParams.htlcBasepoint.deriveForCommitment(remoteCommit.remotePerCommitmentPoint)
+            val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveForRevocation(remoteCommit.remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
                 remoteParams.fundingPubKey,
-                localParams.channelKeys(keyManager).fundingPubKey,
+                channelKeys.fundingPubKey,
                 !localParams.isInitiator,
                 remoteParams.dustLimit,
                 remoteRevocationPubkey,
@@ -605,7 +605,7 @@ object Helpers {
                                 null -> Pair(claimHtlcTx.input.outPoint, null)
                                 // incoming htlc for which we have the preimage: we can spend it directly
                                 else -> {
-                                    val sig = keyManager.sign(claimHtlcTx, localParams.channelKeys(keyManager).htlcKey, remoteCommit.remotePerCommitmentPoint, SigHash.SIGHASH_ALL)
+                                    val sig = Transactions.sign(claimHtlcTx, channelKeys.htlcKey.deriveForCommitment(remoteCommit.remotePerCommitmentPoint), SigHash.SIGHASH_ALL)
                                     Pair(claimHtlcTx.input.outPoint, Transactions.addSigs(claimHtlcTx, sig, preimage))
                                 }
                             }
@@ -626,7 +626,7 @@ object Helpers {
                                 feerateClaimHtlc
                             )
                         }?.let { claimHtlcTx ->
-                            val sig = keyManager.sign(claimHtlcTx, localParams.channelKeys(keyManager).htlcKey, remoteCommit.remotePerCommitmentPoint, SigHash.SIGHASH_ALL)
+                            val sig = Transactions.sign(claimHtlcTx, channelKeys.htlcKey.deriveForCommitment(remoteCommit.remotePerCommitmentPoint), SigHash.SIGHASH_ALL)
                             Pair(claimHtlcTx.input.outPoint, Transactions.addSigs(claimHtlcTx, sig))
                         }
                     }
@@ -634,7 +634,7 @@ object Helpers {
             }.toMap()
 
             // we claim our output and add the htlc txs we just created
-            return claimRemoteCommitMainOutput(keyManager, commitment.params, tx, feerates.claimMainFeerate).copy(claimHtlcTxs = claimHtlcTxs)
+            return claimRemoteCommitMainOutput(channelKeys, commitment.params, tx, feerates.claimMainFeerate).copy(claimHtlcTxs = claimHtlcTxs)
         }
 
         /**
@@ -643,8 +643,8 @@ object Helpers {
          * @param tx the remote commitment transaction that has just been published.
          * @return a transaction to claim our main output.
          */
-        internal fun LoggingContext.claimRemoteCommitMainOutput(keyManager: KeyManager, params: ChannelParams, tx: Transaction, claimMainFeerate: FeeratePerKw): RemoteCommitPublished {
-            val localPaymentPoint = params.localParams.channelKeys(keyManager).paymentBasepoint
+        internal fun LoggingContext.claimRemoteCommitMainOutput(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, tx: Transaction, claimMainFeerate: FeeratePerKw): RemoteCommitPublished {
+            val localPaymentPoint = channelKeys.paymentBasepoint
 
             val mainTx = generateTx("claim-remote-delayed-output") {
                 Transactions.makeClaimRemoteDelayedOutputTx(
@@ -655,7 +655,7 @@ object Helpers {
                     claimMainFeerate
                 )
             }?.let {
-                val sig = keyManager.sign(it, params.localParams.channelKeys(keyManager).paymentKey)
+                val sig = Transactions.sign(it, channelKeys.paymentKey)
                 Transactions.addSigs(it, sig)
             }
 
@@ -673,14 +673,13 @@ object Helpers {
          *
          * This function returns the per-commitment secret in the first case, and null in the other cases.
          */
-        fun getRemotePerCommitmentSecret(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, tx: Transaction): Pair<PrivateKey, Long>? {
+        fun getRemotePerCommitmentSecret(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, tx: Transaction): Pair<PrivateKey, Long>? {
             // a valid tx will always have at least one input, but this ensures we don't throw in tests
             val sequence = tx.txIn.first().sequence
-            val channelKeyPath = keyManager.channelKeyPath(params.localParams, params.channelConfig)
             val obscuredTxNumber = Transactions.decodeTxNumber(sequence, tx.lockTime)
-            val localPaymentPoint = keyManager.paymentPoint(channelKeyPath)
+            val localPaymentPoint = channelKeys.paymentBasepoint
             // this tx has been published by remote, so we need to invert local/remote params
-            val commitmentNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isInitiator, params.remoteParams.paymentBasepoint, localPaymentPoint.publicKey)
+            val commitmentNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isInitiator, params.remoteParams.paymentBasepoint, localPaymentPoint)
             if (commitmentNumber > 0xffffffffffffL) {
                 // txNumber must be lesser than 48 bits long
                 return null
@@ -694,11 +693,11 @@ object Helpers {
          * When a revoked commitment transaction spending the funding tx is detected, we build a set of transactions that
          * will punish our peer by stealing all their funds.
          */
-        fun LoggingContext.claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, params: ChannelParams, remotePerCommitmentSecret: PrivateKey, commitTx: Transaction, feerates: OnChainFeerates): RevokedCommitPublished {
-            val localPaymentPoint = params.localParams.channelKeys(keyManager).paymentBasepoint
+        fun LoggingContext.claimRevokedRemoteCommitTxOutputs(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, remotePerCommitmentSecret: PrivateKey, commitTx: Transaction, feerates: OnChainFeerates): RevokedCommitPublished {
+            val localPaymentPoint = channelKeys.paymentBasepoint
             val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey()
-            val remoteDelayedPaymentPubkey = Generators.derivePubKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(params.localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
+            val remoteDelayedPaymentPubkey = params.remoteParams.delayedPaymentBasepoint.deriveForCommitment(remotePerCommitmentPoint)
+            val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveForRevocation(remotePerCommitmentPoint)
 
             val feerateMain = feerates.claimMainFeerate
             // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
@@ -714,7 +713,7 @@ object Helpers {
                     feerateMain
                 )
             }?.let {
-                val sig = keyManager.sign(it, params.localParams.channelKeys(keyManager).paymentKey)
+                val sig = Transactions.sign(it, channelKeys.paymentKey)
                 Transactions.addSigs(it, sig)
             }
 
@@ -730,7 +729,7 @@ object Helpers {
                     feeratePenalty
                 )
             }?.let {
-                val sig = keyManager.sign(it, params.localParams.channelKeys(keyManager).revocationKey, remotePerCommitmentSecret)
+                val sig = Transactions.sign(it, channelKeys.revocationKey.deriveForRevocation(remotePerCommitmentSecret))
                 Transactions.addSigs(it, sig)
             }
 
@@ -741,7 +740,7 @@ object Helpers {
          * Once we've fetched htlc information for a revoked commitment from the DB, we create penalty transactions to claim all htlc outputs.
          */
         fun LoggingContext.claimRevokedRemoteCommitTxHtlcOutputs(
-            keyManager: KeyManager,
+            channelKeys: KeyManager.ChannelKeys,
             params: ChannelParams,
             revokedCommitPublished: RevokedCommitPublished,
             feerates: OnChainFeerates,
@@ -750,9 +749,9 @@ object Helpers {
             // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
             val feeratePenalty = feerates.fastFeerate
             val remotePerCommitmentPoint = revokedCommitPublished.remotePerCommitmentSecret.publicKey()
-            val remoteRevocationPubkey = Generators.revocationPubKey(params.localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
-            val remoteHtlcPubkey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-            val localHtlcPubkey = Generators.derivePubKey(params.localParams.channelKeys(keyManager).htlcBasepoint, remotePerCommitmentPoint)
+            val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveForRevocation(remotePerCommitmentPoint)
+            val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.deriveForCommitment(remotePerCommitmentPoint)
+            val localHtlcPubkey = channelKeys.htlcBasepoint.deriveForCommitment(remotePerCommitmentPoint)
 
             // we retrieve the information needed to rebuild htlc scripts
             logger.info { "found ${htlcInfos.size} htlcs for txid=${revokedCommitPublished.commitTx.txid}" }
@@ -775,7 +774,7 @@ object Helpers {
                             feeratePenalty
                         )
                     }?.let { htlcPenaltyTx ->
-                        val sig = keyManager.sign(htlcPenaltyTx, params.localParams.channelKeys(keyManager).revocationKey, revokedCommitPublished.remotePerCommitmentSecret)
+                        val sig = Transactions.sign(htlcPenaltyTx, channelKeys.revocationKey.deriveForRevocation(revokedCommitPublished.remotePerCommitmentSecret))
                         Transactions.addSigs(htlcPenaltyTx, sig, remoteRevocationPubkey)
                     }
                 }
@@ -798,7 +797,7 @@ object Helpers {
          * lockTime (thanks to the use of sighash_single | sighash_anyonecanpay), so we may need to claim multiple outputs.
          */
         fun LoggingContext.claimRevokedHtlcTxOutputs(
-            keyManager: KeyManager,
+            channelKeys: KeyManager.ChannelKeys,
             params: ChannelParams,
             revokedCommitPublished: RevokedCommitPublished,
             htlcTx: Transaction,
@@ -814,8 +813,8 @@ object Helpers {
                 logger.info { "looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}" }
                 // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
                 val remotePerCommitmentPoint = revokedCommitPublished.remotePerCommitmentSecret.publicKey()
-                val remoteDelayedPaymentPubkey = Generators.derivePubKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-                val remoteRevocationPubkey = Generators.revocationPubKey(params.localParams.channelKeys(keyManager).revocationBasepoint, remotePerCommitmentPoint)
+                val remoteDelayedPaymentPubkey = params.remoteParams.delayedPaymentBasepoint.deriveForCommitment(remotePerCommitmentPoint)
+                val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveForRevocation(remotePerCommitmentPoint)
 
                 // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
                 val feeratePenalty = feerates.fastFeerate
@@ -832,7 +831,7 @@ object Helpers {
                     generateTx("claim-htlc-delayed-penalty") {
                         claimDelayedOutputPenaltyTx
                     }?.let {
-                        val sig = keyManager.sign(it, params.localParams.channelKeys(keyManager).revocationKey, revokedCommitPublished.remotePerCommitmentSecret)
+                        val sig = Transactions.sign(it, channelKeys.revocationKey.deriveForRevocation(revokedCommitPublished.remotePerCommitmentSecret))
                         val signedTx = Transactions.addSigs(it, sig)
                         // we need to make sure that the tx is indeed valid
                         when (runTrying { Transaction.correctlySpends(signedTx.tx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {

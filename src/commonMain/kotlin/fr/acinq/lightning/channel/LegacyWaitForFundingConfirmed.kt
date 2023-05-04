@@ -41,7 +41,7 @@ data class LegacyWaitForFundingConfirmed(
                             logger.error { "funding tx verification failed: ${result.error}" }
                             return handleLocalError(cmd, InvalidCommitmentSignature(channelId, cmd.watch.tx.txid))
                         }
-                        val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                        val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
                         val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint)
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network

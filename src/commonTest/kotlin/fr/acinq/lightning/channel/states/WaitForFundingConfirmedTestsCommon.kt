@@ -447,9 +447,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val previousFundingTx = alice.state.latestFundingTx.sharedTx
             assertIs<FullySignedSharedTransaction>(previousFundingTx)
             // Alice adds a new input that increases her contribution and covers the additional fees.
-            val priv = alice.staticParams.nodeParams.keyManager.bip84PrivateKey(account = 1, addressIndex = 0)
-            val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(30_000.sat, Script.pay2wpkh(priv.publicKey()))), 0)
-            val address = Bitcoin.computeP2WpkhAddress(priv.publicKey(), Block.RegtestGenesisBlock.hash)
+            val (address, script) = alice.staticParams.nodeParams.keyManager.swapInOnChainWallet.run { Pair(address(0), pubkeyScript(0)) }
+            val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(30_000.sat, script)), 0)
             val wallet1 = WalletState(
                 wallet.addresses + (address to (wallet.addresses[address] ?: listOf()) + UnspentItem(parentTx.txid, 0, 30_000, 654321)),
                 wallet.parentTxs + (parentTx.txid to parentTx),

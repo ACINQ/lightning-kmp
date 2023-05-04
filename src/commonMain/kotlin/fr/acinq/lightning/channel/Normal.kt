@@ -59,7 +59,7 @@ data class Normal(
                             logger.debug { "already in the process of signing, will sign again as soon as possible" }
                             Pair(this@Normal, listOf())
                         }
-                        else -> when (val result = commitments.sendCommit(keyManager, logger)) {
+                        else -> when (val result = commitments.sendCommit(channelKeys(), logger)) {
                             is Either.Left -> handleCommandError(cmd.command, result.value, channelUpdate)
                             is Either.Right -> {
                                 val commitments1 = result.value.first
@@ -180,7 +180,7 @@ data class Normal(
                     }
                     is CommitSig -> when {
                         spliceStatus is SpliceStatus.WaitingForSigs -> {
-                            val (signingSession1, action) = spliceStatus.session.receiveCommitSig(keyManager, commitments.params, cmd.message, currentBlockHeight.toLong())
+                            val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                     logger.warning { "splice attempt failed: ${action.reason.message}" }
@@ -204,7 +204,7 @@ data class Normal(
                         // corner cases like race condition between splice_init and a non-splice commit_sig
                         else -> {
                             when (val sigs = aggregateSigs(cmd.message)) {
-                                is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, keyManager, logger)) {
+                                is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, channelKeys(), logger)) {
                                     is Either.Left -> handleLocalError(cmd, result.value)
                                     is Either.Right -> {
                                         val nextState = this@Normal.copy(commitments = result.value.first)
@@ -241,7 +241,7 @@ data class Normal(
                                     logger.warning { "we have no htlcs but have not replied with our Shutdown yet, this should never happen" }
                                     val closingTxProposed = if (isInitiator) {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
-                                            keyManager,
+                                            channelKeys(),
                                             commitments1.latest,
                                             localShutdown.scriptPubKey.toByteArray(),
                                             remoteShutdown.scriptPubKey.toByteArray(),
@@ -312,7 +312,7 @@ data class Normal(
                                 when {
                                     commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.params.localParams.isInitiator -> {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
-                                            keyManager,
+                                            channelKeys(),
                                             commitments1.latest,
                                             localShutdown.scriptPubKey.toByteArray(),
                                             cmd.message.scriptPubKey.toByteArray(),
@@ -359,7 +359,7 @@ data class Normal(
                                     isInitiator = false,
                                     localContribution = spliceAck.fundingContribution,
                                     remoteContribution = cmd.message.fundingContribution,
-                                    sharedInput = SharedFundingInput.Multisig2of2(keyManager, commitments.params, parentCommitment),
+                                    sharedInput = SharedFundingInput.Multisig2of2(channelKeys(), commitments.params, parentCommitment),
                                     fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
                                     localOutputs = emptyList(),
                                     lockTime = cmd.message.lockTime,
@@ -392,7 +392,7 @@ data class Normal(
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
                             val parentCommitment = commitments.active.first()
-                            val sharedInput = SharedFundingInput.Multisig2of2(keyManager, commitments.params, parentCommitment)
+                            val sharedInput = SharedFundingInput.Multisig2of2(channelKeys(), commitments.params, parentCommitment)
                             val fundingParams = InteractiveTxParams(
                                 channelId = channelId,
                                 isInitiator = true,

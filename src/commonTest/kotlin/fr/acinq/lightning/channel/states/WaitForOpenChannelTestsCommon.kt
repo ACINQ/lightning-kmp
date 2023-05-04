@@ -27,7 +27,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     fun `reject other channel types than anchor outputs`() {
         val alice = LNChannel(
             ChannelContext(
-                StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.keyManager.nodeId),
+                StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams.nodeId),
                 TestConstants.defaultBlockHeight,
                 OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
                 MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))

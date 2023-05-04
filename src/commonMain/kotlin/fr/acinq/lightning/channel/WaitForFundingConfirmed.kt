@@ -205,7 +205,7 @@ data class WaitForFundingConfirmed(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> when (rbfStatus) {
                 is RbfStatus.WaitingForSigs -> {
-                    val (signingSession1, action) = rbfStatus.session.receiveCommitSig(keyManager, commitments.params, cmd.message, currentBlockHeight.toLong())
+                    val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
                     when (action) {
                         is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                             logger.warning { "rbf attempt failed: ${action.reason.message}" }
@@ -243,7 +243,7 @@ data class WaitForFundingConfirmed(
                     is Either.Left -> Pair(this@WaitForFundingConfirmed, listOf())
                     is Either.Right -> {
                         val (commitments1, commitment, actions) = res.value
-                        val nextPerCommitmentPoint = keyManager.commitmentPoint(commitments1.params.localParams.channelKeys(keyManager).shaSeed, 1)
+                        val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
                         val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network

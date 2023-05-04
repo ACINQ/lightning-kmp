@@ -48,7 +48,7 @@ data class WaitForFundingSigned(
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> {
-                val (signingSession1, action) = signingSession.receiveCommitSig(keyManager, channelParams, cmd.message, currentBlockHeight.toLong())
+                val (signingSession1, action) = signingSession.receiveCommitSig(channelParams.localParams.channelKeys(keyManager), channelParams, cmd.message, currentBlockHeight.toLong())
                 when (action) {
                     is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
                     // No need to store their commit_sig, they will re-send it if we disconnect.
@@ -109,7 +109,7 @@ data class WaitForFundingSigned(
         }
         return if (staticParams.useZeroConf) {
             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
-            val nextPerCommitmentPoint = keyManager.commitmentPoint(channelParams.localParams.channelKeys(keyManager).shaSeed, 1)
+            val nextPerCommitmentPoint = channelParams.localParams.channelKeys(keyManager).commitmentPoint(1)
             val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
             // We use part of the funding txid to create a dummy short channel id.
             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20

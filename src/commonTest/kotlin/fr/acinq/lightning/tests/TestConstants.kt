@@ -7,7 +7,6 @@ import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.crypto.LocalKeyManager
-import fr.acinq.lightning.io.PeerChannels
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
@@ -38,17 +37,16 @@ object TestConstants {
         private val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
-        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeId, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
+        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
+            chain = NodeParams.Chain.Regtest,
             loggerFactory = LoggerFactory.default,
             keyManager = keyManager,
+        ).copy(
             alias = "alice",
             features = Features(
-                Feature.InitialRoutingSync to FeatureSupport.Optional,
                 Feature.OptionDataLossProtect to FeatureSupport.Optional,
-                Feature.ChannelRangeQueries to FeatureSupport.Optional,
-                Feature.ChannelRangeQueriesExtended to FeatureSupport.Optional,
                 Feature.VariableLengthOnion to FeatureSupport.Mandatory,
                 Feature.PaymentSecret to FeatureSupport.Mandatory,
                 Feature.BasicMultiPartPayment to FeatureSupport.Optional,
@@ -72,73 +70,29 @@ object TestConstants {
             ),
             maxHtlcValueInFlightMsat = 1_500_000_000L,
             maxAcceptedHtlcs = 100,
-            expiryDeltaBlocks = CltvExpiryDelta(144),
-            fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
-            checkHtlcTimeoutAfterStartupDelaySeconds = 15,
             htlcMinimum = 0.msat,
-            minDepthBlocks = 3,
             toRemoteDelayBlocks = CltvExpiryDelta(144),
             maxToLocalDelayBlocks = CltvExpiryDelta(2048),
             feeBase = 100.msat,
             feeProportionalMillionth = 10,
-            revocationTimeoutSeconds = 20,
-            authTimeoutSeconds = 10,
-            initTimeoutSeconds = 10,
-            pingIntervalSeconds = 30,
-            pingTimeoutSeconds = 10,
-            pingDisconnect = true,
-            autoReconnect = false,
-            initialRandomReconnectDelaySeconds = 5,
-            maxReconnectIntervalSeconds = 3600,
-            chainHash = Block.RegtestGenesisBlock.hash,
-            channelFlags = 1,
-            paymentRequestExpirySeconds = 3600,
-            multiPartPaymentExpirySeconds = 60,
-            maxPaymentAttempts = 5,
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
-            zeroConfPeers = setOf(),
-            enableTrampolinePayment = true
         )
 
-        private val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
-
-        fun channelParams(finalScriptPubKey: ByteVector = ByteVector(closingPubKeyInfo.second)): LocalParams = PeerChannels.makeChannelParams(
-            nodeParams,
-            finalScriptPubKey,
-            isInitiator = true,
-            nodeParams.maxHtlcValueInFlightMsat.msat,
-        )
+        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = true)
     }
 
     object Bob {
         private val entropy = Hex.decode("0202020202020202020202020202020202020202020202020202020202020202")
         val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
-        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeId, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
+        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
         val nodeParams = NodeParams(
+            chain = NodeParams.Chain.Regtest,
             loggerFactory = LoggerFactory.default,
             keyManager = keyManager,
+        ).copy(
             alias = "bob",
-            features = Features(
-                Feature.InitialRoutingSync to FeatureSupport.Optional,
-                Feature.OptionDataLossProtect to FeatureSupport.Optional,
-                Feature.ChannelRangeQueries to FeatureSupport.Optional,
-                Feature.ChannelRangeQueriesExtended to FeatureSupport.Optional,
-                Feature.VariableLengthOnion to FeatureSupport.Mandatory,
-                Feature.PaymentSecret to FeatureSupport.Mandatory,
-                Feature.BasicMultiPartPayment to FeatureSupport.Optional,
-                Feature.Wumbo to FeatureSupport.Optional,
-                Feature.StaticRemoteKey to FeatureSupport.Mandatory,
-                Feature.AnchorOutputs to FeatureSupport.Mandatory,
-                Feature.DualFunding to FeatureSupport.Mandatory,
-                Feature.ChannelType to FeatureSupport.Mandatory,
-                Feature.PaymentMetadata to FeatureSupport.Optional,
-                Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
-                Feature.WakeUpNotificationClient to FeatureSupport.Optional,
-                Feature.PayToOpenClient to FeatureSupport.Optional,
-                Feature.ChannelBackupClient to FeatureSupport.Optional,
-            ),
             dustLimit = 1_000.sat,
             maxRemoteDustLimit = 1_500.sat,
             onChainFeeConf = OnChainFeeConf(
@@ -148,42 +102,14 @@ object TestConstants {
             ),
             maxHtlcValueInFlightMsat = 1_500_000_000L,
             maxAcceptedHtlcs = 100,
-            expiryDeltaBlocks = CltvExpiryDelta(144),
-            fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
-            checkHtlcTimeoutAfterStartupDelaySeconds = 15,
-            htlcMinimum = 1_000.msat,
-            minDepthBlocks = 3,
             toRemoteDelayBlocks = CltvExpiryDelta(144),
             maxToLocalDelayBlocks = CltvExpiryDelta(1024),
             feeBase = 10.msat,
             feeProportionalMillionth = 10,
-            revocationTimeoutSeconds = 20,
-            authTimeoutSeconds = 10,
-            initTimeoutSeconds = 10,
-            pingIntervalSeconds = 30,
-            pingTimeoutSeconds = 10,
-            pingDisconnect = true,
-            autoReconnect = false,
-            initialRandomReconnectDelaySeconds = 5,
-            maxReconnectIntervalSeconds = 3600,
-            chainHash = Block.RegtestGenesisBlock.hash,
-            channelFlags = 1,
-            paymentRequestExpirySeconds = 3600,
-            multiPartPaymentExpirySeconds = 60,
-            maxPaymentAttempts = 5,
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
-            zeroConfPeers = setOf(),
-            enableTrampolinePayment = true
         )
 
-        private val closingPubKeyInfo = keyManager.closingPubkeyScript(PublicKey.Generator)
-
-        fun channelParams(finalScriptPubKey: ByteVector = ByteVector(closingPubKeyInfo.second)): LocalParams = PeerChannels.makeChannelParams(
-            nodeParams,
-            finalScriptPubKey,
-            isInitiator = false,
-            nodeParams.maxHtlcValueInFlightMsat.msat,
-        )
+        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = false)
     }
 
 }

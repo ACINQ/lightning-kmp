@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 
 import fr.acinq.lightning.crypto.LocalKeyManager
@@ -37,7 +38,7 @@ class RecoveryTestsCommon {
 
         // use Bob's mnemonic words to initialise his key manager
         val seed = MnemonicCode.toSeed(TestConstants.Bob.mnemonics, "").toByteVector32()
-        val keyManager = LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
 
         // recompute our channel keys from the extracted funding pubkey and see if we can find and spend our output
         fun findAndSpend(fundingKey: PublicKey): Transaction? {
@@ -52,7 +53,7 @@ class RecoveryTestsCommon {
             )
             return when (mainTx) {
                 is Transactions.TxResult.Success -> {
-                    val sig = keyManager.sign(mainTx.result, channelKeys.paymentKey)
+                    val sig = Transactions.sign(mainTx.result, channelKeys.paymentKey)
                     val signedTx = Transactions.addSigs(mainTx.result, sig).tx
                     Transaction.correctlySpends(signedTx, commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
                     signedTx

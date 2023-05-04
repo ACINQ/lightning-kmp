@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.Helpers.publishIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
@@ -341,45 +342,6 @@ data class RevokedCommitPublished(
     }
 }
 
-/**
- * Channel keys recovered from the channel's funding public key (note that we obviously cannot recover the funding private key)
- * These keys can be used to spend our outputs from a commit tx that has been published to the blockchain, without any other information than
- * the node's seed ("backup less backup")
- */
-data class RecoveredChannelKeys(
-    val fundingPubKey: PublicKey,
-    val paymentKey: PrivateKey,
-    val delayedPaymentKey: PrivateKey,
-    val htlcKey: PrivateKey,
-    val revocationKey: PrivateKey,
-    val shaSeed: ByteVector32
-) {
-    val htlcBasepoint: PublicKey = htlcKey.publicKey()
-    val paymentBasepoint: PublicKey = paymentKey.publicKey()
-    val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
-    val revocationBasepoint: PublicKey = revocationKey.publicKey()
-}
-
-/**
- * Channel secrets and keys, generated from a funding key BIP32 path
- */
-data class ChannelKeys(
-    val fundingKeyPath: KeyPath,
-    val fundingPrivateKey: PrivateKey,
-    val paymentKey: PrivateKey,
-    val delayedPaymentKey: PrivateKey,
-    val htlcKey: PrivateKey,
-    val revocationKey: PrivateKey,
-    val shaSeed: ByteVector32
-) {
-    val fundingPubKey: PublicKey = fundingPrivateKey.publicKey()
-    val htlcBasepoint: PublicKey = htlcKey.publicKey()
-    val paymentBasepoint: PublicKey = paymentKey.publicKey()
-    val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()
-    val revocationBasepoint: PublicKey = revocationKey.publicKey()
-    val temporaryChannelId: ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + revocationBasepoint.value).sha256()
-}
-
 data class LocalParams(
     val nodeId: PublicKey,
     val fundingKeyPath: KeyPath,
@@ -392,6 +354,19 @@ data class LocalParams(
     val defaultFinalScriptPubKey: ByteVector,
     val features: Features
 ) {
+    constructor(nodeParams: NodeParams, isInitiator: Boolean): this(
+        nodeId = nodeParams.nodeId,
+        fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key path end differently
+        dustLimit = nodeParams.dustLimit,
+        maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+        htlcMinimum = nodeParams.htlcMinimum,
+        toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
+        maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+        isInitiator = isInitiator,
+        defaultFinalScriptPubKey = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0), // the default closing address is the same for all channels
+        features = nodeParams.features
+    )
+
     fun channelKeys(keyManager: KeyManager) = keyManager.channelKeys(fundingKeyPath)
 }
 

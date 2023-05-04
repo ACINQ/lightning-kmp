@@ -455,8 +455,10 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         private fun makeLegacyClosingSigned(alice: LNChannel<Negotiating>, bob: LNChannel<Negotiating>, closingFee: Satoshi): Pair<ClosingSigned, ClosingSigned> {
             val aliceScript = alice.state.localShutdown.scriptPubKey.toByteArray()
             val bobScript = bob.state.localShutdown.scriptPubKey.toByteArray()
-            val (_, aliceClosingSigned) = Helpers.Closing.makeClosingTx(alice.ctx.keyManager, alice.commitments.latest, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
-            val (_, bobClosingSigned) = Helpers.Closing.makeClosingTx(bob.ctx.keyManager, bob.commitments.latest, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
+            val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
+            val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
+            val (_, aliceClosingSigned) = Helpers.Closing.makeClosingTx(aliceKeys, alice.commitments.latest, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
+            val (_, bobClosingSigned) = Helpers.Closing.makeClosingTx(bobKeys, bob.commitments.latest, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
             return Pair(aliceClosingSigned.copy(tlvStream = TlvStream.empty()), bobClosingSigned.copy(tlvStream = TlvStream.empty()))
         }
 
