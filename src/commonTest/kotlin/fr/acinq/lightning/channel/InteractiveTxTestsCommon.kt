@@ -885,7 +885,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val balanceA = 100_000_000.msat
         val subtractedFundingA = 96_000.sat
         val dustLimit = 5000.sat
-        val failure = createSpliceContributions(balanceA, -subtractedFundingA, listOf(), 0.msat, 0.sat, FeeratePerKw(1000.sat), dustLimit, 0).left
+        val failure = createSpliceContributions(fundingTxIndex = 0, balanceA, -subtractedFundingA, listOf(), 0.msat, 0.sat, FeeratePerKw(1000.sat), dustLimit, 0).left
         assertEquals(failure, FundingContributionFailure.NotEnoughFunding(-subtractedFundingA, 0.sat, 100_000.sat))
     }
 
@@ -894,7 +894,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val balanceA = 50_000_000.msat
         val balanceB = 50_000_000.msat
         val subtractedFundingA = 50_001.sat
-        val failure = createSpliceContributions(balanceA, -subtractedFundingA, listOf(), balanceB, 0.sat, FeeratePerKw(1000.sat), 330.sat, 0).left
+        val failure = createSpliceContributions(fundingTxIndex = 0, balanceA, -subtractedFundingA, listOf(), balanceB, 0.sat, FeeratePerKw(1000.sat), 330.sat, 0).left
         assertEquals(failure, FundingContributionFailure.InvalidFundingBalances(49_999.sat, (-1000).msat, 50_000_000.msat))
     }
 
@@ -1074,6 +1074,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         }
 
         private fun createSpliceContributions(
+            fundingTxIndex: Long,
             balanceA: MilliSatoshi,
             fundingContributionA: Satoshi,
             outputsA: List<TxOut>,
@@ -1084,7 +1085,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             lockTime: Long
         ): Either<FundingContributionFailure, FundingContributions> {
             val channelId = randomBytes32()
-            val fundingTxIndex = 0L
             val localParamsA = TestConstants.Alice.channelParams()
             val localParamsB = TestConstants.Bob.channelParams()
             val channelKeysA = localParamsA.channelKeys(TestConstants.Alice.keyManager)
