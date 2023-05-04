@@ -287,8 +287,10 @@ object Helpers {
             toRemote: MilliSatoshi,
             commitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
+            fundingTxIndex: Long,
             fundingTxHash: ByteVector32,
             fundingTxOutputIndex: Int,
+            remoteFundingPubkey: PublicKey,
             remotePerCommitmentPoint: PublicKey
         ): Either<ChannelException, PairOfCommitTxs> {
             val localSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
@@ -306,11 +308,11 @@ object Helpers {
                 }
             }
 
-            val fundingPubKey = channelKeys.fundingPubKey
-            val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteParams.fundingPubKey)
+            val fundingPubKey = channelKeys.fundingPubKey(fundingTxIndex)
+            val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteFundingPubkey)
             val localPerCommitmentPoint = channelKeys.commitmentPoint(commitmentIndex)
-            val localCommitTx = Commitments.makeLocalTxs(channelKeys, commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec).first
-            val remoteCommitTx = Commitments.makeRemoteTxs(channelKeys, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec).first
+            val localCommitTx = Commitments.makeLocalTxs(channelKeys, commitTxNumber = commitmentIndex, localParams, remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitmentInput, localPerCommitmentPoint = localPerCommitmentPoint, localSpec).first
+            val remoteCommitTx = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = commitmentIndex, localParams, remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitmentInput, remotePerCommitmentPoint = remotePerCommitmentPoint, remoteSpec).first
 
             return Either.Right(PairOfCommitTxs(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
         }
@@ -383,7 +385,7 @@ object Helpers {
         private fun firstClosingFee(commitment: FullCommitment, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: ClosingFeerates): ClosingFees {
             // this is just to estimate the weight which depends on the size of the pubkey scripts
             val dummyClosingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, Satoshi(0), Satoshi(0), commitment.localCommit.spec)
-            val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitment.params.remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
+            val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitment.remoteFundingPubkey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
             return requestedFeerate.computeFees(closingWeight)
         }
 
@@ -415,7 +417,7 @@ object Helpers {
             require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitment.params.localParams.dustLimit.max(commitment.params.remoteParams.dustLimit)
             val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, dustLimit, closingFees.preferred, commitment.localCommit.spec)
-            val localClosingSig = Transactions.sign(closingTx, channelKeys.fundingPrivateKey)
+            val localClosingSig = Transactions.sign(closingTx, channelKeys.fundingKey(commitment.fundingTxIndex))
             val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
             return Pair(closingTx, closingSigned)
         }
@@ -430,7 +432,7 @@ object Helpers {
         ): Either<ChannelException, Pair<ClosingTx, ClosingSigned>> {
             val (closingTx, closingSigned) = makeClosingTx(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee))
             return if (checkClosingDustAmounts(closingTx)) {
-                val signedClosingTx = Transactions.addSigs(closingTx, channelKeys.fundingPubKey, commitment.params.remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
+                val signedClosingTx = Transactions.addSigs(closingTx, channelKeys.fundingPubKey(commitment.fundingTxIndex), commitment.remoteFundingPubkey, closingSigned.signature, remoteClosingSig)
                 when (Transactions.checkSpendable(signedClosingTx)) {
                     is Try.Success -> Either.Right(Pair(signedClosingTx, closingSigned))
                     is Try.Failure -> Either.Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
@@ -548,9 +550,11 @@ object Helpers {
             val commitInput = commitment.commitInput
             val (remoteCommitTx, _) = Commitments.makeRemoteTxs(
                 channelKeys,
-                remoteCommit.index,
+                commitTxNumber = remoteCommit.index,
                 localParams,
                 remoteParams,
+                fundingTxIndex = commitment.fundingTxIndex,
+                remoteFundingPubKey = commitment.remoteFundingPubkey,
                 commitInput,
                 remoteCommit.remotePerCommitmentPoint,
                 remoteCommit.spec
@@ -563,8 +567,8 @@ object Helpers {
             val remoteHtlcPubkey = remoteParams.htlcBasepoint.deriveForCommitment(remoteCommit.remotePerCommitmentPoint)
             val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveForRevocation(remoteCommit.remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
-                remoteParams.fundingPubKey,
-                channelKeys.fundingPubKey,
+                commitment.remoteFundingPubkey,
+                channelKeys.fundingPubKey(commitment.fundingTxIndex),
                 !localParams.isInitiator,
                 remoteParams.dustLimit,
                 remoteRevocationPubkey,

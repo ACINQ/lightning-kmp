@@ -238,7 +238,7 @@ object Serialization {
         is SharedFundingInput.Multisig2of2 -> {
             write(0x01)
             writeInputInfo(i.info)
-            writePublicKey(i.localFundingPubkey)
+            writeNumber(i.fundingTxIndex)
             writePublicKey(i.remoteFundingPubkey)
         }
     }
@@ -249,7 +249,7 @@ object Serialization {
         writeNumber(localContribution.toLong())
         writeNumber(remoteContribution.toLong())
         writeNullable(sharedInput) { writeSharedFundingInput(it) }
-        writeDelimited(fundingPubkeyScript.toByteArray())
+        writePublicKey(remoteFundingPubkey)
         writeCollection(localOutputs) { writeBtcObject(it) }
         writeNumber(lockTime)
         writeNumber(dustLimit.toLong())
@@ -403,7 +403,6 @@ object Serialization {
             writeNumber(htlcMinimum.toLong())
             writeNumber(toSelfDelay.toLong())
             writeNumber(maxAcceptedHtlcs)
-            writePublicKey(fundingPubKey)
             writePublicKey(revocationBasepoint)
             writePublicKey(paymentBasepoint)
             writePublicKey(delayedPaymentBasepoint)
@@ -430,6 +429,7 @@ object Serialization {
 
     private fun Output.writeCommitment(o: Commitment) = o.run {
         writeNumber(fundingTxIndex)
+        writePublicKey(remoteFundingPubkey)
         when (localFundingStatus) {
             is LocalFundingStatus.UnconfirmedFundingTx -> {
                 write(0x00)

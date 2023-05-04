@@ -315,7 +315,6 @@ internal data class RemoteParams(
         htlcMinimum,
         toSelfDelay,
         maxAcceptedHtlcs,
-        fundingPubKey,
         revocationBasepoint,
         paymentBasepoint,
         delayedPaymentBasepoint,
@@ -385,6 +384,7 @@ internal data class Commitments(
         active = listOf(
             fr.acinq.lightning.channel.Commitment(
                 fundingTxIndex = 0,
+                remoteFundingPubkey = remoteParams.fundingPubKey,
                 // We previously didn't store the funding transaction, so we act as if it were unconfirmed.
                 // We will put a WatchConfirmed when starting, which will return the confirmed transaction.
                 fr.acinq.lightning.channel.LocalFundingStatus.UnconfirmedFundingTx(
@@ -393,7 +393,7 @@ internal data class Commitments(
                         // We must correctly set the txId here.
                         TxSignatures(channelId, commitInput.outPoint.hash, listOf()),
                     ),
-                    fr.acinq.lightning.channel.InteractiveTxParams(channelId, localParams.isFunder, commitInput.txOut.amount, commitInput.txOut.amount, commitInput.txOut.publicKeyScript, 0, localParams.dustLimit, localCommit.spec.feerate),
+                    fr.acinq.lightning.channel.InteractiveTxParams(channelId, localParams.isFunder, commitInput.txOut.amount, commitInput.txOut.amount, remoteParams.fundingPubKey, 0, localParams.dustLimit, localCommit.spec.feerate),
                     0
                 ),
                 fr.acinq.lightning.channel.RemoteFundingStatus.Locked,

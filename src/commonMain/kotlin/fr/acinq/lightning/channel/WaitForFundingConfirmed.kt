@@ -31,7 +31,7 @@ data class WaitForFundingConfirmed(
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> when (latestFundingTx.sharedTx) {
-                is PartiallySignedSharedTransaction -> when (val fullySignedTx = latestFundingTx.sharedTx.addRemoteSigs(latestFundingTx.fundingParams, cmd.message)) {
+                is PartiallySignedSharedTransaction -> when (val fullySignedTx = latestFundingTx.sharedTx.addRemoteSigs(channelKeys(), latestFundingTx.fundingParams, cmd.message)) {
                     null -> {
                         logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                         // The funding transaction may still confirm (since our peer should be able to generate valid signatures), so we cannot close the channel yet.
@@ -54,7 +54,7 @@ data class WaitForFundingConfirmed(
                 }
                 is FullySignedSharedTransaction -> when (rbfStatus) {
                     is RbfStatus.WaitingForSigs -> {
-                        when (val action = rbfStatus.session.receiveTxSigs(cmd.message, currentBlockHeight.toLong())) {
+                        when (val action = rbfStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight.toLong())) {
                             is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                 logger.warning { "rbf attempt failed: ${action.reason.message}" }
                                 Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
@@ -93,7 +93,7 @@ data class WaitForFundingConfirmed(
                                     isInitiator,
                                     latestFundingTx.fundingParams.localContribution, // we don't change our funding contribution
                                     cmd.message.fundingContribution,
-                                    latestFundingTx.fundingParams.fundingPubkeyScript,
+                                    latestFundingTx.fundingParams.remoteFundingPubkey,
                                     cmd.message.lockTime,
                                     latestFundingTx.fundingParams.dustLimit,
                                     cmd.message.feerate
@@ -102,7 +102,7 @@ data class WaitForFundingConfirmed(
                                     addAll(latestFundingTx.sharedTx.tx.localInputs.map { Either.Left(it) })
                                     addAll(latestFundingTx.sharedTx.tx.localOutputs.map { Either.Right(it) })
                                 }
-                                val session = InteractiveTxSession(fundingParams, SharedFundingInputBalances(0.msat, 0.msat), toSend, previousFundingTxs.map { it.sharedTx })
+                                val session = InteractiveTxSession(channelKeys(), fundingParams, SharedFundingInputBalances(0.msat, 0.msat), toSend, previousFundingTxs.map { it.sharedTx })
                                 val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
                                 Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localContribution))))
                             }
@@ -126,18 +126,18 @@ data class WaitForFundingConfirmed(
                         isInitiator,
                         rbfStatus.command.fundingAmount,
                         cmd.message.fundingContribution,
-                        latestFundingTx.fundingParams.fundingPubkeyScript,
+                        latestFundingTx.fundingParams.remoteFundingPubkey,
                         rbfStatus.command.lockTime,
                         latestFundingTx.fundingParams.dustLimit,
                         rbfStatus.command.targetFeerate
                     )
-                    when (val contributions = FundingContributions.create(fundingParams, rbfStatus.command.wallet.confirmedUtxos)) {
+                    when (val contributions = FundingContributions.create(channelKeys(), fundingParams, rbfStatus.command.wallet.confirmedUtxos)) {
                         is Either.Left -> {
                             logger.warning { "error creating funding contributions: ${contributions.value}" }
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                         }
                         is Either.Right -> {
-                            val (session, action) = InteractiveTxSession(fundingParams, 0.msat, 0.msat, contributions.value, previousFundingTxs.map { it.sharedTx }).send()
+                            val (session, action) = InteractiveTxSession(channelKeys(), fundingParams, 0.msat, 0.msat, contributions.value, previousFundingTxs.map { it.sharedTx }).send()
                             when (action) {
                                 is InteractiveTxSessionAction.SendMessage -> {
                                     val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))

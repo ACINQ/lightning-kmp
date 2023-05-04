@@ -8,7 +8,6 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
-import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
@@ -124,6 +123,7 @@ data class Normal(
                                         fundingContribution = fundingContribution,
                                         lockTime = currentBlockHeight.toLong(),
                                         feerate = cmd.command.feerate,
+                                        fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                         pushAmount = cmd.command.pushAmount
                                     )
                                     logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
@@ -353,21 +353,23 @@ data class Normal(
                                 val spliceAck = SpliceAck(
                                     channelId,
                                     fundingContribution = 0.sat, // only remote contributes to the splice
-                                    pushAmount = 0.msat
+                                    pushAmount = 0.msat,
+                                    fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                 )
                                 val fundingParams = InteractiveTxParams(
                                     channelId = channelId,
                                     isInitiator = false,
                                     localContribution = spliceAck.fundingContribution,
                                     remoteContribution = cmd.message.fundingContribution,
-                                    sharedInput = SharedFundingInput.Multisig2of2(channelKeys(), commitments.params, parentCommitment),
-                                    fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
+                                    sharedInput = SharedFundingInput.Multisig2of2(parentCommitment),
+                                    remoteFundingPubkey = cmd.message.fundingPubkey,
                                     localOutputs = emptyList(),
                                     lockTime = cmd.message.lockTime,
                                     dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
                                     targetFeerate = cmd.message.feerate
                                 )
                                 val session = InteractiveTxSession(
+                                    channelKeys(),
                                     fundingParams,
                                     previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                     previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
@@ -375,7 +377,7 @@ data class Normal(
                                     previousTxs = emptyList()
                                 )
                                 val nextState = this@Normal.copy(spliceStatus = SpliceStatus.InProgress(replyTo = null, session, localPushAmount = 0.msat, remotePushAmount = cmd.message.pushAmount, origins = cmd.message.origins))
-                                Pair(nextState, listOf(ChannelAction.Message.Send(SpliceAck(channelId, fundingParams.localContribution))))
+                                Pair(nextState, listOf(ChannelAction.Message.Send(spliceAck)))
                             } else {
                                 logger.info { "rejecting splice attempt: channel is not idle" }
                                 Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceChannelNotIdle(channelId).message))))
@@ -393,20 +395,21 @@ data class Normal(
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
                             val parentCommitment = commitments.active.first()
-                            val sharedInput = SharedFundingInput.Multisig2of2(channelKeys(), commitments.params, parentCommitment)
+                            val sharedInput = SharedFundingInput.Multisig2of2(parentCommitment)
                             val fundingParams = InteractiveTxParams(
                                 channelId = channelId,
                                 isInitiator = true,
                                 localContribution = spliceStatus.spliceInit.fundingContribution,
                                 remoteContribution = cmd.message.fundingContribution,
                                 sharedInput = sharedInput,
-                                fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
+                                remoteFundingPubkey = cmd.message.fundingPubkey,
                                 localOutputs = spliceStatus.command.spliceOutputs,
                                 lockTime = spliceStatus.spliceInit.lockTime,
                                 dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
                                 targetFeerate = spliceStatus.spliceInit.feerate
                             )
                             when (val fundingContributions = FundingContributions.create(
+                                channelKeys = channelKeys(),
                                 params = fundingParams,
                                 sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
                                 walletInputs = spliceStatus.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
@@ -421,6 +424,7 @@ data class Normal(
                                 is Either.Right -> {
                                     // The splice initiator always sends the first interactive-tx message.
                                     val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
+                                        channelKeys(),
                                         fundingParams,
                                         previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                         previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
@@ -517,7 +521,7 @@ data class Normal(
                     }
                     is TxSignatures -> when (spliceStatus) {
                         is SpliceStatus.WaitingForSigs -> {
-                            when (val action = spliceStatus.session.receiveTxSigs(cmd.message, currentBlockHeight.toLong())) {
+                            when (val action = spliceStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight.toLong())) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                     logger.warning { "splice attempt failed: ${action.reason.message}" }
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
@@ -528,7 +532,7 @@ data class Normal(
                         }
                         else -> when (commitments.latest.localFundingStatus) {
                             is LocalFundingStatus.UnconfirmedFundingTx -> when (commitments.latest.localFundingStatus.sharedTx) {
-                                is PartiallySignedSharedTransaction -> when (val fullySignedTx = commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
+                                is PartiallySignedSharedTransaction -> when (val fullySignedTx = commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(channelKeys(), commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
                                     null -> {
                                         logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                                         logger.warning { "tx=${commitments.latest.localFundingStatus.sharedTx}" }

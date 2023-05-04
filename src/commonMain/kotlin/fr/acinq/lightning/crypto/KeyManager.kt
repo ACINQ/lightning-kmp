@@ -42,14 +42,14 @@ interface KeyManager {
      */
     data class ChannelKeys(
         val fundingKeyPath: KeyPath,
-        val fundingPrivateKey: PrivateKey,
+        val fundingKey: (Long) -> PrivateKey,
         val paymentKey: PrivateKey,
         val delayedPaymentKey: PrivateKey,
         val htlcKey: PrivateKey,
         val revocationKey: PrivateKey,
-        val shaSeed: ByteVector32
+        val shaSeed: ByteVector32,
     ) {
-        val fundingPubKey: PublicKey = fundingPrivateKey.publicKey()
+        fun fundingPubKey(index: Long): PublicKey = fundingKey(index).publicKey()
         val htlcBasepoint: PublicKey = htlcKey.publicKey()
         val paymentBasepoint: PublicKey = paymentKey.publicKey()
         val delayedPaymentBasepoint: PublicKey = delayedPaymentKey.publicKey()

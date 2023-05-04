@@ -52,7 +52,6 @@
                 "htlcMinimum": 0,
                 "toSelfDelay": 144,
                 "maxAcceptedHtlcs": 100,
-                "fundingPubKey": "02b6eaf304d966a6df90f3b3df7af7be6b1625854bbc096cb8b3507b2a37c2bf9c",
                 "revocationBasepoint": "037d549bc475d9b2b0098e3b2f23282671646eab09b36e2f01099f39e376552864",
                 "paymentBasepoint": "0368434fc548cb471f7ed8c94638433bfb07cceb97665c411450fdc23c60236409",
                 "delayedPaymentBasepoint": "0399d61c09ee58f1cdc497a872f6b284cbaccd54f56bcbf7acf1f5595b577506cc",
@@ -106,6 +105,7 @@
         "active": [
             {
                 "fundingTxIndex": 0,
+                "remoteFundingPubkey": "02b6eaf304d966a6df90f3b3df7af7be6b1625854bbc096cb8b3507b2a37c2bf9c",
                 "localFundingStatus": {
                     "status": "unconfirmed",
                     "txId": "bdcd274e9bc89c621b30596e344389d28c3a92f820ef5a680ebfcb615b827c2f"

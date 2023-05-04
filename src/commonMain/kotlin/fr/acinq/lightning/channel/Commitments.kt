@@ -96,14 +96,16 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishabl
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey) {
-    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, commitInput: Transactions.InputInfo): CommitSig {
-        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, index, params.localParams, params.remoteParams, commitInput, remotePerCommitmentPoint, spec)
-        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingPrivateKey)
+    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo): CommitSig {
+        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, index, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubKey, commitInput, remotePerCommitmentPoint = remotePerCommitmentPoint, spec)
+        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val sortedHtlcsTxs = htlcTxs.sortedBy { it.input.outPoint.index }
         val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
         return CommitSig(params.channelId, sig, htlcSigs.toList())
     }
+    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, signingSession: InteractiveTxSigningSession): CommitSig =
+        sign(channelKeys, params, fundingTxIndex = signingSession.fundingTxIndex, remoteFundingPubKey = signingSession.fundingParams.remoteFundingPubkey, commitInput = signingSession.commitInput)
 }
 
 /** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */
@@ -131,6 +133,7 @@ sealed class RemoteFundingStatus {
 /** A minimal commitment for a given funding tx. */
 data class Commitment(
     val fundingTxIndex: Long,
+    val remoteFundingPubkey: PublicKey,
     val localFundingStatus: LocalFundingStatus, val remoteFundingStatus: RemoteFundingStatus,
     val localCommit: LocalCommit, val remoteCommit: RemoteCommit, val nextRemoteCommit: NextRemoteCommit?
 ) {
@@ -385,8 +388,8 @@ data class Commitment(
     fun sendCommit(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, log: MDCLogger): Pair<Commitment, CommitSig> {
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
-        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, remoteCommit.index + 1, params.localParams, params.remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingPrivateKey)
+        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitInput, remotePerCommitmentPoint = remoteNextPerCommitmentPoint, spec)
+        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
 
         val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
@@ -419,8 +422,8 @@ data class Commitment(
         // receiving money i.e its commit tx has one output for them
         val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
         val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommit.index + 1)
-        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(channelKeys, localCommit.index + 1, params.localParams, params.remoteParams, commitInput, localPerCommitmentPoint, spec)
-        val sig = Transactions.sign(localCommitTx, channelKeys.fundingPrivateKey)
+        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(channelKeys, commitTxNumber = localCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitInput, localPerCommitmentPoint = localPerCommitmentPoint, spec)
+        val sig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
 
         log.info {
             val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
@@ -429,7 +432,7 @@ data class Commitment(
         }
 
         // no need to compute htlc sigs if commit sig doesn't check out
-        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey, params.remoteParams.fundingPubKey, sig, commit.signature)
+        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubkey, sig, commit.signature)
         when (val check = Transactions.checkSpendable(signedCommitTx)) {
             is Try.Failure -> {
                 log.error(check.error) { "remote signature $commit is invalid" }
@@ -472,6 +475,7 @@ data class Commitment(
 data class FullCommitment(
     val params: ChannelParams, val changes: CommitmentChanges,
     val fundingTxIndex: Long,
+    val remoteFundingPubkey: PublicKey,
     val localFundingStatus: LocalFundingStatus, val remoteFundingStatus: RemoteFundingStatus,
     val localCommit: LocalCommit, val remoteCommit: RemoteCommit, val nextRemoteCommit: NextRemoteCommit?
 ) {
@@ -518,7 +522,7 @@ data class Commitments(
     fun availableBalanceForReceive(): MilliSatoshi = active.minOf { it.availableBalanceForReceive(params, changes) }
 
     // We always use the last commitment that was created, to make sure we never go back in time.
-    val latest = FullCommitment(params, changes, active.first().fundingTxIndex, active.first().localFundingStatus, active.first().remoteFundingStatus, active.first().localCommit, active.first().remoteCommit, active.first().nextRemoteCommit)
+    val latest = FullCommitment(params, changes, active.first().fundingTxIndex, active.first().remoteFundingPubkey, active.first().localFundingStatus, active.first().remoteFundingStatus, active.first().localCommit, active.first().remoteCommit, active.first().nextRemoteCommit)
 
     val all = buildList {
         addAll(active)
@@ -901,6 +905,8 @@ data class Commitments(
             commitTxNumber: Long,
             localParams: LocalParams,
             remoteParams: RemoteParams,
+            fundingTxIndex: Long,
+            remoteFundingPubKey: PublicKey,
             commitmentInput: Transactions.InputInfo,
             localPerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
@@ -912,8 +918,8 @@ data class Commitments(
             val localRevocationPubkey = remoteParams.revocationBasepoint.deriveForRevocation(localPerCommitmentPoint)
             val localPaymentBasepoint = channelKeys.paymentBasepoint
             val outputs = makeCommitTxOutputs(
-                channelKeys.fundingPubKey,
-                remoteParams.fundingPubKey,
+                channelKeys.fundingPubKey(fundingTxIndex),
+                remoteFundingPubKey,
                 localParams.isInitiator,
                 localParams.dustLimit,
                 localRevocationPubkey,
@@ -931,8 +937,12 @@ data class Commitments(
 
         fun makeRemoteTxs(
             channelKeys: KeyManager.ChannelKeys,
-            commitTxNumber: Long, localParams: LocalParams,
-            remoteParams: RemoteParams, commitmentInput: Transactions.InputInfo,
+            commitTxNumber: Long,
+            localParams: LocalParams,
+            remoteParams: RemoteParams,
+            fundingTxIndex: Long,
+            remoteFundingPubKey: PublicKey,
+            commitmentInput: Transactions.InputInfo,
             remotePerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
@@ -942,8 +952,8 @@ data class Commitments(
             val remoteHtlcPubkey = remoteParams.htlcBasepoint.deriveForCommitment(remotePerCommitmentPoint)
             val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveForRevocation(remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
-                remoteParams.fundingPubKey,
-                channelKeys.fundingPubKey,
+                remoteFundingPubKey,
+                channelKeys.fundingPubKey(fundingTxIndex),
                 !localParams.isInitiator,
                 remoteParams.dustLimit,
                 remoteRevocationPubkey,
