@@ -184,6 +184,7 @@ data class Normal(
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                     logger.warning { "splice attempt failed: ${action.reason.message}" }
+                                    logger.warning { "funding tx was txId=${spliceStatus.session.fundingTx.txId} tx=${spliceStatus.session.fundingTx.tx.buildUnsignedTx()}" }
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                                 }
                                 // No need to store their commit_sig, they will re-send it if we disconnect.
@@ -579,10 +580,12 @@ data class Normal(
                         }
                         is SpliceStatus.WaitingForSigs -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
-                            Pair(
-                                this@Normal.copy(spliceStatus = SpliceStatus.None),
-                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                            val nextState = this@Normal.copy(spliceStatus = SpliceStatus.None)
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message))
                             )
+                            Pair(nextState, actions)
                         }
                         is SpliceStatus.Aborted -> {
                             logger.info { "our peer acked our previous tx_abort" }

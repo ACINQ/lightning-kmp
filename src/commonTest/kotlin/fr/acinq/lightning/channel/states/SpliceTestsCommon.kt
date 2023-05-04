@@ -115,15 +115,17 @@ class SpliceTestsCommon : LightningTestSuite() {
             val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(TxAbort(alice.channelId, "internal error")))
             assertIs<Normal>(alice6.state)
             assertEquals(alice6.state.spliceStatus, SpliceStatus.None)
-            assertEquals(actionsAlice6.size, 1)
+            assertEquals(actionsAlice6.size, 2)
             actionsAlice6.hasOutgoingMessage<TxAbort>()
+            actionsAlice6.has<ChannelAction.Storage.StoreState>()
         }
         run {
             val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(TxAbort(alice.channelId, "internal error")))
             assertIs<Normal>(bob6.state)
             assertEquals(bob6.state.spliceStatus, SpliceStatus.None)
-            assertEquals(actionsBob6.size, 1)
+            assertEquals(actionsBob6.size, 2)
             actionsBob6.hasOutgoingMessage<TxAbort>()
+            actionsBob6.has<ChannelAction.Storage.StoreState>()
         }
     }
 
