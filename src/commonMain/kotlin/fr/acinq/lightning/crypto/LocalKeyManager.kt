@@ -23,18 +23,13 @@ import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
  *       50' / 0'
  *
  *  funding keys:
- *   - initial funding tx (*):
- *       50' / 1' / <fundingKeyPath> / <0' or 1'> / 0'
- *   - splice funding txs (index > 0):
- *       50' / 1' / <fundingKeyPath> / <0' or 1'> / 6' / <index>
- *   (*) The initial funding tx is computed differently for historical reasons.
+ *       50' / 1' / <fundingKeyPath> / <0' or 1'> / <index>'
  *
- *  others channel keys (payment, revocation, htlc, etc.):
- *       50' / 1' / <channelKeyPath> / <1-5> / <index>
+ *  others channel basepoint keys (payment, revocation, htlc, etc.):
+ *       50' / 1' / <channelKeyPath> / <1'-5'>
  *
  *  bip-84 on-chain keys:
- *       84' / 0' / <account> / <0 or 1 > / <index>
- *
+ *       84' / 0' / <account>' / <0' or 1'> / <index>
  * ```
  *
  * @param seed seed from which the channel keys will be derived
