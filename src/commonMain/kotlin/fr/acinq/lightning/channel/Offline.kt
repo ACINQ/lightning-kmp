@@ -25,23 +25,22 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                         val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         Pair(nextState, listOf(ChannelAction.Message.Send(error)))
                     }
-                    staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> {
-                        // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
-                        logger.info { "syncing ${state::class}, waiting fo their channelReestablish message" }
-                        val nextState = when (state) {
-                            is ChannelStateWithCommitments -> state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
-                            is WaitForFundingSigned -> state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
-                        }
-                        Pair(Syncing(nextState, true), listOf())
-                    }
                     else -> {
                         logger.info { "syncing ${state::class}" }
-                        val channelReestablish = state.run { createChannelReestablish() }
                         val nextState = when (state) {
                             is WaitForFundingSigned -> state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
                             is ChannelStateWithCommitments -> state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         }
-                        Pair(Syncing(nextState, false), listOf(ChannelAction.Message.Send(channelReestablish)))
+                        val actions = buildList {
+                            if (staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient)) {
+                                // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
+                                logger.info { "waiting for their channelReestablish message" }
+                            } else {
+                                val channelReestablish = state.run { createChannelReestablish() }
+                                add(ChannelAction.Message.Send(channelReestablish))
+                            }
+                        }
+                        Pair(Syncing(nextState), actions)
                     }
                 }
             }
