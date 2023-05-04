@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Script.tail
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.SharedFundingInput.Multisig2of2
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Scripts
@@ -80,12 +79,15 @@ data class InteractiveTxParams(
 
     /** Amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
     val fundingAmount: Satoshi = (sharedInput?.info?.txOut?.amount ?: 0.sat) + localContribution + remoteContribution
-    fun localFundingPubkey(channelKeys: KeyManager.ChannelKeys): PublicKey = channelKeys.fundingPubKey((sharedInput as? Multisig2of2)?.let { it.fundingTxIndex + 1 } ?: 0)
-    fun fundingPubkeyScript(channelKeys: KeyManager.ChannelKeys): ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey(channelKeys), remoteFundingPubkey))).toByteVector()
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity = if (isInitiator) 0 else 1
+
+    fun fundingPubkeyScript(channelKeys: KeyManager.ChannelKeys): ByteVector {
+        val fundingTxIndex = (sharedInput as? SharedFundingInput.Multisig2of2)?.let { it.fundingTxIndex + 1 } ?: 0
+        return Script.write(Script.pay2wsh(Scripts.multiSig2of2(channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubkey))).toByteVector()
+    }
 }
 
 sealed class InteractiveTxInput {
@@ -157,7 +159,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
             val weight = computeWeightPaid(
                 isInitiator,
-                SharedFundingInput.Multisig2of2(commitment.commitInput, 0, Transactions.PlaceHolderPubKey),
+                SharedFundingInput.Multisig2of2(commitment.commitInput, commitment.fundingTxIndex, Transactions.PlaceHolderPubKey),
                 commitment.commitInput.txOut.publicKeyScript,
                 walletInputs,
                 localOutputs
@@ -698,8 +700,9 @@ data class InteractiveTxSigningSession(
     fun receiveCommitSig(channelKeys: KeyManager.ChannelKeys, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
         return when (localCommit) {
             is Either.Left -> {
-                val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, channelKeys.fundingKey(fundingTxIndex))
-                val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingParams.localFundingPubkey(channelKeys), fundingParams.remoteFundingPubkey, localSigOfLocalTx, remoteCommitSig.signature)
+                val fundingKey = channelKeys.fundingKey(fundingTxIndex)
+                val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, fundingKey)
+                val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingKey.publicKey(), fundingParams.remoteFundingPubkey, localSigOfLocalTx, remoteCommitSig.signature)
                 when (Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
                     is Try.Success -> {

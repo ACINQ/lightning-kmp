@@ -64,8 +64,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
 
     override fun channelKeys(fundingKeyPath: KeyPath): KeyManager.ChannelKeys {
         // We use a different funding key for each splice, with a derivation based on the fundingTxIndex.
-        val masterFundingPrivateKey = derivePrivateKey(master, channelKeyBasePath / fundingKeyPath)
-        val fundingKey: (Long) -> PrivateKey = { index -> derivePrivateKey(masterFundingPrivateKey, hardened(index)).privateKey }
+        val fundingKey: (Long) -> PrivateKey = { index -> derivePrivateKey(master, channelKeyBasePath / fundingKeyPath / hardened(index)).privateKey }
         // We use the initial funding pubkey to compute the channel key path, and we use the recovery process even
         // in the normal case, which guarantees it works all the time.
         val initialFundingPubkey = fundingKey(0).publicKey()

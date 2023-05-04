@@ -39,7 +39,6 @@ interface KeyManager {
     /**
      * Secrets and keys for a given channel.
      * How these keys are generated depends on the [KeyManager] implementation.
-     * The initial funding key is treated differently for backwards compatibility.
      */
     data class ChannelKeys(
         val fundingKeyPath: KeyPath,
