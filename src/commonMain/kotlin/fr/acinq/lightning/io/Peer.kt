@@ -853,7 +853,7 @@ class Peer(
                         input.send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
                     }
                     else -> {
-                        if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is ErrorInformationLeak || it is Aborted }) {
+                        if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted }) {
                             // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel
                             val utxos = cmd.wallet.confirmedUtxos
                             // Grand parents are supplied as a proof of migration

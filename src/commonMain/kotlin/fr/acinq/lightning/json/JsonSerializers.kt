@@ -146,7 +146,6 @@ object JsonSerializers {
                 subclass(Negotiating::class, NegotiatingSerializer)
                 subclass(Closing::class, ClosingSerializer)
                 subclass(WaitForRemotePublishFutureCommitment::class, WaitForRemotePublishFutureCommitmentSerializer)
-                subclass(ErrorInformationLeak::class, ErrorInformationLeakSerializer)
                 subclass(Closed::class, ClosedSerializer)
             }
 
@@ -241,9 +240,6 @@ object JsonSerializers {
 
     @Serializer(forClass = WaitForRemotePublishFutureCommitment::class)
     object WaitForRemotePublishFutureCommitmentSerializer
-
-    @Serializer(forClass = ErrorInformationLeak::class)
-    object ErrorInformationLeakSerializer
 
     @Serializer(forClass = Closed::class)
     object ClosedSerializer

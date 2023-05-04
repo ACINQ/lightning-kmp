@@ -35,7 +35,6 @@ object Deserialization {
         0x06 -> readWaitForRemotePublishFutureCommitment()
         0x07 -> readClosed()
         0x0a -> readWaitForFundingSigned()
-        0x0b -> readErrorInformationLeak()
         else -> error("unknown discriminator $discriminator for class ${PersistedChannelState::class}")
     }
 
@@ -171,10 +170,6 @@ object Deserialization {
     private fun Input.readWaitForRemotePublishFutureCommitment(): WaitForRemotePublishFutureCommitment = WaitForRemotePublishFutureCommitment(
         commitments = readCommitments(),
         remoteChannelReestablish = readLightningMessage() as ChannelReestablish
-    )
-
-    private fun Input.readErrorInformationLeak(): ErrorInformationLeak = ErrorInformationLeak(
-        commitments = readCommitments()
     )
 
     private fun Input.readClosed(): Closed = Closed(
