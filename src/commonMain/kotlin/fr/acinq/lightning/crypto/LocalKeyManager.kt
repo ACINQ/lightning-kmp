@@ -135,15 +135,8 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
          */
         fun channelKeyPath(fundingPubKey: PublicKey): KeyPath {
             val buffer = fundingPubKey.value.sha256().toByteArray()
-
-            val path = sequence {
-                var i = 0
-                while (true) {
-                    yield(Pack.int32BE(buffer, i).toUInt().toLong())
-                    i += 4
-                }
-            }
-            return KeyPath(path.take(8).toList())
+            val path = (0 until 8).map { i -> Pack.int32BE(buffer, 4 * i).toUInt().toLong() }
+            return KeyPath(path)
         }
 
         fun channelKeyBasePath(chain: Chain) = when (chain) {
