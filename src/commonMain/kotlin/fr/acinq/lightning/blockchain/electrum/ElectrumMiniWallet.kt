@@ -80,7 +80,8 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
 
         /** Find the private key corresponding to this script, assuming this is a p2wpkh owned by us. */
         private fun script2PrivateKey(onChainKeys: KeyManager.Bip84OnChainKeys, publicKeyScript: ByteVector): PrivateKey? {
-            for (addressIndex in 0L..100L) {
+            // TODO: for now we only use the first address with index 0
+            for (addressIndex in 0L..0L) {
                 if (onChainKeys.pubkeyScript(addressIndex) == publicKeyScript) return onChainKeys.privateKey(addressIndex)
             }
             return null
