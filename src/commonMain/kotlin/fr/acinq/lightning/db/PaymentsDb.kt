@@ -346,6 +346,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract val amountSatoshi: Satoshi
     abstract val address: String
     abstract val miningFees: Satoshi
+    abstract val channelId: ByteVector32
     abstract val txId: ByteVector32
     abstract override val createdAt: Long
     abstract val confirmedAt: Long?
@@ -356,6 +357,7 @@ data class SpliceOutgoingPayment(
     override val amountSatoshi: Satoshi,
     override val address: String,
     override val miningFees: Satoshi,
+    override val channelId: ByteVector32,
     override val txId: ByteVector32,
     override val createdAt: Long,
     override val confirmedAt: Long?
@@ -375,10 +377,10 @@ data class ChannelCloseOutgoingPayment(
     // and is used by the UI to explain the situation to the user.
     val isSentToDefaultAddress: Boolean,
     override val miningFees: Satoshi,
+    override val channelId: ByteVector32,
     override val txId: ByteVector32,
     override val createdAt: Long,
     override val confirmedAt: Long?,
-    val channelId: ByteVector32,
     val closingType: ChannelClosingType
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()

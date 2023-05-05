@@ -515,6 +515,7 @@ class Peer(
                                         amountSatoshi = action.amount,
                                         address = action.address,
                                         miningFees = action.miningFees,
+                                        channelId = channelId,
                                         txId = action.txId,
                                         createdAt = currentTimestampMillis(),
                                         confirmedAt = null
@@ -526,10 +527,10 @@ class Peer(
                                         address = action.address,
                                         isSentToDefaultAddress = action.isSentToDefaultAddress,
                                         miningFees = action.miningFees,
+                                        channelId = channelId,
                                         txId = action.txId,
                                         createdAt = currentTimestampMillis(),
                                         confirmedAt = null,
-                                        channelId = channelId,
                                         closingType = when (action.closingType) {
                                             ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Mutual -> ChannelCloseOutgoingPayment.ChannelClosingType.Mutual
                                             ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Local -> ChannelCloseOutgoingPayment.ChannelClosingType.Local
