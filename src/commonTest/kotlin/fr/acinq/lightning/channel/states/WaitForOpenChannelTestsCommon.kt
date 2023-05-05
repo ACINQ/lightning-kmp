@@ -2,10 +2,7 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.lightning.ChannelEvents
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Feature
-import fr.acinq.lightning.FeatureSupport
+import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
@@ -24,40 +21,6 @@ import kotlin.test.assertTrue
 class WaitForOpenChannelTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `reject other channel types than anchor outputs`() {
-        val alice = LNChannel(
-            ChannelContext(
-                StaticParams(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams.nodeId),
-                TestConstants.defaultBlockHeight,
-                OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
-                MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
-            ),
-            WaitForInit
-        )
-        val bobInit = Init(TestConstants.Bob.nodeParams.features.toByteArray().toByteVector())
-        val unsupportedChannelTypes = listOf(ChannelType.SupportedChannelType.Standard, ChannelType.SupportedChannelType.StaticRemoteKey)
-        unsupportedChannelTypes.forEach { channelType ->
-            val (alice1, actions1) = alice.process(
-                ChannelCommand.InitInitiator(
-                    TestConstants.aliceFundingAmount,
-                    0.msat,
-                    createWallet(TestConstants.Alice.nodeParams.keyManager, TestConstants.aliceFundingAmount + 50.sat).second,
-                    FeeratePerKw.CommitmentFeerate,
-                    TestConstants.feeratePerKw,
-                    TestConstants.Alice.channelParams(),
-                    bobInit,
-                    0,
-                    ChannelConfig.standard,
-                    channelType,
-                    null
-                )
-            )
-            assertIs<LNChannel<Aborted>>(alice1)
-            assertTrue(actions1.isEmpty())
-        }
-    }
-
-    @Test
     fun `recv OpenChannel -- without wumbo`() {
         val (_, bob, open) = TestsHelper.init(aliceFeatures = TestConstants.Alice.nodeParams.features.remove(Feature.Wumbo))
         assertEquals(open.pushAmount, TestConstants.alicePushAmount)
@@ -66,7 +29,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
         assertTrue(bob1.state.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
-        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         actions.has<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(bob1.state), actions.find<ChannelAction.EmitEvent>().event)
@@ -79,7 +42,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
-        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         actions.has<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(bob1.state), actions.find<ChannelAction.EmitEvent>().event)
@@ -92,7 +55,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
         assertTrue(bob1.state.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
-        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
+        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
         val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         assertEquals(0, accept.minimumDepth)
         actions.has<ChannelAction.ChannelId.IdAssigned>()
@@ -112,10 +75,11 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv OpenChannel -- invalid channel type`() {
         val (_, bob, open) = TestsHelper.init()
-        val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.StaticRemoteKey)))
+        val unsupportedChannelType = ChannelType.UnsupportedChannelType(Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory))
+        val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(unsupportedChannelType)))
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(open.temporaryChannelId, InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, ChannelType.SupportedChannelType.StaticRemoteKey).message))
+        assertEquals(error, Error(open.temporaryChannelId, InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, unsupportedChannelType).message))
         assertIs<LNChannel<Aborted>>(bob1)
     }
 

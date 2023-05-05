@@ -1114,8 +1114,8 @@ class ClosingTestsCommon : LightningTestSuite() {
             Pair(alice7, bob7)
         }
 
-        val localInit = Init(ByteVector(alice0.commitments.params.localParams.features.toByteArray()))
-        val remoteInit = Init(ByteVector(bob0.commitments.params.localParams.features.toByteArray()))
+        val localInit = Init(alice0.commitments.params.localParams.features)
+        val remoteInit = Init(bob0.commitments.params.localParams.features)
 
         // then we manually replace alice's state with an older one and reconnect them.
         val (alice1, aliceActions1) = LNChannel(alice0.ctx, Offline(alice0.state)).process(ChannelCommand.Connected(localInit, remoteInit))

@@ -1,6 +1,5 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.*
@@ -26,7 +25,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val txAddInput = actions1.findOutgoingMessage<TxAddInput>()
         assertNotEquals(txAddInput.channelId, accept.temporaryChannelId)
         assertEquals(alice1.channelId, txAddInput.channelId)
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
     }
 
     @Test
@@ -37,7 +36,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         assertEquals(ChannelEvents.Creating(alice1.state), actions1.find<ChannelAction.EmitEvent>().event)
     }
 
@@ -51,7 +50,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(alice1.state), actions1.find<ChannelAction.EmitEvent>().event)
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
     }
 
     @Test
@@ -66,10 +65,10 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv AcceptChannel -- invalid channel type`() {
         val (alice, _, accept) = init()
-        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.Standard)))))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.UnsupportedChannelType(Features.empty))))))
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, InvalidChannelType(accept.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.Standard).message))
+        assertEquals(error, Error(accept.temporaryChannelId, InvalidChannelType(accept.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.UnsupportedChannelType(Features.empty)).message))
     }
 
     @Test

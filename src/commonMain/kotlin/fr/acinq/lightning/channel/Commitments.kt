@@ -38,13 +38,12 @@ data class ChannelParams(
     val channelFlags: Byte
 ) {
     init {
-        require(channelFeatures.hasFeature(Feature.AnchorOutputs)) { "invalid channel type: ${channelFeatures.channelType.name}" }
         require(channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath)) { "FundingPubKeyBasedChannelKeyPath option must be enabled"}
     }
 
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
-        localParams = localParams.copy(features = Features(localInit.features)),
-        remoteParams = remoteParams.copy(features = Features(remoteInit.features))
+        localParams = localParams.copy(features = localInit.features),
+        remoteParams = remoteParams.copy(features = remoteInit.features)
     )
 }
 

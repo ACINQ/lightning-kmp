@@ -12,16 +12,28 @@ import fr.acinq.secp256k1.Hex
  */
 data class ChannelFeatures(val features: Set<Feature>) {
 
-    val channelType: ChannelType.SupportedChannelType = when {
-        features.contains(Feature.AnchorOutputs) && features.contains(Feature.ZeroReserveChannels) -> ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
-        features.contains(Feature.AnchorOutputs) -> ChannelType.SupportedChannelType.AnchorOutputs
-        features.contains(Feature.StaticRemoteKey) -> ChannelType.SupportedChannelType.StaticRemoteKey
-        else -> ChannelType.SupportedChannelType.Standard
-    }
+    /**
+     * Main constructor, to be used when a new channel is created. Features from the channel type are included, but
+     * we also add other permanent features from the init messages.
+     */
+    constructor(channelType: ChannelType, localFeatures: Features, remoteFeatures: Features) : this(
+        buildSet {
+            addAll(channelType.features)
+            addAll(permanentChannelFeatures.filter { Features.canUseFeature(localFeatures, remoteFeatures, it) })
+        }
+    )
 
     fun hasFeature(feature: Feature): Boolean = features.contains(feature)
 
     override fun toString(): String = features.joinToString(",")
+
+    companion object {
+        /**
+         * In addition to channel types features, the following features will be added to the permanent channel features if they
+         * are supported by both peers.
+         */
+        private val permanentChannelFeatures = setOf(Feature.DualFunding)
+    }
 
 }
 
@@ -36,16 +48,6 @@ sealed class ChannelType {
     sealed class SupportedChannelType : ChannelType() {
 
         fun toFeatures(): Features = Features(features.associateWith { FeatureSupport.Mandatory })
-
-        object Standard : SupportedChannelType() {
-            override val name: String get() = "standard"
-            override val features: Set<Feature> get() = setOf()
-        }
-
-        object StaticRemoteKey : SupportedChannelType() {
-            override val name: String get() = "static_remotekey"
-            override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey)
-        }
 
         object AnchorOutputs : SupportedChannelType() {
             override val name: String get() = "anchor_outputs"
@@ -71,8 +73,6 @@ sealed class ChannelType {
             // @formatter:off
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory, Feature.ZeroReserveChannels to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputsZeroReserve
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputs
-            Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory) -> SupportedChannelType.StaticRemoteKey
-            Features.empty -> SupportedChannelType.Standard
             else -> UnsupportedChannelType(features)
             // @formatter:on
         }

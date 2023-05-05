@@ -181,8 +181,8 @@ object TestsHelper {
         val channelFlags = 0.toByte()
         val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures)
         val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures)
-        val aliceInit = Init(aliceFeatures.toByteArray().toByteVector())
-        val bobInit = Init(bobFeatures.toByteArray().toByteVector())
+        val aliceInit = Init(aliceFeatures)
+        val bobInit = Init(bobFeatures)
         val (alice1, actionsAlice1) = alice.process(
             ChannelCommand.InitInitiator(
                 aliceFundingAmount,
@@ -267,7 +267,7 @@ object TestsHelper {
 
     fun localClose(s: LNChannel<ChannelState>): Pair<LNChannel<Closing>, LocalCommitPublished> {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
-        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.params.channelFeatures.channelType)
+        assertContains(s.state.commitments.params.channelFeatures.features, Feature.AnchorOutputs)
         // an error occurs and s publishes their commit tx
         val commitTx = s.state.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
@@ -311,7 +311,7 @@ object TestsHelper {
 
     fun remoteClose(rCommitTx: Transaction, s: LNChannel<ChannelState>): Pair<LNChannel<Closing>, RemoteCommitPublished> {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
-        assertEquals(ChannelType.SupportedChannelType.AnchorOutputs, s.state.commitments.params.channelFeatures.channelType)
+        assertContains(s.state.commitments.params.channelFeatures.features, Feature.AnchorOutputs)
         // we make s believe r unilaterally closed the channel
         val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchEventSpent(s.state.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
         assertIs<LNChannel<Closing>>(s1)

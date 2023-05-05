@@ -1,15 +1,11 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Script
 import fr.acinq.lightning.ChannelEvents
-import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
-import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
@@ -40,7 +36,8 @@ data class WaitForOpenChannel(
                         val open = cmd.message
                         when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open)) {
                             is Either.Right -> {
-                                val channelFeatures = res.value
+                                val channelType = res.value
+                                val channelFeatures = ChannelFeatures(channelType, localFeatures = localParams.features, remoteFeatures = remoteInit.features)
                                 val minimumDepth = if (staticParams.useZeroConf) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                                 val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
                                 val accept = AcceptDualFundedChannel(
@@ -61,7 +58,7 @@ data class WaitForOpenChannel(
                                     secondPerCommitmentPoint = channelKeys.commitmentPoint(1),
                                     tlvStream = TlvStream(
                                         buildSet {
-                                            add(ChannelTlv.ChannelTypeTlv(channelFeatures.channelType))
+                                            add(ChannelTlv.ChannelTypeTlv(channelType))
                                             if (pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(pushAmount))
                                         }
                                     ),
@@ -77,7 +74,7 @@ data class WaitForOpenChannel(
                                     paymentBasepoint = open.paymentBasepoint,
                                     delayedPaymentBasepoint = open.delayedPaymentBasepoint,
                                     htlcBasepoint = open.htlcBasepoint,
-                                    features = Features(remoteInit.features)
+                                    features = remoteInit.features
                                 )
                                 val channelId = computeChannelId(open, accept)
                                 val remoteFundingPubkey = open.fundingPubkey

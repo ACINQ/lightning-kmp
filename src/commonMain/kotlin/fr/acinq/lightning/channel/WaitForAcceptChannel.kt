@@ -2,7 +2,6 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.ChannelEvents
-import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
@@ -31,7 +30,8 @@ data class WaitForAcceptChannel(
                 val accept = cmd.message
                 when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, init, lastSent, accept)) {
                     is Either.Right -> {
-                        val channelFeatures = res.value
+                        val channelType = res.value
+                        val channelFeatures = ChannelFeatures(channelType, localFeatures = init.localParams.features, remoteFeatures = init.remoteInit.features)
                         val remoteParams = RemoteParams(
                             nodeId = staticParams.remoteNodeId,
                             dustLimit = accept.dustLimit,
@@ -43,7 +43,7 @@ data class WaitForAcceptChannel(
                             paymentBasepoint = accept.paymentBasepoint,
                             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
                             htlcBasepoint = accept.htlcBasepoint,
-                            features = Features(init.remoteInit.features)
+                            features = init.remoteInit.features
                         )
                         val channelId = computeChannelId(lastSent, accept)
                         val channelKeys = keyManager.channelKeys(init.localParams.fundingKeyPath)
