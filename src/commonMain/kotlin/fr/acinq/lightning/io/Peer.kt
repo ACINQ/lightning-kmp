@@ -264,7 +264,6 @@ class Peer(
 
     }
 
-    @OptIn(FlowPreview::class)
     private suspend fun updateEstimateFees() {
         watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.first()
         val sortedFees = listOf(
@@ -736,33 +735,45 @@ class Peer(
                             }
                         }
 
-                        msg is ChannelReestablish && !_channels.containsKey(msg.channelId) -> {
-                            if (msg.channelData.isEmpty()) {
-                                sendToPeer(Error(msg.channelId, "unknown channel"))
-                            } else {
-                                when (val decrypted = runTrying { PersistedChannelState.from(nodeParams.nodePrivateKey, msg.channelData) }) {
-                                    is Try.Success -> {
-                                        logger.warning { "restoring channel ${msg.channelId} from peer backup" }
-                                        val backup = decrypted.result
-                                        val state = WaitForInit
-                                        val event1 = ChannelCommand.Restore(backup)
-                                        val (state1, actions1) = state.process(event1)
-                                        processActions(msg.channelId, actions1)
+                        msg is ChannelReestablish -> {
+                            val local: ChannelState? = _channels[msg.channelId]
+                            val backup: PersistedChannelState? = runCatching { PersistedChannelState.from(nodeParams.nodePrivateKey, msg.channelData) }.getOrNull()
 
-                                        val event2 = ChannelCommand.Connected(ourInit, theirInit!!)
-                                        val (state2, actions2) = state1.process(event2)
-                                        processActions(msg.channelId, actions2)
+                            suspend fun recoverChannel(recovered: PersistedChannelState) {
+                                db.channels.addOrUpdateChannel(recovered)
 
-                                        val event3 = ChannelCommand.MessageReceived(msg)
-                                        val (state3, actions3) = state2.process(event3)
-                                        processActions(msg.channelId, actions3)
-                                        _channels = _channels + (msg.channelId to state3)
-                                    }
+                                val state = WaitForInit
+                                val event1 = ChannelCommand.Restore(recovered)
+                                val (state1, actions1) = state.process(event1)
+                                processActions(msg.channelId, actions1)
 
-                                    is Try.Failure -> {
-                                        logger.error(decrypted.error) { "failed to restore channel ${msg.channelId} from peer backup" }
-                                        sendToPeer(Error(msg.channelId, "unknown channel"))
-                                    }
+                                val event2 = ChannelCommand.Connected(ourInit, theirInit!!)
+                                val (state2, actions2) = state1.process(event2)
+                                processActions(msg.channelId, actions2)
+
+                                val event3 = ChannelCommand.MessageReceived(msg)
+                                val (state3, actions3) = state2.process(event3)
+                                processActions(msg.channelId, actions3)
+                                _channels = _channels + (msg.channelId to state3)
+                            }
+
+                            when {
+                                local == null && backup == null -> {
+                                    logger.warning { "peer sent a reestablish for a unknown channel with no backup" }
+                                    sendToPeer(Error(msg.channelId, "unknown channel"))
+                                }
+                                local == null && backup is PersistedChannelState -> {
+                                    logger.warning { "recovering channel from peer backup" }
+                                    recoverChannel(backup)
+                                }
+                                local is Syncing && local.state is ChannelStateWithCommitments && backup is ChannelStateWithCommitments && backup.commitments.isMoreRecent(local.state.commitments) -> {
+                                    logger.warning { "recovering channel from peer backup (it is more recent)" }
+                                    recoverChannel(backup)
+                                }
+                                local is ChannelState -> {
+                                    val (state1, actions1) = local.process(ChannelCommand.MessageReceived(msg))
+                                    processActions(msg.channelId, actions1)
+                                    _channels = _channels + (msg.channelId to state1)
                                 }
                             }
                         }
@@ -853,7 +864,7 @@ class Peer(
                         input.send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
                     }
                     else -> {
-                        if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is ErrorInformationLeak || it is Aborted }) {
+                        if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted }) {
                             // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel
                             val utxos = cmd.wallet.confirmedUtxos
                             // Grand parents are supplied as a proof of migration

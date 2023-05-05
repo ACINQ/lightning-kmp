@@ -535,9 +535,18 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     })
                 }
                 else -> {
-                    // the published tx doesn't seem to be a valid commitment transaction
-                    logger.error { "couldn't identify txid=${tx.txid}, something very bad is going on!!!" }
-                    Pair(ErrorInformationLeak(commitments), listOf())
+                    logger.warning { "unrecognized tx=${tx.txid}" }
+                    // This can happen if the user has two devices.
+                    // - user creates a wallet on device #1
+                    // - user restores the same wallet on device #2
+                    // - user does a splice on device #2
+                    // - user starts wallet on device #1
+                    // The wallet on device #1 has a previous version of the channel, it is not aware of the splice tx. It won't be able
+                    // to recognize the tx when the watcher notifies that the (old) funding tx was spent.
+                    // However, there is a race with the reconnection logic, because then the device #1 will recover its latest state from the
+                    // remote backup.
+                    // So, the best thing to do here is to ignore the spending tx.
+                    Pair(this@ChannelStateWithCommitments, listOf())
                 }
             }
         }

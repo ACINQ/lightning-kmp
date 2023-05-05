@@ -74,9 +74,6 @@ object Serialization {
         is WaitForFundingSigned -> {
             write(0x0a); writeWaitForFundingSigned(o)
         }
-        is ErrorInformationLeak -> {
-            write(0x0b); writeErrorInformationLeak(o)
-        }
     }
 
     private fun Output.writeLegacyWaitForFundingConfirmed(o: LegacyWaitForFundingConfirmed) = o.run {
@@ -224,10 +221,6 @@ object Serialization {
     private fun Output.writeWaitForRemotePublishFutureCommitment(o: WaitForRemotePublishFutureCommitment) = o.run {
         writeCommitments(commitments)
         writeLightningMessage(remoteChannelReestablish)
-    }
-
-    private fun Output.writeErrorInformationLeak(o: ErrorInformationLeak) = o.run {
-        writeCommitments(commitments)
     }
 
     private fun Output.writeClosed(o: Closed) = o.run {

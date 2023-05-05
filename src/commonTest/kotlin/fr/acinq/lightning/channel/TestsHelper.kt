@@ -179,8 +179,8 @@ object TestsHelper {
         )
 
         val channelFlags = 0.toByte()
-        val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures)
-        val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures)
+        val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures.initFeatures())
+        val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures.initFeatures())
         val aliceInit = Init(aliceFeatures)
         val bobInit = Init(bobFeatures)
         val (alice1, actionsAlice1) = alice.process(
@@ -208,8 +208,8 @@ object TestsHelper {
 
     fun reachNormal(
         channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
-        aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
-        bobFeatures: Features = TestConstants.Bob.nodeParams.features,
+        aliceFeatures: Features = TestConstants.Alice.nodeParams.features.initFeatures(),
+        bobFeatures: Features = TestConstants.Bob.nodeParams.features.initFeatures(),
         currentHeight: Int = TestConstants.defaultBlockHeight,
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,

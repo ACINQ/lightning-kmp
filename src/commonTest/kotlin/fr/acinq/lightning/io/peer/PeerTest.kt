@@ -14,8 +14,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
 import fr.acinq.lightning.db.InMemoryDatabases
-import fr.acinq.lightning.db.LightningOutgoingPayment
-import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.router.Announcements
@@ -392,6 +390,66 @@ class PeerTest : LightningTestSuite() {
         val unknownChannelReestablish = ChannelReestablish(randomBytes32(), 1, 0, randomKey(), randomKey().publicKey())
         alice.send(BytesReceived(LightningMessage.encode(unknownChannelReestablish)))
         alice2bob.expect<Error>()
+    }
+
+    @Test
+    fun `recover channel`() = runSuspendTest {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, bob0, alice0)
+        val (bob1, alice1) = TestsHelper.crossSign(nodes.first, nodes.second)
+
+        val peer = buildPeer(
+            this,
+            bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
+            TestConstants.Bob.walletParams,
+            databases = InMemoryDatabases(), // NB: empty database (Bob has lost its channel state)
+            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+        )
+
+        // Simulate a reconnection with Alice.
+        peer.send(BytesReceived(LightningMessage.encode(Init(features = alice0.staticParams.nodeParams.features))))
+        peer.expectStatus(Connection.ESTABLISHED)
+        val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
+        assertFalse(aliceReestablish.channelData.isEmpty())
+        peer.send(BytesReceived(LightningMessage.encode(aliceReestablish)))
+
+        // Wait until the channels are Syncing
+        val restoredChannel = peer.channelsFlow
+            .first { it.size == 1 }
+            .values
+            .first()
+        assertEquals(bob1.state, restoredChannel)
+        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel))
+    }
+
+    @Test
+    fun `recover channel -- outdated local data`() = runSuspendTest {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, bob0, alice0)
+        val (bob1, alice1) = TestsHelper.crossSign(nodes.first, nodes.second)
+
+        val peer = buildPeer(
+            this,
+            bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
+            TestConstants.Bob.walletParams,
+            databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(bob0.state) }, // NB: outdated channel data
+            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+        )
+
+        // Simulate a reconnection with Alice.
+        peer.send(BytesReceived(LightningMessage.encode(Init(features = alice0.staticParams.nodeParams.features))))
+        peer.expectStatus(Connection.ESTABLISHED)
+        val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
+        assertFalse(aliceReestablish.channelData.isEmpty())
+        peer.send(BytesReceived(LightningMessage.encode(aliceReestablish)))
+
+        // Wait until the channels are Syncing
+        val restoredChannel = peer.channelsFlow
+            .first { it.size == 1 && it.values.first() is Normal }
+            .values
+            .first()
+        assertEquals(bob1.state, restoredChannel)
+        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel))
     }
 
     @Test
