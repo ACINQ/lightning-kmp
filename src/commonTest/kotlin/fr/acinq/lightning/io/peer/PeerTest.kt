@@ -395,28 +395,22 @@ class PeerTest : LightningTestSuite() {
     @Test
     fun `recover channel`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
-        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
-        val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
-        assertIs<LNChannel<Normal>>(alice1)
+        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, bob0, alice0)
+        val (bob1, alice1) = TestsHelper.crossSign(nodes.first, nodes.second)
 
         val peer = buildPeer(
             this,
             bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
             TestConstants.Bob.walletParams,
-            databases = InMemoryDatabases(), // NB: empty database
+            databases = InMemoryDatabases(), // NB: empty database (Bob has lost its channel state)
             currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
         )
 
-        // send Init from remote node
-        val theirInit = Init(features = alice0.staticParams.nodeParams.features)
-        val initMsg = LightningMessage.encode(theirInit)
-        peer.send(BytesReceived(initMsg))
-        // Wait until the Peer is ready
+        // Simulate a reconnection with Alice.
+        peer.send(BytesReceived(LightningMessage.encode(Init(features = alice0.staticParams.nodeParams.features))))
         peer.expectStatus(Connection.ESTABLISHED)
-
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
         assertFalse(aliceReestablish.channelData.isEmpty())
-
         peer.send(BytesReceived(LightningMessage.encode(aliceReestablish)))
 
         // Wait until the channels are Syncing
@@ -424,17 +418,15 @@ class PeerTest : LightningTestSuite() {
             .first { it.size == 1 }
             .values
             .first()
-        assertIs<Normal>(restoredChannel)
-
-        assertContains(peer.db.channels.listLocalChannels(), restoredChannel)
+        assertEquals(bob1.state, restoredChannel)
+        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel))
     }
 
     @Test
     fun `recover channel -- outdated local data`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
-        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
-        val (alice1, _) = TestsHelper.crossSign(nodes.first, nodes.second)
-        assertIs<LNChannel<Normal>>(alice1)
+        val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, bob0, alice0)
+        val (bob1, alice1) = TestsHelper.crossSign(nodes.first, nodes.second)
 
         val peer = buildPeer(
             this,
@@ -444,28 +436,20 @@ class PeerTest : LightningTestSuite() {
             currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
         )
 
-        // send Init from remote node
-        val theirInit = Init(features = alice0.staticParams.nodeParams.features)
-        val initMsg = LightningMessage.encode(theirInit)
-        peer.send(BytesReceived(initMsg))
-        // Wait until the Peer is ready
+        // Simulate a reconnection with Alice.
+        peer.send(BytesReceived(LightningMessage.encode(Init(features = alice0.staticParams.nodeParams.features))))
         peer.expectStatus(Connection.ESTABLISHED)
-
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
         assertFalse(aliceReestablish.channelData.isEmpty())
-
         peer.send(BytesReceived(LightningMessage.encode(aliceReestablish)))
-
-        peer.channelsFlow
 
         // Wait until the channels are Syncing
         val restoredChannel = peer.channelsFlow
             .first { it.size == 1 && it.values.first() is Normal }
             .values
             .first()
-        assertIs<Normal>(restoredChannel)
-
-        assertContains(peer.db.channels.listLocalChannels(), restoredChannel)
+        assertEquals(bob1.state, restoredChannel)
+        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel))
     }
 
     @Test
