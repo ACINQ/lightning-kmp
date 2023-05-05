@@ -16,7 +16,7 @@ import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.math.max
 
-class ElectrumWatcher(val client: ElectrumClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : CoroutineScope by scope {
+class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : CoroutineScope by scope {
 
     private val logger = loggerFactory.newLogger(this::class)
     private val mailbox = Channel<WatcherCommand>(Channel.BUFFERED)

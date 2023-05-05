@@ -11,12 +11,12 @@ import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 
 
-suspend fun ElectrumClient.getConfirmations(txId: ByteVector32): Int? {
+suspend fun IElectrumClient.getConfirmations(txId: ByteVector32): Int? {
     val tx = kotlin.runCatching { getTx(txId) }.getOrNull()
     return tx?.let { getConfirmations(tx) }
 }
 
-suspend fun ElectrumClient.getConfirmations(tx: Transaction): Int? {
+suspend fun IElectrumClient.getConfirmations(tx: Transaction): Int? {
     val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
     val scriptHashHistory = getScriptHashHistory(scriptHash)
     val item = scriptHashHistory.find { it.txid == tx.txid }
@@ -24,7 +24,7 @@ suspend fun ElectrumClient.getConfirmations(tx: Transaction): Int? {
     return item?.let { if (item.blockHeight > 0) blockHeight - item.blockHeight + 1 else 0 }
 }
 
-suspend fun ElectrumClient.computeSpliceCpfpFeerate(commitments: Commitments, targetFeerate: FeeratePerKw, spliceWeight: Int, logger: MDCLogger): Pair<FeeratePerKw, Satoshi> {
+suspend fun IElectrumClient.computeSpliceCpfpFeerate(commitments: Commitments, targetFeerate: FeeratePerKw, spliceWeight: Int, logger: MDCLogger): Pair<FeeratePerKw, Satoshi> {
     val (parentsWeight, parentsFees) = commitments.all
         .takeWhile { getConfirmations(it.fundingTxId).let { confirmations -> confirmations == null || confirmations == 0 } } // we check for null in case the tx has been evicted
         .fold(Pair(0, 0.sat)) { (parentsWeight, parentsFees), commitment ->

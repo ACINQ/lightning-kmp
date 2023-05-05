@@ -32,7 +32,7 @@ class ElectrumClient(
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
     private val loggerFactory: LoggerFactory
-) : CoroutineScope by scope {
+) : CoroutineScope by scope, IElectrumClient {
 
     private val logger = loggerFactory.newLogger(this::class)
 
@@ -46,15 +46,15 @@ class ElectrumClient(
 
     // new connection status
     private val _connectionStatus = MutableStateFlow<ElectrumConnectionStatus>(ElectrumConnectionStatus.Closed(null))
-    val connectionStatus: StateFlow<ElectrumConnectionStatus> get() = _connectionStatus.asStateFlow()
+    override val connectionStatus: StateFlow<ElectrumConnectionStatus> get() = _connectionStatus.asStateFlow()
 
     // legacy connection status
     private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
-    val connectionState: StateFlow<Connection> get() = _connectionState.asStateFlow()
+    override val connectionState: StateFlow<Connection> get() = _connectionState.asStateFlow()
 
     // subscriptions notifications (headers, script_hashes, etc.)
     private val _notifications = MutableSharedFlow<ElectrumSubscriptionResponse>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
-    val notifications: Flow<ElectrumSubscriptionResponse> get() = _notifications.asSharedFlow()
+    override val notifications: Flow<ElectrumSubscriptionResponse> get() = _notifications.asSharedFlow()
 
     private sealed interface Action {
         data class SendToServer(val request: Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>) : Action
@@ -212,7 +212,7 @@ class ElectrumClient(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    suspend fun send(request: ElectrumRequest, replyTo: CompletableDeferred<ElectrumResponse>) {
+    override suspend fun send(request: ElectrumRequest, replyTo: CompletableDeferred<ElectrumResponse>) {
         mailbox.send(Action.SendToServer(Pair(request, replyTo)))
     }
 
@@ -225,21 +225,21 @@ class ElectrumClient(
         }
     }
 
-    suspend fun getTx(txid: ByteVector32): Transaction = rpcCall<GetTransactionResponse>(GetTransaction(txid)).tx
+    override suspend fun getTx(txid: ByteVector32): Transaction = rpcCall<GetTransactionResponse>(GetTransaction(txid)).tx
 
-    suspend fun getMerkle(txid: ByteVector32, blockHeight: Int, contextOpt: Transaction? = null) = rpcCall<GetMerkleResponse>(GetMerkle(txid, blockHeight, contextOpt))
+    override suspend fun getMerkle(txid: ByteVector32, blockHeight: Int, contextOpt: Transaction?): GetMerkleResponse = rpcCall<GetMerkleResponse>(GetMerkle(txid, blockHeight, contextOpt))
 
-    suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem> = rpcCall<GetScriptHashHistoryResponse>(GetScriptHashHistory(scriptHash)).history
+    override suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem> = rpcCall<GetScriptHashHistoryResponse>(GetScriptHashHistory(scriptHash)).history
 
-    suspend fun getScriptHashUnspents(scriptHash: ByteVector32): List<UnspentItem> = rpcCall<ScriptHashListUnspentResponse>(ScriptHashListUnspent(scriptHash)).unspents
+    override suspend fun getScriptHashUnspents(scriptHash: ByteVector32): List<UnspentItem> = rpcCall<ScriptHashListUnspentResponse>(ScriptHashListUnspent(scriptHash)).unspents
 
-    suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse = rpcCall(ScriptHashSubscription(scriptHash))
+    override suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse = rpcCall(ScriptHashSubscription(scriptHash))
 
-    suspend fun startHeaderSubscription(): HeaderSubscriptionResponse = rpcCall(HeaderSubscription)
+    override suspend fun startHeaderSubscription(): HeaderSubscriptionResponse = rpcCall(HeaderSubscription)
 
-    suspend fun broadcastTransaction(tx: Transaction): BroadcastTransactionResponse = rpcCall(BroadcastTransaction(tx))
+    override suspend fun broadcastTransaction(tx: Transaction): BroadcastTransactionResponse = rpcCall(BroadcastTransaction(tx))
 
-    suspend fun estimateFees(confirmations: Int): EstimateFeeResponse = rpcCall(EstimateFees(confirmations))
+    override suspend fun estimateFees(confirmations: Int): EstimateFeeResponse = rpcCall(EstimateFees(confirmations))
 
     /** Stop this instance for good, the client cannot be used after it has been closed. */
     fun stop() {
