@@ -11,14 +11,17 @@ import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.utils.toByteVector64
 
 sealed class TxAddInputTlv : Tlv {
-    /** When doing a splice, the initiator must provide the previous funding txId instead of the whole transaction. */
+    /**
+     * When doing a splice, the initiator must provide the previous funding txId instead of the whole transaction.
+     * Note that we actually encode this as a tx_hash to be consistent with other lightning messages.
+     */
     data class SharedInputTxId(val txId: ByteVector32) : TxAddInputTlv() {
         override val tag: Long get() = SharedInputTxId.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(txId, out)
+        override fun write(out: Output) = LightningCodecs.writeBytes(txId.reversed(), out)
 
         companion object : TlvValueReader<SharedInputTxId> {
             const val tag: Long = 1105
-            override fun read(input: Input): SharedInputTxId = SharedInputTxId(LightningCodecs.bytes(input, 32).toByteVector32())
+            override fun read(input: Input): SharedInputTxId = SharedInputTxId(LightningCodecs.bytes(input, 32).toByteVector32().reversed())
         }
     }
 }

@@ -762,7 +762,7 @@ data class AcceptDualFundedChannel(
 
 data class FundingCreated(
     override val temporaryChannelId: ByteVector32,
-    val fundingTxid: ByteVector32,
+    val fundingTxHash: ByteVector32,
     val fundingOutputIndex: Int,
     val signature: ByteVector64
 ) : ChannelMessage, HasTemporaryChannelId {
@@ -770,7 +770,7 @@ data class FundingCreated(
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(temporaryChannelId, out)
-        LightningCodecs.writeBytes(fundingTxid, out)
+        LightningCodecs.writeBytes(fundingTxHash, out)
         LightningCodecs.writeU16(fundingOutputIndex, out)
         LightningCodecs.writeBytes(signature, out)
     }
