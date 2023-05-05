@@ -176,7 +176,7 @@
     "lastSent": {
         "left": {
             "temporaryChannelId": "0000000000000000000000000000000000000000000000000000000000000000",
-            "fundingTxid": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd",
+            "fundingTxHash": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd",
             "fundingOutputIndex": 0,
             "signature": "1991b61ae8ef7bf6bd03f6f965552294e7941fce3fc91a024094cbd9b3464dd26068ef64671e59b5825408e58462613a6ad0edfc7aa23853aea36187298c4939"
         },
