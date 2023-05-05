@@ -55,7 +55,7 @@ object Helpers {
     fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel): Either<ChannelException, ChannelType> {
         // NB: we only accept channels from peers who support explicit channel type negotiation.
         val channelType = open.channelType ?: return Either.Left(MissingChannelType(open.temporaryChannelId))
-        if (!setOf(ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve).contains(channelType)) {
+        if (channelType is ChannelType.UnsupportedChannelType) {
             return Either.Left(InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, channelType))
         }
 
