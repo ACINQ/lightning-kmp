@@ -157,13 +157,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
     companion object {
         /** Compute our local splice contribution using all the funds available in our wallet. */
         fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
-            val weight = computeWeightPaid(
-                isInitiator,
-                SharedFundingInput.Multisig2of2(commitment.commitInput, commitment.fundingTxIndex, Transactions.PlaceHolderPubKey),
-                commitment.commitInput.txOut.publicKeyScript,
-                walletInputs,
-                localOutputs
-            )
+            val weight = computeWeightPaid(isInitiator, commitment, walletInputs, localOutputs)
             val fees = Transactions.weight2fee(targetFeerate, weight)
             return walletInputs.map { it.amount }.sum() - localOutputs.map { it.amount }.sum() - fees
         }
@@ -252,6 +246,15 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 walletInputsWeight + localOutputsWeight
             }
         }
+
+        fun computeWeightPaid(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>): Int =
+            computeWeightPaid(
+                isInitiator,
+                SharedFundingInput.Multisig2of2(commitment.commitInput, commitment.fundingTxIndex, Transactions.PlaceHolderPubKey),
+                commitment.commitInput.txOut.publicKeyScript,
+                walletInputs,
+                localOutputs
+            )
 
         /** We always randomize the order of inputs and outputs. */
         private fun sortFundingContributions(params: InteractiveTxParams, inputs: List<InteractiveTxInput.Outgoing>, outputs: List<InteractiveTxOutput.Outgoing>): FundingContributions {

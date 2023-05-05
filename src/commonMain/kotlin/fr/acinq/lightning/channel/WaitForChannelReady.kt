@@ -28,7 +28,7 @@ data class WaitForChannelReady(
                             Pair(this@WaitForChannelReady, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                         }
                         else -> {
-                            when (val res = commitments.run { updateLocalFundingStatus(fullySignedTx.signedTx.txid, commitments.latest.localFundingStatus.copy(sharedTx = fullySignedTx)) }) {
+                            when (val res = commitments.run { updateLocalFundingSigned(fullySignedTx) }) {
                                 is Either.Left -> Pair(this@WaitForChannelReady, listOf())
                                 is Either.Right -> {
                                     logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }

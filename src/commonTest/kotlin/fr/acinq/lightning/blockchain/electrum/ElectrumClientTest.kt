@@ -11,10 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
+import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 
 class ElectrumClientTest : LightningTestSuite() {
@@ -169,6 +166,15 @@ class ElectrumClientTest : LightningTestSuite() {
             }
         }
         jobs.joinAll()
+        client.stop()
+    }
+
+    @Test
+    fun `get tx confirmations`() = runTest { client ->
+
+        assertTrue(client.getConfirmations(ByteVector32("f1c290880b6fc9355e4f1b1b7d13b9a15babbe096adaf13d01f3a56def793fd5"))!! > 0)
+        assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
+
         client.stop()
     }
 }

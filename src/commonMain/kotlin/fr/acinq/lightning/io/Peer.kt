@@ -391,11 +391,39 @@ class Peer(
     }
 
     /**
+     * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
+     * for a splice out, taking into account potential unconfirmed parent splices.
+     */
+    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .firstOrNull { it.commitments.availableBalanceForSend() > amount }
+            ?.let { channel ->
+                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
+                watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+            }
+    }
+
+    /**
+     * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
+     * for a cpfp splice.
+     */
+    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .find { it.channelId == channelId }
+            ?.let { channel ->
+                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
+                watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+            }
+    }
+
+    /**
      * Do a splice out using any suitable channel
      * @return  [Command.Splice.Companion.Result] if a splice was attempted, or {null} if no suitable
      *          channel was found
      */
-    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Command.Splice.Response? {
+    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw): Command.Splice.Response? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
@@ -404,7 +432,24 @@ class Peer(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
                     spliceOut = Command.Splice.Request.SpliceOut(amount, scriptPubKey),
-                    feerate = feeratePerKw
+                    feerate = feerate
+                )
+                send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
+                spliceCommand.replyTo.await()
+            }
+    }
+
+    suspend fun spliceCpfp(channelId: ByteVector32, feerate: FeeratePerKw): Command.Splice.Response? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .find { it.channelId == channelId }
+            ?.let { channel ->
+                val spliceCommand = Command.Splice.Request(
+                    replyTo = CompletableDeferred(),
+                    // no additional inputs or outputs, the splice is only meant to bump fees
+                    spliceIn = null,
+                    spliceOut = null,
+                    feerate = feerate
                 )
                 send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
                 spliceCommand.replyTo.await()
@@ -876,7 +921,10 @@ class Peer(
                 val balance = cmd.wallet.confirmedBalance
                 when (val channel = channels.values.firstOrNull { it is Normal }) {
                     is ChannelStateWithCommitments -> {
-                        val feerate = onChainFeeratesFlow.filterNotNull().first().fundingFeerate
+                        val targetFeerate = onChainFeeratesFlow.filterNotNull().first().fundingFeerate
+                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.wallet.confirmedUtxos, localOutputs = emptyList())
+                        val (feerate, _) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+
                         logger.info { "requesting splice-in using confirmed balance=$balance feerate=$feerate" }
 
                         val feeEstimate = Transactions.weight2fee(feerate, 610 + cmd.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)

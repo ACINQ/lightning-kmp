@@ -219,7 +219,10 @@ class ElectrumClient(
     suspend inline fun <reified T : ElectrumResponse> rpcCall(request: ElectrumRequest): T {
         val replyTo = CompletableDeferred<ElectrumResponse>()
         send(request, replyTo)
-        return replyTo.await() as T
+        return when (val res = replyTo.await()) {
+            is ServerError -> error(res)
+            else -> res as T
+        }
     }
 
     suspend fun getTx(txid: ByteVector32): Transaction = rpcCall<GetTransactionResponse>(GetTransaction(txid)).tx

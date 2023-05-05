@@ -20,10 +20,6 @@ sealed class Command {
 
     sealed class Splice {
         data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Command() {
-            init {
-                require(spliceIn != null || spliceOut != null) { "there must be a splice-in or a splice-out" }
-            }
-
             val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
             val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 
