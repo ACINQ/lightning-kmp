@@ -198,6 +198,8 @@ data class Normal(
                         commitments.params.channelFeatures.hasFeature(Feature.DualFunding) && commitments.latest.localFundingStatus.signedTx == null && cmd.message.batchSize == 1 -> {
                             // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig that we receive before that should be ignored,
                             // it's either a retransmission of a commit_sig we've already received or a bug that will eventually lead to a force-close anyway.
+                            // NB: we check the dual-funding feature, because legacy single-funding unconfirmed channels will have `localFundingStatus=UnconfirmedFundingTx`,
+                            // so we cannot just check on the absence of `signedTx`.
                             logger.info { "ignoring commit_sig, we're still waiting for tx_signatures" }
                             Pair(this@Normal, listOf())
                         }
