@@ -264,7 +264,6 @@ class Peer(
 
     }
 
-    @OptIn(FlowPreview::class)
     private suspend fun updateEstimateFees() {
         watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.first()
         val sortedFees = listOf(

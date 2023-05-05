@@ -196,7 +196,6 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                         logger.debug { "re-sending local shutdown" }
                                         actions.add(ChannelAction.Message.Send(it))
                                     }
-                                    logger.info { "switching to ${state::class.simpleName}" }
                                     Pair(state.copy(commitments = commitments1, spliceStatus = spliceStatus1), actions)
                                 } catch (e: RevocationSyncError) {
                                     val error = Error(channelId, e.message)
