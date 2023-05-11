@@ -1153,7 +1153,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         paymentHandler.db.receivePayment(
             paidInvoice.paymentHash,
             expectedAmount = 15_000_000.msat,
-            receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null)),
+            receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null, lockedAt = null)),
             receivedAt = 101
         ) // simulate incoming payment being paid before it expired
 
@@ -1246,7 +1246,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         private fun makeReceivedWithNewChannel(payToOpen: PayToOpenRequest, feeRatio: Double = 0.1): IncomingPayment.ReceivedWith.NewChannel {
             val fee = payToOpen.amountMsat * feeRatio
-            return IncomingPayment.ReceivedWith.NewChannel(amount = payToOpen.amountMsat - fee, serviceFee = fee, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null)
+            return IncomingPayment.ReceivedWith.NewChannel(amount = payToOpen.amountMsat - fee, serviceFee = fee, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null, lockedAt = null)
         }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {

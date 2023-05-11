@@ -181,6 +181,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             abstract val channelId: ByteVector32
             abstract val txId: ByteVector32
             abstract val confirmedAt: Long?
+            abstract val lockedAt: Long?
         }
 
         /**
@@ -197,7 +198,8 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             override val miningFee: Satoshi,
             override val channelId: ByteVector32,
             override val txId: ByteVector32,
-            override val confirmedAt: Long?
+            override val confirmedAt: Long?,
+            override val lockedAt: Long?
         ) : OnChainIncomingPayment()
 
         data class SpliceIn(
@@ -206,7 +208,8 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             override val miningFee: Satoshi,
             override val channelId: ByteVector32,
             override val txId: ByteVector32,
-            override val confirmedAt: Long?
+            override val confirmedAt: Long?,
+            override val lockedAt: Long?
         ) : OnChainIncomingPayment()
     }
 

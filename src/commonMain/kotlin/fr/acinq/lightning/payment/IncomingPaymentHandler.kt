@@ -114,7 +114,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                     miningFee = action.miningFee,
                     channelId = channelId,
                     txId = action.txId,
-                    confirmedAt = null
+                    confirmedAt = null,
+                    lockedAt = null,
                 )
             is ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn ->
                 IncomingPayment.ReceivedWith.SpliceIn(
@@ -123,7 +124,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                     miningFee = action.miningFee,
                     channelId = channelId,
                     txId = action.txId,
-                    confirmedAt = null
+                    confirmedAt = null,
+                    lockedAt = null,
                 )
         }
         when (val origin = action.origin) {
