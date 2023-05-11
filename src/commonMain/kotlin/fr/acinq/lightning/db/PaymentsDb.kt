@@ -43,19 +43,17 @@ interface IncomingPaymentsDb {
      * Mark an incoming payment as received (paid).
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      *
-     * There is a duplication between the `expectedAmount` parameter and the sum of the [IncomingPayment.ReceivedWith], because with pay-to-open,
-     * there is a delay before we receive the parts. In such case, the method will be called twice: first with a non-zero amount
-     * and no payment parts, and second with a zero amount and one [IncomingPayment.ReceivedWith.OnChainIncomingPayment] part.
+     * With pay-to-open, there is a delay before we receive the parts, and we may not receive any parts at all if the pay-to-open
+     * was cancelled due to a disconnection. That is why the payment should not be considered received (and not be displayed to
+     * the user) if there are no parts.
      *
      * This method is additive:
-     * - amount must be added to the existing amount in the database.
      * - receivedWith set is appended to the existing set in database.
      * - receivedAt must be updated in database.
      *
-     * @param expectedAmount The amount that we know will be received.
-     * @param receivedWith Is a set containing the payment parts holding the incoming amount, its aggregated amount should be equal to the amount param.
+     * @param receivedWith Is a set containing the payment parts holding the incoming amount.
      */
-    suspend fun receivePayment(paymentHash: ByteVector32, expectedAmount: MilliSatoshi, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
+    suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
@@ -137,7 +135,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     override val fees: MilliSatoshi = received?.fees ?: 0.msat
 
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
-    override val amount: MilliSatoshi = received?.amount?.takeIf { it > 0.msat } ?: received?.expectedAmount ?: 0.msat
+    override val amount: MilliSatoshi = received?.amount ?: 0.msat
 
     sealed class Origin {
         /** A normal, invoice-based lightning payment. */
@@ -153,7 +151,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         data class OnChain(val txid: ByteVector32, val localInputs: Set<OutPoint>) : Origin()
     }
 
-    data class Received(val expectedAmount: MilliSatoshi, val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
+    data class Received(val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
         /** Total amount received after applying the fees. */
         val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
 

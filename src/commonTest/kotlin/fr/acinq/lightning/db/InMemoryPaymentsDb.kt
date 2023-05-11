@@ -27,13 +27,12 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receivePayment(paymentHash: ByteVector32, expectedAmount: MilliSatoshi, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long) {
+    override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
             else -> incoming[paymentHash] = run {
                 payment.copy(
                     received = IncomingPayment.Received(
-                        expectedAmount = expectedAmount,
                         receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
                         receivedAt = receivedAt
                     )

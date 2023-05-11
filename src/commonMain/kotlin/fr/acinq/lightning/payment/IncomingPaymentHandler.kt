@@ -133,7 +133,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 // there already is a corresponding Lightning invoice in the db
                 db.receivePayment(
                     paymentHash = origin.paymentHash,
-                    expectedAmount = 0.msat, // amount was already set before
                     receivedWith = listOf(receivedWith)
                 )
             else -> {
@@ -144,7 +143,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 )
                 db.receivePayment(
                     paymentHash = incomingPayment.paymentHash,
-                    expectedAmount = receivedWith.amount,
                     receivedWith = listOf(receivedWith)
                 )
             }
@@ -226,7 +224,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                     val payment = pending[paymentPart.paymentHash]?.add(paymentPart) ?: PendingPayment(paymentPart)
                     val payToOpenMinAmount = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenMinAmountMsat }.firstOrNull()
                     val payToOpenAmount = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.amountMsat }.sum()
-                    val payToOpenFee = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenFeeSatoshis }.sum()
                     when {
                         paymentPart.totalAmount != payment.totalAmount -> {
                             // Bolt 04:
@@ -307,9 +304,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             }.unzip()
                             pending.remove(paymentPart.paymentHash)
 
-                            val received = IncomingPayment.Received(expectedAmount = payment.parts.map { it.amount }.sum() - payToOpenFee.toMilliSatoshi(), receivedWith = receivedWith.filterNotNull())
+                            val received = IncomingPayment.Received(receivedWith = receivedWith.filterNotNull())
 
-                            db.receivePayment(paymentPart.paymentHash, expectedAmount = received.expectedAmount, received.receivedWith)
+                            db.receivePayment(paymentPart.paymentHash, received.receivedWith)
 
                             return ProcessAddResult.Accepted(actions, incomingPayment.copy(received = received), received)
                         }

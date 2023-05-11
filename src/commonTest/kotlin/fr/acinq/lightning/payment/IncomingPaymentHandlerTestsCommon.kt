@@ -452,7 +452,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `receive multipart payment via pay-to-open`() = runSuspendTest {
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
-        val (fee1, fee2) = Pair(amount1 * 0.1, amount2 * 0.1)
         val totalAmount = amount1 + amount2
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
@@ -474,15 +473,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
 
-            // expected amount is correct and includes the pay-to-open fee
-            assertEquals(amount1 - fee1 + amount2 - fee2, result.received.expectedAmount)
-
             assertEquals(result.actions, listOf(
                 PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))),
                 PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))),
             ))
 
-            // but pay-to-open parts are not yet provided
+            // pay-to-open parts are not yet provided
             assertTrue { result.received.receivedWith.isEmpty() }
             assertEquals(0.msat, result.received.fees)
 
@@ -494,7 +490,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `receive multipart payment with a mix of HTLC and pay-to-open`() = runSuspendTest {
         val channelId = randomBytes32()
         val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
-        val fee2 = amount2 * 0.1
         val totalAmount = amount1 + amount2
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
 
@@ -515,9 +510,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret))
             val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
-
-            // expected amount is correct and includes the pay-to-open fee
-            assertEquals(amount1 + amount2 - fee2, result.received.expectedAmount)
 
             assertEquals(2, result.actions.size)
             assertContains(result.actions, WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.preimage, commit = true))))
@@ -1152,7 +1144,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         paymentHandler.db.receivePayment(
             paidInvoice.paymentHash,
-            expectedAmount = 15_000_000.msat,
             receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null, lockedAt = null)),
             receivedAt = 101
         ) // simulate incoming payment being paid before it expired
