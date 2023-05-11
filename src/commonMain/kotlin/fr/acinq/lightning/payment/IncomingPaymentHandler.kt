@@ -457,7 +457,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             return WrappedChannelCommand(htlc.channelId, channelCommand)
         }
 
-        private fun actionForPayToOpenFailure(privateKey: PrivateKey, failure: FailureMessage, payToOpenRequest: PayToOpenRequest): PayToOpenResponseCommand {
+        fun actionForPayToOpenFailure(privateKey: PrivateKey, failure: FailureMessage, payToOpenRequest: PayToOpenRequest): PayToOpenResponseCommand {
             val reason = CMD_FAIL_HTLC.Reason.Failure(failure)
             val encryptedReason = when (val result = OutgoingPaymentPacket.buildHtlcFailure(privateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
                 is Either.Right -> result.value

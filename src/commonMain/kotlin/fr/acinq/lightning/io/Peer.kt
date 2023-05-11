@@ -826,7 +826,20 @@ class Peer(
 
                         msg is PayToOpenRequest -> {
                             logger.info { "received ${msg::class.simpleName}" }
-                            processIncomingPayment(Either.Left(msg))
+                            // If a channel is currently being created, it can't process splices yet. We could accept this payment, but
+                            // it wouldn't be reflected in the user balance until the channel is ready, because we only insert
+                            // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
+                            // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
+                            // payment rather that having the user wonder where their money went.
+                            if (_channels.isNotEmpty() && _channels.values.all { it is WaitForFundingSigned || it is WaitForFundingConfirmed }) {
+                                val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
+                                logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
+                                nodeParams._nodeEvents.emit(rejected)
+                                val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)
+                                input.send(action)
+                            } else {
+                                processIncomingPayment(Either.Left(msg))
+                            }
                         }
 
                         msg is PhoenixAndroidLegacyInfo -> {

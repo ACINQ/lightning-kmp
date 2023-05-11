@@ -34,6 +34,7 @@ sealed interface LiquidityEvents : NodeEvents {
             object PolicySetToDisabled : Reason()
             object RejectedByUser : Reason()
             data class TooExpensive(val maxAllowed: MilliSatoshi, val actual: MilliSatoshi) : Reason()
+            object ChannelInitializing : Reason()
         }
     }
 
