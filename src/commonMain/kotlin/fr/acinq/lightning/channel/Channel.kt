@@ -137,12 +137,11 @@ sealed class ChannelAction {
         }
         /** Payment sent through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {
-            abstract val amount: Satoshi
             abstract val miningFees: Satoshi
-            abstract val address: String
             abstract val txId: ByteVector32
-            data class ViaSpliceOut(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
-            data class ViaClose(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
+            data class ViaSpliceOut(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
+            data class ViaSpliceCpfp(override val miningFees: Satoshi, override val txId: ByteVector32) : StoreOutgoingPayment()
+            data class ViaClose(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
         }
         data class SetLocked(val txId: ByteVector32) : Storage()
     }

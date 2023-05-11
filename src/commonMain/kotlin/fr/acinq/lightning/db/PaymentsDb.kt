@@ -344,26 +344,40 @@ data class LightningOutgoingPayment(
 
 sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract override val id: UUID
-    abstract val recipientAmount: Satoshi
-    abstract val address: String
     abstract val miningFees: Satoshi
     abstract val channelId: ByteVector32
     abstract val txId: ByteVector32
     abstract override val createdAt: Long
     abstract val confirmedAt: Long?
+    abstract val lockedAt: Long?
 }
 
 data class SpliceOutgoingPayment(
     override val id: UUID,
-    override val recipientAmount: Satoshi,
-    override val address: String,
+    val recipientAmount: Satoshi,
+    val address: String,
     override val miningFees: Satoshi,
     override val channelId: ByteVector32,
     override val txId: ByteVector32,
     override val createdAt: Long,
-    override val confirmedAt: Long?
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val completedAt: Long? = confirmedAt
+}
+
+data class SpliceCpfpOutgoingPayment(
+    override val id: UUID,
+    override val miningFees: Satoshi,
+    override val channelId: ByteVector32,
+    override val txId: ByteVector32,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?,
+) : OnChainOutgoingPayment() {
+    override val amount: MilliSatoshi = miningFees.toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
 }
@@ -374,8 +388,8 @@ enum class ChannelClosingType {
 
 data class ChannelCloseOutgoingPayment(
     override val id: UUID,
-    override val recipientAmount: Satoshi,
-    override val address: String,
+    val recipientAmount: Satoshi,
+    val address: String,
     // The closingAddress may have been supplied by the user during a mutual close initiated by the user.
     // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
     // So `isSentToDefaultAddress` means this default Phoenix address was used,
@@ -391,6 +405,7 @@ data class ChannelCloseOutgoingPayment(
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
+    override val lockedAt: Long = currentTimestampMillis() // channel close are not splices, they are final
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {

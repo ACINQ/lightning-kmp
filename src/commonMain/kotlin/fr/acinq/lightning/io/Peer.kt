@@ -546,7 +546,7 @@ class Peer(
                     }
 
                     action is ChannelAction.Storage.StoreOutgoingPayment -> {
-                        logger.info { "storing outgoing amount=${action.amount} address=${action.address}" }
+                        logger.info { "storing $action" }
                         db.payments.addOutgoingPayment(
                             when (action) {
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
@@ -558,7 +558,18 @@ class Peer(
                                         channelId = channelId,
                                         txId = action.txId,
                                         createdAt = currentTimestampMillis(),
-                                        confirmedAt = null
+                                        confirmedAt = null,
+                                        lockedAt = null
+                                    )
+                                is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp ->
+                                    SpliceCpfpOutgoingPayment(
+                                        id = UUID.randomUUID(),
+                                        miningFees = action.miningFees,
+                                        channelId = channelId,
+                                        txId = action.txId,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null,
+                                        lockedAt = null
                                     )
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
                                     ChannelCloseOutgoingPayment(
