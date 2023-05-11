@@ -405,7 +405,7 @@ data class Closing(
          * called when the channel has been actually closed, so that we know those transactions are confirmed. Note that we only
          * keep track of the commit tx in the non-mutual-close case.
          */
-        private fun setClosingStatus(closingType: ClosingType): ChannelAction.Storage.SetConfirmed {
+        private fun setClosingStatus(closingType: ClosingType): ChannelAction.Storage.SetLocked {
             val txId = when (closingType) {
                 is MutualClose -> closingType.tx.tx.txid
                 is LocalClose -> closingType.localCommit.publishableTxs.commitTx.tx.txid
@@ -413,7 +413,7 @@ data class Closing(
                 is RecoveryClose -> closingType.remoteCommitPublished.commitTx.txid
                 is RevokedClose -> closingType.revokedCommitPublished.commitTx.txid
             }
-            return ChannelAction.Storage.SetConfirmed(txId)
+            return ChannelAction.Storage.SetLocked(txId)
         }
     }
 }

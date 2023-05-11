@@ -544,9 +544,9 @@ class Peer(
                         _eventsFlow.emit(ChannelClosing(channelId))
                     }
 
-                    action is ChannelAction.Storage.SetConfirmed -> {
+                    action is ChannelAction.Storage.SetLocked -> {
                         logger.info { "setting status confirmed for txid=${action.txId}" }
-                        db.payments.setConfirmed(action.txId)
+                        db.payments.setLocked(action.txId)
                     }
 
                     action is ChannelAction.Storage.GetHtlcInfos -> {

@@ -94,7 +94,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         val (bob4, _) = bob3.process(ChannelCommand.WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, mutualCloseTx.tx)))
         val (bob5, bobActions5) = bob4.process(ChannelCommand.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
         assertIs<LNChannel<Closed>>(bob5)
-        assertContains(bobActions5,ChannelAction.Storage.SetConfirmed(mutualCloseTx.tx.txid))
+        assertContains(bobActions5,ChannelAction.Storage.SetLocked(mutualCloseTx.tx.txid))
     }
 
     @Test
@@ -105,7 +105,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         // actual test starts here
         val (alice1, actions1) = alice0.process(ChannelCommand.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
         assertIs<LNChannel<Closed>>(alice1)
-        assertContains(actions1,ChannelAction.Storage.SetConfirmed(mutualCloseTx.tx.txid))
+        assertContains(actions1,ChannelAction.Storage.SetLocked(mutualCloseTx.tx.txid))
     }
 
     @Test
@@ -132,7 +132,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         // actual test starts here
         val (bob4, bobActions4) = bob3.process(ChannelCommand.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
         assertIs<LNChannel<Closed>>(bob4)
-        assertContains(bobActions4,ChannelAction.Storage.SetConfirmed(mutualCloseTx.tx.txid))
+        assertContains(bobActions4,ChannelAction.Storage.SetLocked(mutualCloseTx.tx.txid))
     }
 
     @Test
@@ -266,7 +266,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             listOf(ChannelAction.Storage.StoreState(aliceClosed.state)),
             actions.filterIsInstance<ChannelAction.Storage.StoreState>()
         )
-        assertContains(actions,ChannelAction.Storage.SetConfirmed(localCommitPublished.commitTx.txid))
+        assertContains(actions,ChannelAction.Storage.SetLocked(localCommitPublished.commitTx.txid))
     }
 
     @Test
@@ -600,7 +600,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Closed>>(aliceClosed)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(aliceClosed.state)))
 
-        assertContains(actions,ChannelAction.Storage.SetConfirmed(remoteCommitPublished.commitTx.txid))
+        assertContains(actions,ChannelAction.Storage.SetLocked(remoteCommitPublished.commitTx.txid))
         // We notify the payment handler that the non-dust htlc has been failed.
         val htlcFail = actions.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>().first()
         assertEquals(htlcs[0], htlcFail.htlc)
@@ -1180,7 +1180,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             listOf(ChannelAction.Storage.StoreState(alice5.state)),
             aliceActions5.filterIsInstance<ChannelAction.Storage.StoreState>()
         )
-        assertContains(aliceActions5,ChannelAction.Storage.SetConfirmed(bobCommitTx.txid))
+        assertContains(aliceActions5,ChannelAction.Storage.SetLocked(bobCommitTx.txid))
     }
 
     @Test
@@ -1814,7 +1814,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (aliceClosed, actions) = alice.process(ChannelCommand.WatchReceived(watchConfirmed.last()))
             assertIs<LNChannel<Closed>>(aliceClosed)
             assertContains(actions, ChannelAction.Storage.StoreState(aliceClosed.state))
-            actions.has<ChannelAction.Storage.SetConfirmed>()
+            actions.has<ChannelAction.Storage.SetLocked>()
         }
     }
 

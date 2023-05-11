@@ -29,7 +29,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
      * the transaction is not yet confirmed. In the case of a force-close, the outgoing payment will only be considered confirmed
      * when the channel is closed, meaning that all related transactions have been confirmed.
      */
-    suspend fun setConfirmed(txId: ByteVector32)
+    suspend fun setLocked(txId: ByteVector32)
 }
 
 interface IncomingPaymentsDb {

@@ -613,7 +613,7 @@ data class Normal(
                                 val (commitments1, _) = res.value
                                 val nextState = this@Normal.copy(commitments = commitments1)
                                 val actions = buildList {
-                                    newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetConfirmed(it.fundingTxId)) }
+                                    newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetLocked(it.fundingTxId)) }
                                     add(ChannelAction.Storage.StoreState(nextState))
                                 }
                                 Pair(nextState, actions)

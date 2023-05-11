@@ -143,7 +143,7 @@ sealed class ChannelAction {
             data class ViaSpliceOut(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
             data class ViaClose(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: Type) : StoreOutgoingPayment() { enum class Type { Mutual, Local, Remote, Revoked, Other; } }
         }
-        data class SetConfirmed(val txId: ByteVector32) : Storage()
+        data class SetLocked(val txId: ByteVector32) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -459,7 +459,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             updateLocalFundingStatus(w.tx.txid, fundingStatus).map { (commitments1, commitment) ->
                 val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                 val actions = buildList {
-                    newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetConfirmed(it.fundingTxId)) }
+                    newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetLocked(it.fundingTxId)) }
                     add(ChannelAction.Blockchain.SendWatch(watchSpent))
                 }
                 Triple(commitments1, commitment, actions)
