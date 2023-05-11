@@ -512,7 +512,7 @@ class Peer(
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
                                     SpliceOutgoingPayment(
                                         id = UUID.randomUUID(),
-                                        amountSatoshi = action.amount,
+                                        recipientAmount = action.amount,
                                         address = action.address,
                                         miningFees = action.miningFees,
                                         channelId = channelId,
@@ -523,7 +523,7 @@ class Peer(
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
                                     ChannelCloseOutgoingPayment(
                                         id = UUID.randomUUID(),
-                                        amountSatoshi = action.amount,
+                                        recipientAmount = action.amount,
                                         address = action.address,
                                         isSentToDefaultAddress = action.isSentToDefaultAddress,
                                         miningFees = action.miningFees,

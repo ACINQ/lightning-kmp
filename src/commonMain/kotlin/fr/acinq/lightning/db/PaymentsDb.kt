@@ -344,7 +344,7 @@ data class LightningOutgoingPayment(
 
 sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract override val id: UUID
-    abstract val amountSatoshi: Satoshi
+    abstract val recipientAmount: Satoshi
     abstract val address: String
     abstract val miningFees: Satoshi
     abstract val channelId: ByteVector32
@@ -355,7 +355,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
 
 data class SpliceOutgoingPayment(
     override val id: UUID,
-    override val amountSatoshi: Satoshi,
+    override val recipientAmount: Satoshi,
     override val address: String,
     override val miningFees: Satoshi,
     override val channelId: ByteVector32,
@@ -363,14 +363,14 @@ data class SpliceOutgoingPayment(
     override val createdAt: Long,
     override val confirmedAt: Long?
 ) : OnChainOutgoingPayment() {
-    override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()
+    override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
 }
 
 data class ChannelCloseOutgoingPayment(
     override val id: UUID,
-    override val amountSatoshi: Satoshi,
+    override val recipientAmount: Satoshi,
     override val address: String,
     // The closingAddress may have been supplied by the user during a mutual close initiated by the user.
     // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
@@ -384,7 +384,7 @@ data class ChannelCloseOutgoingPayment(
     override val confirmedAt: Long?,
     val closingType: ChannelClosingType
 ) : OnChainOutgoingPayment() {
-    override val amount: MilliSatoshi = amountSatoshi.toMilliSatoshi()
+    override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
     enum class ChannelClosingType {
