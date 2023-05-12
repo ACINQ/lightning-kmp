@@ -278,55 +278,24 @@ sealed class ChannelState {
                     // this is a force close, the closing tx is a commit tx
                     // since force close scenarios may be complicated with multiple layers of transactions, we estimate global fees by listing all the final outputs
                     // going to us, and subtracting that from the current balance
-                    val (commitTx, type, finalOutputs) = when {
-                        newState.localCommitPublished is LocalCommitPublished -> {
-                            val finalOutputs = buildList {
-                                newState.localCommitPublished.claimMainDelayedOutputTx?.let { addAll(it.tx.txOut) }
-                                addAll(newState.localCommitPublished.claimHtlcDelayedTxs.flatMap { it.tx.txOut })
-                            }
-                            Triple(newState.localCommitPublished.commitTx, ChannelClosingType.Local, finalOutputs)
-                        }
-                        newState.remoteCommitPublished is RemoteCommitPublished -> {
-                            val finalOutputs = buildList {
-                                newState.remoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
-                                addAll(newState.remoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap { it.tx.txOut })
-                            }
-                            Triple(newState.remoteCommitPublished.commitTx, ChannelClosingType.Remote, finalOutputs)
-                        }
-                        newState.nextRemoteCommitPublished is RemoteCommitPublished -> {
-                            val finalOutputs = buildList {
-                                newState.nextRemoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
-                                addAll(newState.nextRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap { it.tx.txOut })
-                            }
-                            Triple(newState.nextRemoteCommitPublished.commitTx, ChannelClosingType.Remote, finalOutputs)
-                        }
-                        newState.futureRemoteCommitPublished is RemoteCommitPublished -> {
-                            val finalOutputs = buildList {
-                                newState.futureRemoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
-                                addAll(newState.futureRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap { it.tx.txOut })
-                            }
-                            Triple(newState.futureRemoteCommitPublished.commitTx, ChannelClosingType.Remote, finalOutputs)
-                        }
+                    val (commitTx, type) = when {
+                        newState.localCommitPublished is LocalCommitPublished -> Pair(newState.localCommitPublished.commitTx, ChannelClosingType.Local)
+                        newState.remoteCommitPublished is RemoteCommitPublished -> Pair(newState.remoteCommitPublished.commitTx, ChannelClosingType.Remote)
+                        newState.nextRemoteCommitPublished is RemoteCommitPublished -> Pair(newState.nextRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
+                        newState.futureRemoteCommitPublished is RemoteCommitPublished -> Pair(newState.futureRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
                         else -> {
                             val revokedCommitPublished = newState.revokedCommitPublished.first() // must be there
-                            val finalOutputs = buildList {
-                                revokedCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
-                                revokedCommitPublished.mainPenaltyTx?.let { addAll(it.tx.txOut) }
-                                addAll(revokedCommitPublished.htlcPenaltyTxs.flatMap { it.tx.txOut })
-                                addAll(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.flatMap { it.tx.txOut })
-                            }
-                            Triple(revokedCommitPublished.commitTx, ChannelClosingType.Revoked, finalOutputs)
+                            Pair(revokedCommitPublished.commitTx, ChannelClosingType.Revoked)
                         }
                     }
-                    val finalAmount = finalOutputs.map { it.amount }.sum()
                     val address = Helpers.Closing.btcAddressFromScriptPubKey(
                         scriptPubKey = oldState.commitments.params.localParams.defaultFinalScriptPubKey, // force close always send to the default script
                         chainHash = staticParams.nodeParams.chainHash
                     ) ?: "unknown"
                     listOf(
                         ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
-                            amount = finalAmount,
-                            miningFees = channelBalance.truncateToSatoshi() - finalAmount,
+                            amount = channelBalance.truncateToSatoshi(),
+                            miningFees = 0.sat, // TODO: mining fees are tricky in force close scenario, we just lump everything in the amount field
                             address = address,
                             txId = commitTx.txid,
                             isSentToDefaultAddress = true, // force close always send to the default script
