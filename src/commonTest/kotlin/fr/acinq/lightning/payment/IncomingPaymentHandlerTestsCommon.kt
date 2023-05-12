@@ -228,7 +228,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result2 = paymentHandler.process(payToOpenRequest2, TestConstants.defaultBlockHeight)
         assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result2)
         val payToOpenResponse = PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest1.chainHash, payToOpenRequest1.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage)))
-        assertEquals(listOf(payToOpenResponse, payToOpenResponse), result2.actions)
+        assertEquals(listOf(payToOpenResponse), result2.actions)
 
         assertEquals(0.msat, result2.received.amount)
         assertEquals(0.msat, result2.received.fees)
@@ -473,10 +473,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
 
-            assertEquals(result.actions, listOf(
-                PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))),
-                PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))),
-            ))
+            val payToOpenResponse = PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))
+            assertEquals(result.actions, listOf(PayToOpenResponseCommand(payToOpenResponse)))
 
             // pay-to-open parts are not yet provided
             assertTrue { result.received.receivedWith.isEmpty() }
@@ -1213,7 +1211,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: PaymentOnion.FinalPayload, payToOpenMinAmount: MilliSatoshi = 10_000.msat): PayToOpenRequest {
             return PayToOpenRequest(
-                chainHash = ByteVector32.Zeroes,
+                chainHash = Block.RegtestGenesisBlock.hash,
                 fundingSatoshis = 100_000.sat,
                 amountMsat = finalPayload.amount,
                 payToOpenMinAmountMsat = payToOpenMinAmount,
