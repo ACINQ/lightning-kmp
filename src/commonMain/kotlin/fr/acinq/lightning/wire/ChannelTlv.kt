@@ -6,12 +6,9 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.channel.ChannelOrigin
+import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.lightning.utils.toByteVector32
+import fr.acinq.lightning.utils.*
 
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
@@ -65,69 +62,75 @@ sealed class ChannelTlv : Tlv {
         override fun read(input: Input): RequireConfirmedInputsTlv = this
     }
 
-    data class ChannelOriginTlv(val channelOrigin: ChannelOrigin) : ChannelTlv() {
-        override val tag: Long get() = ChannelOriginTlv.tag
+    data class OriginTlv(val origin: Origin) : ChannelTlv() {
+        override val tag: Long get() = OriginTlv.tag
 
         override fun write(out: Output) {
-            when (channelOrigin) {
-                is ChannelOrigin.PayToOpenOrigin -> {
+            when (origin) {
+                is Origin.PayToOpenOrigin -> {
                     LightningCodecs.writeU16(1, out)
-                    LightningCodecs.writeBytes(channelOrigin.paymentHash, out)
-                    LightningCodecs.writeU64(channelOrigin.fee.toLong(), out)
+                    LightningCodecs.writeBytes(origin.paymentHash, out)
+                    LightningCodecs.writeU64(origin.miningFee.toLong(), out)
+                    LightningCodecs.writeU64(origin.serviceFee.toLong(), out)
+                    LightningCodecs.writeU64(origin.amount.toLong(), out)
                 }
 
-                is ChannelOrigin.PleaseOpenChannelOrigin -> {
+                is Origin.PleaseOpenChannelOrigin -> {
                     LightningCodecs.writeU16(4, out)
-                    LightningCodecs.writeBytes(channelOrigin.requestId, out)
-                    LightningCodecs.writeU64(channelOrigin.serviceFee.toLong(), out)
-                    LightningCodecs.writeU64(channelOrigin.fundingFee.toLong(), out)
+                    LightningCodecs.writeBytes(origin.requestId, out)
+                    LightningCodecs.writeU64(origin.miningFee.toLong(), out)
+                    LightningCodecs.writeU64(origin.serviceFee.toLong(), out)
+                    LightningCodecs.writeU64(origin.amount.toLong(), out)
                 }
             }
         }
 
-        companion object : TlvValueReader<ChannelOriginTlv> {
+        companion object : TlvValueReader<OriginTlv> {
             const val tag: Long = 0x47000005
 
-            override fun read(input: Input): ChannelOriginTlv {
+            override fun read(input: Input): OriginTlv {
                 val origin = when (LightningCodecs.u16(input)) {
-                    1 -> ChannelOrigin.PayToOpenOrigin(
+                    1 -> Origin.PayToOpenOrigin(
                         paymentHash = LightningCodecs.bytes(input, 32).byteVector32(),
-                        fee = LightningCodecs.u64(input).sat,
-                    )
-
-                    4 -> ChannelOrigin.PleaseOpenChannelOrigin(
-                        requestId = LightningCodecs.bytes(input, 32).byteVector32(),
+                        miningFee = LightningCodecs.u64(input).sat,
                         serviceFee = LightningCodecs.u64(input).msat,
-                        fundingFee = LightningCodecs.u64(input).sat,
+                        amount = LightningCodecs.u64(input).msat
                     )
 
-                    else -> TODO("Unsupported channel origin discriminator")
+                    4 -> Origin.PleaseOpenChannelOrigin(
+                        requestId = LightningCodecs.bytes(input, 32).byteVector32(),
+                        miningFee = LightningCodecs.u64(input).sat,
+                        serviceFee = LightningCodecs.u64(input).msat,
+                        amount = LightningCodecs.u64(input).msat
+                    )
+
+                    else -> error("Unsupported channel origin discriminator")
                 }
-                return ChannelOriginTlv(origin)
+                return OriginTlv(origin)
             }
         }
     }
 
     /** With rbfed splices we can have multiple origins*/
-    data class ChannelOriginsTlv(val channelOrigins: List<ChannelOrigin>) : ChannelTlv() {
-        override val tag: Long get() = ChannelOriginsTlv.tag
+    data class OriginsTlv(val origins: List<Origin>) : ChannelTlv() {
+        override val tag: Long get() = OriginsTlv.tag
 
         override fun write(out: Output) {
-            LightningCodecs.writeU16(channelOrigins.size, out)
-            channelOrigins.forEach { ChannelOriginTlv(it).write(out) }
+            LightningCodecs.writeU16(origins.size, out)
+            origins.forEach { OriginTlv(it).write(out) }
         }
 
-        companion object : TlvValueReader<ChannelOriginsTlv> {
+        companion object : TlvValueReader<OriginsTlv> {
             const val tag: Long = 0x47000009
 
-            override fun read(input: Input): ChannelOriginsTlv {
+            override fun read(input: Input): OriginsTlv {
                 val size = LightningCodecs.u16(input)
                 val origins = buildList {
                     for (i in 0 until size) {
-                        add(ChannelOriginTlv.read(input).channelOrigin)
+                        add(OriginTlv.read(input).origin)
                     }
                 }
-                return ChannelOriginsTlv(origins)
+                return OriginsTlv(origins)
             }
         }
     }

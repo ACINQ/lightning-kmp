@@ -3,12 +3,14 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.math.absoluteValue
@@ -40,7 +42,7 @@ data class WaitForFundingSigned(
     val localPushAmount: MilliSatoshi,
     val remotePushAmount: MilliSatoshi,
     val remoteSecondPerCommitmentPoint: PublicKey,
-    val channelOrigin: ChannelOrigin?,
+    val channelOrigin: Origin?,
     val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) : PersistedChannelState() {
     override val channelId: ByteVector32 = channelParams.channelId
@@ -106,6 +108,17 @@ data class WaitForFundingSigned(
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
+            // If we receive funds as part of the channel creation, we will add it to our payments db
+            if (action.commitment.localCommit.spec.toLocal > 0.msat) add(
+                ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel(
+                    amount = action.commitment.localCommit.spec.toLocal,
+                    serviceFee = channelOrigin?.serviceFee ?: 0.msat,
+                    miningFee = channelOrigin?.miningFee ?: action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
+                    localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
+                    txId = action.fundingTx.txId,
+                    origin = channelOrigin
+                )
+            )
         }
         return if (staticParams.useZeroConf) {
             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
@@ -118,6 +131,7 @@ data class WaitForFundingSigned(
             val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady)
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
+                add(ChannelAction.EmitEvent(ChannelEvents.Created(nextState)))
                 addAll(commonActions) // NB: order matters
                 add(ChannelAction.Message.Send(channelReady))
             }
@@ -134,6 +148,7 @@ data class WaitForFundingSigned(
             )
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
+                add(ChannelAction.EmitEvent(ChannelEvents.Created(nextState)))
                 addAll(commonActions) // NB: order matters
             }
             Pair(nextState, actions)

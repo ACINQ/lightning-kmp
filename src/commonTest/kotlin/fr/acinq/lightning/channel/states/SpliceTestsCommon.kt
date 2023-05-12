@@ -150,15 +150,17 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 100, 0, spliceTx)))
         assertEquals(bob3.commitments.active.size, 1)
         assertIs<LocalFundingStatus.ConfirmedFundingTx>(bob3.commitments.latest.localFundingStatus)
-        assertEquals(actionsBob3.size, 3)
+        assertEquals(actionsBob3.size, 4)
         actionsBob3.hasWatchFundingSpent(spliceTx.txid)
         actionsBob3.has<ChannelAction.Storage.StoreState>()
+        actionsBob3.has<ChannelAction.Storage.SetLocked>()
         val spliceLockedBob = actionsBob3.hasOutgoingMessage<SpliceLocked>()
 
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(spliceLockedBob))
         assertEquals(alice3.commitments.active.size, 1)
-        assertEquals(actionsAlice3.size, 1)
+        assertEquals(actionsAlice3.size, 2)
         actionsAlice3.has<ChannelAction.Storage.StoreState>()
+        actionsAlice3.has<ChannelAction.Storage.SetLocked>()
     }
 
     @Test
@@ -168,18 +170,35 @@ class SpliceTestsCommon : LightningTestSuite() {
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.hash)))
-        assertEquals(actionsAlice2.size, 1)
+        assertEquals(actionsAlice2.size, 2)
         actionsAlice2.has<ChannelAction.Storage.StoreState>()
+        actionsAlice2.has<ChannelAction.Storage.SetLocked>()
         assertEquals(alice2.commitments.active.size, 1)
         assertNotEquals(alice2.commitments.latest.fundingTxId, alice.commitments.latest.fundingTxId)
         assertIs<LocalFundingStatus.UnconfirmedFundingTx>(alice2.commitments.latest.localFundingStatus)
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.hash)))
-        assertEquals(actionsBob2.size, 1)
+        assertEquals(actionsBob2.size, 2)
         actionsBob2.has<ChannelAction.Storage.StoreState>()
+        actionsBob2.has<ChannelAction.Storage.SetLocked>()
         assertEquals(bob2.commitments.active.size, 1)
         assertNotEquals(bob2.commitments.latest.fundingTxId, bob.commitments.latest.fundingTxId)
         assertIs<LocalFundingStatus.UnconfirmedFundingTx>(bob2.commitments.latest.localFundingStatus)
+    }
+
+    @Test
+    fun `remote splice_locked applies to previous splices`() {
+        val (alice, bob) = reachNormal(zeroConf = true)
+        val (alice1, bob1) = spliceOut(alice, bob, 60_000.sat)
+        val spliceTx1 = alice1.commitments.latest.localFundingStatus.signedTx!!
+        val (alice2, _) = spliceOut(alice1, bob1, 60_000.sat)
+        val spliceTx2 = alice2.commitments.latest.localFundingStatus.signedTx!!
+
+        val (_, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx2.hash)))
+        assertEquals(3, actionsAlice3.size)
+        actionsAlice3.has<ChannelAction.Storage.StoreState>()
+        assertContains(actionsAlice3, ChannelAction.Storage.SetLocked(spliceTx1.txid))
+        assertContains(actionsAlice3, ChannelAction.Storage.SetLocked(spliceTx2.txid))
     }
 
     @Test
@@ -369,10 +388,11 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(txSigsBob))
         assertIs<LNChannel<Normal>>(alice5)
         assertEquals(alice5.state.commitments.active.size, 2)
-        assertEquals(actionsAlice5.size, 4)
+        assertEquals(actionsAlice5.size, 5)
         assertEquals(actionsAlice5.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.FundingTx).txid, spliceTxId)
         actionsAlice5.hasWatchConfirmed(spliceTxId)
         actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        actionsAlice5.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut>()
         val txSigsAlice = actionsAlice5.findOutgoingMessage<TxSignatures>()
 
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(commitSigAlice2))
@@ -447,8 +467,9 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(spliceLockedBob))
         assertIs<LNChannel<Normal>>(alice5)
         assertEquals(alice5.state.commitments.active.size, 1)
-        assertEquals(actionsAlice5.size, 1)
+        assertEquals(2, actionsAlice5.size)
         actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        actionsAlice5.has<ChannelAction.Storage.SetLocked>()
 
         val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(spliceLockedAlice2))
         assertIs<LNChannel<Normal>>(bob6)
@@ -482,16 +503,20 @@ class SpliceTestsCommon : LightningTestSuite() {
         val spliceLockedAlice = actionsAlice4.hasOutgoingMessage<SpliceLocked>()
         assertEquals(spliceLockedAlice.fundingTxId, spliceLockedBob.fundingTxId)
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(spliceLockedBob))
-        assertEquals(actionsAlice5.size, 1)
+        assertEquals(actionsAlice5.size, 3)
         assertEquals(alice5.commitments.active.size, 1)
         assertEquals(alice5.commitments.latest.fundingTxId, spliceLockedBob.fundingTxId)
         actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        assertContains(actionsAlice5, ChannelAction.Storage.SetLocked(alice1.commitments.latest.fundingTxId))
+        assertContains(actionsAlice5, ChannelAction.Storage.SetLocked(alice2.commitments.latest.fundingTxId))
 
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(spliceLockedAlice))
-        assertEquals(actionsBob5.size, 1)
+        assertEquals(actionsBob5.size, 3)
         assertEquals(bob5.commitments.active.size, 1)
         assertEquals(bob5.commitments.latest.fundingTxId, spliceLockedAlice.fundingTxId)
         actionsBob5.has<ChannelAction.Storage.StoreState>()
+        assertContains(actionsBob5, ChannelAction.Storage.SetLocked(bob1.commitments.latest.fundingTxId))
+        assertContains(actionsBob5, ChannelAction.Storage.SetLocked(bob2.commitments.latest.fundingTxId))
     }
 
     @Test
@@ -539,14 +564,16 @@ class SpliceTestsCommon : LightningTestSuite() {
         val spliceLockedAlice = actionsAlice5.hasOutgoingMessage<SpliceLocked>()
         assertEquals(spliceLockedAlice.fundingTxId, spliceTx2.txid)
         val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(spliceLockedBob))
-        assertEquals(actionsAlice6.size, 1)
+        assertEquals(actionsAlice6.size, 2)
         assertEquals(alice6.commitments.active.map { it.fundingTxId }, listOf(spliceTx2.txid, spliceTx1.txid))
         actionsAlice6.has<ChannelAction.Storage.StoreState>()
+        actionsAlice6.contains(ChannelAction.Storage.SetLocked(spliceTx1.txid))
 
         val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(spliceLockedAlice))
-        assertEquals(actionsBob6.size, 1)
+        assertEquals(actionsBob6.size, 2)
         assertEquals(bob6.commitments.active.map { it.fundingTxId }, listOf(spliceTx2.txid, spliceTx1.txid))
         actionsBob6.has<ChannelAction.Storage.StoreState>()
+        actionsBob6.contains(ChannelAction.Storage.SetLocked(spliceTx1.txid))
     }
 
     @Test
@@ -565,13 +592,13 @@ class SpliceTestsCommon : LightningTestSuite() {
         actionsBob2.hasWatchConfirmed(claimMain.txid)
         actionsBob2.has<ChannelAction.Storage.StoreState>()
         actionsBob2.hasOutgoingMessage<Error>()
-        actionsBob2.has<ChannelAction.Storage.StoreChannelClosing>()
+        actionsBob2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
 
         // Alice detects the force-close.
         val commitment = alice1.commitments.active.first()
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
         assertIs<LNChannel<Closing>>(alice2)
-        actionsAlice2.has<ChannelAction.Storage.StoreChannelClosing>()
+        actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         handleRemoteClose(alice2, actionsAlice2, commitment, bobCommitTx)
     }
 
@@ -786,13 +813,20 @@ class SpliceTestsCommon : LightningTestSuite() {
             }
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(txSigsBob))
             when {
-                alice1.staticParams.useZeroConf -> assertEquals(actionsAlice2.size, 5)
-                else -> assertEquals(actionsAlice2.size, 4)
+                alice1.staticParams.useZeroConf -> assertEquals(6, actionsAlice2.size)
+                else -> assertEquals(5, actionsAlice2.size)
             }
             val txSigsAlice = actionsAlice2.findOutgoingMessage<TxSignatures>()
             assertEquals(actionsAlice2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.FundingTx).txid, txSigsAlice.txId)
             actionsAlice2.hasWatchConfirmed(txSigsAlice.txId)
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
+            val aliceSpliceStatus = alice.state.spliceStatus
+            assertIs<SpliceStatus.WaitingForSigs>(aliceSpliceStatus)
+            when {
+                aliceSpliceStatus.session.fundingParams.localContribution > 0.sat -> actionsAlice2.has<ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn>()
+                aliceSpliceStatus.session.fundingParams.localContribution < 0.sat -> actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut>()
+                else -> {}
+            }
             if (alice1.staticParams.useZeroConf) {
                 assertEquals(actionsAlice2.hasOutgoingMessage<SpliceLocked>().fundingTxId, txSigsAlice.txId)
             }
@@ -906,7 +940,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             assertIs<Closed>(channel3.state)
             assertEquals(actions3.size, 2)
             actions3.has<ChannelAction.Storage.StoreState>()
-            actions3.has<ChannelAction.Storage.StoreChannelClosed>()
+            actions3.has<ChannelAction.Storage.SetLocked>()
         }
 
         private fun handlePreviousRemoteClose(alice1: LNChannel<Normal>, bobCommitTx: Transaction) {
@@ -922,7 +956,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             actionsAlice2.hasWatchConfirmed(claimMain.txid)
             assertEquals(actionsAlice2.hasWatchConfirmed(bobCommitTx.txid).event, BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED)
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
-            actionsAlice2.has<ChannelAction.Storage.StoreChannelClosing>()
+            actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
 
             // Bob's commitment confirms.
             val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice2.channelId, BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED, alice2.currentBlockHeight, 43, bobCommitTx)))
@@ -932,7 +966,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             assertEquals(1, alice3.commitments.active.size)
             assertEquals(alice3.commitments.active.first().fundingTxId, alice2.commitments.active.last().fundingTxId)
             // And processes the remote commit.
-            actionsAlice3.doesNotHave<ChannelAction.Storage.StoreChannelClosing>()
+            actionsAlice3.doesNotHave<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
             handleRemoteClose(alice3, actionsAlice3, alice3.commitments.active.first(), bobCommitTx)
         }
 
@@ -953,7 +987,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             assertEquals(actionsAlice2.find<ChannelAction.Storage.GetHtlcInfos>().revokedCommitTxId, bobCommitTx.txid)
             actionsAlice2.hasOutgoingMessage<Error>()
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
-            actionsAlice2.has<ChannelAction.Storage.StoreChannelClosing>()
+            actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
 
             // Bob's commitment confirms.
             val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice2.channelId, watchCommitConfirmed.event, alice2.currentBlockHeight, 43, bobCommitTx)))
@@ -967,8 +1001,8 @@ class SpliceTestsCommon : LightningTestSuite() {
             actionsAlice4.has<ChannelAction.Storage.StoreState>()
             val (alice5, actionsAlice5) = alice4.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice4.channelId, BITCOIN_TX_CONFIRMED(claimRemotePenalty), alice4.currentBlockHeight, 45, claimRemotePenalty)))
             assertIs<Closed>(alice5.state)
-            actionsAlice5.has<ChannelAction.Storage.StoreChannelClosed>()
             actionsAlice5.has<ChannelAction.Storage.StoreState>()
+            actionsAlice5.has<ChannelAction.Storage.SetLocked>()
         }
 
         private fun handlePreviousRevokedRemoteClose(alice1: LNChannel<Normal>, bobCommitTx: Transaction) {
@@ -984,7 +1018,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             actionsAlice2.hasWatchConfirmed(claimMain.txid)
             assertEquals(actionsAlice2.hasWatchConfirmed(bobCommitTx.txid).event, BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED)
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
-            actionsAlice2.has<ChannelAction.Storage.StoreChannelClosing>()
+            actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
 
             // Bob's revoked commitment confirms.
             val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice2.channelId, BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED, alice2.currentBlockHeight, 43, bobCommitTx)))
@@ -1012,8 +1046,8 @@ class SpliceTestsCommon : LightningTestSuite() {
             actionsAlice5.has<ChannelAction.Storage.StoreState>()
             val (alice6, actionsAlice6) = alice5.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice5.channelId, BITCOIN_TX_CONFIRMED(claimRemotePenalty), alice5.currentBlockHeight, 45, claimRemotePenalty)))
             assertIs<Closed>(alice6.state)
-            actionsAlice6.has<ChannelAction.Storage.StoreChannelClosed>()
             actionsAlice6.has<ChannelAction.Storage.StoreState>()
+            actionsAlice6.has<ChannelAction.Storage.SetLocked>()
         }
     }
 

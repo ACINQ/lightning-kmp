@@ -9,10 +9,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.noise.*
-import fr.acinq.lightning.db.Databases
-import fr.acinq.lightning.db.IncomingPayment
-import fr.acinq.lightning.db.LightningOutgoingPayment
-import fr.acinq.lightning.db.OutgoingPayment
+import fr.acinq.lightning.db.*
 import fr.acinq.lightning.payment.IncomingPaymentHandler
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.payment.OutgoingPaymentHandler
@@ -67,6 +64,7 @@ data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : 
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash
 }
+
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
 sealed class PeerEvent
@@ -74,7 +72,7 @@ data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val reque
 data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerEvent()
-data class PaymentSent(val request: SendPayment, val payment: OutgoingPayment) : PeerEvent()
+data class PaymentSent(val request: SendPayment, val payment: LightningOutgoingPayment) : PeerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 /**
@@ -146,7 +144,7 @@ class Peer(
     val eventsFlow: SharedFlow<PeerEvent> get() = _eventsFlow.asSharedFlow()
 
     // encapsulates logic for validating incoming payments
-    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, walletParams, db.payments)
+    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments)
 
     // encapsulates logic for sending payments
     private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, walletParams, db.payments)
@@ -427,7 +425,8 @@ class Peer(
             amount = amount,
             description = description,
             expirySeconds = expirySeconds,
-            result = CompletableDeferred())
+            result = CompletableDeferred()
+        )
         command.result.await()
     }
 
@@ -503,39 +502,52 @@ class Peer(
                         action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                     }
 
-                    action is ChannelAction.Storage.StoreIncomingAmount -> {
-                        logger.info { "storing incoming amount=${action.amount} with origin=${action.origin}" }
+                    action is ChannelAction.Storage.StoreIncomingPayment -> {
+                        logger.info { "storing incoming payment $action" }
                         incomingPaymentHandler.process(actualChannelId, action)
+                    }
+
+                    action is ChannelAction.Storage.StoreOutgoingPayment -> {
+                        logger.info { "storing outgoing amount=${action.amount} address=${action.address}" }
+                        db.payments.addOutgoingPayment(
+                            when (action) {
+                                is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
+                                    SpliceOutgoingPayment(
+                                        id = UUID.randomUUID(),
+                                        recipientAmount = action.amount,
+                                        address = action.address,
+                                        miningFees = action.miningFees,
+                                        channelId = channelId,
+                                        txId = action.txId,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null
+                                    )
+                                is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
+                                    ChannelCloseOutgoingPayment(
+                                        id = UUID.randomUUID(),
+                                        recipientAmount = action.amount,
+                                        address = action.address,
+                                        isSentToDefaultAddress = action.isSentToDefaultAddress,
+                                        miningFees = action.miningFees,
+                                        channelId = channelId,
+                                        txId = action.txId,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null,
+                                        closingType = action.closingType
+                                    )
+                            }
+                        )
+                        _eventsFlow.emit(ChannelClosing(channelId))
+                    }
+
+                    action is ChannelAction.Storage.SetLocked -> {
+                        logger.info { "setting status confirmed for txid=${action.txId}" }
+                        db.payments.setLocked(action.txId)
                     }
 
                     action is ChannelAction.Storage.GetHtlcInfos -> {
                         val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
                         input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
-                    }
-
-                    action is ChannelAction.Storage.StoreChannelClosing -> {
-                        val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
-                        val recipient = if (action.isSentToDefaultAddress) nodeParams.nodeId else PublicKey.Generator
-                        val payment = LightningOutgoingPayment(
-                            id = dbId,
-                            recipientAmount = action.amount,
-                            recipient = recipient,
-                            details = LightningOutgoingPayment.Details.ChannelClosing(
-                                channelId = channelId,
-                                closingAddress = action.closingAddress,
-                                isSentToDefaultAddress = action.isSentToDefaultAddress
-                            ),
-                            parts = emptyList(),
-                            status = LightningOutgoingPayment.Status.Pending
-                        )
-                        db.payments.addOutgoingPayment(payment)
-                        _eventsFlow.emit(ChannelClosing(channelId))
-                    }
-
-                    action is ChannelAction.Storage.StoreChannelClosed -> {
-                        val dbId = UUID.fromBytes(channelId.take(16).toByteArray())
-                        db.payments.completeOutgoingPaymentForClosing(id = dbId, parts = action.closingTxs, completedAt = currentTimestampMillis())
-                        _eventsFlow.emit(ChannelClosing(channelId))
                     }
 
                     action is ChannelAction.ChannelId.IdAssigned -> {
@@ -693,19 +705,22 @@ class Peer(
 
                         msg is OpenDualFundedChannel -> {
                             val (wallet, fundingAmount, pushAmount) = when (val origin = msg.origin) {
-                                is ChannelOrigin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
+                                is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
                                         // Let's verify that the fee is indeed below our max (a honest LSP would not even try)
-                                        val totalFee = origin.serviceFee.truncateToSatoshi() + origin.fundingFee
+                                        val totalFee = origin.serviceFee.truncateToSatoshi() + origin.miningFee
                                         if (totalFee > request.maxFee) {
                                             logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: fee is too high (max=${request.maxFee} actual=${totalFee})" }
                                             sendToPeer(Error(msg.temporaryChannelId, "channel opening fee too high"))
                                             return@withMDC
                                         }
+                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
-                                        val fundingAmount = request.wallet.confirmedBalance - origin.fundingFee
-                                        nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, fundingFee = origin.fundingFee))
-                                        Triple(request.wallet, fundingAmount, origin.serviceFee)
+                                        val fundingAmount = request.wallet.confirmedBalance - fundingFee
+                                        // We pay the other fees by pushing the corresponding amount
+                                        val pushAmount = origin.serviceFee + origin.miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi()
+                                        nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, miningFee = origin.miningFee))
+                                        Triple(request.wallet, fundingAmount, pushAmount)
                                     }
 
                                     else -> {
@@ -728,7 +743,7 @@ class Peer(
                                 val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
                                 _channels = _channels + (msg.temporaryChannelId to state2)
                                 when (val origin = msg.origin) {
-                                    is ChannelOrigin.PleaseOpenChannelOrigin -> channelRequests = channelRequests - origin.requestId
+                                    is Origin.PleaseOpenChannelOrigin -> channelRequests = channelRequests - origin.requestId
                                     else -> Unit
                                 }
                                 processActions(msg.temporaryChannelId, actions1 + actions2)

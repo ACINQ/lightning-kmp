@@ -12,7 +12,7 @@ import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.db.LightningOutgoingPayment
+import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
@@ -26,6 +26,7 @@ import fr.acinq.lightning.wire.*
 
 /** Channel Events (inputs to be fed to the state machine). */
 sealed class ChannelCommand {
+    // @formatter:off
     data class InitInitiator(
         val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
@@ -37,7 +38,7 @@ sealed class ChannelCommand {
         val channelFlags: Byte,
         val channelConfig: ChannelConfig,
         val channelType: ChannelType.SupportedChannelType,
-        val channelOrigin: ChannelOrigin? = null
+        val channelOrigin: Origin? = null
     ) : ChannelCommand() {
         fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = keyManager.channelKeys(localParams.fundingKeyPath).temporaryChannelId
     }
@@ -60,11 +61,12 @@ sealed class ChannelCommand {
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelCommand()
     object Disconnected : ChannelCommand()
     data class Connected(val localInit: Init, val remoteInit: Init) : ChannelCommand()
+    // @formatter:on
 }
 
 /** Channel Actions (outputs produced by the state machine). */
 sealed class ChannelAction {
-
+    // @formatter:off
     data class ProcessLocalError(val error: Throwable, val trigger: ChannelCommand) : ChannelAction()
 
     sealed class Message : ChannelAction() {
@@ -125,9 +127,24 @@ sealed class ChannelAction {
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
-        data class StoreIncomingAmount(val amount: MilliSatoshi, val localInputs: Set<OutPoint>, val origin: ChannelOrigin?) : Storage()
-        data class StoreChannelClosing(val amount: MilliSatoshi, val closingAddress: String, val isSentToDefaultAddress: Boolean) : Storage()
-        data class StoreChannelClosed(val closingTxs: List<LightningOutgoingPayment.ClosingTxPart>) : Storage()
+        /** Payment received through on-chain operations (channel creation or splice-in) */
+        sealed class StoreIncomingPayment : Storage() {
+            abstract val origin: Origin?
+            abstract val txId: ByteVector32
+            abstract val localInputs: Set<OutPoint>
+            data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin?) : StoreIncomingPayment()
+            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
+        }
+        /** Payment sent through on-chain operations (channel close or splice-out) */
+        sealed class StoreOutgoingPayment : Storage() {
+            abstract val amount: Satoshi
+            abstract val miningFees: Satoshi
+            abstract val address: String
+            abstract val txId: ByteVector32
+            data class ViaSpliceOut(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
+            data class ViaClose(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
+        }
+        data class SetLocked(val txId: ByteVector32) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
@@ -166,6 +183,7 @@ sealed class ChannelAction {
     }
 
     data class EmitEvent(val event: ChannelEvents) : ChannelAction()
+    // @formatter:on
 }
 
 /** Channel static parameters. */
@@ -194,82 +212,16 @@ sealed class ChannelState {
 
     fun ChannelContext.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return try {
-            val (newState, actions) = processInternal(cmd)
-            val oldState = when (this@ChannelState) {
-                is Offline -> this@ChannelState.state
-                is Syncing -> this@ChannelState.state
-                else -> this@ChannelState
-            }
-            val actions1 = when {
-                oldState is WaitForFundingSigned && (newState is WaitForFundingConfirmed || newState is WaitForChannelReady) -> {
-                    val channelCreated = ChannelAction.EmitEvent(ChannelEvents.Created(newState as ChannelStateWithCommitments))
-                    when {
-                        !oldState.channelParams.localParams.isInitiator -> {
-                            val amount = oldState.signingSession.fundingParams.localContribution.toMilliSatoshi() + oldState.remotePushAmount - oldState.localPushAmount
-                            val localInputs = oldState.signingSession.fundingTx.tx.localInputs.map { OutPoint(it.previousTx, it.previousTxOutput) }.toSet()
-                            actions + ChannelAction.Storage.StoreIncomingAmount(amount, localInputs, oldState.channelOrigin) + channelCreated
-                        }
-                        else -> actions + channelCreated
-                    }
-                }
-                // we only want to fire the PaymentSent event when we transition to Closing for the first time
-                oldState is WaitForInit && newState is Closing -> actions
-                oldState is Closing && newState is Closing -> actions
-                oldState is ChannelStateWithCommitments && newState is Closing -> {
-                    val channelBalance = oldState.commitments.latest.localCommit.spec.toLocal
-                    if (channelBalance > 0.msat) {
-                        val defaultScriptPubKey = oldState.commitments.params.localParams.defaultFinalScriptPubKey
-                        val localShutdown = when (this@ChannelState) {
-                            is Normal -> this@ChannelState.localShutdown
-                            is Negotiating -> this@ChannelState.localShutdown
-                            is ShuttingDown -> this@ChannelState.localShutdown
-                            else -> null
-                        }
-                        if (localShutdown != null && localShutdown.scriptPubKey != defaultScriptPubKey) {
-                            // Non-default output address
-                            val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
-                                scriptPubKey = localShutdown.scriptPubKey,
-                                chainHash = staticParams.nodeParams.chainHash
-                            ) ?: "unknown"
-                            actions + ChannelAction.Storage.StoreChannelClosing(
-                                amount = channelBalance,
-                                closingAddress = btcAddr,
-                                isSentToDefaultAddress = false
-                            )
-                        } else {
-                            // Default output address
-                            val btcAddr = Helpers.Closing.btcAddressFromScriptPubKey(
-                                scriptPubKey = defaultScriptPubKey,
-                                chainHash = staticParams.nodeParams.chainHash
-                            ) ?: "unknown"
-                            actions + ChannelAction.Storage.StoreChannelClosing(
-                                amount = channelBalance,
-                                closingAddress = btcAddr,
-                                isSentToDefaultAddress = true
-                            )
-                        }
-                    } else /* channelBalance <= 0.msat */ {
-                        actions
-                    }
-                }
-                else -> actions
-            }
-            val actions2 = newState.run { updateActions(actions1) }
-            Pair(newState, actions2)
+            processInternal(cmd)
+                .let { (newState, actions) -> Pair(newState, newState.run { maybeAddBackupToMessages(actions) }) }
+                .let { (newState, actions) -> Pair(newState, actions + onTransition(newState)) }
         } catch (t: Throwable) {
             handleLocalError(cmd, t)
         }
     }
 
-    abstract fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>>
-
-    internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
-        return Pair(this@ChannelState, listOf())
-    }
-
     /** Update outgoing messages to include an encrypted backup when necessary. */
-    private fun ChannelContext.updateActions(actions: List<ChannelAction>): List<ChannelAction> = when {
+    private fun ChannelContext.maybeAddBackupToMessages(actions: List<ChannelAction>): List<ChannelAction> = when {
         this@ChannelState is PersistedChannelState && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
             when {
                 it is ChannelAction.Message.Send && it.message is TxSignatures -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
@@ -281,6 +233,83 @@ sealed class ChannelState {
             }
         }
         else -> actions
+    }
+
+    /** Add actions for some transitions */
+    private fun ChannelContext.onTransition(newState: ChannelState): List<ChannelAction> {
+        val oldState = when (this@ChannelState) {
+            is Offline -> this@ChannelState.state
+            is Syncing -> this@ChannelState.state
+            else -> this@ChannelState
+        }
+        return when {
+            // we only want to fire the PaymentSent event when we transition to Closing for the first time
+            oldState is ChannelStateWithCommitments && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState, newState)
+            else -> emptyList()
+        }
+    }
+
+    private fun ChannelContext.emitClosingEvents(oldState: ChannelStateWithCommitments, newState: Closing): List<ChannelAction> {
+        val channelBalance = oldState.commitments.latest.localCommit.spec.toLocal
+        return if (channelBalance > 0.msat) {
+            when {
+                newState.mutualClosePublished.isNotEmpty() -> {
+                    // this code is only executed for the first transition to Closing, so there can only be one transaction here
+                    val closingTx = newState.mutualClosePublished.first()
+                    val finalAmount = closingTx.toLocalOutput?.amount ?: 0.sat
+                    val address = closingTx.toLocalOutput?.publicKeyScript?.let {
+                        Helpers.Closing.btcAddressFromScriptPubKey(
+                            scriptPubKey = it,
+                            chainHash = staticParams.nodeParams.chainHash
+                        )
+                    } ?: "unknown"
+                    listOf(
+                        ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
+                            amount = finalAmount,
+                            miningFees = channelBalance.truncateToSatoshi() - finalAmount,
+                            address = address,
+                            txId = closingTx.tx.txid,
+                            isSentToDefaultAddress = closingTx.toLocalOutput?.publicKeyScript == oldState.commitments.params.localParams.defaultFinalScriptPubKey,
+                            closingType = ChannelClosingType.Mutual
+                        )
+                    )
+                }
+                else -> {
+                    // this is a force close, the closing tx is a commit tx
+                    // since force close scenarios may be complicated with multiple layers of transactions, we estimate global fees by listing all the final outputs
+                    // going to us, and subtracting that from the current balance
+                    val (commitTx, type) = when {
+                        newState.localCommitPublished is LocalCommitPublished -> Pair(newState.localCommitPublished.commitTx, ChannelClosingType.Local)
+                        newState.remoteCommitPublished is RemoteCommitPublished -> Pair(newState.remoteCommitPublished.commitTx, ChannelClosingType.Remote)
+                        newState.nextRemoteCommitPublished is RemoteCommitPublished -> Pair(newState.nextRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
+                        newState.futureRemoteCommitPublished is RemoteCommitPublished -> Pair(newState.futureRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
+                        else -> {
+                            val revokedCommitPublished = newState.revokedCommitPublished.first() // must be there
+                            Pair(revokedCommitPublished.commitTx, ChannelClosingType.Revoked)
+                        }
+                    }
+                    val address = Helpers.Closing.btcAddressFromScriptPubKey(
+                        scriptPubKey = oldState.commitments.params.localParams.defaultFinalScriptPubKey, // force close always send to the default script
+                        chainHash = staticParams.nodeParams.chainHash
+                    ) ?: "unknown"
+                    listOf(
+                        ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
+                            amount = channelBalance.truncateToSatoshi(),
+                            miningFees = 0.sat, // TODO: mining fees are tricky in force close scenario, we just lump everything in the amount field
+                            address = address,
+                            txId = commitTx.txid,
+                            isSentToDefaultAddress = true, // force close always send to the default script
+                            closingType = type
+                        )
+                    )
+                }
+            }
+        } else emptyList() // balance == 0
+    }
+
+    internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+        logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
+        return Pair(this@ChannelState, listOf())
     }
 
     internal fun ChannelContext.handleCommandError(cmd: Command, error: ChannelException, channelUpdate: ChannelUpdate? = null): Pair<ChannelState, List<ChannelAction>> {
@@ -295,6 +324,8 @@ sealed class ChannelState {
         ChannelAction.Blockchain.PublishTx(tx),
         ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx.tx)))
     )
+
+    abstract fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>>
 
     fun ChannelContext.handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
@@ -382,7 +413,11 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         return commitments.run {
             updateLocalFundingStatus(w.tx.txid, fundingStatus).map { (commitments1, commitment) ->
                 val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-                Triple(commitments1, commitment, listOf(ChannelAction.Blockchain.SendWatch(watchSpent)))
+                val actions = buildList {
+                    newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetLocked(it.fundingTxId)) }
+                    add(ChannelAction.Blockchain.SendWatch(watchSpent))
+                }
+                Triple(commitments1, commitment, actions)
             }
         }
     }
@@ -399,6 +434,17 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 Pair(nextState, actions + listOf(ChannelAction.Storage.StoreState(nextState)))
             }
         }
+    }
+
+    /**
+     * List [Commitment] that have been locked by both sides for the first time. It is more complicated that it may seem, because:
+     * - remote will re-emit splice_locked at reconnection
+     * - a splice_locked implicitly applies to all previous splices, and they may be pruned instantly
+     */
+    internal fun ChannelContext.newlyLocked(before: Commitments, after: Commitments): List<Commitment> {
+        val lastLockedBefore = before.run { lastLocked() }?.fundingTxIndex ?: -1
+        val lastLockedAfter = after.run { lastLocked() }?.fundingTxIndex ?: -1
+        return commitments.all.filter { it.fundingTxIndex > 0 && it.fundingTxIndex > lastLockedBefore && it.fundingTxIndex <= lastLockedAfter }
     }
 
     /**

@@ -9,10 +9,7 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.transactions.Transactions
-import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toMilliSatoshi
+import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 
 data class Normal(
@@ -192,7 +189,7 @@ data class Normal(
                                     logger.info { "waiting for tx_sigs" }
                                     Pair(this@Normal.copy(spliceStatus = spliceStatus.copy(session = signingSession1)), listOf())
                                 }
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(action, cmd.message.channelData)
+                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
                             }
                         }
                         commitments.params.channelFeatures.hasFeature(Feature.DualFunding) && commitments.latest.localFundingStatus.signedTx == null && cmd.message.batchSize == 1 -> {
@@ -529,7 +526,7 @@ data class Normal(
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                                 }
                                 InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@Normal, listOf())
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(action, cmd.message.channelData)
+                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
                             }
                         }
                         else -> when (commitments.latest.localFundingStatus) {
@@ -615,7 +612,11 @@ data class Normal(
                             is Either.Right -> {
                                 val (commitments1, _) = res.value
                                 val nextState = this@Normal.copy(commitments = commitments1)
-                                Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
+                                val actions = buildList {
+                                    newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetLocked(it.fundingTxId)) }
+                                    add(ChannelAction.Storage.StoreState(nextState))
+                                }
+                                Pair(nextState, actions)
                             }
                         }
                     }
@@ -668,7 +669,7 @@ data class Normal(
         }
     }
 
-    private fun ChannelContext.sendSpliceTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<Normal, List<ChannelAction>> {
+    private fun ChannelContext.sendSpliceTxSigs(origins: List<Origin.PayToOpenOrigin>, action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<Normal, List<ChannelAction>> {
         logger.info { "sending tx_sigs" }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
@@ -680,6 +681,36 @@ data class Normal(
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
+            // If we received or sent funds as part of the splice, we will add a corresponding entry to our incoming/outgoing payments db
+            addAll(origins.map { origin ->
+                ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
+                    amount = origin.amount,
+                    serviceFee = origin.serviceFee,
+                    miningFee = origin.miningFee,
+                    localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
+                    txId = action.fundingTx.txId,
+                    origin = origin
+                )
+            })
+            // If we initiated the splice and added some funds ourselves it's a swap-in
+            if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
+                ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
+                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.previousTx.txOut[i.previousTxOutput.toInt()].amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.fees.toMilliSatoshi(),
+                    serviceFee = 0.msat,
+                    miningFee = action.fundingTx.sharedTx.tx.fees,
+                    localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
+                    txId = action.fundingTx.txId,
+                    origin = null
+                )
+            )
+            addAll(action.fundingTx.fundingParams.localOutputs.map { txOut ->
+                ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut(
+                    amount = txOut.amount,
+                    miningFees = action.fundingTx.sharedTx.tx.fees,
+                    address = Helpers.Closing.btcAddressFromScriptPubKey(scriptPubKey = txOut.publicKeyScript, chainHash = staticParams.nodeParams.chainHash) ?: "unknown",
+                    txId = action.fundingTx.txId
+                )
+            })
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }
                 val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId.reversed())

@@ -19,7 +19,7 @@ sealed class Command {
     sealed interface ForbiddenDuringSplice
 
     sealed class Splice {
-        data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val feerate: FeeratePerKw, val origins: List<ChannelOrigin.PayToOpenOrigin> = emptyList()) : Command() {
+        data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Command() {
             init {
                 require(spliceIn != null || spliceOut != null) { "there must be a splice-in or a splice-out" }
             }

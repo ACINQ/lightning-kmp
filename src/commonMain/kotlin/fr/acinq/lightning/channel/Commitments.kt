@@ -828,18 +828,16 @@ data class Commitments(
         }
 
     /**
-     * Commitments are considered inactive when they have been superseded by a newer commitment, but can still potentially
-     * end up on-chain. This is a consequence of using zero-conf. Inactive commitments will be cleaned up by
-     * [pruneCommitments], when the next funding tx confirms.
+     * Return the most recent commitment locked by both sides.
      */
-    private fun ChannelContext.deactivateCommitments(): Commitments {
+    fun ChannelContext.lastLocked(): Commitment? {
         // When a commitment is locked, it implicitly locks all previous commitments.
         // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
         // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
         // That's why we look at locked commitments separately and then select the one with the oldest fundingTxIndex.
         val lastLocalLocked = active.find { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
         val lastRemoteLocked = active.find { it.remoteFundingStatus == RemoteFundingStatus.Locked }
-        val lastLocked = when {
+        return when {
             // We select the locked commitment with the smaller value for fundingTxIndex, but both have to be defined.
             // If both have the same fundingTxIndex, they must actually be the same commitment, because:
             //  - we only allow RBF attempts when we're not using zero-conf
@@ -851,18 +849,24 @@ data class Commitments(
             lastLocalLocked != null && lastLocalLocked.fundingTxIndex == 0L -> lastLocalLocked
             else -> null
         }
-        return when (lastLocked) {
-            is Commitment -> {
-                // all commitments older than this one are inactive
-                val inactive1 = active.filter { it.fundingTxId != lastLocked.fundingTxId && it.fundingTxIndex <= lastLocked.fundingTxIndex }
-                inactive1.forEach { logger.info { "deactivating commitment fundingTxIndex=${it.fundingTxIndex} fundingTxId=${it.fundingTxId}" } }
-                copy(
-                    active = active - inactive1.toSet(),
-                    inactive = inactive1 + inactive.toSet()
-                )
-            }
-            else -> this@Commitments
+    }
+
+    /**
+     * Commitments are considered inactive when they have been superseded by a newer commitment, but can still potentially
+     * end up on-chain. This is a consequence of using zero-conf. Inactive commitments will be cleaned up by
+     * [pruneCommitments], when the next funding tx confirms.
+     */
+    private fun ChannelContext.deactivateCommitments(): Commitments = when (val commitment = lastLocked()) {
+        is Commitment -> {
+            // all commitments older than this one are inactive
+            val inactive1 = active.filter { it.fundingTxId != commitment.fundingTxId && it.fundingTxIndex <= commitment.fundingTxIndex }
+            inactive1.forEach { logger.info { "deactivating commitment fundingTxIndex=${it.fundingTxIndex} fundingTxId=${it.fundingTxId}" } }
+            copy(
+                active = active - inactive1.toSet(),
+                inactive = inactive1 + inactive.toSet()
+            )
         }
+        else -> this@Commitments
     }
 
     /**

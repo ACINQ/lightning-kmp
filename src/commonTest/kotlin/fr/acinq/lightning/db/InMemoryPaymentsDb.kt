@@ -2,6 +2,7 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
@@ -14,43 +15,28 @@ class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, IncomingPayment>()
     private val outgoing = mutableMapOf<UUID, LightningOutgoingPayment>()
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
+    override suspend fun setLocked(txId: ByteVector32) {}
 
-    override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long) {
+    override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long): IncomingPayment {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
         require(!incoming.contains(paymentHash)) { "an incoming payment for $paymentHash already exists" }
-        incoming[paymentHash] = IncomingPayment(preimage, origin, null, createdAt)
+        val incomingPayment = IncomingPayment(preimage, origin, null, createdAt)
+        incoming[paymentHash] = incomingPayment
+        return incomingPayment
     }
 
     override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: Set<IncomingPayment.ReceivedWith>, receivedAt: Long) {
+    override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
             else -> incoming[paymentHash] = run {
-                payment.copy(received = IncomingPayment.Received(
-                    receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
-                    receivedAt = receivedAt))
-            }
-        }
-    }
-
-    override suspend fun addAndReceivePayment(preimage: ByteVector32, origin: IncomingPayment.Origin, receivedWith: Set<IncomingPayment.ReceivedWith>, createdAt: Long, receivedAt: Long) {
-        val paymentHash = preimage.sha256()
-        incoming[paymentHash] = IncomingPayment(preimage, origin, IncomingPayment.Received(receivedWith, receivedAt), createdAt)
-    }
-
-    override suspend fun updateNewChannelReceivedWithChannelId(paymentHash: ByteVector32, channelId: ByteVector32) {
-        val payment = incoming[paymentHash]
-        when (payment?.received?.receivedWith) {
-            null -> Unit // no-op
-            else -> incoming[paymentHash] = run {
-                val receivedWith = payment.received.receivedWith.map {
-                    when (it) {
-                        is IncomingPayment.ReceivedWith.NewChannel -> it.copy(channelId = channelId)
-                        else -> it
-                    }
-                }.toSet()
-                payment.copy(received = payment.received.copy(receivedWith = receivedWith))
+                payment.copy(
+                    received = IncomingPayment.Received(
+                        receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
+                        receivedAt = receivedAt
+                    )
+                )
             }
         }
     }
@@ -88,7 +74,7 @@ class InMemoryPaymentsDb : PaymentsDb {
                 outgoing[outgoingPayment.id] = outgoingPayment.copy(parts = listOf())
                 outgoingPayment.parts.forEach { outgoingParts[it.id] = Pair(outgoingPayment.id, it) }
             }
-            //else -> TODO("not implemented")
+            is OnChainOutgoingPayment -> {} // we don't persist on-chain payments
         }
     }
 
@@ -96,24 +82,10 @@ class InMemoryPaymentsDb : PaymentsDb {
         return outgoing[id]?.let { payment ->
             val parts = outgoingParts.values.filter { it.first == payment.id }.map { it.second }
             return when (payment.status) {
-                is LightningOutgoingPayment.Status.Completed.Succeeded -> {
-                    payment.copy(parts = parts.filter {
-                        (it is LightningOutgoingPayment.LightningPart && it.status is LightningOutgoingPayment.LightningPart.Status.Succeeded) || it is LightningOutgoingPayment.ClosingTxPart
-                    })
-                }
+                is LightningOutgoingPayment.Status.Completed.Succeeded -> payment.copy(parts = parts.filter { it.status is LightningOutgoingPayment.Part.Status.Succeeded })
                 else -> payment.copy(parts = parts)
             }
         }
-    }
-
-    override suspend fun completeOutgoingPaymentForClosing(id: UUID, parts: List<LightningOutgoingPayment.ClosingTxPart>, completedAt: Long) {
-        require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
-        val payment = outgoing[id]!!
-        parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
-        parts.forEach { outgoingParts[it.id] = Pair(id, it) }
-
-
-        outgoing[id] = payment.copy(status = LightningOutgoingPayment.Status.Completed.Succeeded.OnChain(completedAt))
     }
 
     override suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long) {
@@ -128,7 +100,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         outgoing[id] = payment.copy(status = LightningOutgoingPayment.Status.Completed.Failed(reason = finalFailure, completedAt = completedAt))
     }
 
-    override suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.LightningPart>) {
+    override suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>) {
         require(outgoing.contains(parentId)) { "parent outgoing payment with id=$parentId doesn't exist" }
         parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
         parts.forEach { outgoingParts[it.id] = Pair(parentId, it) }
@@ -137,13 +109,13 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long) {
         require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
         val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, (part as LightningOutgoingPayment.LightningPart).copy(status = OutgoingPaymentFailure.convertFailure(failure, completedAt)))
+        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPaymentFailure.convertFailure(failure, completedAt)))
     }
 
     override suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long) {
         require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
         val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, (part as LightningOutgoingPayment.LightningPart).copy(status = LightningOutgoingPayment.LightningPart.Status.Succeeded(preimage, completedAt)))
+        outgoingParts[partId] = Pair(parentId, part.copy(status = LightningOutgoingPayment.Part.Status.Succeeded(preimage, completedAt)))
     }
 
     override suspend fun getLightningOutgoingPaymentFromPartId(partId: UUID): LightningOutgoingPayment? {

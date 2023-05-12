@@ -37,7 +37,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
             assertIs<WaitForChannelReady>(alice1.state)
-            assertEquals(actionsAlice1.size, 3)
+            assertEquals(3, actionsAlice1.size)
             actionsAlice1.hasOutgoingMessage<ChannelReady>()
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
             val watch = actionsAlice1.hasWatch<WatchSpent>()
@@ -48,7 +48,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
             assertIs<WaitForChannelReady>(bob1.state)
-            assertEquals(actionsBob1.size, 3)
+            assertEquals(3, actionsBob1.size)
             actionsBob1.hasOutgoingMessage<ChannelReady>()
             actionsBob1.has<ChannelAction.Storage.StoreState>()
             val watch = actionsBob1.hasWatch<WatchSpent>()
@@ -108,74 +108,82 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart`() {
         val (alice, bob, fundingTx) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         run {
-            val (alice1, actions1) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice.state))
-            assertIs<Offline>(alice1.state)
-            assertEquals(actions1.size, 2)
-            actions1.hasPublishTx(fundingTx)
-            assertEquals(actions1.findWatch<WatchConfirmed>().txId, fundingTx.txid)
-            val (alice2, actions2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
-            assertIs<Offline>(alice2.state)
-            assertEquals(actions2.size, 2)
-            val watchSpent = actions2.findWatch<WatchSpent>()
-            assertEquals(watchSpent.txId, fundingTx.txid)
-            assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
-            actions2.has<ChannelAction.Storage.StoreState>()
+            val (alice1, _) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice.state))
+                .also { (state, actions) ->
+                    assertIs<Offline>(state.state)
+                    assertEquals(actions.size, 2)
+                    actions.hasPublishTx(fundingTx)
+                    assertEquals(actions.findWatch<WatchConfirmed>().txId, fundingTx.txid)
+                }
+            val (_, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
+                .also { (state, actions) ->
+                    assertIs<Offline>(state.state)
+                    assertEquals(actions.size, 2)
+                    actions.hasWatchFundingSpent(fundingTx.txid)
+                    actions.has<ChannelAction.Storage.StoreState>()
+                }
         }
         run {
-            val (bob1, actions1) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob.state))
-            assertIs<Offline>(bob1.state)
-            assertEquals(actions1.size, 2)
-            actions1.hasPublishTx(fundingTx)
-            assertEquals(actions1.findWatch<WatchConfirmed>().txId, fundingTx.txid)
-            val (bob2, actions2) = bob1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
-            assertIs<Offline>(bob2.state)
-            assertEquals(actions2.size, 2)
-            val watchSpent = actions2.findWatch<WatchSpent>()
-            assertEquals(watchSpent.txId, fundingTx.txid)
-            assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
-            actions2.has<ChannelAction.Storage.StoreState>()
+            val (bob1, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob.state))
+                .also { (state, actions) ->
+                    assertIs<Offline>(state.state)
+                    assertEquals(actions.size, 2)
+                    actions.hasPublishTx(fundingTx)
+                    assertEquals(actions.findWatch<WatchConfirmed>().txId, fundingTx.txid)
+                }
+            val (_, _) = bob1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
+                .also { (state, actions) ->
+                    assertIs<Offline>(state.state)
+                    assertEquals(actions.size, 2)
+                    actions.hasWatchFundingSpent(fundingTx.txid)
+                    actions.has<ChannelAction.Storage.StoreState>()
+                }
         }
     }
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart -- previous funding tx`() {
-        val (alice, bob, previousFundingTx, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
-        val (alice1, bob1, fundingTx) = rbf(alice, bob, walletAlice)
+        val (alice, bob, fundingTx1, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice1, bob1, fundingTx2) = rbf(alice, bob, walletAlice)
         run {
-            val (alice2, actions2) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
-            assertIs<Offline>(alice2.state)
-            assertEquals(actions2.size, 4)
-            actions2.hasPublishTx(previousFundingTx)
-            actions2.hasPublishTx(fundingTx)
-            assertEquals(actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(previousFundingTx.txid, fundingTx.txid))
-            val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
-            assertIs<Offline>(alice3.state)
-            assertEquals(alice3.commitments.active.size, 1)
-            assertTrue(alice3.commitments.inactive.isEmpty())
-            assertEquals(alice3.commitments.latest.fundingTxId, previousFundingTx.txid)
-            assertEquals(actions3.size, 2)
-            val watchSpent = actions3.findWatch<WatchSpent>()
-            assertEquals(watchSpent.txId, previousFundingTx.txid)
-            assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
-            actions3.has<ChannelAction.Storage.StoreState>()
+            val (alice2, _) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
+                .also { (state, actions) ->
+                    assertIs<Offline>(state.state)
+                    assertEquals(actions.size, 4)
+                    actions.hasPublishTx(fundingTx1)
+                    actions.hasPublishTx(fundingTx2)
+                    assertEquals(actions.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(fundingTx1.txid, fundingTx2.txid))
+                }
+            val (_, _) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx1)))
+                .also { (state, actions) ->
+                    assertIs<Offline>(state.state)
+                    assertEquals(state.commitments.active.size, 1)
+                    assertTrue(state.commitments.inactive.isEmpty())
+                    assertEquals(state.commitments.latest.fundingTxId, fundingTx1.txid)
+                    assertEquals(actions.size, 2)
+                    actions.hasWatchFundingSpent(fundingTx1.txid)
+                    actions.has<ChannelAction.Storage.StoreState>()
+                }
         }
         run {
-            val (bob2, actions2) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob1.state))
-            assertIs<Offline>(bob2.state)
-            assertEquals(actions2.size, 4)
-            actions2.hasPublishTx(previousFundingTx)
-            actions2.hasPublishTx(fundingTx)
-            assertEquals(actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(previousFundingTx.txid, fundingTx.txid))
-            val (bob3, actions3) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
-            assertIs<Offline>(bob3.state)
-            assertEquals(bob3.commitments.active.size, 1)
-            assertTrue(bob3.commitments.inactive.isEmpty())
-            assertEquals(bob3.commitments.latest.fundingTxId, previousFundingTx.txid)
-            assertEquals(actions3.size, 2)
-            val watchSpent = actions3.findWatch<WatchSpent>()
-            assertEquals(watchSpent.txId, previousFundingTx.txid)
-            assertEquals(watchSpent.event, BITCOIN_FUNDING_SPENT)
-            actions3.has<ChannelAction.Storage.StoreState>()
+            val (bob2, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob1.state))
+                .also { (state, actions) ->
+                    assertIs<Offline>(state.state)
+                    assertEquals(actions.size, 4)
+                    actions.hasPublishTx(fundingTx1)
+                    actions.hasPublishTx(fundingTx2)
+                    assertEquals(actions.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(fundingTx1.txid, fundingTx2.txid))
+                }
+            val (_, _) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx1)))
+                .also { (state, actions) ->
+                    assertIs<Offline>(state.state)
+                    assertEquals(state.commitments.active.size, 1)
+                    assertTrue(state.commitments.inactive.isEmpty())
+                    assertEquals(state.commitments.latest.fundingTxId, fundingTx1.txid)
+                    assertEquals(actions.size, 2)
+                    actions.hasWatchFundingSpent(fundingTx1.txid)
+                    actions.has<ChannelAction.Storage.StoreState>()
+                }
         }
     }
 

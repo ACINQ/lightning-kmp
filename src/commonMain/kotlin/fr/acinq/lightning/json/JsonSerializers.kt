@@ -276,7 +276,7 @@ object JsonSerializers {
     @Serializer(forClass = ChannelParams::class)
     object ChannelParamsSerializer
 
-    @Serializer(forClass = ChannelOrigin::class)
+    @Serializer(forClass = Origin::class)
     object ChannelOriginSerializer
 
     @Serializer(forClass = CommitmentChanges::class)

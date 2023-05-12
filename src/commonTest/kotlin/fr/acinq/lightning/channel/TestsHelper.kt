@@ -10,6 +10,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.WaitForChannelReadyTestsCommon
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
@@ -147,7 +148,7 @@ object TestsHelper {
         alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
         bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         zeroConf: Boolean = false,
-        channelOrigin: ChannelOrigin? = null
+        channelOrigin: Origin? = null
     ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForOpenChannel>, OpenDualFundedChannel> {
         val (aliceNodeParams, bobNodeParams) = when (zeroConf) {
             true -> Pair(
@@ -273,7 +274,10 @@ object TestsHelper {
         val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Closing>>(s1)
         actions1.has<ChannelAction.Storage.StoreState>()
-        actions1.has<ChannelAction.Storage.StoreChannelClosing>()
+        actions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
+            assertEquals(commitTx.txid, it.txId)
+            assertEquals(ChannelClosingType.Local, it.closingType)
+        }
 
         val localCommitPublished = s1.state.localCommitPublished
         assertNotNull(localCommitPublished)
@@ -319,7 +323,10 @@ object TestsHelper {
         if (s.state !is Closing) {
             val channelBalance = s.state.commitments.latest.localCommit.spec.toLocal
             if (channelBalance > 0.msat) {
-                actions1.has<ChannelAction.Storage.StoreChannelClosing>()
+                actions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
+                    assertEquals(rCommitTx.txid, it.txId)
+                    assertEquals(ChannelClosingType.Remote, it.closingType )
+                }
             }
         }
 

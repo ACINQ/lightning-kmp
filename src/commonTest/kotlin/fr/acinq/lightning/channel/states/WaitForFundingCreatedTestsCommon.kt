@@ -314,7 +314,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             zeroConf: Boolean = false,
-            channelOrigin: ChannelOrigin? = null
+            channelOrigin: Origin? = null
         ): Fixture {
             val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf, channelOrigin)
             val (b1, actions) = b.process(ChannelCommand.MessageReceived(open))

@@ -95,7 +95,7 @@ object Deserialization {
             0x00 -> SpliceStatus.None
             0x01 -> SpliceStatus.WaitingForSigs(
                 session = readInteractiveTxSigningSession(),
-                origins = readCollection { readChannelOrigin() as ChannelOrigin.PayToOpenOrigin }.toList()
+                origins = readCollection { readChannelOrigin() as Origin.PayToOpenOrigin }.toList()
             )
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
         }
@@ -311,17 +311,20 @@ object Deserialization {
         )
     )
 
-    private fun Input.readChannelOrigin(): ChannelOrigin = when (val discriminator = read()) {
-        0x01 -> ChannelOrigin.PayToOpenOrigin(
+    private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
+        0x01 -> Origin.PayToOpenOrigin(
             paymentHash = readByteVector32(),
-            fee = readNumber().sat,
+            serviceFee = readNumber().msat,
+            miningFee = readNumber().sat,
+            amount = readNumber().msat,
         )
-        0x02 -> ChannelOrigin.PleaseOpenChannelOrigin(
+        0x02 -> Origin.PleaseOpenChannelOrigin(
             requestId = readByteVector32(),
             serviceFee = readNumber().msat,
-            fundingFee = readNumber().sat,
+            miningFee = readNumber().sat,
+            amount = readNumber().msat,
         )
-        else -> error("unknown discriminator $discriminator for class ${ChannelOrigin::class}")
+        else -> error("unknown discriminator $discriminator for class ${Origin::class}")
     }
 
     private fun Input.readChannelParams(): ChannelParams = ChannelParams(

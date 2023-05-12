@@ -15,6 +15,7 @@ import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import org.kodein.log.newLogger
+import kotlin.time.Duration
 
 sealed class PaymentPart {
     abstract val amount: MilliSatoshi
@@ -35,7 +36,7 @@ data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val fi
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
 }
 
-class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: IncomingPaymentsDb) {
+class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb) {
 
     sealed class ProcessAddResult {
         abstract val actions: List<PeerCommand>
@@ -101,40 +102,48 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     /**
      * Save the "received-with" details of an incoming amount.
      *
-     * - for a pay-to-open origin, we only save the id of the channel that was created for this payment.
-     * - for a swap-in origin, a new incoming payment must be created. We use the channel id to generate the payment's preimage.
-     * - for unknown origin, the amount is handled as a swap-in coming from an unknown address.
+     * - for a pay-to-open origin, the payment already exists and we only add a received-with.
+     * - for a swap-in origin, a new incoming payment must be created. We use a random.
      */
-    suspend fun process(channelId: ByteVector32, action: ChannelAction.Storage.StoreIncomingAmount) {
-        val fakePreimage = channelId.sha256()
-        when (action.origin) {
-            null -> {
-                // TODO: hacky, needs clean-up
-                logger.warning { "incoming amount with empty origin, we store only minimal information" }
-                db.addAndReceivePayment(
-                    preimage = fakePreimage,
-                    origin = IncomingPayment.Origin.SwapIn(address = ""),
-                    receivedWith = setOf(IncomingPayment.ReceivedWith.NewChannel(id = UUID.randomUUID(), amount = action.amount, serviceFee = 0.msat, channelId = channelId))
+    suspend fun process(channelId: ByteVector32, action: ChannelAction.Storage.StoreIncomingPayment) {
+        val receivedWith = when (action) {
+            is ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel ->
+                IncomingPayment.ReceivedWith.NewChannel(
+                    amount = action.amount,
+                    serviceFee = action.serviceFee,
+                    miningFee = action.miningFee,
+                    channelId = channelId,
+                    txId = action.txId,
+                    confirmedAt = null,
+                    lockedAt = null,
                 )
-            }
-            is ChannelOrigin.PayToOpenOrigin -> {
-                // In that case, the pay-to-open payment parts have already been handled in the main `processPaymentPart` handler. We just need
-                // to update the channel id of the pay-to-open received-with parts with type new-channel.
-                db.updateNewChannelReceivedWithChannelId(action.origin.paymentHash, channelId)
-            }
-            is ChannelOrigin.PleaseOpenChannelOrigin -> {
-                db.addAndReceivePayment(
-                    preimage = fakePreimage,
-                    origin = IncomingPayment.Origin.DualSwapIn(action.localInputs),
-                    receivedWith = setOf(
-                        IncomingPayment.ReceivedWith.NewChannel(
-                            id = UUID.randomUUID(),
-                            amount = action.amount,
-                            serviceFee = action.origin.serviceFee,
-                            fundingFee = action.origin.fundingFee,
-                            channelId = channelId
-                        )
-                    )
+            is ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn ->
+                IncomingPayment.ReceivedWith.SpliceIn(
+                    amount = action.amount,
+                    serviceFee = action.serviceFee,
+                    miningFee = action.miningFee,
+                    channelId = channelId,
+                    txId = action.txId,
+                    confirmedAt = null,
+                    lockedAt = null,
+                )
+        }
+        when (val origin = action.origin) {
+            is Origin.PayToOpenOrigin ->
+                // there already is a corresponding Lightning invoice in the db
+                db.receivePayment(
+                    paymentHash = origin.paymentHash,
+                    receivedWith = listOf(receivedWith)
+                )
+            else -> {
+                // this is a swap, there was no pre-existing invoice, we need to create a fake one
+                val incomingPayment = db.addIncomingPayment(
+                    preimage = randomBytes32(), // not used, placeholder
+                    origin = IncomingPayment.Origin.OnChain(action.txId, action.localInputs)
+                )
+                db.receivePayment(
+                    paymentHash = incomingPayment.paymentHash,
+                    receivedWith = listOf(receivedWith)
                 )
             }
         }
@@ -265,6 +274,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                 null -> logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
                                 else -> logger.info { "payment received (${payment.amountReceived}) with payment metadata ($paymentMetadata)" }
                             }
+                            // In the code below, we indicate the receivedWith only for htlc parts, because the pay-to-open parts
+                            // will be created later, via a new channel or a splice-in.
+                            // In the corner case where the payment is a mix of htlc and pay-to-open parts, then the payment will be considered
+                            // "received" in the db, but the sum of all parts will not reach the correct amount, until the pay-to-open parts are
+                            // added
                             val (actions, receivedWith) = payment.parts.map { part ->
                                 when (part) {
                                     is HtlcPart -> {
@@ -285,21 +299,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                                             paymentHash = paymentPart.paymentHash,
                                             result = PayToOpenResponse.Result.Success(incomingPayment.preimage)
                                         )
-                                    ) to IncomingPayment.ReceivedWith.NewChannel(
-                                        // The part's amount is the full amount, including the fee. The fee must be subtracted.
-                                        id = UUID.randomUUID(),
-                                        amount = part.amount - part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
-                                        serviceFee = part.payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
-                                        // At that point we do not know the channel's id. It will be set later on.
-                                        channelId = null
-                                    )
+                                    ) to null
                                 }
                             }.unzip()
                             pending.remove(paymentPart.paymentHash)
 
-                            val received = IncomingPayment.Received(receivedWith = receivedWith.toSet())
+                            val received = IncomingPayment.Received(receivedWith = receivedWith.filterNotNull())
 
                             db.receivePayment(paymentPart.paymentHash, received.receivedWith)
+
                             return ProcessAddResult.Accepted(actions, incomingPayment.copy(received = received), received)
                         }
                     }

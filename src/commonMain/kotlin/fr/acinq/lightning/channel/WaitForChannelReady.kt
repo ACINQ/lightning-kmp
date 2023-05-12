@@ -82,6 +82,7 @@ data class WaitForChannelReady(
                 )
                 val actions = listOf(
                     ChannelAction.Storage.StoreState(nextState),
+                    ChannelAction.Storage.SetLocked(commitments.latest.fundingTxId),
                     ChannelAction.EmitEvent(ChannelEvents.Confirmed(nextState)),
                 )
                 Pair(nextState, actions)
