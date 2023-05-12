@@ -134,7 +134,7 @@ sealed class ChannelAction {
             data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin?) : StoreIncomingPayment()
             data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
         }
-        /** Payment received through on-chain operations (channel close or splice-out) */
+        /** Payment sent through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {
             abstract val amount: Satoshi
             abstract val miningFees: Satoshi
@@ -243,7 +243,7 @@ sealed class ChannelState {
         }
         return when {
             // we only want to fire the PaymentSent event when we transition to Closing for the first time
-            oldState is ChannelStateWithCommitments && oldState !is WaitForInit && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState, newState)
+            oldState is ChannelStateWithCommitments && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState, newState)
             else -> emptyList()
         }
     }
@@ -288,36 +288,21 @@ sealed class ChannelState {
                         newState.remoteCommitPublished is RemoteCommitPublished -> {
                             val finalOutputs = buildList {
                                 newState.remoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
-                                addAll(newState.remoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap {
-                                    when (it) {
-                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> it.tx.txOut
-                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> it.tx.txOut
-                                    }
-                                })
+                                addAll(newState.remoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap { it.tx.txOut })
                             }
                             Triple(newState.remoteCommitPublished.commitTx, ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, finalOutputs)
                         }
                         newState.nextRemoteCommitPublished is RemoteCommitPublished -> {
                             val finalOutputs = buildList {
                                 newState.nextRemoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
-                                addAll(newState.nextRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap {
-                                    when (it) {
-                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> it.tx.txOut
-                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> it.tx.txOut
-                                    }
-                                })
+                                addAll(newState.nextRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap { it.tx.txOut })
                             }
                             Triple(newState.nextRemoteCommitPublished.commitTx, ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, finalOutputs)
                         }
                         newState.futureRemoteCommitPublished is RemoteCommitPublished -> {
                             val finalOutputs = buildList {
                                 newState.futureRemoteCommitPublished.claimMainOutputTx?.let { addAll(it.tx.txOut) }
-                                addAll(newState.futureRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap {
-                                    when (it) {
-                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> it.tx.txOut
-                                        is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> it.tx.txOut
-                                    }
-                                })
+                                addAll(newState.futureRemoteCommitPublished.claimHtlcTxs.values.filterNotNull().flatMap { it.tx.txOut })
                             }
                             Triple(newState.futureRemoteCommitPublished.commitTx, ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, finalOutputs)
                         }
