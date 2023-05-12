@@ -413,7 +413,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
      * will accept outdated ones.
      */
     fun purgePayToOpenRequests() {
-        pending.replaceAll { _, payment -> payment.copy(parts = payment.parts.filter { it !is PayToOpenPart }.toSet()) }
+        val valuesToReplace = pending.mapValues { entry -> entry.value.copy(parts = entry.value.parts.filter { it !is PayToOpenPart }.toSet()) }
+        pending.plusAssign(valuesToReplace)
         val keysToRemove = pending.filterValues { it.parts.isEmpty() }.keys
         pending.minusAssign(keysToRemove)
     }
