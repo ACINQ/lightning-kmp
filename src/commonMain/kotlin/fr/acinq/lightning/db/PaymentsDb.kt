@@ -400,12 +400,12 @@ data class ChannelCloseOutgoingPayment(
     override val txId: ByteVector32,
     override val createdAt: Long,
     override val confirmedAt: Long?,
+    override val lockedAt: Long?,
     val closingType: ChannelClosingType
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
-    override val lockedAt: Long = currentTimestampMillis() // channel close are not splices, they are final
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {

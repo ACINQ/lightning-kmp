@@ -582,6 +582,7 @@ class Peer(
                                         txId = action.txId,
                                         createdAt = currentTimestampMillis(),
                                         confirmedAt = null,
+                                        lockedAt = currentTimestampMillis(), // channel close are not splices, they are final
                                         closingType = action.closingType
                                     )
                             }
