@@ -477,6 +477,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
                     if (bobClosingTx != null && bobClosingTx.txIn[0].outPoint == a.commitments.latest.localCommit.publishableTxs.commitTx.input.outPoint && a.state !is Closing) {
                         // Bob just spent the funding tx
                         val (a1, actions2) = a.process(ChannelCommand.WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
+                        actions2.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also { assertEquals(bobClosingTx.txid, it.txId) }
                         return converge(a1, b1, actions2.findOutgoingMessageOpt())
                     }
                     converge(a, b1, null)

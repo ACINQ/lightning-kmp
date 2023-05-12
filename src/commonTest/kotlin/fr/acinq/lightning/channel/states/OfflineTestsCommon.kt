@@ -505,14 +505,16 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<WaitForFundingConfirmed>(bob1.state.state)
         val (_, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
             .also { (state, actions) ->
-                assertIs<LNChannel<Offline>>(state)
+                assertIs<Offline>(state.state)
+                assertEquals(2, actions.size)
                 assertIs<WaitForChannelReady>(state.state.state)
                 actions.hasWatchFundingSpent(fundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
             }
         val (_, _) = bob1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
             .also { (state, actions) ->
-                assertIs<LNChannel<Offline>>(state)
+                assertIs<Offline>(state.state)
+                assertEquals(2, actions.size)
                 assertIs<WaitForChannelReady>(state.state.state)
                 actions.hasWatchFundingSpent(fundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
@@ -528,15 +530,23 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<WaitForFundingConfirmed>(bob2.state.state)
         val (_, _) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
             .also { (state, actions) ->
-                assertIs<LNChannel<Offline>>(state)
+                assertIs<Offline>(state.state)
                 assertIs<WaitForChannelReady>(state.state.state)
+                assertEquals(1, state.commitments.active.size)
+                assertEquals(previousFundingTx.txid, state.commitments.latest.fundingTxId)
+                assertIs<LocalFundingStatus.ConfirmedFundingTx>(state.commitments.latest.localFundingStatus)
+                assertEquals(2, actions.size)
                 actions.hasWatchFundingSpent(previousFundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
             }
         val (_, _) = bob2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, previousFundingTx)))
             .also { (state, actions) ->
-                assertIs<LNChannel<Offline>>(state)
+                assertIs<Offline>(state.state)
                 assertIs<WaitForChannelReady>(state.state.state)
+                assertEquals(1, state.commitments.active.size)
+                assertEquals(previousFundingTx.txid, state.commitments.latest.fundingTxId)
+                assertIs<LocalFundingStatus.ConfirmedFundingTx>(state.commitments.latest.localFundingStatus)
+                assertEquals(2, actions.size)
                 actions.hasWatchFundingSpent(previousFundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
             }

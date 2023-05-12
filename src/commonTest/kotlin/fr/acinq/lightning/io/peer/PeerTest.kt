@@ -14,7 +14,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
 import fr.acinq.lightning.db.InMemoryDatabases
-import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.router.Announcements
@@ -235,7 +234,7 @@ class PeerTest : LightningTestSuite() {
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, miningFee, openAlice.pushAmount))
+                ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, miningFee, openAlice.pushAmount))
             )
         )
         bob.forward(open)
@@ -293,7 +292,7 @@ class PeerTest : LightningTestSuite() {
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee, openAlice.pushAmount))
+                ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee, openAlice.pushAmount))
             )
         )
         bob.forward(open)
@@ -313,7 +312,7 @@ class PeerTest : LightningTestSuite() {
         val open = alice2bob.expect<OpenDualFundedChannel>().copy(
             tlvStream = TlvStream(
                 ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                    ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat, openAlice.pushAmount))
+                ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat, openAlice.pushAmount))
             )
         )
         bob.forward(open)

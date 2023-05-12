@@ -108,8 +108,10 @@ class SyncingTestsCommon : LightningTestSuite() {
         val (alice, commitSigAlice, bob, commitSigBob) = WaitForFundingSignedTestsCommon.init()
         val (alice1, _) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
         assertIs<LNChannel<WaitForFundingSigned>>(alice1)
+        assertIs<WaitForFundingSigned>(alice1.state)
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
         assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
+        assertIs<WaitForFundingConfirmed>(bob1.state)
         val fundingTxId = bob1.state.latestFundingTx.txId
         val (alice2, bob2, channelReestablishAlice) = disconnectWithBackup(alice1, bob1)
         assertEquals(channelReestablishAlice.nextFundingTxId, fundingTxId)
@@ -143,12 +145,15 @@ class SyncingTestsCommon : LightningTestSuite() {
         val (alice, commitSigAlice, bob, commitSigBob) = WaitForFundingSignedTestsCommon.init()
         val (alice1, _) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
         assertIs<LNChannel<WaitForFundingSigned>>(alice1)
+        assertIs<WaitForFundingSigned>(alice1.state)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
         assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
+        assertIs<WaitForFundingConfirmed>(bob1.state)
         val fundingTxId = bob1.state.latestFundingTx.txId
         val txSigsBob = actionsBob1.hasOutgoingMessage<TxSignatures>()
         val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(txSigsBob))
         assertIs<LNChannel<WaitForFundingConfirmed>>(alice2)
+        assertIs<WaitForFundingConfirmed>(alice2.state)
         val (alice3, bob2, channelReestablishAlice) = disconnectWithBackup(alice2, bob1)
         assertNull(channelReestablishAlice.nextFundingTxId)
 
@@ -158,7 +163,7 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertEquals(channelReestablishBob.nextFundingTxId, fundingTxId)
 
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
-        assertIs<LNChannel<WaitForFundingConfirmed>>(alice4)
+        assertIs<WaitForFundingConfirmed>(alice4.state)
         assertEquals(actionsAlice4.size, 1)
         val txSigsAlice = actionsAlice4.hasOutgoingMessage<TxSignatures>()
 
@@ -252,6 +257,7 @@ class SyncingTestsCommon : LightningTestSuite() {
             .also { (state, actions) ->
                 assertIs<Syncing>(state.state)
                 assertIs<WaitForChannelReady>(state.state.state)
+                assertEquals(2, actions.size)
                 actions.hasWatchFundingSpent(fundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
             }
@@ -259,6 +265,7 @@ class SyncingTestsCommon : LightningTestSuite() {
             .also { (state, actions) ->
                 assertIs<Syncing>(state.state)
                 assertIs<WaitForChannelReady>(state.state.state)
+                assertEquals(2, actions.size)
                 actions.hasWatchFundingSpent(fundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
             }
@@ -275,6 +282,10 @@ class SyncingTestsCommon : LightningTestSuite() {
             .also { (state, actions) ->
                 assertIs<Syncing>(state.state)
                 assertIs<WaitForChannelReady>(state.state.state)
+                assertEquals(1, state.commitments.active.size)
+                assertEquals(previousFundingTx.txid, state.commitments.latest.fundingTxId)
+                assertIs<LocalFundingStatus.ConfirmedFundingTx>(state.commitments.latest.localFundingStatus)
+                assertEquals(actions.size, 2)
                 actions.hasWatchFundingSpent(previousFundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
             }
@@ -282,6 +293,10 @@ class SyncingTestsCommon : LightningTestSuite() {
             .also { (state, actions) ->
                 assertIs<Syncing>(state.state)
                 assertIs<WaitForChannelReady>(state.state.state)
+                assertEquals(1, state.commitments.active.size)
+                assertEquals(previousFundingTx.txid, state.commitments.latest.fundingTxId)
+                assertIs<LocalFundingStatus.ConfirmedFundingTx>(state.commitments.latest.localFundingStatus)
+                assertEquals(actions.size, 2)
                 actions.hasWatchFundingSpent(previousFundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
             }

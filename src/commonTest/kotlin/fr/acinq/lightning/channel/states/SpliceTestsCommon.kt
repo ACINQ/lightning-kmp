@@ -197,8 +197,8 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (_, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx2.hash)))
         assertEquals(3, actionsAlice3.size)
         actionsAlice3.has<ChannelAction.Storage.StoreState>()
-        assertContains(actionsAlice3,ChannelAction.Storage.SetLocked(spliceTx1.txid))
-        assertContains(actionsAlice3,ChannelAction.Storage.SetLocked(spliceTx2.txid))
+        assertContains(actionsAlice3, ChannelAction.Storage.SetLocked(spliceTx1.txid))
+        assertContains(actionsAlice3, ChannelAction.Storage.SetLocked(spliceTx2.txid))
     }
 
     @Test
