@@ -831,7 +831,10 @@ class Peer(
                             // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
                             // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
                             // payment rather that having the user wonder where their money went.
-                            if (_channels.isNotEmpty() && _channels.values.all { it is WaitForFundingSigned || it is WaitForFundingConfirmed }) {
+val channelInitializing = _channels.isNotEmpty()
+                                    && !_channels.values.any { it is Normal } // we don't have a channel that can be spliced
+                                    && _channels.values.any { it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } // but we will have one soon
+                            if (channelInitializing) {
                                 val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
                                 logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
                                 nodeParams._nodeEvents.emit(rejected)
