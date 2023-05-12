@@ -303,6 +303,32 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `receive pay-to-open payment with a fee too high`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
+        val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(defaultAmount, defaultAmount, paymentSecret)).copy(payToOpenFeeSatoshis = 2_000.sat)
+        val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
+
+        assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
+        result as IncomingPaymentHandler.ProcessAddResult.Rejected
+        assertEquals(incomingPayment, result.incomingPayment)
+        val expected = PayToOpenResponseCommand(
+            PayToOpenResponse(
+                payToOpenRequest.chainHash,
+                payToOpenRequest.paymentHash,
+                PayToOpenResponse.Result.Failure(
+                    OutgoingPaymentPacket.buildHtlcFailure(
+                        paymentHandler.nodeParams.nodePrivateKey,
+                        payToOpenRequest.paymentHash,
+                        payToOpenRequest.finalPacket,
+                        CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure)
+                    ).right!!
+                )
+            )
+        )
+        assertEquals(setOf(expected), result.actions.toSet())
+    }
+
+    @Test
     fun `receive pay-to-open trampoline payment with an incorrect payment secret`() = runSuspendTest {
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         val trampolineHops = listOf(
@@ -493,6 +519,54 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(0.msat, result.received.fees)
 
             checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
+    }
+
+    @Test
+    fun `receive multipart payment with a mix of HTLC and pay-to-open -- fee too high`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
+        val totalAmount = amount1 + amount2
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
+
+        // Step 1 of 2:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
+            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Pending }
+            assertTrue { result.actions.isEmpty() }
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob has received the complete MPP set
+        run {
+            val payToOpenRequest = makePayToOpenRequest(incomingPayment, makeMppPayload(amount2, totalAmount, paymentSecret)).copy(payToOpenFeeSatoshis = 2_000.sat)
+            val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
+            assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
+            val expected = setOf(
+                WrappedChannelCommand(
+                    channelId,
+                    ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure), commit = true))
+                ),
+                PayToOpenResponseCommand(
+                    PayToOpenResponse(
+                        payToOpenRequest.chainHash,
+                        payToOpenRequest.paymentHash,
+                        PayToOpenResponse.Result.Failure(
+                            OutgoingPaymentPacket.buildHtlcFailure(
+                                paymentHandler.nodeParams.nodePrivateKey,
+                                payToOpenRequest.paymentHash,
+                                payToOpenRequest.finalPacket,
+                                CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure)
+                            ).right!!
+                        )
+                    )
+                )
+            )
+            assertEquals(expected, result.actions.toSet())
         }
     }
 
@@ -1062,12 +1136,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         const val payToOpenFeerate = 0.1
 
-        private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: PaymentOnion.FinalPayload, payToOpenMinAmount: MilliSatoshi = 10_000.msat): PayToOpenRequest {
+        private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: PaymentOnion.FinalPayload): PayToOpenRequest {
             return PayToOpenRequest(
                 chainHash = Block.RegtestGenesisBlock.hash,
                 fundingSatoshis = 100_000.sat,
                 amountMsat = finalPayload.amount,
-                payToOpenMinAmountMsat = payToOpenMinAmount,
+                payToOpenMinAmountMsat = 10_000.msat,
                 payToOpenFeeSatoshis = finalPayload.amount.truncateToSatoshi() * payToOpenFeerate, // 10%
                 paymentHash = incomingPayment.paymentHash,
                 expireAt = Long.MAX_VALUE,

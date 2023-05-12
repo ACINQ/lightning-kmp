@@ -6,9 +6,9 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.PayToOpenEvents
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb

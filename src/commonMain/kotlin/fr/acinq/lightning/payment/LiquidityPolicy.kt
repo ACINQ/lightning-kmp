@@ -24,11 +24,11 @@ sealed class LiquidityPolicy {
 
     /** Make decision for a particular liquidity event */
     fun maybeReject(amount: MilliSatoshi, fee: MilliSatoshi, source: LiquidityEvents.Source, logger: MDCLogger): LiquidityEvents.Rejected? {
-        return when (this@LiquidityPolicy) {
+        return when (this) {
             is Disable -> LiquidityEvents.Rejected.Reason.PolicySetToDisabled
             is Auto -> {
                 val maxAllowedFee = maxFee(amount)
-                logger.info { "liquity policy check: fee=$fee maxAllowedFee=$maxAllowedFee policy=${this@LiquidityPolicy}" }
+                logger.info { "liquidity policy check: fee=$fee maxAllowedFee=$maxAllowedFee policy=$this" }
                 if (fee > maxAllowedFee) {
                     LiquidityEvents.Rejected.Reason.TooExpensive(maxAllowed = maxAllowedFee, actual = fee)
                 } else null
