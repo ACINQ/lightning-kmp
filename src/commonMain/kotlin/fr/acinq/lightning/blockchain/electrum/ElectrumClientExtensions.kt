@@ -16,6 +16,9 @@ suspend fun IElectrumClient.getConfirmations(txId: ByteVector32): Int? {
     return tx?.let { getConfirmations(tx) }
 }
 
+/**
+ *   @return the number of confirmations, zero if the transaction is in the mempool, null if the transaction is not found
+ */
 suspend fun IElectrumClient.getConfirmations(tx: Transaction): Int? {
     val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
     val scriptHashHistory = getScriptHashHistory(scriptHash)
