@@ -219,15 +219,13 @@ class PeerTest : LightningTestSuite() {
 
         val requestId = randomBytes32()
         val walletBob = createWallet(nodeParams.second.keyManager, 260_000.sat).second
-        val internalRequestBob = RequestChannelOpen(requestId, walletBob, 100, maxFeeFloor = 3_000.sat)
+        val internalRequestBob = RequestChannelOpen(requestId, walletBob)
         bob.send(internalRequestBob)
         val request = bob2alice.expect<PleaseOpenChannel>()
         assertEquals(request.localFundingAmount, 260_000.sat)
 
         val miningFee = 500.sat
-        val serviceFee = (internalRequestBob.maxFee - miningFee - 1.sat).toMilliSatoshi()
-        // total fee is below max acceptable
-        assertTrue(miningFee + serviceFee.truncateToSatoshi() < internalRequestBob.maxFee)
+        val serviceFee = 1_000.sat.toMilliSatoshi()
         val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
         val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         alice.send(openAlice)
@@ -279,13 +277,12 @@ class PeerTest : LightningTestSuite() {
 
         val requestId = randomBytes32()
         val walletBob = createWallet(nodeParams.second.keyManager, 260_000.sat).second
-        val internalRequestBob = RequestChannelOpen(requestId, walletBob, 100, maxFeeFloor = 3_000.sat)
+        val internalRequestBob = RequestChannelOpen(requestId, walletBob)
         bob.send(internalRequestBob)
         val request = bob2alice.expect<PleaseOpenChannel>()
         assertEquals(request.localFundingAmount, 260_000.sat)
         val fundingFee = 100.sat
-        val serviceFee = (internalRequestBob.maxFee - fundingFee + 1.sat).toMilliSatoshi()
-        assertTrue(fundingFee + serviceFee.truncateToSatoshi() > internalRequestBob.maxFee)
+        val serviceFee = request.localFundingAmount.toMilliSatoshi() * 0.02 // 2% fee is too high
         val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
         val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         alice.send(openAlice)

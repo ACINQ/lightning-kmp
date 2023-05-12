@@ -43,6 +43,8 @@ suspend fun <T> MDCLogger.withMDC(mdc: Map<String, Any>, f: suspend (MDCLogger) 
     return f(logger)
 }
 
+
+
 /**
  * Utility functions to build MDC for various objects without polluting main classes
  */

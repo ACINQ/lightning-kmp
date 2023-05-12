@@ -256,24 +256,6 @@ sealed class ClosingSignedTlv : Tlv {
 }
 
 sealed class PleaseOpenChannelTlv : Tlv {
-    data class MaxFees(val basisPoints: Int, val floor: Satoshi) : PleaseOpenChannelTlv() {
-        override val tag: Long get() = MaxFees.tag
-        override fun write(out: Output) {
-            LightningCodecs.writeU16(basisPoints, out)
-            LightningCodecs.writeU64(floor.toLong(), out)
-        }
-
-        companion object : TlvValueReader<MaxFees> {
-            const val tag: Long = 1
-            override fun read(input: Input): MaxFees =
-                MaxFees(
-                    basisPoints = LightningCodecs.u16(input),
-                    floor = LightningCodecs.u64(input).sat
-                )
-
-        }
-    }
-
     // NB: this is a temporary tlv that is only used to ensure a smooth migration to lightning-kmp for the android version of Phoenix.
     data class GrandParents(val outpoints: List<OutPoint>) : PleaseOpenChannelTlv() {
         override val tag: Long get() = GrandParents.tag
