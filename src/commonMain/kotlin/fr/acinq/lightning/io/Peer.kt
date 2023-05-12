@@ -591,7 +591,7 @@ class Peer(
                     }
 
                     action is ChannelAction.Storage.SetLocked -> {
-                        logger.info { "setting status confirmed for txid=${action.txId}" }
+                        logger.info { "setting status locked for txid=${action.txId}" }
                         db.payments.setLocked(action.txId)
                     }
 

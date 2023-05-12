@@ -256,7 +256,7 @@ data class WaitForFundingConfirmed(
                             add(ChannelAction.Storage.StoreState(nextState))
                         }
                         if (deferred != null) {
-                            logger.info { "funding_locked has already been received" }
+                            logger.info { "channel_ready has already been received" }
                             val (nextState1, actions2) = nextState.run { process(ChannelCommand.MessageReceived(deferred)) }
                             Pair(nextState1, actions + actions1 + actions2)
                         } else {
