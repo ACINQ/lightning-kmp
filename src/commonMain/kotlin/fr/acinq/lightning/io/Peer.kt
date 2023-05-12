@@ -702,11 +702,11 @@ class Peer(
                                     is RequestChannelOpen -> {
                                         val totalFee = origin.serviceFee + origin.miningFee.toMilliSatoshi() - msg.pushAmount
                                         nodeParams.liquidityPolicy.maybeReject(request.wallet.confirmedBalance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
-                                                logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
-                                                nodeParams._nodeEvents.emit(rejected)
-                                                sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
-                                                return@withMDC
-                                            }
+                                            logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
+                                            nodeParams._nodeEvents.emit(rejected)
+                                            sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
+                                            return@withMDC
+                                        }
                                         val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                         val fundingAmount = request.wallet.confirmedBalance - fundingFee
@@ -831,7 +831,7 @@ class Peer(
                             // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
                             // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
                             // payment rather that having the user wonder where their money went.
-val channelInitializing = _channels.isNotEmpty()
+                            val channelInitializing = _channels.isNotEmpty()
                                     && !_channels.values.any { it is Normal } // we don't have a channel that can be spliced
                                     && _channels.values.any { it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } // but we will have one soon
                             if (channelInitializing) {
@@ -881,10 +881,10 @@ val channelInitializing = _channels.isNotEmpty()
 
                         val feeEstimate = Transactions.weight2fee(feerate, 610 + cmd.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
                         nodeParams.liquidityPolicy.maybeReject(cmd.wallet.confirmedBalance.toMilliSatoshi(), feeEstimate.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
-                                logger.info { "rejecting splice: reason=${rejected.reason}" }
-                                nodeParams._nodeEvents.emit(rejected)
-                                return
-                            }
+                            logger.info { "rejecting splice: reason=${rejected.reason}" }
+                            nodeParams._nodeEvents.emit(rejected)
+                            return
+                        }
 
                         val spliceCommand = Command.Splice.Request(
                             replyTo = CompletableDeferred(),
