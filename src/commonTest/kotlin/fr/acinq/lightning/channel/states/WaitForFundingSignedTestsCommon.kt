@@ -38,6 +38,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             val (_, _) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
                 .also { (state, actions) ->
                     assertIs<WaitForFundingConfirmed>(state.state)
+                    assertEquals(actions.size, 5)
                     actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
                     actions.findWatch<WatchConfirmed>().also { assertEquals(WatchConfirmed(state.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), it) }
                     actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amount) }
@@ -61,6 +62,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             val (_, _) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
                 .also { (state, actions) ->
                     assertIs<WaitForChannelReady>(state.state)
+                    assertEquals(actions.size, 6)
                     actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
                     actions.hasOutgoingMessage<ChannelReady>().also { assertEquals(ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId), it.alias) }
                     actions.findWatch<WatchConfirmed>().also { assertEquals(state.commitments.latest.fundingTxId, it.txId) }
@@ -80,7 +82,12 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         assertEquals(actionsBob1.size, 5)
         assertFalse(actionsBob1.hasOutgoingMessage<TxSignatures>().channelData.isEmpty())
         actionsBob1.has<ChannelAction.Storage.StoreState>()
-        actionsBob1.has<ChannelAction.Storage.StoreIncomingPayment>()//(channelOrigin, setOf(), bob1.commitments.latest.fundingTxId, bob1.commitments.latest.fundingTxIndex))
+        actionsBob1.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also {
+            assertEquals(TestConstants.alicePushAmount, it.amount)
+            assertEquals(channelOrigin, it.origin)
+            assertEquals(bob1.commitments.latest.fundingTxId, it.txId)
+            assertTrue(it.localInputs.isEmpty())
+        }
         actionsBob1.hasWatch<WatchConfirmed>()
         actionsBob1.has<ChannelAction.EmitEvent>()
     }

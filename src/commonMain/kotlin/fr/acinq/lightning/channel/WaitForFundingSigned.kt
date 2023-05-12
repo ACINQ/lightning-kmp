@@ -113,7 +113,7 @@ data class WaitForFundingSigned(
                 ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel(
                     amount = action.commitment.localCommit.spec.toLocal,
                     serviceFee = channelOrigin?.serviceFee ?: 0.msat,
-                    miningFee = channelOrigin?.miningFee ?: 0.sat,
+                    miningFee = channelOrigin?.miningFee ?: action.fundingTx.sharedTx.tx.fees,
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
                     txId = action.fundingTx.txId,
                     origin = channelOrigin

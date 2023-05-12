@@ -368,6 +368,10 @@ data class SpliceOutgoingPayment(
     override val completedAt: Long? = confirmedAt
 }
 
+enum class ChannelClosingType {
+    Mutual, Local, Remote, Revoked, Other;
+}
+
 data class ChannelCloseOutgoingPayment(
     override val id: UUID,
     override val recipientAmount: Satoshi,
@@ -387,9 +391,6 @@ data class ChannelCloseOutgoingPayment(
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
-    enum class ChannelClosingType {
-        Mutual, Local, Remote, Revoked, Other;
-    }
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
