@@ -127,7 +127,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     override val completedAt: Long?
         get() = when {
             received == null -> null // payment has not yet been received
-            received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment && it.confirmedAt == null } -> null // payment has been received, but there is at least one unconfirmed on-chain part
+            received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment && it.lockedAt == null } -> null // payment has been received, but there is at least one unconfirmed on-chain part
             else -> received.receivedAt
         }
 
