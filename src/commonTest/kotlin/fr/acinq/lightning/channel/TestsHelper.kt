@@ -10,6 +10,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.WaitForChannelReadyTestsCommon
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
@@ -275,7 +276,7 @@ object TestsHelper {
         actions1.has<ChannelAction.Storage.StoreState>()
         actions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(commitTx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Local, it.closingType)
+            assertEquals(ChannelClosingType.Local, it.closingType)
         }
 
         val localCommitPublished = s1.state.localCommitPublished
@@ -324,7 +325,7 @@ object TestsHelper {
             if (channelBalance > 0.msat) {
                 actions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
                     assertEquals(rCommitTx.txid, it.txId)
-                    assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, it.closingType )
+                    assertEquals(ChannelClosingType.Remote, it.closingType )
                 }
             }
         }

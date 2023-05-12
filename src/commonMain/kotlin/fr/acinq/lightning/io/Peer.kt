@@ -64,6 +64,7 @@ data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : 
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash
 }
+
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
 sealed class PeerEvent
@@ -424,7 +425,8 @@ class Peer(
             amount = amount,
             description = description,
             expirySeconds = expirySeconds,
-            result = CompletableDeferred())
+            result = CompletableDeferred()
+        )
         command.result.await()
     }
 
@@ -531,13 +533,7 @@ class Peer(
                                         txId = action.txId,
                                         createdAt = currentTimestampMillis(),
                                         confirmedAt = null,
-                                        closingType = when (action.closingType) {
-                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Mutual -> ChannelCloseOutgoingPayment.ChannelClosingType.Mutual
-                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Local -> ChannelCloseOutgoingPayment.ChannelClosingType.Local
-                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote -> ChannelCloseOutgoingPayment.ChannelClosingType.Remote
-                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Revoked -> ChannelCloseOutgoingPayment.ChannelClosingType.Revoked
-                                            ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Other -> ChannelCloseOutgoingPayment.ChannelClosingType.Other
-                                        }
+                                        closingType = action.closingType
                                     )
                             }
                         )

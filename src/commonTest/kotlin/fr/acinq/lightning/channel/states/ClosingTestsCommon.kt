@@ -23,6 +23,7 @@ import fr.acinq.lightning.channel.TestsHelper.mutualCloseBob
 
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.TestsHelper.remoteClose
+import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Scripts
@@ -86,7 +87,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(mutualCloseTx, bob3.state.mutualClosePublished.last())
         bobActions3.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(mutualCloseTx.tx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Mutual, it.closingType)
+            assertEquals(ChannelClosingType.Mutual, it.closingType)
             assertTrue(it.isSentToDefaultAddress)
         }
 
@@ -124,7 +125,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         val mutualCloseTx = bob3.state.mutualClosePublished.last()
         bobActions3.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(mutualCloseTx.tx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Mutual, it.closingType)
+            assertEquals(ChannelClosingType.Mutual, it.closingType)
             assertFalse(it.isSentToDefaultAddress)
             assertEquals(bobBtcAddr, it.address)
         }
@@ -1135,7 +1136,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs + 2 anchors + 2 HTLCs
         bobActions2.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(bobCommitTx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Local, it.closingType)
+            assertEquals(ChannelClosingType.Local, it.closingType)
             assertTrue(it.isSentToDefaultAddress)
         }
 
@@ -1147,7 +1148,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertIs<Closing>(alice3.state)
         aliceActions3.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(bobCommitTx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Remote, it.closingType)
+            assertEquals(ChannelClosingType.Remote, it.closingType)
             assertTrue(it.isSentToDefaultAddress)
         }
         val futureRemoteCommitPublished = alice3.state.futureRemoteCommitPublished
@@ -1197,7 +1198,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         aliceActions1.has<ChannelAction.Storage.StoreState>()
         aliceActions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(bobRevokedTx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Revoked, it.closingType)
+            assertEquals(ChannelClosingType.Revoked, it.closingType)
             assertTrue(it.isSentToDefaultAddress)
         }
 
@@ -1291,7 +1292,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         aliceActions1.has<ChannelAction.Storage.StoreState>()
         aliceActions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(bobCommitTxs[0].commitTx.tx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Revoked, it.closingType)
+            assertEquals(ChannelClosingType.Revoked, it.closingType)
             assertTrue(it.isSentToDefaultAddress)
         }
         assertEquals(1, alice1.state.revokedCommitPublished.size)
@@ -1429,7 +1430,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         actions3.hasOutgoingMessage<Error>()
         actions3.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(bobRevokedTx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Revoked, it.closingType)
+            assertEquals(ChannelClosingType.Revoked, it.closingType)
             assertTrue(it.isSentToDefaultAddress)
         }
 
@@ -1466,7 +1467,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         aliceActions1.has<ChannelAction.Storage.StoreState>()
         aliceActions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(bobRevokedTx.commitTx.tx.txid, it.txId)
-            assertEquals(ChannelAction.Storage.StoreOutgoingPayment.ViaClose.Type.Revoked, it.closingType)
+            assertEquals(ChannelClosingType.Revoked, it.closingType)
             assertTrue(it.isSentToDefaultAddress)
         }
 
