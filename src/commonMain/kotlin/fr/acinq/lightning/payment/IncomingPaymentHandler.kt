@@ -408,6 +408,16 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         }
     }
 
+    /**
+     * If we are disconnected, the LSP will forget pending pay-to-open requests. We need to do the same otherwise we
+     * will accept outdated ones.
+     */
+    fun purgePayToOpenRequests() {
+        pending.replaceAll { _, payment -> payment.copy(parts = payment.parts.filter { it !is PayToOpenPart }.toSet()) }
+        val keysToRemove = pending.filterValues { it.parts.isEmpty() }.keys
+        pending.minusAssign(keysToRemove)
+    }
+
     companion object {
         /** Convert an incoming htlc to a payment part abstraction. Payment parts are then summed together to reach the full payment amount. */
         private fun toPaymentPart(privateKey: PrivateKey, htlc: UpdateAddHtlc): Either<ProcessAddResult.Rejected, HtlcPart> {

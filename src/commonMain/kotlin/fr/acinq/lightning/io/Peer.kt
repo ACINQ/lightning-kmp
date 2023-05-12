@@ -1004,6 +1004,7 @@ class Peer(
                     processActions(key, actions)
                     _channels = _channels + (key to state1)
                 }
+                incomingPaymentHandler.purgePayToOpenRequests()
             }
         }
     }
