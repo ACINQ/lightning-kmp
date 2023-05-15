@@ -713,26 +713,6 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode please-open-channel-rejected messages`() {
-        val testCases = listOf(
-            // @formatter:off
-            PleaseOpenChannelRejected(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), PleaseOpenChannelFailure.FeeInsufficient, TlvStream(PleaseOpenChannelRejectedTlv.ExpectedFees(1_578_000.msat))) to Hex.decode("8ca3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 00000001 0103181410"),
-            PleaseOpenChannelRejected(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), PleaseOpenChannelFailure.FeeInsufficient, TlvStream(PleaseOpenChannelRejectedTlv.ExpectedFees(3_000_000.msat))) to Hex.decode("8ca3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 00000001 01032dc6c0"),
-            PleaseOpenChannelRejected(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), PleaseOpenChannelFailure.Unknown(113)) to Hex.decode("8ca3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 00000071"),
-            PleaseOpenChannelRejected(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), PleaseOpenChannelFailure.Unknown(113), TlvStream(setOf(), setOf(GenericTlv(57, ByteVector("deadbeef"))))) to Hex.decode("8ca3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 00000071 3904deadbeef"),
-            // @formatter:on
-        )
-
-        testCases.forEach {
-            val decoded = LightningMessage.decode(it.second)
-            assertNotNull(decoded)
-            assertEquals(it.first, decoded)
-            val encoded = LightningMessage.encode(decoded)
-            assertArrayEquals(it.second, encoded)
-        }
-    }
-
-    @Test
     fun `encode - decode phoenix-android-legacy-info messages`() {
         val testCases = listOf(
             Pair(PhoenixAndroidLegacyInfo(hasChannels = true), Hex.decode("88cfff")),

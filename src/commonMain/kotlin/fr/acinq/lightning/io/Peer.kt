@@ -737,18 +737,6 @@ class Peer(
                             logger.error { "connection error: ${msg.toAscii()}" }
                         }
 
-                        msg is PleaseOpenChannelRejected -> {
-                            when (val request = channelRequests[msg.requestId]) {
-                                is RequestChannelOpen -> {
-                                    logger.error { "peer rejected channel with failure=${msg.failure} (request=$request)" }
-                                    nodeParams._nodeEvents.emit(SwapInEvents.Rejected(msg.requestId, msg.failure, msg.expectedFees))
-                                    channelRequests = channelRequests - msg.requestId
-                                }
-
-                                else -> {}
-                            }
-                        }
-
                         msg is OpenDualFundedChannel && theirInit == null -> {
                             logger.error { "they sent open_channel before init" }
                         }
