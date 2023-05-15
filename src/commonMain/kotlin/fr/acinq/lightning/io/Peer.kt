@@ -407,6 +407,10 @@ class Peer(
     /**
      * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
      * for a cpfp splice.
+     * @return The adjusted feerate to use in [spliceCpfp], such that the whole transaction chain has a feerate equivalent
+     *         to [targetFeerate].
+     *         NB: if the output feerate is equal to the input feerate then the cpfp is useless and
+     *         should not be attempted.
      */
     suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
         return channels.values
