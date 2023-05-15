@@ -123,7 +123,13 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
 
-    /** Returns the confirmed reception timestamp. If any on-chain parts have NOT yet confirmed, returns null. */
+    /**
+     * This timestamp will be defined when the payment is final and usable for spending:
+     * - for lightning payment it is instant.
+     * - for on-chain payments, the associated transaction doesn't necessarily need to be
+     *   confirmed (if zero-conf is used), but both sides have to agree that the funds are
+     *   usable, a.k.a. "locked".
+     */
     override val completedAt: Long?
         get() = when {
             received == null -> null // payment has not yet been received
