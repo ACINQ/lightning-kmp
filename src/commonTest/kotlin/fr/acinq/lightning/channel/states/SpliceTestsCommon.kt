@@ -45,6 +45,8 @@ class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `splice cpfp`() {
         val (alice, bob) = reachNormal()
+        spliceIn(alice, bob, listOf(50_000.sat))
+        spliceOut(alice, bob, 50_000.sat)
         spliceCpfp(alice, bob)
     }
 
