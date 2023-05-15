@@ -18,8 +18,7 @@ import fr.acinq.lightning.wire.UpdateAddHtlc
 import kotlin.test.*
 
 class CompatibilityTestsCommon {
-    @Ignore
-    @Test
+    //@Test
     fun `generate data`() {
         // generate test data
         val (alice, bob, fundingTx) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)

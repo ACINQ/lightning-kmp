@@ -436,6 +436,7 @@ object Serialization {
             is LocalFundingStatus.ConfirmedFundingTx -> {
                 write(0x01)
                 writeBtcObject(localFundingStatus.signedTx)
+                writeNumber(localFundingStatus.fee.toLong())
             }
         }
         when (remoteFundingStatus) {

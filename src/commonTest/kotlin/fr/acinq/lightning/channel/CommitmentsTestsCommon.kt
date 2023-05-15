@@ -513,7 +513,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     Commitment(
                         fundingTxIndex = 0,
                         remoteFundingPubkey = randomKey().publicKey(),
-                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
                         RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
@@ -558,7 +558,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     Commitment(
                         fundingTxIndex = 0,
                         remoteFundingPubkey = randomKey().publicKey(),
-                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx),
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
                         RemoteCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey()),

@@ -384,7 +384,8 @@ object Deserialization {
                 createdAt = readNumber()
             )
             0x01 -> LocalFundingStatus.ConfirmedFundingTx(
-                signedTx = readTransaction()
+                signedTx = readTransaction(),
+                fee = readNumber().sat
             )
             else -> error("unknown discriminator $discriminator for class ${LocalFundingStatus::class}")
         },

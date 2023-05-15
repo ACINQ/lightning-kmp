@@ -113,13 +113,15 @@ data class NextRemoteCommit(val sig: CommitSig, val commit: RemoteCommit)
 sealed class LocalFundingStatus {
     abstract val signedTx: Transaction?
     abstract val txId: ByteVector32
+    abstract val fee: Satoshi
 
     data class UnconfirmedFundingTx(val sharedTx: SignedSharedTransaction, val fundingParams: InteractiveTxParams, val createdAt: Long) : LocalFundingStatus() {
         override val signedTx: Transaction? = sharedTx.signedTx
         override val txId: ByteVector32 = sharedTx.localSigs.txId
+        override val fee: Satoshi = sharedTx.tx.fees
     }
 
-    data class ConfirmedFundingTx(override val signedTx: Transaction) : LocalFundingStatus() {
+    data class ConfirmedFundingTx(override val signedTx: Transaction, override val fee: Satoshi) : LocalFundingStatus() {
         override val txId: ByteVector32 = signedTx.txid
     }
 }
@@ -810,11 +812,29 @@ data class Commitments(
         }
     }
 
-    fun ChannelContext.updateLocalFundingStatus(fundingTxId: ByteVector32, status: LocalFundingStatus): Either<Commitments, Pair<Commitments, Commitment>> =
-        updateFundingStatus(fundingTxId) { c: Commitment, _: Long ->
-            if (c.fundingTxId == fundingTxId) {
-                logger.debug { "setting localFundingStatus=${status::class.simpleName} for fundingTxId=$fundingTxId" }
-                c.copy(localFundingStatus = status)
+    fun ChannelContext.updateLocalFundingSigned(fundingTx: FullySignedSharedTransaction): Either<Commitments, Pair<Commitments, Commitment>> =
+        updateFundingStatus(fundingTx.txId) { c: Commitment, _: Long ->
+            if (c.fundingTxId == fundingTx.txId) {
+                when (c.localFundingStatus) {
+                    is LocalFundingStatus.UnconfirmedFundingTx -> {
+                        logger.debug { "setting localFundingStatus fully signed for fundingTxId=${fundingTx.txId}" }
+                        c.copy(localFundingStatus = c.localFundingStatus.copy(sharedTx = fundingTx))
+                    }
+                    is LocalFundingStatus.ConfirmedFundingTx -> c
+                }
+            } else c
+        }
+
+    fun ChannelContext.updateLocalFundingConfirmed(fundingTx: Transaction): Either<Commitments, Pair<Commitments, Commitment>> =
+        updateFundingStatus(fundingTx.txid) { c: Commitment, _: Long ->
+            if (c.fundingTxId == fundingTx.txid) {
+                when (c.localFundingStatus) {
+                    is LocalFundingStatus.UnconfirmedFundingTx -> {
+                        logger.debug { "setting localFundingStatus confirmed for fundingTxId=${fundingTx.txid}" }
+                        c.copy(localFundingStatus = LocalFundingStatus.ConfirmedFundingTx(fundingTx, c.localFundingStatus.sharedTx.tx.fees))
+                    }
+                    is LocalFundingStatus.ConfirmedFundingTx -> c
+                }
             } else c
         }
 

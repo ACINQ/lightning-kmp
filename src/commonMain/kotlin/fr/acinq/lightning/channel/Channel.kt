@@ -137,12 +137,11 @@ sealed class ChannelAction {
         }
         /** Payment sent through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {
-            abstract val amount: Satoshi
             abstract val miningFees: Satoshi
-            abstract val address: String
             abstract val txId: ByteVector32
-            data class ViaSpliceOut(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
-            data class ViaClose(override val amount: Satoshi, override val miningFees: Satoshi, override val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
+            data class ViaSpliceOut(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
+            data class ViaSpliceCpfp(override val miningFees: Satoshi, override val txId: ByteVector32) : StoreOutgoingPayment()
+            data class ViaClose(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
         }
         data class SetLocked(val txId: ByteVector32) : Storage()
     }
@@ -409,9 +408,8 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
      */
     internal fun ChannelContext.acceptFundingTxConfirmed(w: WatchEventConfirmed): Either<Commitments, Triple<Commitments, Commitment, List<ChannelAction>>> {
         logger.info { "funding txid=${w.tx.txid} was confirmed at blockHeight=${w.blockHeight} txIndex=${w.txIndex}" }
-        val fundingStatus = LocalFundingStatus.ConfirmedFundingTx(w.tx)
         return commitments.run {
-            updateLocalFundingStatus(w.tx.txid, fundingStatus).map { (commitments1, commitment) ->
+            updateLocalFundingConfirmed(w.tx).map { (commitments1, commitment) ->
                 val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
                 val actions = buildList {
                     newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetLocked(it.fundingTxId)) }

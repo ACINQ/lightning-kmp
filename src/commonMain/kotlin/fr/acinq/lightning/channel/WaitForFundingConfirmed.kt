@@ -38,7 +38,7 @@ data class WaitForFundingConfirmed(
                         Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                     }
                     else -> {
-                        when (val res = commitments.run { updateLocalFundingStatus(fullySignedTx.signedTx.txid, latestFundingTx.copy(sharedTx = fullySignedTx)) }) {
+                        when (val res = commitments.run { updateLocalFundingSigned(fullySignedTx) }) {
                             is Either.Left -> Pair(this@WaitForFundingConfirmed, listOf())
                             is Either.Right -> {
                                 logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid}" }
@@ -256,7 +256,7 @@ data class WaitForFundingConfirmed(
                             add(ChannelAction.Storage.StoreState(nextState))
                         }
                         if (deferred != null) {
-                            logger.info { "funding_locked has already been received" }
+                            logger.info { "channel_ready has already been received" }
                             val (nextState1, actions2) = nextState.run { process(ChannelCommand.MessageReceived(deferred)) }
                             Pair(nextState1, actions + actions1 + actions2)
                         } else {

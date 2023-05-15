@@ -43,6 +43,14 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `splice cpfp`() {
+        val (alice, bob) = reachNormal()
+        spliceIn(alice, bob, listOf(50_000.sat))
+        spliceOut(alice, bob, 50_000.sat)
+        spliceCpfp(alice, bob)
+    }
+
+    @Test
     fun `reject splice_init`() {
         val cmd = createSpliceOutRequest(25_000.sat)
         val (alice, _) = reachNormal()
@@ -788,6 +796,41 @@ class SpliceTestsCommon : LightningTestSuite() {
             return exchangeSpliceSigs(alice4, commitSigAlice, bob4, commitSigBob)
         }
 
+        private fun spliceCpfp(alice: LNChannel<Normal>, bob: LNChannel<Normal>): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+            val parentCommitment = alice.commitments.active.first()
+            val cmd = Command.Splice.Request(
+                replyTo = CompletableDeferred(),
+                spliceIn = null,
+                spliceOut = null,
+                feerate = FeeratePerKw(253.sat)
+            )
+
+            // Negotiate a splice transaction with no contribution.
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(cmd))
+            val spliceInit = actionsAlice1.findOutgoingMessage<SpliceInit>()
+            // Alice's contribution is negative: that amount goes to on-chain fees.
+            assertTrue(spliceInit.fundingContribution < 0.sat)
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(spliceInit))
+            val spliceAck = actionsBob1.findOutgoingMessage<SpliceAck>()
+            assertEquals(spliceAck.fundingContribution, 0.sat)
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
+            // Alice adds one shared input and one shared output
+            val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxAddInput>()))
+            val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
+            val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice3.findOutgoingMessage<TxAddOutput>()))
+            val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(actionsBob3.findOutgoingMessage<TxComplete>()))
+            assertIs<LNChannel<Normal>>(alice4)
+            val commitSigAlice = actionsAlice4.findOutgoingMessage<CommitSig>()
+            actionsAlice4.has<ChannelAction.Storage.StoreState>()
+            val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(actionsAlice4.findOutgoingMessage<TxComplete>()))
+            assertIs<LNChannel<Normal>>(bob4)
+            val commitSigBob = actionsBob4.findOutgoingMessage<CommitSig>()
+            actionsBob4.has<ChannelAction.Storage.StoreState>()
+
+            checkCommandResponse(cmd.replyTo, parentCommitment, spliceInit)
+            return exchangeSpliceSigs(alice4, commitSigAlice, bob4, commitSigBob)
+        }
+
         private fun checkCommandResponse(replyTo: CompletableDeferred<Command.Splice.Response>, parentCommitment: Commitment, spliceInit: SpliceInit): ByteVector32 = runBlocking {
             val response = replyTo.await()
             assertIs<Command.Splice.Response.Created>(response)
@@ -812,9 +855,10 @@ class SpliceTestsCommon : LightningTestSuite() {
                 assertEquals(actionsBob1.hasOutgoingMessage<SpliceLocked>().fundingTxId, txSigsBob.txId)
             }
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(txSigsBob))
-            when {
-                alice1.staticParams.useZeroConf -> assertEquals(6, actionsAlice2.size)
-                else -> assertEquals(5, actionsAlice2.size)
+            if (alice1.staticParams.useZeroConf) {
+                actionsAlice2.hasOutgoingMessage<SpliceLocked>()
+            } else {
+                assertTrue { actionsAlice2.filterIsInstance<ChannelAction.Message.Send>().none { it.message is SpliceLocked } }
             }
             val txSigsAlice = actionsAlice2.findOutgoingMessage<TxSignatures>()
             assertEquals(actionsAlice2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.FundingTx).txid, txSigsAlice.txId)
@@ -824,7 +868,8 @@ class SpliceTestsCommon : LightningTestSuite() {
             assertIs<SpliceStatus.WaitingForSigs>(aliceSpliceStatus)
             when {
                 aliceSpliceStatus.session.fundingParams.localContribution > 0.sat -> actionsAlice2.has<ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn>()
-                aliceSpliceStatus.session.fundingParams.localContribution < 0.sat -> actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut>()
+                aliceSpliceStatus.session.fundingParams.localContribution < 0.sat && aliceSpliceStatus.session.fundingParams.localOutputs.isNotEmpty() -> actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut>()
+                aliceSpliceStatus.session.fundingParams.localContribution < 0.sat && aliceSpliceStatus.session.fundingParams.localOutputs.isEmpty() -> actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp>()
                 else -> {}
             }
             if (alice1.staticParams.useZeroConf) {

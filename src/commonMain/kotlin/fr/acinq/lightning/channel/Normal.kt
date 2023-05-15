@@ -539,7 +539,7 @@ data class Normal(
                                         Pair(this@Normal, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFundingSignature(channelId, cmd.message.txId).message))))
                                     }
                                     else -> {
-                                        when (val res = commitments.run { updateLocalFundingStatus(fullySignedTx.signedTx.txid, commitments.latest.localFundingStatus.copy(sharedTx = fullySignedTx)) }) {
+                                        when (val res = commitments.run { updateLocalFundingSigned(fullySignedTx) }) {
                                             is Either.Left -> Pair(this@Normal, listOf())
                                             is Either.Right -> {
                                                 logger.info { "received remote funding signatures, publishing txId=${fullySignedTx.signedTx.txid} fundingTxIndex=${commitments.latest.fundingTxIndex}" }
@@ -692,7 +692,7 @@ data class Normal(
                     origin = origin
                 )
             })
-            // If we initiated the splice and added some funds ourselves it's a swap-in
+            // If we added some funds ourselves it's a swap-in
             if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
                     amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.previousTx.txOut[i.previousTxOutput.toInt()].amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.fees.toMilliSatoshi(),
@@ -711,6 +711,13 @@ data class Normal(
                     txId = action.fundingTx.txId
                 )
             })
+            // If we initiated the splice but there are no new inputs or outputs, it's a cpfp
+            if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) add(
+                ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(
+                    miningFees = action.fundingTx.sharedTx.tx.fees,
+                    txId = action.fundingTx.txId
+                )
+            )
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }
                 val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId.reversed())

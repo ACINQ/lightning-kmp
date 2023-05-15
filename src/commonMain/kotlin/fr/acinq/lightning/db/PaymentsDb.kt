@@ -123,11 +123,17 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
 
-    /** Returns the confirmed reception timestamp. If any on-chain parts have NOT yet confirmed, returns null. */
+    /**
+     * This timestamp will be defined when the payment is final and usable for spending:
+     * - for lightning payment it is instant.
+     * - for on-chain payments, the associated transaction doesn't necessarily need to be
+     *   confirmed (if zero-conf is used), but both sides have to agree that the funds are
+     *   usable, a.k.a. "locked".
+     */
     override val completedAt: Long?
         get() = when {
             received == null -> null // payment has not yet been received
-            received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment && it.confirmedAt == null } -> null // payment has been received, but there is at least one unconfirmed on-chain part
+            received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment && it.lockedAt == null } -> null // payment has been received, but there is at least one unconfirmed on-chain part
             else -> received.receivedAt
         }
 
@@ -344,26 +350,40 @@ data class LightningOutgoingPayment(
 
 sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract override val id: UUID
-    abstract val recipientAmount: Satoshi
-    abstract val address: String
     abstract val miningFees: Satoshi
     abstract val channelId: ByteVector32
     abstract val txId: ByteVector32
     abstract override val createdAt: Long
     abstract val confirmedAt: Long?
+    abstract val lockedAt: Long?
 }
 
 data class SpliceOutgoingPayment(
     override val id: UUID,
-    override val recipientAmount: Satoshi,
-    override val address: String,
+    val recipientAmount: Satoshi,
+    val address: String,
     override val miningFees: Satoshi,
     override val channelId: ByteVector32,
     override val txId: ByteVector32,
     override val createdAt: Long,
-    override val confirmedAt: Long?
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val completedAt: Long? = confirmedAt
+}
+
+data class SpliceCpfpOutgoingPayment(
+    override val id: UUID,
+    override val miningFees: Satoshi,
+    override val channelId: ByteVector32,
+    override val txId: ByteVector32,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?,
+) : OnChainOutgoingPayment() {
+    override val amount: MilliSatoshi = miningFees.toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
 }
@@ -374,8 +394,8 @@ enum class ChannelClosingType {
 
 data class ChannelCloseOutgoingPayment(
     override val id: UUID,
-    override val recipientAmount: Satoshi,
-    override val address: String,
+    val recipientAmount: Satoshi,
+    val address: String,
     // The closingAddress may have been supplied by the user during a mutual close initiated by the user.
     // But in all other cases, the funds are sent to the default Phoenix address derived from the wallet seed.
     // So `isSentToDefaultAddress` means this default Phoenix address was used,
@@ -386,6 +406,7 @@ data class ChannelCloseOutgoingPayment(
     override val txId: ByteVector32,
     override val createdAt: Long,
     override val confirmedAt: Long?,
+    override val lockedAt: Long?,
     val closingType: ChannelClosingType
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()

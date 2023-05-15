@@ -102,7 +102,7 @@ private sealed interface WalletCommand {
  */
 class ElectrumMiniWallet(
     val chainHash: ByteVector32,
-    private val client: ElectrumClient,
+    private val client: IElectrumClient,
     private val scope: CoroutineScope,
     loggerFactory: LoggerFactory,
     private val name: String = ""

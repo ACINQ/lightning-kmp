@@ -391,11 +391,43 @@ class Peer(
     }
 
     /**
+     * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
+     * for a splice out, taking into account potential unconfirmed parent splices.
+     */
+    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .firstOrNull { it.commitments.availableBalanceForSend() > amount }
+            ?.let { channel ->
+                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
+                watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+            }
+    }
+
+    /**
+     * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
+     * for a cpfp splice.
+     * @return The adjusted feerate to use in [spliceCpfp], such that the whole transaction chain has a feerate equivalent
+     *         to [targetFeerate].
+     *         NB: if the output feerate is equal to the input feerate then the cpfp is useless and
+     *         should not be attempted.
+     */
+    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .find { it.channelId == channelId }
+            ?.let { channel ->
+                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
+                watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+            }
+    }
+
+    /**
      * Do a splice out using any suitable channel
      * @return  [Command.Splice.Companion.Result] if a splice was attempted, or {null} if no suitable
      *          channel was found
      */
-    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Command.Splice.Response? {
+    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw): Command.Splice.Response? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
@@ -404,7 +436,24 @@ class Peer(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
                     spliceOut = Command.Splice.Request.SpliceOut(amount, scriptPubKey),
-                    feerate = feeratePerKw
+                    feerate = feerate
+                )
+                send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
+                spliceCommand.replyTo.await()
+            }
+    }
+
+    suspend fun spliceCpfp(channelId: ByteVector32, feerate: FeeratePerKw): Command.Splice.Response? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .find { it.channelId == channelId }
+            ?.let { channel ->
+                val spliceCommand = Command.Splice.Request(
+                    replyTo = CompletableDeferred(),
+                    // no additional inputs or outputs, the splice is only meant to bump fees
+                    spliceIn = null,
+                    spliceOut = null,
+                    feerate = feerate
                 )
                 send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
                 spliceCommand.replyTo.await()
@@ -501,7 +550,7 @@ class Peer(
                     }
 
                     action is ChannelAction.Storage.StoreOutgoingPayment -> {
-                        logger.info { "storing outgoing amount=${action.amount} address=${action.address}" }
+                        logger.info { "storing $action" }
                         db.payments.addOutgoingPayment(
                             when (action) {
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
@@ -513,7 +562,18 @@ class Peer(
                                         channelId = channelId,
                                         txId = action.txId,
                                         createdAt = currentTimestampMillis(),
-                                        confirmedAt = null
+                                        confirmedAt = null,
+                                        lockedAt = null
+                                    )
+                                is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp ->
+                                    SpliceCpfpOutgoingPayment(
+                                        id = UUID.randomUUID(),
+                                        miningFees = action.miningFees,
+                                        channelId = channelId,
+                                        txId = action.txId,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null,
+                                        lockedAt = null
                                     )
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
                                     ChannelCloseOutgoingPayment(
@@ -526,6 +586,7 @@ class Peer(
                                         txId = action.txId,
                                         createdAt = currentTimestampMillis(),
                                         confirmedAt = null,
+                                        lockedAt = currentTimestampMillis(), // channel close are not splices, they are final
                                         closingType = action.closingType
                                     )
                             }
@@ -534,7 +595,7 @@ class Peer(
                     }
 
                     action is ChannelAction.Storage.SetLocked -> {
-                        logger.info { "setting status confirmed for txid=${action.txId}" }
+                        logger.info { "setting status locked for txid=${action.txId}" }
                         db.payments.setLocked(action.txId)
                     }
 
@@ -876,11 +937,13 @@ class Peer(
                 val balance = cmd.wallet.confirmedBalance
                 when (val channel = channels.values.firstOrNull { it is Normal }) {
                     is ChannelStateWithCommitments -> {
-                        val feerate = onChainFeeratesFlow.filterNotNull().first().fundingFeerate
-                        logger.info { "requesting splice-in using confirmed balance=$balance feerate=$feerate" }
+                        val targetFeerate = onChainFeeratesFlow.filterNotNull().first().fundingFeerate
+                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.wallet.confirmedUtxos, localOutputs = emptyList())
+                        val (feerate, fee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
-                        val feeEstimate = Transactions.weight2fee(feerate, 610 + cmd.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
-                        nodeParams.liquidityPolicy.maybeReject(cmd.wallet.confirmedBalance.toMilliSatoshi(), feeEstimate.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
+                        logger.info { "requesting splice-in using confirmed balance=$balance feerate=$feerate fee=$fee" }
+
+                        nodeParams.liquidityPolicy.maybeReject(cmd.wallet.confirmedBalance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
                             logger.info { "rejecting splice: reason=${rejected.reason}" }
                             nodeParams._nodeEvents.emit(rejected)
                             return
