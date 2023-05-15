@@ -81,7 +81,6 @@ interface LightningMessage {
                 UnsetFCMToken.type -> UnsetFCMToken
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
-                PleaseOpenChannelRejected.type -> PleaseOpenChannelRejected.read(stream)
                 SpliceInit.type -> SpliceInit.read(stream)
                 SpliceAck.type -> SpliceAck.read(stream)
                 SpliceLocked.type -> SpliceLocked.read(stream)
@@ -1677,49 +1676,6 @@ data class PleaseOpenChannel(
             LightningCodecs.u64(input).sat,
             LightningCodecs.u16(input),
             LightningCodecs.u32(input),
-            TlvStreamSerializer(false, readers).read(input)
-        )
-    }
-}
-
-sealed class PleaseOpenChannelFailure {
-    abstract val code: Int
-
-    // @formatter:off
-    object FeeInsufficient : PleaseOpenChannelFailure() { override val code: Int get() = 1 }
-    data class Unknown(override val code: Int) : PleaseOpenChannelFailure()
-    // @formatter:on
-}
-
-data class PleaseOpenChannelRejected(
-    val requestId: ByteVector32,
-    val failure: PleaseOpenChannelFailure,
-    val tlvs: TlvStream<PleaseOpenChannelRejectedTlv> = TlvStream.empty()
-) : LightningMessage {
-    val expectedFees: MilliSatoshi? = tlvs.get<PleaseOpenChannelRejectedTlv.ExpectedFees>()?.fees
-
-    override val type: Long get() = PleaseOpenChannelRejected.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(requestId.toByteArray(), out)
-        LightningCodecs.writeU32(failure.code, out)
-        TlvStreamSerializer(false, readers).write(tlvs, out)
-    }
-
-    companion object : LightningMessageReader<PleaseOpenChannelRejected> {
-        const val type: Long = 36003
-
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(
-            PleaseOpenChannelRejectedTlv.ExpectedFees.tag to PleaseOpenChannelRejectedTlv.ExpectedFees.Companion as TlvValueReader<PleaseOpenChannelRejectedTlv>,
-        )
-
-        override fun read(input: Input): PleaseOpenChannelRejected = PleaseOpenChannelRejected(
-            LightningCodecs.bytes(input, 32).toByteVector32(),
-            when (val failureCode = LightningCodecs.u32(input)) {
-                PleaseOpenChannelFailure.FeeInsufficient.code -> PleaseOpenChannelFailure.FeeInsufficient
-                else -> PleaseOpenChannelFailure.Unknown(failureCode)
-            },
             TlvStreamSerializer(false, readers).read(input)
         )
     }
