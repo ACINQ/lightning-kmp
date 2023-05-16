@@ -40,13 +40,15 @@ suspend fun IElectrumClient.computeSpliceCpfpFeerate(commitments: Commitments, t
         }
     val totalWeight = parentsWeight + spliceWeight
     val totalFees = Transactions.weight2fee(targetFeerate, totalWeight)
-    val actualFee = totalFees - parentsFees
-    val minFeerate = Transactions.fee2rate(actualFee, spliceWeight)
+    val projectedFee = totalFees - parentsFees
+    val projectedFeerate = Transactions.fee2rate(projectedFee, spliceWeight)
     // if ancestors have a higher feerate than target, min feerate could be negative
-    val actualFeerate = maxOf(minFeerate, targetFeerate)
+    val actualFeerate = maxOf(projectedFeerate, targetFeerate)
+    val actualFee = Transactions.weight2fee(actualFeerate, spliceWeight)
     logger.info { "targetFeerate=$targetFeerate spliceWeight=$spliceWeight" }
     logger.info { "parentsWeight=$parentsWeight parentsFees=$parentsFees" }
     logger.info { "totalWeight=$totalWeight totalFees=$totalFees" }
-    logger.info { "minFeerate=$minFeerate actualFeerate=$actualFeerate" }
+    logger.info { "projectedFeerate=$projectedFeerate projectedFee=$projectedFee" }
+    logger.info { "actualFeerate=$actualFeerate actualFee=$actualFee" }
     return Pair(actualFeerate, actualFee)
 }
