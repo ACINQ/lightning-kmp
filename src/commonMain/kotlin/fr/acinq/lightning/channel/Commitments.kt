@@ -292,7 +292,15 @@ data class Commitment(
         // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
         // which may result in a lower commit tx fee; this is why we take the max of the two.
         val missingForSender = reduced.toRemote - localChannelReserve(params).toMilliSatoshi() - (if (params.localParams.isInitiator) fees.toMilliSatoshi().coerceAtLeast(initiatorFeeBuffer) else 0.msat)
-        val missingForReceiver = reduced.toLocal - remoteChannelReserve(params).toMilliSatoshi() - (if (params.localParams.isInitiator) 0.msat else fees.toMilliSatoshi())
+        // According to BOLT 2, we should also subtract the channel reserve from the calculation below.
+        // But this creates issues with splicing in the following scenario:
+        //  - Alice opened a channel to Bob, and her balance is slightly above the reserve
+        //  - Bob splices some funds in, which increases the size of the reserve since it is set to 1% by default
+        //  - Alice is now below her reserve, so Bob is unable to send her any HTLC
+        //  - The liquidity is mostly on Bob's side, but since he's unable to send HTLCs the channel is stuck
+        // We instead only check that the channel initiator is able to pay the fees for the commit tx.
+        // We are sending an outgoing HTLC, so once it's fulfilled it will increase their balance which is good for the channel reserve.
+        val missingForReceiver = reduced.toLocal - (if (params.localParams.isInitiator) 0.msat else fees.toMilliSatoshi())
         if (missingForSender < 0.msat) {
             val actualFees = if (params.localParams.isInitiator) fees else 0.sat
             return Either.Left(InsufficientFunds(params.channelId, amount, -missingForSender.truncateToSatoshi(), localChannelReserve(params), actualFees))
@@ -300,7 +308,7 @@ data class Commitment(
             if (params.localParams.isInitiator) {
                 // receiver is not the initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
             } else {
-                return Either.Left(RemoteCannotAffordFeesForNewHtlc(params.channelId, amount = amount, missing = -missingForReceiver.truncateToSatoshi(), reserve = localChannelReserve(params), fees = fees))
+                return Either.Left(RemoteCannotAffordFeesForNewHtlc(params.channelId, amount = amount, missing = -missingForReceiver.truncateToSatoshi(), fees = fees))
             }
         }
 
@@ -333,7 +341,8 @@ data class Commitment(
         // NB: we don't enforce the initiatorFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
         // We could enforce it once we're confident a large portion of the network implements it.
         val missingForSender = reduced.toRemote - remoteChannelReserve(params).toMilliSatoshi() - (if (params.localParams.isInitiator) 0.sat else fees).toMilliSatoshi()
-        val missingForReceiver = reduced.toLocal - localChannelReserve(params).toMilliSatoshi() - (if (params.localParams.isInitiator) fees else 0.sat).toMilliSatoshi()
+        // We diverge from Bolt 2 and don't subtract the channel reserve: see `canSendAdd` for details.
+        val missingForReceiver = reduced.toLocal - (if (params.localParams.isInitiator) fees else 0.sat).toMilliSatoshi()
         if (missingForSender < 0.sat) {
             val actualFees = if (params.localParams.isInitiator) 0.sat else fees
             return Either.Left(InsufficientFunds(params.channelId, amount, -missingForSender.truncateToSatoshi(), remoteChannelReserve(params), actualFees))

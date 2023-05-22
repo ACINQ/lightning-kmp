@@ -22,6 +22,7 @@ import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.transactions.Transactions.commitTxFeeMsat
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.transactions.incomings
 import fr.acinq.lightning.transactions.outgoings
@@ -200,25 +201,40 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ChannelCommand_Htlc_Add -- HTLC dips into remote initiator fee reserve`() {
+    fun `recv ChannelCommand_Htlc_Add -- commit tx fee greater than remote initiator balance`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(774_660_000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
         assertEquals(0.msat, alice2.state.commitments.availableBalanceForSend())
 
-        tailrec fun loop(bob: LNChannel<ChannelState>, count: Int): LNChannel<ChannelState> = if (count == 0) bob else {
-            val (newBob, actions1) = bob.process(defaultAdd.copy(amount = 16_000_000.msat))
-            actions1.hasOutgoingMessage<UpdateAddHtlc>()
-            loop(newBob, count - 1)
+        tailrec fun addHtlcs(alice: LNChannel<Normal>, bob: LNChannel<Normal>, count: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+            if (count == 0) return Pair(alice, bob)
+            val (newBob, actionsBob) = bob.process(defaultAdd.copy(amount = 8_000_000.msat))
+            assertIs<LNChannel<Normal>>(newBob)
+            val add = actionsBob.findOutgoingMessage<UpdateAddHtlc>()
+            val (newAlice, actionsAlice) = alice.process(ChannelCommand.MessageReceived(add))
+            assertIs<LNChannel<Normal>>(newAlice)
+            assertTrue(actionsAlice.isEmpty())
+            return addHtlcs(newAlice, newBob, count - 1)
         }
 
-        // actual test begins
-        // at this point alice has the minimal amount to sustain a channel
-        // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first HTLCs should be allowed
-        val bob3 = loop(bob2, 9)
-        // but this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more
-        val (_, actionsBob4) = bob3.process(defaultAdd.copy(amount = 12_500_000.msat))
-        actionsBob4.findCommandError<RemoteCannotAffordFeesForNewHtlc>()
+        // Add a bunch of HTLCs, which increases the commit tx fee that Alice has to pay and consume almost all of her balance.
+        val (alice3, bob3) = addHtlcs(alice2, bob2, 21)
+        run {
+            // We can sign those HTLCs and make Alice drop below her reserve.
+            val (_, alice4) = crossSign(bob3, alice3)
+            val aliceCommit = alice4.commitments.active.first().localCommit
+            assertTrue(aliceCommit.publishableTxs.commitTx.tx.txOut.all { txOut -> txOut.amount > 0.sat })
+            val aliceBalance = aliceCommit.spec.toLocal - commitTxFeeMsat(alice4.commitments.params.localParams.dustLimit, aliceCommit.spec)
+            assertTrue(aliceBalance >= 0.msat)
+            assertTrue(aliceBalance < alice4.commitments.latest.localChannelReserve)
+        }
+        run {
+            // If we try adding one more HTLC, Alice won't be able to pay the commit tx fee.
+            // We must wait for the previous HTLCs to settle before sending any more.
+            val (_, actionsBob4) = bob3.process(defaultAdd.copy(amount = 8_000_000.msat))
+            actionsBob4.findCommandError<RemoteCannotAffordFeesForNewHtlc>()
+        }
     }
 
     @Test
