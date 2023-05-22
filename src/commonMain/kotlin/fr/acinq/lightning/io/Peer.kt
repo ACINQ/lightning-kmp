@@ -749,16 +749,19 @@ class Peer(
                             val (wallet, fundingAmount, pushAmount) = when (val origin = msg.origin) {
                                 is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
+                                        val amount = request.wallet.confirmedBalance
                                         val totalFee = origin.serviceFee + origin.miningFee.toMilliSatoshi() - msg.pushAmount
-                                        nodeParams.liquidityPolicy.maybeReject(request.wallet.confirmedBalance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
+                                        val source = LiquidityEvents.Source.OnChainWallet
+                                        nodeParams.liquidityPolicy.maybeReject(amount.toMilliSatoshi(), totalFee, source, logger)?.let { rejected ->
                                             logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
                                             nodeParams._nodeEvents.emit(rejected)
                                             sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
                                             return@withMDC
                                         }
+                                        nodeParams._nodeEvents.emit(LiquidityEvents.Accepted(amount.toMilliSatoshi(), totalFee, source))
                                         val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
-                                        val fundingAmount = request.wallet.confirmedBalance - fundingFee
+                                        val fundingAmount = amount - fundingFee
                                         // We pay the other fees by pushing the corresponding amount
                                         val pushAmount = origin.serviceFee + origin.miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi()
                                         nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, miningFee = origin.miningFee))
@@ -931,11 +934,14 @@ class Peer(
 
                         logger.info { "requesting splice-in using confirmed balance=$balance feerate=$feerate fee=$fee" }
 
-                        nodeParams.liquidityPolicy.maybeReject(cmd.wallet.confirmedBalance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
+                        val amount = cmd.wallet.confirmedBalance.toMilliSatoshi()
+                        val source = LiquidityEvents.Source.OnChainWallet
+                        nodeParams.liquidityPolicy.maybeReject(amount, fee.toMilliSatoshi(), source, logger)?.let { rejected ->
                             logger.info { "rejecting splice: reason=${rejected.reason}" }
                             nodeParams._nodeEvents.emit(rejected)
                             return
                         }
+                        nodeParams._nodeEvents.emit(LiquidityEvents.Accepted(amount, fee.toMilliSatoshi(), source))
 
                         val spliceCommand = Command.Splice.Request(
                             replyTo = CompletableDeferred(),
