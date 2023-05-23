@@ -12,6 +12,7 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.kodein.log.LoggerFactory
@@ -96,6 +97,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
  * @param enableTrampolinePayment enable trampoline payments.
+ * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
  */
 data class NodeParams(
     val loggerFactory: LoggerFactory,
@@ -133,7 +135,7 @@ data class NodeParams(
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
     val enableTrampolinePayment: Boolean,
-    val liquidityPolicy: LiquidityPolicy
+    val liquidityPolicy: MutableStateFlow<LiquidityPolicy>
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
@@ -214,7 +216,7 @@ data class NodeParams(
         enableTrampolinePayment = true,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
-        liquidityPolicy = LiquidityPolicy.Auto(maxAbsoluteFee = 1_500.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */)
+        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 1_500.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */))
     )
 
     sealed class Chain(val name: String, private val genesis: Block) {

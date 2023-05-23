@@ -17,7 +17,7 @@ sealed class LiquidityPolicy {
      * @param maxAbsoluteFee max absolute fee
      * @param maxRelativeFeeBasisPoints max relative fee (all included: service fee and mining fee) (1_000 bips = 10 %)
      */
-    data class Auto(val maxAbsoluteFee: Satoshi, val maxRelativeFeeBasisPoints: Int, ) : LiquidityPolicy() {
+    data class Auto(val maxAbsoluteFee: Satoshi, val maxRelativeFeeBasisPoints: Int) : LiquidityPolicy() {
         /** Maximum fee that we are willing to pay for a particular amount */
         fun maxFee(amount: MilliSatoshi) = maxAbsoluteFee.toMilliSatoshi().min(amount * maxRelativeFeeBasisPoints / 10_000)
     }
