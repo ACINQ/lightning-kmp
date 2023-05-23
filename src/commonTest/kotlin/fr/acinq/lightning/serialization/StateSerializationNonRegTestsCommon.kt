@@ -1,6 +1,7 @@
 package fr.acinq.lightning.serialization
 
 import fr.acinq.lightning.json.JsonSerializers
+import fr.acinq.lightning.utils.value
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.encodeToString
 import org.kodein.memory.file.*
@@ -23,7 +24,7 @@ class StateSerializationNonRegTestsCommon {
             .forEach { path ->
                 val bin = path.resolve("data.bin").openReadableFile().run { readString(sizeBytes = remaining) }
                 val ref = path.resolve("data.json").openReadableFile().run { readString(sizeBytes = remaining) }
-                val state = Serialization.deserialize(Hex.decode(bin))
+                val state = Serialization.deserialize(Hex.decode(bin)).value
                 val json = JsonSerializers.json.encodeToString(state)
                 val tmpFile = path.resolve("actual.json")
                 if (debug) {
@@ -38,7 +39,7 @@ class StateSerializationNonRegTestsCommon {
                     tmpFile.delete()
                 }
                 // we also make sure that serialization round-trip is identity
-                assertEquals(state, Serialization.deserialize(Serialization.serialize(state)), path.toString())
+                assertEquals(state, Serialization.deserialize(Serialization.serialize(state)).value, path.toString())
             }
     }
 

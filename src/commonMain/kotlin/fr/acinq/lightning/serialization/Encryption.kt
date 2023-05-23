@@ -44,12 +44,11 @@ object Encryption {
     /**
      * Convenience method that decrypts and deserializes a [PersistedChannelState] from an [EncryptedChannelData]
      */
-    fun PersistedChannelState.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): PersistedChannelState {
+    fun PersistedChannelState.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): Result<Serialization.DeserializationResult> {
         // we first assume that channel data is prefixed by 2 bytes of serialization meta-info
-        val decrypted = runTrying { decrypt(key.value, encryptedChannelData.data.drop(2).toByteArray()) }
-            .recoverWith { runTrying { decrypt(key.value, encryptedChannelData.data.toByteArray()) } }
-            .get()
-        return Serialization.deserialize(decrypted)
+        return runCatching { decrypt(key.value, encryptedChannelData.data.drop(2).toByteArray()) }
+            .recoverCatching { decrypt(key.value, encryptedChannelData.data.toByteArray()) }
+            .map { Serialization.deserialize(it) }
     }
 
 }

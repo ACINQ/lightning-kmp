@@ -124,7 +124,7 @@ data class LNChannel<out S : ChannelState>(
         }
 
         val serialized = Serialization.serialize(state)
-        val deserialized = Serialization.deserialize(serialized)
+        val deserialized = Serialization.deserialize(serialized).value
 
         assertEquals(removeRbfAttempt(state), deserialized, "serialization error")
     }
