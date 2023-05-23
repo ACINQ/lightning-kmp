@@ -38,3 +38,6 @@ sealed interface LiquidityEvents : NodeEvents {
 
     data class ApprovalRequested(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val replyTo: CompletableDeferred<Boolean>) : LiquidityEvents
 }
+
+/** This will be emitted in a corner case where the user restores a wallet on an older version of the app, which is unable to read the channel data. */
+object UpgradeRequired : NodeEvents

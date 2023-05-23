@@ -823,6 +823,7 @@ class Peer(
                                     // In this corner case, we do not want to return an error to the peer, because they will force-close and we will be unable to
                                     // do anything as we can't read the data. Best thing is to not answer, and tell the user to upgrade the app.
                                     logger.error { "need to upgrade your app!" }
+                                    nodeParams._nodeEvents.emit(UpgradeRequired)
                                 }
                                 local == null && backup == null -> {
                                     logger.warning { "peer sent a reestablish for a unknown channel with no or undecipherable backup" }
