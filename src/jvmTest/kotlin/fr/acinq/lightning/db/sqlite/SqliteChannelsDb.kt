@@ -5,6 +5,7 @@ import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.channel.PersistedChannelState
 import fr.acinq.lightning.db.ChannelsDb
 import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.utils.value
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.sql.Connection
@@ -91,7 +92,7 @@ class SqliteChannelsDb(val sqlite: Connection) : ChannelsDb {
                 val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
                 val result = ArrayList<PersistedChannelState>()
                 while (rs.next()) {
-                    result.add(Serialization.deserialize(rs.getBytes("data")))
+                    result.add(Serialization.deserialize(rs.getBytes("data")).value)
                 }
                 result
             }
