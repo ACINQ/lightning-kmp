@@ -4,6 +4,7 @@ import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.CMD_FORCECLOSE
+import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.PleasePublishYourCommitment
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.ChannelReady

@@ -4,6 +4,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.CloseCommand
 import fr.acinq.lightning.channel.Helpers
 import fr.acinq.lightning.channel.LocalFundingStatus

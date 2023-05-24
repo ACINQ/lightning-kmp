@@ -10,7 +10,7 @@ import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.fsm.ChannelAction
+import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.fsm.ChannelCommand
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb

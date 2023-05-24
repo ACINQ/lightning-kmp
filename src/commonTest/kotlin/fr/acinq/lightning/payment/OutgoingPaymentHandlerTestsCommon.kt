@@ -9,7 +9,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.fsm.ChannelAction
+import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.fsm.ChannelCommand
 import fr.acinq.lightning.channel.fsm.Normal
 import fr.acinq.lightning.channel.fsm.Offline

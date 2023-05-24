@@ -7,7 +7,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.fsm.ChannelAction
+import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.fsm.ChannelCommand
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb

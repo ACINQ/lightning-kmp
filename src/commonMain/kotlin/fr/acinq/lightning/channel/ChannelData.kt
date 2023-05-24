@@ -8,7 +8,6 @@ import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.Helpers.publishIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
-import fr.acinq.lightning.channel.fsm.ChannelAction
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*

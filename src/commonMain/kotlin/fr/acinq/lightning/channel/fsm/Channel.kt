@@ -15,7 +15,6 @@ import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.serialization.Encryption.from
-import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -62,127 +61,6 @@ sealed class ChannelCommand {
     data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : ChannelCommand()
     object Disconnected : ChannelCommand()
     data class Connected(val localInit: Init, val remoteInit: Init) : ChannelCommand()
-    // @formatter:on
-}
-
-/** Channel Actions (outputs produced by the state machine). */
-sealed class ChannelAction {
-    // @formatter:off
-    data class ProcessLocalError(val error: Throwable, val trigger: ChannelCommand) : ChannelAction()
-
-    sealed class Message : ChannelAction() {
-        data class Send(val message: LightningMessage) : Message()
-        data class SendToSelf(val command: Command) : Message()
-    }
-
-    sealed class ChannelId : ChannelAction() {
-        data class IdAssigned(val remoteNodeId: PublicKey, val temporaryChannelId: ByteVector32, val channelId: ByteVector32) : ChannelId()
-    }
-
-    sealed class Blockchain : ChannelAction() {
-        data class SendWatch(val watch: Watch) : Blockchain()
-        data class PublishTx(val tx: Transaction, val txType: Type) : Blockchain() {
-            // region txType
-            enum class Type {
-                FundingTx,
-                CommitTx,
-                HtlcSuccessTx,
-                HtlcTimeoutTx,
-                ClaimHtlcSuccessTx,
-                ClaimHtlcTimeoutTx,
-                ClaimLocalAnchorOutputTx,
-                ClaimRemoteAnchorOutputTx,
-                ClaimLocalDelayedOutputTx,
-                ClaimRemoteDelayedOutputTx,
-                MainPenaltyTx,
-                HtlcPenaltyTx,
-                ClaimHtlcDelayedOutputPenaltyTx,
-                ClosingTx,
-            }
-
-            constructor(txinfo: Transactions.TransactionWithInputInfo) : this(
-                tx = txinfo.tx,
-                txType = when (txinfo) {
-                    is CommitTx -> Type.CommitTx
-                    is HtlcTx.HtlcSuccessTx -> Type.HtlcSuccessTx
-                    is HtlcTx.HtlcTimeoutTx -> Type.HtlcTimeoutTx
-                    is ClaimHtlcTx.ClaimHtlcSuccessTx -> Type.ClaimHtlcSuccessTx
-                    is ClaimHtlcTx.ClaimHtlcTimeoutTx -> Type.ClaimHtlcTimeoutTx
-                    is ClaimAnchorOutputTx.ClaimLocalAnchorOutputTx -> Type.ClaimLocalAnchorOutputTx
-                    is ClaimAnchorOutputTx.ClaimRemoteAnchorOutputTx -> Type.ClaimRemoteAnchorOutputTx
-                    is ClaimLocalDelayedOutputTx -> Type.ClaimLocalDelayedOutputTx
-                    is ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx -> Type.ClaimRemoteDelayedOutputTx
-                    is MainPenaltyTx -> Type.MainPenaltyTx
-                    is HtlcPenaltyTx -> Type.HtlcPenaltyTx
-                    is ClaimHtlcDelayedOutputPenaltyTx -> Type.ClaimHtlcDelayedOutputPenaltyTx
-                    is ClosingTx -> Type.ClosingTx
-                    is SpliceTx -> Type.FundingTx
-                }
-            )
-            // endregion
-        }
-    }
-
-    sealed class Storage : ChannelAction() {
-        data class StoreState(val data: PersistedChannelState) : Storage()
-        data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
-        data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
-        data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
-        /** Payment received through on-chain operations (channel creation or splice-in) */
-        sealed class StoreIncomingPayment : Storage() {
-            abstract val origin: Origin?
-            abstract val txId: ByteVector32
-            abstract val localInputs: Set<OutPoint>
-            data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin?) : StoreIncomingPayment()
-            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
-        }
-        /** Payment sent through on-chain operations (channel close or splice-out) */
-        sealed class StoreOutgoingPayment : Storage() {
-            abstract val miningFees: Satoshi
-            abstract val txId: ByteVector32
-            data class ViaSpliceOut(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
-            data class ViaSpliceCpfp(override val miningFees: Satoshi, override val txId: ByteVector32) : StoreOutgoingPayment()
-            data class ViaClose(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
-        }
-        data class SetLocked(val txId: ByteVector32) : Storage()
-    }
-
-    data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()
-
-    /**
-     * Process the result of executing a given command.
-     * [[CMD_ADD_HTLC]] has a special treatment: there are two response patterns for this command:
-     *  - either [[ProcessCmdRes.AddFailed]] immediately
-     *  - or [[ProcessCmdRes.AddSettledFail]] / [[ProcessCmdRes.AddSettledFulfill]] (usually a while later)
-     */
-    sealed class ProcessCmdRes : ChannelAction() {
-        data class NotExecuted(val cmd: Command, val t: ChannelException) : ProcessCmdRes()
-        data class AddSettledFulfill(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: HtlcResult.Fulfill) : ProcessCmdRes()
-        data class AddSettledFail(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: HtlcResult.Fail) : ProcessCmdRes()
-        data class AddFailed(val cmd: CMD_ADD_HTLC, val error: ChannelException, val channelUpdate: ChannelUpdate?) : ProcessCmdRes() {
-            override fun toString() = "cannot add htlc with paymentId=${cmd.paymentId} reason=${error.message}"
-        }
-    }
-
-    sealed class HtlcResult {
-        sealed class Fulfill : HtlcResult() {
-            abstract val paymentPreimage: ByteVector32
-
-            data class OnChainFulfill(override val paymentPreimage: ByteVector32) : Fulfill()
-            data class RemoteFulfill(val fulfill: UpdateFulfillHtlc) : Fulfill() {
-                override val paymentPreimage = fulfill.paymentPreimage
-            }
-        }
-
-        sealed class Fail : HtlcResult() {
-            data class RemoteFail(val fail: UpdateFailHtlc) : Fail()
-            data class RemoteFailMalformed(val fail: UpdateFailMalformedHtlc) : Fail()
-            data class OnChainFail(val cause: ChannelException) : Fail()
-            object Disconnected : Fail()
-        }
-    }
-
-    data class EmitEvent(val event: ChannelEvents) : ChannelAction()
     // @formatter:on
 }
 
