@@ -4,6 +4,9 @@ import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.fsm.ChannelCommand
+import fr.acinq.lightning.channel.fsm.Normal
+import fr.acinq.lightning.channel.fsm.PersistedChannelState
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.value

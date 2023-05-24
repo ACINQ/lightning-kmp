@@ -4,10 +4,12 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
-import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
+import fr.acinq.lightning.channel.fsm.Channel
+import fr.acinq.lightning.channel.fsm.ChannelAction
+import fr.acinq.lightning.channel.fsm.ChannelContext
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForRevocation
 import fr.acinq.lightning.crypto.KeyManager

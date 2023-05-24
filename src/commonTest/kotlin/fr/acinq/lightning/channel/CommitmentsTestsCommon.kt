@@ -17,6 +17,8 @@ import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
 
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
+import fr.acinq.lightning.channel.fsm.ChannelCommand
+import fr.acinq.lightning.channel.fsm.Closing
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite

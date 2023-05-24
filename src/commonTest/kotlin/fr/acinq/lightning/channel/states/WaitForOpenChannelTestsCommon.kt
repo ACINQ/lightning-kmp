@@ -3,16 +3,12 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.*
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.TestsHelper.createWallet
+import fr.acinq.lightning.channel.fsm.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

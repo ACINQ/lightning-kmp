@@ -1,4 +1,6 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.fsm
+
+import fr.acinq.lightning.channel.Commitments
 
 /**
  * Channel is closed i.t its funding tx has been spent and the spending transactions have been confirmed, it can be forgotten

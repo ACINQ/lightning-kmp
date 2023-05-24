@@ -1,8 +1,10 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.fsm
 
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.channel.CMD_FORCECLOSE
+import fr.acinq.lightning.channel.PleasePublishYourCommitment
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReadyTlv

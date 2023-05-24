@@ -6,7 +6,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.ChannelAction.Blockchain.PublishTx.Type
+import fr.acinq.lightning.channel.fsm.ChannelAction.Blockchain.PublishTx.Type
 import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcTimeoutTxs
@@ -17,6 +17,7 @@ import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.makeCmdAdd
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.TestsHelper.signAndRevack
+import fr.acinq.lightning.channel.fsm.*
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.serialization.Encryption.from

@@ -1,8 +1,9 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.fsm
 
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.Either

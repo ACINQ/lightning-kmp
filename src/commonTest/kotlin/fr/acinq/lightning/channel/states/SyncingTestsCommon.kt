@@ -1,6 +1,5 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
@@ -9,6 +8,7 @@ import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
 
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
+import fr.acinq.lightning.channel.fsm.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat

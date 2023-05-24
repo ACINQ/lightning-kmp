@@ -11,6 +11,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.fulfillHtlc
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
+import fr.acinq.lightning.channel.fsm.*
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat

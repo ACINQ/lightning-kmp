@@ -1,9 +1,10 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.fsm
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
+import fr.acinq.lightning.channel.fsm.PersistedChannelState
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -75,7 +76,7 @@ object Serialization {
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    fun deserialize(bin: ByteArray): fr.acinq.lightning.channel.PersistedChannelState {
+    fun deserialize(bin: ByteArray): PersistedChannelState {
         val input = ByteArrayInput(bin)
         val decoder = DataInputDecoder(input)
         val versioned = decoder.decodeSerializableValue(SerializedData.serializer())

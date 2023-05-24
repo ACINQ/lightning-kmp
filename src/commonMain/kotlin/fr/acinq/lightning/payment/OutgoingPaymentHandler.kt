@@ -3,6 +3,10 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.*
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.fsm.Channel
+import fr.acinq.lightning.channel.fsm.ChannelAction
+import fr.acinq.lightning.channel.fsm.ChannelCommand
+import fr.acinq.lightning.channel.fsm.ChannelState
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.SharedSecrets
 import fr.acinq.lightning.db.HopDesc

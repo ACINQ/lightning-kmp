@@ -11,7 +11,7 @@ import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.channel.Channel
+import fr.acinq.lightning.channel.fsm.Channel
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop

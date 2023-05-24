@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
+import fr.acinq.lightning.channel.fsm.PersistedChannelState
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -73,7 +74,7 @@ object Serialization {
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    fun deserialize(bin: ByteArray): fr.acinq.lightning.channel.PersistedChannelState {
+    fun deserialize(bin: ByteArray): PersistedChannelState {
         val input = ByteArrayInput(bin)
         val decoder = DataInputDecoder(input)
         val versioned = decoder.decodeSerializableValue(SerializedData.serializer())
@@ -87,7 +88,7 @@ object Serialization {
         }
     }
 
-    fun decrypt(key: ByteVector32, data: ByteArray): fr.acinq.lightning.channel.PersistedChannelState {
+    fun decrypt(key: ByteVector32, data: ByteArray): PersistedChannelState {
         // nonce is 12B, tag is 16B
         val ciphertext = data.dropLast(12 + 16)
         val nonce = data.takeLast(12 + 16).take(12)
@@ -96,8 +97,8 @@ object Serialization {
         return deserialize(plaintext)
     }
 
-    fun decrypt(key: PrivateKey, data: ByteArray): fr.acinq.lightning.channel.PersistedChannelState = decrypt(key.value, data)
-    fun decrypt(key: PrivateKey, backup: EncryptedChannelData): fr.acinq.lightning.channel.PersistedChannelState = decrypt(key, backup.data.toByteArray())
+    fun decrypt(key: PrivateKey, data: ByteArray): PersistedChannelState = decrypt(key.value, data)
+    fun decrypt(key: PrivateKey, backup: EncryptedChannelData): PersistedChannelState = decrypt(key, backup.data.toByteArray())
 
     @OptIn(ExperimentalSerializationApi::class)
     @ExperimentalSerializationApi

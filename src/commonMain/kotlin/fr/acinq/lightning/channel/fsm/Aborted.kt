@@ -1,4 +1,4 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.fsm
 
 /**
  * Channel has been aborted before it was funded (because we did not receive a FundingCreated or FundingSigned message for example)

@@ -2,9 +2,9 @@ package fr.acinq.lightning
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.lightning.channel.ChannelStateWithCommitments
-import fr.acinq.lightning.channel.Normal
-import fr.acinq.lightning.channel.WaitForFundingCreated
+import fr.acinq.lightning.channel.fsm.ChannelStateWithCommitments
+import fr.acinq.lightning.channel.fsm.Normal
+import fr.acinq.lightning.channel.fsm.WaitForFundingCreated
 import fr.acinq.lightning.wire.PleaseOpenChannel
 import kotlinx.coroutines.CompletableDeferred
 

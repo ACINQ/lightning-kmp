@@ -1,4 +1,4 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.fsm
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
@@ -6,6 +6,7 @@ import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitMainOutput
 import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
