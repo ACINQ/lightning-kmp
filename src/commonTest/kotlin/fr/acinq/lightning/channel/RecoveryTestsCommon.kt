@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.fsm.ChannelCommand
 
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants

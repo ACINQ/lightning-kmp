@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.fsm
 
 import fr.acinq.lightning.channel.ChannelAction
+import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.Commitments
 
 /**

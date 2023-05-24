@@ -8,7 +8,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.ChannelAction
-import fr.acinq.lightning.channel.fsm.ChannelCommand
+import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
