@@ -11,7 +11,6 @@ import fr.acinq.lightning.channel.TestsHelper.makeCmdAdd
 import fr.acinq.lightning.channel.TestsHelper.mutualCloseAlice
 import fr.acinq.lightning.channel.TestsHelper.mutualCloseBob
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
-import fr.acinq.lightning.channel.fsm.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat

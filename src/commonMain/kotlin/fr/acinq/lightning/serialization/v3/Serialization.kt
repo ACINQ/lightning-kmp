@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
-import fr.acinq.lightning.channel.fsm.PersistedChannelState
+import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable

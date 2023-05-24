@@ -1,7 +1,7 @@
 package fr.acinq.lightning.serialization
 
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.lightning.channel.fsm.PersistedChannelState
+import fr.acinq.lightning.channel.states.PersistedChannelState
 
 object Serialization {
 

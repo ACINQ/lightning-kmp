@@ -5,7 +5,7 @@ import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.Watch
-import fr.acinq.lightning.channel.fsm.PersistedChannelState
+import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.UUID

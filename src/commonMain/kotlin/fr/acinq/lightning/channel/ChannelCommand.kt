@@ -9,8 +9,8 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.fsm.ClosingFeerates
-import fr.acinq.lightning.channel.fsm.PersistedChannelState
+import fr.acinq.lightning.channel.states.ClosingFeerates
+import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat

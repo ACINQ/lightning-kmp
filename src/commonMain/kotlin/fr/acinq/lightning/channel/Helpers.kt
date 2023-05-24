@@ -17,9 +17,9 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.inputsAlreadySpent
-import fr.acinq.lightning.channel.fsm.Channel
-import fr.acinq.lightning.channel.fsm.ClosingFeerates
-import fr.acinq.lightning.channel.fsm.ClosingFees
+import fr.acinq.lightning.channel.states.Channel
+import fr.acinq.lightning.channel.states.ClosingFeerates
+import fr.acinq.lightning.channel.states.ClosingFees
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForRevocation
 import fr.acinq.lightning.crypto.KeyManager

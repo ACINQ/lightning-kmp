@@ -1,4 +1,4 @@
-package fr.acinq.lightning.channel.fsm
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*

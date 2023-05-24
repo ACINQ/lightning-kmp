@@ -1,4 +1,4 @@
-package fr.acinq.lightning.channel.fsm
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId

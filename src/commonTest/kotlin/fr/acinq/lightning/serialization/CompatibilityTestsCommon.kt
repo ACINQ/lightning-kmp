@@ -8,9 +8,9 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.ChannelCommand
-import fr.acinq.lightning.channel.fsm.Normal
-import fr.acinq.lightning.channel.fsm.WaitForChannelReady
-import fr.acinq.lightning.channel.fsm.WaitForFundingConfirmed
+import fr.acinq.lightning.channel.states.Normal
+import fr.acinq.lightning.channel.states.WaitForChannelReady
+import fr.acinq.lightning.channel.states.WaitForFundingConfirmed
 import fr.acinq.lightning.channel.states.WaitForFundingConfirmedTestsCommon
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.TestConstants

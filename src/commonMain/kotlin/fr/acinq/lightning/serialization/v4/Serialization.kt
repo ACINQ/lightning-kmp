@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.fsm.*
+import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.Either

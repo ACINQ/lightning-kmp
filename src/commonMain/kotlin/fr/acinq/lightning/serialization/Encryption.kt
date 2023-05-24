@@ -3,7 +3,7 @@ package fr.acinq.lightning.serialization
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.channel.fsm.PersistedChannelState
+import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.EncryptedChannelData

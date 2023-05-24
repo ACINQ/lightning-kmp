@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
-import fr.acinq.lightning.channel.fsm.PersistedChannelState
+import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.ExperimentalSerializationApi

@@ -11,8 +11,8 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
-import fr.acinq.lightning.channel.fsm.Normal
-import fr.acinq.lightning.channel.fsm.Offline
+import fr.acinq.lightning.channel.states.Normal
+import fr.acinq.lightning.channel.states.Offline
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb

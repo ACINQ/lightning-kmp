@@ -43,12 +43,12 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.InteractiveTxOutput
 import fr.acinq.lightning.channel.SpliceStatus
-import fr.acinq.lightning.channel.fsm.*
-import fr.acinq.lightning.channel.fsm.Closed
-import fr.acinq.lightning.channel.fsm.Negotiating
-import fr.acinq.lightning.channel.fsm.Normal
-import fr.acinq.lightning.channel.fsm.ShuttingDown
-import fr.acinq.lightning.channel.fsm.WaitForRemotePublishFutureCommitment
+import fr.acinq.lightning.channel.states.*
+import fr.acinq.lightning.channel.states.Closed
+import fr.acinq.lightning.channel.states.Negotiating
+import fr.acinq.lightning.channel.states.Normal
+import fr.acinq.lightning.channel.states.ShuttingDown
+import fr.acinq.lightning.channel.states.WaitForRemotePublishFutureCommitment
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
@@ -572,7 +572,7 @@ internal data class Closing(
     val futureRemoteCommitPublished: RemoteCommitPublished? = null,
     val revokedCommitPublished: List<RevokedCommitPublished> = emptyList()
 ) : ChannelStateWithCommitments() {
-    override fun export() = fr.acinq.lightning.channel.fsm.Closing(
+    override fun export() = fr.acinq.lightning.channel.states.Closing(
         commitments.export(),
         waitingSinceBlock,
         mutualCloseProposed,
