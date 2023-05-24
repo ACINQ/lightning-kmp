@@ -50,29 +50,29 @@ class CompatibilityTestsCommon {
         val bin2 = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob2.state)
         println("normal: ${bin2.data}")
 
-        val add1 = CMD_ADD_HTLC(
+        val add1 = ChannelCommand.Htlc.Add(
             10_000.msat,
             Lightning.randomBytes32(),
             CltvExpiryDelta(144).toCltvExpiry(TestConstants.defaultBlockHeight.toLong()),
             TestConstants.emptyOnionPacket,
             UUID.randomUUID()
         )
-        val add2 = CMD_ADD_HTLC(
+        val add2 = ChannelCommand.Htlc.Add(
             10_000.msat,
             Lightning.randomBytes32(),
             CltvExpiryDelta(144).toCltvExpiry(TestConstants.defaultBlockHeight.toLong()),
             TestConstants.emptyOnionPacket,
             UUID.randomUUID()
         )
-        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.ExecuteCommand(add1))
-        val (_, actionsAlice4) = alice3.process(ChannelCommand.ExecuteCommand(add2))
+        val (alice3, actionsAlice3) = alice2.process(add1)
+        val (_, actionsAlice4) = alice3.process(add2)
         val htlc1 = actionsAlice3.findOutgoingMessage<UpdateAddHtlc>()
         val htlc2 = actionsAlice4.findOutgoingMessage<UpdateAddHtlc>()
 
         val (bob3, _) = bob2.process(ChannelCommand.MessageReceived(htlc1))
         val (bob4, _) = bob3.process(ChannelCommand.MessageReceived(htlc2))
-        val (bob5, _) = bob4.process(ChannelCommand.ExecuteCommand(add1))
-        val (bob6, _) = bob5.process(ChannelCommand.ExecuteCommand(add2))
+        val (bob5, _) = bob4.process(add1)
+        val (bob6, _) = bob5.process(add2)
 
         assertIs<LNChannel<Normal>>(bob6)
 

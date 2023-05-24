@@ -266,7 +266,7 @@ data class WaitForFundingConfirmed(
                     }
                 }
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_BUMP_FUNDING_FEE -> when {
+            cmd is ChannelCommand.BumpFundingFee -> when {
                 !latestFundingTx.fundingParams.isInitiator -> {
                     logger.warning { "cannot initiate rbf, we're not the initiator" }
                     Pair(this@WaitForFundingConfirmed, listOf())
@@ -276,16 +276,16 @@ data class WaitForFundingConfirmed(
                     Pair(this@WaitForFundingConfirmed, listOf())
                 }
                 else -> {
-                    logger.info { "initiating rbf (current feerate = ${latestFundingTx.fundingParams.targetFeerate}, next feerate = ${cmd.command.targetFeerate})" }
-                    val txInitRbf = TxInitRbf(channelId, cmd.command.lockTime, cmd.command.targetFeerate, cmd.command.fundingAmount)
-                    Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfRequested(cmd.command)), listOf(ChannelAction.Message.Send(txInitRbf)))
+                    logger.info { "initiating rbf (current feerate = ${latestFundingTx.fundingParams.targetFeerate}, next feerate = ${cmd.targetFeerate})" }
+                    val txInitRbf = TxInitRbf(channelId, cmd.lockTime, cmd.targetFeerate, cmd.fundingAmount)
+                    Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfRequested(cmd)), listOf(ChannelAction.Message.Send(txInitRbf)))
                 }
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_CLOSE -> Pair(
+            cmd is ChannelCommand.Close.MutualClose -> Pair(
                 this@WaitForFundingConfirmed,
-                listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString())))
+                listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString())))
             )
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
+            cmd is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingConfirmed, listOf())
             cmd is ChannelCommand.Disconnected -> {
                 val rbfStatus1 = when (rbfStatus) {

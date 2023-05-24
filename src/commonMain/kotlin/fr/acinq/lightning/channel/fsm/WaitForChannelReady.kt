@@ -93,11 +93,8 @@ data class WaitForChannelReady(
                 is WatchEventConfirmed -> updateFundingTxStatus(cmd.watch)
                 is WatchEventSpent -> handlePotentialForceClose(cmd.watch)
             }
-            cmd is ChannelCommand.ExecuteCommand -> when (cmd.command) {
-                is CMD_CLOSE -> Pair(this@WaitForChannelReady, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
-                else -> unhandled(cmd)
-            }
+            cmd is ChannelCommand.Close.MutualClose -> Pair(this@WaitForChannelReady, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))
+            cmd is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForChannelReady, listOf())
             cmd is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForChannelReady), listOf())
             else -> unhandled(cmd)

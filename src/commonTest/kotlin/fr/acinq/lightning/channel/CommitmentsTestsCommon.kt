@@ -95,7 +95,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc4.availableBalanceForSend(), b)
         assertEquals(bc4.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage)
+        val cmdFulfill = ChannelCommand.Htlc.Settlement.Fulfill(0, payment_preimage)
         val (bc5, fulfill) = bc4.sendFulfill(cmdFulfill).right!!
         assertEquals(bc5.availableBalanceForSend(), b + p) // as soon as we have the fulfill, the balance increases
         assertEquals(bc5.availableBalanceForReceive(), a - p - htlcOutputFee)
@@ -184,7 +184,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc4.availableBalanceForSend(), b)
         assertEquals(bc4.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val cmdFail = CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(p, 42)))
+        val cmdFail = ChannelCommand.Htlc.Settlement.Fail(0, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(p, 42)))
         val (bc5, fail) = bc4.sendFail(cmdFail, bob.staticParams.nodeParams.nodePrivateKey).right!!
         assertEquals(bc5.availableBalanceForSend(), b)
         assertEquals(bc5.availableBalanceForReceive(), a - p - htlcOutputFee)
@@ -306,17 +306,17 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac8.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
         assertEquals(ac8.availableBalanceForReceive(), b - p3)
 
-        val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1)
+        val cmdFulfill1 = ChannelCommand.Htlc.Settlement.Fulfill(0, payment_preimage1)
         val (bc8, fulfill1) = bc7.sendFulfill(cmdFulfill1).right!!
         assertEquals(bc8.availableBalanceForSend(), b + p1 - p3) // as soon as we have the fulfill, the balance increases
         assertEquals(bc8.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-        val cmdFail2 = CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(p2, 42)))
+        val cmdFail2 = ChannelCommand.Htlc.Settlement.Fail(1, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(p2, 42)))
         val (bc9, fail2) = bc8.sendFail(cmdFail2, bob.staticParams.nodeParams.nodePrivateKey).right!!
         assertEquals(bc9.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc9.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
-        val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3)
+        val cmdFulfill3 = ChannelCommand.Htlc.Settlement.Fulfill(0, payment_preimage3)
         val (ac9, fulfill3) = ac8.sendFulfill(cmdFulfill3).right!!
         assertEquals(ac9.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
         assertEquals(ac9.availableBalanceForReceive(), b - p3)
@@ -381,7 +381,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(c1.availableBalanceForSend(), 0.msat)
 
         // We should be able to handle a fee increase.
-        val (c2, _) = c1.sendFee(CMD_UPDATE_FEE(FeeratePerKw(3000.sat))).right!!
+        val (c2, _) = c1.sendFee(ChannelCommand.UpdateFee(FeeratePerKw(3000.sat))).right!!
 
         // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
         val (_, cmdAdd1) = TestsHelper.makeCmdAdd(100.msat, randomKey().publicKey(), currentBlockHeight)
@@ -420,7 +420,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             // We have two identical HTLCs (MPP):
             val (nodes1, _, htlcAlice1a) = TestsHelper.addHtlc(50_000_000.msat, payer = alice0, payee = bob0)
             val (alice1, bob1) = nodes1
-            val cmdAddAlice = CMD_ADD_HTLC(htlcAlice1a.amountMsat, htlcAlice1a.paymentHash, htlcAlice1a.cltvExpiry, htlcAlice1a.onionRoutingPacket, UUID.randomUUID())
+            val cmdAddAlice = ChannelCommand.Htlc.Add(htlcAlice1a.amountMsat, htlcAlice1a.paymentHash, htlcAlice1a.cltvExpiry, htlcAlice1a.onionRoutingPacket, UUID.randomUUID())
             val (alice2, bob2, htlcAlice1b) = TestsHelper.addHtlc(cmdAddAlice, alice1, bob1)
             val (nodes3, preimageAlice2, htlcAlice2) = TestsHelper.addHtlc(60_000_000.msat, payer = alice2, payee = bob2)
             val (alice3, bob3) = nodes3
@@ -428,16 +428,16 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             // We have two identical HTLCs (MPP):
             val (nodes5, _, htlcBob1a) = TestsHelper.addHtlc(15_000_000.msat, payer = bob4, payee = alice4)
             val (bob5, alice5) = nodes5
-            val cmdAddBob = CMD_ADD_HTLC(htlcBob1a.amountMsat, htlcBob1a.paymentHash, htlcBob1a.cltvExpiry, htlcBob1a.onionRoutingPacket, UUID.randomUUID())
+            val cmdAddBob = ChannelCommand.Htlc.Add(htlcBob1a.amountMsat, htlcBob1a.paymentHash, htlcBob1a.cltvExpiry, htlcBob1a.onionRoutingPacket, UUID.randomUUID())
             val (bob6, alice6, htlcBob1b) = TestsHelper.addHtlc(cmdAddBob, bob5, alice5)
             val (nodes7, preimageBob2, htlcBob2) = TestsHelper.addHtlc(20_000_000.msat, payer = bob6, payee = alice6)
             val (bob7, alice7) = nodes7
             val (bob8, alice8) = TestsHelper.crossSign(bob7, alice7)
             // Alice and Bob both know the preimage for only one of the two HTLCs they received.
-            val (alice9, _) = alice8.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcBob2.id, preimageBob2)))
-            val (bob9, _) = bob8.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice2.id, preimageAlice2)))
+            val (alice9, _) = alice8.process(ChannelCommand.Htlc.Settlement.Fulfill(htlcBob2.id, preimageBob2))
+            val (bob9, _) = bob8.process(ChannelCommand.Htlc.Settlement.Fulfill(htlcAlice2.id, preimageAlice2))
             // Alice publishes her commitment.
-            val (aliceClosing, _) = alice9.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+            val (aliceClosing, _) = alice9.process(ChannelCommand.Close.ForceClose)
             assertIs<LNChannel<Closing>>(aliceClosing)
             val lcp = aliceClosing.state.localCommitPublished
             assertNotNull(lcp)

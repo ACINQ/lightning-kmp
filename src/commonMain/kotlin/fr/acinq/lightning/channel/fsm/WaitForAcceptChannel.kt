@@ -100,7 +100,7 @@ data class WaitForAcceptChannel(
                 logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
+            cmd is ChannelCommand.Close -> Pair(Aborted, listOf())
             else -> unhandled(cmd)
         }
     }

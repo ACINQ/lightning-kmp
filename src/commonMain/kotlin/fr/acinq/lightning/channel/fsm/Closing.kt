@@ -1,8 +1,10 @@
 package fr.acinq.lightning.channel.fsm
 
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
 import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
@@ -12,10 +14,24 @@ import fr.acinq.lightning.channel.Helpers.Closing.extractPreimages
 import fr.acinq.lightning.channel.Helpers.Closing.onChainOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.Either
+import fr.acinq.lightning.utils.getValue
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
+
+data class ClosingFees(val preferred: Satoshi, val min: Satoshi, val max: Satoshi) {
+    constructor(preferred: Satoshi) : this(preferred, preferred, preferred)
+}
+
+data class ClosingFeerates(val preferred: FeeratePerKw, val min: FeeratePerKw, val max: FeeratePerKw) {
+    fun computeFees(closingTxWeight: Int): ClosingFees = ClosingFees(Transactions.weight2fee(preferred, closingTxWeight), Transactions.weight2fee(min, closingTxWeight), Transactions.weight2fee(max, closingTxWeight))
+
+    companion object {
+        operator fun invoke(preferred: FeeratePerKw): ClosingFeerates = ClosingFeerates(preferred, preferred / 2, preferred * 2)
+    }
+}
 
 sealed class ClosingType
 data class MutualClose(val tx: ClosingTx) : ClosingType()
@@ -312,48 +328,45 @@ data class Closing(
                 }
                 else -> unhandled(cmd)
             }
-            is ChannelCommand.ExecuteCommand -> when (cmd.command) {
-                is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
-                is CMD_ADD_HTLC -> {
-                    logger.info { "rejecting htlc request in state=${this::class}" }
-                    // we don't provide a channel_update: this will be a permanent channel failure
-                    handleCommandError(cmd.command, ChannelUnavailable(channelId))
-                }
-                is CMD_FULFILL_HTLC -> when (val result = commitments.sendFulfill(cmd.command)) {
-                    is Either.Right -> {
-                        logger.info { "got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
-                        val commitments1 = result.value.first
-                        val localCommitPublished1 = localCommitPublished?.let {
-                            claimCurrentLocalCommitTxOutputs(channelKeys(), commitments1.latest, it.commitTx, currentOnChainFeerates)
-                        }
-                        val remoteCommitPublished1 = remoteCommitPublished?.let {
-                            claimRemoteCommitTxOutputs(channelKeys(), commitments1.latest, commitments1.latest.remoteCommit, it.commitTx, currentOnChainFeerates)
-                        }
-                        val nextRemoteCommitPublished1 = nextRemoteCommitPublished?.let {
-                            val remoteCommit = commitments1.latest.nextRemoteCommit?.commit ?: error("next remote commit must be defined")
-                            claimRemoteCommitTxOutputs(channelKeys(), commitments1.latest, remoteCommit, it.commitTx, currentOnChainFeerates)
-                        }
-                        val republishList = buildList {
-                            val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()
-                            localCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
-                            remoteCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
-                            nextRemoteCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
-                        }
-                        val nextState = copy(
-                            commitments = commitments1,
-                            localCommitPublished = localCommitPublished1,
-                            remoteCommitPublished = remoteCommitPublished1,
-                            nextRemoteCommitPublished = nextRemoteCommitPublished1
-                        )
-                        val actions = buildList {
-                            add(ChannelAction.Storage.StoreState(nextState))
-                            addAll(republishList)
-                        }
-                        Pair(nextState, actions)
+            is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
+            is ChannelCommand.Htlc.Add -> {
+                logger.info { "rejecting htlc request in state=${this::class}" }
+                // we don't provide a channel_update: this will be a permanent channel failure
+                handleCommandError(cmd, ChannelUnavailable(channelId))
+            }
+            is ChannelCommand.Htlc.Settlement.Fulfill -> when (val result = commitments.sendFulfill(cmd)) {
+                is Either.Right -> {
+                    logger.info { "got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
+                    val commitments1 = result.value.first
+                    val localCommitPublished1 = localCommitPublished?.let {
+                        claimCurrentLocalCommitTxOutputs(channelKeys(), commitments1.latest, it.commitTx, currentOnChainFeerates)
                     }
-                    is Either.Left -> handleCommandError(cmd.command, result.value)
+                    val remoteCommitPublished1 = remoteCommitPublished?.let {
+                        claimRemoteCommitTxOutputs(channelKeys(), commitments1.latest, commitments1.latest.remoteCommit, it.commitTx, currentOnChainFeerates)
+                    }
+                    val nextRemoteCommitPublished1 = nextRemoteCommitPublished?.let {
+                        val remoteCommit = commitments1.latest.nextRemoteCommit?.commit ?: error("next remote commit must be defined")
+                        claimRemoteCommitTxOutputs(channelKeys(), commitments1.latest, remoteCommit, it.commitTx, currentOnChainFeerates)
+                    }
+                    val republishList = buildList {
+                        val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()
+                        localCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
+                        remoteCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
+                        nextRemoteCommitPublished1?.run { addAll(doPublish(channelId, minDepth)) }
+                    }
+                    val nextState = copy(
+                        commitments = commitments1,
+                        localCommitPublished = localCommitPublished1,
+                        remoteCommitPublished = remoteCommitPublished1,
+                        nextRemoteCommitPublished = nextRemoteCommitPublished1
+                    )
+                    val actions = buildList {
+                        add(ChannelAction.Storage.StoreState(nextState))
+                        addAll(republishList)
+                    }
+                    Pair(nextState, actions)
                 }
-                else -> unhandled(cmd)
+                is Either.Left -> handleCommandError(cmd, result.value)
             }
             is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
             else -> unhandled(cmd)

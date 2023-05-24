@@ -143,7 +143,7 @@ object WaitForInit : ChannelState() {
                     }
                 }
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
+            cmd is ChannelCommand.Close -> Pair(Aborted, listOf())
             else -> unhandled(cmd)
         }
     }

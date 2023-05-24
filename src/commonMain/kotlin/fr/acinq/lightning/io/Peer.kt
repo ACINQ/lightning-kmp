@@ -429,35 +429,35 @@ class Peer(
      * @return  [Command.Splice.Companion.Result] if a splice was attempted, or {null} if no suitable
      *          channel was found
      */
-    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw): Command.Splice.Response? {
+    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelCommand.Splice.Response? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
             ?.let { channel ->
-                val spliceCommand = Command.Splice.Request(
+                val spliceCommand = ChannelCommand.Splice.Request(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
-                    spliceOut = Command.Splice.Request.SpliceOut(amount, scriptPubKey),
+                    spliceOut = ChannelCommand.Splice.Request.SpliceOut(amount, scriptPubKey),
                     feerate = feerate
                 )
-                send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
+                send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
             }
     }
 
-    suspend fun spliceCpfp(channelId: ByteVector32, feerate: FeeratePerKw): Command.Splice.Response? {
+    suspend fun spliceCpfp(channelId: ByteVector32, feerate: FeeratePerKw): ChannelCommand.Splice.Response? {
         return channels.values
             .filterIsInstance<Normal>()
             .find { it.channelId == channelId }
             ?.let { channel ->
-                val spliceCommand = Command.Splice.Request(
+                val spliceCommand = ChannelCommand.Splice.Request(
                     replyTo = CompletableDeferred(),
                     // no additional inputs or outputs, the splice is only meant to bump fees
                     spliceIn = null,
                     spliceOut = null,
                     feerate = feerate
                 )
-                send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
+                send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
             }
     }
@@ -497,8 +497,8 @@ class Peer(
             actions.forEach { action ->
                 when {
                     action is ChannelAction.Message.Send && _connectionState.value == Connection.ESTABLISHED -> sendToPeer(action.message)
-                    // sometimes channel actions include "self" command (such as CMD_SIGN)
-                    action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.ExecuteCommand(action.command)))
+                    // sometimes channel actions include "self" command (such as ChannelCommand.Sign)
+                    action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, action.command))
                     action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
                     action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
                     action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
@@ -948,13 +948,13 @@ class Peer(
                             return
                         }
 
-                        val spliceCommand = Command.Splice.Request(
+                        val spliceCommand = ChannelCommand.Splice.Request(
                             replyTo = CompletableDeferred(),
-                            spliceIn = Command.Splice.Request.SpliceIn(cmd.wallet),
+                            spliceIn = ChannelCommand.Splice.Request.SpliceIn(cmd.wallet),
                             spliceOut = null,
                             feerate = feerate
                         )
-                        input.send(WrappedChannelCommand(channel.channelId, ChannelCommand.ExecuteCommand(spliceCommand)))
+                        input.send(WrappedChannelCommand(channel.channelId, spliceCommand))
                     }
                     else -> {
                         if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted }) {

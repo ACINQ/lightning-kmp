@@ -39,10 +39,10 @@ internal fun List<ChannelAction>.hasWatchFundingSpent(txId: ByteVector32): Watch
 internal fun List<ChannelAction>.hasWatchConfirmed(txId: ByteVector32): WatchConfirmed = assertNotNull(findWatches<WatchConfirmed>().firstOrNull { it.txId == txId })
 
 // Commands
-internal inline fun <reified T : Command> List<ChannelAction>.findCommands(): List<T> = filterIsInstance<ChannelAction.Message.SendToSelf>().map { it.command }.filterIsInstance<T>()
-internal inline fun <reified T : Command> List<ChannelAction>.findCommandOpt(): T? = findCommands<T>().firstOrNull()
-internal inline fun <reified T : Command> List<ChannelAction>.findCommand(): T = findCommandOpt<T>() ?: fail("cannot find command ${T::class}")
-internal inline fun <reified T : Command> List<ChannelAction>.hasCommand() = assertNotNull(findCommandOpt<T>(), "cannot find command ${T::class}")
+internal inline fun <reified T : ChannelCommand> List<ChannelAction>.findCommands(): List<T> = filterIsInstance<ChannelAction.Message.SendToSelf>().map { it.command }.filterIsInstance<T>()
+internal inline fun <reified T : ChannelCommand> List<ChannelAction>.findCommandOpt(): T? = findCommands<T>().firstOrNull()
+internal inline fun <reified T : ChannelCommand> List<ChannelAction>.findCommand(): T = findCommandOpt<T>() ?: fail("cannot find command ${T::class}")
+internal inline fun <reified T : ChannelCommand> List<ChannelAction>.hasCommand() = assertNotNull(findCommandOpt<T>(), "cannot find command ${T::class}")
 
 // Transactions
 internal fun List<ChannelAction>.findPublishTxs(): List<Transaction> = filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
@@ -234,7 +234,7 @@ object TestsHelper {
     }
 
     fun mutualCloseAlice(alice: LNChannel<Normal>, bob: LNChannel<Normal>, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(scriptPubKey, feerates))
         assertIs<LNChannel<Normal>>(alice1)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         assertNull(actionsAlice1.findOutgoingMessageOpt<ClosingSigned>())
@@ -251,7 +251,7 @@ object TestsHelper {
     }
 
     fun mutualCloseBob(alice: LNChannel<Normal>, bob: LNChannel<Normal>, scriptPubKey: ByteVector? = null, feerates: ClosingFeerates? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
-        val (bob1, actionsBob1) = bob.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(scriptPubKey, feerates)))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(scriptPubKey, feerates))
         assertIs<LNChannel<Normal>>(bob1)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingSigned>())
@@ -366,7 +366,7 @@ object TestsHelper {
     }
 
     fun signAndRevack(alice: LNChannel<ChannelState>, bob: LNChannel<ChannelState>): Pair<LNChannel<ChannelState>, LNChannel<ChannelState>> {
-        val (alice1, actions1) = alice.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+        val (alice1, actions1) = alice.process(ChannelCommand.Sign)
         val commitSig = actions1.findOutgoingMessage<CommitSig>()
         val (bob1, actions2) = bob.process(ChannelCommand.MessageReceived(commitSig))
         val revack = actions2.findOutgoingMessage<RevokeAndAck>()
@@ -374,7 +374,7 @@ object TestsHelper {
         return Pair(alice2, bob1)
     }
 
-    fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = randomBytes32(), paymentId: UUID = UUID.randomUUID()): Pair<ByteVector32, CMD_ADD_HTLC> {
+    fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = randomBytes32(), paymentId: UUID = UUID.randomUUID()): Pair<ByteVector32, ChannelCommand.Htlc.Add> {
         val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
         val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
@@ -401,8 +401,8 @@ object TestsHelper {
         return Triple(sender0 to receiver0, paymentPreimage, htlc)
     }
 
-    fun <T : ChannelState> addHtlc(cmdAdd: CMD_ADD_HTLC, payer: LNChannel<T>, payee: LNChannel<T>): Triple<LNChannel<T>, LNChannel<T>, UpdateAddHtlc> {
-        val (sender0, senderActions0) = payer.process(ChannelCommand.ExecuteCommand(cmdAdd))
+    fun <T : ChannelState> addHtlc(cmdAdd: ChannelCommand.Htlc.Add, payer: LNChannel<T>, payee: LNChannel<T>): Triple<LNChannel<T>, LNChannel<T>, UpdateAddHtlc> {
+        val (sender0, senderActions0) = payer.process(cmdAdd)
         val htlc = senderActions0.findOutgoingMessage<UpdateAddHtlc>()
 
         val (receiver0, _) = payee.process(ChannelCommand.MessageReceived(htlc))
@@ -415,7 +415,7 @@ object TestsHelper {
     }
 
     fun <T : ChannelState> fulfillHtlc(id: Long, paymentPreimage: ByteVector32, payer: LNChannel<T>, payee: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
-        val (payee0, payeeActions0) = payee.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(id, paymentPreimage)))
+        val (payee0, payeeActions0) = payee.process(ChannelCommand.Htlc.Settlement.Fulfill(id, paymentPreimage))
         val fulfillHtlc = payeeActions0.findOutgoingMessage<UpdateFulfillHtlc>()
 
         val (payer0, _) = payer.process(ChannelCommand.MessageReceived(fulfillHtlc))
@@ -428,7 +428,7 @@ object TestsHelper {
     }
 
     fun <T : ChannelState> failHtlc(id: Long, payer: LNChannel<T>, payee: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
-        val (payee0, payeeActions0) = payee.process(ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(id, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure))))
+        val (payee0, payeeActions0) = payee.process(ChannelCommand.Htlc.Settlement.Fail(id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(TemporaryNodeFailure)))
         val failHtlc = payeeActions0.findOutgoingMessage<UpdateFailHtlc>()
 
         val (payer0, _) = payer.process(ChannelCommand.MessageReceived(failHtlc))
@@ -448,15 +448,15 @@ object TestsHelper {
         val rCommitIndex = nodeB.state.commitments.localCommitIndex
         val rHasChanges = nodeB.state.commitments.changes.localHasChanges()
 
-        val (sender0, sActions0) = nodeA.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+        val (sender0, sActions0) = nodeA.process(ChannelCommand.Sign)
         val commitSig0 = sActions0.findOutgoingMessage<CommitSig>()
 
         val (receiver0, rActions0) = nodeB.process(ChannelCommand.MessageReceived(commitSig0))
         val revokeAndAck0 = rActions0.findOutgoingMessage<RevokeAndAck>()
-        val commandSign0 = rActions0.findCommand<CMD_SIGN>()
+        val commandSign0 = rActions0.findCommand<ChannelCommand.Sign>()
 
         val (sender1, _) = sender0.process(ChannelCommand.MessageReceived(revokeAndAck0))
-        val (receiver1, rActions1) = receiver0.process(ChannelCommand.ExecuteCommand(commandSign0))
+        val (receiver1, rActions1) = receiver0.process(commandSign0)
         val commitSig1 = rActions1.findOutgoingMessage<CommitSig>()
 
         val (sender2, sActions2) = sender1.process(ChannelCommand.MessageReceived(commitSig1))
@@ -464,8 +464,8 @@ object TestsHelper {
         val (receiver2, _) = receiver1.process(ChannelCommand.MessageReceived(revokeAndAck1))
 
         if (rHasChanges) {
-            val commandSign1 = sActions2.findCommand<CMD_SIGN>()
-            val (sender3, sActions3) = sender2.process(ChannelCommand.ExecuteCommand(commandSign1))
+            val commandSign1 = sActions2.findCommand<ChannelCommand.Sign>()
+            val (sender3, sActions3) = sender2.process(commandSign1)
             val commitSig2 = sActions3.findOutgoingMessage<CommitSig>()
 
             val (receiver3, rActions3) = receiver2.process(ChannelCommand.MessageReceived(commitSig2))

@@ -27,121 +27,117 @@ data class Normal(
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        return when (cmd) {
-            is ChannelCommand.ExecuteCommand -> when {
-                cmd.command is Command.ForbiddenDuringSplice && spliceStatus !is SpliceStatus.None -> {
-                    val error = ForbiddenDuringSplice(channelId, cmd.command::class.simpleName)
-                    return handleCommandError(cmd.command, error, channelUpdate)
+        return when {
+            cmd is ChannelCommand.ForbiddenDuringSplice && spliceStatus !is SpliceStatus.None -> {
+                val error = ForbiddenDuringSplice(channelId, cmd::class.simpleName)
+                return handleCommandError(cmd, error, channelUpdate)
+            }
+            cmd is ChannelCommand.Htlc.Add -> {
+                if (localShutdown != null || remoteShutdown != null) {
+                    // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
+                    // but we want to converge as fast as possible and they would probably not route them anyway
+                    val error = NoMoreHtlcsClosingInProgress(channelId)
+                    return handleCommandError(cmd, error, channelUpdate)
                 }
-                else -> when (cmd.command) {
-                    is CMD_ADD_HTLC -> {
-                        if (localShutdown != null || remoteShutdown != null) {
-                            // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
-                            // but we want to converge as fast as possible and they would probably not route them anyway
-                            val error = NoMoreHtlcsClosingInProgress(channelId)
-                            return handleCommandError(cmd.command, error, channelUpdate)
+                handleCommandResult(cmd, commitments.sendAdd(cmd, cmd.paymentId, currentBlockHeight.toLong()), cmd.commit)
+            }
+            cmd is ChannelCommand.Htlc.Settlement.Fulfill -> handleCommandResult(cmd, commitments.sendFulfill(cmd), cmd.commit)
+            cmd is ChannelCommand.Htlc.Settlement.Fail -> handleCommandResult(cmd, commitments.sendFail(cmd, this.privateKey), cmd.commit)
+            cmd is ChannelCommand.Htlc.Settlement.FailMalformed -> handleCommandResult(cmd, commitments.sendFailMalformed(cmd), cmd.commit)
+            cmd is ChannelCommand.UpdateFee -> handleCommandResult(cmd, commitments.sendFee(cmd), cmd.commit)
+            cmd is ChannelCommand.Sign -> when {
+                !commitments.changes.localHasChanges() -> {
+                    logger.warning { "no changes to sign" }
+                    Pair(this@Normal, listOf())
+                }
+                commitments.remoteNextCommitInfo is Either.Left -> {
+                    logger.debug { "already in the process of signing, will sign again as soon as possible" }
+                    Pair(this@Normal, listOf())
+                }
+                else -> when (val result = commitments.sendCommit(channelKeys(), logger)) {
+                    is Either.Left -> handleCommandError(cmd, result.value, channelUpdate)
+                    is Either.Right -> {
+                        val commitments1 = result.value.first
+                        val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.commit.spec
+                        // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
+                        // counterparty, so only htlcs above remote's dust_limit matter
+                        val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec) + Transactions.trimReceivedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec)
+                        val htlcInfos = trimmedHtlcs.map { it.add }.map {
+                            logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=${commitments1.nextRemoteCommitIndex}" }
+                            ChannelAction.Storage.HtlcInfo(channelId, commitments1.nextRemoteCommitIndex, it.paymentHash, it.cltvExpiry)
                         }
-                        handleCommandResult(cmd.command, commitments.sendAdd(cmd.command, cmd.command.paymentId, currentBlockHeight.toLong()), cmd.command.commit)
-                    }
-                    is CMD_FULFILL_HTLC -> handleCommandResult(cmd.command, commitments.sendFulfill(cmd.command), cmd.command.commit)
-                    is CMD_FAIL_HTLC -> handleCommandResult(cmd.command, commitments.sendFail(cmd.command, this.privateKey), cmd.command.commit)
-                    is CMD_FAIL_MALFORMED_HTLC -> handleCommandResult(cmd.command, commitments.sendFailMalformed(cmd.command), cmd.command.commit)
-                    is CMD_UPDATE_FEE -> handleCommandResult(cmd.command, commitments.sendFee(cmd.command), cmd.command.commit)
-                    is CMD_SIGN -> when {
-                        !commitments.changes.localHasChanges() -> {
-                            logger.warning { "no changes to sign" }
-                            Pair(this@Normal, listOf())
+                        val nextState = this@Normal.copy(commitments = commitments1)
+                        val actions = buildList {
+                            add(ChannelAction.Storage.StoreHtlcInfos(htlcInfos))
+                            add(ChannelAction.Storage.StoreState(nextState))
+                            addAll(result.value.second.map { ChannelAction.Message.Send(it) })
                         }
-                        commitments.remoteNextCommitInfo is Either.Left -> {
-                            logger.debug { "already in the process of signing, will sign again as soon as possible" }
-                            Pair(this@Normal, listOf())
-                        }
-                        else -> when (val result = commitments.sendCommit(channelKeys(), logger)) {
-                            is Either.Left -> handleCommandError(cmd.command, result.value, channelUpdate)
-                            is Either.Right -> {
-                                val commitments1 = result.value.first
-                                val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.commit.spec
-                                // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
-                                // counterparty, so only htlcs above remote's dust_limit matter
-                                val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec) + Transactions.trimReceivedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec)
-                                val htlcInfos = trimmedHtlcs.map { it.add }.map {
-                                    logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=${commitments1.nextRemoteCommitIndex}" }
-                                    ChannelAction.Storage.HtlcInfo(channelId, commitments1.nextRemoteCommitIndex, it.paymentHash, it.cltvExpiry)
-                                }
-                                val nextState = this@Normal.copy(commitments = commitments1)
-                                val actions = buildList {
-                                    add(ChannelAction.Storage.StoreHtlcInfos(htlcInfos))
-                                    add(ChannelAction.Storage.StoreState(nextState))
-                                    addAll(result.value.second.map { ChannelAction.Message.Send(it) })
-                                }
-                                Pair(nextState, actions)
-                            }
-                        }
-                    }
-                    is CMD_CLOSE -> {
-                        val allowAnySegwit = Features.canUseFeature(commitments.params.localParams.features, commitments.params.remoteParams.features, Feature.ShutdownAnySegwit)
-                        val localScriptPubkey = cmd.command.scriptPubKey ?: commitments.params.localParams.defaultFinalScriptPubKey
-                        when {
-                            localShutdown != null -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId), channelUpdate)
-                            commitments.changes.localHasUnsignedOutgoingHtlcs() -> handleCommandError(cmd.command, CannotCloseWithUnsignedOutgoingHtlcs(channelId), channelUpdate)
-                            commitments.changes.localHasUnsignedOutgoingUpdateFee() -> handleCommandError(cmd.command, CannotCloseWithUnsignedOutgoingUpdateFee(channelId), channelUpdate)
-                            !Helpers.Closing.isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit) -> handleCommandError(cmd.command, InvalidFinalScript(channelId), channelUpdate)
-                            else -> {
-                                val shutdown = Shutdown(channelId, localScriptPubkey)
-                                val newState = this@Normal.copy(localShutdown = shutdown, closingFeerates = cmd.command.feerates)
-                                val actions = listOf(ChannelAction.Storage.StoreState(newState), ChannelAction.Message.Send(shutdown))
-                                Pair(newState, actions)
-                            }
-                        }
-                    }
-                    is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
-                    is CMD_BUMP_FUNDING_FEE -> unhandled(cmd)
-                    is Command.Splice.Request -> when (spliceStatus) {
-                        is SpliceStatus.None -> {
-                            if (commitments.isIdle()) {
-                                val parentCommitment = commitments.active.first()
-                                val fundingContribution = FundingContributions.computeSpliceContribution(
-                                    isInitiator = true,
-                                    commitment = parentCommitment,
-                                    walletInputs = cmd.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
-                                    localOutputs = cmd.command.spliceOutputs,
-                                    targetFeerate = cmd.command.feerate
-                                )
-                                if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < 0.msat) {
-                                    logger.warning { "cannot do splice: insufficient funds" }
-                                    cmd.command.replyTo.complete(Command.Splice.Response.Failure.InsufficientFunds)
-                                    Pair(this@Normal, emptyList())
-                                } else if (cmd.command.spliceOut?.scriptPubKey?.let { Helpers.Closing.isValidFinalScriptPubkey(it, allowAnySegwit = true) } == false) {
-                                    logger.warning { "cannot do splice: invalid splice-out script" }
-                                    cmd.command.replyTo.complete(Command.Splice.Response.Failure.InvalidSpliceOutPubKeyScript)
-                                    Pair(this@Normal, emptyList())
-                                } else {
-                                    val spliceInit = SpliceInit(
-                                        channelId,
-                                        fundingContribution = fundingContribution,
-                                        lockTime = currentBlockHeight.toLong(),
-                                        feerate = cmd.command.feerate,
-                                        fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
-                                        pushAmount = cmd.command.pushAmount
-                                    )
-                                    logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
-                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(cmd.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
-                                }
-                            } else {
-                                logger.warning { "cannot initiate splice, channel not idle" }
-                                cmd.command.replyTo.complete(Command.Splice.Response.Failure.ChannelNotIdle)
-                                Pair(this@Normal, emptyList())
-                            }
-                        }
-                        else -> {
-                            logger.warning { "cannot initiate splice, another splice is already in progress" }
-                            cmd.command.replyTo.complete(Command.Splice.Response.Failure.SpliceAlreadyInProgress)
-                            Pair(this@Normal, emptyList())
-                        }
+                        Pair(nextState, actions)
                     }
                 }
             }
-            is ChannelCommand.MessageReceived -> when {
+            cmd is ChannelCommand.Close.MutualClose -> {
+                val allowAnySegwit = Features.canUseFeature(commitments.params.localParams.features, commitments.params.remoteParams.features, Feature.ShutdownAnySegwit)
+                val localScriptPubkey = cmd.scriptPubKey ?: commitments.params.localParams.defaultFinalScriptPubKey
+                when {
+                    localShutdown != null -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId), channelUpdate)
+                    commitments.changes.localHasUnsignedOutgoingHtlcs() -> handleCommandError(cmd, CannotCloseWithUnsignedOutgoingHtlcs(channelId), channelUpdate)
+                    commitments.changes.localHasUnsignedOutgoingUpdateFee() -> handleCommandError(cmd, CannotCloseWithUnsignedOutgoingUpdateFee(channelId), channelUpdate)
+                    !Helpers.Closing.isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit) -> handleCommandError(cmd, InvalidFinalScript(channelId), channelUpdate)
+                    else -> {
+                        val shutdown = Shutdown(channelId, localScriptPubkey)
+                        val newState = this@Normal.copy(localShutdown = shutdown, closingFeerates = cmd.feerates)
+                        val actions = listOf(ChannelAction.Storage.StoreState(newState), ChannelAction.Message.Send(shutdown))
+                        Pair(newState, actions)
+                    }
+                }
+            }
+            cmd is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
+            cmd is ChannelCommand.BumpFundingFee -> unhandled(cmd)
+            cmd is ChannelCommand.Splice.Request -> when (spliceStatus) {
+                is SpliceStatus.None -> {
+                    if (commitments.isIdle()) {
+                        val parentCommitment = commitments.active.first()
+                        val fundingContribution = FundingContributions.computeSpliceContribution(
+                            isInitiator = true,
+                            commitment = parentCommitment,
+                            walletInputs = cmd.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                            localOutputs = cmd.spliceOutputs,
+                            targetFeerate = cmd.feerate
+                        )
+                        if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < 0.msat) {
+                            logger.warning { "cannot do splice: insufficient funds" }
+                            cmd.replyTo.complete(ChannelCommand.Splice.Response.Failure.InsufficientFunds)
+                            Pair(this@Normal, emptyList())
+                        } else if (cmd.spliceOut?.scriptPubKey?.let { Helpers.Closing.isValidFinalScriptPubkey(it, allowAnySegwit = true) } == false) {
+                            logger.warning { "cannot do splice: invalid splice-out script" }
+                            cmd.replyTo.complete(ChannelCommand.Splice.Response.Failure.InvalidSpliceOutPubKeyScript)
+                            Pair(this@Normal, emptyList())
+                        } else {
+                            val spliceInit = SpliceInit(
+                                channelId,
+                                fundingContribution = fundingContribution,
+                                lockTime = currentBlockHeight.toLong(),
+                                feerate = cmd.feerate,
+                                fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
+                                pushAmount = cmd.pushAmount
+                            )
+                            logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(cmd, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
+                        }
+                    } else {
+                        logger.warning { "cannot initiate splice, channel not idle" }
+                        cmd.replyTo.complete(ChannelCommand.Splice.Response.Failure.ChannelNotIdle)
+                        Pair(this@Normal, emptyList())
+                    }
+                }
+                else -> {
+                    logger.warning { "cannot initiate splice, another splice is already in progress" }
+                    cmd.replyTo.complete(ChannelCommand.Splice.Response.Failure.SpliceAlreadyInProgress)
+                    Pair(this@Normal, emptyList())
+                }
+            }
+            cmd is ChannelCommand.MessageReceived -> when {
                 cmd.message is ForbiddenMessageDuringSplice && spliceStatus !is SpliceStatus.None && spliceStatus !is SpliceStatus.Requested -> {
                     // In case of a race between our splice_init and a forbidden message from our peer, we accept their message, because
                     // we know they are going to reject our splice attempt
@@ -213,7 +209,7 @@ data class Normal(
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         actions.add(ChannelAction.Message.Send(result.value.second))
                                         if (result.value.first.changes.localHasChanges()) {
-                                            actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                                            actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
                                         }
                                         Pair(nextState, actions)
                                     }
@@ -229,7 +225,7 @@ data class Normal(
                             val actions = mutableListOf<ChannelAction>()
                             actions.addAll(result.value.second)
                             if (result.value.first.changes.localHasChanges()) {
-                                actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                                actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
                             }
                             val nextState = if (remoteShutdown != null && !commitments1.changes.localHasUnsignedOutgoingHtlcs()) {
                                 // we were waiting for our pending htlcs to be signed before replying with our local shutdown
@@ -300,7 +296,7 @@ data class Normal(
                                     is Either.Right -> {
                                         // no, let's sign right away
                                         val newState = this@Normal.copy(remoteShutdown = cmd.message, commitments = commitments.copy(remoteChannelData = cmd.message.channelData))
-                                        Pair(newState, listOf(ChannelAction.Message.SendToSelf(CMD_SIGN)))
+                                        Pair(newState, listOf(ChannelAction.Message.SendToSelf(ChannelCommand.Sign)))
                                     }
                                 }
                             }
@@ -418,7 +414,7 @@ data class Normal(
                             )) {
                                 is Either.Left -> {
                                     logger.error { "could not create splice contributions: ${fundingContributions.value}" }
-                                    spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.FundingFailure(fundingContributions.value))
+                                    spliceStatus.command.replyTo.complete(ChannelCommand.Splice.Response.Failure.FundingFailure(fundingContributions.value))
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                                 }
                                 is Either.Right -> {
@@ -445,7 +441,7 @@ data class Normal(
                                         }
                                         else -> {
                                             logger.error { "could not start interactive-tx session: $interactiveTxAction" }
-                                            spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.CannotStartSession)
+                                            spliceStatus.command.replyTo.complete(ChannelCommand.Splice.Response.Failure.CannotStartSession)
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                                         }
                                     }
@@ -479,7 +475,7 @@ data class Normal(
                                     when (signingSession) {
                                         is Either.Left -> {
                                             logger.error(signingSession.value) { "cannot initiate interactive-tx splice signing session" }
-                                            spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.CannotCreateCommitTx(signingSession.value))
+                                            spliceStatus.replyTo?.complete(ChannelCommand.Splice.Response.Failure.CannotCreateCommitTx(signingSession.value))
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, signingSession.value.message))))
                                         }
                                         is Either.Right -> {
@@ -489,7 +485,7 @@ data class Normal(
                                             // It is likely that we will restart before the transaction is confirmed, in which case we will lose the replyTo and the ability to notify the caller.
                                             // We should be able to resume the signing steps and complete the splice if we disconnect, so we optimistically notify the caller now.
                                             spliceStatus.replyTo?.complete(
-                                                Command.Splice.Response.Created(
+                                                ChannelCommand.Splice.Response.Created(
                                                     channelId = channelId,
                                                     fundingTxIndex = session.fundingTxIndex,
                                                     fundingTxId = session.fundingTx.txId,
@@ -509,7 +505,7 @@ data class Normal(
                                 }
                                 is InteractiveTxSessionAction.RemoteFailure -> {
                                     logger.warning { "interactive-tx failed: $interactiveTxAction" }
-                                    spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.InteractiveTxSessionFailed(interactiveTxAction))
+                                    spliceStatus.replyTo?.complete(ChannelCommand.Splice.Response.Failure.InteractiveTxSessionFailed(interactiveTxAction))
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, interactiveTxAction.toString()))))
                                 }
                             }
@@ -568,7 +564,7 @@ data class Normal(
                     is TxAbort -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer rejected our splice request: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
-                            spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            spliceStatus.command.replyTo.complete(ChannelCommand.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
                             Pair(
                                 this@Normal.copy(spliceStatus = SpliceStatus.None),
                                 listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
@@ -576,7 +572,7 @@ data class Normal(
                         }
                         is SpliceStatus.InProgress -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
-                            spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            spliceStatus.replyTo?.complete(ChannelCommand.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
                             Pair(
                                 this@Normal.copy(spliceStatus = SpliceStatus.None),
                                 listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
@@ -625,8 +621,8 @@ data class Normal(
                     else -> unhandled(cmd)
                 }
             }
-            is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
+            cmd is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
+            cmd is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventConfirmed -> {
                     val (nextState, actions) = updateFundingTxStatus(watch)
                     if (!staticParams.useZeroConf && nextState.commitments.active.any { it.fundingTxId == watch.tx.txid && it.fundingTxIndex > 0 }) {
@@ -639,7 +635,7 @@ data class Normal(
                 }
                 is WatchEventSpent -> handlePotentialForceClose(watch)
             }
-            is ChannelCommand.Disconnected -> {
+            cmd is ChannelCommand.Disconnected -> {
                 // if we have pending unsigned outgoing htlcs, then we cancel them and advertise the fact that the channel is now disabled.
                 val failedHtlcs = mutableListOf<ChannelAction>()
                 val proposedHtlcs = commitments.changes.localChanges.proposed.filterIsInstance<UpdateAddHtlc>()
@@ -653,11 +649,11 @@ data class Normal(
                     is SpliceStatus.None -> SpliceStatus.None
                     is SpliceStatus.Aborted -> SpliceStatus.None
                     is SpliceStatus.Requested -> {
-                        spliceStatus.command.replyTo.complete(Command.Splice.Response.Failure.Disconnected)
+                        spliceStatus.command.replyTo.complete(ChannelCommand.Splice.Response.Failure.Disconnected)
                         SpliceStatus.None
                     }
                     is SpliceStatus.InProgress -> {
-                        spliceStatus.replyTo?.complete(Command.Splice.Response.Failure.Disconnected)
+                        spliceStatus.replyTo?.complete(ChannelCommand.Splice.Response.Failure.Disconnected)
                         SpliceStatus.None
                     }
                     is SpliceStatus.WaitingForSigs -> spliceStatus
@@ -744,14 +740,14 @@ data class Normal(
         }
     }
 
-    private fun ChannelContext.handleCommandResult(command: Command, result: Either<ChannelException, Pair<Commitments, LightningMessage>>, commit: Boolean): Pair<ChannelState, List<ChannelAction>> {
+    private fun ChannelContext.handleCommandResult(command: ChannelCommand, result: Either<ChannelException, Pair<Commitments, LightningMessage>>, commit: Boolean): Pair<ChannelState, List<ChannelAction>> {
         return when (result) {
             is Either.Left -> handleCommandError(command, result.value, channelUpdate)
             is Either.Right -> {
                 val (commitments1, message) = result.value
                 val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(message))
                 if (commit) {
-                    actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                    actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
                 }
                 Pair(this@Normal.copy(commitments = commitments1), actions)
             }

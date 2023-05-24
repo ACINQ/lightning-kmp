@@ -45,7 +45,7 @@ class StateSerializationNonRegTestsCommon {
 
     @Test
     fun `non-reg test with v2 serialization`() {
-        regtest("v2", debug = false)
+        regtest("v2", debug = true)
     }
 
     @Test

@@ -119,7 +119,7 @@ data class WaitForFundingCreated(
                 logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> handleLocalError(cmd, ChannelFundingError(channelId))
+            cmd is ChannelCommand.Close -> handleLocalError(cmd, ChannelFundingError(channelId))
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingCreated, listOf())
             cmd is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
             else -> unhandled(cmd)

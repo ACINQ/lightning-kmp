@@ -63,10 +63,10 @@ class OfflineTestsCommon : LightningTestSuite() {
     fun `re-send update and sig after first commitment`() {
         val (alice0, bob0) = run {
             val (alice0, bob0) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
-            val cmdAdd = CMD_ADD_HTLC(1_000_000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())
-            val (alice1, actions1) = alice0.process(ChannelCommand.ExecuteCommand(cmdAdd))
+            val cmdAdd = ChannelCommand.Htlc.Add(1_000_000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())
+            val (alice1, actions1) = alice0.process(cmdAdd)
             val add = actions1.hasOutgoingMessage<UpdateAddHtlc>()
-            val (alice2, actions2) = alice1.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+            val (alice2, actions2) = alice1.process(ChannelCommand.Sign)
             assertIs<LNChannel<Normal>>(alice2)
             actions2.hasOutgoingMessage<CommitSig>()
             val (bob1, _) = bob0.process(ChannelCommand.MessageReceived(add))
@@ -111,8 +111,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(sig))
         // bob sends back a revocation and a sig
         val revB = actionsBob5.hasOutgoingMessage<RevokeAndAck>()
-        actionsBob5.hasCommand<CMD_SIGN>()
-        val (bob6, actionsBob6) = bob5.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+        actionsBob5.hasCommand<ChannelCommand.Sign>()
+        val (bob6, actionsBob6) = bob5.process(ChannelCommand.Sign)
         val sigB = actionsBob6.hasOutgoingMessage<CommitSig>()
 
         val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(revB))
@@ -131,17 +131,17 @@ class OfflineTestsCommon : LightningTestSuite() {
     fun `re-send lost revocation`() {
         val (alice0, bob0) = run {
             val (alice0, bob0) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
-            val cmdAdd = CMD_ADD_HTLC(1_000_000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())
-            val (alice1, actionsAlice1) = alice0.process(ChannelCommand.ExecuteCommand(cmdAdd))
+            val cmdAdd = ChannelCommand.Htlc.Add(1_000_000.msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket, UUID.randomUUID())
+            val (alice1, actionsAlice1) = alice0.process(cmdAdd)
             val add = actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
-            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Sign)
             assertIs<LNChannel<Normal>>(alice2)
             val sig = actionsAlice2.hasOutgoingMessage<CommitSig>()
             val (bob1, _) = bob0.process(ChannelCommand.MessageReceived(add))
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(sig))
             actionsBob2.hasOutgoingMessage<RevokeAndAck>()
-            actionsBob2.hasCommand<CMD_SIGN>()
-            val (bob3, actionsBob3) = bob2.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+            actionsBob2.hasCommand<ChannelCommand.Sign>()
+            val (bob3, actionsBob3) = bob2.process(ChannelCommand.Sign)
             assertIs<LNChannel<Normal>>(bob3)
             actionsBob3.hasOutgoingMessage<CommitSig>()
             // bob received the sig, but alice didn't receive the revocation
@@ -202,7 +202,7 @@ class OfflineTestsCommon : LightningTestSuite() {
             val (nodes2, r2, htlc2) = TestsHelper.addHtlc(25_000_000.msat, bob3, alice3)
             val (bob4, alice4) = TestsHelper.crossSign(nodes2.first, nodes2.second)
             val (bob5, alice5) = TestsHelper.fulfillHtlc(htlc2.id, r2, bob4, alice4)
-            val (alice6, actionsAlice) = alice5.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+            val (alice6, actionsAlice) = alice5.process(ChannelCommand.Sign)
             val commitSig = actionsAlice.findOutgoingMessage<CommitSig>()
             val (bob6, actionsBob) = bob5.process(ChannelCommand.MessageReceived(commitSig))
             val revokeAndAck = actionsBob.findOutgoingMessage<RevokeAndAck>()
@@ -232,8 +232,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishA))
         assertEquals(1, actionsBob3.filterIsInstance<ChannelAction.Message.Send>().size)
         assertEquals(revB, actionsBob3.findOutgoingMessage())
-        actionsBob3.hasCommand<CMD_SIGN>()
-        val (bob4, actionsBob4) = bob3.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+        actionsBob3.hasCommand<ChannelCommand.Sign>()
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.Sign)
         val sigB = actionsBob4.findOutgoingMessage<CommitSig>()
 
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(revB))
@@ -410,9 +410,9 @@ class OfflineTestsCommon : LightningTestSuite() {
             val (bob5, alice5, htlc5) = TestsHelper.addHtlc(TestsHelper.makeCmdAdd(55_000.msat, aliceId, currentBlockHeight, randomBytes32()).second, bob4, alice4)
             val (alice6, bob6) = TestsHelper.crossSign(alice5, bob5)
             // Bob settles the first two htlcs and sends his signature, but Alice doesn't receive these messages.
-            val (bob7, _) = bob6.process(ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(htlc1.id, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = false)))
-            val (bob8, _) = bob7.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc2.id, preimage, commit = false)))
-            val (bob9, _) = bob8.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+            val (bob7, _) = bob6.process(ChannelCommand.Htlc.Settlement.Fail(htlc1.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(PaymentTimeout), commit = false))
+            val (bob8, _) = bob7.process(ChannelCommand.Htlc.Settlement.Fulfill(htlc2.id, preimage, commit = false))
+            val (bob9, _) = bob8.process(ChannelCommand.Sign)
             assertIs<LNChannel<Normal>>(alice6)
             assertIs<LNChannel<Normal>>(bob9)
             Triple(alice6, bob9, listOf(htlc1, htlc2, htlc3, htlc4, htlc5))
@@ -599,7 +599,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val (nodes, preimage, htlc) = TestsHelper.addHtlc(50_000_000.msat, alice0, bob0)
         val (_, bob1) = TestsHelper.crossSign(nodes.first, nodes.second)
-        val (bob2, actions2) = bob1.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc.id, preimage)))
+        val (bob2, actions2) = bob1.process(ChannelCommand.Htlc.Settlement.Fulfill(htlc.id, preimage))
         actions2.hasOutgoingMessage<UpdateFulfillHtlc>()
         val (bob3, _) = bob2.process(ChannelCommand.Disconnected)
         assertIs<Offline>(bob3.state)
@@ -629,12 +629,12 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FORCECLOSE`() {
+    fun `recv ChannelCommand_Close_ForceClose`() {
         val (alice, _) = TestsHelper.reachNormal()
         val (alice1, _) = alice.process(ChannelCommand.Disconnected)
         assertIs<Offline>(alice1.state)
         val commitTx = alice1.commitments.latest.localCommit.publishableTxs.commitTx.tx
-        val (alice2, actions2) = alice1.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+        val (alice2, actions2) = alice1.process(ChannelCommand.Close.ForceClose)
         assertIs<Closing>(alice2.state)
         actions2.hasPublishTx(commitTx)
         assertNull(actions2.findOutgoingMessageOpt<Error>()) // we're offline so we shouldn't try to send messages
@@ -682,7 +682,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (alice, bob, rbfFundingTxId) = run {
             val (alice, bob, _, wallet) = WaitForFundingConfirmedTestsCommon.init()
             val command = WaitForFundingConfirmedTestsCommon.createRbfCommand(alice, wallet)
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(command))
+            val (alice1, actionsAlice1) = alice.process(command)
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxInitRbf>()))
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxAckRbf>()))
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxAddInput>()))

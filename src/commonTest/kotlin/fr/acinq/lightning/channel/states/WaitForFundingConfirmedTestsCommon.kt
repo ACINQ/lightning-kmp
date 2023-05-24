@@ -344,20 +344,20 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE`() {
+    fun `recv ChannelCommand_Close_MutualClose`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
-            val (state1, actions1) = state.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
+            val (state1, actions1) = state.process(ChannelCommand.Close.MutualClose(null, null))
             assertEquals(state, state1)
             actions1.hasCommandError<CommandUnavailableInThisState>()
         }
     }
 
     @Test
-    fun `recv CMD_FORCECLOSE`() {
+    fun `recv ChannelCommand_Close_ForceClose`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
-            val (state1, actions1) = state.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+            val (state1, actions1) = state.process(ChannelCommand.Close.ForceClose)
             assertIs<Closing>(state1.state)
             assertNotNull(state1.state.localCommitPublished)
             actions1.hasPublishTx(state1.state.localCommitPublished!!.commitTx)
@@ -367,9 +367,9 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FORCECLOSE -- nothing at stake`() {
+    fun `recv ChannelCommand_Close_ForceClose -- nothing at stake`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
-        val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+        val (bob1, actions1) = bob.process(ChannelCommand.Close.ForceClose)
         assertIs<Aborted>(bob1.state)
         assertEquals(1, actions1.size)
         val error = actions1.hasOutgoingMessage<Error>()
@@ -451,7 +451,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             return Fixture(alice2, bob2, fundingTxAlice, walletAlice)
         }
 
-        fun createRbfCommand(alice: LNChannel<WaitForFundingConfirmed>, wallet: WalletState): CMD_BUMP_FUNDING_FEE {
+        fun createRbfCommand(alice: LNChannel<WaitForFundingConfirmed>, wallet: WalletState): ChannelCommand.BumpFundingFee {
             val previousFundingParams = alice.state.latestFundingTx.fundingParams
             val previousFundingTx = alice.state.latestFundingTx.sharedTx
             assertIs<FullySignedSharedTransaction>(previousFundingTx)
@@ -462,7 +462,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 wallet.addresses + (address to (wallet.addresses[address] ?: listOf()) + UnspentItem(parentTx.txid, 0, 30_000, 654321)),
                 wallet.parentTxs + (parentTx.txid to parentTx),
             )
-            return CMD_BUMP_FUNDING_FEE(previousFundingTx.feerate * 1.1, previousFundingParams.localContribution + 20_000.sat, wallet1, previousFundingTx.tx.lockTime + 1)
+            return ChannelCommand.BumpFundingFee(previousFundingTx.feerate * 1.1, previousFundingParams.localContribution + 20_000.sat, wallet1, previousFundingTx.tx.lockTime + 1)
         }
 
         fun rbf(alice: LNChannel<WaitForFundingConfirmed>, bob: LNChannel<WaitForFundingConfirmed>, walletAlice: WalletState): Triple<LNChannel<WaitForFundingConfirmed>, LNChannel<WaitForFundingConfirmed>, Transaction> {
@@ -470,7 +470,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val previousFundingTx = alice.state.latestFundingTx.sharedTx
             assertIs<FullySignedSharedTransaction>(previousFundingTx)
             val command = createRbfCommand(alice, walletAlice)
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(command))
+            val (alice1, actionsAlice1) = alice.process(command)
             assertEquals(actionsAlice1.size, 1)
             val txInitRbf = actionsAlice1.findOutgoingMessage<TxInitRbf>()
             assertEquals(txInitRbf.fundingContribution, previousFundingParams.localContribution + 20_000.sat)

@@ -520,7 +520,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertTrue(process1 is IncomingPaymentHandler.ProcessAddResult.Pending)
         val process2 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[1].first, adds[1].second, 5), TestConstants.defaultBlockHeight)
         assertTrue(process2 is IncomingPaymentHandler.ProcessAddResult.Accepted)
-        val fulfills = process2.actions.filterIsInstance<WrappedChannelCommand>().mapNotNull { (it.channelCommand as? ChannelCommand.ExecuteCommand)?.command as? CMD_FULFILL_HTLC }
+        val fulfills = process2.actions.filterIsInstance<WrappedChannelCommand>().mapNotNull { it.channelCommand as? ChannelCommand.Htlc.Settlement.Fulfill }
         assertEquals(2, fulfills.size)
 
         // Alice receives the fulfill for these 2 HTLCs.
@@ -996,10 +996,10 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
     }
 
-    private fun filterAddHtlcCommands(progress: OutgoingPaymentHandler.Progress): List<Pair<ByteVector32, CMD_ADD_HTLC>> {
-        val addCommands = mutableListOf<Pair<ByteVector32, CMD_ADD_HTLC>>()
+    private fun filterAddHtlcCommands(progress: OutgoingPaymentHandler.Progress): List<Pair<ByteVector32, ChannelCommand.Htlc.Add>> {
+        val addCommands = mutableListOf<Pair<ByteVector32, ChannelCommand.Htlc.Add>>()
         for (action in progress.actions) {
-            val addCommand = (action.channelCommand as? ChannelCommand.ExecuteCommand)?.command as? CMD_ADD_HTLC
+            val addCommand = action.channelCommand as? ChannelCommand.Htlc.Add
             if (addCommand != null) {
                 addCommands.add(Pair(action.channelId, addCommand))
             }
@@ -1007,15 +1007,15 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         return addCommands.toList()
     }
 
-    private fun makeUpdateAddHtlc(channelId: ByteVector32, cmd: CMD_ADD_HTLC, htlcId: Long = 0): UpdateAddHtlc =
+    private fun makeUpdateAddHtlc(channelId: ByteVector32, cmd: ChannelCommand.Htlc.Add, htlcId: Long = 0): UpdateAddHtlc =
         UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
 
-    private fun createRemoteFulfill(channelId: ByteVector32, add: CMD_ADD_HTLC, preimage: ByteVector32): ChannelAction.ProcessCmdRes.AddSettledFulfill {
+    private fun createRemoteFulfill(channelId: ByteVector32, add: ChannelCommand.Htlc.Add, preimage: ByteVector32): ChannelAction.ProcessCmdRes.AddSettledFulfill {
         val updateAddHtlc = makeUpdateAddHtlc(channelId, add)
         return ChannelAction.ProcessCmdRes.AddSettledFulfill(add.paymentId, updateAddHtlc, ChannelAction.HtlcResult.Fulfill.RemoteFulfill(UpdateFulfillHtlc(channelId, updateAddHtlc.id, preimage)))
     }
 
-    private fun createRemoteFailure(add: CMD_ADD_HTLC, attempt: OutgoingPaymentHandler.PaymentAttempt, failureMessage: FailureMessage): ChannelAction.ProcessCmdRes.AddSettledFail {
+    private fun createRemoteFailure(add: ChannelCommand.Htlc.Add, attempt: OutgoingPaymentHandler.PaymentAttempt, failureMessage: FailureMessage): ChannelAction.ProcessCmdRes.AddSettledFail {
         val sharedSecrets = attempt.pending.getValue(add.paymentId).second
         val reason = FailurePacket.create(sharedSecrets.perHopSecrets.last().first, failureMessage)
         val updateAddHtlc = makeUpdateAddHtlc(randomBytes32(), add)

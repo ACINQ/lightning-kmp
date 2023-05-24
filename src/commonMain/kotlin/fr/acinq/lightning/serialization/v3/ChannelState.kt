@@ -344,7 +344,7 @@ internal data class ChannelFeatures(val bin: ByteVector) {
 
 @Serializable
 internal data class ClosingFeerates(val preferred: FeeratePerKw, val min: FeeratePerKw, val max: FeeratePerKw) {
-    fun export() = fr.acinq.lightning.channel.ClosingFeerates(preferred, min, max)
+    fun export() = fr.acinq.lightning.channel.fsm.ClosingFeerates(preferred, min, max)
 }
 
 @Serializable

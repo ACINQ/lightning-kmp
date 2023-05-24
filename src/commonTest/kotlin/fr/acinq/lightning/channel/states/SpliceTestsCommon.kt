@@ -55,7 +55,7 @@ class SpliceTestsCommon : LightningTestSuite() {
     fun `reject splice_init`() {
         val cmd = createSpliceOutRequest(25_000.sat)
         val (alice, _) = reachNormal()
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(cmd))
+        val (alice1, actionsAlice1) = alice.process(cmd)
         actionsAlice1.hasOutgoingMessage<SpliceInit>()
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(TxAbort(alice.channelId, "thanks but no thanks")))
         assertIs<Normal>(alice2.state)
@@ -68,7 +68,7 @@ class SpliceTestsCommon : LightningTestSuite() {
     fun `reject splice_ack`() {
         val cmd = createSpliceOutRequest(25_000.sat)
         val (alice, bob) = reachNormal()
-        val (_, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(cmd))
+        val (_, actionsAlice1) = alice.process(cmd)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(actionsAlice1.hasOutgoingMessage<SpliceInit>()))
         actionsBob1.hasOutgoingMessage<SpliceAck>()
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(TxAbort(alice.channelId, "changed my mind")))
@@ -82,7 +82,7 @@ class SpliceTestsCommon : LightningTestSuite() {
     fun `abort before tx_complete`() {
         val cmd = createSpliceOutRequest(20_000.sat)
         val (alice, bob) = reachNormal()
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(cmd))
+        val (alice1, actionsAlice1) = alice.process(cmd)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<SpliceInit>()))
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<SpliceAck>()))
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxAddInput>()))
@@ -108,7 +108,7 @@ class SpliceTestsCommon : LightningTestSuite() {
     fun `abort after tx_complete`() {
         val cmd = createSpliceOutRequest(31_000.sat)
         val (alice, bob) = reachNormal()
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(cmd))
+        val (alice1, actionsAlice1) = alice.process(cmd)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<SpliceInit>()))
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<SpliceAck>()))
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxAddInput>()))
@@ -279,7 +279,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(bob3.commitments.inactive.size, 2)
         val (nodes, preimage, htlc) = addHtlc(20_000_000.msat, alice2, bob3)
         val (alice3, bob4) = nodes
-        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.Sign)
         val commitSigsAlice = actionsAlice4.findOutgoingMessages<CommitSig>()
         assertEquals(commitSigsAlice.size, 3)
         commitSigsAlice.forEach { assertEquals(it.batchSize, 3) }
@@ -293,9 +293,9 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (bob7, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(commitSigsAlice[2]))
         assertEquals(actionsBob7.size, 3)
         val revokeAndAckBob = actionsBob7.findOutgoingMessage<RevokeAndAck>()
-        actionsBob7.contains(ChannelAction.Message.SendToSelf(CMD_SIGN))
+        actionsBob7.contains(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
         actionsBob7.has<ChannelAction.Storage.StoreState>()
-        val (bob8, actionsBob8) = bob7.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+        val (bob8, actionsBob8) = bob7.process(ChannelCommand.Sign)
         assertEquals(actionsBob8.size, 3)
         val commitSigBob = actionsBob8.findOutgoingMessage<CommitSig>()
         assertEquals(commitSigBob.batchSize, 1)
@@ -592,7 +592,7 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         // Bob force-closes using the latest active commitment.
         val bobCommitTx = bob1.commitments.active.first().localCommit.publishableTxs.commitTx.tx
-        val (bob2, actionsBob2) = bob1.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Close.ForceClose)
         assertIs<Closing>(bob2.state)
         assertEquals(actionsBob2.size, 7)
         assertEquals(actionsBob2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.CommitTx).txid, bobCommitTx.txid)
@@ -715,10 +715,10 @@ class SpliceTestsCommon : LightningTestSuite() {
             return Pair(alice5, bob5)
         }
 
-        private fun createSpliceOutRequest(amount: Satoshi): Command.Splice.Request = Command.Splice.Request(
+        private fun createSpliceOutRequest(amount: Satoshi): ChannelCommand.Splice.Request = ChannelCommand.Splice.Request(
             replyTo = CompletableDeferred(),
             spliceIn = null,
-            spliceOut = Command.Splice.Request.SpliceOut(amount, Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
+            spliceOut = ChannelCommand.Splice.Request.SpliceOut(amount, Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
             feerate = FeeratePerKw(253.sat)
         )
 
@@ -733,7 +733,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             val parentCommitment = alice.commitments.active.first()
             val cmd = createSpliceOutRequest(amount)
             // Negotiate a splice transaction where Alice is the only contributor.
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(cmd))
+            val (alice1, actionsAlice1) = alice.process(cmd)
             val spliceInit = actionsAlice1.findOutgoingMessage<SpliceInit>()
             // Alice takes more than the spliced out amount from her local balance because she must pay on-chain fees.
             assertTrue(-amount - 500.sat < spliceInit.fundingContribution && spliceInit.fundingContribution < -amount)
@@ -760,15 +760,15 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         private fun spliceIn(alice: LNChannel<Normal>, bob: LNChannel<Normal>, amounts: List<Satoshi>): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             val parentCommitment = alice.commitments.active.first()
-            val cmd = Command.Splice.Request(
+            val cmd = ChannelCommand.Splice.Request(
                 replyTo = CompletableDeferred(),
-                spliceIn = Command.Splice.Request.SpliceIn(createWalletWithFunds(alice.staticParams.nodeParams.keyManager, amounts)),
+                spliceIn = ChannelCommand.Splice.Request.SpliceIn(createWalletWithFunds(alice.staticParams.nodeParams.keyManager, amounts)),
                 spliceOut = null,
                 feerate = FeeratePerKw(253.sat)
             )
 
             // Negotiate a splice transaction where Alice is the only contributor.
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(cmd))
+            val (alice1, actionsAlice1) = alice.process(cmd)
             val spliceInit = actionsAlice1.findOutgoingMessage<SpliceInit>()
             // Alice adds slightly less than her wallet amount because she must pay on-chain fees.
             assertTrue(amounts.sum() - 500.sat < spliceInit.fundingContribution && spliceInit.fundingContribution < amounts.sum())
@@ -799,7 +799,7 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         private fun spliceCpfp(alice: LNChannel<Normal>, bob: LNChannel<Normal>): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             val parentCommitment = alice.commitments.active.first()
-            val cmd = Command.Splice.Request(
+            val cmd = ChannelCommand.Splice.Request(
                 replyTo = CompletableDeferred(),
                 spliceIn = null,
                 spliceOut = null,
@@ -807,7 +807,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             )
 
             // Negotiate a splice transaction with no contribution.
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(cmd))
+            val (alice1, actionsAlice1) = alice.process(cmd)
             val spliceInit = actionsAlice1.findOutgoingMessage<SpliceInit>()
             // Alice's contribution is negative: that amount goes to on-chain fees.
             assertTrue(spliceInit.fundingContribution < 0.sat)
@@ -832,9 +832,9 @@ class SpliceTestsCommon : LightningTestSuite() {
             return exchangeSpliceSigs(alice4, commitSigAlice, bob4, commitSigBob)
         }
 
-        private fun checkCommandResponse(replyTo: CompletableDeferred<Command.Splice.Response>, parentCommitment: Commitment, spliceInit: SpliceInit): ByteVector32 = runBlocking {
+        private fun checkCommandResponse(replyTo: CompletableDeferred<ChannelCommand.Splice.Response>, parentCommitment: Commitment, spliceInit: SpliceInit): ByteVector32 = runBlocking {
             val response = replyTo.await()
-            assertIs<Command.Splice.Response.Created>(response)
+            assertIs<ChannelCommand.Splice.Response.Created>(response)
             assertEquals(response.capacity, parentCommitment.fundingAmount + spliceInit.fundingContribution)
             assertEquals(response.balance, parentCommitment.localCommit.spec.toLocal + spliceInit.fundingContribution.toMilliSatoshi())
             assertEquals(response.fundingTxIndex, parentCommitment.fundingTxIndex + 1)
@@ -903,7 +903,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             val commitIndexAlice = alice.state.commitments.localCommitIndex
             val commitIndexBob = bob.state.commitments.localCommitIndex
 
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.Sign)
             val commitSigsAlice = actionsAlice1.findOutgoingMessages<CommitSig>()
             assertEquals(commitSigsAlice.size, commitmentsCount)
             commitSigsAlice.forEach { assertEquals(it.batchSize, commitmentsCount) }
@@ -916,7 +916,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 Pair(bobNext, actionsBobNext)
             }
             val revokeAndAckBob = actionsBob2.findOutgoingMessage<RevokeAndAck>()
-            val (bob3, actionsBob3) = bob2.process(ChannelCommand.ExecuteCommand(actionsBob2.findCommand<CMD_SIGN>()))
+            val (bob3, actionsBob3) = bob2.process(actionsBob2.findCommand<ChannelCommand.Sign>())
             val commitSigsBob = actionsBob3.findOutgoingMessages<CommitSig>()
             assertEquals(commitSigsBob.size, commitmentsCount)
             commitSigsBob.forEach { assertEquals(it.batchSize, commitmentsCount) }

@@ -148,9 +148,9 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE`() {
+    fun `recv ChannelCommand_Close_MutualClose`() {
         val (_, bob, _) = TestsHelper.init()
-        val (bob1, actions) = bob.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
+        val (bob1, actions) = bob.process(ChannelCommand.Close.MutualClose(null, null))
         assertIs<LNChannel<Aborted>>(bob1)
         assertTrue(actions.isEmpty())
     }

@@ -23,7 +23,7 @@ class RecoveryTestsCommon {
         val (alice1, _) = TestsHelper.addHtlc(MilliSatoshi(50000), alice, bob).first
 
         // Alice force-closes the channel and publishes her commit tx
-        val (_, actions) = alice1.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+        val (_, actions) = alice1.process(ChannelCommand.Close.ForceClose)
         val transactions = actions.findPublishTxs()
         val commitTx = transactions[0]
         val aliceTx = transactions[1]

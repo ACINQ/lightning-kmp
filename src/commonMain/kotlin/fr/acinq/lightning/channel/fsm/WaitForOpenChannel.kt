@@ -124,7 +124,7 @@ data class WaitForOpenChannel(
                     else -> unhandled(cmd)
                 }
 
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
+            cmd is ChannelCommand.Close -> Pair(Aborted, listOf())
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForOpenChannel, listOf())
             else -> unhandled(cmd)
         }

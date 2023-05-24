@@ -145,9 +145,9 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE`() {
+    fun `recv ChannelCommand_Close_MutualClose`() {
         val (alice, _, _) = init()
-        val (alice1, actions1) = alice.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(null, null))
         assertIs<LNChannel<Aborted>>(alice1)
         assertTrue(actions1.isEmpty())
     }

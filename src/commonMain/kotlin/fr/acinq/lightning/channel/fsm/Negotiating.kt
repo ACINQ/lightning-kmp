@@ -167,8 +167,8 @@ data class Negotiating(
             }
             cmd is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
             cmd is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating), listOf())
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_ADD_HTLC -> handleCommandError(cmd.command, ChannelUnavailable(channelId))
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
+            cmd is ChannelCommand.Htlc.Add -> handleCommandError(cmd, ChannelUnavailable(channelId))
+            cmd is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
             else -> unhandled(cmd)
         }
     }

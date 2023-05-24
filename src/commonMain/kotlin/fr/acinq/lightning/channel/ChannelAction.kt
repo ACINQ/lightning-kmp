@@ -18,7 +18,7 @@ sealed class ChannelAction {
 
     sealed class Message : ChannelAction() {
         data class Send(val message: LightningMessage) : Message()
-        data class SendToSelf(val command: Command) : Message()
+        data class SendToSelf(val command: ChannelCommand) : Message()
     }
 
     sealed class ChannelId : ChannelAction() {
@@ -97,15 +97,15 @@ sealed class ChannelAction {
 
     /**
      * Process the result of executing a given command.
-     * [[CMD_ADD_HTLC]] has a special treatment: there are two response patterns for this command:
-     *  - either [[ProcessCmdRes.AddFailed]] immediately
-     *  - or [[ProcessCmdRes.AddSettledFail]] / [[ProcessCmdRes.AddSettledFulfill]] (usually a while later)
+     * [ChannelCommand.Htlc.Add] has a special treatment: there are two response patterns for this command:
+     *  - either [ProcessCmdRes.AddFailed] immediately
+     *  - or [ProcessCmdRes.AddSettledFail] / [ProcessCmdRes.AddSettledFulfill] (usually a while later)
      */
     sealed class ProcessCmdRes : ChannelAction() {
-        data class NotExecuted(val cmd: Command, val t: ChannelException) : ProcessCmdRes()
+        data class NotExecuted(val cmd: ChannelCommand, val t: ChannelException) : ProcessCmdRes()
         data class AddSettledFulfill(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: HtlcResult.Fulfill) : ProcessCmdRes()
         data class AddSettledFail(val paymentId: UUID, val htlc: UpdateAddHtlc, val result: HtlcResult.Fail) : ProcessCmdRes()
-        data class AddFailed(val cmd: CMD_ADD_HTLC, val error: ChannelException, val channelUpdate: ChannelUpdate?) : ProcessCmdRes() {
+        data class AddFailed(val cmd: ChannelCommand.Htlc.Add, val error: ChannelException, val channelUpdate: ChannelUpdate?) : ProcessCmdRes() {
             override fun toString() = "cannot add htlc with paymentId=${cmd.paymentId} reason=${error.message}"
         }
     }

@@ -563,7 +563,7 @@ data class Commitments(
     fun getIncomingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? = active.first().getIncomingHtlcCrossSigned(htlcId)
     // @formatter:on
 
-    fun sendAdd(cmd: CMD_ADD_HTLC, paymentId: UUID, blockHeight: Long): Either<ChannelException, Pair<Commitments, UpdateAddHtlc>> {
+    fun sendAdd(cmd: ChannelCommand.Htlc.Add, paymentId: UUID, blockHeight: Long): Either<ChannelException, Pair<Commitments, UpdateAddHtlc>> {
         val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
         // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
         if (cmd.cltvExpiry >= maxExpiry) {
@@ -601,7 +601,7 @@ data class Commitments(
         return failure?.let { Either.Left(it) } ?: Either.Right(copy(changes = changes1))
     }
 
-    fun sendFulfill(cmd: CMD_FULFILL_HTLC): Either<ChannelException, Pair<Commitments, UpdateFulfillHtlc>> {
+    fun sendFulfill(cmd: ChannelCommand.Htlc.Settlement.Fulfill): Either<ChannelException, Pair<Commitments, UpdateFulfillHtlc>> {
         val htlc = getIncomingHtlcCrossSigned(cmd.id) ?: return Either.Left(UnknownHtlcId(channelId, cmd.id))
         return when {
             // we have already sent a fail/fulfill for this htlc
@@ -623,7 +623,7 @@ data class Commitments(
         }
     }
 
-    fun sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either<ChannelException, Pair<Commitments, UpdateFailHtlc>> {
+    fun sendFail(cmd: ChannelCommand.Htlc.Settlement.Fail, nodeSecret: PrivateKey): Either<ChannelException, Pair<Commitments, UpdateFailHtlc>> {
         val htlc = getIncomingHtlcCrossSigned(cmd.id) ?: return Either.Left(UnknownHtlcId(channelId, cmd.id))
         return when {
             // we have already sent a fail/fulfill for this htlc
@@ -640,7 +640,7 @@ data class Commitments(
         }
     }
 
-    fun sendFailMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): Either<ChannelException, Pair<Commitments, UpdateFailMalformedHtlc>> {
+    fun sendFailMalformed(cmd: ChannelCommand.Htlc.Settlement.FailMalformed): Either<ChannelException, Pair<Commitments, UpdateFailMalformedHtlc>> {
         // BADONION bit must be set in failure_code
         if ((cmd.failureCode and FailureMessage.BADONION) == 0) return Either.Left(InvalidFailureCode(channelId))
         val htlc = getIncomingHtlcCrossSigned(cmd.id) ?: return Either.Left(UnknownHtlcId(channelId, cmd.id))
@@ -668,7 +668,7 @@ data class Commitments(
         return Either.Right(Triple(copy(changes = changes.addRemoteProposal(fail)), paymentId, htlc))
     }
 
-    fun sendFee(cmd: CMD_UPDATE_FEE): Either<ChannelException, Pair<Commitments, UpdateFee>> {
+    fun sendFee(cmd: ChannelCommand.UpdateFee): Either<ChannelException, Pair<Commitments, UpdateFee>> {
         if (!params.localParams.isInitiator) return Either.Left(NonInitiatorCannotSendUpdateFee(channelId))
         // let's compute the current commitment *as seen by them* with this change taken into account
         val fee = UpdateFee(channelId, cmd.feerate)

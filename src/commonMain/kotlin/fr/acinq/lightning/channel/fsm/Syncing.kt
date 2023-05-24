@@ -300,7 +300,7 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                 }
             }
             cmd is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {
+            cmd is ChannelCommand.Close.ForceClose -> {
                 val (newState, actions) = state.run { process(cmd) }
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -383,7 +383,7 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
             }
 
             if (commitments1.changes.localHasChanges()) {
-                sendQueue.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                sendQueue.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
             }
 
             // When a channel is reestablished after a wallet restarts, we need to reprocess incoming HTLCs that may have been only partially processed

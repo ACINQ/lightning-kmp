@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel.fsm
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.channel.CMD_FORCECLOSE
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.PleasePublishYourCommitment
@@ -100,7 +99,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                     else -> Pair(Offline(newState), actions)
                 }
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {
+            cmd is ChannelCommand.Close.ForceClose -> {
                 val (newState, actions) = state.run { process(cmd) }
                 when (newState) {
                     // NB: it doesn't make sense to try to send outgoing messages if we're offline.

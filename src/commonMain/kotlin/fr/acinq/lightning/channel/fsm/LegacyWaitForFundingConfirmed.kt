@@ -9,7 +9,10 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
-import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.wire.ChannelReady
+import fr.acinq.lightning.wire.Error
+import fr.acinq.lightning.wire.FundingCreated
+import fr.acinq.lightning.wire.FundingSigned
 
 /**
  * We changed the channel funding flow to use dual funding, and removed the ability to open legacy channels.
@@ -68,11 +71,8 @@ data class LegacyWaitForFundingConfirmed(
                         else -> handleRemoteSpentOther(cmd.watch.tx)
                     }
                 }
-            is ChannelCommand.ExecuteCommand -> when (cmd.command) {
-                is CMD_CLOSE -> Pair(this@LegacyWaitForFundingConfirmed, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
-                else -> unhandled(cmd)
-            }
+            is ChannelCommand.Close.MutualClose -> Pair(this@LegacyWaitForFundingConfirmed, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))
+            is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.CheckHtlcTimeout -> Pair(this@LegacyWaitForFundingConfirmed, listOf())
             is ChannelCommand.Disconnected -> Pair(Offline(this@LegacyWaitForFundingConfirmed), listOf())
             else -> unhandled(cmd)

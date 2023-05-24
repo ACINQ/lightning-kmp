@@ -303,12 +303,12 @@ class SyncingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FORCECLOSE`() {
+    fun `recv ChannelCommand_Close_ForceClose`() {
         val (alice, _, _) = run {
             val (alice, bob) = init()
             disconnect(alice, bob)
         }
-        val (alice1, actions1) = alice.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.ForceClose)
         assertIs<Closing>(alice1.state)
         actions1.hasOutgoingMessage<Error>()
     }
@@ -325,7 +325,7 @@ class SyncingTestsCommon : LightningTestSuite() {
         fun createUnsignedRbf(): UnsignedRbfFixture {
             val (alice, bob, _, wallet) = WaitForFundingConfirmedTestsCommon.init()
             val command = WaitForFundingConfirmedTestsCommon.createRbfCommand(alice, wallet)
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.ExecuteCommand(command))
+            val (alice1, actionsAlice1) = alice.process(command)
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxInitRbf>()))
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxAckRbf>()))
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxAddInput>()))
