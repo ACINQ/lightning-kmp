@@ -250,7 +250,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             if (payment.parts.filterIsInstance<PayToOpenPart>().isNotEmpty()) {
                                 // We consider the total amount received (not only the pay-to-open parts) to evaluate whether or not to accept the payment
                                 val payToOpenFee = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenFeeSatoshis }.sum()
-                                nodeParams.liquidityPolicy.maybeReject(payment.amountReceived, payToOpenFee.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, logger)?.let { rejected ->
+                                nodeParams.liquidityPolicy.value.maybeReject(payment.amountReceived, payToOpenFee.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, logger)?.let { rejected ->
                                     logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
                                     nodeParams._nodeEvents.emit(rejected)
                                     val actions = payment.parts.map { part ->
