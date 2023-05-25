@@ -10,6 +10,8 @@ import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelAction
+import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
@@ -208,7 +210,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             val htlcsMapInDb = incomingPayment.received.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.LightningPayment>().map { it.channelId to it.htlcId }
                             if (htlcsMapInDb.contains(paymentPart.htlc.channelId to paymentPart.htlc.id)) {
                                 logger.info { "accepting local replay of htlc=${paymentPart.htlc.id} on channel=${paymentPart.htlc.channelId}" }
-                                val action = WrappedChannelCommand(paymentPart.htlc.channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(paymentPart.htlc.id, incomingPayment.preimage, true)))
+                                val action = WrappedChannelCommand(paymentPart.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(paymentPart.htlc.id, incomingPayment.preimage, true))
                                 ProcessAddResult.Accepted(listOf(action), incomingPayment, incomingPayment.received)
                             } else {
                                 logger.info { "rejecting htlc part for an invoice that has already been paid" }
@@ -281,8 +283,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             }
                             val actions = buildList {
                                 htlcParts.forEach { part ->
-                                    val cmd = CMD_FULFILL_HTLC(part.htlc.id, incomingPayment.preimage, true)
-                                    add(WrappedChannelCommand(part.htlc.channelId, ChannelCommand.ExecuteCommand(cmd)))
+                                    val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.preimage, true)
+                                    add(WrappedChannelCommand(part.htlc.channelId, cmd))
                                 }
                                 // We avoid sending duplicate pay-to-open responses, since the preimage is the same for every part.
                                 if (payToOpenParts.isNotEmpty()) {
@@ -449,16 +451,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         }
 
         private fun actionForFailureMessage(msg: FailureMessage, htlc: UpdateAddHtlc, commit: Boolean = true): WrappedChannelCommand {
-            val cmd: Command = when (msg) {
-                is BadOnion -> CMD_FAIL_MALFORMED_HTLC(htlc.id, msg.onionHash, msg.code, commit)
-                else -> CMD_FAIL_HTLC(htlc.id, CMD_FAIL_HTLC.Reason.Failure(msg), commit)
+            val cmd: ChannelCommand.Htlc.Settlement = when (msg) {
+                is BadOnion -> ChannelCommand.Htlc.Settlement.FailMalformed(htlc.id, msg.onionHash, msg.code, commit)
+                else -> ChannelCommand.Htlc.Settlement.Fail(htlc.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(msg), commit)
             }
-            val channelCommand = ChannelCommand.ExecuteCommand(cmd)
-            return WrappedChannelCommand(htlc.channelId, channelCommand)
+            return WrappedChannelCommand(htlc.channelId, cmd)
         }
 
         fun actionForPayToOpenFailure(privateKey: PrivateKey, failure: FailureMessage, payToOpenRequest: PayToOpenRequest): PayToOpenResponseCommand {
-            val reason = CMD_FAIL_HTLC.Reason.Failure(failure)
+            val reason = ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(failure)
             val encryptedReason = when (val result = OutgoingPaymentPacket.buildHtlcFailure(privateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
                 is Either.Right -> result.value
                 is Either.Left -> null

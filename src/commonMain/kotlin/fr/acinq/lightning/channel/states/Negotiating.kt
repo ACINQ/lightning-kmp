@@ -1,9 +1,10 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.channel.Channel.MAX_NEGOTIATION_ITERATIONS
+import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.states.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
@@ -32,7 +33,8 @@ data class Negotiating(
             cmd is ChannelCommand.MessageReceived && cmd.message is ClosingSigned -> {
                 val remoteClosingFee = cmd.message.feeSatoshis
                 logger.info { "received closing fee=$remoteClosingFee" }
-                when (val result = Helpers.Closing.checkClosingSignature(channelKeys(), commitments.latest, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), cmd.message.feeSatoshis, cmd.message.signature)) {
+                when (val result =
+                    Helpers.Closing.checkClosingSignature(channelKeys(), commitments.latest, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), cmd.message.feeSatoshis, cmd.message.signature)) {
                     is Either.Left -> handleLocalError(cmd, result.value)
                     is Either.Right -> {
                         val (signedClosingTx, closingSignedRemoteFees) = result.value
@@ -165,8 +167,8 @@ data class Negotiating(
             }
             cmd is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
             cmd is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating), listOf())
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_ADD_HTLC -> handleCommandError(cmd.command, ChannelUnavailable(channelId))
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
+            cmd is ChannelCommand.Htlc.Add -> handleCommandError(cmd, ChannelUnavailable(channelId))
+            cmd is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
             else -> unhandled(cmd)
         }
     }

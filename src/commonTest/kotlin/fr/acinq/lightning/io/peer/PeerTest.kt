@@ -13,6 +13,7 @@ import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
+import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.PaymentRequest

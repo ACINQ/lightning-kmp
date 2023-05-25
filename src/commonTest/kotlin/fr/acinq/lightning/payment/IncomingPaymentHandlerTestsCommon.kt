@@ -7,6 +7,8 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelAction
+import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
@@ -36,12 +38,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 1: alice ---> update_add_htlc ---> bob
 
-        var processResult = alice.processSameState(ChannelCommand.ExecuteCommand(cmdAddHtlc))
+        var processResult = alice.processSameState(cmdAddHtlc)
         alice = processResult.first
         var actions = processResult.second
         assertEquals(2, actions.size)
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
-        val aliceCmdSign = actions.findCommand<CMD_SIGN>()
+        val aliceCmdSign = actions.findCommand<ChannelCommand.Sign>()
 
         processResult = bob.processSameState(ChannelCommand.MessageReceived(add))
         bob = processResult.first
@@ -58,7 +60,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 2: alice ---> commitment_signed ---> bob
 
-        processResult = alice.processSameState(ChannelCommand.ExecuteCommand(aliceCmdSign))
+        processResult = alice.processSameState(aliceCmdSign)
         alice = processResult.first
         actions = processResult.second
         val aliceSig = actions.findOutgoingMessage<CommitSig>()
@@ -67,7 +69,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         bob = processResult.first
         actions = processResult.second
         val bobRev = actions.findOutgoingMessage<RevokeAndAck>()
-        val bobCmdSign = actions.findCommand<CMD_SIGN>()
+        val bobCmdSign = actions.findCommand<ChannelCommand.Sign>()
 
         assertTrue { alice.commitments.changes.localChanges.proposed.isEmpty() }
         assertTrue { alice.commitments.changes.localChanges.signed.size == 1 }
@@ -94,7 +96,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // Step 4: alice <--- commitment_signed <--- bob
 
-        processResult = bob.processSameState(ChannelCommand.ExecuteCommand(bobCmdSign))
+        processResult = bob.processSameState(bobCmdSign)
         bob = processResult.first
         actions = processResult.second
         val bobSig = actions.findOutgoingMessage<CommitSig>()
@@ -139,7 +141,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
         result as IncomingPaymentHandler.ProcessAddResult.Accepted
-        val expected = ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(add.id, incomingPayment.preimage, commit = true))
+        val expected = ChannelCommand.Htlc.Settlement.Fulfill(add.id, incomingPayment.preimage, commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
 
         assertEquals(result.incomingPayment.received, result.received)
@@ -268,7 +270,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
-                        CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))
+                        ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))
                     ).right!!
                 )
             )
@@ -294,7 +296,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
-                        CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))
+                        ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))
                     ).right!!
                 )
             )
@@ -320,7 +322,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
-                        CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure)
+                        ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(TemporaryNodeFailure)
                     ).right!!
                 )
             )
@@ -363,7 +365,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                         paymentHandler.nodeParams.nodePrivateKey,
                         payToOpenRequest.paymentHash,
                         payToOpenRequest.finalPacket,
-                        CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))
+                        ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(payToOpenRequest.amountMsat, TestConstants.defaultBlockHeight.toLong()))
                     ).right!!
                 )
             )
@@ -399,9 +401,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
             result as IncomingPaymentHandler.ProcessAddResult.Accepted
             val (expectedActions, expectedReceivedWith) = setOf(
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(0, defaultPreimage, commit = true)))
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(0, defaultPreimage, commit = true))
                         to IncomingPayment.ReceivedWith.LightningPayment(amount1, channelId, 0),
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(1, defaultPreimage, commit = true)))
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(1, defaultPreimage, commit = true))
                         to IncomingPayment.ReceivedWith.LightningPayment(amount2, channelId, 1),
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
@@ -437,9 +439,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
             result as IncomingPaymentHandler.ProcessAddResult.Accepted
             val (expectedActions, expectedReceivedWith) = setOf(
-                WrappedChannelCommand(channelId1, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(7, defaultPreimage, commit = true)))
+                WrappedChannelCommand(channelId1, ChannelCommand.Htlc.Settlement.Fulfill(7, defaultPreimage, commit = true))
                         to IncomingPayment.ReceivedWith.LightningPayment(amount1, channelId1, 7),
-                WrappedChannelCommand(channelId2, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(5, defaultPreimage, commit = true)))
+                WrappedChannelCommand(channelId2, ChannelCommand.Htlc.Settlement.Fulfill(5, defaultPreimage, commit = true))
                         to IncomingPayment.ReceivedWith.LightningPayment(amount2, channelId2, 5),
             ).unzip()
             assertEquals(expectedActions.toSet(), result.actions.toSet())
@@ -510,7 +512,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
 
             assertEquals(2, result.actions.size)
-            assertContains(result.actions, WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(0, incomingPayment.preimage, commit = true))))
+            assertContains(result.actions, WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(0, incomingPayment.preimage, commit = true)))
             assertContains(result.actions, PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))))
 
             // the pay-to-open part is not yet provided
@@ -549,7 +551,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val expected = setOf(
                 WrappedChannelCommand(
                     channelId,
-                    ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(0, CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure), commit = true))
+                    ChannelCommand.Htlc.Settlement.Fail(0, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(TemporaryNodeFailure), commit = true)
                 ),
                 PayToOpenResponseCommand(
                     PayToOpenResponse(
@@ -560,7 +562,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                                 paymentHandler.nodeParams.nodePrivateKey,
                                 payToOpenRequest.paymentHash,
                                 payToOpenRequest.finalPacket,
-                                CMD_FAIL_HTLC.Reason.Failure(TemporaryNodeFailure)
+                                ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(TemporaryNodeFailure)
                             ).right!!
                         )
                     )
@@ -577,7 +579,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
         assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
-        val expected = WrappedChannelCommand(add.channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(add.id, incomingPayment.preimage, commit = true)))
+        val expected = WrappedChannelCommand(add.channelId, ChannelCommand.Htlc.Settlement.Fulfill(add.id, incomingPayment.preimage, commit = true))
         assertEquals(setOf(expected), result.actions.toSet())
     }
 
@@ -606,8 +608,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
             val expected = setOf(
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(7, incomingPayment.preimage, commit = true))),
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(11, incomingPayment.preimage, commit = true))),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(7, incomingPayment.preimage, commit = true)),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(11, incomingPayment.preimage, commit = true)),
             )
             assertEquals(expected, result.actions.toSet())
         }
@@ -639,9 +641,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
             val expected = setOf(
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(3, incomingPayment.preimage, commit = true))),
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(5, incomingPayment.preimage, commit = true))),
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(6, incomingPayment.preimage, commit = true)))
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(3, incomingPayment.preimage, commit = true)),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(5, incomingPayment.preimage, commit = true)),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(6, incomingPayment.preimage, commit = true))
             )
             assertEquals(expected, result.actions.toSet())
         }
@@ -669,8 +671,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         result2 as IncomingPaymentHandler.ProcessAddResult.Accepted
         assertEquals(defaultAmount, result2.received.amount)
         val expected = setOf(
-            WrappedChannelCommand(add1.channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(add1.id, incomingPayment.preimage, commit = true))),
-            WrappedChannelCommand(add2.channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(add2.id, incomingPayment.preimage, commit = true)))
+            WrappedChannelCommand(add1.channelId, ChannelCommand.Htlc.Settlement.Fulfill(add1.id, incomingPayment.preimage, commit = true)),
+            WrappedChannelCommand(add2.channelId, ChannelCommand.Htlc.Settlement.Fulfill(add2.id, incomingPayment.preimage, commit = true))
         )
         assertEquals(expected, result2.actions.toSet())
 
@@ -679,7 +681,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertTrue { result2b is IncomingPaymentHandler.ProcessAddResult.Accepted }
         result2b as IncomingPaymentHandler.ProcessAddResult.Accepted
         assertEquals(defaultAmount, result2b.received.amount)
-        assertEquals(listOf(WrappedChannelCommand(add2.channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(add2.id, incomingPayment.preimage, commit = true)))), result2b.actions)
+        assertEquals(listOf(WrappedChannelCommand(add2.channelId, ChannelCommand.Htlc.Settlement.Fulfill(add2.id, incomingPayment.preimage, commit = true))), result2b.actions)
     }
 
     @Test
@@ -694,7 +696,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // It expires after a while.
         val actions1 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2)
-        val addTimeout = ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))
+        val addTimeout = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(PaymentTimeout), commit = true)
         assertEquals(listOf(WrappedChannelCommand(add.channelId, addTimeout)), actions1)
 
         // For some reason, the channel was offline, didn't process the failure and retransmits the htlc.
@@ -710,7 +712,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val currentBlockHeight = add.cltvExpiry.toLong().toInt() - 3
         val result3 = paymentHandler.process(add, currentBlockHeight)
         assertTrue { result3 is IncomingPaymentHandler.ProcessAddResult.Rejected }
-        val addExpired = ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, currentBlockHeight.toLong())), commit = true))
+        val addExpired = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, currentBlockHeight.toLong())), commit = true)
         assertEquals(listOf(WrappedChannelCommand(add.channelId, addExpired)), result3.actions)
     }
 
@@ -727,7 +729,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
         assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-        val expected = ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+        val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
 
@@ -738,7 +740,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
         assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-        val expected = ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+        val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
 
@@ -757,7 +759,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // 2. InvalidOnionHmac
         // Since we used a valid pubKey, we should get an hmac failure.
         val expectedErr = InvalidOnionHmac(Sphinx.hash(badOnion))
-        val expected = ChannelCommand.ExecuteCommand(CMD_FAIL_MALFORMED_HTLC(add.id, expectedErr.onionHash, expectedErr.code, commit = true))
+        val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedErr.onionHash, expectedErr.code, commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
 
@@ -769,7 +771,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
         assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-        val expected = ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+        val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
 
@@ -786,7 +788,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val add = makeUpdateAddHtlc(3, randomBytes32(), paymentHandler, incomingPayment.paymentHash, payload)
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-            val expected = ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(payload.totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+            val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(payload.totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
             assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
         }
     }
@@ -820,11 +822,11 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val expected = setOf(
                 WrappedChannelCommand(
                     channelId,
-                    ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+                    ChannelCommand.Htlc.Settlement.Fail(1, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
                 ),
                 WrappedChannelCommand(
                     channelId,
-                    ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(2, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount + 1.msat, TestConstants.defaultBlockHeight.toLong())), commit = true))
+                    ChannelCommand.Htlc.Settlement.Fail(2, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount + 1.msat, TestConstants.defaultBlockHeight.toLong())), commit = true)
                 ),
             )
             assertEquals(expected, result.actions.toSet())
@@ -855,7 +857,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val add = makeUpdateAddHtlc(1, randomBytes32(), paymentHandler, incomingPayment.paymentHash, payload)
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
-            val expected = ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(add.id, CMD_FAIL_HTLC.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true))
+            val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
             assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
         }
     }
@@ -891,8 +893,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
             val expected = setOf(
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))),
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(2, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true))),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fail(1, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(PaymentTimeout), commit = true)),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fail(2, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(PaymentTimeout), commit = true)),
             )
             assertEquals(expected, actions.toSet())
         }
@@ -920,7 +922,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         run {
             val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpirySeconds + 2
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
-            val expected = WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FAIL_HTLC(1, CMD_FAIL_HTLC.Reason.Failure(PaymentTimeout), commit = true)))
+            val expected = WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fail(1, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(PaymentTimeout), commit = true))
             assertEquals(setOf(expected), actions.toSet())
         }
 
@@ -941,8 +943,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
             val expected = setOf(
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(3, incomingPayment.preimage, commit = true))),
-                WrappedChannelCommand(channelId, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(4, incomingPayment.preimage, commit = true))),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(3, incomingPayment.preimage, commit = true)),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(4, incomingPayment.preimage, commit = true)),
             )
             assertEquals(expected, result.actions.toSet())
         }
@@ -970,8 +972,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertTrue { result2 is IncomingPaymentHandler.ProcessAddResult.Accepted }
 
             val expected = setOf(
-                WrappedChannelCommand(channelId1, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc1.id, incomingPayment.preimage, commit = true))),
-                WrappedChannelCommand(channelId2, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc2.id, incomingPayment.preimage, commit = true))),
+                WrappedChannelCommand(channelId1, ChannelCommand.Htlc.Settlement.Fulfill(htlc1.id, incomingPayment.preimage, commit = true)),
+                WrappedChannelCommand(channelId2, ChannelCommand.Htlc.Settlement.Fulfill(htlc2.id, incomingPayment.preimage, commit = true)),
             )
             assertEquals(expected, result2.actions.toSet())
         }
@@ -981,7 +983,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         run {
             val result = paymentHandler.process(htlc1, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Accepted }
-            val expected = WrappedChannelCommand(channelId1, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc1.id, incomingPayment.preimage, commit = true)))
+            val expected = WrappedChannelCommand(channelId1, ChannelCommand.Htlc.Settlement.Fulfill(htlc1.id, incomingPayment.preimage, commit = true))
             assertEquals(setOf(expected), result.actions.toSet())
         }
     }
@@ -1008,8 +1010,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertTrue { result2 is IncomingPaymentHandler.ProcessAddResult.Accepted }
 
             val expected = setOf(
-                WrappedChannelCommand(channelId1, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc1.id, incomingPayment.preimage, commit = true))),
-                WrappedChannelCommand(channelId2, ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlc2.id, incomingPayment.preimage, commit = true))),
+                WrappedChannelCommand(channelId1, ChannelCommand.Htlc.Settlement.Fulfill(htlc1.id, incomingPayment.preimage, commit = true)),
+                WrappedChannelCommand(channelId2, ChannelCommand.Htlc.Settlement.Fulfill(htlc2.id, incomingPayment.preimage, commit = true)),
             )
             assertEquals(expected, result2.actions.toSet())
         }
@@ -1021,12 +1023,10 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
             val expected = WrappedChannelCommand(
-                channelId1, ChannelCommand.ExecuteCommand(
-                    CMD_FAIL_HTLC(
-                        3, CMD_FAIL_HTLC.Reason.Failure(
-                            IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
-                        ), commit = true
-                    )
+                channelId1, ChannelCommand.Htlc.Settlement.Fail(
+                    3, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(
+                        IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
+                    ), commit = true
                 )
             )
             assertEquals(setOf(expected), result.actions.toSet())
@@ -1039,12 +1039,10 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertTrue { result is IncomingPaymentHandler.ProcessAddResult.Rejected }
             val expected = WrappedChannelCommand(
-                channelId3, ChannelCommand.ExecuteCommand(
-                    CMD_FAIL_HTLC(
-                        htlc2.id, CMD_FAIL_HTLC.Reason.Failure(
-                            IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
-                        ), commit = true
-                    )
+                channelId3, ChannelCommand.Htlc.Settlement.Fail(
+                    htlc2.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(
+                        IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())
+                    ), commit = true
                 )
             )
             assertEquals(setOf(expected), result.actions.toSet())
@@ -1114,7 +1112,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             return listOf(channelHop)
         }
 
-        private fun makeCmdAddHtlc(destination: PublicKey, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): CMD_ADD_HTLC {
+        private fun makeCmdAddHtlc(destination: PublicKey, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): ChannelCommand.Htlc.Add {
             return OutgoingPaymentPacket.buildCommand(UUID.randomUUID(), paymentHash, channelHops(destination), finalPayload).first.copy(commit = true)
         }
 

@@ -1,4 +1,4 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
@@ -8,10 +8,10 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.math.absoluteValue
 
@@ -81,7 +81,7 @@ data class WaitForFundingSigned(
                 logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> handleLocalError(cmd, ChannelFundingError(channelId))
+            cmd is ChannelCommand.Close -> handleLocalError(cmd, ChannelFundingError(channelId))
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingSigned, listOf())
             // We should be able to complete the channel open when reconnecting.
             cmd is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForFundingSigned), listOf())

@@ -6,9 +6,9 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
-import fr.acinq.lightning.channel.Normal
-import fr.acinq.lightning.channel.Offline
-import fr.acinq.lightning.channel.Syncing
+import fr.acinq.lightning.channel.states.Normal
+import fr.acinq.lightning.channel.states.Offline
+import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.CommitmentSpec

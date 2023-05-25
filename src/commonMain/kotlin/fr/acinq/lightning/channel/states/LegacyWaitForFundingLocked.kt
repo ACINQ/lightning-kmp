@@ -1,8 +1,9 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -64,11 +65,8 @@ data class LegacyWaitForFundingLocked(
                 }
                 else -> unhandled(cmd)
             }
-            is ChannelCommand.ExecuteCommand -> when (cmd.command) {
-                is CMD_CLOSE -> Pair(this@LegacyWaitForFundingLocked, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
-                else -> unhandled(cmd)
-            }
+            is ChannelCommand.Close.MutualClose -> Pair(this@LegacyWaitForFundingLocked, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))
+            is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.CheckHtlcTimeout -> Pair(this@LegacyWaitForFundingLocked, listOf())
             is ChannelCommand.Disconnected -> Pair(Offline(this@LegacyWaitForFundingLocked), listOf())
             else -> unhandled(cmd)

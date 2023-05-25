@@ -1,9 +1,10 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
@@ -118,7 +119,7 @@ data class WaitForFundingCreated(
                 logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> handleLocalError(cmd, ChannelFundingError(channelId))
+            cmd is ChannelCommand.Close -> handleLocalError(cmd, ChannelFundingError(channelId))
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingCreated, listOf())
             cmd is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
             else -> unhandled(cmd)

@@ -163,10 +163,10 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE`() {
+    fun `recv ChannelCommand_Close_MutualClose`() {
         val (alice, _, bob, _) = init()
         listOf(alice, bob).forEach { state ->
-            val (state1, actions1) = state.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
+            val (state1, actions1) = state.process(ChannelCommand.Close.MutualClose(null, null))
             assertEquals(state, state1)
             assertEquals(1, actions1.size)
             actions1.hasCommandError<CommandUnavailableInThisState>()
@@ -174,11 +174,11 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FORCECLOSE`() {
+    fun `recv ChannelCommand_Close_ForceClose`() {
         val (alice, _, bob, _) = init()
         listOf(alice, bob).forEach { state ->
             val commitTx = state.commitments.latest.localCommit.publishableTxs.commitTx.tx
-            val (state1, actions1) = state.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+            val (state1, actions1) = state.process(ChannelCommand.Close.ForceClose)
             assertIs<Closing>(state1.state)
             assertNotNull(state1.state.localCommitPublished)
             val error = actions1.hasOutgoingMessage<Error>()
@@ -189,9 +189,9 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_FORCECLOSE -- nothing at stake`() {
+    fun `recv ChannelCommand_Close_ForceClose -- nothing at stake`() {
         val (_, _, bob, _) = init(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
-        val (bob1, actions1) = bob.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+        val (bob1, actions1) = bob.process(ChannelCommand.Close.ForceClose)
         assertIs<Aborted>(bob1.state)
         assertEquals(1, actions1.size)
         val error = actions1.hasOutgoingMessage<Error>()

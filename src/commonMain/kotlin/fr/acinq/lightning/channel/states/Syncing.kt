@@ -1,8 +1,9 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.Either
@@ -299,7 +300,7 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                 }
             }
             cmd is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CMD_FORCECLOSE -> {
+            cmd is ChannelCommand.Close.ForceClose -> {
                 val (newState, actions) = state.run { process(cmd) }
                 when (newState) {
                     is Closing -> Pair(newState, actions)
@@ -382,7 +383,7 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
             }
 
             if (commitments1.changes.localHasChanges()) {
-                sendQueue.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                sendQueue.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
             }
 
             // When a channel is reestablished after a wallet restarts, we need to reprocess incoming HTLCs that may have been only partially processed

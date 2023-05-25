@@ -4,6 +4,9 @@ import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.channel.states.Normal
+import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.value
@@ -77,13 +80,13 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         fun commitSigSize(maxIncoming: Int, maxOutgoing: Int): Int {
             val (alice1, bob1) = addHtlcs(alice, bob, MilliSatoshi(6000_000), maxOutgoing)
             val (bob2, alice2) = addHtlcs(bob1, alice1, MilliSatoshi(6000_000), maxIncoming)
-            val (_, actions) = alice2.process(ChannelCommand.ExecuteCommand(CMD_SIGN))
+            val (_, actions) = alice2.process(ChannelCommand.Sign)
             val commitSig0 = actions.findOutgoingMessage<CommitSig>()
 
             val (bob3, actions1) = bob2.process(ChannelCommand.MessageReceived(commitSig0))
-            val commandSign0 = actions1.findCommand<CMD_SIGN>()
+            val commandSign0 = actions1.findCommand<ChannelCommand.Sign>()
 
-            val (_, actions2) = bob3.process(ChannelCommand.ExecuteCommand(commandSign0))
+            val (_, actions2) = bob3.process(commandSign0)
             val commitSig1 = actions2.findOutgoingMessage<CommitSig>()
 
             val bina = LightningMessage.encode(commitSig0)

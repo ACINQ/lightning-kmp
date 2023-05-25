@@ -1,7 +1,7 @@
 package fr.acinq.lightning.tests.io.peer
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.lightning.channel.ChannelState
+import fr.acinq.lightning.channel.states.ChannelState
 import fr.acinq.lightning.io.BytesReceived
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.utils.Connection

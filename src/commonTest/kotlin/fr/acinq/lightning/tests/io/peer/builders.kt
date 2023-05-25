@@ -12,13 +12,16 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
+import fr.acinq.lightning.channel.states.Normal
+import fr.acinq.lightning.channel.states.PersistedChannelState
+import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.BytesReceived
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Init

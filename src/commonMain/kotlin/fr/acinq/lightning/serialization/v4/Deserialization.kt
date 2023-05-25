@@ -8,6 +8,7 @@ import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*

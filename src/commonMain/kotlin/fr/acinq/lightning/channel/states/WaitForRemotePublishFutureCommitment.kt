@@ -1,7 +1,10 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.channel.ChannelAction
+import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
 

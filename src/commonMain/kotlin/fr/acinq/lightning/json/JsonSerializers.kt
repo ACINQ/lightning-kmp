@@ -96,6 +96,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.json.JsonSerializers.LongSerializer

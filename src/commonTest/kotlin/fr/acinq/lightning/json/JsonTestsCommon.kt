@@ -1,6 +1,6 @@
 package fr.acinq.lightning.json
 
-import fr.acinq.lightning.channel.ChannelState
+import fr.acinq.lightning.channel.states.ChannelState
 import fr.acinq.lightning.channel.TestsHelper
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import kotlinx.serialization.encodeToString

@@ -22,10 +22,10 @@ import kotlin.test.*
 class NegotiatingTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `recv CMD_ADD_HTLC`() {
+    fun `recv ChannelCommand_Htlc_Add`() {
         val (alice, _, _) = init()
         val (_, add) = makeCmdAdd(500_000.msat, alice.staticParams.remoteNodeId, TestConstants.defaultBlockHeight.toLong())
-        val (alice1, actions1) = alice.process(ChannelCommand.ExecuteCommand(add))
+        val (alice1, actions1) = alice.process(add)
         assertIs<LNChannel<Negotiating>>(alice1)
         assertEquals(1, actions1.size)
         actions1.hasCommandError<ChannelUnavailable>()
@@ -360,7 +360,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
         // Alice initiates a mutual close with a custom final script
         val finalScript = Script.write(Script.pay2pkh(priv.publicKey())).toByteVector()
-        val (alice1, actions1) = alice.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(finalScript, null)))
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(finalScript, null))
         val shutdownA = actions1.findOutgoingMessage<Shutdown>()
 
         // Bob replies with Shutdown + ClosingSigned
@@ -427,11 +427,11 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CMD_CLOSE`() {
+    fun `recv ChannelCommand_Close_MutualClose`() {
         val (alice, _, _) = init()
-        val (alice1, actions) = alice.process(ChannelCommand.ExecuteCommand(CMD_CLOSE(null, null)))
+        val (alice1, actions) = alice.process(ChannelCommand.Close.MutualClose(null, null))
         assertEquals(alice1, alice)
-        assertEquals(actions, listOf(ChannelAction.ProcessCmdRes.NotExecuted(CMD_CLOSE(null, null), ClosingAlreadyInProgress(alice.channelId))))
+        assertEquals(actions, listOf(ChannelAction.ProcessCmdRes.NotExecuted(ChannelCommand.Close.MutualClose(null, null), ClosingAlreadyInProgress(alice.channelId))))
     }
 
     @Test

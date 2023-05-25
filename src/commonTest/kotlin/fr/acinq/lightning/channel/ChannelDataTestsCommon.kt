@@ -13,6 +13,7 @@ import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
+import fr.acinq.lightning.channel.states.Closing
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions.InputInfo
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
@@ -270,10 +271,10 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             val (bob5, alice5) = nodes5
             val (bob6, alice6) = crossSign(bob5, alice5)
             // Alice and Bob both know the preimage for only one of the two HTLCs they received.
-            val (alice7, _) = alice6.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcBob.id, preimageBob)))
-            val (bob7, _) = bob6.process(ChannelCommand.ExecuteCommand(CMD_FULFILL_HTLC(htlcAlice.id, preimageAlice)))
+            val (alice7, _) = alice6.process(ChannelCommand.Htlc.Settlement.Fulfill(htlcBob.id, preimageBob))
+            val (bob7, _) = bob6.process(ChannelCommand.Htlc.Settlement.Fulfill(htlcAlice.id, preimageAlice))
             // Alice publishes her commitment.
-            val (aliceClosing, _) = alice7.process(ChannelCommand.ExecuteCommand(CMD_FORCECLOSE))
+            val (aliceClosing, _) = alice7.process(ChannelCommand.Close.ForceClose)
             assertIs<LNChannel<Closing>>(aliceClosing)
             val lcp = aliceClosing.state.localCommitPublished
             assertNotNull(lcp)

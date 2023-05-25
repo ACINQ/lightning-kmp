@@ -1,7 +1,8 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
@@ -77,7 +78,7 @@ data class ShuttingDown(
                                         val actions = mutableListOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(revocation))
                                         if (commitments1.changes.localHasChanges()) {
                                             // if we have newly acknowledged changes let's sign them
-                                            actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                                            actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
                                         }
                                         Pair(nextState, actions)
                                     }
@@ -120,7 +121,7 @@ data class ShuttingDown(
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
                                     actions1.add(ChannelAction.Storage.StoreState(nextState))
                                     if (commitments1.changes.localHasChanges() && commitments1.remoteNextCommitInfo.isLeft) {
-                                        actions1.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                                        actions1.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
                                     }
                                     Pair(nextState, actions1)
                                 }
@@ -133,49 +134,48 @@ data class ShuttingDown(
                     else -> unhandled(cmd)
                 }
             }
-            is ChannelCommand.ExecuteCommand -> when {
-                cmd.command is CMD_ADD_HTLC -> {
-                    logger.info { "rejecting htlc request in state=${this::class}" }
-                    // we don't provide a channel_update: this will be a permanent channel failure
-                    handleCommandError(cmd.command, ChannelUnavailable(channelId))
-                }
-                cmd.command is CMD_SIGN && !commitments.changes.localHasChanges() -> {
-                    logger.debug { "ignoring CMD_SIGN (nothing to sign)" }
+            is ChannelCommand.Htlc.Add -> {
+                logger.info { "rejecting htlc request in state=${this::class}" }
+                // we don't provide a channel_update: this will be a permanent channel failure
+                handleCommandError(cmd, ChannelUnavailable(channelId))
+            }
+            is ChannelCommand.Sign -> {
+                if (!commitments.changes.localHasChanges()) {
+                    logger.debug { "ignoring ChannelCommand.Sign (nothing to sign)" }
                     Pair(this@ShuttingDown, listOf())
-                }
-                cmd.command is CMD_SIGN && commitments.remoteNextCommitInfo.isLeft -> {
+                } else if (commitments.remoteNextCommitInfo.isLeft) {
                     logger.debug { "already in the process of signing, will sign again as soon as possible" }
                     Pair(this@ShuttingDown, listOf())
-                }
-                cmd.command is CMD_SIGN -> when (val result = commitments.sendCommit(channelKeys(), logger)) {
-                    is Either.Left -> handleCommandError(cmd.command, result.value)
-                    is Either.Right -> {
-                        val commitments1 = result.value.first
-                        val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.commit.spec
-                        // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
-                        // counterparty, so only htlcs above remote's dust_limit matter
-                        val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec) + Transactions.trimReceivedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec)
-                        val htlcInfos = trimmedHtlcs.map { it.add }.map {
-                            logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=${commitments1.nextRemoteCommitIndex}" }
-                            ChannelAction.Storage.HtlcInfo(channelId, commitments1.nextRemoteCommitIndex, it.paymentHash, it.cltvExpiry)
+                } else {
+                    when (val result = commitments.sendCommit(channelKeys(), logger)) {
+                        is Either.Left -> handleCommandError(cmd, result.value)
+                        is Either.Right -> {
+                            val commitments1 = result.value.first
+                            val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.commit.spec
+                            // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
+                            // counterparty, so only htlcs above remote's dust_limit matter
+                            val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec) + Transactions.trimReceivedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec)
+                            val htlcInfos = trimmedHtlcs.map { it.add }.map {
+                                logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=${commitments1.nextRemoteCommitIndex}" }
+                                ChannelAction.Storage.HtlcInfo(channelId, commitments1.nextRemoteCommitIndex, it.paymentHash, it.cltvExpiry)
+                            }
+                            val nextState = this@ShuttingDown.copy(commitments = commitments1)
+                            val actions = buildList {
+                                add(ChannelAction.Storage.StoreHtlcInfos(htlcInfos))
+                                add(ChannelAction.Storage.StoreState(nextState))
+                                addAll(result.value.second.map { ChannelAction.Message.Send(it) })
+                            }
+                            Pair(nextState, actions)
                         }
-                        val nextState = this@ShuttingDown.copy(commitments = commitments1)
-                        val actions = buildList {
-                            add(ChannelAction.Storage.StoreHtlcInfos(htlcInfos))
-                            add(ChannelAction.Storage.StoreState(nextState))
-                            addAll(result.value.second.map { ChannelAction.Message.Send(it) })
-                        }
-                        Pair(nextState, actions)
                     }
                 }
-                cmd.command is CMD_FULFILL_HTLC -> handleCommandResult(cmd.command, commitments.sendFulfill(cmd.command), cmd.command.commit)
-                cmd.command is CMD_FAIL_HTLC -> handleCommandResult(cmd.command, commitments.sendFail(cmd.command, staticParams.nodeParams.nodePrivateKey), cmd.command.commit)
-                cmd.command is CMD_FAIL_MALFORMED_HTLC -> handleCommandResult(cmd.command, commitments.sendFailMalformed(cmd.command), cmd.command.commit)
-                cmd.command is CMD_UPDATE_FEE -> handleCommandResult(cmd.command, commitments.sendFee(cmd.command), cmd.command.commit)
-                cmd.command is CMD_CLOSE -> handleCommandError(cmd.command, ClosingAlreadyInProgress(channelId))
-                cmd.command is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
-                else -> unhandled(cmd)
             }
+            is ChannelCommand.Htlc.Settlement.Fulfill -> handleCommandResult(cmd, commitments.sendFulfill(cmd), cmd.commit)
+            is ChannelCommand.Htlc.Settlement.Fail -> handleCommandResult(cmd, commitments.sendFail(cmd, staticParams.nodeParams.nodePrivateKey), cmd.commit)
+            is ChannelCommand.Htlc.Settlement.FailMalformed -> handleCommandResult(cmd, commitments.sendFailMalformed(cmd), cmd.commit)
+            is ChannelCommand.UpdateFee -> handleCommandResult(cmd, commitments.sendFee(cmd), cmd.commit)
+            is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
+            is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventConfirmed -> updateFundingTxStatus(watch)
                 is WatchEventSpent -> handlePotentialForceClose(watch)
@@ -196,14 +196,14 @@ data class ShuttingDown(
         return spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
     }
 
-    private fun ChannelContext.handleCommandResult(command: Command, result: Either<ChannelException, Pair<Commitments, LightningMessage>>, commit: Boolean): Pair<ChannelState, List<ChannelAction>> {
+    private fun ChannelContext.handleCommandResult(command: ChannelCommand, result: Either<ChannelException, Pair<Commitments, LightningMessage>>, commit: Boolean): Pair<ChannelState, List<ChannelAction>> {
         return when (result) {
             is Either.Left -> handleCommandError(command, result.value)
             is Either.Right -> {
                 val (commitments1, message) = result.value
                 val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(message))
                 if (commit) {
-                    actions.add(ChannelAction.Message.SendToSelf(CMD_SIGN))
+                    actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
                 }
                 Pair(this@ShuttingDown.copy(commitments = commitments1), actions)
             }

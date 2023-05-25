@@ -7,8 +7,7 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.channel.CMD_ADD_HTLC
-import fr.acinq.lightning.channel.CMD_FAIL_HTLC
+import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.PacketAndSecrets
 import fr.acinq.lightning.crypto.sphinx.SharedSecrets
@@ -116,18 +115,18 @@ object OutgoingPaymentPacket {
      *
      * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
      */
-    fun buildCommand(paymentId: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: PaymentOnion.FinalPayload): Pair<CMD_ADD_HTLC, SharedSecrets> {
+    fun buildCommand(paymentId: UUID, paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: PaymentOnion.FinalPayload): Pair<ChannelCommand.Htlc.Add, SharedSecrets> {
         val (firstAmount, firstExpiry, onion) = buildPacket(paymentHash, hops, finalPayload, OnionRoutingPacket.PaymentPacketLength)
-        return Pair(CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, paymentId, commit = true), onion.sharedSecrets)
+        return Pair(ChannelCommand.Htlc.Add(firstAmount, paymentHash, firstExpiry, onion.packet, paymentId, commit = true), onion.sharedSecrets)
     }
 
-    fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, reason: CMD_FAIL_HTLC.Reason): Either<FailureMessage, ByteVector> {
+    fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, reason: ChannelCommand.Htlc.Settlement.Fail.Reason): Either<FailureMessage, ByteVector> {
         // we need to decrypt the payment onion to obtain the shared secret to build the error packet
         return when (val result = Sphinx.peel(nodeSecret, paymentHash, onion, onion.payload.size())) {
             is Either.Right -> {
                 val encryptedReason = when (reason) {
-                    is CMD_FAIL_HTLC.Reason.Bytes -> FailurePacket.wrap(reason.bytes.toByteArray(), result.value.sharedSecret)
-                    is CMD_FAIL_HTLC.Reason.Failure -> FailurePacket.create(result.value.sharedSecret, reason.message)
+                    is ChannelCommand.Htlc.Settlement.Fail.Reason.Bytes -> FailurePacket.wrap(reason.bytes.toByteArray(), result.value.sharedSecret)
+                    is ChannelCommand.Htlc.Settlement.Fail.Reason.Failure -> FailurePacket.create(result.value.sharedSecret, reason.message)
                 }
                 Either.Right(ByteVector(encryptedReason))
             }

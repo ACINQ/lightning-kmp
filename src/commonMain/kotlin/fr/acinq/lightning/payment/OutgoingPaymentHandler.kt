@@ -3,6 +3,9 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.*
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.states.Channel
+import fr.acinq.lightning.channel.ChannelAction
+import fr.acinq.lightning.channel.states.ChannelState
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.SharedSecrets
 import fr.acinq.lightning.db.HopDesc
@@ -323,8 +326,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             status = LightningOutgoingPayment.Part.Status.Pending
         )
         val channelHops: List<ChannelHop> = listOf(ChannelHop(nodeParams.nodeId, route.channel.commitments.remoteNodeId, route.channel.channelUpdate))
-        val (add, secrets) = OutgoingPaymentPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))
-        return Triple(outgoingPayment, secrets, WrappedChannelCommand(route.channel.channelId, ChannelCommand.ExecuteCommand(add)))
+        val (cmdAdd, secrets) = OutgoingPaymentPacket.buildCommand(childId, request.paymentHash, channelHops, trampolinePayload.createFinalPayload(route.amount))
+        return Triple(outgoingPayment, secrets, WrappedChannelCommand(route.channel.channelId, cmdAdd))
     }
 
     private fun createTrampolinePayload(request: SendPayment, fees: TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {

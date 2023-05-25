@@ -2,7 +2,7 @@ package fr.acinq.lightning.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.channel.PersistedChannelState
+import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.db.ChannelsDb
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.utils.value

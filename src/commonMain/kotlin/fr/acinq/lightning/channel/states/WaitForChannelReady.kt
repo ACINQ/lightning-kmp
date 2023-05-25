@@ -1,9 +1,10 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -92,11 +93,8 @@ data class WaitForChannelReady(
                 is WatchEventConfirmed -> updateFundingTxStatus(cmd.watch)
                 is WatchEventSpent -> handlePotentialForceClose(cmd.watch)
             }
-            cmd is ChannelCommand.ExecuteCommand -> when (cmd.command) {
-                is CMD_CLOSE -> Pair(this@WaitForChannelReady, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd.command, CommandUnavailableInThisState(channelId, this::class.toString()))))
-                is CMD_FORCECLOSE -> handleLocalError(cmd, ForcedLocalCommit(channelId))
-                else -> unhandled(cmd)
-            }
+            cmd is ChannelCommand.Close.MutualClose -> Pair(this@WaitForChannelReady, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))
+            cmd is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForChannelReady, listOf())
             cmd is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForChannelReady), listOf())
             else -> unhandled(cmd)

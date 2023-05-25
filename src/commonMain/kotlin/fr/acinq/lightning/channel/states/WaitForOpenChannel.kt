@@ -1,10 +1,11 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
@@ -123,7 +124,7 @@ data class WaitForOpenChannel(
                     else -> unhandled(cmd)
                 }
 
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
+            cmd is ChannelCommand.Close -> Pair(Aborted, listOf())
             cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForOpenChannel, listOf())
             else -> unhandled(cmd)
         }

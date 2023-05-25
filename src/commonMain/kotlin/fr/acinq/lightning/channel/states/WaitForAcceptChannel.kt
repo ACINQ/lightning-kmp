@@ -1,7 +1,8 @@
-package fr.acinq.lightning.channel
+package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.ChannelEvents
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
@@ -99,7 +100,7 @@ data class WaitForAcceptChannel(
                 logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
                 Pair(Aborted, listOf())
             }
-            cmd is ChannelCommand.ExecuteCommand && cmd.command is CloseCommand -> Pair(Aborted, listOf())
+            cmd is ChannelCommand.Close -> Pair(Aborted, listOf())
             else -> unhandled(cmd)
         }
     }

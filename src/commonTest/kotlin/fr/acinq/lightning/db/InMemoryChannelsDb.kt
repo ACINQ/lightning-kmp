@@ -2,7 +2,7 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.channel.PersistedChannelState
+import fr.acinq.lightning.channel.states.PersistedChannelState
 
 class InMemoryChannelsDb : ChannelsDb {
     private val channels = mutableMapOf<ByteVector32, PersistedChannelState>()

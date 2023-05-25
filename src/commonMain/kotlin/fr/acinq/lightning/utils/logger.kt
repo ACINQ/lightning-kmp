@@ -1,6 +1,6 @@
 package fr.acinq.lightning.utils
 
-import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.payment.PaymentPart
