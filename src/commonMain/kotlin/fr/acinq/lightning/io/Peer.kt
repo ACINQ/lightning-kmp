@@ -166,7 +166,7 @@ class Peer(
         return state.run { ctx.process(cmd) }
             .also { (state1, _) ->
                 if (state1::class != state::class) {
-                    ctx.logger.info { "${state::class.simpleName} -> ${state1::class.simpleName}" }
+                    ctx.logger.info { "${state.stateName} -> ${state1.stateName}" }
                 }
             }
     }

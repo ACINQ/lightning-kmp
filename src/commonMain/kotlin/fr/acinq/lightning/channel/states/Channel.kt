@@ -186,6 +186,13 @@ sealed class ChannelState {
             else -> Pair(Aborted, listOf())
         }
     }
+
+    val stateName: String
+        get() = when (this) {
+            is Offline -> "${this::class.simpleName}(${this.state::class.simpleName})"
+            is Syncing -> "${this::class.simpleName}(${this.state::class.simpleName})"
+            else -> "${this::class.simpleName}"
+        }
 }
 
 /** A channel state that is persisted to the DB. */
