@@ -132,7 +132,7 @@ data class WaitForFundingConfirmed(
                         latestFundingTx.fundingParams.dustLimit,
                         rbfStatus.command.targetFeerate
                     )
-                    when (val contributions = FundingContributions.create(channelKeys(), fundingParams, rbfStatus.command.wallet.confirmedUtxos)) {
+                    when (val contributions = FundingContributions.create(channelKeys(), fundingParams, rbfStatus.command.wallet.deeplyConfirmedUtxos)) {
                         is Either.Left -> {
                             logger.warning { "error creating funding contributions: ${contributions.value}" }
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))

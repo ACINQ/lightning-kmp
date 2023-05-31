@@ -26,12 +26,15 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
 
-    val confirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight > 0L }
+    // Note that we wait for one more confirmation than the LSP to make sure they accept our inputs.
+    val deeplyConfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight > SwapInConfirmations }
+    val weaklyConfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight in 1..SwapInConfirmations }
     val unconfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight == 0L }
 
-    val confirmedBalance = confirmedUtxos.map { it.amount }.sum()
+    val deeplyConfirmedBalance = deeplyConfirmedUtxos.map { it.amount }.sum()
+    val weaklyConfirmedBalance = weaklyConfirmedUtxos.map { it.amount }.sum()
     val unconfirmedBalance = unconfirmedUtxos.map { it.amount }.sum()
-    val totalBalance = confirmedBalance + unconfirmedBalance
+    val totalBalance = deeplyConfirmedBalance + weaklyConfirmedBalance + unconfirmedBalance
 
     fun minus(reserved: Set<Utxo>): WalletState {
         val reservedIds = reserved.map {
@@ -53,6 +56,9 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
 
     companion object {
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
+
+        /** We wait for enough confirmations before using our wallet inputs in funding transactions. */
+        const val SwapInConfirmations = 6
 
         /** Sign the given input if we have the corresponding private key (only works for swap-in scripts). */
         fun signInput(onChainKeys: KeyManager.SwapInOnChainKeys, tx: Transaction, index: Int, parentTxOut: TxOut, serverSig: ByteVector64): ScriptWitness {
@@ -85,7 +91,12 @@ class ElectrumMiniWallet(
     fun Logger.mdcinfo(msgCreator: () -> String) {
         log(
             level = Logger.Level.INFO,
-            meta = mapOf("wallet" to name, "confirmed" to walletStateFlow.value.confirmedBalance, "unconfirmed" to walletStateFlow.value.unconfirmedBalance),
+            meta = mapOf(
+                "wallet" to name,
+                "deeplyConfirmed" to walletStateFlow.value.deeplyConfirmedBalance,
+                "weaklyConfirmed" to walletStateFlow.value.weaklyConfirmedBalance,
+                "unconfirmed" to walletStateFlow.value.unconfirmedBalance
+            ),
             msgCreator = msgCreator
         )
     }
