@@ -55,10 +55,9 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
 
         /** Sign the given input if we have the corresponding private key (only works for swap-in scripts). */
-        fun signInput(onChainKeys: KeyManager.SwapInOnChainKeys, tx: Transaction, index: Int, parentTxOut: TxOut, serverSig: ByteVector64): Pair<Transaction, ScriptWitness> {
+        fun signInput(onChainKeys: KeyManager.SwapInOnChainKeys, tx: Transaction, index: Int, parentTxOut: TxOut, serverSig: ByteVector64): ScriptWitness {
             val userSig = Transactions.signSwapInputUser(tx, index, parentTxOut, onChainKeys.userPrivateKey, onChainKeys.remoteServerPublicKey, onChainKeys.refundDelay)
-            val witness = Scripts.witnessSwapIn2of2(userSig, onChainKeys.userPublicKey, serverSig, onChainKeys.remoteServerPublicKey, onChainKeys.refundDelay)
-            return Pair(tx.updateWitness(index, witness), witness)
+            return Scripts.witnessSwapIn2of2(userSig, onChainKeys.userPublicKey, serverSig, onChainKeys.remoteServerPublicKey, onChainKeys.refundDelay)
         }
     }
 }

@@ -299,29 +299,34 @@ object Deserialization {
     private fun Input.readInteractiveTxSigningSession(): InteractiveTxSigningSession = InteractiveTxSigningSession(
         fundingParams = readInteractiveTxParams(),
         fundingTxIndex = readNumber(),
-        fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
-        localCommit = readEither(
+        fundingTxAndCommit = readEither(
             readLeft = {
-                InteractiveTxSigningSession.Companion.UnsignedLocalCommit(
-                    index = readNumber(),
-                    spec = readCommitmentSpecWithHtlcs(),
-                    commitTx = readTransactionWithInputInfo() as CommitTx,
-                    htlcTxs = readCollection { readTransactionWithInputInfo() as HtlcTx }.toList(),
+                InteractiveTxSigningSession.Companion.FundingTxWithUnsignedCommit(
+                    fundingTx = readSharedTransaction(),
+                    localCommit = InteractiveTxSigningSession.Companion.UnsignedLocalCommit(
+                        index = readNumber(),
+                        spec = readCommitmentSpecWithHtlcs(),
+                        commitTx = readTransactionWithInputInfo() as CommitTx,
+                        htlcTxs = readCollection { readTransactionWithInputInfo() as HtlcTx }.toList(),
+                    )
                 )
             },
             readRight = {
-                LocalCommit(
-                    index = readNumber(),
-                    spec = readCommitmentSpecWithHtlcs(),
-                    publishableTxs = PublishableTxs(
-                        commitTx = readTransactionWithInputInfo() as CommitTx,
-                        htlcTxsAndSigs = readCollection {
-                            HtlcTxAndSigs(
-                                txinfo = readTransactionWithInputInfo() as HtlcTx,
-                                localSig = readByteVector64(),
-                                remoteSig = readByteVector64()
-                            )
-                        }.toList()
+                InteractiveTxSigningSession.Companion.FundingTxWithSignedCommit(
+                    fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
+                    localCommit = LocalCommit(
+                        index = readNumber(),
+                        spec = readCommitmentSpecWithHtlcs(),
+                        publishableTxs = PublishableTxs(
+                            commitTx = readTransactionWithInputInfo() as CommitTx,
+                            htlcTxsAndSigs = readCollection {
+                                HtlcTxAndSigs(
+                                    txinfo = readTransactionWithInputInfo() as HtlcTx,
+                                    localSig = readByteVector64(),
+                                    remoteSig = readByteVector64()
+                                )
+                            }.toList()
+                        )
                     )
                 )
             },

@@ -208,7 +208,7 @@ sealed class PersistedChannelState : ChannelState() {
                 nextRemoteRevocationNumber = 0,
                 yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
                 myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
-                TlvStream(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTx.txId.reversed()))
+                TlvStream(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTxId.reversed()))
             ).withChannelData(state.remoteChannelData, logger)
         }
         is ChannelStateWithCommitments -> {

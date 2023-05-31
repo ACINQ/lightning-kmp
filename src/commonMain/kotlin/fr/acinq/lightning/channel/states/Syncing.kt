@@ -34,8 +34,8 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                     state is WaitForFundingSigned -> {
                         when (cmd.message.nextFundingTxId) {
                             // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
-                            state.signingSession.fundingTx.txId -> {
-                                val remoteSwapLocalSigs = state.signingSession.fundingTx.tx.signRemoteSwapInputs(keyManager)
+                            state.signingSession.fundingTxId -> {
+                                val remoteSwapLocalSigs = state.signingSession.unsignedFundingTx.signRemoteSwapInputs(keyManager)
                                 val commitSig = state.signingSession.remoteCommit.sign(channelKeys(), state.channelParams, state.signingSession, remoteSwapLocalSigs)
                                 Pair(state, listOf(ChannelAction.Message.Send(commitSig)))
                             }
@@ -46,10 +46,10 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                         when (cmd.message.nextFundingTxId) {
                             null -> Pair(state, listOf())
                             else -> {
-                                if (state.rbfStatus is RbfStatus.WaitingForSigs && state.rbfStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
+                                if (state.rbfStatus is RbfStatus.WaitingForSigs && state.rbfStatus.session.fundingTxId == cmd.message.nextFundingTxId) {
                                     // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                                     logger.info { "re-sending commit_sig for rbf attempt with fundingTxId=${cmd.message.nextFundingTxId}" }
-                                    val remoteSwapLocalSigs = state.rbfStatus.session.fundingTx.tx.signRemoteSwapInputs(keyManager)
+                                    val remoteSwapLocalSigs = state.rbfStatus.session.unsignedFundingTx.signRemoteSwapInputs(keyManager)
                                     val commitSig = state.rbfStatus.session.remoteCommit.sign(channelKeys(), state.commitments.params, state.rbfStatus.session, remoteSwapLocalSigs)
                                     val actions = listOf(ChannelAction.Message.Send(commitSig))
                                     Pair(state, actions)
@@ -189,10 +189,10 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                 }
 
                                 // resume splice signing session if any
-                                val spliceStatus1 = if (state.spliceStatus is SpliceStatus.WaitingForSigs && state.spliceStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
+                                val spliceStatus1 = if (state.spliceStatus is SpliceStatus.WaitingForSigs && state.spliceStatus.session.fundingTxId == cmd.message.nextFundingTxId) {
                                     // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
-                                    logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
-                                    val remoteSwapLocalSigs = state.spliceStatus.session.fundingTx.tx.signRemoteSwapInputs(keyManager)
+                                    logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTxId}" }
+                                    val remoteSwapLocalSigs = state.spliceStatus.session.unsignedFundingTx.signRemoteSwapInputs(keyManager)
                                     val commitSig = state.spliceStatus.session.remoteCommit.sign(channelKeys(), state.commitments.params, state.spliceStatus.session, remoteSwapLocalSigs)
                                     actions.add(ChannelAction.Message.Send(commitSig))
                                     state.spliceStatus

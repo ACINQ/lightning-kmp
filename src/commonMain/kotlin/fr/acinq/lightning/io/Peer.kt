@@ -758,7 +758,7 @@ class Peer(
                                             sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
                                             return@withMDC
                                         }
-                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.confirmedUtxos.size * Transactions.p2wpkhInputWeight)
+                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.confirmedUtxos.size * Transactions.swapInputWeight)
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                         val fundingAmount = request.wallet.confirmedBalance - fundingFee
                                         // We pay the other fees by pushing the corresponding amount
@@ -970,7 +970,7 @@ class Peer(
                                 cmd.requestId,
                                 balance,
                                 utxos.size,
-                                utxos.size * Transactions.p2wpkhInputWeight,
+                                utxos.size * Transactions.swapInputWeight,
                                 TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
                             )
                             logger.info { "sending please_open_channel with ${utxos.size} utxos (amount = ${balance})" }

@@ -159,7 +159,7 @@ object Transactions {
      *     - [[ClaimDelayedOutputPenaltyTx]] spends [[HtlcTimeoutTx]] using the revocation secret (published by local)
      *   - [[HtlcPenaltyTx]] spends competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] for the same outputs (published by local)
      */
-    const val p2wpkhInputWeight = 275
+    const val swapInputWeight = 392
 
     // The following values are specific to lightning and used to estimate fees.
     const val claimP2WPKHOutputWeight = 438

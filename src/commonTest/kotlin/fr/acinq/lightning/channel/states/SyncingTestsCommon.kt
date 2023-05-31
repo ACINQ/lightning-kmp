@@ -74,7 +74,7 @@ class SyncingTestsCommon : LightningTestSuite() {
     @Test
     fun `reestablish unsigned channel -- commit_sig not received`() {
         val (alice, _, bob, _) = WaitForFundingSignedTestsCommon.init()
-        val fundingTxId = alice.state.signingSession.fundingTx.txId
+        val fundingTxId = alice.state.signingSession.fundingTxId
         val (alice1, bob1, channelReestablishAlice) = disconnectWithBackup(alice, bob)
         assertEquals(channelReestablishAlice.nextFundingTxId, fundingTxId)
 
@@ -342,7 +342,7 @@ class SyncingTestsCommon : LightningTestSuite() {
             assertIs<RbfStatus.WaitingForSigs>(bob5.state.rbfStatus)
             val commitSigAlice = actionsAlice5.hasOutgoingMessage<CommitSig>()
             val commitSigBob = actionsBob5.hasOutgoingMessage<CommitSig>()
-            return UnsignedRbfFixture(alice5, commitSigAlice, bob5, commitSigBob, (alice5.state.rbfStatus as RbfStatus.WaitingForSigs).session.fundingTx.txId)
+            return UnsignedRbfFixture(alice5, commitSigAlice, bob5, commitSigBob, (alice5.state.rbfStatus as RbfStatus.WaitingForSigs).session.fundingTxId)
         }
 
         fun disconnect(alice: LNChannel<ChannelStateWithCommitments>, bob: LNChannel<ChannelStateWithCommitments>): Triple<LNChannel<Syncing>, LNChannel<Syncing>, Pair<ChannelReestablish, ChannelReestablish>> {

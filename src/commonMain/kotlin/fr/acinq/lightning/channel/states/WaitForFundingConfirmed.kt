@@ -206,7 +206,7 @@ data class WaitForFundingConfirmed(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> when (rbfStatus) {
                 is RbfStatus.WaitingForSigs -> {
-                    val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
+                    val (signingSession1, action) = rbfStatus.session.receiveCommitSig(keyManager, channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
                     when (action) {
                         is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                             logger.warning { "rbf attempt failed: ${action.reason.message}" }
@@ -324,7 +324,7 @@ data class WaitForFundingConfirmed(
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
     fun getUnsignedFundingTxId(): ByteVector32? {
         return when (rbfStatus) {
-            is RbfStatus.WaitingForSigs -> rbfStatus.session.fundingTx.txId
+            is RbfStatus.WaitingForSigs -> rbfStatus.session.fundingTxId
             else -> when (latestFundingTx.sharedTx) {
                 is PartiallySignedSharedTransaction -> latestFundingTx.txId
                 is FullySignedSharedTransaction -> null

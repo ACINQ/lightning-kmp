@@ -265,7 +265,7 @@ object JsonSerializers {
     @Serializable
     data class InteractiveTxSigningSessionSurrogate(val fundingParams: InteractiveTxParams, val fundingTxId: ByteVector32)
     object InteractiveTxSigningSessionSerializer : SurrogateSerializer<InteractiveTxSigningSession, InteractiveTxSigningSessionSurrogate>(
-        transform = { s -> InteractiveTxSigningSessionSurrogate(s.fundingParams, s.fundingTx.txId) },
+        transform = { s -> InteractiveTxSigningSessionSurrogate(s.fundingParams, s.fundingTxId) },
         delegateSerializer = InteractiveTxSigningSessionSurrogate.serializer()
     )
 

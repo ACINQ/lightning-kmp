@@ -331,13 +331,13 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertIs<SpliceStatus.WaitingForSigs>(spliceStatus)
 
         val (alice2, bob2, channelReestablishAlice) = disconnect(alice1, bob1)
-        assertEquals(channelReestablishAlice.nextFundingTxId, spliceStatus.session.fundingTx.txId)
+        assertEquals(channelReestablishAlice.nextFundingTxId, spliceStatus.session.fundingTxId)
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         assertIs<LNChannel<Normal>>(bob3)
         assertEquals(actionsBob3.size, 2)
         val channelReestablishBob = actionsBob3.findOutgoingMessage<ChannelReestablish>()
         val commitSigBob = actionsBob3.findOutgoingMessage<CommitSig>()
-        assertEquals(channelReestablishBob.nextFundingTxId, spliceStatus.session.fundingTx.txId)
+        assertEquals(channelReestablishBob.nextFundingTxId, spliceStatus.session.fundingTxId)
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishBob))
         assertIs<LNChannel<Normal>>(alice3)
         assertEquals(actionsAlice3.size, 1)
@@ -356,13 +356,13 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertIs<SpliceStatus.WaitingForSigs>(spliceStatus)
 
         val (alice3, bob2, channelReestablishAlice) = disconnect(alice2, bob1)
-        assertEquals(channelReestablishAlice.nextFundingTxId, spliceStatus.session.fundingTx.txId)
+        assertEquals(channelReestablishAlice.nextFundingTxId, spliceStatus.session.fundingTxId)
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         assertIs<LNChannel<Normal>>(bob3)
         assertEquals(actionsBob3.size, 2)
         val channelReestablishBob = actionsBob3.findOutgoingMessage<ChannelReestablish>()
         val commitSigBob2 = actionsBob3.findOutgoingMessage<CommitSig>()
-        assertEquals(channelReestablishBob.nextFundingTxId, spliceStatus.session.fundingTx.txId)
+        assertEquals(channelReestablishBob.nextFundingTxId, spliceStatus.session.fundingTxId)
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
         assertIs<LNChannel<Normal>>(alice4)
         assertEquals(actionsAlice4.size, 1)
@@ -841,6 +841,13 @@ class SpliceTestsCommon : LightningTestSuite() {
         }
 
         private fun exchangeSpliceSigs(alice: LNChannel<Normal>, commitSigAlice: CommitSig, bob: LNChannel<Normal>, commitSigBob: CommitSig): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+            val aliceSpliceStatus = alice.state.spliceStatus
+            assertIs<SpliceStatus.WaitingForSigs>(aliceSpliceStatus)
+            assertEquals(aliceSpliceStatus.session.unsignedFundingTx.localInputs.size, commitSigBob.swapInSigs.size)
+            val bobSpliceStatus = bob.state.spliceStatus
+            assertIs<SpliceStatus.WaitingForSigs>(bobSpliceStatus)
+            assertEquals(bobSpliceStatus.session.unsignedFundingTx.localInputs.size, commitSigAlice.swapInSigs.size)
+
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
             assertTrue(actionsAlice1.isEmpty())
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
@@ -864,8 +871,6 @@ class SpliceTestsCommon : LightningTestSuite() {
             assertEquals(actionsAlice2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.FundingTx).txid, txSigsAlice.txId)
             actionsAlice2.hasWatchConfirmed(txSigsAlice.txId)
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
-            val aliceSpliceStatus = alice.state.spliceStatus
-            assertIs<SpliceStatus.WaitingForSigs>(aliceSpliceStatus)
             when {
                 aliceSpliceStatus.session.fundingParams.localContribution > 0.sat -> actionsAlice2.has<ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn>()
                 aliceSpliceStatus.session.fundingParams.localContribution < 0.sat && aliceSpliceStatus.session.fundingParams.localOutputs.isNotEmpty() -> actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut>()

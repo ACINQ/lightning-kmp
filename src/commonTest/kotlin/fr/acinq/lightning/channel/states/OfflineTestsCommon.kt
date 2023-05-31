@@ -678,7 +678,7 @@ class OfflineTestsCommon : LightningTestSuite() {
             actionsAlice2.hasOutgoingMessage<CommitSig>()
             assertIs<WaitForFundingCreated>(bob2.state)
             assertIs<WaitForFundingSigned>(alice2.state)
-            Triple(alice2, bob2, alice2.state.signingSession.fundingTx.txId)
+            Triple(alice2, bob2, alice2.state.signingSession.fundingTxId)
         }
 
         // Bob has not received Alice's tx_complete, so he's not storing the channel.
@@ -724,7 +724,7 @@ class OfflineTestsCommon : LightningTestSuite() {
             assertIs<RbfStatus.InProgress>(bob4.state.rbfStatus)
             assertIs<WaitForFundingConfirmed>(alice5.state)
             assertIs<RbfStatus.WaitingForSigs>(alice5.state.rbfStatus)
-            Triple(alice5, bob4, (alice5.state.rbfStatus as RbfStatus.WaitingForSigs).session.fundingTx.txId)
+            Triple(alice5, bob4, (alice5.state.rbfStatus as RbfStatus.WaitingForSigs).session.fundingTxId)
         }
 
         val aliceInit = Init(alice.commitments.params.localParams.features)
