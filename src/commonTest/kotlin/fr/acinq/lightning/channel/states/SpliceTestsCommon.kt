@@ -888,7 +888,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         }
 
         private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): WalletState {
-            val (address, script) = keyManager.swapInOnChainWallet.run { Pair(address(0), pubkeyScript(0)) }
+            val (address, script) = keyManager.swapInOnChainWallet.run { Pair(address, pubkeyScript) }
             val utxos = amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(Lightning.randomBytes32(), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))

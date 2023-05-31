@@ -2,15 +2,12 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Scripts
@@ -260,7 +257,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.remoteFees, 2_215_000.msat)
 
         // Bob sends signatures first as he did not contribute at all.
-        val signedTxB = sharedTxB.sharedTx.sign(LocalKeyManager(randomBytes64(), NodeParams.Chain.Regtest), f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.witnesses.size, 0)
 
@@ -1034,12 +1031,12 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         data class Fixture(
             val channelId: ByteVector32,
             val keyManagerA: KeyManager,
-            val channelKeysA : KeyManager.ChannelKeys,
+            val channelKeysA: KeyManager.ChannelKeys,
             val localParamsA: LocalParams,
             val fundingParamsA: InteractiveTxParams,
             val fundingContributionsA: FundingContributions,
             val keyManagerB: KeyManager,
-            val channelKeysB : KeyManager.ChannelKeys,
+            val channelKeysB: KeyManager.ChannelKeys,
             val localParamsB: LocalParams,
             val fundingParamsB: InteractiveTxParams,
             val fundingContributionsB: FundingContributions
@@ -1170,16 +1167,14 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             return action1
         }
 
-        private fun createWallet(onChainKeys: KeyManager.Bip84OnChainKeys, amounts: List<Satoshi>): WalletState {
-            val privateKey = onChainKeys.privateKey(addressIndex = 0)
-            val address = onChainKeys.address(addressIndex = 0L)
+        private fun createWallet(onChainKeys: KeyManager.SwapInOnChainKeys, amounts: List<Satoshi>): WalletState {
             val utxos = amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0))
-                val txOut = listOf(TxOut(amount, Script.pay2wpkh(privateKey.publicKey())), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
+                val txOut = listOf(TxOut(amount, onChainKeys.pubkeyScript), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 Pair(UnspentItem(parentTx.txid, 0, amount.toLong(), 0), parentTx)
             }
-            return WalletState(mapOf(address to utxos.map { it.first }), utxos.associate { it.second.txid to it.second })
+            return WalletState(mapOf(onChainKeys.address to utxos.map { it.first }), utxos.associate { it.second.txid to it.second })
         }
 
         private fun createTxAddInput(channelId: ByteVector32, serialId: Long, amount: Satoshi): TxAddInput {

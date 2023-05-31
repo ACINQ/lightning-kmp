@@ -454,6 +454,45 @@ class TransactionsTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `spend 2-of-2 swap-in`() {
+        val userWallet = TestConstants.Alice.keyManager.swapInOnChainWallet
+        val swapInTx = Transaction(
+            version = 2,
+            txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0)),
+            txOut = listOf(TxOut(100_000.sat, userWallet.pubkeyScript)),
+            lockTime = 0
+        )
+        // The transaction can be spent if the user and the server produce a signature.
+        run {
+            val fundingTx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), 0)),
+                txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
+                lockTime = 0
+            )
+            val userSig = Transactions.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPrivateKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val serverWallet = TestConstants.Bob.keyManager.swapInOnChainWallet
+            val serverSig = Transactions.signSwapInputServer(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPublicKey, serverWallet.localServerPrivateKey, serverWallet.refundDelay)
+            val witness = Scripts.witnessSwapIn2of2(userSig, userWallet.userPublicKey, serverSig, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val signedTx = fundingTx.updateWitness(0, witness)
+            Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+        // Or it can be spent with only the user's signature, after a delay.
+        run {
+            val fundingTx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), userWallet.refundDelay)),
+                txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
+                lockTime = 0
+            )
+            val userSig = Transactions.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPrivateKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val witness = Scripts.witnessSwapIn2of2Refund(userSig, userWallet.userPublicKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val signedTx = fundingTx.updateWitness(0, witness)
+            Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+    }
+
+    @Test
     fun `sort the htlc outputs using BIP69 and cltv expiry`() {
         val localFundingPriv = PrivateKey.fromHex("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
         val remoteFundingPriv = PrivateKey.fromHex("a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2")

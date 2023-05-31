@@ -9,7 +9,6 @@ import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.*
-import fr.acinq.lightning.channel.states.WaitForChannelReadyTestsCommon
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.json.JsonSerializers
@@ -326,7 +325,7 @@ object TestsHelper {
             if (channelBalance > 0.msat) {
                 actions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
                     assertEquals(rCommitTx.txid, it.txId)
-                    assertEquals(ChannelClosingType.Remote, it.closingType )
+                    assertEquals(ChannelClosingType.Remote, it.closingType)
                 }
             }
         }
@@ -389,7 +388,7 @@ object TestsHelper {
     }
 
     fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, WalletState> {
-        val (privateKey, address, script) = keyManager.swapInOnChainWallet.run { Triple(privateKey(0), address(0), pubkeyScript(0)) }
+        val (privateKey, address, script) = keyManager.swapInOnChainWallet.run { Triple(userPrivateKey, address, pubkeyScript) }
         val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, script)), 0)
         return privateKey to WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 654321))), mapOf(parentTx.txid to parentTx))
     }

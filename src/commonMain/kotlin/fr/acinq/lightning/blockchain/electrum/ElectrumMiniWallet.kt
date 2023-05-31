@@ -2,6 +2,8 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.transactions.Scripts
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
@@ -52,39 +54,11 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     companion object {
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
 
-        /** Sign the given input if we have the corresponding private key (only works for P2WPKH scripts). */
-        fun signInput(onChainKeys: KeyManager.Bip84OnChainKeys, tx: Transaction, index: Int, parentTxOut: TxOut?): Pair<Transaction, ScriptWitness?> {
-            val witness = parentTxOut
-                ?.let { script2PrivateKey(onChainKeys, it.publicKeyScript) }
-                ?.let { privateKey ->
-                    // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
-                    // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
-                    val publicKey = privateKey.publicKey()
-                    val pubKeyScript = Script.pay2pkh(publicKey)
-                    val sig = Transaction.signInput(
-                        tx,
-                        index,
-                        pubKeyScript,
-                        SigHash.SIGHASH_ALL,
-                        parentTxOut.amount,
-                        SigVersion.SIGVERSION_WITNESS_V0,
-                        privateKey
-                    )
-                    Script.witnessPay2wpkh(publicKey, sig.byteVector())
-                }
-            return when (witness) {
-                is ScriptWitness -> Pair(tx.updateWitness(index, witness), witness)
-                else -> Pair(tx, null)
-            }
-        }
-
-        /** Find the private key corresponding to this script, assuming this is a p2wpkh owned by us. */
-        private fun script2PrivateKey(onChainKeys: KeyManager.Bip84OnChainKeys, publicKeyScript: ByteVector): PrivateKey? {
-            // TODO: for now we only use the first address with index 0
-            for (addressIndex in 0L..0L) {
-                if (onChainKeys.pubkeyScript(addressIndex) == publicKeyScript) return onChainKeys.privateKey(addressIndex)
-            }
-            return null
+        /** Sign the given input if we have the corresponding private key (only works for swap-in scripts). */
+        fun signInput(onChainKeys: KeyManager.SwapInOnChainKeys, tx: Transaction, index: Int, parentTxOut: TxOut, serverSig: ByteVector64): Pair<Transaction, ScriptWitness> {
+            val userSig = Transactions.signSwapInputUser(tx, index, parentTxOut, onChainKeys.userPrivateKey, onChainKeys.remoteServerPublicKey, onChainKeys.refundDelay)
+            val witness = Scripts.witnessSwapIn2of2(userSig, onChainKeys.userPublicKey, serverSig, onChainKeys.remoteServerPublicKey, onChainKeys.refundDelay)
+            return Pair(tx.updateWitness(index, witness), witness)
         }
     }
 }
@@ -167,9 +141,9 @@ class ElectrumMiniWallet(
             val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
             kotlin.runCatching { client.startScriptHashSubscription(scriptHash) }
                 .map { response ->
-                logger.info { "subscribed to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
-                _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
-            }
+                    logger.info { "subscribed to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
+                    _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
+                }
             return scriptHash to bitcoinAddress
         }
 

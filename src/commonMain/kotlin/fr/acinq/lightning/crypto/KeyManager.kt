@@ -3,6 +3,7 @@ package fr.acinq.lightning.crypto
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.toByteVector
 
 interface KeyManager {
@@ -24,7 +25,7 @@ interface KeyManager {
 
     val finalOnChainWallet: Bip84OnChainKeys
 
-    val swapInOnChainWallet: Bip84OnChainKeys
+    val swapInOnChainWallet: SwapInOnChainKeys
 
     /**
      * Keys used for the node. They are used to generate the node id, to secure communication with other peers, and
@@ -93,6 +94,40 @@ interface KeyManager {
             fun bip84BasePath(chain: NodeParams.Chain) = when (chain) {
                 NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty / hardened(84) / hardened(1)
                 NodeParams.Chain.Mainnet -> KeyPath.empty / hardened(84) / hardened(0)
+            }
+        }
+    }
+
+    /**
+     * We use a specific kind of swap-in where users send funds to a 2-of-2 multisig with a timelock refund.
+     * Once confirmed, the swap-in utxos can be spent by one of two paths:
+     *  - with a signature from both [userPublicKey] and [remoteServerPublicKey]
+     *  - with a signature from [userPublicKey] after the [refundDelay]
+     * The keys used are static across swaps to make recovery easier.
+     */
+    data class SwapInOnChainKeys(
+        private val chain: NodeParams.Chain,
+        private val master: DeterministicWallet.ExtendedPrivateKey,
+        val remoteServerPublicKey: PublicKey,
+        val refundDelay: Long = SwapInRefundDelay
+    ) {
+        val userPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(0)).privateKey
+        val userPublicKey: PublicKey = userPrivateKey.publicKey()
+
+        val localServerPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(1)).privateKey
+        val localServerPublicKey: PublicKey = localServerPrivateKey.publicKey()
+
+        val redeemScript: List<ScriptElt> = Scripts.swapIn2of2(userPublicKey, remoteServerPublicKey, refundDelay)
+        val pubkeyScript: List<ScriptElt> = Script.pay2wsh(redeemScript)
+        val address: String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript)!!
+
+        companion object {
+            /** When doing a swap-in, the user's funds are locked in a 2-of-2: they can claim them unilaterally after that delay. */
+            const val SwapInRefundDelay: Long = 144 * 30 * 6 // ~6 months
+
+            fun swapInKeyBasePath(chain: NodeParams.Chain) = when (chain) {
+                NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty / hardened(51) / hardened(0)
+                NodeParams.Chain.Mainnet -> KeyPath.empty / hardened(52) / hardened(0)
             }
         }
     }
