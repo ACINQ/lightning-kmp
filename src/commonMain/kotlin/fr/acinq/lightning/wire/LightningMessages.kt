@@ -7,8 +7,8 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
@@ -328,6 +328,8 @@ data class TxAddInput(
 
     override val type: Long get() = TxAddInput.type
     val sharedInput: OutPoint? = tlvs.get<TxAddInputTlv.SharedInputTxId>()?.let { OutPoint(it.txId.reversed(), previousTxOutput) }
+    val swapInUserKey: PublicKey? = tlvs.get<TxAddInputTlv.SwapInInput>()?.userKey
+    val isFromSwapIn: Boolean = swapInUserKey != null
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -349,7 +351,10 @@ data class TxAddInput(
         const val type: Long = 66
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(TxAddInputTlv.SharedInputTxId.tag to TxAddInputTlv.SharedInputTxId.Companion as TlvValueReader<TxAddInputTlv>)
+        val readers = mapOf(
+            TxAddInputTlv.SharedInputTxId.tag to TxAddInputTlv.SharedInputTxId.Companion as TlvValueReader<TxAddInputTlv>,
+            TxAddInputTlv.SwapInInput.tag to TxAddInputTlv.SwapInInput.Companion as TlvValueReader<TxAddInputTlv>,
+        )
 
         override fun read(input: Input): TxAddInput = TxAddInput(
             LightningCodecs.bytes(input, 32).byteVector32(),
@@ -1088,6 +1093,7 @@ data class CommitSig(
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): CommitSig = copy(tlvStream = tlvStream.addOrUpdate(CommitSigTlv.ChannelData(ecd)))
 
     val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
+    val swapInSigs: List<ByteVector64> = tlvStream.get<CommitSigTlv.SwapInSigs>()?.sigs ?: listOf()
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1103,7 +1109,8 @@ data class CommitSig(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>,
-            CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>
+            CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
+            CommitSigTlv.SwapInSigs.tag to CommitSigTlv.SwapInSigs.Companion as TlvValueReader<CommitSigTlv>,
         )
 
         override fun read(input: Input): CommitSig {

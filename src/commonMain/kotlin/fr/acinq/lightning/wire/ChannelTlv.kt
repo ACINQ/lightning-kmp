@@ -6,8 +6,8 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.utils.*
 
 sealed class ChannelTlv : Tlv {
@@ -179,6 +179,21 @@ sealed class CommitSigTlv : Tlv {
         companion object : TlvValueReader<Batch> {
             const val tag: Long = 0x47010005
             override fun read(input: Input): Batch = Batch(size = LightningCodecs.tu16(input))
+        }
+    }
+
+    /** When swap-in inputs are used for an interactive-tx, the server must provide their signatures first. */
+    data class SwapInSigs(val sigs: List<ByteVector64>) : CommitSigTlv() {
+        override val tag: Long get() = SwapInSigs.tag
+        override fun write(out: Output) = sigs.forEach { sig -> LightningCodecs.writeBytes(sig, out) }
+
+        companion object : TlvValueReader<SwapInSigs> {
+            const val tag: Long = 0x47010007
+            override fun read(input: Input): SwapInSigs {
+                val count = input.availableBytes / 64
+                val sigs = (0 until count).map { LightningCodecs.bytes(input, 64).byteVector64() }
+                return SwapInSigs(sigs)
+            }
         }
     }
 }

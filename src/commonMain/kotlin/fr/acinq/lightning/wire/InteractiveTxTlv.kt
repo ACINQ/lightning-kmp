@@ -2,6 +2,7 @@ package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
@@ -22,6 +23,17 @@ sealed class TxAddInputTlv : Tlv {
         companion object : TlvValueReader<SharedInputTxId> {
             const val tag: Long = 1105
             override fun read(input: Input): SharedInputTxId = SharedInputTxId(LightningCodecs.bytes(input, 32).toByteVector32().reversed())
+        }
+    }
+
+    /** When adding a swap-in input to an interactive-tx, the user needs to provide their corresponding public key. */
+    data class SwapInInput(val userKey: PublicKey) : TxAddInputTlv() {
+        override val tag: Long get() = SwapInInput.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(userKey.value, out)
+
+        companion object : TlvValueReader<SwapInInput> {
+            const val tag: Long = 1107
+            override fun read(input: Input): SwapInInput = SwapInInput(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 }
