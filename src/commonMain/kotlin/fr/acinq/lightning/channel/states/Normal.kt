@@ -366,6 +366,7 @@ data class Normal(
                                 )
                                 val session = InteractiveTxSession(
                                     channelKeys(),
+                                    keyManager.swapInOnChainWallet,
                                     fundingParams,
                                     previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                     previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
@@ -421,6 +422,7 @@ data class Normal(
                                     // The splice initiator always sends the first interactive-tx message.
                                     val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
                                         channelKeys(),
+                                        keyManager.swapInOnChainWallet,
                                         fundingParams,
                                         previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                         previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,

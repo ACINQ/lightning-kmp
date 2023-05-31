@@ -199,34 +199,53 @@ object Deserialization {
         targetFeerate = FeeratePerKw(readNumber().sat)
     )
 
-    private fun Input.readSharedInteractiveTxInput() = InteractiveTxInput.Shared(
-        serialId = readNumber(),
-        outPoint = readOutPoint(),
-        sequence = readNumber().toUInt(),
-        localAmount = readNumber().msat,
-        remoteAmount = readNumber().msat,
-    )
+    private fun Input.readSharedInteractiveTxInput() = when (val discriminator = read()) {
+        0x01 -> InteractiveTxInput.Shared(
+            serialId = readNumber(),
+            outPoint = readOutPoint(),
+            sequence = readNumber().toUInt(),
+            localAmount = readNumber().msat,
+            remoteAmount = readNumber().msat,
+        )
+        else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Shared::class}")
+    }
 
-    private fun Input.readLocalInteractiveTxInput() = InteractiveTxInput.Local(
-        serialId = readNumber(),
-        previousTx = readTransaction(),
-        previousTxOutput = readNumber(),
-        sequence = readNumber().toUInt(),
-    )
+    private fun Input.readLocalInteractiveTxInput() = when (val discriminator = read()) {
+        0x01 -> InteractiveTxInput.Local(
+            serialId = readNumber(),
+            previousTx = readTransaction(),
+            previousTxOutput = readNumber(),
+            sequence = readNumber().toUInt(),
+        )
+        else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Local::class}")
+    }
 
-    private fun Input.readRemoteInteractiveTxInput() = InteractiveTxInput.Remote(
-        serialId = readNumber(),
-        outPoint = readOutPoint(),
-        txOut = TxOut.read(readDelimitedByteArray()),
-        sequence = readNumber().toUInt(),
-    )
+    private fun Input.readRemoteInteractiveTxInput() = when (val discriminator = read()) {
+        0x01 -> InteractiveTxInput.RemoteOnly(
+            serialId = readNumber(),
+            outPoint = readOutPoint(),
+            txOut = TxOut.read(readDelimitedByteArray()),
+            sequence = readNumber().toUInt(),
+        )
+        0x02 -> InteractiveTxInput.RemoteSwapIn(
+            serialId = readNumber(),
+            outPoint = readOutPoint(),
+            txOut = TxOut.read(readDelimitedByteArray()),
+            sequence = readNumber().toUInt(),
+            userKey = readPublicKey(),
+        )
+        else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Remote::class}")
+    }
 
-    private fun Input.readSharedInteractiveTxOutput() = InteractiveTxOutput.Shared(
-        serialId = readNumber(),
-        pubkeyScript = readDelimitedByteArray().toByteVector(),
-        localAmount = readNumber().msat,
-        remoteAmount = readNumber().msat,
-    )
+    private fun Input.readSharedInteractiveTxOutput() = when (val discriminator = read()) {
+        0x01 -> InteractiveTxOutput.Shared(
+            serialId = readNumber(),
+            pubkeyScript = readDelimitedByteArray().toByteVector(),
+            localAmount = readNumber().msat,
+            remoteAmount = readNumber().msat,
+        )
+        else -> error("unknown discriminator $discriminator for class ${InteractiveTxOutput.Shared::class}")
+    }
 
     private fun Input.readLocalInteractiveTxOutput() = when (val discriminator = read()) {
         0x01 -> InteractiveTxOutput.Local.Change(
@@ -242,11 +261,14 @@ object Deserialization {
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxOutput.Local::class}")
     }
 
-    private fun Input.readRemoteInteractiveTxOutput() = InteractiveTxOutput.Remote(
-        serialId = readNumber(),
-        amount = readNumber().sat,
-        pubkeyScript = readDelimitedByteArray().toByteVector(),
-    )
+    private fun Input.readRemoteInteractiveTxOutput() = when (val discriminator = read()) {
+        0x01 -> InteractiveTxOutput.Remote(
+            serialId = readNumber(),
+            amount = readNumber().sat,
+            pubkeyScript = readDelimitedByteArray().toByteVector(),
+        )
+        else -> error("unknown discriminator $discriminator for class ${InteractiveTxOutput.Remote::class}")
+    }
 
     private fun Input.readSharedTransaction() = SharedTransaction(
         sharedInput = readNullable { readSharedInteractiveTxInput() },

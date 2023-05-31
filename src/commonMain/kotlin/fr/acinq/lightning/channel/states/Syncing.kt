@@ -35,7 +35,8 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                         when (cmd.message.nextFundingTxId) {
                             // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                             state.signingSession.fundingTx.txId -> {
-                                val commitSig = state.signingSession.remoteCommit.sign(channelKeys(), state.channelParams, state.signingSession)
+                                val remoteSwapLocalSigs = state.signingSession.fundingTx.tx.signRemoteSwapInputs(keyManager)
+                                val commitSig = state.signingSession.remoteCommit.sign(channelKeys(), state.channelParams, state.signingSession, remoteSwapLocalSigs)
                                 Pair(state, listOf(ChannelAction.Message.Send(commitSig)))
                             }
                             else -> Pair(state, listOf())
@@ -48,7 +49,8 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                 if (state.rbfStatus is RbfStatus.WaitingForSigs && state.rbfStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
                                     // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                                     logger.info { "re-sending commit_sig for rbf attempt with fundingTxId=${cmd.message.nextFundingTxId}" }
-                                    val commitSig = state.rbfStatus.session.remoteCommit.sign(channelKeys(), state.commitments.params, state.rbfStatus.session)
+                                    val remoteSwapLocalSigs = state.rbfStatus.session.fundingTx.tx.signRemoteSwapInputs(keyManager)
+                                    val commitSig = state.rbfStatus.session.remoteCommit.sign(channelKeys(), state.commitments.params, state.rbfStatus.session, remoteSwapLocalSigs)
                                     val actions = listOf(ChannelAction.Message.Send(commitSig))
                                     Pair(state, actions)
                                 } else if (state.latestFundingTx.txId == cmd.message.nextFundingTxId) {
@@ -56,12 +58,14 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                         if (state.latestFundingTx.sharedTx is PartiallySignedSharedTransaction) {
                                             // We have not received their tx_signatures: we retransmit our commit_sig because we don't know if they received it.
                                             logger.info { "re-sending commit_sig for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                            val remoteSwapLocalSigs = state.latestFundingTx.sharedTx.tx.signRemoteSwapInputs(keyManager)
                                             val commitSig = state.commitments.latest.remoteCommit.sign(
                                                 channelKeys(),
                                                 state.commitments.params,
                                                 fundingTxIndex = 0,
                                                 state.commitments.latest.remoteFundingPubkey,
-                                                state.commitments.latest.commitInput
+                                                state.commitments.latest.commitInput,
+                                                remoteSwapLocalSigs
                                             )
                                             add(ChannelAction.Message.Send(commitSig))
                                         }
@@ -86,12 +90,14 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                 if (state.commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
                                     // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
                                     logger.info { "re-sending commit_sig for fundingTxId=${state.commitments.latest.fundingTxId}" }
+                                    val remoteSwapLocalSigs = state.commitments.latest.localFundingStatus.sharedTx.tx.signRemoteSwapInputs(keyManager)
                                     val commitSig = state.commitments.latest.remoteCommit.sign(
                                         channelKeys(),
                                         state.commitments.params,
                                         fundingTxIndex = state.commitments.latest.fundingTxIndex,
                                         state.commitments.latest.remoteFundingPubkey,
-                                        state.commitments.latest.commitInput
+                                        state.commitments.latest.commitInput,
+                                        remoteSwapLocalSigs
                                     )
                                     actions.add(ChannelAction.Message.Send(commitSig))
                                 }
@@ -186,7 +192,8 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                 val spliceStatus1 = if (state.spliceStatus is SpliceStatus.WaitingForSigs && state.spliceStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
                                     // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                                     logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
-                                    val commitSig = state.spliceStatus.session.remoteCommit.sign(channelKeys(), state.commitments.params, state.spliceStatus.session)
+                                    val remoteSwapLocalSigs = state.spliceStatus.session.fundingTx.tx.signRemoteSwapInputs(keyManager)
+                                    val commitSig = state.spliceStatus.session.remoteCommit.sign(channelKeys(), state.commitments.params, state.spliceStatus.session, remoteSwapLocalSigs)
                                     actions.add(ChannelAction.Message.Send(commitSig))
                                     state.spliceStatus
                                 } else if (state.commitments.latest.fundingTxId == cmd.message.nextFundingTxId) {
@@ -194,12 +201,14 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                         if (state.commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
                                             // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
                                             logger.info { "re-sending commit_sig for fundingTxIndex=${state.commitments.latest.fundingTxIndex} fundingTxId=${state.commitments.latest.fundingTxId}" }
+                                            val remoteSwapLocalSigs = state.commitments.latest.localFundingStatus.sharedTx.tx.signRemoteSwapInputs(keyManager)
                                             val commitSig = state.commitments.latest.remoteCommit.sign(
                                                 channelKeys(),
                                                 state.commitments.params,
                                                 fundingTxIndex = state.commitments.latest.fundingTxIndex,
                                                 state.commitments.latest.remoteFundingPubkey,
-                                                state.commitments.latest.commitInput
+                                                state.commitments.latest.commitInput,
+                                                remoteSwapLocalSigs
                                             )
                                             actions.add(ChannelAction.Message.Send(commitSig))
                                         }
