@@ -166,7 +166,7 @@ class Peer(
         return state.run { ctx.process(cmd) }
             .also { (state1, _) ->
                 if (state1::class != state::class) {
-                    ctx.logger.info { "${state::class.simpleName} -> ${state1::class.simpleName}" }
+                    ctx.logger.info { "${state.stateName} -> ${state1.stateName}" }
                 }
             }
     }
@@ -796,9 +796,12 @@ class Peer(
 
                         msg is ChannelReestablish -> {
                             val local: ChannelState? = _channels[msg.channelId]
-                            val backup: DeserializationResult? = PersistedChannelState.from(nodeParams.nodePrivateKey, msg.channelData)
-                                .onFailure { logger.warning(it) { "unreadable backup" } }
-                                .getOrNull()
+                            val backup: DeserializationResult? = msg.channelData.takeIf { !it.isEmpty() }?.let { channelData ->
+                                PersistedChannelState
+                                    .from(nodeParams.nodePrivateKey, channelData)
+                                    .onFailure { logger.warning(it) { "unreadable backup" } }
+                                    .getOrNull()
+                            }
 
                             suspend fun recoverChannel(recovered: PersistedChannelState) {
                                 db.channels.addOrUpdateChannel(recovered)

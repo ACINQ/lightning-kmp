@@ -72,7 +72,7 @@ fun LightningOutgoingPayment.mdc(): Map<String, Any> = mapOf(
 fun ChannelState.mdc(): Map<String, Any> {
     val state = this
     return buildMap {
-        state::class.simpleName?.let { put("state", it) }
+        put("state", state.stateName)
         when (state) {
             is WaitForOpenChannel -> put("temporaryChannelId", state.temporaryChannelId)
             is WaitForAcceptChannel -> put("temporaryChannelId", state.temporaryChannelId)

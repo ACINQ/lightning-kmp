@@ -56,8 +56,13 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                         if (state.latestFundingTx.sharedTx is PartiallySignedSharedTransaction) {
                                             // We have not received their tx_signatures: we retransmit our commit_sig because we don't know if they received it.
                                             logger.info { "re-sending commit_sig for fundingTxId=${cmd.message.nextFundingTxId}" }
-                                            val commitSig =
-                                                state.commitments.latest.remoteCommit.sign(channelKeys(), state.commitments.params, fundingTxIndex = 0, state.commitments.latest.remoteFundingPubkey, state.commitments.latest.commitInput)
+                                            val commitSig = state.commitments.latest.remoteCommit.sign(
+                                                channelKeys(),
+                                                state.commitments.params,
+                                                fundingTxIndex = 0,
+                                                state.commitments.latest.remoteFundingPubkey,
+                                                state.commitments.latest.commitInput
+                                            )
                                             add(ChannelAction.Message.Send(commitSig))
                                         }
                                         logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
@@ -74,10 +79,37 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                         }
                     }
                     state is WaitForChannelReady -> {
+                        val actions = ArrayList<ChannelAction>()
+
+                        if (state.commitments.latest.fundingTxId == cmd.message.nextFundingTxId) {
+                            if (state.commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx) {
+                                if (state.commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
+                                    // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
+                                    logger.info { "re-sending commit_sig for fundingTxId=${state.commitments.latest.fundingTxId}" }
+                                    val commitSig = state.commitments.latest.remoteCommit.sign(
+                                        channelKeys(),
+                                        state.commitments.params,
+                                        fundingTxIndex = state.commitments.latest.fundingTxIndex,
+                                        state.commitments.latest.remoteFundingPubkey,
+                                        state.commitments.latest.commitInput
+                                    )
+                                    actions.add(ChannelAction.Message.Send(commitSig))
+                                }
+                                logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                actions.add(ChannelAction.Message.Send(state.commitments.latest.localFundingStatus.sharedTx.localSigs))
+                            } else {
+                                // The funding tx is confirmed, and they have not received our tx_signatures, but they must have received our commit_sig, otherwise they
+                                // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
+                                // recompute our tx_signatures, but instead we do nothing: they will shortly be notified that the funding tx has confirmed.
+                                logger.warning { "cannot re-send tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}, transaction is already confirmed" }
+                            }
+                        }
+
                         logger.debug { "re-sending channel_ready" }
                         val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
                         val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
-                        val actions = listOf(ChannelAction.Message.Send(channelReady))
+                        actions.add(ChannelAction.Message.Send(channelReady))
+
                         Pair(state, actions)
                     }
                     state is LegacyWaitForFundingLocked -> {

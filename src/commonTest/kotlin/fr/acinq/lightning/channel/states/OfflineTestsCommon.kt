@@ -18,6 +18,33 @@ import kotlin.test.*
 class OfflineTestsCommon : LightningTestSuite() {
 
     @Test
+    fun `handle disconnect - connect events in WaitForChannelReady -- zeroconf`() {
+        val (alice, aliceCommitSig, bob, _) = WaitForFundingSignedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true, bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient).initFeatures())
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(aliceCommitSig))
+        assertIs<WaitForChannelReady>(bob1.state)
+        assertIs<LNChannel<WaitForChannelReady>>(bob1)
+        actionsBob1.hasOutgoingMessage<TxSignatures>()
+        actionsBob1.hasOutgoingMessage<ChannelReady>()
+        val (alice1, bob2) = disconnect(alice, bob1)
+
+        val aliceInit = Init(alice.state.channelParams.localParams.features.initFeatures())
+        val bobInit = Init(bob.state.channelParams.localParams.features.initFeatures())
+
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
+        assertIs<Syncing>(alice2.state)
+        val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Connected(bobInit, aliceInit))
+        assertIs<Syncing>(bob3.state)
+        actionsBob3.findOutgoingMessage<ChannelReestablish>()
+
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishA))
+        assertIs<WaitForChannelReady>(bob4.state)
+        actionsBob4.hasOutgoingMessage<CommitSig>()
+        actionsBob4.hasOutgoingMessage<TxSignatures>()
+        actionsBob4.hasOutgoingMessage<ChannelReady>()
+    }
+
+    @Test
     fun `handle disconnect - connect events -- no messages sent yet`() {
         val (alice, bob) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient).initFeatures())
         val (alice1, bob1) = disconnect(alice, bob)
@@ -771,7 +798,7 @@ class OfflineTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        fun disconnect(alice: LNChannel<ChannelStateWithCommitments>, bob: LNChannel<ChannelStateWithCommitments>): Pair<LNChannel<Offline>, LNChannel<Offline>> {
+        fun disconnect(alice: LNChannel<PersistedChannelState>, bob: LNChannel<PersistedChannelState>): Pair<LNChannel<Offline>, LNChannel<Offline>> {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.Disconnected)
             val (bob1, actionsBob1) = bob.process(ChannelCommand.Disconnected)
             assertIs<LNChannel<Offline>>(alice1)
