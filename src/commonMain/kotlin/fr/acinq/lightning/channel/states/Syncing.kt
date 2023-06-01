@@ -61,9 +61,9 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                                                 state.commitments.params,
                                                 fundingTxIndex = 0,
                                                 state.commitments.latest.remoteFundingPubkey,
-                                                state.commitments.latest.commitInput)
-                                            add(ChannelAction.Message.Send(commitSig)
+                                                state.commitments.latest.commitInput
                                             )
+                                            add(ChannelAction.Message.Send(commitSig))
                                         }
                                         logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
                                         add(ChannelAction.Message.Send(state.latestFundingTx.sharedTx.localSigs))
