@@ -174,10 +174,10 @@ data class Normal(
                     }
                     is CommitSig -> when {
                         spliceStatus is SpliceStatus.WaitingForSigs -> {
-                            val (signingSession1, action) = spliceStatus.session.receiveCommitSig(keyManager, channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
+                            val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
-                                    logger.warning { "splice attempt failed: ${action.reason.message} (fundingTxId=${spliceStatus.session.fundingTxId})" }
+                                    logger.warning { "splice attempt failed: ${action.reason.message} (fundingTxId=${spliceStatus.session.fundingTx.txId})" }
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                                 }
                                 // No need to store their commit_sig, they will re-send it if we disconnect.
@@ -406,6 +406,7 @@ data class Normal(
                             )
                             when (val fundingContributions = FundingContributions.create(
                                 channelKeys = channelKeys(),
+                                swapInKeys = keyManager.swapInOnChainWallet,
                                 params = fundingParams,
                                 sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
                                 walletInputs = spliceStatus.command.spliceIn?.wallet?.deeplyConfirmedUtxos ?: emptyList(),
@@ -481,7 +482,7 @@ data class Normal(
                                         }
                                         is Either.Right -> {
                                             val (session, commitSig) = signingSession.value
-                                            logger.info { "splice funding tx created with txId=${session.fundingTxId}, ${session.unsignedFundingTx.localInputs.size} local inputs, ${session.unsignedFundingTx.remoteInputs.size} remote inputs, ${session.unsignedFundingTx.localOutputs.size} local outputs and ${session.unsignedFundingTx.remoteOutputs.size} remote outputs" }
+                                            logger.info { "splice funding tx created with txId=${session.fundingTx.txId}, ${session.fundingTx.tx.localInputs.size} local inputs, ${session.fundingTx.tx.remoteInputs.size} remote inputs, ${session.fundingTx.tx.localOutputs.size} local outputs and ${session.fundingTx.tx.remoteOutputs.size} remote outputs" }
                                             // We cannot guarantee that the splice is successful: the only way to guarantee that is to wait for on-chain confirmations.
                                             // It is likely that we will restart before the transaction is confirmed, in which case we will lose the replyTo and the ability to notify the caller.
                                             // We should be able to resume the signing steps and complete the splice if we disconnect, so we optimistically notify the caller now.
@@ -489,9 +490,9 @@ data class Normal(
                                                 ChannelCommand.Splice.Response.Created(
                                                     channelId = channelId,
                                                     fundingTxIndex = session.fundingTxIndex,
-                                                    fundingTxId = session.fundingTxId,
+                                                    fundingTxId = session.fundingTx.txId,
                                                     capacity = session.fundingParams.fundingAmount,
-                                                    balance = session.fundingTxAndCommit.fold({ it.localCommit.spec }, { it.localCommit.spec }).toLocal
+                                                    balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal
                                                 )
                                             )
                                             val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(session, spliceStatus.origins))
@@ -693,7 +694,7 @@ data class Normal(
             // If we added some funds ourselves it's a swap-in
             if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
-                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.previousTx.txOut[i.previousTxOutput.toInt()].amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.fees.toMilliSatoshi(),
+                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.fees.toMilliSatoshi(),
                     serviceFee = 0.msat,
                     miningFee = action.fundingTx.sharedTx.tx.fees,
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
@@ -727,7 +728,7 @@ data class Normal(
 
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
     fun getUnsignedFundingTxId(): ByteVector32? = when {
-        spliceStatus is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTxId
+        spliceStatus is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.txId
         commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx && commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction -> commitments.latest.localFundingStatus.txId
         else -> null
     }

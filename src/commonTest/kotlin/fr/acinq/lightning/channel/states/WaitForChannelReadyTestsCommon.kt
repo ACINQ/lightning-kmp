@@ -12,10 +12,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
-import fr.acinq.lightning.wire.ChannelReady
-import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.TxSignatures
-import fr.acinq.lightning.wire.Warning
+import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
 class WaitForChannelReadyTestsCommon : LightningTestSuite() {
@@ -55,7 +52,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures -- invalid`() {
         val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
-        val invalidTxSigsAlice = getFundingSigs(alice).copy(witnesses = listOf())
+        val invalidTxSigsAlice = getFundingSigs(alice).copy(tlvs = TlvStream.empty())
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(invalidTxSigsAlice))
         assertEquals(bob, bob1)
         assertEquals(actionsBob1.size, 1)

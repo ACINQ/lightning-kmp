@@ -469,7 +469,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         run {
             val fundingTx = Transaction(
                 version = 2,
-                txIn = listOf(TxIn(OutPoint(swapInTx, 0), userWallet.refundDelay)),
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), userWallet.refundDelay.toLong())),
                 txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
                 lockTime = 0
             )

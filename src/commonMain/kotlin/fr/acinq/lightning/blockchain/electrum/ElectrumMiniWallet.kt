@@ -1,9 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.transactions.Scripts
-import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
@@ -59,12 +56,6 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
 
         /** We wait for enough confirmations before using our wallet inputs in funding transactions. */
         const val SwapInConfirmations = 6
-
-        /** Sign the given input if we have the corresponding private key (only works for swap-in scripts). */
-        fun signInput(onChainKeys: KeyManager.SwapInOnChainKeys, tx: Transaction, index: Int, parentTxOut: TxOut, serverSig: ByteVector64): ScriptWitness {
-            val userSig = Transactions.signSwapInputUser(tx, index, parentTxOut, onChainKeys.userPrivateKey, onChainKeys.remoteServerPublicKey, onChainKeys.refundDelay)
-            return Scripts.witnessSwapIn2of2(userSig, onChainKeys.userPublicKey, serverSig, onChainKeys.remoteServerPublicKey, onChainKeys.refundDelay)
-        }
     }
 }
 

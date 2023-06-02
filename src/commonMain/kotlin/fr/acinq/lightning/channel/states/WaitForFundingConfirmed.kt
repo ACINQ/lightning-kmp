@@ -132,7 +132,7 @@ data class WaitForFundingConfirmed(
                         latestFundingTx.fundingParams.dustLimit,
                         rbfStatus.command.targetFeerate
                     )
-                    when (val contributions = FundingContributions.create(channelKeys(), fundingParams, rbfStatus.command.wallet.deeplyConfirmedUtxos)) {
+                    when (val contributions = FundingContributions.create(channelKeys(), keyManager.swapInOnChainWallet, fundingParams, rbfStatus.command.wallet.deeplyConfirmedUtxos)) {
                         is Either.Left -> {
                             logger.warning { "error creating funding contributions: ${contributions.value}" }
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
@@ -206,7 +206,7 @@ data class WaitForFundingConfirmed(
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> when (rbfStatus) {
                 is RbfStatus.WaitingForSigs -> {
-                    val (signingSession1, action) = rbfStatus.session.receiveCommitSig(keyManager, channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
+                    val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
                     when (action) {
                         is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                             logger.warning { "rbf attempt failed: ${action.reason.message}" }
@@ -324,7 +324,7 @@ data class WaitForFundingConfirmed(
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
     fun getUnsignedFundingTxId(): ByteVector32? {
         return when (rbfStatus) {
-            is RbfStatus.WaitingForSigs -> rbfStatus.session.fundingTxId
+            is RbfStatus.WaitingForSigs -> rbfStatus.session.fundingTx.txId
             else -> when (latestFundingTx.sharedTx) {
                 is PartiallySignedSharedTransaction -> latestFundingTx.txId
                 is FullySignedSharedTransaction -> null

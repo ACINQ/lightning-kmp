@@ -24,11 +24,11 @@ import kotlin.test.*
 class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     private fun verifyCommits(signingSessionAlice: InteractiveTxSigningSession, signingSessionBob: InteractiveTxSigningSession, balanceAlice: MilliSatoshi, balanceBob: MilliSatoshi) {
-        assertTrue(signingSessionAlice.fundingTxAndCommit.isLeft)
-        val localCommitAlice = signingSessionAlice.fundingTxAndCommit.left!!.localCommit
+        assertTrue(signingSessionAlice.localCommit.isLeft)
+        val localCommitAlice = signingSessionAlice.localCommit.left!!
         val remoteCommitAlice = signingSessionAlice.remoteCommit
-        assertTrue(signingSessionBob.fundingTxAndCommit.isLeft)
-        val localCommitBob = signingSessionBob.fundingTxAndCommit.left!!.localCommit
+        assertTrue(signingSessionBob.localCommit.isLeft)
+        val localCommitBob = signingSessionBob.localCommit.left!!
         val remoteCommitBob = signingSessionBob.remoteCommit
         assertEquals(localCommitAlice.spec.toLocal, balanceAlice)
         assertEquals(localCommitAlice.spec.toRemote, balanceBob)

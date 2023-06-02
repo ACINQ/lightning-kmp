@@ -259,12 +259,24 @@ object Serialization {
         writeNumber(remoteAmount.toLong())
     }
 
-    private fun Output.writeLocalInteractiveTxInput(i: InteractiveTxInput.Local) = i.run {
-        write(0x01)
-        writeNumber(serialId)
-        writeBtcObject(previousTx)
-        writeNumber(previousTxOutput)
-        writeNumber(sequence.toLong())
+    private fun Output.writeLocalInteractiveTxInput(i: InteractiveTxInput.Local) = when (i) {
+        is InteractiveTxInput.LocalOnly -> i.run {
+            write(0x01)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+        }
+        is InteractiveTxInput.LocalSwapIn -> i.run {
+            write(0x02)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writeNumber(refundDelay)
+        }
     }
 
     private fun Output.writeRemoteInteractiveTxInput(i: InteractiveTxInput.Remote) = when (i) {
@@ -282,6 +294,8 @@ object Serialization {
             writeBtcObject(txOut)
             writeNumber(sequence.toLong())
             writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writeNumber(refundDelay)
         }
     }
 
@@ -345,17 +359,16 @@ object Serialization {
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
+        writeSignedSharedTransaction(fundingTx)
         // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel cannot be used for payments.
-        writeEither(fundingTxAndCommit,
-            writeLeft = { (fundingTx, localCommit) ->
-                writeSharedTransaction(fundingTx)
+        writeEither(localCommit,
+            writeLeft = { localCommit ->
                 writeNumber(localCommit.index)
                 writeCommitmentSpecWithHtlcs(localCommit.spec)
                 writeTransactionWithInputInfo(localCommit.commitTx)
                 writeCollection(localCommit.htlcTxs) { writeTransactionWithInputInfo(it) }
             },
-            writeRight = { (fundingTx, localCommit) ->
-                writeSignedSharedTransaction(fundingTx)
+            writeRight = { localCommit ->
                 writeNumber(localCommit.index)
                 writeCommitmentSpecWithHtlcs(localCommit.spec)
                 localCommit.publishableTxs.run {

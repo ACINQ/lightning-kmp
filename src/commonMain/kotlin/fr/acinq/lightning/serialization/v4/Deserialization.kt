@@ -211,11 +211,20 @@ object Deserialization {
     }
 
     private fun Input.readLocalInteractiveTxInput() = when (val discriminator = read()) {
-        0x01 -> InteractiveTxInput.Local(
+        0x01 -> InteractiveTxInput.LocalOnly(
             serialId = readNumber(),
             previousTx = readTransaction(),
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
+        )
+        0x02 -> InteractiveTxInput.LocalSwapIn(
+            serialId = readNumber(),
+            previousTx = readTransaction(),
+            previousTxOutput = readNumber(),
+            sequence = readNumber().toUInt(),
+            userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            refundDelay = readNumber().toInt(),
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Local::class}")
     }
@@ -233,6 +242,8 @@ object Deserialization {
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
             userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            refundDelay = readNumber().toInt()
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Remote::class}")
     }
@@ -299,34 +310,29 @@ object Deserialization {
     private fun Input.readInteractiveTxSigningSession(): InteractiveTxSigningSession = InteractiveTxSigningSession(
         fundingParams = readInteractiveTxParams(),
         fundingTxIndex = readNumber(),
-        fundingTxAndCommit = readEither(
+        fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
+        localCommit = readEither(
             readLeft = {
-                InteractiveTxSigningSession.Companion.FundingTxWithUnsignedCommit(
-                    fundingTx = readSharedTransaction(),
-                    localCommit = InteractiveTxSigningSession.Companion.UnsignedLocalCommit(
-                        index = readNumber(),
-                        spec = readCommitmentSpecWithHtlcs(),
-                        commitTx = readTransactionWithInputInfo() as CommitTx,
-                        htlcTxs = readCollection { readTransactionWithInputInfo() as HtlcTx }.toList(),
-                    )
+                InteractiveTxSigningSession.Companion.UnsignedLocalCommit(
+                    index = readNumber(),
+                    spec = readCommitmentSpecWithHtlcs(),
+                    commitTx = readTransactionWithInputInfo() as CommitTx,
+                    htlcTxs = readCollection { readTransactionWithInputInfo() as HtlcTx }.toList(),
                 )
             },
             readRight = {
-                InteractiveTxSigningSession.Companion.FundingTxWithSignedCommit(
-                    fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
-                    localCommit = LocalCommit(
-                        index = readNumber(),
-                        spec = readCommitmentSpecWithHtlcs(),
-                        publishableTxs = PublishableTxs(
-                            commitTx = readTransactionWithInputInfo() as CommitTx,
-                            htlcTxsAndSigs = readCollection {
-                                HtlcTxAndSigs(
-                                    txinfo = readTransactionWithInputInfo() as HtlcTx,
-                                    localSig = readByteVector64(),
-                                    remoteSig = readByteVector64()
-                                )
-                            }.toList()
-                        )
+                LocalCommit(
+                    index = readNumber(),
+                    spec = readCommitmentSpecWithHtlcs(),
+                    publishableTxs = PublishableTxs(
+                        commitTx = readTransactionWithInputInfo() as CommitTx,
+                        htlcTxsAndSigs = readCollection {
+                            HtlcTxAndSigs(
+                                txinfo = readTransactionWithInputInfo() as HtlcTx,
+                                localSig = readByteVector64(),
+                                remoteSig = readByteVector64()
+                            )
+                        }.toList()
                     )
                 )
             },

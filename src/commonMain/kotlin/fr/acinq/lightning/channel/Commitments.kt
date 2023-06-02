@@ -96,20 +96,17 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishabl
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: ByteVector32, val remotePerCommitmentPoint: PublicKey) {
-    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo, remoteSwapLocalSigs: List<ByteVector64>): CommitSig {
+    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo): CommitSig {
         val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(channelKeys, index, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubKey, commitInput, remotePerCommitmentPoint = remotePerCommitmentPoint, spec)
         val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val sortedHtlcsTxs = htlcTxs.sortedBy { it.input.outPoint.index }
         val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
-        return when {
-            remoteSwapLocalSigs.isNotEmpty() -> CommitSig(params.channelId, sig, htlcSigs.toList(), TlvStream(CommitSigTlv.SwapInSigs(remoteSwapLocalSigs)))
-            else -> CommitSig(params.channelId, sig, htlcSigs.toList())
-        }
+        return CommitSig(params.channelId, sig, htlcSigs.toList())
     }
 
-    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, signingSession: InteractiveTxSigningSession, remoteSwapLocalSigs: List<ByteVector64>): CommitSig =
-        sign(channelKeys, params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubkey, signingSession.commitInput, remoteSwapLocalSigs)
+    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, signingSession: InteractiveTxSigningSession): CommitSig =
+        sign(channelKeys, params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubkey, signingSession.commitInput)
 }
 
 /** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */

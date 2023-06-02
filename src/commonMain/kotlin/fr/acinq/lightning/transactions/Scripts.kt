@@ -33,7 +33,7 @@ object Scripts {
     /**
      * @return the script used for a 2-of-2 swap-in as used in Phoenix.
      */
-    fun swapIn2of2(userKey: PublicKey, serverKey: PublicKey, delayedRefund: Long): List<ScriptElt> {
+    fun swapIn2of2(userKey: PublicKey, serverKey: PublicKey, delayedRefund: Int): List<ScriptElt> {
         // This script was generated with https://bitcoin.sipa.be/miniscript/ using the following miniscript policy:
         // and(pk(<user_key>),or(99@pk(<server_key>),older(<delayed_refund>)))
         // @formatter:off
@@ -46,12 +46,12 @@ object Scripts {
         // @formatter:on
     }
 
-    fun witnessSwapIn2of2(userSig: ByteVector64, userKey: PublicKey, serverSig: ByteVector64, serverKey: PublicKey, delayedRefund: Long): ScriptWitness {
+    fun witnessSwapIn2of2(userSig: ByteVector64, userKey: PublicKey, serverSig: ByteVector64, serverKey: PublicKey, delayedRefund: Int): ScriptWitness {
         val redeemScript = swapIn2of2(userKey, serverKey, delayedRefund)
         return ScriptWitness(listOf(der(serverSig, SigHash.SIGHASH_ALL), der(userSig, SigHash.SIGHASH_ALL), Script.write(redeemScript).byteVector()))
     }
 
-    fun witnessSwapIn2of2Refund(userSig: ByteVector64, userKey: PublicKey, serverKey: PublicKey, delayedRefund: Long): ScriptWitness {
+    fun witnessSwapIn2of2Refund(userSig: ByteVector64, userKey: PublicKey, serverKey: PublicKey, delayedRefund: Int): ScriptWitness {
         val redeemScript = swapIn2of2(userKey, serverKey, delayedRefund)
         return ScriptWitness(listOf(ByteVector.empty, der(userSig, SigHash.SIGHASH_ALL), Script.write(redeemScript).byteVector()))
     }

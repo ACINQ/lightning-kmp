@@ -109,7 +109,7 @@ interface KeyManager {
         private val chain: NodeParams.Chain,
         private val master: DeterministicWallet.ExtendedPrivateKey,
         val remoteServerPublicKey: PublicKey,
-        val refundDelay: Long = SwapInRefundDelay
+        val refundDelay: Int = SwapInRefundDelay
     ) {
         val userPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(0)).privateKey
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
@@ -123,7 +123,7 @@ interface KeyManager {
 
         companion object {
             /** When doing a swap-in, the user's funds are locked in a 2-of-2: they can claim them unilaterally after that delay. */
-            const val SwapInRefundDelay: Long = 144 * 30 * 6 // ~6 months
+            const val SwapInRefundDelay = 144 * 30 * 6 // ~6 months
 
             fun swapInKeyBasePath(chain: NodeParams.Chain) = when (chain) {
                 NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty / hardened(51) / hardened(0)

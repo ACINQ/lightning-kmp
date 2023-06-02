@@ -792,13 +792,13 @@ object Transactions {
     }
 
     /** Sign an input from a 2-of-2 swap-in address with the swap user's key. */
-    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PrivateKey, serverKey: PublicKey, refundDelay: Long): ByteVector64 {
+    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PrivateKey, serverKey: PublicKey, refundDelay: Int): ByteVector64 {
         val redeemScript = Scripts.swapIn2of2(userKey.publicKey(), serverKey, refundDelay)
         return sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, userKey)
     }
 
     /** Sign an input from a 2-of-2 swap-in address with the swap server's key. */
-    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PublicKey, serverKey: PrivateKey, refundDelay: Long): ByteVector64 {
+    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PublicKey, serverKey: PrivateKey, refundDelay: Int): ByteVector64 {
         val redeemScript = Scripts.swapIn2of2(userKey, serverKey.publicKey(), refundDelay)
         return sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, serverKey)
     }

@@ -201,7 +201,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         assertIs<WaitForFundingSigned>(alice1.state)
         assertTrue(actionsAlice1.isEmpty())
         val invalidWitness = Script.witnessPay2wpkh(randomKey().publicKey(), randomBytes(72).byteVector())
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, alice.state.signingSession.fundingTxId, listOf(invalidWitness))))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, alice.state.signingSession.fundingTx.txId, listOf(invalidWitness))))
         assertIs<Aborted>(alice2.state)
         assertEquals(actionsAlice2.size, 1)
         actionsAlice2.hasOutgoingMessage<Error>()
