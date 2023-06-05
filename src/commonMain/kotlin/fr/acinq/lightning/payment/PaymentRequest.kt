@@ -240,23 +240,25 @@ data class PaymentRequest(
         /**
          * @return the unit allowing for the shortest representation possible
          */
-        fun unit(amount: MilliSatoshi): Char {
+        fun unit(amount: MilliSatoshi): Char? {
             val pico = amount.toLong() * 10
             return when {
-                pico.rem(1000) > 0 -> 'p'
-                pico.rem(1000000) > 0 -> 'n'
-                pico.rem(1000000000) > 0 -> 'u'
-                else -> 'm'
+                pico.rem(1_000) > 0 -> 'p'
+                pico.rem(1_000_000) > 0 -> 'n'
+                pico.rem(1_000_000_000) > 0 -> 'u'
+                pico.rem(1_000_000_000_000) > 0 -> 'm'
+                else -> null
             }
         }
 
         fun encodeAmount(amount: MilliSatoshi?): String {
             return when {
                 amount == null -> ""
-                unit(amount) == 'p' -> "${amount.toLong() * 10L}p" // 1 pico-bitcoin == 10 milli-satoshis
-                unit(amount) == 'n' -> "${amount.toLong() / 100L}n"
-                unit(amount) == 'u' -> "${amount.toLong() / 100000L}u"
-                unit(amount) == 'm' -> "${amount.toLong() / 100000000L}m"
+                unit(amount) == 'p' -> "${amount.toLong() * 10}p" // 1 pico-bitcoin == 10 milli-satoshis
+                unit(amount) == 'n' -> "${amount.toLong() / 100}n"
+                unit(amount) == 'u' -> "${amount.toLong() / 100_000}u"
+                unit(amount) == 'm' -> "${amount.toLong() / 100_000_000}m"
+                unit(amount) == null -> "${amount.toLong() / 100_000_000_000}"
                 else -> throw IllegalArgumentException("invalid amount $amount")
             }
         }
