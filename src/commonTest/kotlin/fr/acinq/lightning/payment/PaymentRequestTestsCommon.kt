@@ -31,7 +31,10 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
         assertEquals('u', PaymentRequest.unit(1155400.sat.toMilliSatoshi()))
         assertEquals('m', PaymentRequest.unit(1.mbtc.toMilliSatoshi()))
         assertEquals('m', PaymentRequest.unit(10.mbtc.toMilliSatoshi()))
-        assertEquals('m', PaymentRequest.unit(1.btc.toMilliSatoshi()))
+        assertNull(PaymentRequest.unit(1.btc.toMilliSatoshi()))
+        assertEquals('m', PaymentRequest.unit(1100.mbtc.toMilliSatoshi()))
+        assertNull(PaymentRequest.unit(2.btc.toMilliSatoshi()))
+        assertNull(PaymentRequest.unit(10.btc.toMilliSatoshi()))
     }
 
     @Test
@@ -54,6 +57,20 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
     @Test
     fun `reject sub-millisatoshi amounts`() {
         assertFails { PaymentRequest.decodeAmount("1501p") }
+    }
+
+    @Test
+    fun `handle amounts that are multiples of 1BTC`() {
+        val testCases = listOf(
+            100_000_000_000.msat to "lnbcrt11pj8wdh7sp5p2052f28az75s3eauqjskcwrzrjujf7rfqspsvk6hgppywytrdzspp5670t00mwakdy0l5w3lnw4rhdgnv4ctep974am6jp0zma627fhdfsdqqxqyjw5qcqp29qyysgqh2ce2cmptj33l35a9pt2l603aa34jpj8p35s302l0lhuujmtmkghrmkadv456h3rpsxjpschnpt5ugzltqsjtauvnfy799aufapav6gp202th5",
+            100_000_000_000_000.msat to "lnbcrt10001pj8wd3rsp5cv2vayxnm7d4783r0477rstzpkl7n4ftmalgu9v8akzf0nhqrs3qpp5vednenalh0v6gzxpzrdxf9cepv4274vc0tax5389cjq0zv9qvs9sdqqxqyjw5qcqp29qyysgqk5f8um72jlnw9unjltdgxw9e2fvec0cxq05tcwuen2jpu42q4p9pt2djk2ysu62nkpg49km59wrexm0wt3msevz53fr2tfnqxf5sdnqpu8th97",
+        )
+        testCases.forEach { (amount, ref) ->
+            val invoice = PaymentRequest.read(ref)
+            assertEquals(amount, invoice.amount)
+            val encoded = invoice.write()
+            assertEquals(ref, encoded)
+        }
     }
 
     @Test
@@ -366,7 +383,8 @@ class PaymentRequestTestsCommon : LightningTestSuite() {
 
     @Test
     fun `On mainnet please send 1000000 sat with payment metadata 0x01fafaf0`() {
-        val ref = "lnbc10m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdp9wpshjmt9de6zqmt9w3skgct5vysxjmnnd9jx2mq8q8a04uqsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q2gqqqqqqsgq7hf8he7ecf7n4ffphs6awl9t6676rrclv9ckg3d3ncn7fct63p6s365duk5wrk202cfy3aj5xnnp5gs3vrdvruverwwq7yzhkf5a3xqpd05wjc"
+        val ref =
+            "lnbc10m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdp9wpshjmt9de6zqmt9w3skgct5vysxjmnnd9jx2mq8q8a04uqsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q2gqqqqqqsgq7hf8he7ecf7n4ffphs6awl9t6676rrclv9ckg3d3ncn7fct63p6s365duk5wrk202cfy3aj5xnnp5gs3vrdvruverwwq7yzhkf5a3xqpd05wjc"
         val pr = PaymentRequest.read(ref)
         assertEquals(pr.prefix, "lnbc")
         assertEquals(pr.amount, MilliSatoshi(1000000000))
