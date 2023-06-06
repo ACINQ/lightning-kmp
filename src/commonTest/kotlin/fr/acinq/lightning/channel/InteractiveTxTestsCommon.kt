@@ -1105,10 +1105,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingAmountA, fundingAmountB, fundingPubkeyB, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingAmountB, fundingAmountA, fundingPubkeyA, lockTime, dustLimit, targetFeerate)
             val walletA = createWallet(swapInKeysA, utxosA)
-            val contributionsA = FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, null, walletA.utxos, listOf(), randomKey().publicKey())
+            val contributionsA = FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, null, walletA, listOf(), randomKey().publicKey())
             assertNotNull(contributionsA.right)
             val walletB = createWallet(swapInKeysB, utxosB)
-            val contributionsB = FundingContributions.create(channelKeysB, swapInKeysB, fundingParamsB, null, walletB.utxos, listOf(), randomKey().publicKey())
+            val contributionsB = FundingContributions.create(channelKeysB, swapInKeysB, fundingParamsB, null, walletB, listOf(), randomKey().publicKey())
             assertNotNull(contributionsB.right)
             return Fixture(channelId, TestConstants.Alice.keyManager, channelKeysA, localParamsA, fundingParamsA, contributionsA.right!!, TestConstants.Bob.keyManager, channelKeysB, localParamsB, fundingParamsB, contributionsB.right!!)
         }
@@ -1178,10 +1178,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingContributionA, fundingContributionB, sharedInputA, nextFundingPubkeyB, outputsA, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingContributionB, fundingContributionA, sharedInputB, nextFundingPubkeyA, outputsB, lockTime, dustLimit, targetFeerate)
             val walletA = createWallet(swapInKeysA, utxosA)
-            val contributionsA = FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, Pair(sharedInputA, SharedFundingInputBalances(balanceA, balanceB)), walletA.utxos, outputsA, randomKey().publicKey())
+            val contributionsA = FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, Pair(sharedInputA, SharedFundingInputBalances(balanceA, balanceB)), walletA, outputsA, randomKey().publicKey())
             assertNotNull(contributionsA.right)
             val walletB = createWallet(swapInKeysB, utxosB)
-            val contributionsB = FundingContributions.create(channelKeysB, swapInKeysB, fundingParamsB, Pair(sharedInputB, SharedFundingInputBalances(balanceB, balanceA)), walletB.utxos, outputsB, randomKey().publicKey())
+            val contributionsB = FundingContributions.create(channelKeysB, swapInKeysB, fundingParamsB, Pair(sharedInputB, SharedFundingInputBalances(balanceB, balanceA)), walletB, outputsB, randomKey().publicKey())
             assertNotNull(contributionsB.right)
             return Fixture(channelId, TestConstants.Alice.keyManager, channelKeysA, localParamsA, fundingParamsA, contributionsA.right!!, TestConstants.Bob.keyManager, channelKeysB, localParamsB, fundingParamsB, contributionsB.right!!)
         }
@@ -1213,13 +1213,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             return action1
         }
 
-        private fun createWallet(onChainKeys: KeyManager.SwapInOnChainKeys, amounts: List<Satoshi>): WalletState.Utxos {
-            return WalletState.Utxos(amounts.map { amount ->
+        private fun createWallet(onChainKeys: KeyManager.SwapInOnChainKeys, amounts: List<Satoshi>): List<WalletState.Utxo> {
+            return amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0))
                 val txOut = listOf(TxOut(amount, onChainKeys.pubkeyScript), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 WalletState.Utxo(parentTx, 0, 0)
-            })
+            }
         }
 
         private fun createTxAddInput(channelId: ByteVector32, serialId: Long, amount: Satoshi): TxAddInput {

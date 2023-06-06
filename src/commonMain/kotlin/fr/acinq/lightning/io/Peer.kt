@@ -33,13 +33,13 @@ sealed class PeerCommand
 /**
  * Try to open a channel, consuming all the spendable utxos in the wallet state provided.
  */
-data class RequestChannelOpen(val requestId: ByteVector32, val utxos: WalletState.Utxos) : PeerCommand()
+data class RequestChannelOpen(val requestId: ByteVector32, val utxos: List<WalletState.Utxo>) : PeerCommand()
 
 /** Open a channel, consuming all the spendable utxos in the wallet state provided. */
 data class OpenChannel(
     val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
-    val utxos: WalletState.Utxos,
+    val utxos: List<WalletState.Utxo>,
     val commitTxFeerate: FeeratePerKw,
     val fundingTxFeerate: FeeratePerKw,
     val channelFlags: Byte,
@@ -228,7 +228,7 @@ class Peer(
                             if (utxos.balance > 0.sat) {
                                 logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
                                 input.send(RequestChannelOpen(Lightning.randomBytes32(), utxos))
-                                reservedUtxos.union(utxos.utxos)
+                                reservedUtxos.union(utxos)
                             } else {
                                 reservedUtxos
                             }.intersect(wallet.utxos.toSet()) // drop utxos no longer in wallet
@@ -787,7 +787,7 @@ class Peer(
                                         return@withMDC
                                     }
                                 }
-                                else -> Triple(WalletState.Utxos(listOf()), 0.sat, 0.msat)
+                                else -> Triple(listOf(), 0.sat, 0.msat)
                             }
                             if (fundingAmount.toMilliSatoshi() < pushAmount) {
                                 logger.warning { "rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
@@ -952,7 +952,7 @@ class Peer(
                 when (val channel = channels.values.firstOrNull { it is Normal }) {
                     is ChannelStateWithCommitments -> {
                         val targetFeerate = onChainFeeratesFlow.filterNotNull().first().fundingFeerate
-                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.utxos.utxos, localOutputs = emptyList())
+                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.utxos, localOutputs = emptyList())
                         val (feerate, fee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
                         logger.info { "requesting splice-in using balance=${cmd.utxos.balance} feerate=$feerate fee=$fee" }
@@ -975,7 +975,7 @@ class Peer(
                         if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted }) {
                             // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel.
                             // Grandparents are supplied as a proof of migration
-                            val grandParents = cmd.utxos.utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
+                            val grandParents = cmd.utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
                             val pleaseOpenChannel = PleaseOpenChannel(
                                 nodeParams.chainHash,
                                 cmd.requestId,

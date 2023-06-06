@@ -891,14 +891,14 @@ class SpliceTestsCommon : LightningTestSuite() {
             return Pair(alice2, bob2)
         }
 
-        private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): WalletState.Utxos {
+        private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): List<WalletState.Utxo> {
             val script = keyManager.swapInOnChainWallet.pubkeyScript
-            return WalletState.Utxos(amounts.map { amount ->
+            return amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(Lightning.randomBytes32(), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 WalletState.Utxo(parentTx, 0, 42)
-            })
+            }
         }
 
         private fun crossSign(alice: LNChannel<Normal>, bob: LNChannel<Normal>, commitmentsCount: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> {

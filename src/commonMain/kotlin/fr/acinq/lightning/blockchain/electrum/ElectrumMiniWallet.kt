@@ -32,10 +32,10 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     }
 
     fun withConfirmations(currentBlockHeight: Int, minConfirmations: Int): WalletWithConfirmations = WalletWithConfirmations(
-        unconfirmed = Utxos(utxos.filter { it.blockHeight == 0L }),
+        unconfirmed = utxos.filter { it.blockHeight == 0L },
         // Note that we wait for one more confirmation than the LSP to make sure that they accept our inputs (in case we receive blocks slightly before them).
-        weaklyConfirmed = Utxos(utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations > currentBlockHeight }),
-        deeplyConfirmed = Utxos(utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations <= currentBlockHeight })
+        weaklyConfirmed = utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations > currentBlockHeight },
+        deeplyConfirmed = utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations <= currentBlockHeight }
     )
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
@@ -43,18 +43,13 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         val amount = previousTx.txOut[outputIndex].amount
     }
 
-    data class Utxos(val utxos: List<Utxo>) {
-        val balance = utxos.map { it.amount }.sum()
-        val size = utxos.size
-    }
-
     /**
      * @param unconfirmed unconfirmed utxos that shouldn't be used yet.
      * @param weaklyConfirmed confirmed utxos that cannot be used for channel funding because they don't have enough confirmations yet.
      * @param deeplyConfirmed deeply confirmed utxos that can be used for channel funding.
      */
-    data class WalletWithConfirmations(val unconfirmed: Utxos, val weaklyConfirmed: Utxos, val deeplyConfirmed: Utxos) {
-        val all = Utxos(unconfirmed.utxos + weaklyConfirmed.utxos + deeplyConfirmed.utxos)
+    data class WalletWithConfirmations(val unconfirmed: List<Utxo>, val weaklyConfirmed: List<Utxo>, val deeplyConfirmed: List<Utxo>) {
+        val all: List<Utxo> = unconfirmed + weaklyConfirmed + deeplyConfirmed
     }
 
     data class UnspentItemId(val txid: ByteVector32, val outputIndex: Int)
@@ -63,6 +58,8 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
     }
 }
+
+val List<WalletState.Utxo>.balance get() = this.map { it.amount }.sum()
 
 private sealed interface WalletCommand {
     companion object {

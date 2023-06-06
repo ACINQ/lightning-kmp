@@ -199,7 +199,7 @@ object TestsHelper {
             )
         )
         assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
-        val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else WalletState.Utxos(listOf())
+        val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else listOf()
         val (bob1, _) = bob.process(ChannelCommand.InitNonInitiator(aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
         assertIs<LNChannel<WaitForOpenChannel>>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
@@ -386,10 +386,10 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, WalletState.Utxos> {
+    fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, List<WalletState.Utxo>> {
         val (privateKey, script) = keyManager.swapInOnChainWallet.run { Pair(userPrivateKey, pubkeyScript) }
         val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, script)), 0)
-        return privateKey to WalletState.Utxos(listOf(WalletState.Utxo(parentTx, 0, 42)))
+        return privateKey to listOf(WalletState.Utxo(parentTx, 0, 42))
     }
 
     fun <T : ChannelState> addHtlc(amount: MilliSatoshi, payer: LNChannel<T>, payee: LNChannel<T>): Triple<Pair<LNChannel<T>, LNChannel<T>>, ByteVector32, UpdateAddHtlc> {
