@@ -15,47 +15,52 @@ import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-data class WalletState(val currentBlockHeight: Int?, val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
+data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
     /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent */
-    val consistent: Boolean = currentBlockHeight != null && addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
+    val consistent: Boolean = addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
     val utxos: List<Utxo> = addresses
         .flatMap { it.value }
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
-
-    // Note that we wait for one more confirmation than the LSP to make sure that they accept our inputs (in case we receive blocks slightly before them).
-    val deeplyConfirmedUtxos: List<Utxo> = utxos.filter { currentBlockHeight != null && 0 < it.blockHeight && it.blockHeight + SwapInConfirmations <= currentBlockHeight }
-    val weaklyConfirmedUtxos: List<Utxo> = utxos.filter { currentBlockHeight != null && 0 < it.blockHeight && it.blockHeight + SwapInConfirmations > currentBlockHeight }
-    val unconfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight == 0L }
-
-    val deeplyConfirmedBalance = deeplyConfirmedUtxos.map { it.amount }.sum()
-    val weaklyConfirmedBalance = weaklyConfirmedUtxos.map { it.amount }.sum()
-    val unconfirmedBalance = unconfirmedUtxos.map { it.amount }.sum()
-    val totalBalance = deeplyConfirmedBalance + weaklyConfirmedBalance + unconfirmedBalance
+    val totalBalance = utxos.map { it.amount }.sum()
 
     fun minus(reserved: Set<Utxo>): WalletState {
-        val reservedIds = reserved.map {
-            UnspentItemId(it.previousTx.txid, it.outputIndex)
-        }.toSet()
+        val reservedIds = reserved.map { UnspentItemId(it.previousTx.txid, it.outputIndex) }.toSet()
         return copy(addresses = addresses.mapValues {
-            it.value.filter { item ->
-                !reservedIds.contains(UnspentItemId(item.txid, item.outputIndex))
-            }
+            it.value.filter { item -> !reservedIds.contains(UnspentItemId(item.txid, item.outputIndex)) }
         })
     }
+
+    fun withConfirmations(currentBlockHeight: Int, minConfirmations: Int): WalletWithConfirmations = WalletWithConfirmations(
+        unconfirmed = Utxos(utxos.filter { it.blockHeight == 0L }),
+        // Note that we wait for one more confirmation than the LSP to make sure that they accept our inputs (in case we receive blocks slightly before them).
+        weaklyConfirmed = Utxos(utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations > currentBlockHeight }),
+        deeplyConfirmed = Utxos(utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations <= currentBlockHeight })
+    )
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
         val amount = previousTx.txOut[outputIndex].amount
     }
 
+    data class Utxos(val utxos: List<Utxo>) {
+        val balance = utxos.map { it.amount }.sum()
+        val size = utxos.size
+    }
+
+    /**
+     * @param unconfirmed unconfirmed utxos that shouldn't be used yet.
+     * @param weaklyConfirmed confirmed utxos that cannot be used for channel funding because they don't have enough confirmations yet.
+     * @param deeplyConfirmed deeply confirmed utxos that can be used for channel funding.
+     */
+    data class WalletWithConfirmations(val unconfirmed: Utxos, val weaklyConfirmed: Utxos, val deeplyConfirmed: Utxos) {
+        val all = Utxos(unconfirmed.utxos + weaklyConfirmed.utxos + deeplyConfirmed.utxos)
+    }
+
     data class UnspentItemId(val txid: ByteVector32, val outputIndex: Int)
 
     companion object {
-        val empty: WalletState = WalletState(null, emptyMap(), emptyMap())
-
-        /** We wait for enough confirmations before using our wallet inputs in funding transactions. */
-        const val SwapInConfirmations = 6
+        val empty: WalletState = WalletState(emptyMap(), emptyMap())
     }
 }
 
@@ -84,16 +89,15 @@ class ElectrumMiniWallet(
             level = Logger.Level.INFO,
             meta = mapOf(
                 "wallet" to name,
-                "deeplyConfirmed" to walletStateFlow.value.deeplyConfirmedBalance,
-                "weaklyConfirmed" to walletStateFlow.value.weaklyConfirmedBalance,
-                "unconfirmed" to walletStateFlow.value.unconfirmedBalance
+                "utxos" to walletStateFlow.value.utxos.size,
+                "balance" to walletStateFlow.value.totalBalance
             ),
             msgCreator = msgCreator
         )
     }
 
     // state flow with the current balance
-    private val _walletStateFlow = MutableStateFlow(WalletState(null, emptyMap(), emptyMap()))
+    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     // all currently watched script hashes and their corresponding bitcoin address
@@ -173,9 +177,6 @@ class ElectrumMiniWallet(
                         }
 
                         is WalletCommand.Companion.ElectrumNotification -> {
-                            if (it.msg is HeaderSubscriptionResponse) {
-                                _walletStateFlow.value = _walletStateFlow.value.copy(currentBlockHeight = it.msg.blockHeight)
-                            }
                             if (it.msg is ScriptHashSubscriptionResponse) {
                                 _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
                             }

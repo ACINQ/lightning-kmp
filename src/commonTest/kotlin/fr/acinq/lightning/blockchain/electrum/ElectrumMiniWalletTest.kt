@@ -44,10 +44,25 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
             .filter { it.addresses.size == 1 && it.consistent }
             .first()
 
+        // This address has 3 transactions confirmed at block 100 002 and 3 transactions confirmed at block 100 003.
         assertEquals(6, walletState.utxos.size)
-        assertEquals(0.sat, walletState.weaklyConfirmedBalance)
-        assertEquals(30_000_000.sat, walletState.deeplyConfirmedBalance)
         assertEquals(30_000_000.sat, walletState.totalBalance)
+
+        run {
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_005, minConfirmations = 3)
+            assertEquals(0, withConf.unconfirmed.size)
+            assertEquals(3, withConf.weaklyConfirmed.size)
+            assertEquals(3, withConf.deeplyConfirmed.size)
+            assertEquals(15_000_000.sat, withConf.weaklyConfirmed.balance)
+            assertEquals(15_000_000.sat, withConf.deeplyConfirmed.balance)
+        }
+        run {
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_006, minConfirmations = 3)
+            assertEquals(0, withConf.unconfirmed.size)
+            assertEquals(0, withConf.weaklyConfirmed.size)
+            assertEquals(6, withConf.deeplyConfirmed.size)
+            assertEquals(30_000_000.sat, withConf.deeplyConfirmed.balance)
+        }
 
         wallet.stop()
         client.stop()

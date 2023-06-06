@@ -239,7 +239,7 @@ class PeerTest : LightningTestSuite() {
         bob.forward(open)
         val accept = bob2alice.expect<AcceptDualFundedChannel>()
         assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
-        val fundingFee = walletBob.deeplyConfirmedBalance - accept.fundingAmount
+        val fundingFee = walletBob.balance - accept.fundingAmount
         assertEquals(accept.pushAmount, serviceFee + miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi())
         alice.forward(accept)
 
@@ -267,7 +267,7 @@ class PeerTest : LightningTestSuite() {
         // Bob has to deduce from its balance:
         //  - the fees for the channel open (10 000 sat)
         //  - the miner fees for his input(s) in the funding transaction
-        assertEquals(bobState.commitments.latest.localCommit.spec.toLocal, walletBob.deeplyConfirmedBalance.toMilliSatoshi() - serviceFee - miningFee.toMilliSatoshi())
+        assertEquals(bobState.commitments.latest.localCommit.spec.toLocal, walletBob.balance.toMilliSatoshi() - serviceFee - miningFee.toMilliSatoshi())
     }
 
     @Test

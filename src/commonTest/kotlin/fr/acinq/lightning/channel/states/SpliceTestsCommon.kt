@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
@@ -12,7 +11,6 @@ import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.fulfillHtlc
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -893,15 +891,14 @@ class SpliceTestsCommon : LightningTestSuite() {
             return Pair(alice2, bob2)
         }
 
-        private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): WalletState {
-            val (address, script) = keyManager.swapInOnChainWallet.run { Pair(address, pubkeyScript) }
-            val utxos = amounts.map { amount ->
+        private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): WalletState.Utxos {
+            val script = keyManager.swapInOnChainWallet.pubkeyScript
+            return WalletState.Utxos(amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(Lightning.randomBytes32(), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
-                Pair(UnspentItem(parentTx.txid, 0, amount.toLong(), 42), parentTx)
-            }
-            return WalletState(TestConstants.defaultBlockHeight, mapOf(address to utxos.map { it.first }), utxos.associate { it.second.txid to it.second })
+                WalletState.Utxo(parentTx, 0, 42)
+            })
         }
 
         private fun crossSign(alice: LNChannel<Normal>, bob: LNChannel<Normal>, commitmentsCount: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> {

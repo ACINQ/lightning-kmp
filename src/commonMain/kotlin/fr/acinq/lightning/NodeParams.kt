@@ -39,11 +39,13 @@ data class InvoiceDefaultRoutingFees(val feeBase: MilliSatoshi, val feeProportio
  * @param trampolineNode address of the trampoline node used for outgoing payments.
  * @param trampolineFees ordered list of trampoline fees to try when making an outgoing payment.
  * @param invoiceDefaultRoutingFees default routing fees set in invoices when we don't have any channel.
+ * @param swapInConfirmations number of confirmations needed on swap-in transactions, before importing those funds into a channel.
  */
 data class WalletParams(
     val trampolineNode: NodeUri,
     val trampolineFees: List<TrampolineFees>,
-    val invoiceDefaultRoutingFees: InvoiceDefaultRoutingFees
+    val invoiceDefaultRoutingFees: InvoiceDefaultRoutingFees,
+    val swapInConfirmations: Int
 )
 
 /**
