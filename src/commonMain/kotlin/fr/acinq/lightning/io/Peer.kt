@@ -211,29 +211,22 @@ class Peer(
             swapInWallet.walletStateFlow
                 .filter { it.consistent }
                 .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
-                    when (val currentBlockHeight = currentTipFlow.value?.first) {
-                        null -> {
-                            logger.warning { "cannot process wallet state: current block height not available" }
-                            reservedUtxos
-                        }
-                        else -> {
-                            // reservedUtxos are part of a previously issued RequestChannelOpen command
-                            val availableWallet = wallet.minus(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
-                            logger.info { "swap-in wallet balance (migration=$isMigrationFromLegacyApp): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
-                            val utxos = when {
-                                // When migrating from the legacy android app, we use all utxos, even unconfirmed ones.
-                                isMigrationFromLegacyApp -> availableWallet.all
-                                else -> availableWallet.deeplyConfirmed
-                            }
-                            if (utxos.balance > 0.sat) {
-                                logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
-                                input.send(RequestChannelOpen(Lightning.randomBytes32(), utxos))
-                                reservedUtxos.union(utxos)
-                            } else {
-                                reservedUtxos
-                            }.intersect(wallet.utxos.toSet()) // drop utxos no longer in wallet
-                        }
+                    val currentBlockHeight = currentTipFlow.filterNotNull().first().first
+                    // reservedUtxos are part of a previously issued RequestChannelOpen command
+                    val availableWallet = wallet.minus(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
+                    logger.info { "swap-in wallet balance (migration=$isMigrationFromLegacyApp): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
+                    val utxos = when {
+                        // When migrating from the legacy android app, we use all utxos, even unconfirmed ones.
+                        isMigrationFromLegacyApp -> availableWallet.all
+                        else -> availableWallet.deeplyConfirmed
                     }
+                    if (utxos.balance > 0.sat) {
+                        logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
+                        input.send(RequestChannelOpen(Lightning.randomBytes32(), utxos))
+                        reservedUtxos.union(utxos)
+                    } else {
+                        reservedUtxos
+                    }.intersect(wallet.utxos.toSet()) // drop utxos no longer in wallet
                 }
         }
         launch {
