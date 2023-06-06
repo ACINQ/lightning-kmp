@@ -390,7 +390,7 @@ object TestsHelper {
     fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, WalletState> {
         val (privateKey, address, script) = keyManager.swapInOnChainWallet.run { Triple(userPrivateKey, address, pubkeyScript) }
         val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, script)), 0)
-        return privateKey to WalletState(mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 654321))), mapOf(parentTx.txid to parentTx))
+        return privateKey to WalletState(TestConstants.defaultBlockHeight, mapOf(address to listOf(UnspentItem(parentTx.txid, 0, amount.toLong(), 42))), mapOf(parentTx.txid to parentTx))
     }
 
     fun <T : ChannelState> addHtlc(amount: MilliSatoshi, payer: LNChannel<T>, payee: LNChannel<T>): Triple<Pair<LNChannel<T>, LNChannel<T>>, ByteVector32, UpdateAddHtlc> {

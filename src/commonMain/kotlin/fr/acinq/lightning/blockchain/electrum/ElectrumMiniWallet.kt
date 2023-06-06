@@ -15,17 +15,17 @@ import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
+data class WalletState(val currentBlockHeight: Int?, val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
     /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent */
-    val consistent: Boolean = addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
+    val consistent: Boolean = currentBlockHeight != null && addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
     val utxos: List<Utxo> = addresses
         .flatMap { it.value }
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
 
-    // Note that we wait for one more confirmation than the LSP to make sure they accept our inputs.
-    val deeplyConfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight > SwapInConfirmations }
-    val weaklyConfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight in 1..SwapInConfirmations }
+    // Note that we wait for one more confirmation than the LSP to make sure that they accept our inputs (in case we receive blocks slightly before them).
+    val deeplyConfirmedUtxos: List<Utxo> = utxos.filter { currentBlockHeight != null && 0 < it.blockHeight && it.blockHeight + SwapInConfirmations <= currentBlockHeight }
+    val weaklyConfirmedUtxos: List<Utxo> = utxos.filter { currentBlockHeight != null && 0 < it.blockHeight && it.blockHeight + SwapInConfirmations > currentBlockHeight }
     val unconfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight == 0L }
 
     val deeplyConfirmedBalance = deeplyConfirmedUtxos.map { it.amount }.sum()
@@ -52,7 +52,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     data class UnspentItemId(val txid: ByteVector32, val outputIndex: Int)
 
     companion object {
-        val empty: WalletState = WalletState(emptyMap(), emptyMap())
+        val empty: WalletState = WalletState(null, emptyMap(), emptyMap())
 
         /** We wait for enough confirmations before using our wallet inputs in funding transactions. */
         const val SwapInConfirmations = 6
@@ -93,7 +93,7 @@ class ElectrumMiniWallet(
     }
 
     // state flow with the current balance
-    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
+    private val _walletStateFlow = MutableStateFlow(WalletState(null, emptyMap(), emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     // all currently watched script hashes and their corresponding bitcoin address
@@ -105,6 +105,13 @@ class ElectrumMiniWallet(
     fun addAddress(bitcoinAddress: String) {
         launch {
             mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
+        }
+    }
+
+    /** This function should only be used in tests, to test the wallet notification flow. */
+    fun setWalletState(walletState: WalletState) {
+        launch {
+            _walletStateFlow.value = walletState
         }
     }
 
@@ -166,6 +173,9 @@ class ElectrumMiniWallet(
                         }
 
                         is WalletCommand.Companion.ElectrumNotification -> {
+                            if (it.msg is HeaderSubscriptionResponse) {
+                                _walletStateFlow.value = _walletStateFlow.value.copy(currentBlockHeight = it.msg.blockHeight)
+                            }
                             if (it.msg is ScriptHashSubscriptionResponse) {
                                 _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
                             }

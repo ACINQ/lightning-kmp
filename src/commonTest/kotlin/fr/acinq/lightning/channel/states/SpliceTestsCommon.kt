@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.fulfillHtlc
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -900,7 +901,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 Pair(UnspentItem(parentTx.txid, 0, amount.toLong(), 42), parentTx)
             }
-            return WalletState(mapOf(address to utxos.map { it.first }), utxos.associate { it.second.txid to it.second })
+            return WalletState(TestConstants.defaultBlockHeight, mapOf(address to utxos.map { it.first }), utxos.associate { it.second.txid to it.second })
         }
 
         private fun crossSign(alice: LNChannel<Normal>, bob: LNChannel<Normal>, commitmentsCount: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> {

@@ -83,6 +83,7 @@ data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : P
  * @param watcher Watches events from the Electrum client and publishes transactions and events.
  * @param db Wraps the various databases persisting the channels and payments data related to the Peer.
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
+ * @param isMigrationFromLegacyApp true if we're migrating from the legacy phoenix android app.
  * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
 @OptIn(ExperimentalStdlibApi::class)
@@ -93,6 +94,7 @@ class Peer(
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
+    private val isMigrationFromLegacyApp: Boolean = false,
     private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
 ) : CoroutineScope by scope {
     companion object {
@@ -210,11 +212,18 @@ class Peer(
                 .filter { it.consistent }
                 .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
                     // reservedUtxos are part of a previously issued RequestChannelOpen command
-                    val availableWallet = wallet.minus(reservedUtxos)
+                    val nonReservedFunds = wallet.minus(reservedUtxos)
+                    logger.info { "swap-in wallet balance: deeplyConfirmed=${nonReservedFunds.deeplyConfirmedBalance}, weaklyConfirmed=${nonReservedFunds.weaklyConfirmedBalance}, unconfirmed=${nonReservedFunds.unconfirmedBalance}" }
+                    val availableWallet = when {
+                        isMigrationFromLegacyApp -> {
+                            // When migrating from the legacy android app, we treat all utxos as if they were already deeply confirmed.
+                            nonReservedFunds.copy(addresses = nonReservedFunds.addresses.mapValues { it.value.map { utxo -> utxo.copy(blockHeight = 1) } })
+                        }
+                        else -> nonReservedFunds
+                    }
                     val balance = availableWallet.deeplyConfirmedBalance
-                    logger.info { "swap-in wallet balance: deeplyConfirmed=$balance, weaklyConfirmed=${availableWallet.weaklyConfirmedBalance}, unconfirmed=${availableWallet.unconfirmedBalance}" }
                     if (balance > 0.sat) {
-                        logger.info { "swap-in wallet: requesting channel using deeply confirmed balance: $balance" }
+                        logger.info { "swap-in wallet: requesting channel using balance=$balance" }
                         input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet))
                         reservedUtxos.union(availableWallet.deeplyConfirmedUtxos)
                     } else {
@@ -936,14 +945,13 @@ class Peer(
             }
 
             cmd is RequestChannelOpen -> {
-                val balance = cmd.wallet.deeplyConfirmedBalance
                 when (val channel = channels.values.firstOrNull { it is Normal }) {
                     is ChannelStateWithCommitments -> {
                         val targetFeerate = onChainFeeratesFlow.filterNotNull().first().fundingFeerate
                         val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.wallet.deeplyConfirmedUtxos, localOutputs = emptyList())
                         val (feerate, fee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
-                        logger.info { "requesting splice-in using confirmed balance=$balance feerate=$feerate fee=$fee" }
+                        logger.info { "requesting splice-in using confirmed balance=${cmd.wallet.deeplyConfirmedBalance} feerate=$feerate fee=$fee" }
 
                         nodeParams.liquidityPolicy.value.maybeReject(cmd.wallet.deeplyConfirmedBalance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
                             logger.info { "rejecting splice: reason=${rejected.reason}" }
@@ -961,7 +969,8 @@ class Peer(
                     }
                     else -> {
                         if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted }) {
-                            // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel
+                            // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel.
+                            val balance = cmd.wallet.deeplyConfirmedBalance
                             val utxos = cmd.wallet.deeplyConfirmedUtxos
                             // Grandparents are supplied as a proof of migration
                             val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()

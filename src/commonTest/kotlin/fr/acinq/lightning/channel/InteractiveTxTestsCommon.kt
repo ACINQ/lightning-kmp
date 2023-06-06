@@ -1221,7 +1221,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 Pair(UnspentItem(parentTx.txid, 0, amount.toLong(), 0), parentTx)
             }
-            return WalletState(mapOf(onChainKeys.address to utxos.map { it.first }), utxos.associate { it.second.txid to it.second })
+            return WalletState(TestConstants.defaultBlockHeight, mapOf(onChainKeys.address to utxos.map { it.first }), utxos.associate { it.second.txid to it.second })
         }
 
         private fun createTxAddInput(channelId: ByteVector32, serialId: Long, amount: Satoshi): TxAddInput {
