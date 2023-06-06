@@ -15,23 +15,22 @@ import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-data class WalletState(val currentBlockHeight: Int?, val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
+data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
     /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent */
-    val consistent: Boolean = currentBlockHeight != null && addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
+    val consistent: Boolean = addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
     val utxos: List<Utxo> = addresses
         .flatMap { it.value }
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
 
-    // Note that we wait for one more confirmation than the LSP to make sure that they accept our inputs (in case we receive blocks slightly before them).
-    val deeplyConfirmedUtxos: List<Utxo> = utxos.filter { currentBlockHeight != null && 0 < it.blockHeight && it.blockHeight + SwapInConfirmations <= currentBlockHeight }
-    val weaklyConfirmedUtxos: List<Utxo> = utxos.filter { currentBlockHeight != null && 0 < it.blockHeight && it.blockHeight + SwapInConfirmations > currentBlockHeight }
+    /** Returns the utxos with a given number of confirmations at a given blockheight. */
+    fun confirmedAt(blockHeight: Int, minDepth: Int): List<Utxo> = utxos.filter { it.blockHeight >= blockHeight + minDepth }
+    val confirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight > 0L }
     val unconfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight == 0L }
 
-    val deeplyConfirmedBalance = deeplyConfirmedUtxos.map { it.amount }.sum()
-    val weaklyConfirmedBalance = weaklyConfirmedUtxos.map { it.amount }.sum()
-    val unconfirmedBalance = unconfirmedUtxos.map { it.amount }.sum()
-    val totalBalance = deeplyConfirmedBalance + weaklyConfirmedBalance + unconfirmedBalance
+    val confirmedBalance = confirmedUtxos.balance
+    val unconfirmedBalance = unconfirmedUtxos.balance
+    val totalBalance = confirmedBalance + unconfirmedBalance
 
     fun minus(reserved: Set<Utxo>): WalletState {
         val reservedIds = reserved.map {
@@ -52,10 +51,12 @@ data class WalletState(val currentBlockHeight: Int?, val addresses: Map<String, 
     data class UnspentItemId(val txid: ByteVector32, val outputIndex: Int)
 
     companion object {
-        val empty: WalletState = WalletState(null, emptyMap(), emptyMap())
+        val empty: WalletState = WalletState(emptyMap(), emptyMap())
 
         /** We wait for enough confirmations before using our wallet inputs in funding transactions. */
         const val SwapInConfirmations = 6
+
+        val List<Utxo>.balance get() = this.map { it.amount }.sum()
     }
 }
 
@@ -82,18 +83,13 @@ class ElectrumMiniWallet(
     fun Logger.mdcinfo(msgCreator: () -> String) {
         log(
             level = Logger.Level.INFO,
-            meta = mapOf(
-                "wallet" to name,
-                "deeplyConfirmed" to walletStateFlow.value.deeplyConfirmedBalance,
-                "weaklyConfirmed" to walletStateFlow.value.weaklyConfirmedBalance,
-                "unconfirmed" to walletStateFlow.value.unconfirmedBalance
-            ),
+            meta = mapOf("wallet" to name, "confirmed" to walletStateFlow.value.confirmedBalance, "unconfirmed" to walletStateFlow.value.unconfirmedBalance),
             msgCreator = msgCreator
         )
     }
 
     // state flow with the current balance
-    private val _walletStateFlow = MutableStateFlow(WalletState(null, emptyMap(), emptyMap()))
+    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     // all currently watched script hashes and their corresponding bitcoin address
@@ -173,9 +169,6 @@ class ElectrumMiniWallet(
                         }
 
                         is WalletCommand.Companion.ElectrumNotification -> {
-                            if (it.msg is HeaderSubscriptionResponse) {
-                                _walletStateFlow.value = _walletStateFlow.value.copy(currentBlockHeight = it.msg.blockHeight)
-                            }
                             if (it.msg is ScriptHashSubscriptionResponse) {
                                 _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
                             }

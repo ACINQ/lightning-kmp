@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.electrum.*
+import fr.acinq.lightning.blockchain.electrum.WalletState.Companion.balance
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
@@ -33,13 +34,13 @@ sealed class PeerCommand
 /**
  * Try to open a channel, consuming all the spendable utxos in the wallet state provided.
  */
-data class RequestChannelOpen(val requestId: ByteVector32, val wallet: WalletState) : PeerCommand()
+data class RequestChannelOpen(val requestId: ByteVector32, val walletInputs: List<WalletState.Utxo>) : PeerCommand()
 
 /** Open a channel, consuming all the spendable utxos in the wallet state provided. */
 data class OpenChannel(
     val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
-    val wallet: WalletState,
+    val walletInputs: List<WalletState.Utxo>,
     val commitTxFeerate: FeeratePerKw,
     val fundingTxFeerate: FeeratePerKw,
     val channelFlags: Byte,
@@ -202,9 +203,9 @@ class Peer(
         }
         launch {
             finalWallet.walletStateFlow
-                .distinctUntilChangedBy { Triple(it.unconfirmedBalance, it.weaklyConfirmedBalance, it.deeplyConfirmedBalance) }
+                .distinctUntilChangedBy { Pair(it.unconfirmedBalance, it.confirmedBalance) }
                 .collect { wallet ->
-                    logger.info { "${wallet.totalBalance} available on final wallet (${wallet.unconfirmedBalance} unconfirmed and ${wallet.weaklyConfirmedBalance} weakly confirmed)" }
+                    logger.info { "${wallet.totalBalance} available on final wallet (${wallet.unconfirmedBalance} unconfirmed)" }
                 }
         }
         launch {
@@ -213,19 +214,24 @@ class Peer(
                 .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
                     // reservedUtxos are part of a previously issued RequestChannelOpen command
                     val nonReservedFunds = wallet.minus(reservedUtxos)
-                    logger.info { "swap-in wallet balance: deeplyConfirmed=${nonReservedFunds.deeplyConfirmedBalance}, weaklyConfirmed=${nonReservedFunds.weaklyConfirmedBalance}, unconfirmed=${nonReservedFunds.unconfirmedBalance}" }
-                    val availableWallet = when {
+                    val walletInputs = when {
                         isMigrationFromLegacyApp -> {
                             // When migrating from the legacy android app, we treat all utxos as if they were already deeply confirmed.
-                            nonReservedFunds.copy(addresses = nonReservedFunds.addresses.mapValues { it.value.map { utxo -> utxo.copy(blockHeight = 1) } })
+                            logger.info { "swap-in wallet balance (migration mode): confirmed=${nonReservedFunds.confirmedBalance}, unconfirmed=${nonReservedFunds.unconfirmedBalance}" }
+                            nonReservedFunds.utxos
                         }
-                        else -> nonReservedFunds
+                        else -> {
+                            // Otherwise we only consider deeply confirmed utxos
+                            val currentBlockHeight = currentTipFlow.filterNotNull().first().first
+                            val deeplyConfirmed = nonReservedFunds.confirmedAt(currentBlockHeight, minDepth = WalletState.SwapInConfirmations)
+                            logger.info { "swap-in wallet balance: deeplyConfirmed=${deeplyConfirmed.balance}, confirmed=${nonReservedFunds.confirmedBalance}, unconfirmed=${nonReservedFunds.unconfirmedBalance}" }
+                            deeplyConfirmed
+                        }
                     }
-                    val balance = availableWallet.deeplyConfirmedBalance
-                    if (balance > 0.sat) {
-                        logger.info { "swap-in wallet: requesting channel using balance=$balance" }
-                        input.send(RequestChannelOpen(Lightning.randomBytes32(), availableWallet))
-                        reservedUtxos.union(availableWallet.deeplyConfirmedUtxos)
+                    if (walletInputs.balance > 0.sat) {
+                        logger.info { "swap-in wallet: requesting channel using balance=${walletInputs.balance}" }
+                        input.send(RequestChannelOpen(Lightning.randomBytes32(), walletInputs))
+                        reservedUtxos.union(walletInputs)
                     } else {
                         reservedUtxos
                     }.intersect(wallet.utxos.toSet()) // drop utxos no longer in wallet
@@ -757,23 +763,23 @@ class Peer(
                         }
 
                         msg is OpenDualFundedChannel -> {
-                            val (wallet, fundingAmount, pushAmount) = when (val origin = msg.origin) {
+                            val (walletInputs, fundingAmount, pushAmount) = when (val origin = msg.origin) {
                                 is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
                                         val totalFee = origin.serviceFee + origin.miningFee.toMilliSatoshi() - msg.pushAmount
-                                        nodeParams.liquidityPolicy.value.maybeReject(request.wallet.deeplyConfirmedBalance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
+                                        nodeParams.liquidityPolicy.value.maybeReject(request.walletInputs.balance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
                                             logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
                                             nodeParams._nodeEvents.emit(rejected)
                                             sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
                                             return@withMDC
                                         }
-                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.wallet.deeplyConfirmedUtxos.size * Transactions.swapInputWeight)
+                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.walletInputs.size * Transactions.swapInputWeight)
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
-                                        val fundingAmount = request.wallet.deeplyConfirmedBalance - fundingFee
+                                        val fundingAmount = request.walletInputs.balance - fundingFee
                                         // We pay the other fees by pushing the corresponding amount
                                         val pushAmount = origin.serviceFee + origin.miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi()
                                         nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, miningFee = origin.miningFee))
-                                        Triple(request.wallet, fundingAmount, pushAmount)
+                                        Triple(request.walletInputs, fundingAmount, pushAmount)
                                     }
 
                                     else -> {
@@ -783,7 +789,7 @@ class Peer(
                                     }
                                 }
 
-                                else -> Triple(WalletState.empty, 0.sat, 0.msat)
+                                else -> Triple(emptyList(), 0.sat, 0.msat)
                             }
                             if (fundingAmount.toMilliSatoshi() < pushAmount) {
                                 logger.warning { "rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
@@ -792,7 +798,7 @@ class Peer(
                                 val localParams = LocalParams(nodeParams, isInitiator = false)
                                 val state = WaitForInit
                                 val channelConfig = ChannelConfig.standard
-                                val (state1, actions1) = state.process(ChannelCommand.InitNonInitiator(msg.temporaryChannelId, fundingAmount, pushAmount, wallet, localParams, channelConfig, theirInit!!))
+                                val (state1, actions1) = state.process(ChannelCommand.InitNonInitiator(msg.temporaryChannelId, fundingAmount, pushAmount, walletInputs, localParams, channelConfig, theirInit!!))
                                 val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
                                 _channels = _channels + (msg.temporaryChannelId to state2)
                                 when (val origin = msg.origin) {
@@ -948,12 +954,12 @@ class Peer(
                 when (val channel = channels.values.firstOrNull { it is Normal }) {
                     is ChannelStateWithCommitments -> {
                         val targetFeerate = onChainFeeratesFlow.filterNotNull().first().fundingFeerate
-                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.wallet.deeplyConfirmedUtxos, localOutputs = emptyList())
+                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
                         val (feerate, fee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
-                        logger.info { "requesting splice-in using confirmed balance=${cmd.wallet.deeplyConfirmedBalance} feerate=$feerate fee=$fee" }
+                        logger.info { "requesting splice-in using confirmed balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
 
-                        nodeParams.liquidityPolicy.value.maybeReject(cmd.wallet.deeplyConfirmedBalance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
+                        nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
                             logger.info { "rejecting splice: reason=${rejected.reason}" }
                             nodeParams._nodeEvents.emit(rejected)
                             return
@@ -961,7 +967,7 @@ class Peer(
 
                         val spliceCommand = ChannelCommand.Splice.Request(
                             replyTo = CompletableDeferred(),
-                            spliceIn = ChannelCommand.Splice.Request.SpliceIn(cmd.wallet),
+                            spliceIn = ChannelCommand.Splice.Request.SpliceIn(cmd.walletInputs),
                             spliceOut = null,
                             feerate = feerate
                         )
@@ -970,8 +976,8 @@ class Peer(
                     else -> {
                         if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted }) {
                             // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel.
-                            val balance = cmd.wallet.deeplyConfirmedBalance
-                            val utxos = cmd.wallet.deeplyConfirmedUtxos
+                            val balance = cmd.walletInputs.balance
+                            val utxos = cmd.walletInputs
                             // Grandparents are supplied as a proof of migration
                             val grandParents = utxos.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
                             val pleaseOpenChannel = PleaseOpenChannel(
@@ -1001,7 +1007,7 @@ class Peer(
                     ChannelCommand.InitInitiator(
                         cmd.fundingAmount,
                         cmd.pushAmount,
-                        cmd.wallet,
+                        cmd.walletInputs,
                         cmd.commitTxFeerate,
                         cmd.fundingTxFeerate,
                         localParams,

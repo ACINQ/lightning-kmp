@@ -26,7 +26,7 @@ sealed class ChannelCommand {
     data class InitInitiator(
         val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
-        val wallet: WalletState,
+        val walletInputs: List<WalletState.Utxo>,
         val commitTxFeerate: FeeratePerKw,
         val fundingTxFeerate: FeeratePerKw,
         val localParams: LocalParams,
@@ -43,7 +43,7 @@ sealed class ChannelCommand {
         val temporaryChannelId: ByteVector32,
         val fundingAmount: Satoshi,
         val pushAmount: MilliSatoshi,
-        val wallet: WalletState,
+        val walletInputs: List<WalletState.Utxo>,
         val localParams: LocalParams,
         val channelConfig: ChannelConfig,
         val remoteInit: Init
@@ -73,7 +73,7 @@ sealed class ChannelCommand {
     object Sign : ChannelCommand(), ForbiddenDuringSplice
     data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : ChannelCommand(), ForbiddenDuringSplice
     // We only support a very limited fee bumping mechanism where all spendable utxos will be used (only used in tests).
-    data class BumpFundingFee(val targetFeerate: FeeratePerKw, val fundingAmount: Satoshi, val wallet: WalletState, val lockTime: Long) : ChannelCommand()
+    data class BumpFundingFee(val targetFeerate: FeeratePerKw, val fundingAmount: Satoshi, val walletInputs: List<WalletState.Utxo>, val lockTime: Long) : ChannelCommand()
     sealed class Close : ChannelCommand() {
         data class MutualClose(val scriptPubKey: ByteVector?, val feerates: ClosingFeerates?) : Close()
         object ForceClose : Close()
@@ -83,7 +83,7 @@ sealed class ChannelCommand {
             val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
             val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 
-            data class SpliceIn(val wallet: WalletState, val pushAmount: MilliSatoshi = 0.msat)
+            data class SpliceIn(val walletInputs: List<WalletState.Utxo>, val pushAmount: MilliSatoshi = 0.msat)
             data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
         }
 

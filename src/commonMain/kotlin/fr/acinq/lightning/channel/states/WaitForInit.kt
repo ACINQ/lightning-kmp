@@ -18,7 +18,7 @@ object WaitForInit : ChannelState() {
                     cmd.temporaryChannelId,
                     cmd.fundingAmount,
                     cmd.pushAmount,
-                    cmd.wallet,
+                    cmd.walletInputs,
                     cmd.localParams,
                     cmd.channelConfig,
                     cmd.remoteInit

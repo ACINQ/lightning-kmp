@@ -51,7 +51,7 @@ data class WaitForAcceptChannel(
                         val remoteFundingPubkey = accept.fundingPubkey
                         val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
                         val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, remoteFundingPubkey, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
-                        when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.wallet.deeplyConfirmedUtxos)) {
+                        when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs)) {
                             is Either.Left -> {
                                 logger.error { "could not fund channel: ${fundingContributions.value}" }
                                 Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
