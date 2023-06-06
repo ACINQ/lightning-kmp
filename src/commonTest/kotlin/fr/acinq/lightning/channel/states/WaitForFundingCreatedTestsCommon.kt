@@ -325,7 +325,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             val aliceInput = actions2.findOutgoingMessage<TxAddInput>()
             assertIs<LNChannel<WaitForFundingCreated>>(a1)
             assertIs<WaitForFundingCreated>(a1.state)
-            return Fixture(a1, b1, aliceInput, a.state.init.utxos)
+            return Fixture(a1, b1, aliceInput, a.state.init.walletInputs)
         }
     }
 }

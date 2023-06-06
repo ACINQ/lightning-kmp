@@ -101,7 +101,7 @@ data class Normal(
                         val fundingContribution = FundingContributions.computeSpliceContribution(
                             isInitiator = true,
                             commitment = parentCommitment,
-                            walletInputs = cmd.spliceIn?.utxos ?: emptyList(),
+                            walletInputs = cmd.spliceIn?.walletInputs ?: emptyList(),
                             localOutputs = cmd.spliceOutputs,
                             targetFeerate = cmd.feerate
                         )
@@ -409,7 +409,7 @@ data class Normal(
                                 swapInKeys = keyManager.swapInOnChainWallet,
                                 params = fundingParams,
                                 sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
-                                walletInputs = spliceStatus.command.spliceIn?.utxos ?: emptyList(),
+                                walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                 localOutputs = spliceStatus.command.spliceOutputs,
                                 changePubKey = null // we don't want a change output: we're spending every funds available
                             )) {
