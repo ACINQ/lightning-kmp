@@ -219,7 +219,7 @@ class Peer(
                         else -> {
                             // reservedUtxos are part of a previously issued RequestChannelOpen command
                             val availableWallet = wallet.minus(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
-                            logger.info { "swap-in wallet balance: deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
+                            logger.info { "swap-in wallet balance (migration=$isMigrationFromLegacyApp): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
                             val utxos = when {
                                 // When migrating from the legacy android app, we use all utxos, even unconfirmed ones.
                                 isMigrationFromLegacyApp -> availableWallet.all
