@@ -39,7 +39,7 @@ data class ChannelParams(
     val channelFlags: Byte
 ) {
     init {
-        require(channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath)) { "FundingPubKeyBasedChannelKeyPath option must be enabled"}
+        require(channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath)) { "FundingPubKeyBasedChannelKeyPath option must be enabled" }
     }
 
     fun updateFeatures(localInit: Init, remoteInit: Init) = this.copy(
@@ -104,8 +104,9 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: Byt
         val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
         return CommitSig(params.channelId, sig, htlcSigs.toList())
     }
+
     fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, signingSession: InteractiveTxSigningSession): CommitSig =
-        sign(channelKeys, params, fundingTxIndex = signingSession.fundingTxIndex, remoteFundingPubKey = signingSession.fundingParams.remoteFundingPubkey, commitInput = signingSession.commitInput)
+        sign(channelKeys, params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubkey, signingSession.commitInput)
 }
 
 /** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */

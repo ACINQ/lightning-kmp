@@ -10,6 +10,7 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.NodeUri
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
+import fr.acinq.lightning.blockchain.electrum.balance
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
@@ -239,7 +240,7 @@ class PeerTest : LightningTestSuite() {
         bob.forward(open)
         val accept = bob2alice.expect<AcceptDualFundedChannel>()
         assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
-        val fundingFee = walletBob.confirmedBalance - accept.fundingAmount
+        val fundingFee = walletBob.balance - accept.fundingAmount
         assertEquals(accept.pushAmount, serviceFee + miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi())
         alice.forward(accept)
 
@@ -267,7 +268,7 @@ class PeerTest : LightningTestSuite() {
         // Bob has to deduce from its balance:
         //  - the fees for the channel open (10 000 sat)
         //  - the miner fees for his input(s) in the funding transaction
-        assertEquals(bobState.commitments.latest.localCommit.spec.toLocal, walletBob.confirmedBalance.toMilliSatoshi() - serviceFee - miningFee.toMilliSatoshi())
+        assertEquals(bobState.commitments.latest.localCommit.spec.toLocal, walletBob.balance.toMilliSatoshi() - serviceFee - miningFee.toMilliSatoshi())
     }
 
     @Test

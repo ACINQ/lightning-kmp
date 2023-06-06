@@ -26,7 +26,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CommitSig`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
-        val commitInput = alice.state.signingSession.localCommit.left!!.commitTx.input
+        val commitInput = alice.state.signingSession.commitInput
         run {
             val (_, _) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
                 .also { (state, actions) ->
@@ -130,7 +130,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
-        val commitInput = alice.state.signingSession.localCommit.left!!.commitTx.input
+        val commitInput = alice.state.signingSession.commitInput
         val txSigsBob = run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
             assertIs<WaitForFundingConfirmed>(bob1.state)
@@ -292,7 +292,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        data class Fixture(val alice: LNChannel<WaitForFundingSigned>, val commitSigAlice: CommitSig, val bob: LNChannel<WaitForFundingSigned>, val commitSigBob: CommitSig, val walletAlice: WalletState)
+        data class Fixture(val alice: LNChannel<WaitForFundingSigned>, val commitSigAlice: CommitSig, val bob: LNChannel<WaitForFundingSigned>, val commitSigBob: CommitSig, val walletAlice: List<WalletState.Utxo>)
 
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,

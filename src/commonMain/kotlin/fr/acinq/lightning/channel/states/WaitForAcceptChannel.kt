@@ -51,14 +51,14 @@ data class WaitForAcceptChannel(
                         val remoteFundingPubkey = accept.fundingPubkey
                         val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
                         val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, remoteFundingPubkey, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
-                        when (val fundingContributions = FundingContributions.create(channelKeys, fundingParams, init.wallet.confirmedUtxos)) {
+                        when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs)) {
                             is Either.Left -> {
                                 logger.error { "could not fund channel: ${fundingContributions.value}" }
                                 Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
                             }
                             is Either.Right -> {
                                 // The channel initiator always sends the first interactive-tx message.
-                                val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(channelKeys, fundingParams, 0.msat, 0.msat, fundingContributions.value).send()
+                                val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, fundingContributions.value).send()
                                 when (interactiveTxAction) {
                                     is InteractiveTxSessionAction.SendMessage -> {
                                         val nextState = WaitForFundingCreated(

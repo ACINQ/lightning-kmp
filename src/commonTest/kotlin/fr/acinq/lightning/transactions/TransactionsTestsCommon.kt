@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Crypto.ripemd160
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
-import fr.acinq.bitcoin.Script.witnessPay2wpkh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.CltvExpiry
@@ -50,8 +49,8 @@ import fr.acinq.lightning.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.lightning.transactions.Transactions.makeHtlcPenaltyTx
 import fr.acinq.lightning.transactions.Transactions.makeHtlcTxs
 import fr.acinq.lightning.transactions.Transactions.makeMainPenaltyTx
-import fr.acinq.lightning.transactions.Transactions.p2wpkhInputWeight
 import fr.acinq.lightning.transactions.Transactions.sign
+import fr.acinq.lightning.transactions.Transactions.swapInputWeight
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
@@ -93,17 +92,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val txNumber1 = decodeTxNumber(sequence, lockTime)
             assertEquals(txNumber, txNumber1)
         }
-    }
-
-    @Test
-    fun `default weights`() {
-        val pubkey = randomKey().publicKey()
-        // DER-encoded ECDSA signatures usually take up to 72 bytes.
-        val sig = randomBytes(72).toByteVector()
-        val tx = Transaction(2, listOf(TxIn(OutPoint(ByteVector32.Zeroes, 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
-        val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(TxIn(OutPoint(ByteVector32.Zeroes, 3), ByteVector.empty, 0, witnessPay2wpkh(pubkey, sig))))
-        val inputWeight = txWithAdditionalInput.weight() - tx.weight()
-        assertEquals(inputWeight, p2wpkhInputWeight)
     }
 
     @Test
@@ -451,6 +439,59 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
         }
+    }
+
+    @Test
+    fun `spend 2-of-2 swap-in`() {
+        val userWallet = TestConstants.Alice.keyManager.swapInOnChainWallet
+        val swapInTx = Transaction(
+            version = 2,
+            txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0)),
+            txOut = listOf(TxOut(100_000.sat, userWallet.pubkeyScript)),
+            lockTime = 0
+        )
+        // The transaction can be spent if the user and the server produce a signature.
+        run {
+            val fundingTx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), 0)),
+                txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
+                lockTime = 0
+            )
+            val userSig = Transactions.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPrivateKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val serverWallet = TestConstants.Bob.keyManager.swapInOnChainWallet
+            val serverSig = Transactions.signSwapInputServer(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPublicKey, serverWallet.localServerPrivateKey, serverWallet.refundDelay)
+            val witness = Scripts.witnessSwapIn2of2(userSig, userWallet.userPublicKey, serverSig, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val signedTx = fundingTx.updateWitness(0, witness)
+            Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+        // Or it can be spent with only the user's signature, after a delay.
+        run {
+            val fundingTx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), userWallet.refundDelay.toLong())),
+                txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
+                lockTime = 0
+            )
+            val userSig = Transactions.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPrivateKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val witness = Scripts.witnessSwapIn2of2Refund(userSig, userWallet.userPublicKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val signedTx = fundingTx.updateWitness(0, witness)
+            Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+    }
+
+    @Test
+    fun `swap-in input weight`() {
+        val pubkey = randomKey().publicKey()
+        // DER-encoded ECDSA signatures usually take up to 72 bytes.
+        val sig = randomBytes(72).toByteVector()
+        val tx = Transaction(2, listOf(TxIn(OutPoint(ByteVector32.Zeroes, 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
+        val redeemScript = Scripts.swapIn2of2(pubkey, pubkey, 144)
+        val witness = ScriptWitness(listOf(sig, sig, write(redeemScript).byteVector()))
+        val swapInput = TxIn(OutPoint(ByteVector32.Zeroes, 3), ByteVector.empty, 0, witness)
+        val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))
+        val inputWeight = txWithAdditionalInput.weight() - tx.weight()
+        assertEquals(inputWeight, swapInputWeight)
     }
 
     @Test

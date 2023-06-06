@@ -7,11 +7,9 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
-
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
@@ -399,7 +397,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        data class Fixture(val alice: LNChannel<WaitForFundingConfirmed>, val bob: LNChannel<WaitForFundingConfirmed>, val fundingTx: Transaction, val walletAlice: WalletState)
+        data class Fixture(val alice: LNChannel<WaitForFundingConfirmed>, val bob: LNChannel<WaitForFundingConfirmed>, val fundingTx: Transaction, val walletAlice: List<WalletState.Utxo>)
 
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
@@ -450,21 +448,18 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             return Fixture(alice2, bob2, fundingTxAlice, walletAlice)
         }
 
-        fun createRbfCommand(alice: LNChannel<WaitForFundingConfirmed>, wallet: WalletState): ChannelCommand.BumpFundingFee {
+        fun createRbfCommand(alice: LNChannel<WaitForFundingConfirmed>, wallet: List<WalletState.Utxo>): ChannelCommand.BumpFundingFee {
             val previousFundingParams = alice.state.latestFundingTx.fundingParams
             val previousFundingTx = alice.state.latestFundingTx.sharedTx
             assertIs<FullySignedSharedTransaction>(previousFundingTx)
             // Alice adds a new input that increases her contribution and covers the additional fees.
-            val (address, script) = alice.staticParams.nodeParams.keyManager.swapInOnChainWallet.run { Pair(address(0), pubkeyScript(0)) }
+            val script = alice.staticParams.nodeParams.keyManager.swapInOnChainWallet.pubkeyScript
             val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(30_000.sat, script)), 0)
-            val wallet1 = WalletState(
-                wallet.addresses + (address to (wallet.addresses[address] ?: listOf()) + UnspentItem(parentTx.txid, 0, 30_000, 654321)),
-                wallet.parentTxs + (parentTx.txid to parentTx),
-            )
+            val wallet1 = wallet + listOf(WalletState.Utxo(parentTx, 0, 42))
             return ChannelCommand.BumpFundingFee(previousFundingTx.feerate * 1.1, previousFundingParams.localContribution + 20_000.sat, wallet1, previousFundingTx.tx.lockTime + 1)
         }
 
-        fun rbf(alice: LNChannel<WaitForFundingConfirmed>, bob: LNChannel<WaitForFundingConfirmed>, walletAlice: WalletState): Triple<LNChannel<WaitForFundingConfirmed>, LNChannel<WaitForFundingConfirmed>, Transaction> {
+        fun rbf(alice: LNChannel<WaitForFundingConfirmed>, bob: LNChannel<WaitForFundingConfirmed>, walletAlice: List<WalletState.Utxo>): Triple<LNChannel<WaitForFundingConfirmed>, LNChannel<WaitForFundingConfirmed>, Transaction> {
             val previousFundingParams = alice.state.latestFundingTx.fundingParams
             val previousFundingTx = alice.state.latestFundingTx.sharedTx
             assertIs<FullySignedSharedTransaction>(previousFundingTx)

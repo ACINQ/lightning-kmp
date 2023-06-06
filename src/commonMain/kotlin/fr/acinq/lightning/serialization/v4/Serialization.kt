@@ -251,6 +251,7 @@ object Serialization {
     }
 
     private fun Output.writeSharedInteractiveTxInput(i: InteractiveTxInput.Shared) = i.run {
+        write(0x01)
         writeNumber(serialId)
         writeBtcObject(outPoint)
         writeNumber(sequence.toLong())
@@ -258,21 +259,48 @@ object Serialization {
         writeNumber(remoteAmount.toLong())
     }
 
-    private fun Output.writeLocalInteractiveTxInput(i: InteractiveTxInput.Local) = i.run {
-        writeNumber(serialId)
-        writeBtcObject(previousTx)
-        writeNumber(previousTxOutput)
-        writeNumber(sequence.toLong())
+    private fun Output.writeLocalInteractiveTxInput(i: InteractiveTxInput.Local) = when (i) {
+        is InteractiveTxInput.LocalOnly -> i.run {
+            write(0x01)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+        }
+        is InteractiveTxInput.LocalSwapIn -> i.run {
+            write(0x02)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writeNumber(refundDelay)
+        }
     }
 
-    private fun Output.writeRemoteInteractiveTxInput(i: InteractiveTxInput.Remote) = i.run {
-        writeNumber(serialId)
-        writeBtcObject(outPoint)
-        writeBtcObject(txOut)
-        writeNumber(sequence.toLong())
+    private fun Output.writeRemoteInteractiveTxInput(i: InteractiveTxInput.Remote) = when (i) {
+        is InteractiveTxInput.RemoteOnly -> i.run {
+            write(0x01)
+            writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
+            writeNumber(sequence.toLong())
+        }
+        is InteractiveTxInput.RemoteSwapIn -> i.run {
+            write(0x02)
+            writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writeNumber(refundDelay)
+        }
     }
 
     private fun Output.writeSharedInteractiveTxOutput(o: InteractiveTxOutput.Shared) = o.run {
+        write(0x01)
         writeNumber(serialId)
         writeDelimited(pubkeyScript.toByteArray())
         writeNumber(localAmount.toLong())
@@ -295,6 +323,7 @@ object Serialization {
     }
 
     private fun Output.writeRemoteInteractiveTxOutput(o: InteractiveTxOutput.Remote) = o.run {
+        write(0x01)
         writeNumber(serialId)
         writeNumber(amount.toLong())
         writeDelimited(pubkeyScript.toByteArray())

@@ -3,6 +3,7 @@ package fr.acinq.lightning.tests
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.MnemonicCode
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
@@ -25,6 +26,7 @@ object TestConstants {
     val feeratePerKw = FeeratePerKw(5000.sat) // 20 sat/byte
     val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(OnionRoutingPacket.PaymentPacketLength)), ByteVector32.Zeroes)
 
+    const val swapInConfirmations = 3
     val trampolineFees = listOf(
         TrampolineFees(0.sat, 0, CltvExpiryDelta(576)),
         TrampolineFees(1.sat, 100, CltvExpiryDelta(576)),
@@ -38,9 +40,10 @@ object TestConstants {
         private val entropy = Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")
         private val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
+        private val bobServerSwapInKey = PublicKey.fromHex("02cd0e2ed9c42af42e0b30e2a0b339c8335bbdc1f895fe552d8e224aedc82d6c88")
 
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
-        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, bobServerSwapInKey)
+        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInConfirmations)
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
             loggerFactory = LoggerFactory.default,
@@ -87,8 +90,10 @@ object TestConstants {
         private val entropy = Hex.decode("0202020202020202020202020202020202020202020202020202020202020202")
         val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest)
-        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)))
+        private val aliceServerSwapInKey = PublicKey.fromHex("0359f13771c78a0fd9fb45fc2bf666008c591a35877684be46247dfe02c9af2b58")
+
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, aliceServerSwapInKey)
+        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInConfirmations)
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
             loggerFactory = LoggerFactory.default,

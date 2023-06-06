@@ -7,8 +7,8 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
@@ -328,6 +328,7 @@ data class TxAddInput(
 
     override val type: Long get() = TxAddInput.type
     val sharedInput: OutPoint? = tlvs.get<TxAddInputTlv.SharedInputTxId>()?.let { OutPoint(it.txId.reversed(), previousTxOutput) }
+    val swapInParams = tlvs.get<TxAddInputTlv.SwapInParams>()
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -349,7 +350,10 @@ data class TxAddInput(
         const val type: Long = 66
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(TxAddInputTlv.SharedInputTxId.tag to TxAddInputTlv.SharedInputTxId.Companion as TlvValueReader<TxAddInputTlv>)
+        val readers = mapOf(
+            TxAddInputTlv.SharedInputTxId.tag to TxAddInputTlv.SharedInputTxId.Companion as TlvValueReader<TxAddInputTlv>,
+            TxAddInputTlv.SwapInParams.tag to TxAddInputTlv.SwapInParams.Companion as TlvValueReader<TxAddInputTlv>,
+        )
 
         override fun read(input: Input): TxAddInput = TxAddInput(
             LightningCodecs.bytes(input, 32).byteVector32(),
@@ -459,17 +463,25 @@ data class TxSignatures(
     val witnesses: List<ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
 ) : InteractiveTxMessage(), HasChannelId, HasEncryptedChannelData {
-    constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>, previousFundingSig: ByteVector64?) : this(
+    constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>, previousFundingSig: ByteVector64?, swapInUserSigs: List<ByteVector64>, swapInServerSigs: List<ByteVector64>) : this(
         channelId,
         tx.hash,
         witnesses,
-        previousFundingSig?.let { TlvStream(TxSignaturesTlv.PreviousFundingTxSig(it)) } ?: TlvStream.empty()
+        TlvStream(
+            listOfNotNull(
+                previousFundingSig?.let { TxSignaturesTlv.PreviousFundingTxSig(it) },
+                if (swapInUserSigs.isNotEmpty()) TxSignaturesTlv.SwapInUserSigs(swapInUserSigs) else null,
+                if (swapInServerSigs.isNotEmpty()) TxSignaturesTlv.SwapInServerSigs(swapInServerSigs) else null,
+            ).toSet()
+        ),
     )
 
     override val type: Long get() = TxSignatures.type
 
     val txId: ByteVector32 = txHash.reversed()
     val previousFundingTxSig: ByteVector64? = tlvs.get<TxSignaturesTlv.PreviousFundingTxSig>()?.sig
+    val swapInUserSigs: List<ByteVector64> = tlvs.get<TxSignaturesTlv.SwapInUserSigs>()?.sigs ?: listOf()
+    val swapInServerSigs: List<ByteVector64> = tlvs.get<TxSignaturesTlv.SwapInServerSigs>()?.sigs ?: listOf()
 
     override val channelData: EncryptedChannelData get() = tlvs.get<TxSignaturesTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): TxSignatures = copy(tlvs = tlvs.addOrUpdate(TxSignaturesTlv.ChannelData(ecd)))
@@ -492,6 +504,8 @@ data class TxSignatures(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             TxSignaturesTlv.PreviousFundingTxSig.tag to TxSignaturesTlv.PreviousFundingTxSig.Companion as TlvValueReader<TxSignaturesTlv>,
+            TxSignaturesTlv.SwapInUserSigs.tag to TxSignaturesTlv.SwapInUserSigs.Companion as TlvValueReader<TxSignaturesTlv>,
+            TxSignaturesTlv.SwapInServerSigs.tag to TxSignaturesTlv.SwapInServerSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>,
         )
 
@@ -1103,7 +1117,7 @@ data class CommitSig(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>,
-            CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>
+            CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
         )
 
         override fun read(input: Input): CommitSig {

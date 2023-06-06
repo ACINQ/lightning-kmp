@@ -101,7 +101,7 @@ data class Normal(
                         val fundingContribution = FundingContributions.computeSpliceContribution(
                             isInitiator = true,
                             commitment = parentCommitment,
-                            walletInputs = cmd.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                            walletInputs = cmd.spliceIn?.walletInputs ?: emptyList(),
                             localOutputs = cmd.spliceOutputs,
                             targetFeerate = cmd.feerate
                         )
@@ -177,8 +177,7 @@ data class Normal(
                             val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
-                                    logger.warning { "splice attempt failed: ${action.reason.message}" }
-                                    logger.warning { "funding tx was txId=${spliceStatus.session.fundingTx.txId} tx=${spliceStatus.session.fundingTx.tx.buildUnsignedTx()}" }
+                                    logger.warning { "splice attempt failed: ${action.reason.message} (fundingTxId=${spliceStatus.session.fundingTx.txId})" }
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                                 }
                                 // No need to store their commit_sig, they will re-send it if we disconnect.
@@ -366,6 +365,7 @@ data class Normal(
                                 )
                                 val session = InteractiveTxSession(
                                     channelKeys(),
+                                    keyManager.swapInOnChainWallet,
                                     fundingParams,
                                     previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                     previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
@@ -406,9 +406,10 @@ data class Normal(
                             )
                             when (val fundingContributions = FundingContributions.create(
                                 channelKeys = channelKeys(),
+                                swapInKeys = keyManager.swapInOnChainWallet,
                                 params = fundingParams,
                                 sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
-                                walletInputs = spliceStatus.command.spliceIn?.wallet?.confirmedUtxos ?: emptyList(),
+                                walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                 localOutputs = spliceStatus.command.spliceOutputs,
                                 changePubKey = null // we don't want a change output: we're spending every funds available
                             )) {
@@ -421,6 +422,7 @@ data class Normal(
                                     // The splice initiator always sends the first interactive-tx message.
                                     val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
                                         channelKeys(),
+                                        keyManager.swapInOnChainWallet,
                                         fundingParams,
                                         previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                         previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
@@ -692,7 +694,7 @@ data class Normal(
             // If we added some funds ourselves it's a swap-in
             if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
-                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.previousTx.txOut[i.previousTxOutput.toInt()].amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.fees.toMilliSatoshi(),
+                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.fees.toMilliSatoshi(),
                     serviceFee = 0.msat,
                     miningFee = action.fundingTx.sharedTx.tx.fees,
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),

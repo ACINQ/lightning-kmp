@@ -39,11 +39,13 @@ data class InvoiceDefaultRoutingFees(val feeBase: MilliSatoshi, val feeProportio
  * @param trampolineNode address of the trampoline node used for outgoing payments.
  * @param trampolineFees ordered list of trampoline fees to try when making an outgoing payment.
  * @param invoiceDefaultRoutingFees default routing fees set in invoices when we don't have any channel.
+ * @param swapInConfirmations number of confirmations needed on swap-in transactions, before importing those funds into a channel.
  */
 data class WalletParams(
     val trampolineNode: NodeUri,
     val trampolineFees: List<TrampolineFees>,
-    val invoiceDefaultRoutingFees: InvoiceDefaultRoutingFees
+    val invoiceDefaultRoutingFees: InvoiceDefaultRoutingFees,
+    val swapInConfirmations: Int
 )
 
 /**
@@ -216,7 +218,7 @@ data class NodeParams(
         enableTrampolinePayment = true,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
-        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 1_500.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */))
+        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */))
     )
 
     sealed class Chain(val name: String, private val genesis: Block) {

@@ -1,7 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
@@ -23,71 +22,44 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         .flatMap { it.value }
         .filter { parentTxs.containsKey(it.txid) }
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
-
-    val confirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight > 0L }
-    val unconfirmedUtxos: List<Utxo> = utxos.filter { it.blockHeight == 0L }
-
-    val confirmedBalance = confirmedUtxos.map { it.amount }.sum()
-    val unconfirmedBalance = unconfirmedUtxos.map { it.amount }.sum()
-    val totalBalance = confirmedBalance + unconfirmedBalance
+    val totalBalance = utxos.map { it.amount }.sum()
 
     fun minus(reserved: Set<Utxo>): WalletState {
-        val reservedIds = reserved.map {
-            UnspentItemId(it.previousTx.txid, it.outputIndex)
-        }.toSet()
+        val reservedIds = reserved.map { UnspentItemId(it.previousTx.txid, it.outputIndex) }.toSet()
         return copy(addresses = addresses.mapValues {
-            it.value.filter { item ->
-                !reservedIds.contains(UnspentItemId(item.txid, item.outputIndex))
-            }
+            it.value.filter { item -> !reservedIds.contains(UnspentItemId(item.txid, item.outputIndex)) }
         })
     }
+
+    fun withConfirmations(currentBlockHeight: Int, minConfirmations: Int): WalletWithConfirmations = WalletWithConfirmations(
+        unconfirmed = utxos.filter { it.blockHeight == 0L },
+        // Note that we wait for one more confirmation than the LSP to make sure that they accept our inputs (in case we receive blocks slightly before them).
+        weaklyConfirmed = utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations > currentBlockHeight },
+        deeplyConfirmed = utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations <= currentBlockHeight }
+    )
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
         val amount = previousTx.txOut[outputIndex].amount
     }
 
+    /**
+     * @param unconfirmed unconfirmed utxos that shouldn't be used yet.
+     * @param weaklyConfirmed confirmed utxos that cannot be used for channel funding because they don't have enough confirmations yet.
+     * @param deeplyConfirmed deeply confirmed utxos that can be used for channel funding.
+     */
+    data class WalletWithConfirmations(val unconfirmed: List<Utxo>, val weaklyConfirmed: List<Utxo>, val deeplyConfirmed: List<Utxo>) {
+        val all: List<Utxo> = unconfirmed + weaklyConfirmed + deeplyConfirmed
+    }
+
     data class UnspentItemId(val txid: ByteVector32, val outputIndex: Int)
 
     companion object {
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
-
-        /** Sign the given input if we have the corresponding private key (only works for P2WPKH scripts). */
-        fun signInput(onChainKeys: KeyManager.Bip84OnChainKeys, tx: Transaction, index: Int, parentTxOut: TxOut?): Pair<Transaction, ScriptWitness?> {
-            val witness = parentTxOut
-                ?.let { script2PrivateKey(onChainKeys, it.publicKeyScript) }
-                ?.let { privateKey ->
-                    // mind this: the pubkey script used for signing is not the prevout pubscript (which is just a push
-                    // of the pubkey hash), but the actual script that is evaluated by the script engine, in this case a PAY2PKH script
-                    val publicKey = privateKey.publicKey()
-                    val pubKeyScript = Script.pay2pkh(publicKey)
-                    val sig = Transaction.signInput(
-                        tx,
-                        index,
-                        pubKeyScript,
-                        SigHash.SIGHASH_ALL,
-                        parentTxOut.amount,
-                        SigVersion.SIGVERSION_WITNESS_V0,
-                        privateKey
-                    )
-                    Script.witnessPay2wpkh(publicKey, sig.byteVector())
-                }
-            return when (witness) {
-                is ScriptWitness -> Pair(tx.updateWitness(index, witness), witness)
-                else -> Pair(tx, null)
-            }
-        }
-
-        /** Find the private key corresponding to this script, assuming this is a p2wpkh owned by us. */
-        private fun script2PrivateKey(onChainKeys: KeyManager.Bip84OnChainKeys, publicKeyScript: ByteVector): PrivateKey? {
-            // TODO: for now we only use the first address with index 0
-            for (addressIndex in 0L..0L) {
-                if (onChainKeys.pubkeyScript(addressIndex) == publicKeyScript) return onChainKeys.privateKey(addressIndex)
-            }
-            return null
-        }
     }
 }
+
+val List<WalletState.Utxo>.balance get() = this.map { it.amount }.sum()
 
 private sealed interface WalletCommand {
     companion object {
@@ -112,7 +84,11 @@ class ElectrumMiniWallet(
     fun Logger.mdcinfo(msgCreator: () -> String) {
         log(
             level = Logger.Level.INFO,
-            meta = mapOf("wallet" to name, "confirmed" to walletStateFlow.value.confirmedBalance, "unconfirmed" to walletStateFlow.value.unconfirmedBalance),
+            meta = mapOf(
+                "wallet" to name,
+                "utxos" to walletStateFlow.value.utxos.size,
+                "balance" to walletStateFlow.value.totalBalance
+            ),
             msgCreator = msgCreator
         )
     }
@@ -130,6 +106,13 @@ class ElectrumMiniWallet(
     fun addAddress(bitcoinAddress: String) {
         launch {
             mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
+        }
+    }
+
+    /** This function should only be used in tests, to test the wallet notification flow. */
+    fun setWalletState(walletState: WalletState) {
+        launch {
+            _walletStateFlow.value = walletState
         }
     }
 
@@ -167,9 +150,9 @@ class ElectrumMiniWallet(
             val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
             kotlin.runCatching { client.startScriptHashSubscription(scriptHash) }
                 .map { response ->
-                logger.info { "subscribed to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
-                _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
-            }
+                    logger.info { "subscribed to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
+                    _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
+                }
             return scriptHash to bitcoinAddress
         }
 

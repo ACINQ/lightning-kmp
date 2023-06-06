@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.blockchain.electrum.UnspentItem
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
@@ -841,6 +840,11 @@ class SpliceTestsCommon : LightningTestSuite() {
         }
 
         private fun exchangeSpliceSigs(alice: LNChannel<Normal>, commitSigAlice: CommitSig, bob: LNChannel<Normal>, commitSigBob: CommitSig): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+            val aliceSpliceStatus = alice.state.spliceStatus
+            assertIs<SpliceStatus.WaitingForSigs>(aliceSpliceStatus)
+            val bobSpliceStatus = bob.state.spliceStatus
+            assertIs<SpliceStatus.WaitingForSigs>(bobSpliceStatus)
+
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
             assertTrue(actionsAlice1.isEmpty())
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
@@ -849,6 +853,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 else -> assertEquals(actionsBob1.size, 3)
             }
             val txSigsBob = actionsBob1.findOutgoingMessage<TxSignatures>()
+            assertEquals(txSigsBob.swapInServerSigs.size, aliceSpliceStatus.session.fundingTx.tx.localInputs.size)
             actionsBob1.hasWatchConfirmed(txSigsBob.txId)
             actionsBob1.has<ChannelAction.Storage.StoreState>()
             if (bob1.staticParams.useZeroConf) {
@@ -861,11 +866,10 @@ class SpliceTestsCommon : LightningTestSuite() {
                 assertTrue { actionsAlice2.filterIsInstance<ChannelAction.Message.Send>().none { it.message is SpliceLocked } }
             }
             val txSigsAlice = actionsAlice2.findOutgoingMessage<TxSignatures>()
+            assertEquals(txSigsAlice.swapInServerSigs.size, bobSpliceStatus.session.fundingTx.tx.localInputs.size)
             assertEquals(actionsAlice2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.FundingTx).txid, txSigsAlice.txId)
             actionsAlice2.hasWatchConfirmed(txSigsAlice.txId)
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
-            val aliceSpliceStatus = alice.state.spliceStatus
-            assertIs<SpliceStatus.WaitingForSigs>(aliceSpliceStatus)
             when {
                 aliceSpliceStatus.session.fundingParams.localContribution > 0.sat -> actionsAlice2.has<ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn>()
                 aliceSpliceStatus.session.fundingParams.localContribution < 0.sat && aliceSpliceStatus.session.fundingParams.localOutputs.isNotEmpty() -> actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut>()
@@ -887,15 +891,14 @@ class SpliceTestsCommon : LightningTestSuite() {
             return Pair(alice2, bob2)
         }
 
-        private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): WalletState {
-            val (address, script) = keyManager.swapInOnChainWallet.run { Pair(address(0), pubkeyScript(0)) }
-            val utxos = amounts.map { amount ->
+        private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): List<WalletState.Utxo> {
+            val script = keyManager.swapInOnChainWallet.pubkeyScript
+            return amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(Lightning.randomBytes32(), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
-                Pair(UnspentItem(parentTx.txid, 0, amount.toLong(), 42), parentTx)
+                WalletState.Utxo(parentTx, 0, 42)
             }
-            return WalletState(mapOf(address to utxos.map { it.first }), utxos.associate { it.second.txid to it.second })
         }
 
         private fun crossSign(alice: LNChannel<Normal>, bob: LNChannel<Normal>, commitmentsCount: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> {

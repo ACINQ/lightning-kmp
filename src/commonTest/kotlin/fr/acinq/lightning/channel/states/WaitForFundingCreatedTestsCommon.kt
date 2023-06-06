@@ -302,7 +302,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        data class Fixture(val alice: LNChannel<WaitForFundingCreated>, val bob: LNChannel<WaitForFundingCreated>, val aliceInput: TxAddInput, val aliceWallet: WalletState)
+        data class Fixture(val alice: LNChannel<WaitForFundingCreated>, val bob: LNChannel<WaitForFundingCreated>, val aliceInput: TxAddInput, val aliceWallet: List<WalletState.Utxo>)
 
         fun init(
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
@@ -325,7 +325,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             val aliceInput = actions2.findOutgoingMessage<TxAddInput>()
             assertIs<LNChannel<WaitForFundingCreated>>(a1)
             assertIs<WaitForFundingCreated>(a1.state)
-            return Fixture(a1, b1, aliceInput, a.state.init.wallet)
+            return Fixture(a1, b1, aliceInput, a.state.init.walletInputs)
         }
     }
 }

@@ -6,8 +6,8 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.utils.*
 
 sealed class ChannelTlv : Tlv {

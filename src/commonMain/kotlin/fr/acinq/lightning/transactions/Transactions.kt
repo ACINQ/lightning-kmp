@@ -159,7 +159,7 @@ object Transactions {
      *     - [[ClaimDelayedOutputPenaltyTx]] spends [[HtlcTimeoutTx]] using the revocation secret (published by local)
      *   - [[HtlcPenaltyTx]] spends competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] for the same outputs (published by local)
      */
-    const val p2wpkhInputWeight = 275
+    const val swapInputWeight = 392
 
     // The following values are specific to lightning and used to estimate fees.
     const val claimP2WPKHOutputWeight = 438
@@ -789,6 +789,18 @@ object Transactions {
         val inputIndex = txInfo.tx.txIn.indexOfFirst { it.outPoint == txInfo.input.outPoint }
         require(inputIndex >= 0) { "transaction doesn't spend the input to sign" }
         return sign(txInfo.tx, inputIndex, txInfo.input.redeemScript.toByteArray(), txInfo.input.txOut.amount, key, sigHash)
+    }
+
+    /** Sign an input from a 2-of-2 swap-in address with the swap user's key. */
+    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PrivateKey, serverKey: PublicKey, refundDelay: Int): ByteVector64 {
+        val redeemScript = Scripts.swapIn2of2(userKey.publicKey(), serverKey, refundDelay)
+        return sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, userKey)
+    }
+
+    /** Sign an input from a 2-of-2 swap-in address with the swap server's key. */
+    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PublicKey, serverKey: PrivateKey, refundDelay: Int): ByteVector64 {
+        val redeemScript = Scripts.swapIn2of2(userKey, serverKey.publicKey(), refundDelay)
+        return sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, serverKey)
     }
 
     fun addSigs(

@@ -103,7 +103,7 @@ data class WaitForFundingConfirmed(
                                     addAll(latestFundingTx.sharedTx.tx.localInputs.map { Either.Left(it) })
                                     addAll(latestFundingTx.sharedTx.tx.localOutputs.map { Either.Right(it) })
                                 }
-                                val session = InteractiveTxSession(channelKeys(), fundingParams, SharedFundingInputBalances(0.msat, 0.msat), toSend, previousFundingTxs.map { it.sharedTx })
+                                val session = InteractiveTxSession(channelKeys(), keyManager.swapInOnChainWallet, fundingParams, SharedFundingInputBalances(0.msat, 0.msat), toSend, previousFundingTxs.map { it.sharedTx })
                                 val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
                                 Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localContribution))))
                             }
@@ -132,13 +132,13 @@ data class WaitForFundingConfirmed(
                         latestFundingTx.fundingParams.dustLimit,
                         rbfStatus.command.targetFeerate
                     )
-                    when (val contributions = FundingContributions.create(channelKeys(), fundingParams, rbfStatus.command.wallet.confirmedUtxos)) {
+                    when (val contributions = FundingContributions.create(channelKeys(), keyManager.swapInOnChainWallet, fundingParams, rbfStatus.command.walletInputs)) {
                         is Either.Left -> {
                             logger.warning { "error creating funding contributions: ${contributions.value}" }
                             Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                         }
                         is Either.Right -> {
-                            val (session, action) = InteractiveTxSession(channelKeys(), fundingParams, 0.msat, 0.msat, contributions.value, previousFundingTxs.map { it.sharedTx }).send()
+                            val (session, action) = InteractiveTxSession(channelKeys(), keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, contributions.value, previousFundingTxs.map { it.sharedTx }).send()
                             when (action) {
                                 is InteractiveTxSessionAction.SendMessage -> {
                                     val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))

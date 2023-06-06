@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.NodeParams.Chain
-import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
 
 /**
@@ -33,8 +32,9 @@ import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
  * ```
  *
  * @param seed seed from which the channel keys will be derived
+ * @param remoteSwapInServerKey public key belonging to our swap-in server, that must be used in our swap address
  */
-data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager {
+data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwapInServerKey: PublicKey) : KeyManager {
 
     private val master = DeterministicWallet.generate(seed)
 
@@ -44,7 +44,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
     )
 
     override val finalOnChainWallet: KeyManager.Bip84OnChainKeys = KeyManager.Bip84OnChainKeys(chain, master, account = 0)
-    override val swapInOnChainWallet: KeyManager.Bip84OnChainKeys = KeyManager.Bip84OnChainKeys(chain, master, account = 1)
+    override val swapInOnChainWallet: KeyManager.SwapInOnChainKeys = KeyManager.SwapInOnChainKeys(chain, master, remoteSwapInServerKey)
 
     private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
 
@@ -71,7 +71,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain) : KeyManager 
         val recoveredChannelKeys = recoverChannelKeys(initialFundingPubkey)
         return KeyManager.ChannelKeys(
             fundingKeyPath,
-            fundingKey =  fundingKey,
+            fundingKey = fundingKey,
             paymentKey = recoveredChannelKeys.paymentKey,
             delayedPaymentKey = recoveredChannelKeys.delayedPaymentKey,
             htlcKey = recoveredChannelKeys.htlcKey,
