@@ -1,6 +1,5 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
@@ -10,12 +9,7 @@ import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 
-/**
- * waitForTheirReestablishMessage == true means that we want to wait until we've received their channel_reestablish message before
- * we send ours (for example, to extract encrypted backup data from extra fields)
- * waitForTheirReestablishMessage == false means that we've already sent our channel_reestablish message
- */
-data class Syncing(val state: PersistedChannelState) : ChannelState() {
+data class Syncing(val state: PersistedChannelState, val channelReestablishSent: Boolean) : ChannelState() {
 
     val channelId = state.channelId
 
@@ -270,12 +264,8 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                     }
                     else -> unhandled(cmd)
                 }
-                val sendChannelReestablish = when (state) {
-                    is WaitForFundingSigned -> false // we've already sent our channel_reestablish without waiting for theirs
-                    else -> staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) // if the backup feature is enabled, we were waiting for their reestablish before sending ours
-                }
                 Pair(nextState, buildList {
-                    if (sendChannelReestablish) {
+                    if (!channelReestablishSent) {
                         val channelReestablish = state.run { createChannelReestablish() }
                         add(ChannelAction.Message.Send(channelReestablish))
                     }
@@ -331,7 +321,7 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
-                    else -> Pair(Syncing(newState), actions)
+                    else -> Pair(Syncing(newState, channelReestablishSent), actions)
                 }
             }
             cmd is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())
@@ -340,7 +330,7 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
-                    else -> Pair(Syncing(newState as PersistedChannelState), actions)
+                    else -> Pair(Syncing(newState as PersistedChannelState, channelReestablishSent), actions)
                 }
             }
             cmd is ChannelCommand.MessageReceived && cmd.message is Error -> state.run { handleRemoteError(cmd.message) }

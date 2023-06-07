@@ -35,12 +35,13 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                         val channelReestablish = state.run { createChannelReestablish() }
                         val actions = listOf(ChannelAction.Message.Send(channelReestablish))
                         val nextState = state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
-                        Pair(Syncing(nextState), actions)
+                        Pair(Syncing(nextState, channelReestablishSent = true), actions)
                     }
                     is ChannelStateWithCommitments -> {
                         logger.info { "syncing ${state::class}" }
+                        val sendChannelReestablish = !staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient)
                         val actions = buildList {
-                            if (staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient)) {
+                            if (!sendChannelReestablish) {
                                 // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
                                 logger.info { "waiting for their channel_reestablish message" }
                             } else {
@@ -49,7 +50,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                             }
                         }
                         val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
-                        Pair(Syncing(nextState), actions)
+                        Pair(Syncing(nextState, channelReestablishSent = sendChannelReestablish), actions)
                     }
                 }
             }

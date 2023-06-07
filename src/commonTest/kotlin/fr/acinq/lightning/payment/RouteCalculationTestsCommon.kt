@@ -61,7 +61,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
         val (channelId1, channelId2, channelId3) = listOf(randomBytes32(), randomBytes32(), randomBytes32())
         val channels = mapOf(
             channelId1 to Offline(makeChannel(channelId1, 15_000.msat, 10.msat)),
-            channelId2 to Syncing(makeChannel(channelId2, 20_000.msat, 5.msat)),
+            channelId2 to Syncing(makeChannel(channelId2, 20_000.msat, 5.msat), channelReestablishSent = true),
             channelId3 to Offline(makeChannel(channelId3, 10_000.msat, 10.msat)),
         )
         assertEquals(Either.Left(FinalFailure.NoAvailableChannels), routeCalculation.findRoutes(paymentId, 5_000.msat, channels))
