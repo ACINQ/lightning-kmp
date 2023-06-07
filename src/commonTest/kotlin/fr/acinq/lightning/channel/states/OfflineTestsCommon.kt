@@ -662,8 +662,11 @@ class OfflineTestsCommon : LightningTestSuite() {
         val commitTx = alice1.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (alice2, actions2) = alice1.process(ChannelCommand.Close.ForceClose)
         assertIs<Closing>(alice2.state)
+        assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
         actions2.hasPublishTx(commitTx)
-        assertNull(actions2.findOutgoingMessageOpt<Error>()) // we're offline so we shouldn't try to send messages
+        actions2.hasWatchConfirmed(commitTx.txid)
+        actions2.hasOutgoingMessage<Error>()
+        assertEquals(1, actions2.filterIsInstance<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().size)
     }
 
     @Test
