@@ -664,9 +664,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<Closing>(alice2.state)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
         assertEquals(commitTx, actions2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.CommitTx))
-        assertTrue(actions2.findWatches<WatchConfirmed>().isNotEmpty())
-        assertTrue(actions2.filterIsInstance<ChannelAction.Blockchain.SendWatch>().all { it.watch is WatchConfirmed })
-        assertNull(actions2.findOutgoingMessageOpt<Error>()) // we're offline so we shouldn't try to send messages
+        actions2.hasWatchConfirmed(commitTx.txid)
+        actions2.hasOutgoingMessage<Error>()
         assertEquals(1, actions2.filterIsInstance<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().size)
     }
 
