@@ -19,8 +19,8 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when {
             cmd is ChannelCommand.Connected -> {
-                when {
-                    state is WaitForRemotePublishFutureCommitment -> {
+                when (state) {
+                    is WaitForRemotePublishFutureCommitment -> {
                         // they already proved that we have an outdated commitment
                         // there isn't much to do except asking them again to publish their current commitment by sending an error
                         val exc = PleasePublishYourCommitment(channelId)
@@ -28,21 +28,27 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                         val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         Pair(nextState, listOf(ChannelAction.Message.Send(error)))
                     }
-                    else -> {
+                    is WaitForFundingSigned -> {
                         logger.info { "syncing ${state::class}" }
-                        val nextState = when (state) {
-                            is WaitForFundingSigned -> state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
-                            is ChannelStateWithCommitments -> state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
-                        }
+                        // We send our channel_reestablish without waiting for theirs, even if we're using backups.
+                        // Otherwise we could end up waiting forever for them if they have forgotten the channel because they didn't receive our tx_complete.
+                        val channelReestablish = state.run { createChannelReestablish() }
+                        val actions = listOf(ChannelAction.Message.Send(channelReestablish))
+                        val nextState = state.copy(channelParams = state.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit))
+                        Pair(Syncing(nextState), actions)
+                    }
+                    is ChannelStateWithCommitments -> {
+                        logger.info { "syncing ${state::class}" }
                         val actions = buildList {
                             if (staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient)) {
                                 // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
-                                logger.info { "waiting for their channelReestablish message" }
+                                logger.info { "waiting for their channel_reestablish message" }
                             } else {
                                 val channelReestablish = state.run { createChannelReestablish() }
                                 add(ChannelAction.Message.Send(channelReestablish))
                             }
                         }
+                        val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         Pair(Syncing(nextState), actions)
                     }
                 }

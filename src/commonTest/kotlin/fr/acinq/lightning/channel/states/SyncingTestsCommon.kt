@@ -57,7 +57,8 @@ class SyncingTestsCommon : LightningTestSuite() {
         val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1, fundingTx) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
         assertNotEquals(previousFundingTx.txid, fundingTx.txid)
-        val (alice2, bob2, channelReestablishAlice) = disconnectWithBackup(alice1, bob1)
+        val (alice2, bob2, channelReestablishAlice, channelReestablishBob0) = disconnectWithBackup(alice1, bob1)
+        assertNull(channelReestablishBob0)
         assertNull(channelReestablishAlice.nextFundingTxId)
 
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
@@ -72,16 +73,30 @@ class SyncingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `forget unsigned channel`() {
+        val (alice, _, bob, _) = WaitForFundingSignedTestsCommon.init()
+        val fundingTxId = alice.state.signingSession.fundingTx.txId
+        val (_, bob1, _, channelReestablishBob) = disconnectWithBackup(alice, bob)
+        assertNotNull(channelReestablishBob)
+        assertEquals(channelReestablishBob.nextFundingTxId, fundingTxId)
+
+        // Alice acts as if they were disconnected before she sent commit_sig: she has forgotten that channel.
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(Error(channelReestablishBob.channelId, "sorry bro no channel here")))
+        assertIs<Aborted>(bob2.state)
+        assertTrue(actionsBob2.isEmpty())
+    }
+
+    @Test
     fun `reestablish unsigned channel -- commit_sig not received`() {
         val (alice, _, bob, _) = WaitForFundingSignedTestsCommon.init()
         val fundingTxId = alice.state.signingSession.fundingTx.txId
-        val (alice1, bob1, channelReestablishAlice) = disconnectWithBackup(alice, bob)
+        val (alice1, bob1, channelReestablishAlice, channelReestablishBob) = disconnectWithBackup(alice, bob)
+        assertNotNull(channelReestablishBob)
         assertEquals(channelReestablishAlice.nextFundingTxId, fundingTxId)
+        assertEquals(channelReestablishBob.nextFundingTxId, fundingTxId)
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(channelReestablishAlice))
-        assertEquals(actionsBob2.size, 2)
-        val channelReestablishBob = actionsBob2.hasOutgoingMessage<ChannelReestablish>()
-        assertEquals(channelReestablishBob.nextFundingTxId, fundingTxId)
+        assertEquals(actionsBob2.size, 1)
         val commitSigBob = actionsBob2.hasOutgoingMessage<CommitSig>()
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(channelReestablishBob))
@@ -112,7 +127,8 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
         assertIs<WaitForFundingConfirmed>(bob1.state)
         val fundingTxId = bob1.state.latestFundingTx.txId
-        val (alice2, bob2, channelReestablishAlice) = disconnectWithBackup(alice1, bob1)
+        val (alice2, bob2, channelReestablishAlice, channelReestablishBob0) = disconnectWithBackup(alice1, bob1)
+        assertNull(channelReestablishBob0)
         assertEquals(channelReestablishAlice.nextFundingTxId, fundingTxId)
 
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
@@ -153,7 +169,8 @@ class SyncingTestsCommon : LightningTestSuite() {
         val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(txSigsBob))
         assertIs<LNChannel<WaitForFundingConfirmed>>(alice2)
         assertIs<WaitForFundingConfirmed>(alice2.state)
-        val (alice3, bob2, channelReestablishAlice) = disconnectWithBackup(alice2, bob1)
+        val (alice3, bob2, channelReestablishAlice, channelReestablishBob0) = disconnectWithBackup(alice2, bob1)
+        assertNull(channelReestablishBob0)
         assertNull(channelReestablishAlice.nextFundingTxId)
 
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
@@ -175,7 +192,8 @@ class SyncingTestsCommon : LightningTestSuite() {
     @Test
     fun `reestablish unsigned rbf attempt -- commit_sig not received`() {
         val (alice, _, bob, _, rbfFundingTxId) = createUnsignedRbf()
-        val (alice1, bob1, channelReestablishAlice) = disconnectWithBackup(alice, bob)
+        val (alice1, bob1, channelReestablishAlice, channelReestablishBob0) = disconnectWithBackup(alice, bob)
+        assertNull(channelReestablishBob0)
         assertEquals(channelReestablishAlice.nextFundingTxId, rbfFundingTxId)
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(channelReestablishAlice))
@@ -212,7 +230,8 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<WaitForFundingConfirmed>>(alice1)
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
         assertIs<LNChannel<WaitForFundingConfirmed>>(bob1)
-        val (alice2, bob2, channelReestablishAlice) = disconnectWithBackup(alice1, bob1)
+        val (alice2, bob2, channelReestablishAlice, channelReestablishBob0) = disconnectWithBackup(alice1, bob1)
+        assertNull(channelReestablishBob0)
         assertEquals(channelReestablishAlice.nextFundingTxId, rbfFundingTxId)
 
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
@@ -366,7 +385,9 @@ class SyncingTestsCommon : LightningTestSuite() {
             return Triple(alice2, bob2, Pair(channelReestablishA, channelReestablishB))
         }
 
-        fun disconnectWithBackup(alice: LNChannel<PersistedChannelState>, bob: LNChannel<PersistedChannelState>): Triple<LNChannel<Syncing>, LNChannel<Syncing>, ChannelReestablish> {
+        data class SyncingFixture(val alice: LNChannel<Syncing>, val bob: LNChannel<Syncing>, val channelReestablishAlice: ChannelReestablish, val channelReestablishBob: ChannelReestablish?)
+
+        fun disconnectWithBackup(alice: LNChannel<PersistedChannelState>, bob: LNChannel<PersistedChannelState>): SyncingFixture {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.Disconnected)
             val (bob1, actionsBob1) = bob.process(ChannelCommand.Disconnected)
             assertIs<Offline>(alice1.state)
@@ -389,11 +410,20 @@ class SyncingTestsCommon : LightningTestSuite() {
 
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
             assertIs<LNChannel<Syncing>>(alice2)
-            val channelReestablish = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
+            val channelReestablishA = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(bobInit, aliceInit))
             assertIs<LNChannel<Syncing>>(bob2)
-            assertTrue(actionsBob2.isEmpty())
-            return Triple(alice2, bob2, channelReestablish)
+            val channelReestablishB = when (bob2.state.state) {
+                is WaitForFundingSigned -> {
+                    assertEquals(1, actionsBob2.size)
+                    actionsBob2.findOutgoingMessage<ChannelReestablish>()
+                }
+                else -> {
+                    assertTrue(actionsBob2.isEmpty())
+                    null
+                }
+            }
+            return SyncingFixture(alice2, bob2, channelReestablishA, channelReestablishB)
         }
     }
 

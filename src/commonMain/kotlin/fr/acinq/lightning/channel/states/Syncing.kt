@@ -270,9 +270,12 @@ data class Syncing(val state: PersistedChannelState) : ChannelState() {
                     }
                     else -> unhandled(cmd)
                 }
+                val sendChannelReestablish = when (state) {
+                    is WaitForFundingSigned -> false // we've already sent our channel_reestablish without waiting for theirs
+                    else -> staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) // if the backup feature is enabled, we were waiting for their reestablish before sending ours
+                }
                 Pair(nextState, buildList {
-                    if (staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient)) {
-                        // if the backup feature is enabled, we were waiting for their reestablish before sending ours
+                    if (sendChannelReestablish) {
                         val channelReestablish = state.run { createChannelReestablish() }
                         add(ChannelAction.Message.Send(channelReestablish))
                     }
