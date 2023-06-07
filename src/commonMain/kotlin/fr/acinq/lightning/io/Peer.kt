@@ -220,7 +220,9 @@ class Peer(
                 it.channelId
             }
             logger.info { "restored ${channelIds.size} channels" }
-            launchSwapInWallet(bootChannels)
+            launch {
+                watchSwapInWallet(bootChannels)
+            }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
                 // But maybe we were offline for too long and it is why our peer couldn't settle these htlcs in time.
@@ -374,7 +376,7 @@ class Peer(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    private fun launchSwapInWallet(channels: List<PersistedChannelState>) = launch {
+    private suspend fun watchSwapInWallet(channels: List<PersistedChannelState>) {
         // Wallet utxos that are already used in channel funding attempts should be ignored, otherwise we would double-spend ourselves.
         // If the electrum server we connect to has our channel funding attempts in their mempool, those utxos wouldn't be added to our wallet anyway.
         // But we cannot rely only on that, since we may connect to a different electrum server after a restart, or transactions may be evicted from their mempool.
