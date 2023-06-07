@@ -663,7 +663,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         val (alice2, actions2) = alice1.process(ChannelCommand.Close.ForceClose)
         assertIs<Closing>(alice2.state)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(alice2.state)))
-        assertEquals(commitTx, actions2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.CommitTx))
+        actions2.hasPublishTx(commitTx)
         actions2.hasWatchConfirmed(commitTx.txid)
         actions2.hasOutgoingMessage<Error>()
         assertEquals(1, actions2.filterIsInstance<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().size)
