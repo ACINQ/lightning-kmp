@@ -24,7 +24,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
     val totalBalance = utxos.map { it.amount }.sum()
 
-    fun minus(reserved: Set<OutPoint>): WalletState {
+    fun withoutReservedUtxos(reserved: Set<OutPoint>): WalletState {
         return copy(addresses = addresses.mapValues {
             it.value.filter { item -> !reserved.contains(item.outPoint) }
         })

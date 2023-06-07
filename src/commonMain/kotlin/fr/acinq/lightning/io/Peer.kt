@@ -385,7 +385,7 @@ class Peer(
             .filter { it.consistent }
             .fold(initiallyReservedUtxos) { reservedUtxos, wallet ->
                 val currentBlockHeight = currentTipFlow.filterNotNull().first().first
-                val availableWallet = wallet.minus(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
+                val availableWallet = wallet.withoutReservedUtxos(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
                 logger.info { "swap-in wallet balance (migration=$isMigrationFromLegacyApp): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
                 val utxos = when {
                     // When migrating from the legacy android app, we use all utxos, even unconfirmed ones.
