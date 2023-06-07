@@ -513,11 +513,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     }
                     else -> {
                         val error = Error(channelId, channelEx.message)
-                        val (nextState, actions) = spendLocalCurrent()
-                        Pair(nextState, buildList {
-                            addAll(actions)
-                            add(ChannelAction.Message.Send(error))
-                        })
+                        spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error))}
                     }
                 }
             }
