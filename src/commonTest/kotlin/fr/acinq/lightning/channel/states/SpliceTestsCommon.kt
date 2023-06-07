@@ -32,13 +32,21 @@ class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `splice funds in`() {
         val (alice, bob) = reachNormal()
-        spliceIn(alice, bob, listOf(50_000.sat))
+        assertTrue(Helpers.reservedWalletInputs(listOf(alice.state)).isEmpty())
+        assertTrue(Helpers.reservedWalletInputs(listOf(bob.state)).isEmpty())
+        val (alice1, bob1) = spliceIn(alice, bob, listOf(50_000.sat))
+        assertEquals(1, Helpers.reservedWalletInputs(listOf(alice1.state)).size)
+        assertTrue(Helpers.reservedWalletInputs(listOf(bob1.state)).isEmpty())
     }
 
     @Test
     fun `splice funds in -- many utxos`() {
         val (alice, bob) = reachNormal()
-        spliceIn(alice, bob, listOf(30_000.sat, 40_000.sat, 25_000.sat))
+        assertTrue(Helpers.reservedWalletInputs(listOf(alice.state)).isEmpty())
+        assertTrue(Helpers.reservedWalletInputs(listOf(bob.state)).isEmpty())
+        val (alice1, bob1) = spliceIn(alice, bob, listOf(30_000.sat, 40_000.sat, 25_000.sat))
+        assertEquals(3, Helpers.reservedWalletInputs(listOf(alice1.state)).size)
+        assertTrue(Helpers.reservedWalletInputs(listOf(bob1.state)).isEmpty())
     }
 
     @Test

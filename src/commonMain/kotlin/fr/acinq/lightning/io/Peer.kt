@@ -208,31 +208,9 @@ class Peer(
                 }
         }
         launch {
-            swapInWallet.walletStateFlow
-                .filter { it.consistent }
-                .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
-                    val currentBlockHeight = currentTipFlow.filterNotNull().first().first
-                    // reservedUtxos are part of a previously issued RequestChannelOpen command
-                    val availableWallet = wallet.minus(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
-                    logger.info { "swap-in wallet balance (migration=$isMigrationFromLegacyApp): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
-                    val utxos = when {
-                        // When migrating from the legacy android app, we use all utxos, even unconfirmed ones.
-                        isMigrationFromLegacyApp -> availableWallet.all
-                        else -> availableWallet.deeplyConfirmed
-                    }
-                    if (utxos.balance > 0.sat) {
-                        logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
-                        input.send(RequestChannelOpen(Lightning.randomBytes32(), utxos))
-                        reservedUtxos.union(utxos)
-                    } else {
-                        reservedUtxos
-                    }.intersect(wallet.utxos.toSet()) // drop utxos no longer in wallet
-                }
-        }
-        launch {
             // we don't restore closed channels
             val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
-            _bootChannelsFlow.value = bootChannels.map { it.channelId to it }.toMap()
+            _bootChannelsFlow.value = bootChannels.associateBy { it.channelId }
             val channelIds = bootChannels.map {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
@@ -242,6 +220,9 @@ class Peer(
                 it.channelId
             }
             logger.info { "restored ${channelIds.size} channels" }
+            launch {
+                watchSwapInWallet(bootChannels)
+            }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
                 // But maybe we were offline for too long and it is why our peer couldn't settle these htlcs in time.
@@ -393,6 +374,34 @@ class Peer(
         launch { respond() }
 
         listen() // This suspends until the coroutines is cancelled or the socket is closed
+    }
+
+    private suspend fun watchSwapInWallet(channels: List<PersistedChannelState>) {
+        // Wallet utxos that are already used in channel funding attempts should be ignored, otherwise we would double-spend ourselves.
+        // If the electrum server we connect to has our channel funding attempts in their mempool, those utxos wouldn't be added to our wallet anyway.
+        // But we cannot rely only on that, since we may connect to a different electrum server after a restart, or transactions may be evicted from their mempool.
+        // Since we don't have an easy way of asking electrum to check for double-spends, we would end up with channels that are stuck waiting for confirmations.
+        // This generally wouldn't be a security issue (only one of the funding attempts would succeed), unless 0-conf is used and our LSP is malicious.
+        val initiallyReservedUtxos: Set<OutPoint> = Helpers.reservedWalletInputs(channels)
+        swapInWallet.walletStateFlow
+            .filter { it.consistent }
+            .fold(initiallyReservedUtxos) { reservedUtxos, wallet ->
+                val currentBlockHeight = currentTipFlow.filterNotNull().first().first
+                val availableWallet = wallet.withoutReservedUtxos(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
+                logger.info { "swap-in wallet balance (migration=$isMigrationFromLegacyApp): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
+                val utxos = when {
+                    // When migrating from the legacy android app, we use all utxos, even unconfirmed ones.
+                    isMigrationFromLegacyApp -> availableWallet.all
+                    else -> availableWallet.deeplyConfirmed
+                }
+                if (utxos.balance > 0.sat) {
+                    logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
+                    input.send(RequestChannelOpen(Lightning.randomBytes32(), utxos))
+                    reservedUtxos.union(utxos.map { it.outPoint })
+                } else {
+                    reservedUtxos
+                }
+            }
     }
 
     suspend fun send(cmd: PeerCommand) {

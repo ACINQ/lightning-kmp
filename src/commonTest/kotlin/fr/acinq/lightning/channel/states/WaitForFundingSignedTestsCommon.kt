@@ -1,9 +1,6 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Script
-import fr.acinq.bitcoin.byteVector
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -336,6 +333,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 assertFalse(commitSigBob.channelData.isEmpty())
             }
             actionsBob3.has<ChannelAction.Storage.StoreState>()
+            assertEquals(setOf(OutPoint(inputAlice.previousTx!!, inputAlice.previousTxOutput)), Helpers.reservedWalletInputs(listOf(alice2.state)))
             return Fixture(alice2, commitSigAlice, bob3, commitSigBob, walletAlice)
         }
     }
