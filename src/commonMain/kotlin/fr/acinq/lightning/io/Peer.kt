@@ -208,11 +208,16 @@ class Peer(
                 }
         }
         launch {
+            // Wallet utxos that are already used in channel funding attempts should be ignored, otherwise we would double-spend ourselves.
+            // If the electrum server we connect to has our channel funding attempts in their mempool, those utxos wouldn't be added to our wallet anyway.
+            // But we cannot rely only on that, since we may connect to a different electrum server after a restart, or transactions may be evicted from their mempool.
+            // Since we don't have an easy way of asking electrum to check for double-spends, we would end up with channels that are stuck waiting for confirmations.
+            // This generally wouldn't be a security issue (only one of the funding attempts would succeed), unless 0-conf is used and our LSP is malicious.
+            val initiallyReservedUtxos: Set<OutPoint> = Helpers.reservedWalletInputs(db.channels.listLocalChannels())
             swapInWallet.walletStateFlow
                 .filter { it.consistent }
-                .fold(emptySet<WalletState.Utxo>()) { reservedUtxos, wallet ->
+                .fold(initiallyReservedUtxos) { reservedUtxos, wallet ->
                     val currentBlockHeight = currentTipFlow.filterNotNull().first().first
-                    // reservedUtxos are part of a previously issued RequestChannelOpen command
                     val availableWallet = wallet.minus(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
                     logger.info { "swap-in wallet balance (migration=$isMigrationFromLegacyApp): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
                     val utxos = when {
@@ -223,10 +228,10 @@ class Peer(
                     if (utxos.balance > 0.sat) {
                         logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
                         input.send(RequestChannelOpen(Lightning.randomBytes32(), utxos))
-                        reservedUtxos.union(utxos)
+                        reservedUtxos.union(utxos.map { it.outPoint })
                     } else {
                         reservedUtxos
-                    }.intersect(wallet.utxos.toSet()) // drop utxos no longer in wallet
+                    }
                 }
         }
         launch {

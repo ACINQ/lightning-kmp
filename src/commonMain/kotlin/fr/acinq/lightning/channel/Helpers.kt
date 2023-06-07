@@ -17,9 +17,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.inputsAlreadySpent
-import fr.acinq.lightning.channel.states.Channel
-import fr.acinq.lightning.channel.states.ClosingFeerates
-import fr.acinq.lightning.channel.states.ClosingFees
+import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForRevocation
 import fr.acinq.lightning.crypto.KeyManager
@@ -246,6 +244,38 @@ object Helpers {
         }
     }
 
+    /**
+     * Return the list of wallet inputs used in pending unconfirmed channel funding attempts.
+     * These inputs should not be reused in other funding attempts, otherwise we would double-spend ourselves.
+     */
+    fun reservedWalletInputs(channels: List<PersistedChannelState>): Set<OutPoint> {
+        return channels.filterNot { it is Closed }.flatMap { channel ->
+            when (channel) {
+                is WaitForFundingSigned -> channel.signingSession.fundingTx.tx.localInputs.map { it.outPoint }
+                is ChannelStateWithCommitments -> {
+                    val unsignedInputs = when (channel) {
+                        is WaitForFundingConfirmed -> when (val rbfStatus = channel.rbfStatus) {
+                            is RbfStatus.WaitingForSigs -> rbfStatus.session.fundingTx.tx.localInputs.map { it.outPoint }
+                            else -> listOf()
+                        }
+                        is Normal -> when (val spliceStatus = channel.spliceStatus) {
+                            is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.tx.localInputs.map { it.outPoint }
+                            else -> listOf()
+                        }
+                        else -> listOf()
+                    }
+                    val fundingInputs = channel.commitments.all.flatMap { commitment ->
+                        when (val fundingStatus = commitment.localFundingStatus) {
+                            is LocalFundingStatus.UnconfirmedFundingTx -> fundingStatus.sharedTx.tx.localInputs.map { it.outPoint }
+                            is LocalFundingStatus.ConfirmedFundingTx -> listOf() // utxos spent by confirmed transactions will never appear in our wallet
+                        }
+                    }
+                    unsignedInputs + fundingInputs
+                }
+            }
+        }.toSet()
+    }
+
     object Funding {
 
         /** Compute the channelId of a dual-funded channel. */
@@ -314,8 +344,28 @@ object Helpers {
             val fundingPubKey = channelKeys.fundingPubKey(fundingTxIndex)
             val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteFundingPubkey)
             val localPerCommitmentPoint = channelKeys.commitmentPoint(commitmentIndex)
-            val localCommitTx = Commitments.makeLocalTxs(channelKeys, commitTxNumber = commitmentIndex, localParams, remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitmentInput, localPerCommitmentPoint = localPerCommitmentPoint, localSpec).first
-            val remoteCommitTx = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = commitmentIndex, localParams, remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitmentInput, remotePerCommitmentPoint = remotePerCommitmentPoint, remoteSpec).first
+            val localCommitTx = Commitments.makeLocalTxs(
+                channelKeys,
+                commitTxNumber = commitmentIndex,
+                localParams,
+                remoteParams,
+                fundingTxIndex = fundingTxIndex,
+                remoteFundingPubKey = remoteFundingPubkey,
+                commitmentInput,
+                localPerCommitmentPoint = localPerCommitmentPoint,
+                localSpec
+            ).first
+            val remoteCommitTx = Commitments.makeRemoteTxs(
+                channelKeys,
+                commitTxNumber = commitmentIndex,
+                localParams,
+                remoteParams,
+                fundingTxIndex = fundingTxIndex,
+                remoteFundingPubKey = remoteFundingPubkey,
+                commitmentInput,
+                remotePerCommitmentPoint = remotePerCommitmentPoint,
+                remoteSpec
+            ).first
 
             return Either.Right(PairOfCommitTxs(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
         }

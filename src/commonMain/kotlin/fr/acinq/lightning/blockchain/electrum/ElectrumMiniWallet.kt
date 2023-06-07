@@ -24,10 +24,9 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
     val totalBalance = utxos.map { it.amount }.sum()
 
-    fun minus(reserved: Set<Utxo>): WalletState {
-        val reservedIds = reserved.map { UnspentItemId(it.previousTx.txid, it.outputIndex) }.toSet()
+    fun minus(reserved: Set<OutPoint>): WalletState {
         return copy(addresses = addresses.mapValues {
-            it.value.filter { item -> !reservedIds.contains(UnspentItemId(item.txid, item.outputIndex)) }
+            it.value.filter { item -> !reserved.contains(item.outPoint) }
         })
     }
 
@@ -51,8 +50,6 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     data class WalletWithConfirmations(val unconfirmed: List<Utxo>, val weaklyConfirmed: List<Utxo>, val deeplyConfirmed: List<Utxo>) {
         val all: List<Utxo> = unconfirmed + weaklyConfirmed + deeplyConfirmed
     }
-
-    data class UnspentItemId(val txid: ByteVector32, val outputIndex: Int)
 
     companion object {
         val empty: WalletState = WalletState(emptyMap(), emptyMap())
@@ -81,7 +78,7 @@ class ElectrumMiniWallet(
 ) : CoroutineScope by scope {
 
     private val logger = loggerFactory.newLogger(this::class)
-    fun Logger.mdcinfo(msgCreator: () -> String) {
+    private fun Logger.mdcinfo(msgCreator: () -> String) {
         log(
             level = Logger.Level.INFO,
             meta = mapOf(
