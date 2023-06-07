@@ -502,15 +502,15 @@ class Peer(
         val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
         logger.withMDC(mapOf("channelId" to actualChannelId)) { logger ->
             actions.forEach { action ->
-                when {
-                    action is ChannelAction.Message.Send && _connectionState.value == Connection.ESTABLISHED -> sendToPeer(action.message)
+                when (action) {
+                    is ChannelAction.Message.Send -> if (_connectionState.value == Connection.ESTABLISHED) sendToPeer(action.message) // ignore if disconnected
                     // sometimes channel actions include "self" command (such as ChannelCommand.Sign)
-                    action is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, action.command))
-                    action is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
-                    action is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
-                    action is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
-                    action is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "command not executed" }
-                    action is ChannelAction.ProcessCmdRes.AddFailed -> {
+                    is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, action.command))
+                    is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
+                    is ChannelAction.Blockchain.PublishTx -> watcher.publish(action.tx)
+                    is ChannelAction.ProcessIncomingHtlc -> processIncomingPayment(Either.Right(action.add))
+                    is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "command not executed" }
+                    is ChannelAction.ProcessCmdRes.AddFailed -> {
                         when (val result = outgoingPaymentHandler.processAddFailed(actualChannelId, action, _channels)) {
                             is OutgoingPaymentHandler.Progress -> {
                                 _eventsFlow.emit(PaymentProgress(result.request, result.fees))
@@ -522,7 +522,7 @@ class Peer(
                         }
                     }
 
-                    action is ChannelAction.ProcessCmdRes.AddSettledFail -> {
+                    is ChannelAction.ProcessCmdRes.AddSettledFail -> {
                         val currentTip = currentTipFlow.filterNotNull().first()
                         when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
                             is OutgoingPaymentHandler.Progress -> {
@@ -536,7 +536,7 @@ class Peer(
                         }
                     }
 
-                    action is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
+                    is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                         when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                             is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
                             is OutgoingPaymentHandler.PreimageReceived -> logger.debug(mapOf("paymentId" to result.request.paymentId)) { "payment preimage received: ${result.preimage}" }
@@ -544,21 +544,21 @@ class Peer(
                         }
                     }
 
-                    action is ChannelAction.Storage.StoreState -> {
+                    is ChannelAction.Storage.StoreState -> {
                         logger.info { "storing state=${action.data::class.simpleName}" }
                         db.channels.addOrUpdateChannel(action.data)
                     }
 
-                    action is ChannelAction.Storage.StoreHtlcInfos -> {
+                    is ChannelAction.Storage.StoreHtlcInfos -> {
                         action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                     }
 
-                    action is ChannelAction.Storage.StoreIncomingPayment -> {
+                    is ChannelAction.Storage.StoreIncomingPayment -> {
                         logger.info { "storing incoming payment $action" }
                         incomingPaymentHandler.process(actualChannelId, action)
                     }
 
-                    action is ChannelAction.Storage.StoreOutgoingPayment -> {
+                    is ChannelAction.Storage.StoreOutgoingPayment -> {
                         logger.info { "storing $action" }
                         db.payments.addOutgoingPayment(
                             when (action) {
@@ -603,24 +603,24 @@ class Peer(
                         _eventsFlow.emit(ChannelClosing(channelId))
                     }
 
-                    action is ChannelAction.Storage.SetLocked -> {
+                    is ChannelAction.Storage.SetLocked -> {
                         logger.info { "setting status locked for txid=${action.txId}" }
                         db.payments.setLocked(action.txId)
                     }
 
-                    action is ChannelAction.Storage.GetHtlcInfos -> {
+                    is ChannelAction.Storage.GetHtlcInfos -> {
                         val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
                         input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
                     }
 
-                    action is ChannelAction.ChannelId.IdAssigned -> {
+                    is ChannelAction.ChannelId.IdAssigned -> {
                         logger.info { "switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
                         _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
                     }
 
-                    action is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
+                    is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
 
-                    action is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
+                    is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
                 }
             }
         }
