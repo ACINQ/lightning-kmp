@@ -5,6 +5,7 @@ import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.channel.ForcedLocalCommit
 import fr.acinq.lightning.channel.PleasePublishYourCommitment
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.ChannelReady
@@ -107,7 +108,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                 }
             }
             cmd is ChannelCommand.Close.ForceClose -> {
-                val (newState, actions) = state.run { process(cmd) }
+                val (newState, actions) = state.run { handleLocalError(cmd, ForcedLocalCommit(channelId)) }
                 when (newState) {
                     // NB: it doesn't make sense to try to send outgoing messages if we're offline.
                     is Closing -> Pair(newState, actions.filterNot { it is ChannelAction.Message.Send })

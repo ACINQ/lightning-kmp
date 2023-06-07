@@ -326,7 +326,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
             }
             cmd is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())
             cmd is ChannelCommand.Close.ForceClose -> {
-                val (newState, actions) = state.run { process(cmd) }
+                val (newState, actions) = state.run { handleLocalError(cmd, ForcedLocalCommit(channelId)) }
                 when (newState) {
                     is Closing -> Pair(newState, actions)
                     is Closed -> Pair(newState, actions)
