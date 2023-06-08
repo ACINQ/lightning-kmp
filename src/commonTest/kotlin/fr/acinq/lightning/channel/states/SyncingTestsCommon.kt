@@ -83,7 +83,8 @@ class SyncingTestsCommon : LightningTestSuite() {
         // Alice acts as if they were disconnected before she sent commit_sig: she has forgotten that channel.
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(Error(channelReestablishBob.channelId, "sorry bro no channel here")))
         assertIs<Aborted>(bob2.state)
-        assertTrue(actionsBob2.isEmpty())
+        assertEquals(1, actionsBob2.size)
+        actionsBob2.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(bob.channelId, it.data.channelId) }
     }
 
     @Test

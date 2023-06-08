@@ -166,22 +166,26 @@ sealed class ChannelState {
     fun ChannelContext.handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
         logger.error { "peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
-        return when {
-            this@ChannelState is Closing -> Pair(this@ChannelState, listOf()) // nothing to do, there is already a spending tx published
-            this@ChannelState is Negotiating && this@ChannelState.bestUnpublishedClosingTx != null -> {
-                val nexState = Closing(
-                    commitments = commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
-                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                    mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
-                )
-                Pair(nexState, buildList {
-                    add(ChannelAction.Storage.StoreState(nexState))
-                    addAll(doPublish(bestUnpublishedClosingTx, nexState.channelId))
-                })
+        return when (this@ChannelState) {
+            is Closing -> Pair(this@ChannelState, listOf()) // nothing to do, there is already a spending tx published
+            is Negotiating -> when (this@ChannelState.bestUnpublishedClosingTx) {
+                null -> this.spendLocalCurrent()
+                else -> {
+                    val nexState = Closing(
+                        commitments = commitments,
+                        waitingSinceBlock = currentBlockHeight.toLong(),
+                        mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                        mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
+                    )
+                    Pair(nexState, buildList {
+                        add(ChannelAction.Storage.StoreState(nexState))
+                        addAll(doPublish(bestUnpublishedClosingTx, nexState.channelId))
+                    })
+                }
             }
+            is WaitForFundingSigned -> Pair(Aborted, listOf(ChannelAction.Storage.RemoveChannel(this@ChannelState)))
             // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
-            this@ChannelState is ChannelStateWithCommitments -> this.spendLocalCurrent()
+            is ChannelStateWithCommitments -> this.spendLocalCurrent()
             // when there is no commitment yet, we just go to CLOSED state in case an error occurs
             else -> Pair(Aborted, listOf())
         }
@@ -513,7 +517,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     }
                     else -> {
                         val error = Error(channelId, channelEx.message)
-                        spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error))}
+                        spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
                     }
                 }
             }

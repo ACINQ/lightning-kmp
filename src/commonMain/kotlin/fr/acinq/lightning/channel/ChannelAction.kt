@@ -71,6 +71,7 @@ sealed class ChannelAction {
 
     sealed class Storage : ChannelAction() {
         data class StoreState(val data: PersistedChannelState) : Storage()
+        data class RemoveChannel(val data: PersistedChannelState) : Storage()
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
         data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
