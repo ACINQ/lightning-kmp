@@ -32,9 +32,8 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
 
     fun withConfirmations(currentBlockHeight: Int, minConfirmations: Int): WalletWithConfirmations = WalletWithConfirmations(
         unconfirmed = utxos.filter { it.blockHeight == 0L },
-        // Note that we wait for one more confirmation than the LSP to make sure that they accept our inputs (in case we receive blocks slightly before them).
-        weaklyConfirmed = utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations > currentBlockHeight },
-        deeplyConfirmed = utxos.filter { 0 < it.blockHeight && it.blockHeight + minConfirmations <= currentBlockHeight }
+        weaklyConfirmed = utxos.filter { it.blockHeight > 0 && (currentBlockHeight - it.blockHeight + 1) < minConfirmations }, // we add 1 because if a tx is confirmed at current block height, it is considered to have one confirmation
+        deeplyConfirmed = utxos.filter { it.blockHeight > 0 && (currentBlockHeight - it.blockHeight + 1) >= minConfirmations }
     )
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {

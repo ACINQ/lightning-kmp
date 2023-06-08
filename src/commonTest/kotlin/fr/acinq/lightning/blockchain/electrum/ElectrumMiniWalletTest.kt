@@ -49,7 +49,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         assertEquals(30_000_000.sat, walletState.totalBalance)
 
         run {
-            val withConf = walletState.withConfirmations(currentBlockHeight = 100_005, minConfirmations = 3)
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_004, minConfirmations = 3)
             assertEquals(0, withConf.unconfirmed.size)
             assertEquals(3, withConf.weaklyConfirmed.size)
             assertEquals(3, withConf.deeplyConfirmed.size)
@@ -57,7 +57,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
             assertEquals(15_000_000.sat, withConf.deeplyConfirmed.balance)
         }
         run {
-            val withConf = walletState.withConfirmations(currentBlockHeight = 100_006, minConfirmations = 3)
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_005, minConfirmations = 3)
             assertEquals(0, withConf.unconfirmed.size)
             assertEquals(0, withConf.weaklyConfirmed.size)
             assertEquals(6, withConf.deeplyConfirmed.size)
