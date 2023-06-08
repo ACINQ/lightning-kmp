@@ -162,29 +162,24 @@ sealed class ChannelState {
     )
 
     internal fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
+        logger.error(t) { "error on command ${cmd::class.simpleName}" }
         return when(val state = this@ChannelState) {
             is WaitForInit -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 Pair(state, listOf(ChannelAction.ProcessLocalError(t, cmd)))
             }
             is WaitForOpenChannel -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.temporaryChannelId, t.message)
                 Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
             }
             is WaitForAcceptChannel -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.temporaryChannelId, t.message)
                 Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
             }
             is WaitForFundingCreated -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
             }
             is WaitForFundingSigned -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 Pair(Aborted, listOf(
                     ChannelAction.Message.Send(error),
@@ -192,7 +187,6 @@ sealed class ChannelState {
                 ))
             }
             is WaitForFundingConfirmed -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 when {
                     state.commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
@@ -200,7 +194,6 @@ sealed class ChannelState {
                 }
             }
             is WaitForChannelReady -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 when {
                     state.commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
@@ -208,7 +201,6 @@ sealed class ChannelState {
                 }
             }
             is Normal -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 when {
                     state.commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
@@ -216,12 +208,10 @@ sealed class ChannelState {
                 }
             }
             is ShuttingDown -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 state.run { spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) } }
             }
             is Negotiating -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 when {
                     state.commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
@@ -244,34 +234,28 @@ sealed class ChannelState {
                 }
             }
             is Closing -> {
-                logger.error(t) { "error processing ${cmd::class} in state ${this::class}" }
                 state.localCommitPublished?.let {
                     // we're already trying to claim our commitment, there's nothing more we can do
                     Pair(state, listOf())
                 } ?: state.run { spendLocalCurrent() }
             }
             is Closed -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 Pair(state, listOf())
             }
             is Aborted -> {
                 Pair(state, listOf())
             }
             is Offline -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 Pair(state, listOf(ChannelAction.ProcessLocalError(t, cmd)))
             }
             is Syncing -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 Pair(state, listOf(ChannelAction.ProcessLocalError(t, cmd)))
             }
             is WaitForRemotePublishFutureCommitment -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class}" }
                 val error = Error(state.channelId, t.message)
                 Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
             }
             is LegacyWaitForFundingConfirmed -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 when {
                     state.commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
@@ -279,7 +263,6 @@ sealed class ChannelState {
                 }
             }
             is LegacyWaitForFundingLocked -> {
-                logger.error(t) { "error on command ${cmd::class.simpleName} in state ${state::class.simpleName}" }
                 val error = Error(state.channelId, t.message)
                 when {
                     state.commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
