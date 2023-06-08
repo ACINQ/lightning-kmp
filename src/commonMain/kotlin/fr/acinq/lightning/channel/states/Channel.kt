@@ -165,7 +165,7 @@ sealed class ChannelState {
         logger.error(t) { "error on command ${cmd::class.simpleName}" }
         return when(val state = this@ChannelState) {
             is WaitForInit -> {
-                Pair(state, listOf(ChannelAction.ProcessLocalError(t, cmd)))
+                Pair(state, emptyList())
             }
             is WaitForOpenChannel -> {
                 val error = Error(state.temporaryChannelId, t.message)
@@ -246,10 +246,10 @@ sealed class ChannelState {
                 Pair(state, listOf())
             }
             is Offline -> {
-                Pair(state, listOf(ChannelAction.ProcessLocalError(t, cmd)))
+                Pair(state, emptyList())
             }
             is Syncing -> {
-                Pair(state, listOf(ChannelAction.ProcessLocalError(t, cmd)))
+                Pair(state, emptyList())
             }
             is WaitForRemotePublishFutureCommitment -> {
                 val error = Error(state.channelId, t.message)

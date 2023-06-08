@@ -14,8 +14,6 @@ import fr.acinq.lightning.wire.*
 /** Channel Actions (outputs produced by the state machine). */
 sealed class ChannelAction {
     // @formatter:off
-    data class ProcessLocalError(val error: Throwable, val trigger: ChannelCommand) : ChannelAction()
-
     sealed class Message : ChannelAction() {
         data class Send(val message: LightningMessage) : Message()
         data class SendToSelf(val command: ChannelCommand) : Message()
