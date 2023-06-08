@@ -195,28 +195,4 @@ data class Negotiating(
         }
         return Pair(nextState, actions)
     }
-
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@Negotiating::class.simpleName}" }
-        val error = Error(channelId, t.message)
-        return when {
-            commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
-            bestUnpublishedClosingTx != null -> {
-                // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
-                val nextState = Closing(
-                    commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
-                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx } + listOf(bestUnpublishedClosingTx),
-                    mutualClosePublished = listOf(bestUnpublishedClosingTx)
-                )
-                val actions = listOf(
-                    ChannelAction.Storage.StoreState(nextState),
-                    ChannelAction.Blockchain.PublishTx(bestUnpublishedClosingTx),
-                    ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, bestUnpublishedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(bestUnpublishedClosingTx.tx)))
-                )
-                Pair(nextState, actions)
-            }
-            else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
-        }
-    }
 }

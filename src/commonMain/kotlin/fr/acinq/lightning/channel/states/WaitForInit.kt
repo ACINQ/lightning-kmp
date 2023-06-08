@@ -147,9 +147,4 @@ object WaitForInit : ChannelState() {
             else -> unhandled(cmd)
         }
     }
-
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForInit::class.simpleName}" }
-        return Pair(this@WaitForInit, listOf(ChannelAction.ProcessLocalError(t, cmd)))
-    }
 }

@@ -129,10 +129,4 @@ data class WaitForOpenChannel(
             else -> unhandled(cmd)
         }
     }
-
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForOpenChannel::class.simpleName}" }
-        val error = Error(temporaryChannelId, t.message)
-        return Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
-    }
 }

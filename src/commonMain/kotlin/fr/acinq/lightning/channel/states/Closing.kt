@@ -373,14 +373,6 @@ data class Closing(
         }
     }
 
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error processing ${cmd::class} in state ${this::class}" }
-        return localCommitPublished?.let {
-            // we're already trying to claim our commitment, there's nothing more we can do
-            Pair(this@Closing, listOf())
-        } ?: spendLocalCurrent()
-    }
-
     /**
      * Checks if a channel is closed (i.e. its closing tx has been confirmed)
      *

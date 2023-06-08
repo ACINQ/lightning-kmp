@@ -190,12 +190,6 @@ data class ShuttingDown(
         }
     }
 
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@ShuttingDown::class.simpleName}" }
-        val error = Error(channelId, t.message)
-        return spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
-    }
-
     private fun ChannelContext.handleCommandResult(command: ChannelCommand, result: Either<ChannelException, Pair<Commitments, LightningMessage>>, commit: Boolean): Pair<ChannelState, List<ChannelAction>> {
         return when (result) {
             is Either.Left -> handleCommandError(command, result.value)
