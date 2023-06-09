@@ -703,7 +703,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         // When receiving Bob's error, Alice forgets the channel.
         val (alice4, actions4) = alice3.process(ChannelCommand.MessageReceived(Error(alice.channelId, "unknown channel")))
         assertIs<Aborted>(alice4.state)
-        assertTrue(actions4.isEmpty())
+        assertEquals(1, actions4.size)
+        actions4.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(alice.channelId, it.data.channelId) }
     }
 
     @Test

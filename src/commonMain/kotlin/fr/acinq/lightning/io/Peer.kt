@@ -558,6 +558,11 @@ class Peer(
                         db.channels.addOrUpdateChannel(action.data)
                     }
 
+                    is ChannelAction.Storage.RemoveChannel -> {
+                        logger.info { "removing channelId=${action.data.channelId} state=${action.data::class.simpleName}" }
+                        db.channels.removeChannel(action.data.channelId)
+                    }
+
                     is ChannelAction.Storage.StoreHtlcInfos -> {
                         action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                     }

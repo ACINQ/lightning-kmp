@@ -112,14 +112,16 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob.copy(signature = ByteVector64.Zeroes)))
-            assertEquals(actionsAlice1.size, 1)
+            assertEquals(actionsAlice1.size, 2)
             actionsAlice1.hasOutgoingMessage<Error>()
+            actionsAlice1.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(alice.channelId, it.data.channelId) }
             assertIs<Aborted>(alice1.state)
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice.copy(signature = ByteVector64.Zeroes)))
-            assertEquals(actionsBob1.size, 1)
+            assertEquals(actionsBob1.size, 2)
             actionsBob1.hasOutgoingMessage<Error>()
+            actionsBob1.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(bob.channelId, it.data.channelId) }
             assertIs<Aborted>(bob1.state)
         }
     }
@@ -200,8 +202,9 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val invalidWitness = Script.witnessPay2wpkh(randomKey().publicKey(), randomBytes(72).byteVector())
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, alice.state.signingSession.fundingTx.txId, listOf(invalidWitness))))
         assertIs<Aborted>(alice2.state)
-        assertEquals(actionsAlice2.size, 1)
+        assertEquals(actionsAlice2.size, 2)
         actionsAlice2.hasOutgoingMessage<Error>()
+        actionsAlice2.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(alice.channelId, it.data.channelId) }
     }
 
     @Test
