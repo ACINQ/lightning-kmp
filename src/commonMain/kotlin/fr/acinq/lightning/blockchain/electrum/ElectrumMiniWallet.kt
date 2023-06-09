@@ -57,12 +57,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         /** Confirmed utxos that are safe to use. */
         val deeplyConfirmed by lazy { all.filter { it.blockHeight > 0 && confirmationsNeeded(it) == 0 } }
 
-        /**
-         * Returns the number of confirmations an utxo must reach to be considered deeply confirmed, 0 if deep enough.
-         *
-         * Note that we wait for one more confirmation than the LSP does, to make sure that they accept our inputs (in case
-         * we receive blocks slightly before them).
-         */
+        /** Returns the number of confirmations an utxo must reach to be considered deeply confirmed, 0 if deep enough. */
         fun confirmationsNeeded(utxo: Utxo): Int = when (val height = utxo.blockHeight.toInt()) {
             0 -> minConfirmations
             // we subtract 1 because if a tx is confirmed at current block height, it is considered to have one confirmation
