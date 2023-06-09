@@ -58,10 +58,6 @@ object WaitForInit : ChannelState() {
                 val nextState = WaitForAcceptChannel(cmd, open)
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
-            cmd is ChannelCommand.Restore && cmd.state is Closing && cmd.state.commitments.nothingAtStake() -> {
-                logger.info { "we have nothing at stake, going straight to CLOSED" }
-                Pair(Closed(cmd.state), listOf())
-            }
             cmd is ChannelCommand.Restore -> {
                 logger.info { "restoring channel ${cmd.state.channelId} to state ${cmd.state::class.simpleName}" }
                 // We republish unconfirmed transactions.
