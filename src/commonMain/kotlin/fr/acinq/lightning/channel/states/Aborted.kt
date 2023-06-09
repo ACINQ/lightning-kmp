@@ -10,8 +10,4 @@ object Aborted : ChannelState() {
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this@Aborted, listOf())
     }
-
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        return Pair(this@Aborted, listOf())
-    }
 }

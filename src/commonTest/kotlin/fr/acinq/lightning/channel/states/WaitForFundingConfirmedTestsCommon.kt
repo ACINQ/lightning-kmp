@@ -364,16 +364,6 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ChannelCommand_Close_ForceClose -- nothing at stake`() {
-        val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
-        val (bob1, actions1) = bob.process(ChannelCommand.Close.ForceClose)
-        assertIs<Aborted>(bob1.state)
-        assertEquals(1, actions1.size)
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(ForcedLocalCommit(alice.state.channelId).message, error.toAscii())
-    }
-
-    @Test
     fun `recv CheckHtlcTimeout`() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->

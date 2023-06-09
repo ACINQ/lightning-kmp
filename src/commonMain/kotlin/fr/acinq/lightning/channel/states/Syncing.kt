@@ -331,11 +331,6 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
         }
     }
 
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@Syncing::class.simpleName}" }
-        return Pair(this@Syncing, listOf(ChannelAction.ProcessLocalError(t, cmd)))
-    }
-
     companion object {
         private fun ChannelContext.handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments): Pair<Commitments, List<ChannelAction>> {
             val sendQueue = ArrayList<ChannelAction>()

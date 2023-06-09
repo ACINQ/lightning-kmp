@@ -185,16 +185,6 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         }
     }
 
-    @Test
-    fun `recv ChannelCommand_Close_ForceClose -- nothing at stake`() {
-        val (_, _, bob, _) = init(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
-        val (bob1, actions1) = bob.process(ChannelCommand.Close.ForceClose)
-        assertIs<Aborted>(bob1.state)
-        assertEquals(1, actions1.size)
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(ForcedLocalCommit(bob.channelId).message, error.toAscii())
-    }
-
     private fun getFundingSigs(channel: LNChannel<WaitForChannelReady>): TxSignatures {
         assertIs<LocalFundingStatus.UnconfirmedFundingTx>(channel.commitments.latest.localFundingStatus)
         return (channel.commitments.latest.localFundingStatus as LocalFundingStatus.UnconfirmedFundingTx).sharedTx.localSigs

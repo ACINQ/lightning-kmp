@@ -72,13 +72,4 @@ data class LegacyWaitForFundingLocked(
             else -> unhandled(cmd)
         }
     }
-
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@LegacyWaitForFundingLocked::class.simpleName}" }
-        val error = Error(channelId, t.message)
-        return when {
-            commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
-            else -> spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }
-        }
-    }
 }

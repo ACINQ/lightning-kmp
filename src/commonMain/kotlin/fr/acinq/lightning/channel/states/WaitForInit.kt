@@ -58,10 +58,6 @@ object WaitForInit : ChannelState() {
                 val nextState = WaitForAcceptChannel(cmd, open)
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
-            cmd is ChannelCommand.Restore && cmd.state is Closing && cmd.state.commitments.nothingAtStake() -> {
-                logger.info { "we have nothing at stake, going straight to CLOSED" }
-                Pair(Closed(cmd.state), listOf())
-            }
             cmd is ChannelCommand.Restore -> {
                 logger.info { "restoring channel ${cmd.state.channelId} to state ${cmd.state::class.simpleName}" }
                 // We republish unconfirmed transactions.
@@ -146,10 +142,5 @@ object WaitForInit : ChannelState() {
             cmd is ChannelCommand.Close -> Pair(Aborted, listOf())
             else -> unhandled(cmd)
         }
-    }
-
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@WaitForInit::class.simpleName}" }
-        return Pair(this@WaitForInit, listOf(ChannelAction.ProcessLocalError(t, cmd)))
     }
 }

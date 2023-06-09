@@ -2214,7 +2214,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob0.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(txs, listOf(bobCommitTx))
-        assertIs<LNChannel<Closing>>(bob1)
+        assertIs<Closing>(bob1.state)
         assertEquals(bob1.state.localCommitPublished!!.commitTx, bobCommitTx)
     }
 }

@@ -546,17 +546,6 @@ data class Commitments(
         addAll(active)
     })
 
-    /**
-     * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
-     */
-    fun nothingAtStake(): Boolean = active.all {
-        it.localCommit.index == 0L &&
-                it.localCommit.spec.toLocal == 0.msat &&
-                it.remoteCommit.index == 0L &&
-                it.remoteCommit.spec.toRemote == 0.msat &&
-                it.nextRemoteCommit == null
-    }
-
     fun isMoreRecent(other: Commitments): Boolean {
         return this.localCommitIndex > other.localCommitIndex ||
                 this.remoteCommitIndex > other.remoteCommitIndex ||

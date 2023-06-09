@@ -161,7 +161,73 @@ sealed class ChannelState {
         ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx.tx)))
     )
 
-    abstract fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>>
+    internal fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
+        logger.error(t) { "error on command ${cmd::class.simpleName}" }
+
+        fun abort(channelId: ByteVector32?, state: ChannelState): Pair<ChannelState, List<ChannelAction>> {
+            val actions = buildList {
+                channelId
+                    ?.let { Error(it, t.message) }
+                    ?.let { add(ChannelAction.Message.Send(it)) }
+                (state as? PersistedChannelState)
+                    ?.let { add(ChannelAction.Storage.RemoveChannel(state)) }
+            }
+            return Pair(Aborted, actions)
+        }
+
+        fun forceClose(state: ChannelStateWithCommitments): Pair<ChannelState, List<ChannelAction>> {
+            val error = Error(state.channelId, t.message)
+            return state.run { spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) } }
+        }
+
+        return when(val state = this@ChannelState) {
+            is WaitForInit -> abort(null, state)
+            is WaitForOpenChannel -> abort(state.temporaryChannelId, state)
+            is WaitForAcceptChannel -> abort(state.temporaryChannelId, state)
+            is WaitForFundingCreated -> abort(state.channelId, state)
+            is WaitForFundingSigned -> abort(state.channelId, state)
+            is WaitForFundingConfirmed -> forceClose(state)
+            is WaitForChannelReady -> forceClose(state)
+            is Normal -> forceClose(state)
+            is ShuttingDown -> forceClose(state)
+            is Negotiating -> when {
+                state.bestUnpublishedClosingTx != null -> {
+                    // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
+                    val nextState = Closing(
+                        state.commitments,
+                        waitingSinceBlock = currentBlockHeight.toLong(),
+                        mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx } + listOf(state.bestUnpublishedClosingTx),
+                        mutualClosePublished = listOf(state.bestUnpublishedClosingTx)
+                    )
+                    val actions = listOf(
+                        ChannelAction.Storage.StoreState(nextState),
+                        ChannelAction.Blockchain.PublishTx(state.bestUnpublishedClosingTx),
+                        ChannelAction.Blockchain.SendWatch(WatchConfirmed(state.channelId, state.bestUnpublishedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(state.bestUnpublishedClosingTx.tx)))
+                    )
+                    Pair(nextState, actions)
+                }
+                else -> forceClose(state)
+            }
+            is Closing -> {
+                if (state.mutualClosePublished.isNotEmpty()) {
+                    // we already have published a mutual close tx, it's always better to use that
+                    Pair(state, emptyList())
+                } else {
+                    state.localCommitPublished ?.let {
+                        // we're already trying to claim our commitment, there's nothing more we can do
+                        Pair(state, emptyList())
+                    } ?: state.run { spendLocalCurrent() }
+                }
+            }
+            is Closed -> Pair(state, emptyList())
+            is Aborted -> Pair(state, emptyList())
+            is Offline -> state.run { handleLocalError(cmd, t) }
+            is Syncing -> state.run { handleLocalError(cmd, t) }
+            is WaitForRemotePublishFutureCommitment -> Pair(state, emptyList())
+            is LegacyWaitForFundingConfirmed -> forceClose(state)
+            is LegacyWaitForFundingLocked -> forceClose(state)
+        }
+    }
 
     fun ChannelContext.handleRemoteError(e: Error): Pair<ChannelState, List<ChannelAction>> {
         // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters

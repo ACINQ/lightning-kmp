@@ -47,11 +47,6 @@ internal fun List<ChannelAction>.findPublishTxs(): List<Transaction> = filterIsI
 internal fun List<ChannelAction>.hasPublishTx(tx: Transaction) = assertContains(findPublishTxs(), tx)
 internal fun List<ChannelAction>.hasPublishTx(txType: ChannelAction.Blockchain.PublishTx.Type): Transaction = assertNotNull(filterIsInstance<ChannelAction.Blockchain.PublishTx>().firstOrNull { it.txType == txType }).tx
 
-// Errors
-internal inline fun <reified T : Throwable> List<ChannelAction>.findErrorOpt(): T? = filterIsInstance<ChannelAction.ProcessLocalError>().map { it.error }.filterIsInstance<T>().firstOrNull()
-internal inline fun <reified T : Throwable> List<ChannelAction>.findError(): T = findErrorOpt<T>() ?: fail("cannot find error ${T::class}")
-internal inline fun <reified T : Throwable> List<ChannelAction>.hasError() = assertNotNull(findErrorOpt<T>(), "cannot find error ${T::class}")
-
 internal inline fun <reified T : ChannelException> List<ChannelAction>.findCommandErrorOpt(): T? {
     val cmdAddError = filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().map { it.error }.filterIsInstance<T>().firstOrNull()
     val otherCmdError = filterIsInstance<ChannelAction.ProcessCmdRes.NotExecuted>().map { it.t }.filterIsInstance<T>().firstOrNull()

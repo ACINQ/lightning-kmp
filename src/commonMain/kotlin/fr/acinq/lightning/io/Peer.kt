@@ -632,8 +632,6 @@ class Peer(
                         _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
                     }
 
-                    is ChannelAction.ProcessLocalError -> logger.error(action.error) { "error in channel $actualChannelId" }
-
                     is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
                 }
             }

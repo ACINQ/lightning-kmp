@@ -17,9 +17,4 @@ data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this@Closed, listOf())
     }
-
-    override fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName} in state ${this@Closed::class.simpleName}" }
-        return Pair(this@Closed, listOf())
-    }
 }
