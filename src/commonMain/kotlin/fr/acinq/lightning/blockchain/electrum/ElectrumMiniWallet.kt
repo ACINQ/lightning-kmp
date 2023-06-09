@@ -31,9 +31,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     }
 
     fun withConfirmations(currentBlockHeight: Int, minConfirmations: Int): WalletWithConfirmations = WalletWithConfirmations(
-        unconfirmed = utxos.filter { it.blockHeight == 0L },
-        weaklyConfirmed = utxos.filter { it.blockHeight > 0 && (currentBlockHeight - it.blockHeight + 1) < minConfirmations }, // we add 1 because if a tx is confirmed at current block height, it is considered to have one confirmation
-        deeplyConfirmed = utxos.filter { it.blockHeight > 0 && (currentBlockHeight - it.blockHeight + 1) >= minConfirmations }
+        minConfirmations = minConfirmations, currentBlockHeight = currentBlockHeight, all = utxos,
     )
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
@@ -42,12 +40,34 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     }
 
     /**
-     * @param unconfirmed unconfirmed utxos that shouldn't be used yet.
-     * @param weaklyConfirmed confirmed utxos that cannot be used for channel funding because they don't have enough confirmations yet.
-     * @param deeplyConfirmed deeply confirmed utxos that can be used for channel funding.
+     * The utxos of a wallet may be discriminated against their number of confirmations. Typically, this is used in the
+     * context of a funding, which should happen only after a given depth.
+     *
+     * @param minConfirmations minimum number of blocks an utxo needs to be deeply confirmed, compared to [currentBlockHeight].
+     * @param currentBlockHeight the current block height as seen by the wallet.
+     * @param all all the utxos of the wallet
      */
-    data class WalletWithConfirmations(val unconfirmed: List<Utxo>, val weaklyConfirmed: List<Utxo>, val deeplyConfirmed: List<Utxo>) {
-        val all: List<Utxo> = unconfirmed + weaklyConfirmed + deeplyConfirmed
+    data class WalletWithConfirmations(val minConfirmations: Int, val currentBlockHeight: Int, val all: List<Utxo>) {
+        /** Unconfirmed utxos that shouldn't be used yet. */
+        val unconfirmed by lazy { all.filter { it.blockHeight == 0L } }
+
+        /** Confirmed utxos that need more confirmations to be used. */
+        val weaklyConfirmed by lazy { all.filter { it.blockHeight > 0 && confirmationsNeeded(it) > 0 } }
+
+        /** Confirmed utxos that are safe to use. */
+        val deeplyConfirmed by lazy { all.filter { it.blockHeight > 0 && confirmationsNeeded(it) == 0 } }
+
+        /**
+         * Returns the number of confirmations an utxo must reach to be considered deeply confirmed, 0 if deep enough.
+         *
+         * Note that we wait for one more confirmation than the LSP does, to make sure that they accept our inputs (in case
+         * we receive blocks slightly before them).
+         */
+        fun confirmationsNeeded(utxo: Utxo): Int = when (val height = utxo.blockHeight.toInt()) {
+            0 -> minConfirmations
+            // we subtract 1 because if a tx is confirmed at current block height, it is considered to have one confirmation
+            else -> height + minConfirmations - currentBlockHeight - 1
+        }.coerceAtLeast(0)
     }
 
     companion object {
