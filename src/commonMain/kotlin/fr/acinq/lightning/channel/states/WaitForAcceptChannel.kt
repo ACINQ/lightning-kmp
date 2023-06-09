@@ -20,88 +20,96 @@ import fr.acinq.lightning.wire.OpenDualFundedChannel
  *         |--------------------------->|
  */
 data class WaitForAcceptChannel(
-    val init: ChannelCommand.InitInitiator,
+    val init: ChannelCommand.Init.Initiator,
     val lastSent: OpenDualFundedChannel
 ) : ChannelState() {
     val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        return when {
-            cmd is ChannelCommand.MessageReceived && cmd.message is AcceptDualFundedChannel -> {
-                val accept = cmd.message
-                when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, init, lastSent, accept)) {
-                    is Either.Right -> {
-                        val channelType = res.value
-                        val channelFeatures = ChannelFeatures(channelType, localFeatures = init.localParams.features, remoteFeatures = init.remoteInit.features)
-                        val remoteParams = RemoteParams(
-                            nodeId = staticParams.remoteNodeId,
-                            dustLimit = accept.dustLimit,
-                            maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-                            htlcMinimum = accept.htlcMinimum,
-                            toSelfDelay = accept.toSelfDelay,
-                            maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
-                            revocationBasepoint = accept.revocationBasepoint,
-                            paymentBasepoint = accept.paymentBasepoint,
-                            delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
-                            htlcBasepoint = accept.htlcBasepoint,
-                            features = init.remoteInit.features
-                        )
-                        val channelId = computeChannelId(lastSent, accept)
-                        val channelKeys = keyManager.channelKeys(init.localParams.fundingKeyPath)
-                        val remoteFundingPubkey = accept.fundingPubkey
-                        val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
-                        val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, remoteFundingPubkey, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
-                        when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs)) {
-                            is Either.Left -> {
-                                logger.error { "could not fund channel: ${fundingContributions.value}" }
-                                Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
-                            }
-                            is Either.Right -> {
-                                // The channel initiator always sends the first interactive-tx message.
-                                val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, fundingContributions.value).send()
-                                when (interactiveTxAction) {
-                                    is InteractiveTxSessionAction.SendMessage -> {
-                                        val nextState = WaitForFundingCreated(
-                                            init.localParams,
-                                            remoteParams,
-                                            interactiveTxSession,
-                                            lastSent.pushAmount,
-                                            accept.pushAmount,
-                                            lastSent.commitmentFeerate,
-                                            accept.firstPerCommitmentPoint,
-                                            accept.secondPerCommitmentPoint,
-                                            lastSent.channelFlags,
-                                            init.channelConfig,
-                                            channelFeatures,
-                                            null
-                                        )
-                                        val actions = listOf(
-                                            ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
-                                            ChannelAction.Message.Send(interactiveTxAction.msg),
-                                            ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
-                                        )
-                                        Pair(nextState, actions)
-                                    }
-                                    else -> {
-                                        logger.error { "could not start interactive-tx session: $interactiveTxAction" }
-                                        Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+        return when (cmd) {
+            is ChannelCommand.MessageReceived -> when (cmd.message) {
+                is AcceptDualFundedChannel -> {
+                    val accept = cmd.message
+                    when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, init, lastSent, accept)) {
+                        is Either.Right -> {
+                            val channelType = res.value
+                            val channelFeatures = ChannelFeatures(channelType, localFeatures = init.localParams.features, remoteFeatures = init.remoteInit.features)
+                            val remoteParams = RemoteParams(
+                                nodeId = staticParams.remoteNodeId,
+                                dustLimit = accept.dustLimit,
+                                maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
+                                htlcMinimum = accept.htlcMinimum,
+                                toSelfDelay = accept.toSelfDelay,
+                                maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
+                                revocationBasepoint = accept.revocationBasepoint,
+                                paymentBasepoint = accept.paymentBasepoint,
+                                delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
+                                htlcBasepoint = accept.htlcBasepoint,
+                                features = init.remoteInit.features
+                            )
+                            val channelId = computeChannelId(lastSent, accept)
+                            val channelKeys = keyManager.channelKeys(init.localParams.fundingKeyPath)
+                            val remoteFundingPubkey = accept.fundingPubkey
+                            val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
+                            val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, remoteFundingPubkey, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
+                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs)) {
+                                is Either.Left -> {
+                                    logger.error { "could not fund channel: ${fundingContributions.value}" }
+                                    Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                                }
+                                is Either.Right -> {
+                                    // The channel initiator always sends the first interactive-tx message.
+                                    val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, fundingContributions.value).send()
+                                    when (interactiveTxAction) {
+                                        is InteractiveTxSessionAction.SendMessage -> {
+                                            val nextState = WaitForFundingCreated(
+                                                init.localParams,
+                                                remoteParams,
+                                                interactiveTxSession,
+                                                lastSent.pushAmount,
+                                                accept.pushAmount,
+                                                lastSent.commitmentFeerate,
+                                                accept.firstPerCommitmentPoint,
+                                                accept.secondPerCommitmentPoint,
+                                                lastSent.channelFlags,
+                                                init.channelConfig,
+                                                channelFeatures,
+                                                null
+                                            )
+                                            val actions = listOf(
+                                                ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
+                                                ChannelAction.Message.Send(interactiveTxAction.msg),
+                                                ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
+                                            )
+                                            Pair(nextState, actions)
+                                        }
+                                        else -> {
+                                            logger.error { "could not start interactive-tx session: $interactiveTxAction" }
+                                            Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    is Either.Left -> {
-                        logger.error(res.value) { "invalid ${cmd.message::class} in state ${this::class}" }
-                        return Pair(Aborted, listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId(keyManager), res.value.message))))
+                        is Either.Left -> {
+                            logger.error(res.value) { "invalid ${cmd.message::class} in state ${this::class}" }
+                            return Pair(Aborted, listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId(keyManager), res.value.message))))
+                        }
                     }
                 }
+                is Error -> handleRemoteError(cmd.message)
+                else -> unhandled(cmd)
             }
-            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
-                logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted, listOf())
-            }
-            cmd is ChannelCommand.Close -> Pair(Aborted, listOf())
-            else -> unhandled(cmd)
+            is ChannelCommand.Close.MutualClose -> Pair(this@WaitForAcceptChannel, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(temporaryChannelId, stateName))))
+            is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(temporaryChannelId))
+            is ChannelCommand.Connected -> unhandled(cmd)
+            is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
+            is ChannelCommand.Init -> unhandled(cmd)
+            is ChannelCommand.Commitment -> unhandled(cmd)
+            is ChannelCommand.Htlc -> unhandled(cmd)
+            is ChannelCommand.WatchReceived -> unhandled(cmd)
+            is ChannelCommand.Funding -> unhandled(cmd)
+            is ChannelCommand.Closing -> unhandled(cmd)
         }
     }
 }

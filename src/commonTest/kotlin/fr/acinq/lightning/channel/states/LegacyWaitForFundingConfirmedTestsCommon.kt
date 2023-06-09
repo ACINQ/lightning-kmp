@@ -39,7 +39,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
             OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
             MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
         )
-        val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Restore(state))
+        val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Init.Restore(state))
         assertIs<LNChannel<Offline>>(state1)
         assertEquals(actions1.size, 1)
         val watchConfirmed = actions1.findWatch<WatchConfirmed>()

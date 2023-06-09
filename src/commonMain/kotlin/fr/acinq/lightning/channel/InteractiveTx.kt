@@ -853,7 +853,7 @@ data class InteractiveTxSigningSession(
 
 sealed class RbfStatus {
     object None : RbfStatus()
-    data class RbfRequested(val command: ChannelCommand.BumpFundingFee) : RbfStatus()
+    data class RbfRequested(val command: ChannelCommand.Funding.BumpFundingFee) : RbfStatus()
     data class InProgress(val rbfSession: InteractiveTxSession) : RbfStatus()
     data class WaitingForSigs(val session: InteractiveTxSigningSession) : RbfStatus()
     object RbfAborted : RbfStatus()
@@ -861,8 +861,8 @@ sealed class RbfStatus {
 
 sealed class SpliceStatus {
     object None : SpliceStatus()
-    data class Requested(val command: ChannelCommand.Splice.Request, val spliceInit: SpliceInit) : SpliceStatus()
-    data class InProgress(val replyTo: CompletableDeferred<ChannelCommand.Splice.Response>?, val spliceSession: InteractiveTxSession, val localPushAmount: MilliSatoshi, val remotePushAmount: MilliSatoshi, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
+    data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : SpliceStatus()
+    data class InProgress(val replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>?, val spliceSession: InteractiveTxSession, val localPushAmount: MilliSatoshi, val remotePushAmount: MilliSatoshi, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
     data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
     object Aborted : SpliceStatus()
 }

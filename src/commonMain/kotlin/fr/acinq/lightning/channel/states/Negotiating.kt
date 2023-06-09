@@ -29,97 +29,60 @@ data class Negotiating(
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        return when {
-            cmd is ChannelCommand.MessageReceived && cmd.message is ClosingSigned -> {
-                val remoteClosingFee = cmd.message.feeSatoshis
-                logger.info { "received closing fee=$remoteClosingFee" }
-                when (val result =
-                    Helpers.Closing.checkClosingSignature(channelKeys(), commitments.latest, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), cmd.message.feeSatoshis, cmd.message.signature)) {
-                    is Either.Left -> handleLocalError(cmd, result.value)
-                    is Either.Right -> {
-                        val (signedClosingTx, closingSignedRemoteFees) = result.value
-                        val lastLocalClosingSigned = closingTxProposed.last().lastOrNull()?.localClosingSigned
-                        when {
-                            lastLocalClosingSigned?.feeSatoshis == remoteClosingFee -> {
-                                logger.info { "they accepted our fee, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
-                                completeMutualClose(signedClosingTx, null)
-                            }
-                            closingTxProposed.flatten().size >= MAX_NEGOTIATION_ITERATIONS -> {
-                                logger.warning { "could not agree on closing fees after $MAX_NEGOTIATION_ITERATIONS iterations, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
-                                completeMutualClose(signedClosingTx, closingSignedRemoteFees)
-                            }
-                            lastLocalClosingSigned?.tlvStream?.get<ClosingSignedTlv.FeeRange>()?.let { it.min <= remoteClosingFee && remoteClosingFee <= it.max } == true -> {
-                                val localFeeRange = lastLocalClosingSigned.tlvStream.get<ClosingSignedTlv.FeeRange>()!!
-                                logger.info { "they chose closing fee=$remoteClosingFee within our fee range (min=${localFeeRange.max} max=${localFeeRange.max}), publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
-                                completeMutualClose(signedClosingTx, closingSignedRemoteFees)
-                            }
-                            commitments.latest.localCommit.spec.toLocal == 0.msat -> {
-                                logger.info { "we have nothing at stake, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
-                                completeMutualClose(signedClosingTx, closingSignedRemoteFees)
-                            }
-                            else -> {
-                                val theirFeeRange = cmd.message.tlvStream.get<ClosingSignedTlv.FeeRange>()
-                                val ourFeeRange = closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
-                                when {
-                                    theirFeeRange != null && !commitments.params.localParams.isInitiator -> {
-                                        // if we are not the initiator and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
-                                        // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
-                                        val closingFees = Helpers.Closing.firstClosingFee(commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, ourFeeRange)
-                                        val closingFee = when {
-                                            closingFees.preferred > theirFeeRange.max -> theirFeeRange.max
-                                            // if we underestimate the fee, then we're happy with whatever they propose (it will confirm more quickly and we're not paying it)
-                                            closingFees.preferred < remoteClosingFee -> remoteClosingFee
-                                            else -> closingFees.preferred
-                                        }
-                                        if (closingFee == remoteClosingFee) {
-                                            logger.info { "accepting their closing fee=$remoteClosingFee, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
-                                            completeMutualClose(signedClosingTx, closingSignedRemoteFees)
-                                        } else {
-                                            val (closingTx, closingSigned) = Helpers.Closing.makeClosingTx(
-                                                channelKeys(),
-                                                commitments.latest,
-                                                localShutdown.scriptPubKey.toByteArray(),
-                                                remoteShutdown.scriptPubKey.toByteArray(),
-                                                ClosingFees(closingFee, theirFeeRange.min, theirFeeRange.max)
-                                            )
-                                            logger.info { "proposing closing fee=${closingSigned.feeSatoshis}" }
-                                            val closingProposed1 = closingTxProposed.updated(
-                                                closingTxProposed.lastIndex,
-                                                closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
-                                            )
-                                            val nextState = this@Negotiating.copy(
-                                                commitments = commitments.copy(remoteChannelData = cmd.message.channelData),
-                                                closingTxProposed = closingProposed1,
-                                                bestUnpublishedClosingTx = signedClosingTx
-                                            )
-                                            val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned))
-                                            Pair(nextState, actions)
-                                        }
-                                    }
-                                    else -> {
-                                        val (closingTx, closingSigned) = run {
-                                            // if we are not the initiator and we were waiting for them to send their first closing_signed, we compute our firstClosingFee, otherwise we use the last one we sent
-                                            val localClosingFees = Helpers.Closing.firstClosingFee(commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, ourFeeRange)
-                                            val nextPreferredFee = Helpers.Closing.nextClosingFee(lastLocalClosingSigned?.feeSatoshis ?: localClosingFees.preferred, remoteClosingFee)
-                                            Helpers.Closing.makeClosingTx(
-                                                channelKeys(),
-                                                commitments.latest,
-                                                localShutdown.scriptPubKey.toByteArray(),
-                                                remoteShutdown.scriptPubKey.toByteArray(),
-                                                localClosingFees.copy(preferred = nextPreferredFee)
-                                            )
-                                        }
-                                        when {
-                                            lastLocalClosingSigned?.feeSatoshis == closingSigned.feeSatoshis -> {
-                                                // next computed fee is the same than the one we previously sent (probably because of rounding)
+        return when (cmd) {
+            is ChannelCommand.MessageReceived -> when (cmd.message) {
+                is ClosingSigned -> {
+                    val remoteClosingFee = cmd.message.feeSatoshis
+                    logger.info { "received closing fee=$remoteClosingFee" }
+                    when (val result =
+                        Helpers.Closing.checkClosingSignature(channelKeys(), commitments.latest, localShutdown.scriptPubKey.toByteArray(), remoteShutdown.scriptPubKey.toByteArray(), cmd.message.feeSatoshis, cmd.message.signature)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
+                        is Either.Right -> {
+                            val (signedClosingTx, closingSignedRemoteFees) = result.value
+                            val lastLocalClosingSigned = closingTxProposed.last().lastOrNull()?.localClosingSigned
+                            when {
+                                lastLocalClosingSigned?.feeSatoshis == remoteClosingFee -> {
+                                    logger.info { "they accepted our fee, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
+                                    completeMutualClose(signedClosingTx, null)
+                                }
+                                closingTxProposed.flatten().size >= MAX_NEGOTIATION_ITERATIONS -> {
+                                    logger.warning { "could not agree on closing fees after $MAX_NEGOTIATION_ITERATIONS iterations, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
+                                    completeMutualClose(signedClosingTx, closingSignedRemoteFees)
+                                }
+                                lastLocalClosingSigned?.tlvStream?.get<ClosingSignedTlv.FeeRange>()?.let { it.min <= remoteClosingFee && remoteClosingFee <= it.max } == true -> {
+                                    val localFeeRange = lastLocalClosingSigned.tlvStream.get<ClosingSignedTlv.FeeRange>()!!
+                                    logger.info { "they chose closing fee=$remoteClosingFee within our fee range (min=${localFeeRange.max} max=${localFeeRange.max}), publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
+                                    completeMutualClose(signedClosingTx, closingSignedRemoteFees)
+                                }
+                                commitments.latest.localCommit.spec.toLocal == 0.msat -> {
+                                    logger.info { "we have nothing at stake, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
+                                    completeMutualClose(signedClosingTx, closingSignedRemoteFees)
+                                }
+                                else -> {
+                                    val theirFeeRange = cmd.message.tlvStream.get<ClosingSignedTlv.FeeRange>()
+                                    val ourFeeRange = closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                    when {
+                                        theirFeeRange != null && !commitments.params.localParams.isInitiator -> {
+                                            // if we are not the initiator and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
+                                            // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
+                                            val closingFees = Helpers.Closing.firstClosingFee(commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, ourFeeRange)
+                                            val closingFee = when {
+                                                closingFees.preferred > theirFeeRange.max -> theirFeeRange.max
+                                                // if we underestimate the fee, then we're happy with whatever they propose (it will confirm more quickly and we're not paying it)
+                                                closingFees.preferred < remoteClosingFee -> remoteClosingFee
+                                                else -> closingFees.preferred
+                                            }
+                                            if (closingFee == remoteClosingFee) {
                                                 logger.info { "accepting their closing fee=$remoteClosingFee, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
-                                                completeMutualClose(signedClosingTx, null)
-                                            }
-                                            closingSigned.feeSatoshis == remoteClosingFee -> {
-                                                logger.info { "we have converged, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
-                                                completeMutualClose(signedClosingTx, closingSigned)
-                                            }
-                                            else -> {
+                                                completeMutualClose(signedClosingTx, closingSignedRemoteFees)
+                                            } else {
+                                                val (closingTx, closingSigned) = Helpers.Closing.makeClosingTx(
+                                                    channelKeys(),
+                                                    commitments.latest,
+                                                    localShutdown.scriptPubKey.toByteArray(),
+                                                    remoteShutdown.scriptPubKey.toByteArray(),
+                                                    ClosingFees(closingFee, theirFeeRange.min, theirFeeRange.max)
+                                                )
                                                 logger.info { "proposing closing fee=${closingSigned.feeSatoshis}" }
                                                 val closingProposed1 = closingTxProposed.updated(
                                                     closingTxProposed.lastIndex,
@@ -134,15 +97,55 @@ data class Negotiating(
                                                 Pair(nextState, actions)
                                             }
                                         }
+                                        else -> {
+                                            val (closingTx, closingSigned) = run {
+                                                // if we are not the initiator and we were waiting for them to send their first closing_signed, we compute our firstClosingFee, otherwise we use the last one we sent
+                                                val localClosingFees = Helpers.Closing.firstClosingFee(commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, ourFeeRange)
+                                                val nextPreferredFee = Helpers.Closing.nextClosingFee(lastLocalClosingSigned?.feeSatoshis ?: localClosingFees.preferred, remoteClosingFee)
+                                                Helpers.Closing.makeClosingTx(
+                                                    channelKeys(),
+                                                    commitments.latest,
+                                                    localShutdown.scriptPubKey.toByteArray(),
+                                                    remoteShutdown.scriptPubKey.toByteArray(),
+                                                    localClosingFees.copy(preferred = nextPreferredFee)
+                                                )
+                                            }
+                                            when {
+                                                lastLocalClosingSigned?.feeSatoshis == closingSigned.feeSatoshis -> {
+                                                    // next computed fee is the same than the one we previously sent (probably because of rounding)
+                                                    logger.info { "accepting their closing fee=$remoteClosingFee, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
+                                                    completeMutualClose(signedClosingTx, null)
+                                                }
+                                                closingSigned.feeSatoshis == remoteClosingFee -> {
+                                                    logger.info { "we have converged, publishing closing tx: closingTxId=${signedClosingTx.tx.txid}" }
+                                                    completeMutualClose(signedClosingTx, closingSigned)
+                                                }
+                                                else -> {
+                                                    logger.info { "proposing closing fee=${closingSigned.feeSatoshis}" }
+                                                    val closingProposed1 = closingTxProposed.updated(
+                                                        closingTxProposed.lastIndex,
+                                                        closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
+                                                    )
+                                                    val nextState = this@Negotiating.copy(
+                                                        commitments = commitments.copy(remoteChannelData = cmd.message.channelData),
+                                                        closingTxProposed = closingProposed1,
+                                                        bestUnpublishedClosingTx = signedClosingTx
+                                                    )
+                                                    val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned))
+                                                    Pair(nextState, actions)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+                is Error -> handleRemoteError(cmd.message)
+                else -> unhandled(cmd)
             }
-            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> handleRemoteError(cmd.message)
-            cmd is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
+            is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventConfirmed -> updateFundingTxStatus(watch)
                 is WatchEventSpent -> when {
                     watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
@@ -165,11 +168,17 @@ data class Negotiating(
                     else -> handlePotentialForceClose(watch)
                 }
             }
-            cmd is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
-            cmd is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating), listOf())
-            cmd is ChannelCommand.Htlc.Add -> handleCommandError(cmd, ChannelUnavailable(channelId))
-            cmd is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
-            else -> unhandled(cmd)
+            is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
+            is ChannelCommand.Commitment -> unhandled(cmd)
+            is ChannelCommand.Htlc.Add -> handleCommandError(cmd, ChannelUnavailable(channelId))
+            is ChannelCommand.Htlc -> unhandled(cmd)
+            is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
+            is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
+            is ChannelCommand.Init -> unhandled(cmd)
+            is ChannelCommand.Funding -> unhandled(cmd)
+            is ChannelCommand.Closing -> unhandled(cmd)
+            is ChannelCommand.Connected -> unhandled(cmd)
+            is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating), listOf())
         }
     }
 

@@ -46,83 +46,89 @@ data class WaitForFundingCreated(
     val channelId: ByteVector32 = interactiveTxSession.fundingParams.channelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        return when {
-            cmd is ChannelCommand.MessageReceived && cmd.message is InteractiveTxConstructionMessage -> {
-                val (interactiveTxSession1, interactiveTxAction) = interactiveTxSession.receive(cmd.message)
-                when (interactiveTxAction) {
-                    is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingCreated.copy(interactiveTxSession = interactiveTxSession1), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
-                    is InteractiveTxSessionAction.SignSharedTx -> {
-                        val channelParams = ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
-                        val signingSession = InteractiveTxSigningSession.create(
-                            keyManager,
-                            channelParams,
-                            interactiveTxSession.fundingParams,
-                            fundingTxIndex = 0,
-                            interactiveTxAction.sharedTx,
-                            localPushAmount,
-                            remotePushAmount,
-                            commitmentIndex = 0,
-                            commitTxFeerate,
-                            remoteFirstPerCommitmentPoint
-                        )
-                        when (signingSession) {
-                            is Either.Left -> {
-                                logger.error(signingSession.value) { "cannot initiate interactive-tx signing session" }
-                                handleLocalError(cmd, signingSession.value)
-                            }
-                            is Either.Right -> {
-                                val (session, commitSig) = signingSession.value
-                                val nextState = WaitForFundingSigned(
-                                    channelParams,
-                                    session,
-                                    localPushAmount,
-                                    remotePushAmount,
-                                    remoteSecondPerCommitmentPoint,
-                                    channelOrigin
-                                )
-                                val actions = buildList {
-                                    interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
-                                    add(ChannelAction.Storage.StoreState(nextState))
-                                    add(ChannelAction.Message.Send(commitSig))
+        return when (cmd) {
+            is ChannelCommand.MessageReceived -> when (cmd.message) {
+                is InteractiveTxConstructionMessage -> {
+                    val (interactiveTxSession1, interactiveTxAction) = interactiveTxSession.receive(cmd.message)
+                    when (interactiveTxAction) {
+                        is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingCreated.copy(interactiveTxSession = interactiveTxSession1), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
+                        is InteractiveTxSessionAction.SignSharedTx -> {
+                            val channelParams = ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
+                            val signingSession = InteractiveTxSigningSession.create(
+                                keyManager,
+                                channelParams,
+                                interactiveTxSession.fundingParams,
+                                fundingTxIndex = 0,
+                                interactiveTxAction.sharedTx,
+                                localPushAmount,
+                                remotePushAmount,
+                                commitmentIndex = 0,
+                                commitTxFeerate,
+                                remoteFirstPerCommitmentPoint
+                            )
+                            when (signingSession) {
+                                is Either.Left -> {
+                                    logger.error(signingSession.value) { "cannot initiate interactive-tx signing session" }
+                                    handleLocalError(cmd, signingSession.value)
                                 }
-                                Pair(nextState, actions)
+                                is Either.Right -> {
+                                    val (session, commitSig) = signingSession.value
+                                    val nextState = WaitForFundingSigned(
+                                        channelParams,
+                                        session,
+                                        localPushAmount,
+                                        remotePushAmount,
+                                        remoteSecondPerCommitmentPoint,
+                                        channelOrigin
+                                    )
+                                    val actions = buildList {
+                                        interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
+                                        add(ChannelAction.Storage.StoreState(nextState))
+                                        add(ChannelAction.Message.Send(commitSig))
+                                    }
+                                    Pair(nextState, actions)
+                                }
                             }
                         }
-                    }
-                    is InteractiveTxSessionAction.RemoteFailure -> {
-                        logger.warning { "interactive-tx failed: $interactiveTxAction" }
-                        handleLocalError(cmd, DualFundingAborted(channelId, interactiveTxAction.toString()))
+                        is InteractiveTxSessionAction.RemoteFailure -> {
+                            logger.warning { "interactive-tx failed: $interactiveTxAction" }
+                            handleLocalError(cmd, DualFundingAborted(channelId, interactiveTxAction.toString()))
+                        }
                     }
                 }
+                is CommitSig -> {
+                    logger.warning { "received commit_sig too early, aborting" }
+                    handleLocalError(cmd, UnexpectedCommitSig(channelId))
+                }
+                is TxSignatures -> {
+                    logger.warning { "received tx_signatures too early, aborting" }
+                    handleLocalError(cmd, UnexpectedFundingSignatures(channelId))
+                }
+                is TxInitRbf -> {
+                    logger.info { "ignoring unexpected tx_init_rbf message" }
+                    Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
+                }
+                is TxAckRbf -> {
+                    logger.info { "ignoring unexpected tx_ack_rbf message" }
+                    Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
+                }
+                is TxAbort -> {
+                    logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
+                    Pair(Aborted, listOf(ChannelAction.Message.Send(TxAbort(channelId, DualFundingAborted(channelId, "requested by peer").message))))
+                }
+                is Error -> handleRemoteError(cmd.message)
+                else -> unhandled(cmd)
             }
-            cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> {
-                logger.warning { "received commit_sig too early, aborting" }
-                handleLocalError(cmd, UnexpectedCommitSig(channelId))
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> {
-                logger.warning { "received tx_signatures too early, aborting" }
-                handleLocalError(cmd, UnexpectedFundingSignatures(channelId))
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
-                logger.info { "ignoring unexpected tx_init_rbf message" }
-                Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is TxAckRbf -> {
-                logger.info { "ignoring unexpected tx_ack_rbf message" }
-                Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> {
-                logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted, listOf(ChannelAction.Message.Send(TxAbort(channelId, DualFundingAborted(channelId, "requested by peer").message))))
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
-                logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted, listOf())
-            }
-            cmd is ChannelCommand.Close -> handleLocalError(cmd, ChannelFundingError(channelId))
-            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingCreated, listOf())
-            cmd is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
-            else -> unhandled(cmd)
+            is ChannelCommand.Close.MutualClose -> Pair(this@WaitForFundingCreated, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
+            is ChannelCommand.Init -> unhandled(cmd)
+            is ChannelCommand.Htlc -> unhandled(cmd)
+            is ChannelCommand.Commitment -> unhandled(cmd)
+            is ChannelCommand.WatchReceived -> unhandled(cmd)
+            is ChannelCommand.Funding -> unhandled(cmd)
+            is ChannelCommand.Closing -> unhandled(cmd)
+            is ChannelCommand.Connected -> unhandled(cmd)
+            is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
         }
     }
 }

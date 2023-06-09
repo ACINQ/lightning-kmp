@@ -667,7 +667,7 @@ data class Commitments(
         return Either.Right(Triple(copy(changes = changes.addRemoteProposal(fail)), paymentId, htlc))
     }
 
-    fun sendFee(cmd: ChannelCommand.UpdateFee): Either<ChannelException, Pair<Commitments, UpdateFee>> {
+    fun sendFee(cmd: ChannelCommand.Commitment.UpdateFee): Either<ChannelException, Pair<Commitments, UpdateFee>> {
         if (!params.localParams.isInitiator) return Either.Left(NonInitiatorCannotSendUpdateFee(channelId))
         // let's compute the current commitment *as seen by them* with this change taken into account
         val fee = UpdateFee(channelId, cmd.feerate)

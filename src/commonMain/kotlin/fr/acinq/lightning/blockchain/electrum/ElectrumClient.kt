@@ -14,7 +14,6 @@ import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.time.Duration.Companion.seconds
 
-
 /** Commands */
 sealed interface ElectrumClientCommand {
     object Connected : ElectrumClientCommand
@@ -84,7 +83,6 @@ class ElectrumClient(
             }
         }
     }
-
 
     fun connect(serverAddress: ServerAddress) {
         if (_connectionStatus.value is ElectrumConnectionStatus.Closed) {
@@ -172,25 +170,20 @@ class ElectrumClient(
 
         suspend fun respond() {
             for (msg in mailbox) {
-                when {
-                    msg is Action.SendToServer -> {
+                when (msg) {
+                    is Action.SendToServer -> {
                         requestMap[requestId] = msg.request
                         sendRequest(msg.request.first, requestId++)
                     }
-
-                    msg is Action.ProcessServerResponse && msg.response is Either.Left -> {
-                        _notifications.emit(msg.response.value)
-                    }
-
-                    msg is Action.ProcessServerResponse && msg.response is Either.Right -> {
-                        msg.response.value.id?.let { id ->
+                    is Action.ProcessServerResponse -> when (msg.response) {
+                        is Either.Left -> _notifications.emit(msg.response.value)
+                        is Either.Right -> msg.response.value.id?.let { id ->
                             requestMap.remove(id)?.let { (request, replyTo) ->
                                 replyTo.complete(parseJsonResponse(request, msg.response.value))
                             }
                         }
                     }
-
-                    msg is Action.Disconnect -> {
+                    is Action.Disconnect -> {
                         closeSocket(null)
                     }
                 }

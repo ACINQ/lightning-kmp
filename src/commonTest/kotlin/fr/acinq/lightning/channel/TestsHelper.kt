@@ -179,7 +179,7 @@ object TestsHelper {
         val aliceInit = Init(aliceFeatures)
         val bobInit = Init(bobFeatures)
         val (alice1, actionsAlice1) = alice.process(
-            ChannelCommand.InitInitiator(
+            ChannelCommand.Init.Initiator(
                 aliceFundingAmount,
                 alicePushAmount,
                 createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
@@ -195,7 +195,7 @@ object TestsHelper {
         )
         assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else listOf()
-        val (bob1, _) = bob.process(ChannelCommand.InitNonInitiator(aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val (bob1, _) = bob.process(ChannelCommand.Init.NonInitiator(aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
         assertIs<LNChannel<WaitForOpenChannel>>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
@@ -359,7 +359,7 @@ object TestsHelper {
     }
 
     fun signAndRevack(alice: LNChannel<ChannelState>, bob: LNChannel<ChannelState>): Pair<LNChannel<ChannelState>, LNChannel<ChannelState>> {
-        val (alice1, actions1) = alice.process(ChannelCommand.Sign)
+        val (alice1, actions1) = alice.process(ChannelCommand.Commitment.Sign)
         val commitSig = actions1.findOutgoingMessage<CommitSig>()
         val (bob1, actions2) = bob.process(ChannelCommand.MessageReceived(commitSig))
         val revack = actions2.findOutgoingMessage<RevokeAndAck>()
@@ -441,12 +441,12 @@ object TestsHelper {
         val rCommitIndex = nodeB.state.commitments.localCommitIndex
         val rHasChanges = nodeB.state.commitments.changes.localHasChanges()
 
-        val (sender0, sActions0) = nodeA.process(ChannelCommand.Sign)
+        val (sender0, sActions0) = nodeA.process(ChannelCommand.Commitment.Sign)
         val commitSig0 = sActions0.findOutgoingMessage<CommitSig>()
 
         val (receiver0, rActions0) = nodeB.process(ChannelCommand.MessageReceived(commitSig0))
         val revokeAndAck0 = rActions0.findOutgoingMessage<RevokeAndAck>()
-        val commandSign0 = rActions0.findCommand<ChannelCommand.Sign>()
+        val commandSign0 = rActions0.findCommand<ChannelCommand.Commitment.Sign>()
 
         val (sender1, _) = sender0.process(ChannelCommand.MessageReceived(revokeAndAck0))
         val (receiver1, rActions1) = receiver0.process(commandSign0)
@@ -457,7 +457,7 @@ object TestsHelper {
         val (receiver2, _) = receiver1.process(ChannelCommand.MessageReceived(revokeAndAck1))
 
         if (rHasChanges) {
-            val commandSign1 = sActions2.findCommand<ChannelCommand.Sign>()
+            val commandSign1 = sActions2.findCommand<ChannelCommand.Commitment.Sign>()
             val (sender3, sActions3) = sender2.process(commandSign1)
             val commitSig2 = sActions3.findOutgoingMessage<CommitSig>()
 

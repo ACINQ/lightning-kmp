@@ -34,7 +34,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         val txSigsAlice = getFundingSigs(alice)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(txSigsAlice))
         val fundingTx = actionsBob1.find<ChannelAction.Blockchain.PublishTx>().tx
-        val (bob2, actionsBob2) = LNChannel(bob1.ctx, WaitForInit).process(ChannelCommand.Restore(bob1.state as PersistedChannelState))
+        val (bob2, actionsBob2) = LNChannel(bob1.ctx, WaitForInit).process(ChannelCommand.Init.Restore(bob1.state as PersistedChannelState))
         assertIs<Offline>(bob2.state)
         assertEquals(actionsBob2.size, 2)
         assertEquals(actionsBob2.find<ChannelAction.Blockchain.PublishTx>().tx, fundingTx)

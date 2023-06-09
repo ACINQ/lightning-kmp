@@ -48,44 +48,50 @@ data class WaitForFundingSigned(
     override val channelId: ByteVector32 = channelParams.channelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        return when {
-            cmd is ChannelCommand.MessageReceived && cmd.message is CommitSig -> {
-                val (signingSession1, action) = signingSession.receiveCommitSig(channelParams.localParams.channelKeys(keyManager), channelParams, cmd.message, currentBlockHeight.toLong())
-                when (action) {
-                    is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
-                    // No need to store their commit_sig, they will re-send it if we disconnect.
-                    InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingSigned.copy(signingSession = signingSession1, remoteChannelData = cmd.message.channelData), listOf())
-                    is InteractiveTxSigningSessionAction.SendTxSigs -> sendTxSigs(action, cmd.message.channelData)
+        return when (cmd) {
+            is ChannelCommand.MessageReceived -> when (cmd.message) {
+                is CommitSig -> {
+                    val (signingSession1, action) = signingSession.receiveCommitSig(channelParams.localParams.channelKeys(keyManager), channelParams, cmd.message, currentBlockHeight.toLong())
+                    when (action) {
+                        is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
+                        // No need to store their commit_sig, they will re-send it if we disconnect.
+                        InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingSigned.copy(signingSession = signingSession1, remoteChannelData = cmd.message.channelData), listOf())
+                        is InteractiveTxSigningSessionAction.SendTxSigs -> sendTxSigs(action, cmd.message.channelData)
+                    }
                 }
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is TxSignatures -> {
-                when (val action = signingSession.receiveTxSigs(channelParams.localParams.channelKeys(keyManager), cmd.message, currentBlockHeight.toLong())) {
-                    is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
-                    InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingSigned, listOf())
-                    is InteractiveTxSigningSessionAction.SendTxSigs -> sendTxSigs(action, cmd.message.channelData)
+                is TxSignatures -> {
+                    when (val action = signingSession.receiveTxSigs(channelParams.localParams.channelKeys(keyManager), cmd.message, currentBlockHeight.toLong())) {
+                        is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
+                        InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingSigned, listOf())
+                        is InteractiveTxSigningSessionAction.SendTxSigs -> sendTxSigs(action, cmd.message.channelData)
+                    }
                 }
+                is TxInitRbf -> {
+                    logger.info { "ignoring unexpected tx_init_rbf message" }
+                    Pair(this@WaitForFundingSigned, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
+                }
+                is TxAckRbf -> {
+                    logger.info { "ignoring unexpected tx_ack_rbf message" }
+                    Pair(this@WaitForFundingSigned, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
+                }
+                is TxAbort -> {
+                    logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
+                    Pair(Aborted, listOf(ChannelAction.Message.Send(TxAbort(channelId, DualFundingAborted(channelId, "requested by peer").message))))
+                }
+                is Error -> handleRemoteError(cmd.message)
+                else -> unhandled(cmd)
             }
-            cmd is ChannelCommand.MessageReceived && cmd.message is TxInitRbf -> {
-                logger.info { "ignoring unexpected tx_init_rbf message" }
-                Pair(this@WaitForFundingSigned, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is TxAckRbf -> {
-                logger.info { "ignoring unexpected tx_ack_rbf message" }
-                Pair(this@WaitForFundingSigned, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is TxAbort -> {
-                logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted, listOf(ChannelAction.Message.Send(TxAbort(channelId, DualFundingAborted(channelId, "requested by peer").message))))
-            }
-            cmd is ChannelCommand.MessageReceived && cmd.message is Error -> {
-                logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
-                Pair(Aborted, listOf())
-            }
-            cmd is ChannelCommand.Close -> handleLocalError(cmd, ChannelFundingError(channelId))
-            cmd is ChannelCommand.CheckHtlcTimeout -> Pair(this@WaitForFundingSigned, listOf())
+            is ChannelCommand.WatchReceived -> unhandled(cmd)
+            is ChannelCommand.Close.MutualClose -> Pair(this@WaitForFundingSigned, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ChannelFundingError(channelId))
+            is ChannelCommand.Init -> unhandled(cmd)
+            is ChannelCommand.Commitment -> unhandled(cmd)
+            is ChannelCommand.Htlc -> unhandled(cmd)
+            is ChannelCommand.Funding -> unhandled(cmd)
+            is ChannelCommand.Closing -> unhandled(cmd)
+            is ChannelCommand.Connected -> unhandled(cmd)
             // We should be able to complete the channel open when reconnecting.
-            cmd is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForFundingSigned), listOf())
-            else -> unhandled(cmd)
+            is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForFundingSigned), listOf())
         }
     }
 

@@ -3,10 +3,7 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.channel.ChannelAction
-import fr.acinq.lightning.channel.ChannelCommand
-import fr.acinq.lightning.channel.ForcedLocalCommit
-import fr.acinq.lightning.channel.PleasePublishYourCommitment
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReadyTlv
@@ -18,8 +15,8 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
     val channelId = state.channelId
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        return when {
-            cmd is ChannelCommand.Connected -> {
+        return when (cmd) {
+            is ChannelCommand.Connected -> {
                 when (state) {
                     is WaitForRemotePublishFutureCommitment -> {
                         // they already proved that we have an outdated commitment
@@ -55,60 +52,73 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                     }
                 }
             }
-            cmd is ChannelCommand.WatchReceived && state is ChannelStateWithCommitments -> when (val watch = cmd.watch) {
-                is WatchEventConfirmed -> {
-                    if (watch.event is BITCOIN_FUNDING_DEPTHOK) {
-                        when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
-                            is Either.Left -> Pair(this@Offline, listOf())
-                            is Either.Right -> {
-                                val (commitments1, _, actions) = res.value
-                                val nextState = when (state) {
-                                    is WaitForFundingConfirmed -> {
-                                        logger.info { "was confirmed while offline at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with funding txid=${watch.tx.txid}" }
-                                        val nextPerCommitmentPoint = commitments1.params.localParams.channelKeys(keyManager).commitmentPoint(1)
-                                        val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
-                                        val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.commitInput.outPoint.index.toInt())
-                                        WaitForChannelReady(commitments1, shortChannelId, channelReady)
+            is ChannelCommand.Disconnected -> unhandled(cmd)
+            is ChannelCommand.MessageReceived -> unhandled(cmd)
+            is ChannelCommand.WatchReceived -> when (state) {
+                is ChannelStateWithCommitments -> when (val watch = cmd.watch) {
+                    is WatchEventConfirmed -> {
+                        if (watch.event is BITCOIN_FUNDING_DEPTHOK) {
+                            when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
+                                is Either.Left -> Pair(this@Offline, listOf())
+                                is Either.Right -> {
+                                    val (commitments1, _, actions) = res.value
+                                    val nextState = when (state) {
+                                        is WaitForFundingConfirmed -> {
+                                            logger.info { "was confirmed while offline at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with funding txid=${watch.tx.txid}" }
+                                            val nextPerCommitmentPoint = commitments1.params.localParams.channelKeys(keyManager).commitmentPoint(1)
+                                            val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
+                                            val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.commitInput.outPoint.index.toInt())
+                                            WaitForChannelReady(commitments1, shortChannelId, channelReady)
+                                        }
+                                        else -> state
                                     }
-                                    else -> state
+                                    Pair(this@Offline.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                                 }
-                                Pair(this@Offline.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                             }
+                        } else {
+                            Pair(this@Offline, listOf())
                         }
-                    } else {
-                        Pair(this@Offline, listOf())
+                    }
+                    is WatchEventSpent -> when {
+                        state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
+                            logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
+                            val closingTx = state.getMutualClosePublished(watch.tx)
+                            val nextState = Closing(
+                                state.commitments,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(closingTx)
+                            )
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Blockchain.PublishTx(closingTx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
+                            )
+                            Pair(nextState, actions)
+                        }
+                        else -> state.run { handlePotentialForceClose(watch) }
                     }
                 }
-                is WatchEventSpent -> when {
-                    state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
-                        logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
-                        val closingTx = state.getMutualClosePublished(watch.tx)
-                        val nextState = Closing(
-                            state.commitments,
-                            waitingSinceBlock = currentBlockHeight.toLong(),
-                            mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
-                            mutualClosePublished = listOf(closingTx)
-                        )
-                        val actions = listOf(
-                            ChannelAction.Storage.StoreState(nextState),
-                            ChannelAction.Blockchain.PublishTx(closingTx),
-                            ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
-                        )
-                        Pair(nextState, actions)
+                is WaitForFundingSigned -> Pair(this@Offline, listOf())
+            }
+            is ChannelCommand.Commitment.CheckHtlcTimeout -> when (state) {
+                is ChannelStateWithCommitments -> {
+                    val (newState, actions) = state.run { checkHtlcTimeout() }
+                    when (newState) {
+                        is Closing -> Pair(newState, actions)
+                        is Closed -> Pair(newState, actions)
+                        else -> Pair(Offline(newState), actions)
                     }
-                    else -> state.run { handlePotentialForceClose(watch) }
                 }
+                is WaitForFundingSigned -> Pair(state, listOf())
             }
-            cmd is ChannelCommand.CheckHtlcTimeout && state is ChannelStateWithCommitments -> {
-                val (newState, actions) = state.run { checkHtlcTimeout() }
-                when (newState) {
-                    is Closing -> Pair(newState, actions)
-                    is Closed -> Pair(newState, actions)
-                    else -> Pair(Offline(newState), actions)
-                }
-            }
-            cmd is ChannelCommand.Close.ForceClose -> state.run { handleLocalError(cmd, ForcedLocalCommit(channelId)) }
-            else -> unhandled(cmd)
+            is ChannelCommand.Commitment -> unhandled(cmd)
+            is ChannelCommand.Htlc -> unhandled(cmd)
+            is ChannelCommand.Close.MutualClose -> Pair(this@Offline, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            is ChannelCommand.Close.ForceClose -> state.run { handleLocalError(cmd, ForcedLocalCommit(channelId)) }
+            is ChannelCommand.Init -> unhandled(cmd)
+            is ChannelCommand.Funding -> unhandled(cmd)
+            is ChannelCommand.Closing -> unhandled(cmd)
         }
     }
 }
