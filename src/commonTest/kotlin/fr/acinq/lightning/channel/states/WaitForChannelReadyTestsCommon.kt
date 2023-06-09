@@ -190,9 +190,9 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         val (_, _, bob, _) = init(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         val (bob1, actions1) = bob.process(ChannelCommand.Close.ForceClose)
         assertIs<Aborted>(bob1.state)
-        assertEquals(1, actions1.size)
-        val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(ForcedLocalCommit(bob.channelId).message, error.toAscii())
+        assertEquals(2, actions1.size)
+        assertEquals(ForcedLocalCommit(bob.channelId).message, actions1.hasOutgoingMessage<Error>().toAscii())
+        actions1.has<ChannelAction.Storage.RemoveChannel>()
     }
 
     private fun getFundingSigs(channel: LNChannel<WaitForChannelReady>): TxSignatures {

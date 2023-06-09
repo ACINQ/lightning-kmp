@@ -178,7 +178,7 @@ sealed class ChannelState {
         fun forceClose(state: ChannelStateWithCommitments): Pair<ChannelState, List<ChannelAction>> {
             val error = Error(state.channelId, t.message)
             return when {
-                state.commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error)))
+                state.commitments.nothingAtStake() -> Pair(Aborted, listOf(ChannelAction.Message.Send(error), ChannelAction.Storage.RemoveChannel(state)))
                 else -> state.run { spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) } }
             }
         }
