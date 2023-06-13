@@ -45,7 +45,12 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
 
     override val finalOnChainWallet: KeyManager.Bip84OnChainKeys = KeyManager.Bip84OnChainKeys(chain, master, account = 0)
     override val swapInOnChainWallet: KeyManager.SwapInOnChainKeys = run {
-        val xpub = DeterministicWallet.ExtendedPublicKey.decode(remoteSwapInExtendedPublicKey).second
+        val (prefix, xpub) = DeterministicWallet.ExtendedPublicKey.decode(remoteSwapInExtendedPublicKey)
+        val expectedPrefix = when (chain) {
+            Chain.Mainnet -> DeterministicWallet.xpub
+            else -> DeterministicWallet.tpub
+        }
+        require(prefix == expectedPrefix) { "unexpected swap-in xpub prefix $prefix (expected $expectedPrefix)" }
         val remoteSwapInPublicKey = DeterministicWallet.derivePublicKey(xpub, KeyManager.SwapInOnChainKeys.perUserPath(nodeKeys.nodeKey.publicKey)).publicKey
         KeyManager.SwapInOnChainKeys(chain, master, remoteSwapInPublicKey)
     }

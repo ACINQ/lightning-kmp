@@ -117,7 +117,6 @@ interface KeyManager {
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
 
         private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(1))
-        val localServerExtendedPublicKey: DeterministicWallet.ExtendedPublicKey = DeterministicWallet.publicKey(localServerExtendedPrivateKey)
         fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
 
         val redeemScript: List<ScriptElt> = Scripts.swapIn2of2(userPublicKey, remoteServerPublicKey, refundDelay)
