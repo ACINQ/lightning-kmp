@@ -3,9 +3,9 @@ package fr.acinq.lightning.wire
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.MnemonicCode
 import fr.acinq.bitcoin.byteVector
-import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 class InitTlvTestsCommon : LightningTestSuite() {
     @Test
     fun `legacy phoenix TLV`() {
-        val keyManager = LocalKeyManager(MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector(), NodeParams.Chain.Testnet, randomKey().publicKey())
+        val keyManager = LocalKeyManager(MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector(), NodeParams.Chain.Testnet, TestConstants.Alice.swapInServerXpub)
         val testCases = listOf(
             Pair(
                 first = keyManager.nodeKeys.legacyNodeKey.publicKey,

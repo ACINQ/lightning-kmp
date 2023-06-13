@@ -460,7 +460,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             val userSig = Transactions.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPrivateKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
             val serverWallet = TestConstants.Bob.keyManager.swapInOnChainWallet
-            val serverSig = Transactions.signSwapInputServer(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPublicKey, serverWallet.localServerPrivateKey, serverWallet.refundDelay)
+            val serverSig = Transactions.signSwapInputServer(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPublicKey, serverWallet.localServerPrivateKey(TestConstants.Alice.nodeParams.nodeId), serverWallet.refundDelay)
             val witness = Scripts.witnessSwapIn2of2(userSig, userWallet.userPublicKey, serverSig, userWallet.remoteServerPublicKey, userWallet.refundDelay)
             val signedTx = fundingTx.updateWitness(0, witness)
             Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
