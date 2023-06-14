@@ -9,7 +9,6 @@ import fr.acinq.lightning.utils.toByteVector
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
 
 class LocalKeyManagerTestsCommon : LightningTestSuite() {
 
@@ -18,7 +17,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // if this test breaks it means that we will generate a different node id from
         // the same seed, which could be a problem during an upgrade
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.aliceSwapInServerXpub)
         assertEquals(keyManager.nodeKeys.nodeKey.publicKey, PublicKey.fromHex("0392ea6e914abcee840dc8a763b02ba5ac47e0ac3fadcd5294f9516fe353882522"))
     }
 
@@ -27,14 +26,14 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // if this test breaks it means that we will generate a different legacy node id from
         // the same seed, which could be a problem during migration from legacy to kmp
         val seed = MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector()
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.aliceSwapInServerXpub)
         assertEquals(keyManager.nodeKeys.legacyNodeKey.publicKey, PublicKey.fromHex("0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc"))
     }
 
     @Test
     fun `generate channel keys`() {
         val seed = ByteVector("aeb3e9b5642cd4523e9e09164047f60adb413633549c3c6189192921311894d501")
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.aliceSwapInServerXpub)
         val fundingKeyPath = makeFundingKeyPath(ByteVector("06535806c1aa73971ec4877a5e2e684fa636136c073810f190b63eefc58ca488"), isInitiator = false)
         val channelKeys = keyManager.channelKeys(fundingKeyPath)
 
@@ -54,9 +53,9 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `generate different node ids from the same seed on different chains`() {
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-        val keyManager1 = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.Alice.swapInServerXpub)
-        val keyManager2 = LocalKeyManager(seed, NodeParams.Chain.Mainnet, TestConstants.Alice.swapInServerXpub)
-        assertTrue { keyManager1.nodeKeys.nodeKey.publicKey != keyManager2.nodeKeys.nodeKey.publicKey }
+        val keyManager1 = LocalKeyManager(seed, NodeParams.Chain.Regtest, DeterministicWallet.encode(dummyExtendedPubkey, testnet = true))
+        val keyManager2 = LocalKeyManager(seed, NodeParams.Chain.Mainnet, DeterministicWallet.encode(dummyExtendedPubkey, testnet = false))
+        assertNotEquals(keyManager1.nodeKeys.nodeKey.publicKey, keyManager2.nodeKeys.nodeKey.publicKey)
         val fundingKeyPath = KeyPath("1")
         val channelKeys1 = keyManager1.channelKeys(fundingKeyPath)
         val channelKeys2 = keyManager2.channelKeys(fundingKeyPath)
@@ -82,7 +81,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `test vectors -- testnet + initiator`() {
         val seed = ByteVector("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.aliceSwapInServerXpub)
         val fundingKeyPath = makeFundingKeyPath(ByteVector("be4fa97c62b9f88437a3be577b31eb48f2165c7bc252194a15ff92d995778cfb"), isInitiator = true)
 
         val localParams = TestConstants.Alice.channelParams().copy(fundingKeyPath = fundingKeyPath)
@@ -99,7 +98,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `test vectors -- testnet + non-initiator`() {
         val seed = ByteVector("aeb3e9b5642cd4523e9e09164047f60adb413633549c3c6189192921311894d501")
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.aliceSwapInServerXpub)
         val fundingKeyPath = makeFundingKeyPath(ByteVector("06535806c1aa73971ec4877a5e2e684fa636136c073810f190b63eefc58ca488"), isInitiator = false)
 
         val localParams = TestConstants.Alice.channelParams().copy(fundingKeyPath = fundingKeyPath)
@@ -116,7 +115,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `test vectors -- mainnet + initiator`() {
         val seed = ByteVector("d8d5431487c2b19ee6486aad6c3bdfb99d10b727bade7fa848e2ab7901c15bff01")
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet, DeterministicWallet.encode(dummyExtendedPubkey, testnet = false))
         val fundingKeyPath = makeFundingKeyPath(ByteVector("ec1c41cd6be2b6e4ef46c1107f6c51fbb2066d7e1f7720bde4715af233ae1322"), isInitiator = true)
 
         val localParams = TestConstants.Alice.channelParams().copy(fundingKeyPath = fundingKeyPath)
@@ -133,7 +132,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `test vectors -- mainnet + non-initiator`() {
         val seed = ByteVector("4b809dd593b36131c454d60c2f7bdfd49d12ec455e5b657c47a9ca0f5dfc5eef01")
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet, DeterministicWallet.encode(dummyExtendedPubkey, testnet = false))
         val fundingKeyPath = makeFundingKeyPath(ByteVector("2b4f045be5303d53f9d3a84a1e70c12251168dc29f300cf9cece0ec85cd8182b"), isInitiator = false)
 
         val localParams = TestConstants.Alice.channelParams().copy(fundingKeyPath = fundingKeyPath)
@@ -152,7 +151,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // basic test taken from https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Mainnet, DeterministicWallet.encode(dummyExtendedPubkey, testnet = false))
         assertEquals(keyManager.finalOnChainWallet.address(addressIndex = 0L), "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
         assertEquals(keyManager.finalOnChainWallet.address(addressIndex = 1L), "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g")
         assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).toBase58(Base58.Prefix.SecretKey), "Kxpf5b8p3qX56DKEe5NqWbNUP9MnqoRFzZwHRtsFqhzuvUJsYZCy")
@@ -165,7 +164,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // reference data was generated from electrum 4.1.5
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Testnet, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Testnet, TestConstants.aliceSwapInServerXpub)
         assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTGhosGriPpuGA586jemcuH9pE9spwUmneMBmYYzrQEbY92DJrbo")
         assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cQFUndrpAyMaE3HAsjMCXiT94MzfsABCREat1x7Qe3Mtq9KihD4V")
         assertEquals(keyManager.finalOnChainWallet.xpub, "vpub5Y6cjg78GGuNLsaPhmYsiw4gYX3HoQiRBiSwDaBXKUafCt9bNwWQiitDk5VZ5BVxYnQdwoTyXSs2JHRPAgjAvtbBrf8ZhDYe2jWAqvZVnsc")
@@ -177,5 +176,9 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         assertEquals(PublicKey.fromHex("020bc21d9cb5ecc60fc2002195429d55ff4dfd0888e377a1b3226b4dc1ee7cedf3"), TestConstants.Bob.keyManager.swapInOnChainWallet.userPublicKey)
         assertEquals(TestConstants.Alice.keyManager.swapInOnChainWallet.remoteServerPublicKey, TestConstants.Bob.keyManager.swapInOnChainWallet.localServerPrivateKey(TestConstants.Alice.nodeParams.nodeId).publicKey())
         assertEquals(TestConstants.Bob.keyManager.swapInOnChainWallet.remoteServerPublicKey, TestConstants.Alice.keyManager.swapInOnChainWallet.localServerPrivateKey(TestConstants.Bob.nodeParams.nodeId).publicKey())
+    }
+
+    companion object {
+        val dummyExtendedPubkey = DeterministicWallet.publicKey(DeterministicWallet.generate(ByteVector("deadbeef")))
     }
 }

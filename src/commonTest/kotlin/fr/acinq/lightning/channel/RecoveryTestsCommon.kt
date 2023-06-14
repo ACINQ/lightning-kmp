@@ -37,7 +37,7 @@ class RecoveryTestsCommon {
 
         // use Bob's mnemonic words to initialise his key manager
         val seed = MnemonicCode.toSeed(TestConstants.Bob.mnemonics, "").toByteVector32()
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, TestConstants.aliceSwapInServerXpub)
 
         // recompute our channel keys from the extracted funding pubkey and see if we can find and spend our output
         fun findAndSpend(fundingKey: PublicKey): Transaction? {

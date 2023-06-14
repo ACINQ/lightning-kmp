@@ -35,13 +35,15 @@ object TestConstants {
         TrampolineFees(5.sat, 1200, CltvExpiryDelta(576))
     )
 
+    const val aliceSwapInServerXpub = "tpubDCvYeHUZisCMVTSfWDa1yevTf89NeF6TWxXUQwqkcmFrNvNdNvZQh1j4m4uTA4QcmPEwcrKVF8bJih1v16zDZacRr4j9MCAFQoSydKKy66q"
+    const val bobSwapInServerXpub = "tpubDDt5vQap1awkyDXx1z1cP7QFKSZHDCCpbU8nSq9jy7X2grTjUVZDePexf6gc6AHtRRzkgfPW87K6EKUVV6t3Hu2hg7YkHkmMeLSfrP85x41"
+
     object Alice {
         private val entropy = Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")
         private val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
-        const val swapInServerXpub = "tpubDCvYeHUZisCMVTSfWDa1yevTf89NeF6TWxXUQwqkcmFrNvNdNvZQh1j4m4uTA4QcmPEwcrKVF8bJih1v16zDZacRr4j9MCAFQoSydKKy66q"
 
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, Bob.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, bobSwapInServerXpub)
         val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInConfirmations)
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
@@ -89,9 +91,8 @@ object TestConstants {
         private val entropy = Hex.decode("0202020202020202020202020202020202020202020202020202020202020202")
         val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
-        const val swapInServerXpub = "tpubDDt5vQap1awkyDXx1z1cP7QFKSZHDCCpbU8nSq9jy7X2grTjUVZDePexf6gc6AHtRRzkgfPW87K6EKUVV6t3Hu2hg7YkHkmMeLSfrP85x41"
 
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, Alice.swapInServerXpub)
+        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, aliceSwapInServerXpub)
         val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInConfirmations)
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
