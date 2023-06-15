@@ -2,9 +2,11 @@ package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.hardened
+import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.wire.LightningCodecs
 
 interface KeyManager {
 
@@ -114,8 +116,8 @@ interface KeyManager {
         val userPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(0)).privateKey
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
 
-        val localServerPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(1)).privateKey
-        val localServerPublicKey: PublicKey = localServerPrivateKey.publicKey()
+        private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(1))
+        fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
 
         val redeemScript: List<ScriptElt> = Scripts.swapIn2of2(userPublicKey, remoteServerPublicKey, refundDelay)
         val pubkeyScript: List<ScriptElt> = Script.pay2wsh(redeemScript)
@@ -128,6 +130,13 @@ interface KeyManager {
             fun swapInKeyBasePath(chain: NodeParams.Chain) = when (chain) {
                 NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty / hardened(51) / hardened(0)
                 NodeParams.Chain.Mainnet -> KeyPath.empty / hardened(52) / hardened(0)
+            }
+
+            /** Swap-in servers use a different swap-in key for different users. */
+            fun perUserPath(remoteNodeId: PublicKey): KeyPath {
+                // We hash the remote node_id and break it into 2-byte values to get non-hardened path indices.
+                val h = ByteArrayInput(Crypto.sha256(remoteNodeId.value))
+                return KeyPath((0 until 16).map { _ -> LightningCodecs.u16(h).toLong() })
             }
         }
     }

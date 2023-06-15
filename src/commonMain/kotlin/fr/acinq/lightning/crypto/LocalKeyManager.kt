@@ -32,9 +32,9 @@ import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
  * ```
  *
  * @param seed seed from which the channel keys will be derived
- * @param remoteSwapInServerKey public key belonging to our swap-in server, that must be used in our swap address
+ * @param remoteSwapInExtendedPublicKey xpub belonging to our swap-in server, that must be used in our swap address
  */
-data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwapInServerKey: PublicKey) : KeyManager {
+data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwapInExtendedPublicKey: String) : KeyManager {
 
     private val master = DeterministicWallet.generate(seed)
 
@@ -44,7 +44,16 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
     )
 
     override val finalOnChainWallet: KeyManager.Bip84OnChainKeys = KeyManager.Bip84OnChainKeys(chain, master, account = 0)
-    override val swapInOnChainWallet: KeyManager.SwapInOnChainKeys = KeyManager.SwapInOnChainKeys(chain, master, remoteSwapInServerKey)
+    override val swapInOnChainWallet: KeyManager.SwapInOnChainKeys = run {
+        val (prefix, xpub) = DeterministicWallet.ExtendedPublicKey.decode(remoteSwapInExtendedPublicKey)
+        val expectedPrefix = when (chain) {
+            Chain.Mainnet -> DeterministicWallet.xpub
+            else -> DeterministicWallet.tpub
+        }
+        require(prefix == expectedPrefix) { "unexpected swap-in xpub prefix $prefix (expected $expectedPrefix)" }
+        val remoteSwapInPublicKey = DeterministicWallet.derivePublicKey(xpub, KeyManager.SwapInOnChainKeys.perUserPath(nodeKeys.nodeKey.publicKey)).publicKey
+        KeyManager.SwapInOnChainKeys(chain, master, remoteSwapInPublicKey)
+    }
 
     private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
 

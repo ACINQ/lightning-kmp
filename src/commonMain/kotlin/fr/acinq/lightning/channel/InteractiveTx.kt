@@ -337,7 +337,7 @@ data class SharedTransaction(
         return Transaction(2, inputs, outputs, lockTime)
     }
 
-    fun sign(keyManager: KeyManager, fundingParams: InteractiveTxParams, localParams: LocalParams): PartiallySignedSharedTransaction {
+    fun sign(keyManager: KeyManager, fundingParams: InteractiveTxParams, localParams: LocalParams, remoteNodeId: PublicKey): PartiallySignedSharedTransaction {
         val unsignedTx = buildUnsignedTx()
         val sharedSig = fundingParams.sharedInput?.sign(keyManager.channelKeys(localParams.fundingKeyPath), unsignedTx)
         // If we are swapping funds in, we provide our partial signatures to the corresponding inputs.
@@ -351,7 +351,7 @@ data class SharedTransaction(
             remoteInputs
                 .filterIsInstance<InteractiveTxInput.RemoteSwapIn>()
                 .find { txIn.outPoint == it.outPoint }
-                ?.let { input -> Transactions.signSwapInputServer(unsignedTx, i, input.txOut, input.userKey, keyManager.swapInOnChainWallet.localServerPrivateKey, keyManager.swapInOnChainWallet.refundDelay) }
+                ?.let { input -> Transactions.signSwapInputServer(unsignedTx, i, input.txOut, input.userKey, keyManager.swapInOnChainWallet.localServerPrivateKey(remoteNodeId), keyManager.swapInOnChainWallet.refundDelay) }
         }.filterNotNull()
         return PartiallySignedSharedTransaction(this, TxSignatures(fundingParams.channelId, unsignedTx, listOf(), sharedSig, swapUserSigs, swapServerSigs))
     }
@@ -833,7 +833,7 @@ data class InteractiveTxSigningSession(
                 val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf())
                 val unsignedLocalCommit = UnsignedLocalCommit(commitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
                 val remoteCommit = RemoteCommit(commitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
-                val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams)
+                val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
                 Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
             }
         }

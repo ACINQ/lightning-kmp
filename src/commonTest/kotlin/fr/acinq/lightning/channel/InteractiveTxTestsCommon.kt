@@ -74,24 +74,24 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertTrue(sharedTxB.sharedTx.localFees < sharedTxA.sharedTx.localFees)
 
         // Bob sends signatures first as he contributed less than Alice.
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId)
         assertEquals(signedTxB.localSigs.swapInUserSigs.size, 1)
         assertEquals(signedTxB.localSigs.swapInServerSigs.size, 3)
 
         // Alice detects invalid signatures from Bob.
         val sigsInvalidTxId = signedTxB.localSigs.copy(txHash = randomBytes32())
-        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidTxId))
+        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidTxId))
         val sigsMissingUserSigs = signedTxB.localSigs.copy(tlvs = TlvStream(TxSignaturesTlv.SwapInUserSigs(listOf()), TxSignaturesTlv.SwapInServerSigs(signedTxB.localSigs.swapInServerSigs)))
-        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingUserSigs))
+        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingUserSigs))
         val sigsMissingServerSigs = signedTxB.localSigs.copy(tlvs = TlvStream(TxSignaturesTlv.SwapInUserSigs(signedTxB.localSigs.swapInUserSigs), TxSignaturesTlv.SwapInServerSigs(listOf())))
-        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingServerSigs))
+        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingServerSigs))
         val sigsInvalidUserSig = signedTxB.localSigs.copy(tlvs = TlvStream(TxSignaturesTlv.SwapInUserSigs(listOf(randomBytes64())), TxSignaturesTlv.SwapInServerSigs(signedTxB.localSigs.swapInServerSigs)))
-        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidUserSig))
+        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidUserSig))
         val sigsInvalidServerSig = signedTxB.localSigs.copy(tlvs = TlvStream(TxSignaturesTlv.SwapInUserSigs(signedTxB.localSigs.swapInUserSigs), TxSignaturesTlv.SwapInServerSigs(signedTxB.localSigs.swapInServerSigs.reversed())))
-        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidServerSig))
+        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidServerSig))
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.swapInUserSigs.size, 3)
         assertEquals(signedTxA.localSigs.swapInServerSigs.size, 1)
@@ -146,13 +146,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertTrue(sharedTxB.sharedTx.localFees < sharedTxA.sharedTx.localFees)
 
         // Alice sends signatures first as she contributed less than Bob.
-        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA)
+        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.swapInUserSigs.size, 1)
         assertEquals(signedTxA.localSigs.swapInServerSigs.size, 1)
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB).addRemoteSigs(f.channelKeysB, f.fundingParamsB, signedTxA.localSigs)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId).addRemoteSigs(f.channelKeysB, f.fundingParamsB, signedTxA.localSigs)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.swapInUserSigs.size, 1)
         assertEquals(signedTxB.localSigs.swapInServerSigs.size, 1)
@@ -206,13 +206,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertTrue(sharedTxA.sharedTx.remoteFees < sharedTxA.sharedTx.localFees)
 
         // Alice contributes more than Bob to the funding output, but Bob's inputs are bigger than Alice's, so Alice must sign first.
-        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA)
+        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.swapInUserSigs.size, 1)
         assertEquals(signedTxA.localSigs.swapInServerSigs.size, 1)
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB).addRemoteSigs(f.channelKeysB, f.fundingParamsB, signedTxA.localSigs)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId).addRemoteSigs(f.channelKeysB, f.fundingParamsB, signedTxA.localSigs)
         assertNotNull(signedTxB)
         Transaction.correctlySpends(signedTxB.signedTx, (sharedTxA.sharedTx.localInputs + sharedTxB.sharedTx.localInputs).map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val feerate = Transactions.fee2rate(signedTxB.tx.fees, signedTxB.signedTx.weight())
@@ -263,13 +263,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.remoteFees, 2_800_000.msat)
 
         // Bob sends signatures first as he did not contribute at all.
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.swapInUserSigs.size, 0)
         assertEquals(signedTxB.localSigs.swapInServerSigs.size, 2)
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.swapInUserSigs.size, 2)
         assertEquals(signedTxA.localSigs.swapInServerSigs.size, 0)
@@ -338,14 +338,14 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.remoteFees, 1_116_000.msat)
 
         // Bob sends signatures first as he contributed less than Alice.
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.swapInUserSigs.size, 1)
         assertEquals(signedTxB.localSigs.swapInServerSigs.size, 1)
         assertNotNull(signedTxB.localSigs.previousFundingTxSig)
 
         // The resulting transaction is valid and has the right feerate.
-        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.swapInUserSigs.size, 1)
         assertEquals(signedTxA.localSigs.swapInServerSigs.size, 1)
@@ -412,7 +412,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.remoteFees, 1_000_000.msat)
 
         // Bob sends signatures first as he did not contribute.
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId)
         assertNotNull(signedTxB)
         assertTrue(signedTxB.localSigs.witnesses.isEmpty())
         assertTrue(signedTxB.localSigs.swapInUserSigs.isEmpty())
@@ -420,7 +420,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNotNull(signedTxB.localSigs.previousFundingTxSig)
 
         // The resulting transaction is valid.
-        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
         assertNotNull(signedTxA)
         assertTrue(signedTxA.localSigs.witnesses.isEmpty())
         assertTrue(signedTxA.localSigs.swapInUserSigs.isEmpty())
@@ -492,13 +492,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.remoteFees, 1_000_000.msat)
 
         // Bob sends signatures first as he did not contribute.
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId)
         assertNotNull(signedTxB)
         assertTrue(signedTxB.localSigs.swapInUserSigs.isEmpty())
         assertNotNull(signedTxB.localSigs.previousFundingTxSig)
 
         // The resulting transaction is valid.
-        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
         assertNotNull(signedTxA)
         assertTrue(signedTxA.localSigs.swapInUserSigs.isEmpty())
         assertNotNull(signedTxA.localSigs.previousFundingTxSig)
@@ -569,14 +569,14 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(sharedTxB.sharedTx.remoteFees, 1_240_000.msat)
 
         // Bob sends signatures first as he did not contribute.
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId)
         assertNotNull(signedTxB)
         assertEquals(signedTxB.localSigs.swapInUserSigs.size, 1)
         assertEquals(signedTxB.localSigs.swapInServerSigs.size, 1)
         assertNotNull(signedTxB.localSigs.previousFundingTxSig)
 
         // The resulting transaction is valid.
-        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
+        val signedTxA = sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
         assertNotNull(signedTxA)
         assertEquals(signedTxA.localSigs.swapInUserSigs.size, 1)
         assertEquals(signedTxA.localSigs.swapInServerSigs.size, 1)
@@ -869,10 +869,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertNull(sharedTxB.txComplete)
 
         // Alice didn't send her user key, so Bob thinks there aren't any swap inputs
-        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB)
+        val signedTxB = sharedTxB.sharedTx.sign(f.keyManagerB, f.fundingParamsB, f.localParamsB, f.localParamsA.nodeId)
         assertTrue(signedTxB.localSigs.swapInServerSigs.isEmpty())
         // Alice is unable to sign her input since Bob didn't provide his signature.
-        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs))
+        assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs))
     }
 
     @Test
