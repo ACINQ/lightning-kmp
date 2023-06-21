@@ -123,7 +123,7 @@ class Peer(
 
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once accepted
-    private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
+    private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(emptyMap())
     val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>> get() = _channelsFlow
 
     private var _channels by _channelsFlow
@@ -151,6 +151,10 @@ class Peer(
 
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
+
+    // signals when the peer has loaded channels from the database, allowing to differentiate between "channels not yet loaded" and "no channels at all".
+    private val _initialized = MutableStateFlow<Boolean>(false)
+    val initialized get() = _initialized.asSharedFlow()
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -209,6 +213,7 @@ class Peer(
         launch {
             // we don't restore closed channels
             val channels = db.channels.listLocalChannels().filterNot { it is Closed }.associateBy { it.channelId }
+            _initialized.emit(true)
             channels.values.forEach {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
