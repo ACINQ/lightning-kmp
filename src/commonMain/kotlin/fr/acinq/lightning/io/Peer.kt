@@ -212,18 +212,19 @@ class Peer(
         }
         launch {
             // we don't restore closed channels
-            val channels = db.channels.listLocalChannels().filterNot { it is Closed }.associateBy { it.channelId }
+            val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
+            _channels = bootChannels.associateBy { it.channelId }
             _initialized.emit(true)
-            channels.values.forEach {
+            bootChannels.forEach {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
                 val (state1, actions) = state.process(ChannelCommand.Init.Restore(it))
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
             }
-            logger.info { "restored ${channels.size} channels" }
+            logger.info { "restored ${bootChannels.size} channels" }
             launch {
-                watchSwapInWallet(channels.values.toList())
+                watchSwapInWallet(bootChannels)
             }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
