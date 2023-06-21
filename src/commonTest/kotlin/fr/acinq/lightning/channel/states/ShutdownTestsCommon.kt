@@ -203,7 +203,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val fulfill = actions1.findOutgoingMessage<UpdateFulfillHtlc>()
         val (alice1, _) = alice.process(ChannelCommand.MessageReceived(fulfill))
         val (_, alice2) = signAndRevack(bob1, alice1)
-        val (alice3, actions3) = alice2.process(ChannelCommand.Sign)
+        val (alice3, actions3) = alice2.process(ChannelCommand.Commitment.Sign)
         assertIs<LNChannel<ShuttingDown>>(alice3)
         assertTrue(alice3.commitments.remoteNextCommitInfo.isLeft)
         actions3.hasOutgoingMessage<CommitSig>()
@@ -217,7 +217,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelCommand_Sign -- no changes`() {
         val (_, bob) = init()
-        val (bob1, actions1) = bob.process(ChannelCommand.Sign)
+        val (bob1, actions1) = bob.process(ChannelCommand.Commitment.Sign)
         assertEquals(bob, bob1)
         assertTrue { actions1.isEmpty() }
     }
@@ -227,12 +227,12 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (_, bob) = init()
         val (bob1, actions1) = bob.process(ChannelCommand.Htlc.Settlement.Fulfill(0, r1))
         actions1.hasOutgoingMessage<UpdateFulfillHtlc>()
-        val (bob2, actions2) = bob1.process(ChannelCommand.Sign)
+        val (bob2, actions2) = bob1.process(ChannelCommand.Commitment.Sign)
         assertIs<LNChannel<ShuttingDown>>(bob2)
         actions2.hasOutgoingMessage<CommitSig>()
         assertNotNull(bob2.commitments.remoteNextCommitInfo.left)
         val waitForRevocation = bob2.commitments.remoteNextCommitInfo.left!!
-        val (bob3, actions3) = bob2.process(ChannelCommand.Sign)
+        val (bob3, actions3) = bob2.process(ChannelCommand.Commitment.Sign)
         assertIs<LNChannel<ShuttingDown>>(bob3)
         assertTrue(actions3.isEmpty())
         assertEquals(Either.Left(waitForRevocation), bob3.commitments.remoteNextCommitInfo)
@@ -243,7 +243,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = init()
         val (bob1, actionsBob1) = bob0.process(ChannelCommand.Htlc.Settlement.Fulfill(0, r1))
         val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
-        val (_, actionsBob2) = bob1.process(ChannelCommand.Sign)
+        val (_, actionsBob2) = bob1.process(ChannelCommand.Commitment.Sign)
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(sig))
@@ -256,7 +256,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = init()
         val (bob1, actionsBob1) = bob0.process(ChannelCommand.Htlc.Settlement.Fulfill(0, r1))
         val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
-        val (_, actionsBob2) = bob1.process(ChannelCommand.Sign)
+        val (_, actionsBob2) = bob1.process(ChannelCommand.Commitment.Sign)
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
         val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(sig))
@@ -274,7 +274,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = init()
         val (bob1, actionsBob1) = bob0.process(ChannelCommand.Htlc.Settlement.Fulfill(0, r1))
         val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
-        val (_, actionsBob2) = bob1.process(ChannelCommand.Sign)
+        val (_, actionsBob2) = bob1.process(ChannelCommand.Commitment.Sign)
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
         assertIs<LNChannel<ShuttingDown>>(alice1)
@@ -303,7 +303,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = init()
         val (alice1, bob1) = fulfillHtlc(0, r1, alice0, bob0)
         val (alice2, bob2) = fulfillHtlc(1, r2, alice1, bob1)
-        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Sign)
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Commitment.Sign)
         val sig = actionsBob3.hasOutgoingMessage<CommitSig>()
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(sig))
         assertIs<LNChannel<ShuttingDown>>(alice3)
@@ -332,7 +332,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = init()
         val (bob1, actionsBob1) = bob0.process(ChannelCommand.Htlc.Settlement.Fulfill(0, r1))
         val fulfill = actionsBob1.hasOutgoingMessage<UpdateFulfillHtlc>()
-        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Sign)
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Commitment.Sign)
         assertIs<LNChannel<ShuttingDown>>(bob2)
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
@@ -372,7 +372,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice, _) = init()
 
         run {
-            val (alice1, actions1) = alice.process(ChannelCommand.CheckHtlcTimeout)
+            val (alice1, actions1) = alice.process(ChannelCommand.Commitment.CheckHtlcTimeout)
             assertEquals(alice, alice1)
             assertTrue(actions1.isEmpty())
         }
@@ -385,7 +385,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val htlcExpiry = alice.commitments.latest.localCommit.spec.htlcs.map { it.add.cltvExpiry }.first()
         val (alice1, actions1) = run {
             val tmp = alice.copy(ctx = alice.ctx.copy(currentBlockHeight = htlcExpiry.toLong().toInt()))
-            tmp.process(ChannelCommand.CheckHtlcTimeout)
+            tmp.process(ChannelCommand.Commitment.CheckHtlcTimeout)
         }
         assertIs<LNChannel<Closing>>(alice1)
         assertNotNull(alice1.state.localCommitPublished)
@@ -416,7 +416,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
             val (nodes3, _, _) = addHtlc(35_000_000.msat, alice2, bob2)
             val (alice3, bob3) = nodes3
             // alice signs the next commitment, but bob doesn't
-            val (alice4, actionsAlice) = alice3.process(ChannelCommand.Sign)
+            val (alice4, actionsAlice) = alice3.process(ChannelCommand.Commitment.Sign)
             val commitSig = actionsAlice.hasOutgoingMessage<CommitSig>()
             val (bob4, actionsBob) = bob3.process(ChannelCommand.MessageReceived(commitSig))
             actionsBob.hasOutgoingMessage<RevokeAndAck>() // not forwarded to Alice (malicious Bob)

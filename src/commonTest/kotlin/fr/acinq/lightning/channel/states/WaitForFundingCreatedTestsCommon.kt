@@ -276,18 +276,10 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ChannelCommand_Close_MutualClose`() {
-        val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
-        val (bob1, actions1) = bob.process(ChannelCommand.Close.MutualClose(null, null))
-        assertEquals(actions1.findOutgoingMessage<Error>().toAscii(), ChannelFundingError(bob.channelId).message)
-        assertIs<Aborted>(bob1.state)
-    }
-
-    @Test
     fun `recv ChannelCommand_Close_ForceClose`() {
         val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         val (bob1, actions1) = bob.process(ChannelCommand.Close.ForceClose)
-        assertEquals(actions1.findOutgoingMessage<Error>().toAscii(), ChannelFundingError(bob.channelId).message)
+        assertEquals(actions1.findOutgoingMessage<Error>().toAscii(), ForcedLocalCommit(bob.channelId).message)
         assertIs<Aborted>(bob1.state)
     }
 

@@ -106,7 +106,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart`() {
         val (alice, bob, fundingTx) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         run {
-            val (alice1, _) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice.state))
+            val (alice1, _) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Init.Restore(alice.state))
                 .also { (state, actions) ->
                     assertIs<Offline>(state.state)
                     assertEquals(actions.size, 2)
@@ -122,7 +122,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 }
         }
         run {
-            val (bob1, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob.state))
+            val (bob1, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Init.Restore(bob.state))
                 .also { (state, actions) ->
                     assertIs<Offline>(state.state)
                     assertEquals(actions.size, 2)
@@ -144,7 +144,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (alice, bob, fundingTx1, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1, fundingTx2) = rbf(alice, bob, walletAlice)
         run {
-            val (alice2, _) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Restore(alice1.state))
+            val (alice2, _) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Init.Restore(alice1.state))
                 .also { (state, actions) ->
                     assertIs<Offline>(state.state)
                     assertEquals(actions.size, 4)
@@ -164,7 +164,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 }
         }
         run {
-            val (bob2, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Restore(bob1.state))
+            val (bob2, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Init.Restore(bob1.state))
                 .also { (state, actions) ->
                     assertIs<Offline>(state.state)
                     assertEquals(actions.size, 4)
@@ -368,7 +368,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
             run {
-                val (state1, actions1) = state.process(ChannelCommand.CheckHtlcTimeout)
+                val (state1, actions1) = state.process(ChannelCommand.Commitment.CheckHtlcTimeout)
                 assertEquals(state, state1)
                 assertTrue(actions1.isEmpty())
             }
@@ -438,7 +438,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             return Fixture(alice2, bob2, fundingTxAlice, walletAlice)
         }
 
-        fun createRbfCommand(alice: LNChannel<WaitForFundingConfirmed>, wallet: List<WalletState.Utxo>): ChannelCommand.BumpFundingFee {
+        fun createRbfCommand(alice: LNChannel<WaitForFundingConfirmed>, wallet: List<WalletState.Utxo>): ChannelCommand.Funding.BumpFundingFee {
             val previousFundingParams = alice.state.latestFundingTx.fundingParams
             val previousFundingTx = alice.state.latestFundingTx.sharedTx
             assertIs<FullySignedSharedTransaction>(previousFundingTx)
@@ -446,7 +446,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val script = alice.staticParams.nodeParams.keyManager.swapInOnChainWallet.pubkeyScript
             val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(30_000.sat, script)), 0)
             val wallet1 = wallet + listOf(WalletState.Utxo(parentTx, 0, 42))
-            return ChannelCommand.BumpFundingFee(previousFundingTx.feerate * 1.1, previousFundingParams.localContribution + 20_000.sat, wallet1, previousFundingTx.tx.lockTime + 1)
+            return ChannelCommand.Funding.BumpFundingFee(previousFundingTx.feerate * 1.1, previousFundingParams.localContribution + 20_000.sat, wallet1, previousFundingTx.tx.lockTime + 1)
         }
 
         fun rbf(alice: LNChannel<WaitForFundingConfirmed>, bob: LNChannel<WaitForFundingConfirmed>, walletAlice: List<WalletState.Utxo>): Triple<LNChannel<WaitForFundingConfirmed>, LNChannel<WaitForFundingConfirmed>, Transaction> {

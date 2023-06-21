@@ -67,9 +67,13 @@ data class LegacyWaitForFundingLocked(
             }
             is ChannelCommand.Close.MutualClose -> Pair(this@LegacyWaitForFundingLocked, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
-            is ChannelCommand.CheckHtlcTimeout -> Pair(this@LegacyWaitForFundingLocked, listOf())
+            is ChannelCommand.Init -> unhandled(cmd)
+            is ChannelCommand.Funding -> unhandled(cmd)
+            is ChannelCommand.Htlc -> unhandled(cmd)
+            is ChannelCommand.Commitment -> unhandled(cmd)
+            is ChannelCommand.Closing -> unhandled(cmd)
+            is ChannelCommand.Connected -> unhandled(cmd)
             is ChannelCommand.Disconnected -> Pair(Offline(this@LegacyWaitForFundingLocked), listOf())
-            else -> unhandled(cmd)
         }
     }
 }

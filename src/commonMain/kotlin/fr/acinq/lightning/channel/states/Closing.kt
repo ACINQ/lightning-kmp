@@ -297,7 +297,7 @@ data class Closing(
                     else -> unhandled(cmd)
                 }
             }
-            is ChannelCommand.GetHtlcInfosResponse -> {
+            is ChannelCommand.Closing.GetHtlcInfosResponse -> {
                 val index = revokedCommitPublished.indexOfFirst { it.commitTx.txid == cmd.revokedCommitTxId }
                 if (index >= 0) {
                     val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(channelKeys(), commitments.params, revokedCommitPublished[index], currentOnChainFeerates, cmd.htlcInfos)
@@ -328,7 +328,7 @@ data class Closing(
                 }
                 else -> unhandled(cmd)
             }
-            is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
+            is ChannelCommand.Close -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
             is ChannelCommand.Htlc.Add -> {
                 logger.info { "rejecting htlc request in state=${this::class}" }
                 // we don't provide a channel_update: this will be a permanent channel failure
@@ -368,8 +368,13 @@ data class Closing(
                 }
                 is Either.Left -> handleCommandError(cmd, result.value)
             }
-            is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
-            else -> unhandled(cmd)
+            is ChannelCommand.Htlc.Settlement -> unhandled(cmd)
+            is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
+            is ChannelCommand.Commitment -> unhandled(cmd)
+            is ChannelCommand.Init -> unhandled(cmd)
+            is ChannelCommand.Funding -> unhandled(cmd)
+            is ChannelCommand.Connected -> unhandled(cmd)
+            is ChannelCommand.Disconnected -> unhandled(cmd)
         }
     }
 

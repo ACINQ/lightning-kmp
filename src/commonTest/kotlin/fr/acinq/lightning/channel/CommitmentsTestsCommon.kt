@@ -381,7 +381,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(c1.availableBalanceForSend(), 0.msat)
 
         // We should be able to handle a fee increase.
-        val (c2, _) = c1.sendFee(ChannelCommand.UpdateFee(FeeratePerKw(3000.sat))).right!!
+        val (c2, _) = c1.sendFee(ChannelCommand.Commitment.UpdateFee(FeeratePerKw(3000.sat))).right!!
 
         // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
         val (_, cmdAdd1) = TestsHelper.makeCmdAdd(100.msat, randomKey().publicKey(), currentBlockHeight)

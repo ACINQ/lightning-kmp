@@ -78,7 +78,7 @@ data class ShuttingDown(
                                         val actions = mutableListOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(revocation))
                                         if (commitments1.changes.localHasChanges()) {
                                             // if we have newly acknowledged changes let's sign them
-                                            actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
+                                            actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
                                         }
                                         Pair(nextState, actions)
                                     }
@@ -121,7 +121,7 @@ data class ShuttingDown(
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
                                     actions1.add(ChannelAction.Storage.StoreState(nextState))
                                     if (commitments1.changes.localHasChanges() && commitments1.remoteNextCommitInfo.isLeft) {
-                                        actions1.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
+                                        actions1.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
                                     }
                                     Pair(nextState, actions1)
                                 }
@@ -139,9 +139,9 @@ data class ShuttingDown(
                 // we don't provide a channel_update: this will be a permanent channel failure
                 handleCommandError(cmd, ChannelUnavailable(channelId))
             }
-            is ChannelCommand.Sign -> {
+            is ChannelCommand.Commitment.Sign -> {
                 if (!commitments.changes.localHasChanges()) {
-                    logger.debug { "ignoring ChannelCommand.Sign (nothing to sign)" }
+                    logger.debug { "ignoring ChannelCommand.Commitment.Sign (nothing to sign)" }
                     Pair(this@ShuttingDown, listOf())
                 } else if (commitments.remoteNextCommitInfo.isLeft) {
                     logger.debug { "already in the process of signing, will sign again as soon as possible" }
@@ -173,14 +173,14 @@ data class ShuttingDown(
             is ChannelCommand.Htlc.Settlement.Fulfill -> handleCommandResult(cmd, commitments.sendFulfill(cmd), cmd.commit)
             is ChannelCommand.Htlc.Settlement.Fail -> handleCommandResult(cmd, commitments.sendFail(cmd, staticParams.nodeParams.nodePrivateKey), cmd.commit)
             is ChannelCommand.Htlc.Settlement.FailMalformed -> handleCommandResult(cmd, commitments.sendFailMalformed(cmd), cmd.commit)
-            is ChannelCommand.UpdateFee -> handleCommandResult(cmd, commitments.sendFee(cmd), cmd.commit)
+            is ChannelCommand.Commitment.UpdateFee -> handleCommandResult(cmd, commitments.sendFee(cmd), cmd.commit)
             is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventConfirmed -> updateFundingTxStatus(watch)
                 is WatchEventSpent -> handlePotentialForceClose(watch)
             }
-            is ChannelCommand.CheckHtlcTimeout -> checkHtlcTimeout()
+            is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelCommand.Disconnected -> {
                 // reset the commit_sig batch
                 sigStash = emptyList()
@@ -197,7 +197,7 @@ data class ShuttingDown(
                 val (commitments1, message) = result.value
                 val actions = mutableListOf<ChannelAction>(ChannelAction.Message.Send(message))
                 if (commit) {
-                    actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Sign))
+                    actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
                 }
                 Pair(this@ShuttingDown.copy(commitments = commitments1), actions)
             }

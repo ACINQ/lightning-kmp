@@ -12,8 +12,8 @@ import fr.acinq.lightning.wire.TlvStream
 
 object WaitForInit : ChannelState() {
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        return when {
-            cmd is ChannelCommand.InitNonInitiator -> {
+        return when (cmd) {
+            is ChannelCommand.Init.NonInitiator -> {
                 val nextState = WaitForOpenChannel(
                     cmd.temporaryChannelId,
                     cmd.fundingAmount,
@@ -25,7 +25,7 @@ object WaitForInit : ChannelState() {
                 )
                 Pair(nextState, listOf())
             }
-            cmd is ChannelCommand.InitInitiator -> {
+            is ChannelCommand.Init.Initiator -> {
                 val channelKeys = keyManager.channelKeys(cmd.localParams.fundingKeyPath)
                 val open = OpenDualFundedChannel(
                     chainHash = staticParams.nodeParams.chainHash,
@@ -58,7 +58,7 @@ object WaitForInit : ChannelState() {
                 val nextState = WaitForAcceptChannel(cmd, open)
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
-            cmd is ChannelCommand.Restore -> {
+            is ChannelCommand.Init.Restore -> {
                 logger.info { "restoring channel ${cmd.state.channelId} to state ${cmd.state::class.simpleName}" }
                 // We republish unconfirmed transactions.
                 val unconfirmedFundingTxs = when (cmd.state) {
@@ -139,8 +139,15 @@ object WaitForInit : ChannelState() {
                     }
                 }
             }
-            cmd is ChannelCommand.Close -> Pair(Aborted, listOf())
-            else -> unhandled(cmd)
+            is ChannelCommand.Close -> Pair(Aborted, listOf())
+            is ChannelCommand.MessageReceived -> unhandled(cmd)
+            is ChannelCommand.WatchReceived -> unhandled(cmd)
+            is ChannelCommand.Commitment -> unhandled(cmd)
+            is ChannelCommand.Htlc -> unhandled(cmd)
+            is ChannelCommand.Funding -> unhandled(cmd)
+            is ChannelCommand.Closing -> unhandled(cmd)
+            is ChannelCommand.Connected -> unhandled(cmd)
+            is ChannelCommand.Disconnected -> unhandled(cmd)
         }
     }
 }

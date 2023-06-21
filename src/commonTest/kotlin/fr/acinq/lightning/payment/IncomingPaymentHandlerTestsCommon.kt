@@ -43,7 +43,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         var actions = processResult.second
         assertEquals(2, actions.size)
         val add = actions.findOutgoingMessage<UpdateAddHtlc>()
-        val aliceCmdSign = actions.findCommand<ChannelCommand.Sign>()
+        val aliceCmdSign = actions.findCommand<ChannelCommand.Commitment.Sign>()
 
         processResult = bob.processSameState(ChannelCommand.MessageReceived(add))
         bob = processResult.first
@@ -69,7 +69,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         bob = processResult.first
         actions = processResult.second
         val bobRev = actions.findOutgoingMessage<RevokeAndAck>()
-        val bobCmdSign = actions.findCommand<ChannelCommand.Sign>()
+        val bobCmdSign = actions.findCommand<ChannelCommand.Commitment.Sign>()
 
         assertTrue { alice.commitments.changes.localChanges.proposed.isEmpty() }
         assertTrue { alice.commitments.changes.localChanges.signed.size == 1 }
