@@ -121,12 +121,6 @@ class Peer(
 
     private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
 
-    // The channels map, as initially loaded from the database at "boot" (on Peer.init).
-    // As the channelsFlow is unavailable until the electrum connection is up-and-running,
-    // this may provide useful information for the UI.
-    private val _bootChannelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>?>(null)
-    val bootChannelsFlow: StateFlow<Map<ByteVector32, ChannelState>?> get() = _bootChannelsFlow
-
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once accepted
     private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
@@ -214,25 +208,24 @@ class Peer(
         }
         launch {
             // we don't restore closed channels
-            val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
-            _bootChannelsFlow.value = bootChannels.associateBy { it.channelId }
-            val channelIds = bootChannels.map {
+            val channels = db.channels.listLocalChannels().filterNot { it is Closed }.associateBy { it.channelId }
+            channels.values.forEach {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
                 val (state1, actions) = state.process(ChannelCommand.Init.Restore(it))
                 processActions(it.channelId, actions)
                 _channels = _channels + (it.channelId to state1)
-                it.channelId
             }
-            logger.info { "restored ${channelIds.size} channels" }
+            logger.info { "restored ${channels.size} channels" }
             launch {
-                watchSwapInWallet(bootChannels)
+                watchSwapInWallet(channels.values.toList())
             }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
                 // But maybe we were offline for too long and it is why our peer couldn't settle these htlcs in time.
                 // We give them a bit of time after we reconnect to send us their latest htlc updates.
                 delay(timeMillis = nodeParams.checkHtlcTimeoutAfterStartupDelaySeconds.toLong() * 1000)
+                val channelIds = channels.keys
                 logger.info { "checking for timed out htlcs for channels: ${channelIds.joinToString(", ")}" }
                 channelIds.forEach { input.send(WrappedChannelCommand(it, ChannelCommand.Commitment.CheckHtlcTimeout)) }
             }
