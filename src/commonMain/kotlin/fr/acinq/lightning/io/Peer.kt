@@ -25,7 +25,7 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
+import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
 import org.kodein.log.newLogger
@@ -113,8 +113,10 @@ class Peer(
 
     val remoteNodeId: PublicKey = walletParams.trampolineNode.id
 
-    private val input = Channel<PeerCommand>(BUFFERED)
-    private var output = Channel<ByteArray>(BUFFERED)
+    // We use unlimited buffers, otherwise we may end up in a deadlock since we're both
+    // receiving *and* sending to those channels in the same coroutine.
+    private val input = Channel<PeerCommand>(UNLIMITED)
+    private var output = Channel<ByteArray>(UNLIMITED)
     val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
     private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
@@ -368,7 +370,7 @@ class Peer(
 
         suspend fun respond() {
             // Reset the output channel to avoid sending obsolete messages
-            output = Channel(BUFFERED)
+            output = Channel(UNLIMITED)
             for (msg in output) send(msg)
         }
 
