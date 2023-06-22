@@ -157,6 +157,7 @@ class Peer(
 
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
+    val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -226,6 +227,8 @@ class Peer(
             }
             logger.info { "restored ${channelIds.size} channels" }
             launch {
+                // wait to have a swap-in feerate available
+                swapInFeeratesFlow.filterNotNull().first()
                 watchSwapInWallet(bootChannels)
             }
             launch {
@@ -941,7 +944,7 @@ class Peer(
             is RequestChannelOpen -> {
                 when (val channel = channels.values.firstOrNull { it is Normal }) {
                     is ChannelStateWithCommitments -> {
-                        val targetFeerate = onChainFeeratesFlow.filterNotNull().first().fundingFeerate
+                        val targetFeerate = swapInFeeratesFlow.filterNotNull().first()
                         val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
                         val (feerate, fee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
