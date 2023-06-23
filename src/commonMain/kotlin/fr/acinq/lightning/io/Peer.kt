@@ -230,11 +230,11 @@ class Peer(
             logger.info { "restored ${channelIds.size} channels" }
             launch {
                 val swapInManager = SwapInManager(bootChannels, logger)
-                // wait to have a swap-in feerate available
-                swapInFeeratesFlow.filterNotNull().first()
                 processSwapInCommands(swapInManager)
             }
             launch {
+                // wait to have a swap-in feerate available
+                swapInFeeratesFlow.filterNotNull().first()
                 watchSwapInWallet()
             }
             launch {
