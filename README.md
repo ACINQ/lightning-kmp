@@ -16,6 +16,10 @@ Read [this article](https://medium.com/@ACINQ/when-ios-cdf798d5f8ef) for more de
 
 See instructions [here](https://github.com/ACINQ/lightning-kmp/blob/master/BUILD.md) to build and test the library.
 
+## Recovering on-chain funds
+
+See instructions [here](./RECOVERY.md) to recover on-chain funds.
+
 ## Contributing
 
 We use GitHub for bug tracking. Search the existing issues for your bug and create a new one if needed.

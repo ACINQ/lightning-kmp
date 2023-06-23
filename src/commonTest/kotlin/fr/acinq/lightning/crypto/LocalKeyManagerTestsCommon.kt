@@ -176,6 +176,16 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         assertEquals(PublicKey.fromHex("020bc21d9cb5ecc60fc2002195429d55ff4dfd0888e377a1b3226b4dc1ee7cedf3"), TestConstants.Bob.keyManager.swapInOnChainWallet.userPublicKey)
         assertEquals(TestConstants.Alice.keyManager.swapInOnChainWallet.remoteServerPublicKey, TestConstants.Bob.keyManager.swapInOnChainWallet.localServerPrivateKey(TestConstants.Alice.nodeParams.nodeId).publicKey())
         assertEquals(TestConstants.Bob.keyManager.swapInOnChainWallet.remoteServerPublicKey, TestConstants.Alice.keyManager.swapInOnChainWallet.localServerPrivateKey(TestConstants.Bob.nodeParams.nodeId).publicKey())
+        assertEquals(TestConstants.Alice.keyManager.swapInOnChainWallet.remoteServerPublicKey, PublicKey.fromHex("0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd"))
+        assertEquals(TestConstants.Bob.keyManager.swapInOnChainWallet.remoteServerPublicKey, PublicKey.fromHex("02d8c2f4fe8a017ff3a30eb2a4477f3ebe64ae930f67f907270712a70b18cb8951"))
+        assertEquals(
+            "wsh(and_v(v:pk([14620948/51h/0h/0h]tpubDCvYeHUZisCMV3h1zPevPWQmNPfA3g3vnu7gDqskXVCbJB1VKk2F7LApV6TTdm1sCyGout8ma27CCHvYTuMZxpwrcHnLwL4kaXW8z2KfFcW),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))",
+            TestConstants.Alice.keyManager.swapInOnChainWallet.descriptor
+        )
+        assertEquals(
+            "wsh(and_v(v:pk([85185511/51h/0h/0h]tpubDDt5vQap1awkteTeYioVGLQvj75xrFvjuW6WjNumsedvckEHAMUACubuKtmjmXViDPYMvtnEQt6EGj3eeMVSGRKxRZqCme37j5jAUMhkX5L),or_d(pk(02d8c2f4fe8a017ff3a30eb2a4477f3ebe64ae930f67f907270712a70b18cb8951),older(25920))))",
+            TestConstants.Bob.keyManager.swapInOnChainWallet.descriptor
+        )
     }
 
     companion object {

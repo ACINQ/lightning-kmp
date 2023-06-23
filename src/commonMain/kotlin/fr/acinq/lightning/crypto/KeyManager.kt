@@ -113,23 +113,47 @@ interface KeyManager {
         val remoteServerPublicKey: PublicKey,
         val refundDelay: Int = SwapInRefundDelay
     ) {
-        val userPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(0)).privateKey
+        private val userExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserKeyPath(chain))
+        val userPrivateKey: PrivateKey = userExtendedPrivateKey.privateKey
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
 
-        private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInKeyBasePath(chain) / hardened(1))
+        private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInLocalServerKeyPath(chain))
         fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
 
         val redeemScript: List<ScriptElt> = Scripts.swapIn2of2(userPublicKey, remoteServerPublicKey, refundDelay)
         val pubkeyScript: List<ScriptElt> = Script.pay2wsh(redeemScript)
         val address: String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript)!!
 
+        /**
+         * The output script descriptor matching our swap-in addresses.
+         * That descriptor can be imported in bitcoind to recover funds after the refund delay.
+         */
+        val descriptor = run {
+            // Since child public keys cannot be derived from a master xpub when hardened derivation is used,
+            // we need to provide the fingerprint of the master xpub and the hardened derivation path.
+            // This lets wallets that have access to the master xpriv derive the corresponding private and public keys.
+            val masterFingerprint = ByteVector(Crypto.hash160(DeterministicWallet.publicKey(master).publickeybytes).take(4).toByteArray())
+            val encodedChildKey = DeterministicWallet.encode(DeterministicWallet.publicKey(userExtendedPrivateKey), testnet = chain != NodeParams.Chain.Mainnet)
+            val userKey = "[${masterFingerprint.toHex()}/${encodedSwapInUserKeyPath(chain)}]$encodedChildKey"
+            "wsh(and_v(v:pk($userKey),or_d(pk(${remoteServerPublicKey.toHex()}),older($refundDelay))))"
+        }
+
         companion object {
             /** When doing a swap-in, the user's funds are locked in a 2-of-2: they can claim them unilaterally after that delay. */
             const val SwapInRefundDelay = 144 * 30 * 6 // ~6 months
 
-            fun swapInKeyBasePath(chain: NodeParams.Chain) = when (chain) {
+            private fun swapInKeyBasePath(chain: NodeParams.Chain) = when (chain) {
                 NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty / hardened(51) / hardened(0)
                 NodeParams.Chain.Mainnet -> KeyPath.empty / hardened(52) / hardened(0)
+            }
+
+            fun swapInUserKeyPath(chain: NodeParams.Chain) = swapInKeyBasePath(chain) / hardened(0)
+
+            fun swapInLocalServerKeyPath(chain: NodeParams.Chain) = swapInKeyBasePath(chain) / hardened(1)
+
+            fun encodedSwapInUserKeyPath(chain: NodeParams.Chain) = when (chain) {
+                NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> "51h/0h/0h"
+                NodeParams.Chain.Mainnet -> "52h/0h/0h"
             }
 
             /** Swap-in servers use a different swap-in key for different users. */
