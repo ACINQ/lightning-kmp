@@ -328,7 +328,6 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 assertFalse(commitSigBob.channelData.isEmpty())
             }
             actionsBob3.has<ChannelAction.Storage.StoreState>()
-            assertEquals(setOf(OutPoint(inputAlice.previousTx!!, inputAlice.previousTxOutput)), Helpers.reservedWalletInputs(listOf(alice2.state)))
             return Fixture(alice2, commitSigAlice, bob3, commitSigBob, walletAlice)
         }
     }

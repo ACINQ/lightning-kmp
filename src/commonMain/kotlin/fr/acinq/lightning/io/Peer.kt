@@ -119,6 +119,8 @@ class Peer(
     private var output = Channel<ByteArray>(UNLIMITED)
     val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
+    private val swapInCommands = Channel<SwapInCommand>(Channel.UNLIMITED)
+
     private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
 
     // The channels map, as initially loaded from the database at "boot" (on Peer.init).
@@ -227,9 +229,13 @@ class Peer(
             }
             logger.info { "restored ${channelIds.size} channels" }
             launch {
+                val swapInManager = SwapInManager(bootChannels, logger)
                 // wait to have a swap-in feerate available
                 swapInFeeratesFlow.filterNotNull().first()
-                watchSwapInWallet(bootChannels)
+                processSwapInCommands(swapInManager)
+            }
+            launch {
+                watchSwapInWallet()
             }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
@@ -249,7 +255,6 @@ class Peer(
                 previousState = it
             }
         }
-
     }
 
     private suspend fun updateEstimateFees() {
@@ -384,32 +389,19 @@ class Peer(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    private suspend fun watchSwapInWallet(channels: List<PersistedChannelState>) {
-        // Wallet utxos that are already used in channel funding attempts should be ignored, otherwise we would double-spend ourselves.
-        // If the electrum server we connect to has our channel funding attempts in their mempool, those utxos wouldn't be added to our wallet anyway.
-        // But we cannot rely only on that, since we may connect to a different electrum server after a restart, or transactions may be evicted from their mempool.
-        // Since we don't have an easy way of asking electrum to check for double-spends, we would end up with channels that are stuck waiting for confirmations.
-        // This generally wouldn't be a security issue (only one of the funding attempts would succeed), unless 0-conf is used and our LSP is malicious.
-        val initiallyReservedUtxos: Set<OutPoint> = Helpers.reservedWalletInputs(channels)
+    private suspend fun watchSwapInWallet() {
         swapInWallet.walletStateFlow
             .filter { it.consistent }
-            .fold(initiallyReservedUtxos) { reservedUtxos, wallet ->
+            .collect {
                 val currentBlockHeight = currentTipFlow.filterNotNull().first().first
-                val availableWallet = wallet.withoutReservedUtxos(reservedUtxos).withConfirmations(currentBlockHeight, walletParams.swapInConfirmations)
-                logger.info { "swap-in wallet balance (migration=$isMigrationFromLegacyApp): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
-                val utxos = when {
-                    // When migrating from the legacy android app, we use all utxos, even unconfirmed ones.
-                    isMigrationFromLegacyApp -> availableWallet.all
-                    else -> availableWallet.deeplyConfirmed
-                }
-                if (utxos.balance > 0.sat) {
-                    logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
-                    input.send(RequestChannelOpen(Lightning.randomBytes32(), utxos))
-                    reservedUtxos.union(utxos.map { it.outPoint })
-                } else {
-                    reservedUtxos
-                }
+                swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, it, walletParams.swapInConfirmations, isMigrationFromLegacyApp))
             }
+    }
+
+    private suspend fun processSwapInCommands(swapInManager: SwapInManager) {
+        for (command in swapInCommands) {
+            swapInManager.process(command)?.let { requestChannelOpen -> input.send(requestChannelOpen) }
+        }
     }
 
     suspend fun send(cmd: PeerCommand) {
@@ -770,6 +762,7 @@ class Peer(
                                             nodeParams.liquidityPolicy.value.maybeReject(request.walletInputs.balance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
                                                 logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
                                                 nodeParams._nodeEvents.emit(rejected)
+                                                swapInCommands.send(SwapInCommand.UnlockWalletInputs(request.walletInputs.map { it.outPoint }.toSet()))
                                                 sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
                                                 return@withMDC
                                             }
@@ -953,6 +946,7 @@ class Peer(
                         nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
                             logger.info { "rejecting splice: reason=${rejected.reason}" }
                             nodeParams._nodeEvents.emit(rejected)
+                            swapInCommands.send(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                             return
                         }
 

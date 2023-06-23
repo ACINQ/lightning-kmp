@@ -32,21 +32,13 @@ class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `splice funds in`() {
         val (alice, bob) = reachNormal()
-        assertTrue(Helpers.reservedWalletInputs(listOf(alice.state)).isEmpty())
-        assertTrue(Helpers.reservedWalletInputs(listOf(bob.state)).isEmpty())
-        val (alice1, bob1) = spliceIn(alice, bob, listOf(50_000.sat))
-        assertEquals(1, Helpers.reservedWalletInputs(listOf(alice1.state)).size)
-        assertTrue(Helpers.reservedWalletInputs(listOf(bob1.state)).isEmpty())
+        spliceIn(alice, bob, listOf(50_000.sat))
     }
 
     @Test
     fun `splice funds in -- many utxos`() {
         val (alice, bob) = reachNormal()
-        assertTrue(Helpers.reservedWalletInputs(listOf(alice.state)).isEmpty())
-        assertTrue(Helpers.reservedWalletInputs(listOf(bob.state)).isEmpty())
-        val (alice1, bob1) = spliceIn(alice, bob, listOf(30_000.sat, 40_000.sat, 25_000.sat))
-        assertEquals(3, Helpers.reservedWalletInputs(listOf(alice1.state)).size)
-        assertTrue(Helpers.reservedWalletInputs(listOf(bob1.state)).isEmpty())
+        spliceIn(alice, bob, listOf(30_000.sat, 40_000.sat, 25_000.sat))
     }
 
     @Test
@@ -764,7 +756,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             return UnsignedSpliceFixture(alice5, commitSigAlice, bob5, commitSigBob)
         }
 
-        private fun spliceIn(alice: LNChannel<Normal>, bob: LNChannel<Normal>, amounts: List<Satoshi>): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+        fun spliceIn(alice: LNChannel<Normal>, bob: LNChannel<Normal>, amounts: List<Satoshi>): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             val parentCommitment = alice.commitments.active.first()
             val cmd = ChannelCommand.Commitment.Splice.Request(
                 replyTo = CompletableDeferred(),

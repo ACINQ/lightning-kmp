@@ -17,7 +17,9 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.inputsAlreadySpent
-import fr.acinq.lightning.channel.states.*
+import fr.acinq.lightning.channel.states.Channel
+import fr.acinq.lightning.channel.states.ClosingFeerates
+import fr.acinq.lightning.channel.states.ClosingFees
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForRevocation
 import fr.acinq.lightning.crypto.KeyManager
@@ -242,34 +244,6 @@ object Helpers {
             require(output.txid == parentTx.txid) { "output doesn't belong to the given parentTx: txid=${output.txid} but expected txid=${parentTx.txid}" }
             ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, parentTx, output.index.toInt(), BITCOIN_OUTPUT_SPENT))
         }
-    }
-
-    /**
-     * Return the list of wallet inputs used in pending unconfirmed channel funding attempts.
-     * These inputs should not be reused in other funding attempts, otherwise we would double-spend ourselves.
-     */
-    fun reservedWalletInputs(channels: List<PersistedChannelState>): Set<OutPoint> {
-        val unconfirmedFundingTxs: List<SignedSharedTransaction> = buildList {
-            for (channel in channels) {
-                // Add all unsigned inputs currently used to build a funding tx that isn't broadcast yet (creation, rbf, splice).
-                when {
-                    channel is WaitForFundingSigned -> add(channel.signingSession.fundingTx)
-                    channel is WaitForFundingConfirmed && channel.rbfStatus is RbfStatus.WaitingForSigs -> add(channel.rbfStatus.session.fundingTx)
-                    channel is Normal && channel.spliceStatus is SpliceStatus.WaitingForSigs -> add(channel.spliceStatus.session.fundingTx)
-                    else -> {}
-                }
-                // Add all inputs in unconfirmed funding txs (utxos spent by confirmed transactions will never appear in our wallet).
-                when (channel) {
-                    is ChannelStateWithCommitments -> channel.commitments.all
-                        .map { it.localFundingStatus }
-                        .filterIsInstance<LocalFundingStatus.UnconfirmedFundingTx>()
-                        .forEach { add(it.sharedTx) }
-                    else -> {}
-                }
-            }
-        }
-        val localInputs = unconfirmedFundingTxs.flatMap { fundingTx -> fundingTx.tx.localInputs.map { it.outPoint } }
-        return localInputs.toSet()
     }
 
     object Funding {
