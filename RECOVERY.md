@@ -25,15 +25,18 @@ When swapping funds to a `lightning-kmp` wallet, the following steps are perform
 
 The swap transaction's output can be spent using either:
 
-1. A signature from the user's wallet and a signature from the swap server
+1. A signature from the user's wallet and a signature from the remote node
 2. A signature from the user's wallet after a refund delay
 
 Funds can be recovered using the second option and [Bitcoin Core](https://github.com/bitcoin/bitcoin).
 This process needs at least Bitcoin Core 25.0.
 
+This process will become simpler once popular on-chain wallets (such as [electrum](https://electrum.org/)) add supports for output script descriptors.
+
 ### Extract master keys
 
-Bitcoin Core does not support BIP39 seeds, so you'll need to use another tool to convert your seed to an extended private key (`xprv`).
+We don't directly export your extended master private key for security reasons, so you will need to manually insert it in the descriptor.
+You can obtain your extended master private key in [electrum](https://electrum.org/). After restoring your seed, type `wallet.keystore.xprv` in the console to obtain your master `xprv`.
 
 ### Create recovery wallet
 
