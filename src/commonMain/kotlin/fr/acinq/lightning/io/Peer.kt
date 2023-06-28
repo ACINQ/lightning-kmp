@@ -55,7 +55,6 @@ data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand
 object Disconnected : PeerCommand()
 
 sealed class PaymentCommand : PeerCommand()
-data class ReceivePayment(val paymentPreimage: ByteVector32, val amount: MilliSatoshi?, val description: Either<String, ByteVector32>, val expirySeconds: Long? = null, val result: CompletableDeferred<PaymentRequest>) : PaymentCommand()
 private object CheckPaymentsTimeout : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
@@ -65,7 +64,6 @@ data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipi
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
 sealed class PeerEvent
-data class PaymentRequestGenerated(val receivePayment: ReceivePayment, val request: String) : PeerEvent()
 data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerEvent()
@@ -478,16 +476,29 @@ class Peer(
             }
     }
 
-    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expirySeconds: Long? = null) {
-        val command = ReceivePayment(
-            paymentPreimage = paymentPreimage,
-            amount = amount,
-            description = description,
-            expirySeconds = expirySeconds,
-            result = CompletableDeferred()
+    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expirySeconds: Long? = null): PaymentRequest {
+        // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all
+        // channels to maximize the likelihood of success on the first payment attempt
+        val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
+            when (channelState) {
+                is Normal -> channelState.remoteChannelUpdate
+                is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
+                is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
+                else -> null
+            }
+        }
+        val extraHops = listOf(
+            listOf(
+                PaymentRequest.TaggedField.ExtraHop(
+                    nodeId = walletParams.trampolineNode.id,
+                    shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
+                    feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
+                    feeProportionalMillionths = remoteChannelUpdates.maxOfOrNull { it.feeProportionalMillionths } ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
+                    cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
+                )
+            )
         )
-        send(command)
-        command.result.await()
+        return incomingPaymentHandler.createInvoice(paymentPreimage, amount, description, extraHops, expirySeconds)
     }
 
     @OptIn(DelicateCoroutinesApi::class)
@@ -1002,32 +1013,6 @@ class Peer(
                 val msg = actions1.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                 _channels = _channels + (msg.temporaryChannelId to state1)
                 processActions(msg.temporaryChannelId, actions1)
-            }
-            is ReceivePayment -> {
-                // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all
-                // channels to maximize the likelihood of success on the first payment attempt
-                val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
-                    when (channelState) {
-                        is Normal -> channelState.remoteChannelUpdate
-                        is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
-                        is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
-                        else -> null
-                    }
-                }
-                val extraHops = listOf(
-                    listOf(
-                        PaymentRequest.TaggedField.ExtraHop(
-                            nodeId = walletParams.trampolineNode.id,
-                            shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
-                            feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
-                            feeProportionalMillionths = remoteChannelUpdates.maxOfOrNull { it.feeProportionalMillionths } ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
-                            cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
-                        )
-                    )
-                )
-                val pr = incomingPaymentHandler.createInvoice(cmd.paymentPreimage, cmd.amount, cmd.description, extraHops, cmd.expirySeconds)
-                _eventsFlow.emit(PaymentRequestGenerated(cmd, pr.write()))
-                cmd.result.complete(pr)
             }
             is PayToOpenResponseCommand -> {
                 logger.info { "sending ${cmd.payToOpenResponse::class.simpleName}" }

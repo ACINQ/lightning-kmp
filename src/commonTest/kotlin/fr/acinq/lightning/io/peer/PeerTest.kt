@@ -27,6 +27,7 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlin.test.*
 
 class PeerTest : LightningTestSuite() {
@@ -459,9 +460,7 @@ class PeerTest : LightningTestSuite() {
         val bob = newPeer(nodeParams, walletParams)
 
         run {
-            val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 1.msat, Either.Left("A description: \uD83D\uDE2C"), 3600L * 3, deferredInvoice))
-            val invoice = deferredInvoice.await()
+            val invoice = bob.createInvoice(randomBytes32(), 1.msat, Either.Left("A description: \uD83D\uDE2C"), 3600L * 3)
             assertEquals(1.msat, invoice.amount)
             assertEquals(3600L * 3, invoice.expirySeconds)
             assertEquals("A description: \uD83D\uDE2C", invoice.description)
@@ -477,9 +476,7 @@ class PeerTest : LightningTestSuite() {
         val (_, bob, _, _) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
 
         run {
-            val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, Either.Left("default routing hints"), null, deferredInvoice))
-            val invoice = deferredInvoice.await()
+            val invoice = bob.createInvoice(randomBytes32(), 15_000_000.msat, Either.Left("default routing hints"), null)
             // The routing hint uses default values since no channel update has been sent by Alice yet.
             assertEquals(1, invoice.routingInfo.size)
             assertEquals(1, invoice.routingInfo[0].hints.size)
@@ -490,10 +487,12 @@ class PeerTest : LightningTestSuite() {
             val aliceUpdate =
                 Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.ctx.privateKey, alice0.staticParams.remoteNodeId, alice0.state.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
             bob.forward(aliceUpdate)
+            // wait until the update is processed
+            bob.channelsFlow
+                .map { it.values.first() }
+                .first { it is Normal && it.remoteChannelUpdate?.feeBaseMsat == 50.msat }
 
-            val deferredInvoice = CompletableDeferred<PaymentRequest>()
-            bob.send(ReceivePayment(randomBytes32(), 5_000_000.msat, Either.Left("updated routing hints"), null, deferredInvoice))
-            val invoice = deferredInvoice.await()
+            val invoice = bob.createInvoice(randomBytes32(), 5_000_000.msat, Either.Left("updated routing hints"), null)
             // The routing hint uses values from Alice's channel update.
             assertEquals(1, invoice.routingInfo.size)
             assertEquals(1, invoice.routingInfo[0].hints.size)
@@ -515,9 +514,7 @@ class PeerTest : LightningTestSuite() {
         )
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
 
-        val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, Either.Left("test invoice"), null, deferredInvoice))
-        val invoice = deferredInvoice.await()
+        val invoice = bob.createInvoice(randomBytes32(), 15_000_000.msat, Either.Left("test invoice"), null)
 
         alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, invoice))
 
@@ -561,9 +558,7 @@ class PeerTest : LightningTestSuite() {
         )
         val (alice, bob) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0))
 
-        val deferredInvoice = CompletableDeferred<PaymentRequest>()
-        bob.send(ReceivePayment(randomBytes32(), 15_000_000.msat, Either.Left("test invoice"), null, deferredInvoice))
-        val invoice = deferredInvoice.await()
+        val invoice = bob.createInvoice(randomBytes32(), 15_000_000.msat, Either.Left("test invoice"), null)
 
         alice.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, invoice))
 
