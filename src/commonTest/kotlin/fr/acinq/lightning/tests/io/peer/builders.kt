@@ -27,9 +27,7 @@ import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Init
 import fr.acinq.lightning.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
@@ -169,13 +167,17 @@ fun buildPeer(
 ): Peer {
     val electrum = ElectrumClient(TcpSocket.Builder(), scope, LoggerFactory.default)
     val watcher = ElectrumWatcher(electrum, scope, LoggerFactory.default)
-    val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
-    peer.currentTipFlow.value = currentTip
-    peer.onChainFeeratesFlow.value = OnChainFeerates(
-        fundingFeerate = FeeratePerKw(FeeratePerByte(5.sat)),
-        mutualCloseFeerate = FeeratePerKw(FeeratePerByte(10.sat)),
-        claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
-        fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
+    val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope,
+        currentTipFlow = MutableStateFlow(currentTip),
+        onChainFeeratesFlow = MutableStateFlow(
+            OnChainFeerates(
+                fundingFeerate = FeeratePerKw(FeeratePerByte(5.sat)),
+                mutualCloseFeerate = FeeratePerKw(FeeratePerByte(10.sat)),
+                claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
+                fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
+            )
+        ),
+        swapInFeeratesFlow = MutableStateFlow(FeeratePerKw(FeeratePerByte(5.sat)))
     )
 
     return peer
