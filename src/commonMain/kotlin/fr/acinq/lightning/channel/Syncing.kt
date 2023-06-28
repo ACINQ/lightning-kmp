@@ -32,6 +32,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
             event is ChannelEvent.MessageReceived && event.message is ChannelReestablish ->
                 when {
                     waitForTheirReestablishMessage -> {
+                        var unreadableBackup = false
                         val nextState = if (!event.message.channelData.isEmpty()) {
                             logger.info { "c:${state.channelId} channel_reestablish includes a peer backup" }
                             when (val decrypted = runTrying { Serialization.decrypt(state.staticParams.nodeParams.nodePrivateKey.value, event.message.channelData, staticParams.nodeParams) }) {
@@ -45,6 +46,7 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                                     }
                                 }
                                 is Try.Failure -> {
+                                    unreadableBackup = true
                                     logger.error(decrypted.error) { "c:${state.channelId} ignoring unreadable channel data" }
                                     state
                                 }
@@ -53,26 +55,31 @@ data class Syncing(val state: ChannelStateWithCommitments, val waitForTheirReest
                             state
                         }
 
-                        val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-                        val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, nextState.commitments.localCommit.index)
+                        if (unreadableBackup) {
+                            unhandled(event)
+                        } else {
 
-                        val channelReestablish = ChannelReestablish(
-                            channelId = nextState.channelId,
-                            nextLocalCommitmentNumber = nextState.commitments.localCommit.index + 1,
-                            nextRemoteRevocationNumber = nextState.commitments.remoteCommit.index,
-                            yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-                            myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-                        ).withChannelData(nextState.commitments.remoteChannelData)
-                        val actions = buildList {
-                            if (nextState != state) {
-                                // we just restored from backup
-                                add(ChannelAction.Storage.StoreState(nextState))
+                            val yourLastPerCommitmentSecret = nextState.commitments.remotePerCommitmentSecrets.lastIndex?.let { nextState.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
+                            val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(state.commitments.localParams.channelKeys.shaSeed, nextState.commitments.localCommit.index)
+
+                            val channelReestablish = ChannelReestablish(
+                                channelId = nextState.channelId,
+                                nextLocalCommitmentNumber = nextState.commitments.localCommit.index + 1,
+                                nextRemoteRevocationNumber = nextState.commitments.remoteCommit.index,
+                                yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+                                myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+                            ).withChannelData(nextState.commitments.remoteChannelData)
+                            val actions = buildList {
+                                if (nextState != state) {
+                                    // we just restored from backup
+                                    add(ChannelAction.Storage.StoreState(nextState))
+                                }
+                                add(ChannelAction.Message.Send(channelReestablish))
                             }
-                            add(ChannelAction.Message.Send(channelReestablish))
+                            // now apply their reestablish message to the restored state
+                            val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).processInternal(event)
+                            Pair(nextState1, actions + actions1)
                         }
-                        // now apply their reestablish message to the restored state
-                        val (nextState1, actions1) = Syncing(nextState, waitForTheirReestablishMessage = false).processInternal(event)
-                        Pair(nextState1, actions + actions1)
                     }
                     state is WaitForFundingConfirmed -> {
                         val minDepth = if (state.commitments.localParams.isFunder) {
