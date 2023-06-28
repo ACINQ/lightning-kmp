@@ -630,7 +630,6 @@ class Peer(
                                 }
                                 is Try.Failure -> {
                                     logger.error(decrypted.error) { "n:$remoteNodeId failed to restore channelId=${msg.channelId} from peer backup" }
-                                    sendToPeer(Error(msg.channelId, "unknown channel"))
                                 }
                             }
                         }
