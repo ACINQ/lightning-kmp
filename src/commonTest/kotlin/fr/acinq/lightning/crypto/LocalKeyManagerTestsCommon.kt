@@ -3,6 +3,8 @@ package fr.acinq.lightning.crypto
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.toByteVector
@@ -186,6 +188,20 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
             "wsh(and_v(v:pk([85185511/51h/0h/0h]tpubDDt5vQap1awkteTeYioVGLQvj75xrFvjuW6WjNumsedvckEHAMUACubuKtmjmXViDPYMvtnEQt6EGj3eeMVSGRKxRZqCme37j5jAUMhkX5L),or_d(pk(02d8c2f4fe8a017ff3a30eb2a4477f3ebe64ae930f67f907270712a70b18cb8951),older(25920))))",
             TestConstants.Bob.keyManager.swapInOnChainWallet.descriptor
         )
+    }
+
+    @Test
+    fun `spend swap-in transactions`() {
+        val swapInTx = Transaction(version = 2,
+            txIn = listOf(),
+            txOut = listOf(
+                TxOut(Satoshi(100000), Bitcoin.addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, TestConstants.Alice.keyManager.swapInOnChainWallet.address)),
+                TxOut(Satoshi(150000), Bitcoin.addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, TestConstants.Alice.keyManager.swapInOnChainWallet.address))
+            ),
+            lockTime = 0)
+        val recoveryTx = TestConstants.Alice.keyManager.swapInOnChainWallet.spendSwapInTransaction(swapInTx, TestConstants.Alice.keyManager.finalOnChainWallet.address(0), FeeratePerKw(FeeratePerByte(Satoshi(5))))!!
+        assertEquals(swapInTx.txOut.size, recoveryTx.txIn.size)
+        Transaction.correctlySpends(recoveryTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
     companion object {
