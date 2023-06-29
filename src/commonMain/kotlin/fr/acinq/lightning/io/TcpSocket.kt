@@ -20,6 +20,18 @@ interface TcpSocket {
     suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int)
     suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int
 
+    fun linesFlow(): Flow<String> {
+        return flow {
+            val buffer = ByteArray(8192)
+            while (true) {
+                val size = receiveAvailable(buffer)
+                emit(buffer.subArray(size))
+            }
+        }
+            .decodeToString()
+            .splitByLines()
+    }
+
     suspend fun startTls(tls: TLS): TcpSocket
 
     fun close()
@@ -69,11 +81,3 @@ suspend fun TcpSocket.receiveAvailable(buffer: ByteArray) = receiveAvailable(buf
 internal expect object PlatformSocketBuilder : TcpSocket.Builder
 
 suspend fun TcpSocket.receiveFully(size: Int): ByteArray = ByteArray(size).also { receiveFully(it) }
-
-fun TcpSocket.linesFlow(): Flow<String> = flow {
-    val buffer = ByteArray(8192)
-    while (true) {
-        val size = receiveAvailable(buffer)
-        emit(buffer.subArray(size))
-    }
-}.decodeToString().splitByLines()
