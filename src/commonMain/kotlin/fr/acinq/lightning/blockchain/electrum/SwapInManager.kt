@@ -1,5 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.OutPoint
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.channel.LocalFundingStatus
@@ -12,7 +13,7 @@ import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 
 internal sealed class SwapInCommand {
-    data class TrySwapIn(val currentBlockHeight: Int, val wallet: WalletState, val swapInConfirmations: Int, val isMigrationFromLegacyApp: Boolean) : SwapInCommand()
+    data class TrySwapIn(val currentBlockHeight: Int, val wallet: WalletState, val swapInConfirmations: Int, val trustedTxs: Set<ByteVector32>) : SwapInCommand()
     data class UnlockWalletInputs(val inputs: Set<OutPoint>) : SwapInCommand()
 }
 
@@ -32,12 +33,12 @@ class SwapInManager(private var reservedUtxos: Set<OutPoint>, private val logger
     internal fun process(cmd: SwapInCommand): RequestChannelOpen? = when (cmd) {
         is SwapInCommand.TrySwapIn -> {
             val availableWallet = cmd.wallet.withoutReservedUtxos(reservedUtxos).withConfirmations(cmd.currentBlockHeight, cmd.swapInConfirmations)
-            logger.info { "swap-in wallet balance (migration=${cmd.isMigrationFromLegacyApp}): deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
-            val utxos = when {
-                // When migrating from the legacy android app, we use all utxos, even unconfirmed ones.
-                cmd.isMigrationFromLegacyApp -> availableWallet.all
-                else -> availableWallet.deeplyConfirmed
-            }
+            logger.info { "swap-in wallet balance: deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
+            val utxos = buildSet {
+                // some utxos may be used for swap-in even if they are not confirmed, for example when migrating from the legacy phoenix android app
+                addAll(availableWallet.all.filter { cmd.trustedTxs.contains(it.outPoint.txid) })
+                addAll(availableWallet.deeplyConfirmed)
+            }.toList()
             if (utxos.balance > 0.sat) {
                 logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
                 reservedUtxos = reservedUtxos.union(utxos.map { it.outPoint })

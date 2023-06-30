@@ -40,7 +40,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
             )
             WalletState(mapOf(dummyAddress to unspent), parentTxs.associateBy { it.txid })
         }
-        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 3, isMigrationFromLegacyApp = false)
+        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 3, trustedTxs = emptySet())
         mgr.process(cmd).also { result ->
             assertNotNull(result)
             assertEquals(result.walletInputs.map { it.amount }.toSet(), setOf(50_000.sat, 75_000.sat))
@@ -61,19 +61,19 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
             )
             WalletState(mapOf(dummyAddress to unspent), parentTxs.associateBy { it.txid })
         }
-        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 101, wallet = wallet, swapInConfirmations = 3, isMigrationFromLegacyApp = false)
+        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 101, wallet = wallet, swapInConfirmations = 3, trustedTxs = emptySet())
         mgr.process(cmd).also { assertNull(it) }
     }
 
     @Test
     fun `swap funds -- allow unconfirmed in migration`() {
         val mgr = SwapInManager(listOf(), logger)
+        val parentTxs = listOf(
+            Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(75_000.sat, dummyScript)), 0),
+            Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 2), 0)), listOf(TxOut(50_000.sat, dummyScript)), 0),
+            Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
+        )
         val wallet = run {
-            val parentTxs = listOf(
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(75_000.sat, dummyScript)), 0),
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 2), 0)), listOf(TxOut(50_000.sat, dummyScript)), 0),
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
-            )
             val unspent = listOf(
                 UnspentItem(parentTxs[0].txid, 0, 75_000, 100), // deeply confirmed
                 UnspentItem(parentTxs[1].txid, 0, 50_000, 150), // recently confirmed
@@ -81,7 +81,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
             )
             WalletState(mapOf(dummyAddress to unspent), parentTxs.associateBy { it.txid })
         }
-        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 5, isMigrationFromLegacyApp = true)
+        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 5, trustedTxs = parentTxs.map { it.txid }.toSet())
         mgr.process(cmd).also { result ->
             assertNotNull(result)
             assertEquals(result.walletInputs.map { it.amount }.toSet(), setOf(25_000.sat, 50_000.sat, 75_000.sat))
@@ -96,7 +96,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
             val unspent = UnspentItem(parentTx.txid, 0, 75_000, 100)
             WalletState(mapOf(dummyAddress to listOf(unspent)), mapOf(parentTx.txid to parentTx))
         }
-        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 5, isMigrationFromLegacyApp = false)
+        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 5, trustedTxs = emptySet())
         mgr.process(cmd).also { assertNotNull(it) }
 
         // We cannot reuse the same inputs.
@@ -119,7 +119,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
             WalletState(mapOf(dummyAddress to unspent), parentTxs.associateBy { it.txid })
         }
         val mgr = SwapInManager(listOf(waitForFundingSigned.state), logger)
-        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 5, isMigrationFromLegacyApp = false)
+        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 5, trustedTxs = emptySet())
         mgr.process(cmd).also { assertNull(it) }
 
         // The pending channel is aborted: we can reuse those inputs.
@@ -140,7 +140,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
             WalletState(mapOf(dummyAddress to unspent), parentTxs.associateBy { it.txid })
         }
         val mgr = SwapInManager(listOf(alice1.state), logger)
-        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 5, isMigrationFromLegacyApp = false)
+        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInConfirmations = 5, trustedTxs = emptySet())
         mgr.process(cmd).also { assertNull(it) }
 
         // The channel is aborted: we can reuse those inputs.
