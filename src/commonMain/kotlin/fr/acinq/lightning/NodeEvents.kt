@@ -30,8 +30,10 @@ sealed interface LiquidityEvents : NodeEvents {
     data class Rejected(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val reason: Reason) : LiquidityEvents {
         sealed class Reason {
             object PolicySetToDisabled : Reason()
-            object RejectedByUser : Reason()
-            data class TooExpensive(val maxAllowed: MilliSatoshi, val actual: MilliSatoshi) : Reason()
+            sealed class TooExpensive : Reason() {
+                data class OverAbsoluteFee(val maxAbsoluteFee: Satoshi) : TooExpensive()
+                data class OverRelativeFee(val maxRelativeFeeBasisPoints: Int) : TooExpensive()
+            }
             object ChannelInitializing : Reason()
         }
     }
