@@ -4,7 +4,10 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Scripts
+import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.LightningCodecs
 
@@ -136,6 +139,42 @@ interface KeyManager {
             val encodedChildKey = DeterministicWallet.encode(DeterministicWallet.publicKey(userExtendedPrivateKey), testnet = chain != NodeParams.Chain.Mainnet)
             val userKey = "[${masterFingerprint.toHex()}/${encodedSwapInUserKeyPath(chain)}]$encodedChildKey"
             "wsh(and_v(v:pk($userKey),or_d(pk(${remoteServerPublicKey.toHex()}),older($refundDelay))))"
+        }
+
+        /**
+         * Create a recovery transaction that spends a swap-in transaction after the refund delay has passed
+         * @param swapInTx swap-in transaction
+         * @param address address to send funds to
+         * @param feeRate fee rate for the refund transaction
+         * @return a signed transaction that spends our swap-in transaction. It cannot be published until `swapInTx` has enough confirmations
+         */
+        fun createRecoveryTransaction(swapInTx: Transaction, address: String, feeRate: FeeratePerKw): Transaction? {
+            val utxos = swapInTx.txOut.filter { it.publicKeyScript.contentEquals(Script.write(pubkeyScript)) }
+            return if (utxos.isEmpty()) {
+                null
+            } else {
+                val ourOutput = TxOut(utxos.map { it.amount }.sum(), Bitcoin.addressToPublicKeyScript(chain.chainHash, address))
+                val unsignedTx = Transaction(
+                    version = 2,
+                    txIn = utxos.map { TxIn(OutPoint(swapInTx, swapInTx.txOut.indexOf(it).toLong()), sequence = refundDelay.toLong()) },
+                    txOut = listOf(ourOutput),
+                    lockTime = 0
+                )
+                val fees = run {
+                    val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo ->
+                        val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
+                        tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey,remoteServerPublicKey, refundDelay))
+                    }
+                    Transactions.weight2fee(feeRate, recoveryTx.weight())
+                }
+                val unsignedTx1 = unsignedTx.copy(txOut = listOf(ourOutput.copy(amount = ourOutput.amount - fees)))
+                val recoveryTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo ->
+                    val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
+                    tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey,remoteServerPublicKey, refundDelay))
+                }
+                // this tx is signed but cannot be published until swapInTx has `refundDelay` confirmations
+                recoveryTx
+            }
         }
 
         companion object {
