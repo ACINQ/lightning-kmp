@@ -2,7 +2,6 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.io.TcpSocket
-import fr.acinq.lightning.io.linesFlow
 import fr.acinq.lightning.io.send
 import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.*

@@ -23,6 +23,16 @@ interface TcpSocket {
 
     suspend fun startTls(tls: TLS): TcpSocket
 
+    fun linesFlow(): Flow<String> = flow {
+        val buffer = ByteArray(8192)
+        while (true) {
+            val size = receiveAvailable(buffer)
+            emit(buffer.subArray(size))
+        }
+    }
+        .decodeToString()
+        .splitByLines()
+
     fun close()
 
     sealed class TLS {
@@ -71,14 +81,3 @@ internal expect object PlatformSocketBuilder : TcpSocket.Builder
 
 suspend fun TcpSocket.receiveFully(size: Int): ByteArray =
     ByteArray(size).also { receiveFully(it) }
-
-fun TcpSocket.linesFlow(): Flow<String> =
-    flow {
-        val buffer = ByteArray(8192)
-        while (true) {
-            val size = receiveAvailable(buffer)
-            emit(buffer.subArray(size))
-        }
-    }
-        .decodeToString()
-        .splitByLines()
