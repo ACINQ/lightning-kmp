@@ -1,6 +1,9 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.io.send
 import fr.acinq.lightning.utils.*
@@ -22,14 +25,14 @@ sealed interface ElectrumClientCommand {
 sealed interface ElectrumConnectionStatus {
     data class Closed(val reason: TcpSocket.IOException?) : ElectrumConnectionStatus
     object Connecting : ElectrumConnectionStatus
-    data class Connected(val version: ServerVersionResponse, val height: Int, val header: BlockHeader) : ElectrumConnectionStatus
+    data class Connected(val version: ServerVersionResponse, val height: Int, val header: BlockHeader, val onchainFeeRates: OnChainFeerates) : ElectrumConnectionStatus
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClient(
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
-    private val loggerFactory: LoggerFactory
+    private val loggerFactory: LoggerFactory,
+    defaultExceptionHandler: CoroutineExceptionHandler? = null
 ) : CoroutineScope by scope, IElectrumClient {
 
     private val logger = loggerFactory.newLogger(this::class)
@@ -98,9 +101,11 @@ class ElectrumClient(
         }
     }
 
-    private fun establishConnection(serverAddress: ServerAddress) = launch(CoroutineExceptionHandler { _, exception ->
+    val exceptionHandler = defaultExceptionHandler ?: CoroutineExceptionHandler { _, exception ->
         logger.error(exception) { "error starting electrum client" }
-    }) {
+    }
+
+    private fun establishConnection(serverAddress: ServerAddress) = launch(exceptionHandler) {
         _connectionStatus.value = ElectrumConnectionStatus.Connecting
         val socket: TcpSocket = try {
             val (host, port, tls) = serverAddress
@@ -138,22 +143,41 @@ class ElectrumClient(
         }
 
         val flow = socket.linesFlow().map { json.decodeFromString(ElectrumResponseDeserializer, it) }
-        val version = ServerVersion()
-        sendRequest(version, 0)
         val rpcFlow = flow.filterIsInstance<Either.Right<Nothing, JsonRPCResponse>>().map { it.value }
+        var requestId = 0
+
+        val version = ServerVersion()
+        sendRequest(version, requestId++)
         val theirVersion = parseJsonResponse(version, rpcFlow.first())
         require(theirVersion is ServerVersionResponse) { "invalid server version response $theirVersion" }
         logger.info { "server version $theirVersion" }
-        sendRequest(HeaderSubscription, 0)
+
+        sendRequest(HeaderSubscription, requestId++)
         val header = parseJsonResponse(HeaderSubscription, rpcFlow.first())
         require(header is HeaderSubscriptionResponse) { "invalid header subscription response $header" }
+
+        suspend fun estimateFee(confirmations: Int): EstimateFeeResponse {
+            val request = EstimateFees(confirmations)
+            sendRequest(request, requestId++)
+            val response = parseJsonResponse(request, rpcFlow.first())
+            require(response is EstimateFeeResponse) { "invalid estimatefee response $response" }
+            return response
+        }
+
+        val fees = listOf(estimateFee(2), estimateFee(6), estimateFee(18), estimateFee(144))
+        logger.info { "onchain fees $fees" }
+        val feeRates = OnChainFeerates(
+            fundingFeerate = fees[3].feerate ?: FeeratePerKw(FeeratePerByte(2.sat)),
+            mutualCloseFeerate = fees[2].feerate ?: FeeratePerKw(FeeratePerByte(10.sat)),
+            claimMainFeerate = fees[1].feerate ?: FeeratePerKw(FeeratePerByte(20.sat)),
+            fastFeerate = fees[0].feerate ?: FeeratePerKw(FeeratePerByte(50.sat))
+        )
         _notifications.emit(header)
-        _connectionStatus.value = ElectrumConnectionStatus.Connected(theirVersion, header.blockHeight, header.header)
+        _connectionStatus.value = ElectrumConnectionStatus.Connected(theirVersion, header.blockHeight, header.header, feeRates)
         logger.info { "server tip $header" }
 
         // pending requests map
         val requestMap = mutableMapOf<Int, Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>>()
-        var requestId = 0
 
         // reset mailbox
         mailbox.cancel(CancellationException("connection in progress"))

@@ -2,15 +2,16 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.Connection
+import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import org.kodein.log.LoggerFactory
 import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 
@@ -176,5 +177,46 @@ class ElectrumClientTest : LightningTestSuite() {
         assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
 
         client.stop()
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    @Test
+    fun `catch coroutine errors`() {
+        val myCustomError = "this is a test error"
+
+        class MyTcpSopcket(val socket: TcpSocket) : TcpSocket by socket {
+            override fun linesFlow(): Flow<String> {
+                return super.linesFlow().map {
+                    // during the handshake with the electrum server we first ask for the server version, then headers, fee rates
+                    // so id == 2 means we're asking for fee rates, and here we return an error
+                    val sendError = it.contains("\"id\": 2")
+                    if (sendError) {
+                        """{"jsonrpc": "2.0", "error": {"code": 42, "message": "$myCustomError"}, "id": 2}"""
+                    } else {
+                        it
+                    }
+                }
+            }
+        }
+
+        class MyBuilder(val builder: TcpSocket.Builder) : TcpSocket.Builder {
+            override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
+                val socket = builder.connect(host, port, tls, loggerFactory)
+                return MyTcpSopcket(socket)
+            }
+        }
+
+        runBlocking {
+            val builder = MyBuilder(TcpSocket.Builder())
+            val errorFlow = MutableStateFlow<Throwable?>(null)
+            val myErrorHandler = CoroutineExceptionHandler { _, e -> errorFlow.value = e }
+            val client = ElectrumClient(builder, GlobalScope, LoggerFactory.default, myErrorHandler)
+            client.connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES))
+            client.connectionState.first { it is Connection.CLOSED }
+            client.connectionState.first { it is Connection.ESTABLISHING }
+            val error = errorFlow.filterNotNull().first()
+            assertTrue(error.message!!.contains(myCustomError))
+            client.stop()
+        }
     }
 }
