@@ -199,7 +199,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
                 TxOut(Satoshi(150000), Bitcoin.addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, TestConstants.Alice.keyManager.swapInOnChainWallet.address))
             ),
             lockTime = 0)
-        val recoveryTx = TestConstants.Alice.keyManager.swapInOnChainWallet.spendSwapInTransaction(swapInTx, TestConstants.Alice.keyManager.finalOnChainWallet.address(0), FeeratePerKw(FeeratePerByte(Satoshi(5))))!!
+        val recoveryTx = TestConstants.Alice.keyManager.swapInOnChainWallet.createRecoveryTransaction(swapInTx, TestConstants.Alice.keyManager.finalOnChainWallet.address(0), FeeratePerKw(FeeratePerByte(Satoshi(5))))!!
         assertEquals(swapInTx.txOut.size, recoveryTx.txIn.size)
         Transaction.correctlySpends(recoveryTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }

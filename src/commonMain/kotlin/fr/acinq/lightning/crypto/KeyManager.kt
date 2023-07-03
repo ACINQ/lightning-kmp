@@ -142,13 +142,13 @@ interface KeyManager {
         }
 
         /**
-         * Spend a swap-in transaction
+         * Create a recovery transaction that spends a swap-in transaction after the refund delay has passed
          * @param swapInTx swap-in transaction
          * @param address address to send funds to
          * @param feeRate fee rate for the refund transaction
          * @return a signed transaction that spends our swap-in transaction. It cannot be published until `swapInTx` has enough confirmations
          */
-        fun spendSwapInTransaction(swapInTx: Transaction, address: String, feeRate: FeeratePerKw): Transaction? {
+        fun createRecoveryTransaction(swapInTx: Transaction, address: String, feeRate: FeeratePerKw): Transaction? {
             val utxos = swapInTx.txOut.filter { it.publicKeyScript.contentEquals(Script.write(pubkeyScript)) }
             return if (utxos.isEmpty()) {
                 null
