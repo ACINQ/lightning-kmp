@@ -162,15 +162,15 @@ interface KeyManager {
                 )
                 val fees = run {
                     val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo ->
-                        val sig = Transaction.signInput(tx, index, redeemScript, SigHash.SIGHASH_ALL, utxo.amount, SigVersion.SIGVERSION_WITNESS_V0, userPrivateKey)
-                        tx.updateWitness(index, ScriptWitness.empty.push(ByteVector.empty).push(sig).push(redeemScript))
+                        val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
+                        tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey,remoteServerPublicKey, refundDelay))
                     }
                     Transactions.weight2fee(feeRate, recoveryTx.weight())
                 }
                 val unsignedTx1 = unsignedTx.copy(txOut = listOf(ourOutput.copy(amount = ourOutput.amount - fees)))
                 val recoveryTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo ->
-                    val sig = Transaction.signInput(tx, index, redeemScript, SigHash.SIGHASH_ALL, utxo.amount, SigVersion.SIGVERSION_WITNESS_V0, userPrivateKey)
-                    tx.updateWitness(index, ScriptWitness.empty.push(ByteVector.empty).push(sig).push(redeemScript)) // one sig for us, one empty sig for our peer
+                    val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
+                    tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey,remoteServerPublicKey, refundDelay))
                 }
                 // this tx is signed but cannot be published until swapInTx has `refundDelay` confirmations
                 recoveryTx
