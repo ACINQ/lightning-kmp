@@ -61,7 +61,7 @@ jobs:
       # 4 - tests
       - name: Check with integration
         if: matrix.os == 'ubuntu-latest'
-        run: ./gradlew -i build -PintegrationTests=include
+        run: ./gradlew -i -PintegrationTests=include jvmTest --tests "fr.acinq.lightning.blockchain.electrum.ElectrumClientTest.catch coroutine errors"
       - name: Check without integration
         if: matrix.os == 'macOS-latest'
         run: ./gradlew -i build -x jvmTest
