@@ -156,15 +156,23 @@ class ElectrumMiniWallet(
          * Depending on the status of the electrum connection, the subscription may or may not be sent to a server.
          * It is the responsibility of the caller to resubscribe on reconnection.
          */
-        suspend fun subscribe(bitcoinAddress: String): Pair<ByteVector32, String> {
-            val pubkeyScript = ByteVector(Script.write(Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)))
-            val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
-            kotlin.runCatching { client.startScriptHashSubscription(scriptHash) }
-                .map { response ->
-                    logger.info { "subscribed to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
-                    _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
+        suspend fun subscribe(bitcoinAddress: String): Pair<ByteVector32, String>? {
+            return when (val result = Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)) {
+                is AddressToPublicKeyScriptResult.Failure -> {
+                    logger.error { "cannot subscribe to $bitcoinAddress ($result)" }
+                    null
                 }
-            return scriptHash to bitcoinAddress
+
+                is AddressToPublicKeyScriptResult.Success -> {
+                    val pubkeyScript = ByteVector(Script.write(result.script))
+                    val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
+                    kotlin.runCatching { client.startScriptHashSubscription(scriptHash) }.map { response ->
+                        logger.info { "subscribed to address=$bitcoinAddress pubkeyScript=$pubkeyScript scriptHash=$scriptHash" }
+                        _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
+                    }
+                    scriptHash to bitcoinAddress
+                }
+            }
         }
 
         job = launch {
@@ -192,8 +200,9 @@ class ElectrumMiniWallet(
 
                         is WalletCommand.Companion.AddAddress -> {
                             logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
-                            val (scriptHash, address) = subscribe(it.bitcoinAddress)
-                            scriptHashes = scriptHashes + (scriptHash to address)
+                            subscribe(it.bitcoinAddress)?.let {
+                                scriptHashes = scriptHashes + it
+                            }
                         }
                     }
                 }

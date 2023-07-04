@@ -125,7 +125,7 @@ interface KeyManager {
 
         val redeemScript: List<ScriptElt> = Scripts.swapIn2of2(userPublicKey, remoteServerPublicKey, refundDelay)
         val pubkeyScript: List<ScriptElt> = Script.pay2wsh(redeemScript)
-        val address: String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript)!!
+        val address: String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).result!!
 
         /**
          * The output script descriptor matching our swap-in addresses.
@@ -153,27 +153,30 @@ interface KeyManager {
             return if (utxos.isEmpty()) {
                 null
             } else {
-                val ourOutput = TxOut(utxos.map { it.amount }.sum(), Bitcoin.addressToPublicKeyScript(chain.chainHash, address))
-                val unsignedTx = Transaction(
-                    version = 2,
-                    txIn = utxos.map { TxIn(OutPoint(swapInTx, swapInTx.txOut.indexOf(it).toLong()), sequence = refundDelay.toLong()) },
-                    txOut = listOf(ourOutput),
-                    lockTime = 0
-                )
-                val fees = run {
-                    val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo ->
-                        val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
-                        tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey,remoteServerPublicKey, refundDelay))
+                val pubKeyScript = Bitcoin.addressToPublicKeyScript(chain.chainHash, address).result
+                pubKeyScript?.let { script ->
+                    val ourOutput = TxOut(utxos.map { it.amount }.sum(), script)
+                    val unsignedTx = Transaction(
+                        version = 2,
+                        txIn = utxos.map { TxIn(OutPoint(swapInTx, swapInTx.txOut.indexOf(it).toLong()), sequence = refundDelay.toLong()) },
+                        txOut = listOf(ourOutput),
+                        lockTime = 0
+                    )
+                    val fees = run {
+                        val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo ->
+                            val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
+                            tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey, remoteServerPublicKey, refundDelay))
+                        }
+                        Transactions.weight2fee(feeRate, recoveryTx.weight())
                     }
-                    Transactions.weight2fee(feeRate, recoveryTx.weight())
+                    val unsignedTx1 = unsignedTx.copy(txOut = listOf(ourOutput.copy(amount = ourOutput.amount - fees)))
+                    val recoveryTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo ->
+                        val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
+                        tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey, remoteServerPublicKey, refundDelay))
+                    }
+                    // this tx is signed but cannot be published until swapInTx has `refundDelay` confirmations
+                    recoveryTx
                 }
-                val unsignedTx1 = unsignedTx.copy(txOut = listOf(ourOutput.copy(amount = ourOutput.amount - fees)))
-                val recoveryTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo ->
-                    val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
-                    tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey,remoteServerPublicKey, refundDelay))
-                }
-                // this tx is signed but cannot be published until swapInTx has `refundDelay` confirmations
-                recoveryTx
             }
         }
 
