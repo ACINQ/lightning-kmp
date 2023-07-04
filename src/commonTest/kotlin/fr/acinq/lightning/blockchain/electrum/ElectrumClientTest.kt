@@ -189,11 +189,11 @@ class ElectrumClientTest : LightningTestSuite() {
     fun `catch coroutine errors`() {
         val myCustomError = "this is a test error"
 
-        class MyTcpSocket() : TcpSocket {
+        class MyTcpSocket(val scope: CoroutineScope) : TcpSocket {
             val output = MutableSharedFlow<String>()
             override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) {
                 if (bytes != null) {
-                    GlobalScope.launch {
+                    scope.launch {
                         val encoded = bytes.decodeToString(offset, offset + length)
                         val request = Json.parseToJsonElement(encoded)
                         val response = when (request.jsonObject["method"]!!.jsonPrimitive.content) {
@@ -226,14 +226,14 @@ class ElectrumClientTest : LightningTestSuite() {
             }
         }
 
-        class MyBuilder() : TcpSocket.Builder {
+        class MyBuilder(val scope: CoroutineScope) : TcpSocket.Builder {
             override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
-                return MyTcpSocket()
+                return MyTcpSocket(scope)
             }
         }
 
         runBlocking {
-            val builder = MyBuilder()
+            val builder = MyBuilder(this)
             val errorFlow = MutableStateFlow<Throwable?>(null)
             val myErrorHandler = CoroutineExceptionHandler { _, e -> errorFlow.value = e }
             val client = ElectrumClient(builder, GlobalScope, LoggerFactory.default, myErrorHandler)
