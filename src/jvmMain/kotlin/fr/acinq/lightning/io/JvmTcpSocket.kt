@@ -3,9 +3,9 @@ package fr.acinq.lightning.io
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.channels.ClosedSendChannelException
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
@@ -27,43 +27,39 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 
     private val connection = socket.connection()
 
-    override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) =
+    private val ioHandler = CoroutineExceptionHandler { _, throwable ->
+        logger.error(throwable) { "handling tcp error" }
+        when (throwable) {
+            is ClosedSendChannelException -> throw TcpSocket.IOException.ConnectionClosed(throwable)
+            is ClosedReceiveChannelException -> throw TcpSocket.IOException.ConnectionClosed(throwable)
+            is java.io.IOException -> throw TcpSocket.IOException.ConnectionClosed(throwable)
+            else -> throw TcpSocket.IOException.Unknown(throwable.message, throwable)
+        }
+    }
+
+    override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) {
         withContext(Dispatchers.IO) {
-            try {
+            launch(ioHandler) {
                 if (bytes != null) connection.output.writeFully(bytes, offset, length)
                 if (flush) connection.output.flush()
-            } catch (ex: java.io.IOException) {
-                throw TcpSocket.IOException.ConnectionClosed(ex)
-            } catch (ex: Throwable) {
-                throw TcpSocket.IOException.Unknown(ex.message, ex)
-            }
-        }
-
-    private inline fun <R> tryReceive(receive: () -> R): R {
-        try {
-            return receive()
-        } catch (ex: ClosedReceiveChannelException) {
-            throw TcpSocket.IOException.ConnectionClosed(ex)
-        } catch (ex: SocketException) {
-            throw TcpSocket.IOException.ConnectionClosed(ex)
-        } catch (ex: Throwable) {
-            throw TcpSocket.IOException.Unknown(ex.message, ex)
+            }.join()
         }
     }
 
     private suspend fun <R> receive(read: suspend () -> R): R =
         withContext(Dispatchers.IO) {
-            tryReceive { read() }
+            async(ioHandler) {
+                read()
+            }.await()
         }
 
-    override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int): Unit {
+    override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int) {
         receive { connection.input.readFully(buffer, offset, length) }
     }
 
-    override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int {
-        return tryReceive { connection.input.readAvailable(buffer, offset, length) }
+    override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int =
+        receive { connection.input.readAvailable(buffer, offset, length) }
             .takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed()
-    }
 
     override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = try {
         when (tls) {
