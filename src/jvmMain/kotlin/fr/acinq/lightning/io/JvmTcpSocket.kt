@@ -157,9 +157,10 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
-        return try {
-            val logger = loggerFactory.newLogger(this::class)
-            val context = ioContext(logger)
+        val logger = loggerFactory.newLogger(this::class)
+        val context = ioContext(logger)
+        return withContext(context) {
+        try {
             val socket = aSocket(SelectorManager(context)).tcp().connect(host, port).let { socket ->
                 when (tls) {
                     is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(context)

@@ -108,7 +108,7 @@ class ElectrumClient(
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             socketBuilder?.connect(host, port, tls, loggerFactory) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
-            logger.warning { "TCP connect: ${ex.message}" }
+            logger.warning(ex) { "TCP connect: ${ex.message}" }
             val ioException = when (ex) {
                 is TcpSocket.IOException -> ex
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
