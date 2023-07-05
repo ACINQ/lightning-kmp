@@ -3,8 +3,11 @@ package fr.acinq.lightning.io
 import fr.acinq.lightning.utils.decodeToString
 import fr.acinq.lightning.utils.splitByLines
 import fr.acinq.lightning.utils.subArray
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 
 interface TcpSocket {
@@ -77,3 +80,8 @@ fun TcpSocket.linesFlow(): Flow<String> = flow {
         emit(buffer.subArray(size))
     }
 }.decodeToString().splitByLines()
+
+fun ioHandler(logger: Logger) = CoroutineExceptionHandler { _, throwable -> logger.error(throwable) { "IO error" } }
+
+/** Using the IO dispatcher is a good practice, but exceptions need to be caught because they are fatal on Android. */
+fun ioContext(logger: Logger) = Dispatchers.IO + ioHandler(logger)

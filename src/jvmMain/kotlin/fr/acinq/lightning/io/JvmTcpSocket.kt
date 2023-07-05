@@ -25,11 +25,12 @@ import javax.net.ssl.X509TrustManager
 class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
 
     private val logger = loggerFactory.newLogger(this::class)
+    private val context = ioContext(logger)
 
     private val connection = socket.connection()
 
     override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) =
-        withContext(Dispatchers.IO) {
+        withContext(context) {
             try {
                 ensureActive()
                 if (bytes != null) connection.output.writeFully(bytes, offset, length)
@@ -52,7 +53,7 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
     }
 
     private suspend fun <R> receive(read: suspend () -> R): R =
-        withContext(Dispatchers.IO) {
+        withContext(context) {
             ensureActive()
             tryReceive { read() }
         }
@@ -68,13 +69,13 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 
     override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = try {
         when (tls) {
-            is TcpSocket.TLS.TRUSTED_CERTIFICATES -> JvmTcpSocket(connection.tls(Dispatchers.IO), loggerFactory)
-            TcpSocket.TLS.UNSAFE_CERTIFICATES -> JvmTcpSocket(connection.tls(Dispatchers.IO) {
+            is TcpSocket.TLS.TRUSTED_CERTIFICATES -> JvmTcpSocket(connection.tls(context), loggerFactory)
+            TcpSocket.TLS.UNSAFE_CERTIFICATES -> JvmTcpSocket(connection.tls(context) {
                 logger.warning { "using unsafe TLS!" }
                 trustManager = unsafeX509TrustManager()
             }, loggerFactory)
             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                JvmTcpSocket(connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
+                JvmTcpSocket(connection.tls(context, tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
             }
             TcpSocket.TLS.DISABLED -> this
         }
@@ -154,33 +155,30 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 
-    private val selectorManager = ActorSelectorManager(Dispatchers.IO)
-
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
-        val logger = loggerFactory.newLogger(this::class)
-        return withContext(Dispatchers.IO) {
-            try {
-                val socket = aSocket(selectorManager).tcp().connect(host, port).let { socket ->
-                    when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(Dispatchers.IO)
-                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
-                            logger.warning { "using unsafe TLS!" }
-                            trustManager = JvmTcpSocket.unsafeX509TrustManager()
-                        }
-                        is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                            logger.info { "using certificate pinning for connections with $host" }
-                            socket.tls(Dispatchers.IO, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
-                        }
-                        else -> socket
+        return try {
+            val logger = loggerFactory.newLogger(this::class)
+            val context = ioContext(logger)
+            val socket = aSocket(SelectorManager(context)).tcp().connect(host, port).let { socket ->
+                when (tls) {
+                    is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(context)
+                    TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(context) {
+                        logger.warning { "using unsafe TLS!" }
+                        trustManager = JvmTcpSocket.unsafeX509TrustManager()
                     }
+                    is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
+                        logger.info { "using certificate pinning for connections with $host" }
+                        socket.tls(context, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
+                    }
+                    else -> socket
                 }
-                JvmTcpSocket(socket, loggerFactory)
-            } catch (e: Exception) {
-                throw when (e) {
-                    is ConnectException -> TcpSocket.IOException.ConnectionRefused()
-                    is SocketException -> TcpSocket.IOException.Unknown(e.message)
-                    else -> e
-                }
+            }
+            JvmTcpSocket(socket, loggerFactory)
+        } catch (e: Exception) {
+            throw when (e) {
+                is ConnectException -> TcpSocket.IOException.ConnectionRefused()
+                is SocketException -> TcpSocket.IOException.Unknown(e.message)
+                else -> e
             }
         }
     }
