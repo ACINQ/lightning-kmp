@@ -26,7 +26,7 @@ allprojects {
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    val ktorVersion: String by extra { "2.0.3" }
+    val ktorVersion: String by extra { "2.3.2" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
     val serializationVersion = "1.5.1"
     val coroutineVersion = "1.7.1"
