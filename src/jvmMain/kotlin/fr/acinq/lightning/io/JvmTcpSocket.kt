@@ -3,6 +3,8 @@ package fr.acinq.lightning.io
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.ensureActive
@@ -182,3 +184,8 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
         }
     }
 }
+
+fun ioHandler(logger: Logger) = CoroutineExceptionHandler { _, throwable -> logger.error(throwable) { "IO error" } }
+
+/** Using the IO dispatcher is a good practice, but exceptions need to be caught because they are fatal on Android. */
+fun ioContext(logger: Logger) = Dispatchers.IO + ioHandler(logger)
