@@ -111,7 +111,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
             ),
             actual = walletState.utxos.map {
                 val txOut = it.previousTx.txOut[it.outputIndex]
-                val address = Bitcoin.addressFromPublicKeyScript(Block.LivenetGenesisBlock.hash, txOut.publicKeyScript.toByteArray())
+                val address = Bitcoin.addressFromPublicKeyScript(Block.LivenetGenesisBlock.hash, txOut.publicKeyScript.toByteArray()).result!!
                 Triple(address, it.previousTx.txid to it.outputIndex, txOut.amount)
             }.toSet()
         )

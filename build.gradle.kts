@@ -29,11 +29,11 @@ kotlin {
     val ktorVersion: String by extra { "2.0.3" }
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
     val serializationVersion = "1.5.1"
-    val coroutineVersion = "1.7.1"
+    val coroutineVersion = "1.7.2"
 
     val commonMain by sourceSets.getting {
         dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.12.0") // when upgrading, keep secp256k1-kmp-jni-jvm in sync below
+            api("fr.acinq.bitcoin:bitcoin-kmp:0.13.0") // when upgrading, keep secp256k1-kmp-jni-jvm in sync below
             api("org.kodein.log:canard:0.18.0")
             api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
@@ -63,7 +63,7 @@ kotlin {
             api(ktor("client-okhttp"))
             api(ktor("network"))
             api(ktor("network-tls"))
-            implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.10.0")
+            implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.10.1")
             implementation("org.slf4j:slf4j-api:1.7.36")
             api("org.xerial:sqlite-jdbc:3.32.3.2")
         }
