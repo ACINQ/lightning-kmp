@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.kodein.log.LoggerFactory
 
-
 interface TcpSocket {
 
     sealed class IOException(override val message: String, cause: Throwable? = null) : Exception(message, cause) {
@@ -69,16 +68,12 @@ suspend fun TcpSocket.receiveAvailable(buffer: ByteArray) = receiveAvailable(buf
 
 internal expect object PlatformSocketBuilder : TcpSocket.Builder
 
-suspend fun TcpSocket.receiveFully(size: Int): ByteArray =
-    ByteArray(size).also { receiveFully(it) }
+suspend fun TcpSocket.receiveFully(size: Int): ByteArray = ByteArray(size).also { receiveFully(it) }
 
-fun TcpSocket.linesFlow(): Flow<String> =
-    flow {
-        val buffer = ByteArray(8192)
-        while (true) {
-            val size = receiveAvailable(buffer)
-            emit(buffer.subArray(size))
-        }
+fun TcpSocket.linesFlow(): Flow<String> = flow {
+    val buffer = ByteArray(8192)
+    while (true) {
+        val size = receiveAvailable(buffer)
+        emit(buffer.subArray(size))
     }
-        .decodeToString()
-        .splitByLines()
+}.decodeToString().splitByLines()

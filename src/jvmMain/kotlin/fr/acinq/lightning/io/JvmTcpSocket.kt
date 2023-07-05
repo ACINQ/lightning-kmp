@@ -5,6 +5,8 @@ import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
@@ -20,7 +22,6 @@ import java.util.*
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
-
 class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
 
     private val logger = loggerFactory.newLogger(this::class)
@@ -30,12 +31,13 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
     override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) =
         withContext(Dispatchers.IO) {
             try {
+                ensureActive()
                 if (bytes != null) connection.output.writeFully(bytes, offset, length)
                 if (flush) connection.output.flush()
+            } catch (ex: ClosedSendChannelException) {
+                throw TcpSocket.IOException.ConnectionClosed(ex)
             } catch (ex: java.io.IOException) {
                 throw TcpSocket.IOException.ConnectionClosed(ex)
-            } catch (ex: Throwable) {
-                throw TcpSocket.IOException.Unknown(ex.message, ex)
             }
         }
 
@@ -44,24 +46,23 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
             return receive()
         } catch (ex: ClosedReceiveChannelException) {
             throw TcpSocket.IOException.ConnectionClosed(ex)
-        } catch (ex: SocketException) {
+        } catch (ex: java.io.IOException) {
             throw TcpSocket.IOException.ConnectionClosed(ex)
-        } catch (ex: Throwable) {
-            throw TcpSocket.IOException.Unknown(ex.message, ex)
         }
     }
 
     private suspend fun <R> receive(read: suspend () -> R): R =
         withContext(Dispatchers.IO) {
+            ensureActive()
             tryReceive { read() }
         }
 
-    override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int): Unit {
+    override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int) {
         receive { connection.input.readFully(buffer, offset, length) }
     }
 
     override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int {
-        return tryReceive { connection.input.readAvailable(buffer, offset, length) }
+        return receive { connection.input.readAvailable(buffer, offset, length) }
             .takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed()
     }
 
