@@ -160,18 +160,19 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         val logger = loggerFactory.newLogger(this::class)
-        return withContext(Dispatchers.IO) {
+        val context = tlsContext(logger)
+        return withContext(context) {
             try {
-                val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->
+                val socket = aSocket(SelectorManager(context)).tcp().connect(host, port).let { socket ->
                     when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(tlsContext(logger))
-                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(tlsContext(logger)) {
+                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(context)
+                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(context) {
                             logger.warning { "using unsafe TLS!" }
                             trustManager = JvmTcpSocket.unsafeX509TrustManager()
                         }
                         is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
                             logger.info { "using certificate pinning for connections with $host" }
-                            socket.tls(tlsContext(logger), JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
+                            socket.tls(context, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
                         }
                         else -> socket
                     }
