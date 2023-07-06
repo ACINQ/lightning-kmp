@@ -3,8 +3,11 @@ package fr.acinq.lightning.io
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
@@ -20,7 +23,6 @@ import java.util.*
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
-
 class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
 
     private val logger = loggerFactory.newLogger(this::class)
@@ -30,8 +32,11 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
     override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) =
         withContext(Dispatchers.IO) {
             try {
+                ensureActive()
                 if (bytes != null) connection.output.writeFully(bytes, offset, length)
                 if (flush) connection.output.flush()
+            } catch (ex: ClosedSendChannelException) {
+                throw TcpSocket.IOException.ConnectionClosed(ex)
             } catch (ex: java.io.IOException) {
                 throw TcpSocket.IOException.ConnectionClosed(ex)
             } catch (ex: Throwable) {
@@ -44,7 +49,7 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
             return receive()
         } catch (ex: ClosedReceiveChannelException) {
             throw TcpSocket.IOException.ConnectionClosed(ex)
-        } catch (ex: SocketException) {
+        } catch (ex: java.io.IOException) {
             throw TcpSocket.IOException.ConnectionClosed(ex)
         } catch (ex: Throwable) {
             throw TcpSocket.IOException.Unknown(ex.message, ex)
@@ -53,34 +58,35 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 
     private suspend fun <R> receive(read: suspend () -> R): R =
         withContext(Dispatchers.IO) {
+            ensureActive()
             tryReceive { read() }
         }
 
-    override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int): Unit {
+    override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int) {
         receive { connection.input.readFully(buffer, offset, length) }
     }
 
     override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int {
-        return tryReceive { connection.input.readAvailable(buffer, offset, length) }
+        return receive { connection.input.readAvailable(buffer, offset, length) }
             .takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed()
     }
 
     override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = try {
         when (tls) {
-            is TcpSocket.TLS.TRUSTED_CERTIFICATES -> JvmTcpSocket(connection.tls(Dispatchers.IO), loggerFactory)
-            TcpSocket.TLS.UNSAFE_CERTIFICATES -> JvmTcpSocket(connection.tls(Dispatchers.IO) {
+            is TcpSocket.TLS.TRUSTED_CERTIFICATES -> JvmTcpSocket(connection.tls(tlsContext(logger)), loggerFactory)
+            TcpSocket.TLS.UNSAFE_CERTIFICATES -> JvmTcpSocket(connection.tls(tlsContext(logger)) {
                 logger.warning { "using unsafe TLS!" }
                 trustManager = unsafeX509TrustManager()
             }, loggerFactory)
             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                JvmTcpSocket(connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
+                JvmTcpSocket(connection.tls(tlsContext(logger), tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
             }
             TcpSocket.TLS.DISABLED -> this
         }
     } catch (e: Exception) {
         throw when (e) {
-            is ConnectException -> TcpSocket.IOException.ConnectionRefused()
-            is SocketException -> TcpSocket.IOException.Unknown(e.message)
+            is ConnectException -> TcpSocket.IOException.ConnectionRefused(e)
+            is SocketException -> TcpSocket.IOException.Unknown(e.message, e)
             else -> e
         }
     }
@@ -152,23 +158,20 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 }
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-
-    private val selectorManager = ActorSelectorManager(Dispatchers.IO)
-
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         val logger = loggerFactory.newLogger(this::class)
         return withContext(Dispatchers.IO) {
             try {
-                val socket = aSocket(selectorManager).tcp().connect(host, port).let { socket ->
+                val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->
                     when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(Dispatchers.IO)
-                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
+                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(tlsContext(logger))
+                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(tlsContext(logger)) {
                             logger.warning { "using unsafe TLS!" }
                             trustManager = JvmTcpSocket.unsafeX509TrustManager()
                         }
                         is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
                             logger.info { "using certificate pinning for connections with $host" }
-                            socket.tls(Dispatchers.IO, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
+                            socket.tls(tlsContext(logger), JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
                         }
                         else -> socket
                     }
@@ -176,11 +179,19 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                 JvmTcpSocket(socket, loggerFactory)
             } catch (e: Exception) {
                 throw when (e) {
-                    is ConnectException -> TcpSocket.IOException.ConnectionRefused()
-                    is SocketException -> TcpSocket.IOException.Unknown(e.message)
+                    is ConnectException -> TcpSocket.IOException.ConnectionRefused(e)
+                    is SocketException -> TcpSocket.IOException.Unknown(e.message, e)
                     else -> e
                 }
             }
         }
     }
 }
+
+fun tlsExceptionHandler(logger: Logger) = CoroutineExceptionHandler { _, throwable -> logger.error(throwable) { "TLS socket error: " } }
+
+/**
+ * Using the IO dispatcher is a good practice, but the TLS internal coroutines sometimes throw exceptions
+ * that are fatal on Android and aren't caught in the parent context, so we catch them explicitly.
+ */
+fun tlsContext(logger: Logger) = Dispatchers.IO + tlsExceptionHandler(logger)

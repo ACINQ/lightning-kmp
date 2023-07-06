@@ -26,7 +26,6 @@ sealed interface ElectrumConnectionStatus {
     data class Connected(val version: ServerVersionResponse, val height: Int, val header: BlockHeader) : ElectrumConnectionStatus
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class ElectrumClient(
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
@@ -100,7 +99,7 @@ class ElectrumClient(
     }
 
     private fun establishConnection(serverAddress: ServerAddress) = launch(CoroutineExceptionHandler { _, exception ->
-        logger.error(exception) { "error starting electrum client" }
+        logger.error(exception) { "error starting electrum client: " }
     }) {
         _connectionStatus.value = ElectrumConnectionStatus.Connecting
         val socket: TcpSocket = try {
@@ -108,7 +107,7 @@ class ElectrumClient(
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             socketBuilder?.connect(host, port, tls, loggerFactory) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
-            logger.warning { "TCP connect: ${ex.message}" }
+            logger.warning(ex) { "TCP connect: ${ex.message}: " }
             val ioException = when (ex) {
                 is TcpSocket.IOException -> ex
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
@@ -121,7 +120,7 @@ class ElectrumClient(
 
         fun closeSocket(ex: TcpSocket.IOException?) {
             if (_connectionStatus.value is ElectrumConnectionStatus.Closed) return
-            logger.warning { "closing TCP socket." }
+            logger.warning(ex) { "closing TCP socket: " }
             socket.close()
             _connectionStatus.value = ElectrumConnectionStatus.Closed(ex)
             mailbox.close(ex)
@@ -133,7 +132,7 @@ class ElectrumClient(
             try {
                 socket.send(bytes, flush = true)
             } catch (ex: TcpSocket.IOException) {
-                logger.warning(ex) { "cannot send to electrum server" }
+                logger.warning { "cannot send to electrum server" }
                 closeSocket(ex)
             }
         }
@@ -203,7 +202,7 @@ class ElectrumClient(
         launch { ping() }
         launch { respond() }
 
-        listen() // This suspends until the coroutines is cancelled or the socket is closed
+        listen() // This suspends until the coroutine is cancelled or the socket is closed
     }
 
     override suspend fun send(request: ElectrumRequest, replyTo: CompletableDeferred<ElectrumResponse>) {

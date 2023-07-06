@@ -300,7 +300,7 @@ class Peer(
                 loggerFactory = nodeParams.loggerFactory
             ) ?: error("socket builder is null.")
         } catch (ex: Throwable) {
-            logger.warning { "TCP connect: ${ex.message}" }
+            logger.warning(ex) { "TCP connect: ${ex.message}: " }
             val ioException = when (ex) {
                 is TcpSocket.IOException -> ex
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
@@ -311,7 +311,7 @@ class Peer(
 
         fun closeSocket(ex: TcpSocket.IOException?) {
             if (_connectionState.value is Connection.CLOSED) return
-            logger.warning { "closing TCP socket." }
+            logger.warning(ex) { "closing TCP socket: " }
             socket.close()
             _connectionState.value = Connection.CLOSED(ex)
             cancel()
