@@ -31,8 +31,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 
     override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) =
         withContext(Dispatchers.IO) {
+            ensureActive()
             try {
-                ensureActive()
                 if (bytes != null) connection.output.writeFully(bytes, offset, length)
                 if (flush) connection.output.flush()
             } catch (ex: ClosedSendChannelException) {
