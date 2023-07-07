@@ -14,12 +14,6 @@ import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.time.Duration.Companion.seconds
 
-/** Commands */
-sealed interface ElectrumClientCommand {
-    object Connected : ElectrumClientCommand
-    object Disconnected : ElectrumClientCommand
-}
-
 sealed interface ElectrumConnectionStatus {
     data class Closed(val reason: TcpSocket.IOException?) : ElectrumConnectionStatus
     object Connecting : ElectrumConnectionStatus
