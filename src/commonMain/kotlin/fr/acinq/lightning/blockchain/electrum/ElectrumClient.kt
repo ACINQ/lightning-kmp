@@ -21,18 +21,11 @@ sealed interface ElectrumConnectionStatus {
 }
 
 class ElectrumClient(
-    socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
     private val loggerFactory: LoggerFactory
 ) : CoroutineScope by scope, IElectrumClient {
 
     private val logger = loggerFactory.newLogger(this::class)
-
-    var socketBuilder: TcpSocket.Builder? = socketBuilder
-        set(value) {
-            logger.debug { "swap socket builder=$value" }
-            field = value
-        }
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -77,9 +70,9 @@ class ElectrumClient(
         }
     }
 
-    fun connect(serverAddress: ServerAddress) {
+    fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder) {
         if (_connectionStatus.value is ElectrumConnectionStatus.Closed) {
-            runJob = establishConnection(serverAddress)
+            runJob = establishConnection(serverAddress, socketBuilder)
         } else logger.warning { "electrum client is already running" }
     }
 
@@ -92,14 +85,14 @@ class ElectrumClient(
         }
     }
 
-    private fun establishConnection(serverAddress: ServerAddress) = launch(CoroutineExceptionHandler { _, exception ->
+    private fun establishConnection(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder) = launch(CoroutineExceptionHandler { _, exception ->
         logger.error(exception) { "error starting electrum client: " }
     }) {
         _connectionStatus.value = ElectrumConnectionStatus.Connecting
         val socket: TcpSocket = try {
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
-            socketBuilder?.connect(host, port, tls, loggerFactory) ?: error("socket builder is null.")
+            socketBuilder.connect(host, port, tls, loggerFactory)
         } catch (ex: Throwable) {
             logger.warning(ex) { "TCP connect: ${ex.message}: " }
             val ioException = when (ex) {

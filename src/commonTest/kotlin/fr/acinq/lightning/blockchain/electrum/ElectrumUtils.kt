@@ -6,7 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import org.kodein.log.LoggerFactory
 
 fun CoroutineScope.connectToElectrumServer(addr: ServerAddress): ElectrumClient =
-    ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(addr) }
+    ElectrumClient(this, LoggerFactory.default).apply { connect(addr, TcpSocket.Builder()) }
 
 fun CoroutineScope.connectToTestnetServer(): ElectrumClient =
     connectToElectrumServer(ServerAddress("testnet1.electrum.acinq.co", 51002, TcpSocket.TLS.UNSAFE_CERTIFICATES))
