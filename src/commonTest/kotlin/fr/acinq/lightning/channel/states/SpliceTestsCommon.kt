@@ -137,6 +137,39 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `abort after tx_complete then receive commit_sig`() {
+        val cmd = createSpliceOutRequest(50_000.sat)
+        val (alice, bob) = reachNormal()
+        val (alice1, actionsAlice1) = alice.process(cmd)
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<SpliceInit>()))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<SpliceAck>()))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxAddInput>()))
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
+        val txOut1 = actionsAlice3.findOutgoingMessage<TxAddOutput>()
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(txOut1))
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(actionsBob3.findOutgoingMessage<TxComplete>()))
+        // Instead of relaying the second output, we duplicate the first one, which will make Bob abort after receiving tx_complete.
+        actionsAlice4.hasOutgoingMessage<TxAddOutput>()
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(txOut1.copy(serialId = 100)))
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(actionsBob4.findOutgoingMessage<TxComplete>()))
+        val commitSigAlice = actionsAlice5.findOutgoingMessage<CommitSig>()
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(actionsAlice5.findOutgoingMessage<TxComplete>()))
+        val txAbortBob = actionsBob5.findOutgoingMessage<TxAbort>()
+        val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(txAbortBob))
+        assertIs<Normal>(alice6.state)
+        assertEquals(1, alice6.commitments.active.size)
+        assertEquals(SpliceStatus.None, alice6.state.spliceStatus)
+        val txAbortAlice = actionsAlice6.findOutgoingMessage<TxAbort>()
+        val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigAlice))
+        assertTrue(actionsBob6.isEmpty())
+        val (bob7, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(txAbortAlice))
+        assertIs<Normal>(bob7.state)
+        assertEquals(1, bob7.commitments.active.size)
+        assertEquals(SpliceStatus.None, bob7.state.spliceStatus)
+        assertTrue(actionsBob7.isEmpty())
+    }
+
+    @Test
     fun `exchange splice_locked`() {
         val (alice, bob) = reachNormal()
         val (alice1, bob1) = spliceOut(alice, bob, 60_000.sat)
