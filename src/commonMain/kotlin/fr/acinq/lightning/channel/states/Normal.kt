@@ -173,6 +173,10 @@ data class Normal(
                         is Either.Right -> Pair(this@Normal.copy(commitments = result.value), listOf())
                     }
                     is CommitSig -> when {
+                        spliceStatus == SpliceStatus.Aborted -> {
+                            logger.warning { "received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring..." }
+                            Pair(this@Normal, listOf())
+                        }
                         spliceStatus is SpliceStatus.WaitingForSigs -> {
                             val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
                             when (action) {
@@ -530,7 +534,8 @@ data class Normal(
                         }
                         else -> when (commitments.latest.localFundingStatus) {
                             is LocalFundingStatus.UnconfirmedFundingTx -> when (commitments.latest.localFundingStatus.sharedTx) {
-                                is PartiallySignedSharedTransaction -> when (val fullySignedTx = commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(channelKeys(), commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
+                                is PartiallySignedSharedTransaction -> when (val fullySignedTx =
+                                    commitments.latest.localFundingStatus.sharedTx.addRemoteSigs(channelKeys(), commitments.latest.localFundingStatus.fundingParams, cmd.message)) {
                                     null -> {
                                         logger.warning { "received invalid remote funding signatures for txId=${cmd.message.txId}" }
                                         logger.warning { "tx=${commitments.latest.localFundingStatus.sharedTx}" }
