@@ -16,7 +16,7 @@ sealed class LiquidityPolicy {
      * Allow automated liquidity managements, within relative and absolute fee limits. Both conditions must be met.
      * @param maxAbsoluteFee max absolute fee
      * @param maxRelativeFeeBasisPoints max relative fee (all included: service fee and mining fee) (1_000 bips = 10 %)
-     * @param skipAbsoluteFeeCheck useful for pay-to-open, being more lax may make sense when the sender doesn't retry payments
+     * @param skipAbsoluteFeeCheck only applies for off-chain payments, being more lax may make sense when the sender doesn't retry payments
      */
     data class Auto(val maxAbsoluteFee: Satoshi, val maxRelativeFeeBasisPoints: Int, val skipAbsoluteFeeCheck: Boolean) : LiquidityPolicy()
 
@@ -25,7 +25,7 @@ sealed class LiquidityPolicy {
         return when (this) {
             is Disable -> LiquidityEvents.Rejected.Reason.PolicySetToDisabled
             is Auto -> {
-                val maxAbsoluteFee = if (skipAbsoluteFeeCheck) 0.msat else this.maxAbsoluteFee.toMilliSatoshi()
+                val maxAbsoluteFee = if (skipAbsoluteFeeCheck && source == LiquidityEvents.Source.OffChainPayment) Long.MAX_VALUE.msat else this.maxAbsoluteFee.toMilliSatoshi()
                 val maxRelativeFee = amount * maxRelativeFeeBasisPoints / 10_000
                 logger.info { "liquidity policy check: fee=$fee maxAbsoluteFee=$maxAbsoluteFee maxRelativeFee=$maxRelativeFee policy=$this" }
                 if (fee > maxRelativeFee) {
