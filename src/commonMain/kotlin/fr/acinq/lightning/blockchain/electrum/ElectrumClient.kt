@@ -124,7 +124,7 @@ class ElectrumClient(
             }
         }
 
-        val flow = socket.linesFlow().map { json.decodeFromString(ElectrumResponseDeserializer, it) }
+        val flow = linesFlow(socket).map { json.decodeFromString(ElectrumResponseDeserializer, it) }
         val version = ServerVersion()
         sendRequest(version, 0)
         val rpcFlow = flow.filterIsInstance<Either.Right<Nothing, JsonRPCResponse>>().map { it.value }

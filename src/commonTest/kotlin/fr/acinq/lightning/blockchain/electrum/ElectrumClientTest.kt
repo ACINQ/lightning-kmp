@@ -2,13 +2,23 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.Connection
+import fr.acinq.lightning.utils.linesFlow
+import fr.acinq.lightning.utils.subArray
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
+import io.ktor.utils.io.charsets.*
+import io.ktor.utils.io.core.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlin.test.*
@@ -176,5 +186,89 @@ class ElectrumClientTest : LightningTestSuite() {
         assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
 
         client.stop()
+    }
+
+    @Test
+    fun `multiplex incoming messages from TCP socket`() = runTest {
+        class DummySocket(val chunks: ReceiveChannel<ByteArray>) : TcpSocket {
+            override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int {
+                val chunk = chunks.receive()
+                require(chunk.size <= length) { "invalid test data: chunk size is greater than buffer length (${chunk.size} > $length)" }
+                val size = minOf(chunk.size, length)
+                chunk.copyInto(buffer, 0, 0, size)
+                return size
+            }
+
+            override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int) = TODO("Not yet implemented")
+            override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) = TODO("Not yet implemented")
+            override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = TODO("Not yet implemented")
+            override fun close() = TODO("Not yet implemented")
+        }
+
+        // We read from the TCP sockets in chunks, which may:
+        //  - split messages across chunks
+        //  - split utf8 characters across chunks
+
+        run {
+            // In this test, we split a message across several chunks, and split a 2-bytes utf8 character across two chunks.
+            val message = "Rappelez-vous l'objet que nous vîmes, mon âme, ce beau matin d'été si doux : au détour d'un sentier une charogne infâme, sur un lit semé de cailloux."
+            val chunks = listOf(
+                ByteVector("52617070656c657a2d766f7573206c276f626a657420717565206e6f75732076c3"), // this chunk ends with only the first half of the 'î' character
+                ByteVector("ae6d65732c206d6f6e20c3a26d652c2063652062656175206d6174696e206427c3"),
+                ByteVector("a974c3a920736920646f7578203a2061752064c3a9746f7572206427756e207365"),
+                ByteVector("6e7469657220756e6520636861726f676e6520696e66c3a26d652c207375722075"),
+                ByteVector("6e206c69742073656dc3a9206465206361696c6c6f75782e 0a"), // we append a newline character (0x0a) to mark the message's end
+            )
+            assertEquals((message + "\n").toByteArray(Charsets.UTF_8).byteVector(), chunks.reduce { acc, chunk -> acc + chunk })
+
+            // One of the characters is split across two chunks:
+            assertEquals(chunks.first().size() - 1, "Rappelez-vous l'objet que nous v".toByteArray(Charsets.UTF_8).size)
+            assertEquals(chunks.first().size() + 1, "Rappelez-vous l'objet que nous vî".toByteArray(Charsets.UTF_8).size)
+            assertEquals(chunks.first(), "Rappelez-vous l'objet que nous vî".toByteArray(Charsets.UTF_8).subArray(33).byteVector())
+
+            val socketChan = Channel<ByteArray>(UNLIMITED)
+            chunks.forEach { chunk -> socketChan.send(chunk.toByteArray()) }
+
+            val messageFlow = linesFlow(DummySocket(socketChan), chunkSize = 33)
+            assertEquals(message, messageFlow.first())
+        }
+        run {
+            // In this test, each chunk contains more than one message, and the third message is split across chunks.
+            val messages = listOf(
+                "Les jambes en l'air, comme une femme lubrique,",
+                "Brûlante et suant les poisons,",
+                "Ouvrait d'une façon nonchalante et cynique",
+                "Son ventre plein d'exhalaisons."
+            )
+            val chunks = listOf(
+                ByteVector("4c6573206a616d62657320656e206c276169722c20636f6d6d6520756e652066656d6d65206c756272697175652c 0a 4272c3bb6c616e7465206574207375616e74206c657320706f69736f6e732c 0a 4f7576"),
+                ByteVector("72616974206427756e65206661c3a76f6e206e6f6e6368616c616e74652065742063796e69717565 0a 536f6e2076656e74726520706c65696e206427657868616c6169736f6e732e 0a"),
+            )
+            assertEquals(
+                messages.map { m -> (m + "\n").toByteArray(Charsets.UTF_8).byteVector() }.reduce { acc, chunk -> acc + chunk },
+                chunks.reduce { acc, chunk -> acc + chunk }
+            )
+
+            val socketChan = Channel<ByteArray>(UNLIMITED)
+            chunks.forEach { chunk -> socketChan.send(chunk.toByteArray()) }
+
+            val messageFlow = linesFlow(DummySocket(socketChan), chunkSize = 82)
+            assertEquals(messages, messageFlow.take(4).toList())
+        }
+        run {
+            // In this test, the first chunk contains the whole message but the newline character is in the second chunk.
+            val message = "Le soleil rayonnait sur cette pourriture, comme afin de la cuire à point"
+            val chunks = listOf(
+                ByteVector("4c6520736f6c65696c207261796f6e6e6169742073757220636574746520706f75727269747572652c20636f6d6d65206166696e206465206c6120637569726520c3a020706f696e74"),
+                ByteVector("0a"),
+            )
+            assertEquals(message.toByteArray(Charsets.UTF_8).byteVector(), chunks.first())
+
+            val socketChan = Channel<ByteArray>(UNLIMITED)
+            chunks.forEach { chunk -> socketChan.send(chunk.toByteArray()) }
+
+            val messageFlow = linesFlow(DummySocket(socketChan), chunkSize = 8192)
+            assertEquals(message, messageFlow.first())
+        }
     }
 }
