@@ -2,7 +2,6 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.io.TcpSocket
-import fr.acinq.lightning.io.linesFlow
 import fr.acinq.lightning.io.send
 import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.*
@@ -14,10 +13,16 @@ import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 import kotlin.time.Duration.Companion.seconds
 
-sealed interface ElectrumConnectionStatus {
-    data class Closed(val reason: TcpSocket.IOException?) : ElectrumConnectionStatus
-    object Connecting : ElectrumConnectionStatus
-    data class Connected(val version: ServerVersionResponse, val height: Int, val header: BlockHeader) : ElectrumConnectionStatus
+sealed class ElectrumConnectionStatus {
+    data class Closed(val reason: TcpSocket.IOException?) : ElectrumConnectionStatus()
+    object Connecting : ElectrumConnectionStatus()
+    data class Connected(val version: ServerVersionResponse, val height: Int, val header: BlockHeader) : ElectrumConnectionStatus()
+
+    fun toConnectionState(): Connection = when (this) {
+        is Closed -> Connection.CLOSED(this.reason)
+        Connecting -> Connection.ESTABLISHING
+        is Connected -> Connection.ESTABLISHED
+    }
 }
 
 class ElectrumClient(
@@ -29,46 +34,23 @@ class ElectrumClient(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    // new connection status
+    // connection status
     private val _connectionStatus = MutableStateFlow<ElectrumConnectionStatus>(ElectrumConnectionStatus.Closed(null))
     override val connectionStatus: StateFlow<ElectrumConnectionStatus> get() = _connectionStatus.asStateFlow()
-
-    // legacy connection status
-    private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
-    override val connectionState: StateFlow<Connection> get() = _connectionState.asStateFlow()
 
     // subscriptions notifications (headers, script_hashes, etc.)
     private val _notifications = MutableSharedFlow<ElectrumSubscriptionResponse>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
     override val notifications: Flow<ElectrumSubscriptionResponse> get() = _notifications.asSharedFlow()
 
-    private sealed interface Action {
-        data class SendToServer(val request: Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>) : Action
-        data class ProcessServerResponse(val response: Either<ElectrumSubscriptionResponse, JsonRPCResponse>) : Action
-        object Disconnect : Action
+    private sealed class Action {
+        data class SendToServer(val request: Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>) : Action()
+        data class ProcessServerResponse(val response: Either<ElectrumSubscriptionResponse, JsonRPCResponse>) : Action()
+        object Disconnect : Action()
     }
 
     private var mailbox = Channel<Action>()
 
-    private val statusJob: Job
     private var runJob: Job? = null
-
-    init {
-        logger.info { "initializing electrum client" }
-        statusJob = launch {
-            fun convert(input: ElectrumConnectionStatus): Connection = when (input) {
-                is ElectrumConnectionStatus.Connecting -> Connection.ESTABLISHING
-                is ElectrumConnectionStatus.Connected -> Connection.ESTABLISHED
-                is ElectrumConnectionStatus.Closed -> Connection.CLOSED(input.reason)
-            }
-
-            var previousState = convert(_connectionStatus.value)
-            _connectionStatus.map { convert(it) }.filter { it != previousState }.collect {
-                logger.info { "connection state changed: ${it::class.simpleName}" }
-                _connectionState.value = it
-                previousState = it
-            }
-        }
-    }
 
     fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder) {
         if (_connectionStatus.value is ElectrumConnectionStatus.Closed) {
@@ -227,7 +209,6 @@ class ElectrumClient(
         // NB: disconnecting cancels the output channel
         disconnect()
         // Cancel coroutine jobs
-        statusJob.cancel()
         runJob?.cancel()
         // Cancel event channel
         mailbox.cancel()

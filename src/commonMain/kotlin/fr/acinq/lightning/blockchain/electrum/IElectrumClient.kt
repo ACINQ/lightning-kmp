@@ -30,6 +30,4 @@ interface IElectrumClient {
     val notifications: Flow<ElectrumSubscriptionResponse>
 
     val connectionStatus: StateFlow<ElectrumConnectionStatus>
-
-    val connectionState: StateFlow<Connection>
 }

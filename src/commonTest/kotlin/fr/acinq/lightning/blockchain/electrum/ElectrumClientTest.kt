@@ -17,6 +17,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.joinAll
@@ -50,9 +51,9 @@ class ElectrumClientTest : LightningTestSuite() {
     private fun runTest(test: suspend CoroutineScope.(ElectrumClient) -> Unit) = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
 
-        client.connectionState.first { it is Connection.CLOSED }
-        client.connectionState.first { it is Connection.ESTABLISHING }
-        client.connectionState.first { it is Connection.ESTABLISHED }
+        client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.CLOSED }
+        client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.ESTABLISHING }
+        client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.ESTABLISHED }
 
         test(client)
     }

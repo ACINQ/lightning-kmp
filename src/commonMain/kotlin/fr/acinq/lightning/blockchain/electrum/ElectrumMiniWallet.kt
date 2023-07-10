@@ -178,7 +178,7 @@ class ElectrumMiniWallet(
         job = launch {
             launch {
                 // listen to connection events
-                client.connectionState.filterIsInstance<Connection.ESTABLISHED>().collect { mailbox.send(WalletCommand.Companion.ElectrumConnected) }
+                client.connectionStatus.filterIsInstance<ElectrumConnectionStatus.Connected>().collect { mailbox.send(WalletCommand.Companion.ElectrumConnected) }
             }
             launch {
                 // listen to subscriptions events
