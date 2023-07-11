@@ -72,6 +72,15 @@ class ElectrumClientTest : LightningTestSuite() {
     }
 
     @Test
+    fun `timeout connecting to electrumx server`() = runTest { client ->
+        client.disconnect()
+        client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.CLOSED }
+        assertFalse(client.connect(ElectrumMainnetServerAddress, TcpSocket.Builder(), timeout = 1.milliseconds))
+        client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.CLOSED }
+        client.stop()
+    }
+
+    @Test
     fun `estimate fees`() = runTest { client ->
         val response = client.estimateFees(3)
         assertTrue { response.feerate!! >= FeeratePerKw.MinimumFeeratePerKw }

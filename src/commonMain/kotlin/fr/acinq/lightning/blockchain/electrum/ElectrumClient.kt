@@ -62,13 +62,13 @@ class ElectrumClient(
 
     private var listenJob: ListenJob? = null
 
-    suspend fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder): Boolean {
+    suspend fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder, timeout: Duration = 15.seconds): Boolean {
         if (_connectionStatus.value is ElectrumConnectionStatus.Closed) {
             listenJob?.cancel()
-            val socket = openSocket(serverAddress, socketBuilder) ?: return false
+            val socket = openSocket(serverAddress, socketBuilder, timeout) ?: return false
             logger.info { "connected to electrumx instance" }
             return try {
-                handshake(socket)
+                handshake(socket, timeout)
                 listenJob = listen(socket)
                 true
             } catch (ex: Throwable) {
@@ -93,12 +93,14 @@ class ElectrumClient(
         _connectionStatus.value = ElectrumConnectionStatus.Closed(null)
     }
 
-    private suspend fun openSocket(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder): TcpSocket? {
+    private suspend fun openSocket(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder, timeout: Duration): TcpSocket? {
         return try {
             _connectionStatus.value = ElectrumConnectionStatus.Connecting
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
-            socketBuilder.connect(host, port, tls, loggerFactory)
+            withTimeout(timeout) {
+                socketBuilder.connect(host, port, tls, loggerFactory)
+            }
         } catch (ex: Throwable) {
             logger.warning(ex) { "could not connect to electrum server: " }
             val ioException = when (ex) {
@@ -114,23 +116,26 @@ class ElectrumClient(
      * We fetch some general information about the Electrum server and subscribe to receive block headers.
      * This function will throw if the server returns unexpected content or the connection is closed.
      */
-    private suspend fun handshake(socket: TcpSocket) {
-        val handshakeFlow = linesFlow(socket)
-            .map { json.decodeFromString(ElectrumResponseDeserializer, it) }
-            .filterIsInstance<Either.Right<Nothing, JsonRPCResponse>>()
-            .map { it.value }
-        // Note that since we synchronously wait for the response, we can safely reuse requestId = 0.
-        val ourVersion = ServerVersion()
-        socket.send(ourVersion.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
-        val theirVersion = parseJsonResponse(ourVersion, handshakeFlow.first())
-        require(theirVersion is ServerVersionResponse) { "invalid server version response $theirVersion" }
-        logger.info { "server version $theirVersion" }
-        socket.send(HeaderSubscription.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
-        val header = parseJsonResponse(HeaderSubscription, handshakeFlow.first())
-        require(header is HeaderSubscriptionResponse) { "invalid header subscription response $header" }
-        _notifications.emit(header)
-        _connectionStatus.value = ElectrumConnectionStatus.Connected(theirVersion, header.blockHeight, header.header)
-        logger.info { "server tip $header" }
+    private suspend fun handshake(socket: TcpSocket, timeout: Duration) {
+        withTimeout(timeout) {
+            val handshakeFlow = linesFlow(socket)
+                .map { json.decodeFromString(ElectrumResponseDeserializer, it) }
+                .filterIsInstance<Either.Right<Nothing, JsonRPCResponse>>()
+                .map { it.value }
+            // Note that since we synchronously wait for the response, we can safely reuse requestId = 0.
+            val ourVersion = ServerVersion()
+            socket.send(ourVersion.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
+            delay(1.seconds)
+            val theirVersion = parseJsonResponse(ourVersion, handshakeFlow.first())
+            require(theirVersion is ServerVersionResponse) { "invalid server version response $theirVersion" }
+            logger.info { "server version $theirVersion" }
+            socket.send(HeaderSubscription.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
+            val header = parseJsonResponse(HeaderSubscription, handshakeFlow.first())
+            require(header is HeaderSubscriptionResponse) { "invalid header subscription response $header" }
+            _notifications.emit(header)
+            _connectionStatus.value = ElectrumConnectionStatus.Connected(theirVersion, header.blockHeight, header.header)
+            logger.info { "server tip $header" }
+        }
     }
 
     /**
