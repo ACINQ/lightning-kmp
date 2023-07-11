@@ -3,7 +3,7 @@ package fr.acinq.lightning.io
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
-import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
@@ -39,6 +39,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
                 throw TcpSocket.IOException.ConnectionClosed(ex)
             } catch (ex: java.io.IOException) {
                 throw TcpSocket.IOException.ConnectionClosed(ex)
+            } catch (ex: CancellationException) {
+                throw ex
             } catch (ex: Throwable) {
                 throw TcpSocket.IOException.Unknown(ex.message, ex)
             }
@@ -51,6 +53,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
             throw TcpSocket.IOException.ConnectionClosed(ex)
         } catch (ex: java.io.IOException) {
             throw TcpSocket.IOException.ConnectionClosed(ex)
+        } catch (ex: CancellationException) {
+            throw ex
         } catch (ex: Throwable) {
             throw TcpSocket.IOException.Unknown(ex.message, ex)
         }
@@ -73,13 +77,13 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 
     override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = try {
         when (tls) {
-            is TcpSocket.TLS.TRUSTED_CERTIFICATES -> JvmTcpSocket(connection.tls(tlsContext(logger)), loggerFactory)
-            TcpSocket.TLS.UNSAFE_CERTIFICATES -> JvmTcpSocket(connection.tls(tlsContext(logger)) {
+            is TcpSocket.TLS.TRUSTED_CERTIFICATES -> JvmTcpSocket(connection.tls(Dispatchers.IO), loggerFactory)
+            TcpSocket.TLS.UNSAFE_CERTIFICATES -> JvmTcpSocket(connection.tls(Dispatchers.IO) {
                 logger.warning { "using unsafe TLS!" }
                 trustManager = unsafeX509TrustManager()
             }, loggerFactory)
             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                JvmTcpSocket(connection.tls(tlsContext(logger), tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
+                JvmTcpSocket(connection.tls(Dispatchers.IO, tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
             }
             TcpSocket.TLS.DISABLED -> this
         }
@@ -92,7 +96,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
     }
 
     override fun close() {
-        socket.close()
+        // NB: this safely calls close(), wrapping it into a try/catch.
+        socket.dispose()
     }
 
     companion object {
@@ -160,19 +165,18 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         val logger = loggerFactory.newLogger(this::class)
-        val context = tlsContext(logger)
-        return withContext(context) {
+        return withContext(Dispatchers.IO) {
             try {
-                val socket = aSocket(SelectorManager(context)).tcp().connect(host, port).let { socket ->
+                val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->
                     when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(context)
-                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(context) {
+                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(Dispatchers.IO)
+                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(Dispatchers.IO) {
                             logger.warning { "using unsafe TLS!" }
                             trustManager = JvmTcpSocket.unsafeX509TrustManager()
                         }
                         is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
                             logger.info { "using certificate pinning for connections with $host" }
-                            socket.tls(context, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
+                            socket.tls(Dispatchers.IO, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
                         }
                         else -> socket
                     }
@@ -188,11 +192,3 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
         }
     }
 }
-
-fun tlsExceptionHandler(logger: Logger) = CoroutineExceptionHandler { _, throwable -> logger.error(throwable) { "TLS socket error: " } }
-
-/**
- * Using the IO dispatcher is a good practice, but the TLS internal coroutines sometimes throw exceptions
- * that are fatal on Android and aren't caught in the parent context, so we catch them explicitly.
- */
-fun tlsContext(logger: Logger) = Dispatchers.IO + tlsExceptionHandler(logger)

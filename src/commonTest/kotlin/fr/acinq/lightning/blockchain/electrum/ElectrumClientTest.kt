@@ -5,10 +5,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.utils.Connection
-import fr.acinq.lightning.utils.linesFlow
-import fr.acinq.lightning.utils.subArray
-import fr.acinq.lightning.utils.toByteVector32
+import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
 import io.ktor.utils.io.charsets.*
 import io.ktor.utils.io.core.*
@@ -16,13 +13,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import org.kodein.log.LoggerFactory
 import kotlin.test.*
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class ElectrumClientTest : LightningTestSuite() {
@@ -50,17 +47,28 @@ class ElectrumClientTest : LightningTestSuite() {
 
     private fun runTest(test: suspend CoroutineScope.(ElectrumClient) -> Unit) = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-
-        client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.CLOSED }
-        client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.ESTABLISHING }
         client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.ESTABLISHED }
-
         test(client)
     }
 
     @Test
     fun `connect to an electrumx mainnet server`() = runTest { client ->
         client.stop()
+    }
+
+    @Test
+    fun `switch between electrumx servers`() = runTest { client ->
+        // Gracefully disconnect from previous server.
+        client.disconnect()
+        client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.CLOSED }
+        // Try to connect to unreachable server.
+        assertFalse(client.connect(ServerAddress("unknown.electrum.acinq.co", 51002, TcpSocket.TLS.UNSAFE_CERTIFICATES), TcpSocket.Builder()))
+        assertIs<ElectrumConnectionStatus.Closed>(client.connectionStatus.first())
+        // Reconnect to previous valid server.
+        assertTrue(client.connect(ElectrumMainnetServerAddress, TcpSocket.Builder()))
+        val connected = client.connectionStatus.filterIsInstance<ElectrumConnectionStatus.Connected>().first()
+        assertTrue(connected.height >= 798_000)
+        assertEquals(ServerVersionResponse("\"ElectrumX 1.15.0\"", "\"1.4\""), connected.version)
     }
 
     @Test
@@ -113,7 +121,6 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get merkle tree`() = runTest { client ->
         val merkle = client.getMerkle(referenceTx.txid, 500000)
-
         assertEquals(referenceTx.txid, merkle.txid)
         assertEquals(500000, merkle.block_height)
         assertEquals(2690, merkle.pos)
@@ -121,7 +128,6 @@ class ElectrumClientTest : LightningTestSuite() {
             Hex.decode("1f6231ed3de07345b607ec2a39b2d01bec2fe10dfb7f516ba4958a42691c9531").byteVector32(),
             merkle.root
         )
-
         client.stop()
     }
 
@@ -155,7 +161,6 @@ class ElectrumClientTest : LightningTestSuite() {
 
     @Test
     fun `client multiplexing`() = runTest { client ->
-
         val txids = listOf(
             ByteVector32("c1e943938e0bf2e9e6feefe22af0466514a58e9f7ed0f7ada6fd8e6dbeca0742"),
             ByteVector32("2cf392ecf573a638f01f72c276c3b097d05eb58f39e165eacc91b8a8df09fbd8"),
@@ -182,10 +187,20 @@ class ElectrumClientTest : LightningTestSuite() {
 
     @Test
     fun `get tx confirmations`() = runTest { client ->
-
         assertTrue(client.getConfirmations(ByteVector32("f1c290880b6fc9355e4f1b1b7d13b9a15babbe096adaf13d01f3a56def793fd5"))!! > 0)
         assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
+        client.stop()
+    }
 
+    @Test
+    fun `TCP socket closed by remote`() = runSuspendTest {
+        val socketBuilder = TestTcpSocketBuilder(TcpSocket.Builder())
+        val client = ElectrumClient(this, LoggerFactory.default, pingInterval = 100.milliseconds)
+        client.connect(ElectrumMainnetServerAddress, socketBuilder)
+        client.connectionStatus.first { it is ElectrumConnectionStatus.Connected }
+        delay(100.milliseconds)
+        socketBuilder.socket!!.close()
+        client.connectionStatus.first { it is ElectrumConnectionStatus.Closed }
         client.stop()
     }
 
@@ -270,6 +285,19 @@ class ElectrumClientTest : LightningTestSuite() {
 
             val messageFlow = linesFlow(DummySocket(socketChan), chunkSize = 8192)
             assertEquals(message, messageFlow.first())
+        }
+    }
+
+    companion object {
+        /** Wrap a [TcpSocket.Builder] instance to provide access to the last connected socket. */
+        class TestTcpSocketBuilder(private val builder: TcpSocket.Builder) : TcpSocket.Builder {
+            var socket: TcpSocket? = null
+
+            override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
+                val actualSocket = builder.connect(host, port, tls, loggerFactory)
+                socket = actualSocket
+                return actualSocket
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 sealed class ElectrumConnectionStatus {
@@ -26,9 +27,10 @@ sealed class ElectrumConnectionStatus {
 }
 
 class ElectrumClient(
-    scope: CoroutineScope,
-    private val loggerFactory: LoggerFactory
-) : CoroutineScope by scope, IElectrumClient {
+    private val scope: CoroutineScope,
+    private val loggerFactory: LoggerFactory,
+    private val pingInterval: Duration = 30.seconds
+) : IElectrumClient {
 
     private val logger = loggerFactory.newLogger(this::class)
 
@@ -45,133 +47,150 @@ class ElectrumClient(
     private sealed class Action {
         data class SendToServer(val request: Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>) : Action()
         data class ProcessServerResponse(val response: Either<ElectrumSubscriptionResponse, JsonRPCResponse>) : Action()
-        object Disconnect : Action()
     }
 
-    private var mailbox = Channel<Action>()
+    // This channel acts as a queue for messages sent/received to the electrum server.
+    // It lets us decouple message processing from the connection state (messages can be queued while we're connecting).
+    private val mailbox = Channel<Action>()
 
-    private var runJob: Job? = null
-
-    fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder) {
-        if (_connectionStatus.value is ElectrumConnectionStatus.Closed) {
-            runJob = establishConnection(serverAddress, socketBuilder)
-        } else logger.warning { "electrum client is already running" }
-    }
-
-    @OptIn(DelicateCoroutinesApi::class)
-    fun disconnect() {
-        launch {
-            if (!mailbox.isClosedForSend) {
-                mailbox.send(Action.Disconnect)
-            }
+    data class ListenJob(val job: Job, val socket: TcpSocket) {
+        fun cancel() {
+            job.cancel()
+            socket.close()
         }
     }
 
-    private fun establishConnection(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder) = launch(CoroutineExceptionHandler { _, exception ->
-        logger.error(exception) { "error starting electrum client: " }
-    }) {
-        _connectionStatus.value = ElectrumConnectionStatus.Connecting
-        val socket: TcpSocket = try {
+    private var listenJob: ListenJob? = null
+
+    suspend fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder): Boolean {
+        if (_connectionStatus.value is ElectrumConnectionStatus.Closed) {
+            listenJob?.cancel()
+            val socket = openSocket(serverAddress, socketBuilder) ?: return false
+            logger.info { "connected to electrumx instance" }
+            return try {
+                handshake(socket)
+                listenJob = listen(socket)
+                true
+            } catch (ex: Throwable) {
+                logger.warning(ex) { "electrum connection handshake failed: " }
+                val ioException = when (ex) {
+                    is TcpSocket.IOException -> ex
+                    else -> TcpSocket.IOException.Unknown(ex.message, ex)
+                }
+                socket.close()
+                _connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
+                false
+            }
+        } else {
+            logger.warning { "ignoring connection request, electrum client is already running" }
+            return false
+        }
+    }
+
+    fun disconnect() {
+        listenJob?.cancel()
+        listenJob = null
+        _connectionStatus.value = ElectrumConnectionStatus.Closed(null)
+    }
+
+    private suspend fun openSocket(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder): TcpSocket? {
+        return try {
+            _connectionStatus.value = ElectrumConnectionStatus.Connecting
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             socketBuilder.connect(host, port, tls, loggerFactory)
         } catch (ex: Throwable) {
-            logger.warning(ex) { "TCP connect: ${ex.message}: " }
+            logger.warning(ex) { "could not connect to electrum server: " }
             val ioException = when (ex) {
                 is TcpSocket.IOException -> ex
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
             }
             _connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
-            return@launch
+            null
         }
+    }
 
-        logger.info { "connected to electrumx instance" }
-
-        fun closeSocket(ex: TcpSocket.IOException?) {
-            if (_connectionStatus.value is ElectrumConnectionStatus.Closed) return
-            logger.warning(ex) { "closing TCP socket: " }
-            socket.close()
-            _connectionStatus.value = ElectrumConnectionStatus.Closed(ex)
-            mailbox.close(ex)
-            cancel()
-        }
-
-        suspend fun sendRequest(request: ElectrumRequest, requestId: Int) {
-            val bytes = request.asJsonRPCRequest(requestId).encodeToByteArray()
-            try {
-                socket.send(bytes, flush = true)
-            } catch (ex: TcpSocket.IOException) {
-                logger.warning { "cannot send to electrum server" }
-                closeSocket(ex)
-            }
-        }
-
-        val flow = linesFlow(socket).map { json.decodeFromString(ElectrumResponseDeserializer, it) }
-        val version = ServerVersion()
-        sendRequest(version, 0)
-        val rpcFlow = flow.filterIsInstance<Either.Right<Nothing, JsonRPCResponse>>().map { it.value }
-        val theirVersion = parseJsonResponse(version, rpcFlow.first())
+    /**
+     * We fetch some general information about the Electrum server and subscribe to receive block headers.
+     * This function will throw if the server returns unexpected content or the connection is closed.
+     */
+    private suspend fun handshake(socket: TcpSocket) {
+        val handshakeFlow = linesFlow(socket)
+            .map { json.decodeFromString(ElectrumResponseDeserializer, it) }
+            .filterIsInstance<Either.Right<Nothing, JsonRPCResponse>>()
+            .map { it.value }
+        // Note that since we synchronously wait for the response, we can safely reuse requestId = 0.
+        val ourVersion = ServerVersion()
+        socket.send(ourVersion.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
+        val theirVersion = parseJsonResponse(ourVersion, handshakeFlow.first())
         require(theirVersion is ServerVersionResponse) { "invalid server version response $theirVersion" }
         logger.info { "server version $theirVersion" }
-        sendRequest(HeaderSubscription, 0)
-        val header = parseJsonResponse(HeaderSubscription, rpcFlow.first())
+        socket.send(HeaderSubscription.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
+        val header = parseJsonResponse(HeaderSubscription, handshakeFlow.first())
         require(header is HeaderSubscriptionResponse) { "invalid header subscription response $header" }
         _notifications.emit(header)
         _connectionStatus.value = ElectrumConnectionStatus.Connected(theirVersion, header.blockHeight, header.header)
         logger.info { "server tip $header" }
+    }
 
-        // pending requests map
-        val requestMap = mutableMapOf<Int, Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>>()
-        var requestId = 0
-
-        // reset mailbox
-        mailbox.cancel(CancellationException("connection in progress"))
-        mailbox = Channel()
-
-        suspend fun ping() {
-            while (isActive) {
-                delay(30.seconds)
-                val pong = rpcCall<PingResponse>(Ping)
-                logger.debug { "received ping response $pong" }
+    /**
+     * Start a background coroutine that sends/receive on the TCP socket with the remote server.
+     *
+     * This uses the coroutine scope of the [ElectrumClient], not the scope of the caller, and uses supervision
+     * to ensure that its failure doesn't propagate to the parent, which is likely the application's main scope.
+     *
+     * If this job fails or is cancelled, we clean up resources and set the [connectionStatus] to [ElectrumConnectionStatus.Closed].
+     * The wallet application can then decide to automatically reconnect or switch to a different Electrum server.
+     */
+    private fun listen(socket: TcpSocket): ListenJob {
+        val job = scope.launch(CoroutineName("electrum-client") + SupervisorJob() + CoroutineExceptionHandler { _, ex ->
+            logger.warning(ex) { "electrum connection error: " }
+            socket.close()
+            val ioException = when (ex) {
+                is TcpSocket.IOException -> ex
+                else -> TcpSocket.IOException.Unknown(ex.message, ex)
             }
-        }
+            _connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
+        }) {
+            launch(CoroutineName("keep-alive")) {
+                while (isActive) {
+                    delay(pingInterval)
+                    val pong = rpcCall<PingResponse>(Ping)
+                    logger.debug { "received ping response $pong" }
+                }
+            }
 
-        suspend fun respond() {
-            for (msg in mailbox) {
-                when (msg) {
-                    is Action.SendToServer -> {
-                        requestMap[requestId] = msg.request
-                        sendRequest(msg.request.first, requestId++)
-                    }
-                    is Action.ProcessServerResponse -> when (msg.response) {
-                        is Either.Left -> _notifications.emit(msg.response.value)
-                        is Either.Right -> msg.response.value.id?.let { id ->
-                            requestMap.remove(id)?.let { (request, replyTo) ->
-                                replyTo.complete(parseJsonResponse(request, msg.response.value))
+            launch(CoroutineName("process")) {
+                var requestId = 0
+                val requestMap = mutableMapOf<Int, Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>>()
+                for (msg in mailbox) {
+                    when (msg) {
+                        is Action.SendToServer -> {
+                            requestMap[requestId] = msg.request
+                            socket.send(msg.request.first.asJsonRPCRequest(requestId++).encodeToByteArray(), flush = true)
+                        }
+                        is Action.ProcessServerResponse -> when (msg.response) {
+                            is Either.Left -> _notifications.emit(msg.response.value)
+                            is Either.Right -> msg.response.value.id?.let { id ->
+                                requestMap.remove(id)?.let { (request, replyTo) ->
+                                    replyTo.complete(parseJsonResponse(request, msg.response.value))
+                                }
                             }
                         }
                     }
-                    is Action.Disconnect -> {
-                        closeSocket(null)
-                    }
                 }
             }
-        }
 
-        suspend fun listen() {
-            try {
+            val listenJob = launch(CoroutineName("listen")) {
+                val flow = linesFlow(socket).map { json.decodeFromString(ElectrumResponseDeserializer, it) }
                 flow.collect { response -> mailbox.send(Action.ProcessServerResponse(response)) }
-                closeSocket(null)
-            } catch (ex: TcpSocket.IOException) {
-                logger.warning { "TCP receive: ${ex.message}" }
-                closeSocket(ex)
             }
+
+            // Suspend until the coroutine is cancelled or the socket is closed.
+            listenJob.join()
         }
 
-        launch { ping() }
-        launch { respond() }
-
-        listen() // This suspends until the coroutine is cancelled or the socket is closed
+        return ListenJob(job, socket)
     }
 
     override suspend fun send(request: ElectrumRequest, replyTo: CompletableDeferred<ElectrumResponse>) {
@@ -206,11 +225,7 @@ class ElectrumClient(
     /** Stop this instance for good, the client cannot be used after it has been closed. */
     fun stop() {
         logger.info { "electrum client stopping" }
-        // NB: disconnecting cancels the output channel
         disconnect()
-        // Cancel coroutine jobs
-        runJob?.cancel()
-        // Cancel event channel
         mailbox.cancel()
     }
 
