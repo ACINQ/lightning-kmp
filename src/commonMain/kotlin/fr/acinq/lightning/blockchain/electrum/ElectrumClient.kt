@@ -198,13 +198,9 @@ class ElectrumClient(
         return ListenJob(job, socket)
     }
 
-    override suspend fun send(request: ElectrumRequest, replyTo: CompletableDeferred<ElectrumResponse>) {
-        mailbox.send(Action.SendToServer(Pair(request, replyTo)))
-    }
-
-    suspend inline fun <reified T : ElectrumResponse> rpcCall(request: ElectrumRequest): T {
+    private suspend inline fun <reified T : ElectrumResponse> rpcCall(request: ElectrumRequest): T {
         val replyTo = CompletableDeferred<ElectrumResponse>()
-        send(request, replyTo)
+        mailbox.send(Action.SendToServer(Pair(request, replyTo)))
         return when (val res = replyTo.await()) {
             is ServerError -> error(res)
             else -> res as T
@@ -212,6 +208,10 @@ class ElectrumClient(
     }
 
     override suspend fun getTx(txid: ByteVector32): Transaction = rpcCall<GetTransactionResponse>(GetTransaction(txid)).tx
+
+    override suspend fun getHeader(blockHeight: Int): BlockHeader = rpcCall<GetHeaderResponse>(GetHeader(blockHeight)).header
+
+    override suspend fun getHeaders(startHeight: Int, count: Int): List<BlockHeader> = rpcCall<GetHeadersResponse>(GetHeaders(startHeight, count)).headers
 
     override suspend fun getMerkle(txid: ByteVector32, blockHeight: Int, contextOpt: Transaction?): GetMerkleResponse = rpcCall<GetMerkleResponse>(GetMerkle(txid, blockHeight, contextOpt))
 

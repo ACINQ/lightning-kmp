@@ -1,17 +1,20 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.lightning.utils.Connection
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 interface IElectrumClient {
-
-    suspend fun send(request: ElectrumRequest, replyTo: CompletableDeferred<ElectrumResponse>)
+    val notifications: Flow<ElectrumSubscriptionResponse>
+    val connectionStatus: StateFlow<ElectrumConnectionStatus>
 
     suspend fun getTx(txid: ByteVector32): Transaction
+
+    suspend fun getHeader(blockHeight: Int): BlockHeader
+
+    suspend fun getHeaders(startHeight: Int, count: Int): List<BlockHeader>
 
     suspend fun getMerkle(txid: ByteVector32, blockHeight: Int, contextOpt: Transaction? = null): GetMerkleResponse
 
@@ -26,8 +29,4 @@ interface IElectrumClient {
     suspend fun broadcastTransaction(tx: Transaction): BroadcastTransactionResponse
 
     suspend fun estimateFees(confirmations: Int): EstimateFeeResponse
-
-    val notifications: Flow<ElectrumSubscriptionResponse>
-
-    val connectionStatus: StateFlow<ElectrumConnectionStatus>
 }
