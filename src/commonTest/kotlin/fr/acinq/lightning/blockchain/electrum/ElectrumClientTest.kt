@@ -66,8 +66,9 @@ class ElectrumClientTest : LightningTestSuite() {
 
     @Test
     fun `estimate fees`() = runTest { client ->
-        val response = client.estimateFees(3)
-        assertTrue { response.feerate!! >= FeeratePerKw.MinimumFeeratePerKw }
+        val feerate = client.estimateFees(3)
+        assertNotNull(feerate)
+        assertTrue(feerate >= FeeratePerKw.MinimumFeeratePerKw)
         client.stop()
     }
 
@@ -79,12 +80,27 @@ class ElectrumClientTest : LightningTestSuite() {
     }
 
     @Test
+    fun `get transaction -- not found`() = runTest { client ->
+        val tx = client.getTx(ByteVector32.Zeroes)
+        assertNull(tx)
+        client.stop()
+    }
+
+    @Test
     fun `get header`() = runTest { client ->
         val header = client.getHeader(100000)
+        assertNotNull(header)
         assertEquals(
             Hex.decode("000000000003ba27aa200b1cecaad478d2b00432346c3f1f3986da1afd33e506").byteVector32(),
             header.blockId
         )
+        client.stop()
+    }
+
+    @Test
+    fun `get header -- not found`() = runTest { client ->
+        val header = client.getHeader(7_500_000)
+        assertNull(header)
         client.stop()
     }
 
@@ -97,8 +113,16 @@ class ElectrumClientTest : LightningTestSuite() {
     }
 
     @Test
+    fun `get headers -- not found`() = runTest { client ->
+        val headers = client.getHeaders(7_500_000, 10)
+        assertTrue(headers.isEmpty())
+        client.stop()
+    }
+
+    @Test
     fun `get merkle tree`() = runTest { client ->
         val merkle = client.getMerkle(referenceTx.txid, 500000)
+        assertNotNull(merkle)
         assertEquals(referenceTx.txid, merkle.txid)
         assertEquals(500000, merkle.block_height)
         assertEquals(2690, merkle.pos)
@@ -156,6 +180,7 @@ class ElectrumClientTest : LightningTestSuite() {
         val jobs = txids.map {
             launch {
                 val tx = client.getTx(it)
+                assertNotNull(tx)
                 assertEquals(it, tx.txid)
             }
         }
@@ -165,8 +190,9 @@ class ElectrumClientTest : LightningTestSuite() {
 
     @Test
     fun `get tx confirmations`() = runTest { client ->
-        assertTrue(client.getConfirmations(ByteVector32("f1c290880b6fc9355e4f1b1b7d13b9a15babbe096adaf13d01f3a56def793fd5"))!! > 0)
-        assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
+        val blockHeight = 788_370
+        assertEquals(10, client.getConfirmations(ByteVector32("f1c290880b6fc9355e4f1b1b7d13b9a15babbe096adaf13d01f3a56def793fd5"), blockHeight))
+        assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), blockHeight))
         client.stop()
     }
 

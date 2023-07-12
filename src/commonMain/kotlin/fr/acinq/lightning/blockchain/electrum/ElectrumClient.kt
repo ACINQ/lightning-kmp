@@ -1,6 +1,7 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.io.send
 import fr.acinq.lightning.utils.*
@@ -198,34 +199,38 @@ class ElectrumClient(
         return ListenJob(job, socket)
     }
 
-    private suspend inline fun <reified T : ElectrumResponse> rpcCall(request: ElectrumRequest): T {
+    private suspend inline fun <reified T : ElectrumResponse> rpcCall(request: ElectrumRequest): Either<ServerError, T> {
         val replyTo = CompletableDeferred<ElectrumResponse>()
         mailbox.send(Action.SendToServer(Pair(request, replyTo)))
+        // We don't need to catch exceptions thrown by await(), because the only way we complete the replyTo (in the main processing loop) is inherently safe.
         return when (val res = replyTo.await()) {
-            is ServerError -> error(res)
-            else -> res as T
+            is ServerError -> {
+                logger.warning { "received error for ${res.request.method}: ${res.error.message}" }
+                Either.Left(res)
+            }
+            else -> Either.Right(res as T)
         }
     }
 
-    override suspend fun getTx(txid: ByteVector32): Transaction = rpcCall<GetTransactionResponse>(GetTransaction(txid)).tx
+    override suspend fun getTx(txid: ByteVector32): Transaction? = rpcCall<GetTransactionResponse>(GetTransaction(txid)).right?.tx
 
-    override suspend fun getHeader(blockHeight: Int): BlockHeader = rpcCall<GetHeaderResponse>(GetHeader(blockHeight)).header
+    override suspend fun getHeader(blockHeight: Int): BlockHeader? = rpcCall<GetHeaderResponse>(GetHeader(blockHeight)).right?.header
 
-    override suspend fun getHeaders(startHeight: Int, count: Int): List<BlockHeader> = rpcCall<GetHeadersResponse>(GetHeaders(startHeight, count)).headers
+    override suspend fun getHeaders(startHeight: Int, count: Int): List<BlockHeader> = rpcCall<GetHeadersResponse>(GetHeaders(startHeight, count)).right?.headers ?: listOf()
 
-    override suspend fun getMerkle(txid: ByteVector32, blockHeight: Int, contextOpt: Transaction?): GetMerkleResponse = rpcCall<GetMerkleResponse>(GetMerkle(txid, blockHeight, contextOpt))
+    override suspend fun getMerkle(txid: ByteVector32, blockHeight: Int, contextOpt: Transaction?): GetMerkleResponse? = rpcCall<GetMerkleResponse>(GetMerkle(txid, blockHeight, contextOpt)).right
 
-    override suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem> = rpcCall<GetScriptHashHistoryResponse>(GetScriptHashHistory(scriptHash)).history
+    override suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem> = rpcCall<GetScriptHashHistoryResponse>(GetScriptHashHistory(scriptHash)).right?.history ?: listOf()
 
-    override suspend fun getScriptHashUnspents(scriptHash: ByteVector32): List<UnspentItem> = rpcCall<ScriptHashListUnspentResponse>(ScriptHashListUnspent(scriptHash)).unspents
+    override suspend fun getScriptHashUnspents(scriptHash: ByteVector32): List<UnspentItem> = rpcCall<ScriptHashListUnspentResponse>(ScriptHashListUnspent(scriptHash)).right?.unspents ?: listOf()
 
-    override suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse = rpcCall(ScriptHashSubscription(scriptHash))
+    override suspend fun broadcastTransaction(tx: Transaction): ByteVector32 = rpcCall<BroadcastTransactionResponse>(BroadcastTransaction(tx)).right?.tx?.txid ?: tx.txid
 
-    override suspend fun startHeaderSubscription(): HeaderSubscriptionResponse = rpcCall(HeaderSubscription)
+    override suspend fun estimateFees(confirmations: Int): FeeratePerKw? = rpcCall<EstimateFeeResponse>(EstimateFees(confirmations)).right?.feerate
 
-    override suspend fun broadcastTransaction(tx: Transaction): BroadcastTransactionResponse = rpcCall(BroadcastTransaction(tx))
+    override suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse = rpcCall<ScriptHashSubscriptionResponse>(ScriptHashSubscription(scriptHash)).right!!
 
-    override suspend fun estimateFees(confirmations: Int): EstimateFeeResponse = rpcCall(EstimateFees(confirmations))
+    override suspend fun startHeaderSubscription(): HeaderSubscriptionResponse = rpcCall<HeaderSubscriptionResponse>(HeaderSubscription).right!!
 
     /** Stop this instance for good, the client cannot be used after it has been closed. */
     fun stop() {

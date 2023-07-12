@@ -1,7 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -138,11 +137,8 @@ class ElectrumMiniWallet(
                     val unspents = client.getScriptHashUnspents(msg.scriptHash)
                     val newUtxos = unspents.minus((_walletStateFlow.value.addresses[bitcoinAddress] ?: emptyList()).toSet())
                     // request new parent txs
-                    val parentTxs = newUtxos.map { utxo ->
-                        val tx = client.getTx(utxo.txid)
-                        logger.mdcinfo { "received parent transaction with txid=${tx.txid}" }
-                        tx
-                    }
+                    val parentTxs = newUtxos.mapNotNull { utxo -> client.getTx(utxo.txid) }
+                    parentTxs.forEach { tx -> logger.mdcinfo { "received parent transaction with txid=${tx.txid}" } }
                     val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to unspents), parentTxs = this.parentTxs + parentTxs.associateBy { it.txid })
                     logger.mdcinfo { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
@@ -162,7 +158,6 @@ class ElectrumMiniWallet(
                     logger.error { "cannot subscribe to $bitcoinAddress ($result)" }
                     null
                 }
-
                 is AddressToPublicKeyScriptResult.Success -> {
                     val pubkeyScript = ByteVector(Script.write(result.script))
                     val scriptHash = ElectrumClient.computeScriptHash(pubkeyScript)
@@ -191,13 +186,11 @@ class ElectrumMiniWallet(
                             logger.mdcinfo { "electrum connected" }
                             scriptHashes.values.forEach { scriptHash -> subscribe(scriptHash) }
                         }
-
                         is WalletCommand.Companion.ElectrumNotification -> {
                             if (it.msg is ScriptHashSubscriptionResponse) {
                                 _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
                             }
                         }
-
                         is WalletCommand.Companion.AddAddress -> {
                             logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
                             subscribe(it.bitcoinAddress)?.let {
