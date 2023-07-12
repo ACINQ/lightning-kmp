@@ -30,7 +30,8 @@ sealed class ElectrumConnectionStatus {
 class ElectrumClient(
     private val scope: CoroutineScope,
     private val loggerFactory: LoggerFactory,
-    private val pingInterval: Duration = 30.seconds
+    private val pingInterval: Duration = 30.seconds,
+    private var rpcTimeout: Duration = 10.seconds
 ) : IElectrumClient {
 
     private val logger = loggerFactory.newLogger(this::class)
@@ -199,16 +200,60 @@ class ElectrumClient(
         return ListenJob(job, socket)
     }
 
+    /** This can be used to set longer timeouts if we detect a slow connection (e.g. Tor). */
+    fun setRpcTimeout(timeout: Duration) {
+        rpcTimeout = timeout
+    }
+
+    /**
+     * We may never get a response to our requests, because the electrum protocol is fully asynchronous (we write a
+     * request on the TCP socket, and at some point in the future the server may send us a response).
+     *
+     * This can for example happen if:
+     *  - the server drops our request for whatever reason
+     *  - we get disconnected after sending the request and reconnect to a different server
+     *
+     * We can mitigate that by retrying after a delay and disconnecting from servers that don't seem to be responsive.
+     *
+     * @param replyTo callers should use the same replyTo for retries: this guarantees that if a previous attempt
+     * succeeds after its timeout, we will return the result and ignore the retries.
+     */
+    private suspend inline fun rpcCallWithTimeout(replyTo: CompletableDeferred<ElectrumResponse>, request: ElectrumRequest): ElectrumResponse? {
+        // Sending to the mailbox suspends until the request is picked up and written to the TCP socket.
+        // We explicitly keep this out of the timeout, which lets us suspend until we're connected to an electrum server.
+        mailbox.send(Action.SendToServer(Pair(request, replyTo)))
+        // We don't need to catch exceptions thrown by await(): our code only completes it with valid results.
+        return withTimeoutOrNull(rpcTimeout) { replyTo.await() }
+    }
+
+    /** Send a request using timeouts, retrying once and giving up after that retry. */
     private suspend inline fun <reified T : ElectrumResponse> rpcCall(request: ElectrumRequest): Either<ServerError, T> {
         val replyTo = CompletableDeferred<ElectrumResponse>()
-        mailbox.send(Action.SendToServer(Pair(request, replyTo)))
-        // We don't need to catch exceptions thrown by await(), because the only way we complete the replyTo (in the main processing loop) is inherently safe.
-        return when (val res = replyTo.await()) {
+        val result = rpcCallWithTimeout(replyTo, request)
+            ?: rpcCallWithTimeout(replyTo, request)
+            ?: ServerError(request, JsonRPCError(0, "timeout"))
+        return when (result) {
             is ServerError -> {
-                logger.warning { "received error for ${res.request.method}: ${res.error.message}" }
-                Either.Left(res)
+                logger.warning { "received error for ${request.method}: ${result.error.message}" }
+                Either.Left(result)
             }
-            else -> Either.Right(res as T)
+            else -> Either.Right(result as T)
+        }
+    }
+
+    /** Send a request until we get a response, disconnecting from servers that don't send a valid response. */
+    private suspend fun rpcCallMustSucceed(request: ElectrumRequest): ElectrumResponse {
+        val replyTo = CompletableDeferred<ElectrumResponse>()
+        val result = rpcCallWithTimeout(replyTo, request)
+            ?: rpcCallWithTimeout(replyTo, request)
+            ?: ServerError(request, JsonRPCError(0, "timeout"))
+        return when (result) {
+            is ServerError -> {
+                logger.warning { "received error for ${request.method}: ${result.error.message}, disconnecting..." }
+                disconnect()
+                rpcCallMustSucceed(request)
+            }
+            else -> result
         }
     }
 
@@ -228,9 +273,9 @@ class ElectrumClient(
 
     override suspend fun estimateFees(confirmations: Int): FeeratePerKw? = rpcCall<EstimateFeeResponse>(EstimateFees(confirmations)).right?.feerate
 
-    override suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse = rpcCall<ScriptHashSubscriptionResponse>(ScriptHashSubscription(scriptHash)).right!!
+    override suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse = rpcCallMustSucceed(ScriptHashSubscription(scriptHash)) as ScriptHashSubscriptionResponse
 
-    override suspend fun startHeaderSubscription(): HeaderSubscriptionResponse = rpcCall<HeaderSubscriptionResponse>(HeaderSubscription).right!!
+    override suspend fun startHeaderSubscription(): HeaderSubscriptionResponse = rpcCallMustSucceed(HeaderSubscription) as HeaderSubscriptionResponse
 
     /** Stop this instance for good, the client cannot be used after it has been closed. */
     fun stop() {

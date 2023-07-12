@@ -9,14 +9,11 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
 import io.ktor.utils.io.charsets.*
 import io.ktor.utils.io.core.*
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 import kotlin.test.*
 import kotlin.time.Duration.Companion.milliseconds
@@ -136,7 +133,7 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `header subscription`() = runTest { client ->
         val response = client.startHeaderSubscription()
-        require(BlockHeader.checkProofOfWork(response.header))
+        assertTrue(BlockHeader.checkProofOfWork(response.header))
         client.stop()
     }
 
@@ -144,6 +141,22 @@ class ElectrumClientTest : LightningTestSuite() {
     fun `scripthash subscription`() = runTest { client ->
         val response = client.startScriptHashSubscription(scriptHash)
         assertNotEquals("", response.status)
+        client.stop()
+    }
+
+    @Test
+    fun `disconnect from slow servers on subscription attempts`() = runTest { client ->
+        // Set a very small timeout that the server won't be able to honor.
+        client.setRpcTimeout(5.milliseconds)
+        val subscriptionJob = async { client.startHeaderSubscription() }
+        // We automatically disconnect after timing out on the subscription request.
+        client.connectionStatus.first { it is ElectrumConnectionStatus.Closed }
+        // We reconnect to a healthy server.
+        client.setRpcTimeout(5.seconds)
+        client.connect(ElectrumMainnetServerAddress, TcpSocket.Builder())
+        // The subscription call will automatically be retried.
+        val response = subscriptionJob.await()
+        assertTrue(BlockHeader.checkProofOfWork(response.header))
         client.stop()
     }
 
