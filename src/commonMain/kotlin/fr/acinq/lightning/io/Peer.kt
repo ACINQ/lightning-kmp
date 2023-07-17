@@ -658,10 +658,8 @@ class Peer(
         when (result) {
             is IncomingPaymentHandler.ProcessAddResult.Accepted -> {
                 _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
-                if (result.incomingPayment.amount == 11_111_111.msat) {
-                    logger.info { "magic payment detected, waiting for 10s" }
-                    delay(10.seconds)
-                }
+                logger.info { "waiting for 10s" }
+                delay(10.seconds)
             }
             else -> Unit
         }
