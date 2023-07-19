@@ -1,5 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
@@ -9,7 +10,48 @@ import fr.acinq.lightning.channel.LocalFundingStatus
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
+import kotlinx.coroutines.CompletableDeferred
 
+data class ConfirmationStatus(
+    val minedAtBlockHeight: Int,
+    val currentConfirmationCount: Int,
+    val firstBlock: BlockHeader // includes timestamp of when block was mined
+)
+
+suspend fun IElectrumClient.getConfirmationStatus(txId: ByteVector32): ConfirmationStatus? {
+    val tx = kotlin.runCatching { getTx(txId) }.getOrNull()
+    return tx?.let { getConfirmationStatus(tx) }
+}
+
+/**
+ * Returns information about when the tx was confirmed
+ * (including the time of the first mined block)
+ * if the tx has 1 or more confirmations. Returns null otherwise.
+ */
+suspend fun IElectrumClient.getConfirmationStatus(tx: Transaction): ConfirmationStatus? {
+    val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
+    val scriptHashHistory = getScriptHashHistory(scriptHash)
+    return scriptHashHistory.find { it.txid == tx.txid }?.let { item ->
+        if (item.blockHeight <= 0) {
+            null
+        } else {
+            val replyTo = CompletableDeferred<ElectrumResponse>()
+            send(GetHeader(item.blockHeight), replyTo)
+            when (val res = replyTo.await()) {
+                is GetHeaderResponse -> {
+                    val currentBlockHeight = startHeaderSubscription().blockHeight
+                    val currentConfirmationCount = currentBlockHeight - item.blockHeight + 1
+                    ConfirmationStatus(
+                        minedAtBlockHeight = item.blockHeight,
+                        currentConfirmationCount = currentConfirmationCount,
+                        firstBlock = res.header
+                    )
+                }
+                else -> null
+            }
+        }
+    }
+}
 
 suspend fun IElectrumClient.getConfirmations(txId: ByteVector32): Int? {
     val tx = kotlin.runCatching { getTx(txId) }.getOrNull()
