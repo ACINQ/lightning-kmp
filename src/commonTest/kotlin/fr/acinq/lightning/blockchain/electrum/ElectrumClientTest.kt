@@ -43,7 +43,7 @@ class ElectrumClientTest : LightningTestSuite() {
         client.disconnect()
         client.connectionStatus.map { it.toConnectionState() }.first { it is Connection.CLOSED }
         // Try to connect to unreachable server.
-        assertFalse(client.connect(ServerAddress("unknown.electrum.acinq.co", 51002, TcpSocket.TLS.UNSAFE_CERTIFICATES), TcpSocket.Builder()))
+        assertFalse(client.connect(ServerAddress("unknown.electrum.acinq.co", 51002, TcpSocket.TLS.UNSAFE_CERTIFICATES), TcpSocket.Builder(), timeout = 1.seconds))
         assertIs<ElectrumConnectionStatus.Closed>(client.connectionStatus.first())
         // Reconnect to previous valid server.
         assertTrue(client.connect(ElectrumMainnetServerAddress, TcpSocket.Builder()))
@@ -147,7 +147,7 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `disconnect from slow servers on subscription attempts`() = runTest { client ->
         // Set a very small timeout that the server won't be able to honor.
-        client.setRpcTimeout(5.milliseconds)
+        client.setRpcTimeout(0.milliseconds)
         val subscriptionJob = async { client.startHeaderSubscription() }
         // We automatically disconnect after timing out on the subscription request.
         client.connectionStatus.first { it is ElectrumConnectionStatus.Closed }
