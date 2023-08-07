@@ -3,8 +3,10 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.io.TcpSocket
+import fr.acinq.lightning.io.receiveAvailable
 import fr.acinq.lightning.io.send
 import fr.acinq.lightning.utils.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
@@ -123,22 +125,35 @@ class ElectrumClient(
      */
     private suspend fun handshake(socket: TcpSocket, timeout: Duration) {
         withTimeout(timeout) {
-            val handshakeFlow = linesFlow(socket)
-                .map { json.decodeFromString(ElectrumResponseDeserializer, it) }
-                .filterIsInstance<Either.Right<Nothing, JsonRPCResponse>>()
-                .map { it.value }
+            val electrumResponses = Channel<Either<ElectrumSubscriptionResponse, JsonRPCResponse>>()
+            val byteChannel = ByteChannel()
+            val jobs = listOf(launch {
+                val chunkSize = 8192
+                val buffer = ByteArray(chunkSize)
+                while (true) {
+                    val size = socket.receiveAvailable(buffer)
+                    byteChannel.writeFully(buffer.subArray(size), 0, size)
+                    byteChannel.flush()
+                }
+            }, launch {
+                while (true) {
+                    val line = byteChannel.readUTF8Line(Int.MAX_VALUE)
+                    line?.let { electrumResponses.send(json.decodeFromString(ElectrumResponseDeserializer, it)) }
+                }
+            })
             // Note that since we synchronously wait for the response, we can safely reuse requestId = 0.
             val ourVersion = ServerVersion()
             socket.send(ourVersion.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
-            val theirVersion = parseJsonResponse(ourVersion, handshakeFlow.first())
+            val theirVersion = parseJsonResponse(ourVersion, electrumResponses.receive().right!!)
             require(theirVersion is ServerVersionResponse) { "invalid server version response $theirVersion" }
             logger.info { "server version $theirVersion" }
             socket.send(HeaderSubscription.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
-            val header = parseJsonResponse(HeaderSubscription, handshakeFlow.first())
+            val header = parseJsonResponse(HeaderSubscription, electrumResponses.receive().right!!)
             require(header is HeaderSubscriptionResponse) { "invalid header subscription response $header" }
             _notifications.emit(header)
             _connectionStatus.value = ElectrumConnectionStatus.Connected(theirVersion, header.blockHeight, header.header)
             logger.info { "server tip $header" }
+            jobs.forEach { it.cancel() }
         }
     }
 
@@ -178,6 +193,7 @@ class ElectrumClient(
                             requestMap[requestId] = msg.request
                             socket.send(msg.request.first.asJsonRPCRequest(requestId++).encodeToByteArray(), flush = true)
                         }
+
                         is Action.ProcessServerResponse -> when (msg.response) {
                             is Either.Left -> _notifications.emit(msg.response.value)
                             is Either.Right -> msg.response.value.id?.let { id ->
@@ -191,8 +207,26 @@ class ElectrumClient(
             }
 
             val listenJob = launch(CoroutineName("listen")) {
-                val flow = linesFlow(socket).map { json.decodeFromString(ElectrumResponseDeserializer, it) }
-                flow.collect { response -> mailbox.send(Action.ProcessServerResponse(response)) }
+                val electrumResponses = Channel<Either<ElectrumSubscriptionResponse, JsonRPCResponse>>()
+                val byteChannel = ByteChannel()
+                launch {
+                    val chunkSize = 8192
+                    val buffer = ByteArray(chunkSize)
+                    while (true) {
+                        val size = socket.receiveAvailable(buffer)
+                        byteChannel.writeFully(buffer.subArray(size), 0, size)
+                        byteChannel.flush()
+                    }
+                }
+                launch {
+                    while (true) {
+                        val line = byteChannel.readUTF8Line(Int.MAX_VALUE)
+                        line?.let { electrumResponses.send(json.decodeFromString(ElectrumResponseDeserializer, it)) }
+                    }
+                }
+                for (response in electrumResponses) {
+                    mailbox.send(Action.ProcessServerResponse(response))
+                }
             }
 
             // Suspend until the coroutine is cancelled or the socket is closed.
@@ -239,6 +273,7 @@ class ElectrumClient(
                 logger.warning { "received error for ${request.method}: ${result.error.message}" }
                 Either.Left(result)
             }
+
             else -> Either.Right(result as T)
         }
     }
@@ -255,6 +290,7 @@ class ElectrumClient(
                 disconnect()
                 rpcCallMustSucceed(request)
             }
+
             else -> result
         }
     }
