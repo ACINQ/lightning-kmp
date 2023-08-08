@@ -96,12 +96,14 @@ class ElectrumClient(
     }
 
     private suspend fun openSocket(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder, timeout: Duration): TcpSocket? {
+        var socket: TcpSocket? = null
         return try {
             _connectionStatus.value = ElectrumConnectionStatus.Connecting
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             withTimeout(timeout) {
-                socketBuilder.connect(host, port, tls, loggerFactory)
+                socket = socketBuilder.connect(host, port, tls, loggerFactory)
+                socket
             }
         } catch (ex: Throwable) {
             logger.warning(ex) { "could not connect to electrum server: " }
@@ -109,6 +111,7 @@ class ElectrumClient(
                 is TcpSocket.IOException -> ex
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
             }
+            socket?.close()
             _connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
             null
         }
