@@ -127,7 +127,6 @@ class ElectrumClient(
             // Note that since we synchronously wait for the response, we can safely reuse requestId = 0.
             val ourVersion = ServerVersion()
             socket.send(ourVersion.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
-            delay(1.seconds)
             val theirVersion = parseJsonResponse(ourVersion, handshakeFlow.first())
             require(theirVersion is ServerVersionResponse) { "invalid server version response $theirVersion" }
             logger.info { "server version $theirVersion" }

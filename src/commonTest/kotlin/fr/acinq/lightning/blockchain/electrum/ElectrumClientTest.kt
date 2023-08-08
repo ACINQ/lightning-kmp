@@ -163,14 +163,14 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `get scripthash history`() = runTest { client ->
         val history = client.getScriptHashHistory(scriptHash)
-        assertTrue { history.contains(TransactionHistoryItem(500000, referenceTx.txid)) }
+        assertTrue(history.contains(TransactionHistoryItem(500_000, referenceTx.txid)))
         client.stop()
     }
 
     @Test
     fun `list script unspents`() = runTest { client ->
         val response = client.getScriptHashUnspents(scriptHash)
-        assertTrue { response.isEmpty() }
+        assertTrue(response.isEmpty())
         client.stop()
     }
 
