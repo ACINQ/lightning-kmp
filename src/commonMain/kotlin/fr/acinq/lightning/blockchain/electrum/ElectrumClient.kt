@@ -53,10 +53,10 @@ class ElectrumClient(
 
     // This channel acts as a queue for messages sent/received to/from the electrum server.
     // It lets us decouple message processing from the connection state (messages will be queued while we're disconnected).
-    // We use a rendezvous channel, which means that writers will simply block until a read operation happens.
+    // We use a rendezvous channel, which means that writers will simply suspend until a read operation happens.
     // When connected, a dedicated coroutine will continuously read from the mailbox, send the corresponding requests to the
     // electrum server, and send the response back when it is received.
-    // When disconnected, callers will block until we reconnect, at which point their messages will be processed.
+    // When disconnected, callers will suspend until we reconnect, at which point their messages will be processed.
     private val mailbox = Channel<Action>()
 
     data class ListenJob(val job: Job, val socket: TcpSocket) {
