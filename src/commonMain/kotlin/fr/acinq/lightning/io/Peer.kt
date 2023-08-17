@@ -84,7 +84,8 @@ data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : P
  * @param watcher Watches events from the Electrum client and publishes transactions and events.
  * @param db Wraps the various databases persisting the channels and payments data related to the Peer.
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
- * @param trustedSwapInTxs a set of txids that can be used for swap-in even if they are zeroconf (useful when migrating from the legacy phoenix android app).
+ * @param trustedSwapInTxs A function that returns a set of txids that can be used for swap-in even if they are zeroconf (useful when migrating from the legacy phoenix android app).
+ *                         This function will be called everytime a swap is attempted.
  * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
 @OptIn(ExperimentalStdlibApi::class)
@@ -95,7 +96,7 @@ class Peer(
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
-    private val trustedSwapInTxs: Set<ByteVector32> = emptySet(),
+    private val trustedSwapInTxs: () -> Set<ByteVector32> = { emptySet() },
     private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
 ) : CoroutineScope by scope {
     companion object {
@@ -392,7 +393,7 @@ class Peer(
             .filter { it.consistent }
             .collect {
                 val currentBlockHeight = currentTipFlow.filterNotNull().first().first
-                swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, it, walletParams.swapInConfirmations, trustedSwapInTxs))
+                swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, it, walletParams.swapInConfirmations, trustedSwapInTxs()))
             }
     }
 
