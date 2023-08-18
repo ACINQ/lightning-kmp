@@ -388,11 +388,10 @@ class Peer(
     }
 
     private suspend fun watchSwapInWallet() {
-        swapInWallet.walletStateFlow
-            .filter { it.consistent }
-            .collect {
-                val currentBlockHeight = currentTipFlow.filterNotNull().first().first
-                swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, it, walletParams.swapInConfirmations, trustedSwapInTxs))
+        swapInWallet.walletStateFlow.combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> currentTip.first to walletState }
+            .filter { (_, walletState) -> walletState.consistent }
+            .collect { (currentBlockHeight, walletState) ->
+                swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, walletState, walletParams.swapInConfirmations, trustedSwapInTxs))
             }
     }
 
