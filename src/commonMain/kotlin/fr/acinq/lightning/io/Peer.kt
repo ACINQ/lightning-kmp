@@ -391,7 +391,12 @@ class Peer(
         swapInWallet.walletStateFlow.combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> currentTip.first to walletState }
             .filter { (_, walletState) -> walletState.consistent }
             .collect { (currentBlockHeight, walletState) ->
-                swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, walletState, walletParams.swapInConfirmations, trustedSwapInTxs))
+                // Local mutual close txs can be used as zero-conf inputs for swap-in
+                val mutualCloseTxs = channels.values
+                    .filterIsInstance<Closing>()
+                    .flatMap { state -> state.mutualClosePublished.map { closingTx -> closingTx.tx.txid } }
+                val trustedTxs = trustedSwapInTxs + mutualCloseTxs
+                swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, walletState, walletParams.swapInConfirmations, trustedTxs))
             }
     }
 
