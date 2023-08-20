@@ -40,6 +40,7 @@ kotlin {
             api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
             api("org.jetbrains.kotlinx:kotlinx-datetime:0.4.0")
+            api(ktor("utils"))
         }
     }
     val commonTest by sourceSets.getting {
