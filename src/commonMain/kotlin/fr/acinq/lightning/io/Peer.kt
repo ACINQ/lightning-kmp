@@ -185,6 +185,8 @@ class Peer(
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
     val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.address.also { swapInWallet.addAddress(it) }
 
+    lateinit var swapInJob: Job
+
     init {
         launch {
             watcher.client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
@@ -233,7 +235,7 @@ class Peer(
             launch {
                 // wait to have a swap-in feerate available
                 swapInFeeratesFlow.filterNotNull().first()
-                watchSwapInWallet()
+                startWatchSwapInWallet()
             }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
@@ -387,17 +389,24 @@ class Peer(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
-    private suspend fun watchSwapInWallet() {
-        swapInWallet.walletStateFlow.combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> currentTip.first to walletState }
-            .filter { (_, walletState) -> walletState.consistent }
-            .collect { (currentBlockHeight, walletState) ->
-                // Local mutual close txs can be used as zero-conf inputs for swap-in
-                val mutualCloseTxs = channels.values
-                    .filterIsInstance<Closing>()
-                    .flatMap { state -> state.mutualClosePublished.map { closingTx -> closingTx.tx.txid } }
-                val trustedTxs = trustedSwapInTxs + mutualCloseTxs
-                swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, walletState, walletParams.swapInConfirmations, trustedTxs))
-            }
+    suspend fun startWatchSwapInWallet() {
+        swapInJob = launch {
+            swapInWallet.walletStateFlow.combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> currentTip.first to walletState }
+                .filter { (_, walletState) -> walletState.consistent }
+                .collect { (currentBlockHeight, walletState) ->
+                    // Local mutual close txs can be used as zero-conf inputs for swap-in
+                    val mutualCloseTxs = channels.values
+                        .filterIsInstance<Closing>()
+                        .flatMap { state -> state.mutualClosePublished.map { closingTx -> closingTx.tx.txid } }
+                    val trustedTxs = trustedSwapInTxs + mutualCloseTxs
+                    swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, walletState, walletParams.swapInConfirmations, trustedTxs))
+                }
+        }
+    }
+
+    suspend fun stopWatchSwapInWallet() {
+        swapInJob.cancel(null)
+        swapInJob.join()
     }
 
     private suspend fun processSwapInCommands(swapInManager: SwapInManager) {
