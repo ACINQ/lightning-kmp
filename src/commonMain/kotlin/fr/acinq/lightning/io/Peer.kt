@@ -185,7 +185,7 @@ class Peer(
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
     val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.address.also { swapInWallet.addAddress(it) }
 
-    lateinit var swapInJob: Job
+    private var swapInJob: Job? = null
 
     init {
         launch {
@@ -390,6 +390,7 @@ class Peer(
     }
 
     suspend fun startWatchSwapInWallet() {
+        if (swapInJob != null) return
         swapInJob = launch {
             swapInWallet.walletStateFlow.combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> currentTip.first to walletState }
                 .filter { (_, walletState) -> walletState.consistent }
@@ -405,8 +406,8 @@ class Peer(
     }
 
     suspend fun stopWatchSwapInWallet() {
-        swapInJob.cancel(null)
-        swapInJob.join()
+        swapInJob?.cancelAndJoin()
+        swapInJob = null
     }
 
     private suspend fun processSwapInCommands(swapInManager: SwapInManager) {
