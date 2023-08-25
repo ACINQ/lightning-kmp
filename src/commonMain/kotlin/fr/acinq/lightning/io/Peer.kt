@@ -229,13 +229,9 @@ class Peer(
             }
             logger.info { "restored ${channelIds.size} channels" }
             launch {
+                // the swap-in manager executes commands, but will not do anything until startWatchSwapInWallet() is called
                 val swapInManager = SwapInManager(bootChannels, logger)
                 processSwapInCommands(swapInManager)
-            }
-            launch {
-                // wait to have a swap-in feerate available
-                swapInFeeratesFlow.filterNotNull().first()
-                startWatchSwapInWallet()
             }
             launch {
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
@@ -389,8 +385,15 @@ class Peer(
         listen() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
+    /**
+     * This function needs to be called after [Peer] is initialized, to start watching the swap-in wallet
+     * and trigger swap-ins.
+     * Warning: not thread-safe!
+     */
     suspend fun startWatchSwapInWallet() {
         if (swapInJob != null) return
+        // wait to have a swap-in feerate available
+        swapInFeeratesFlow.filterNotNull().first()
         swapInJob = launch {
             swapInWallet.walletStateFlow.combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> currentTip.first to walletState }
                 .filter { (_, walletState) -> walletState.consistent }
