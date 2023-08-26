@@ -105,7 +105,7 @@ data class Normal(
                             localOutputs = cmd.spliceOutputs,
                             targetFeerate = cmd.feerate
                         )
-                        if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < 0.msat) {
+                        if (fundingContribution < 0.sat && parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < parentCommitment.localChannelReserve(commitments.params)) {
                             logger.warning { "cannot do splice: insufficient funds" }
                             cmd.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
                             Pair(this@Normal, emptyList())
