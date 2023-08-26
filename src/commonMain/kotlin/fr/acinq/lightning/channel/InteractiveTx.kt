@@ -659,11 +659,17 @@ data class InteractiveTxSession(
         val sharedOutput = sharedOutputs.first()
 
         val sharedInput = fundingParams.sharedInput?.let {
-            // To compute the remote reserve, we discard the local contribution. It's okay if they go below reserve because
-            // we added capacity to the channel with a splice-in.
-            val remoteReserve = ((fundingParams.fundingAmount - fundingParams.localContribution) / 100).max(fundingParams.dustLimit)
-            if (sharedOutput.remoteAmount < remoteReserve && remoteOnlyOutputs.isNotEmpty()) {
-                return InteractiveTxSessionAction.InvalidTxBelowReserve(fundingParams.channelId, sharedOutput.remoteAmount.truncateToSatoshi(), remoteReserve)
+            if (fundingParams.remoteContribution >= 0.sat) {
+                // If remote has a positive contribution, we do not check their post-splice reserve level, because they are improving
+                // their situation, even if they stay below the requirement. Note that if local splices-in some funds in the same
+                // operation, remote post-splice reserve may actually be worse than before, but that's not their fault.
+            } else {
+                // To compute the remote reserve, we discard the local contribution. It's okay if they go below reserve because
+                // we added capacity to the channel with a splice-in.
+                val remoteReserve = ((fundingParams.fundingAmount - fundingParams.localContribution) / 100).max(fundingParams.dustLimit)
+                if (sharedOutput.remoteAmount < remoteReserve && remoteOnlyOutputs.isNotEmpty()) {
+                    return InteractiveTxSessionAction.InvalidTxBelowReserve(fundingParams.channelId, sharedOutput.remoteAmount.truncateToSatoshi(), remoteReserve)
+                }
             }
             if (sharedInputs.size != 1) {
                 return InteractiveTxSessionAction.InvalidTxSharedInput(fundingParams.channelId)
