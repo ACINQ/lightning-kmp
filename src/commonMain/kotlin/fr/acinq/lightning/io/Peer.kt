@@ -188,6 +188,7 @@ class Peer(
     private var swapInJob: Job? = null
 
     init {
+        logger.info { "initializing peer" }
         launch {
             watcher.client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
@@ -391,6 +392,7 @@ class Peer(
      * Warning: not thread-safe!
      */
     suspend fun startWatchSwapInWallet() {
+        logger.info { "starting swap-in watch job" }
         if (swapInJob != null) return
         // wait to have a swap-in feerate available
         swapInFeeratesFlow.filterNotNull().first()
@@ -410,6 +412,7 @@ class Peer(
     }
 
     suspend fun stopWatchSwapInWallet() {
+        logger.info { "stopping swap-in watch job" }
         swapInJob?.cancelAndJoin()
         swapInJob = null
     }
