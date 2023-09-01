@@ -33,8 +33,8 @@ internal inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoi
 internal inline fun <reified T : Watch> List<ChannelAction>.findWatches(): List<T> = filterIsInstance<ChannelAction.Blockchain.SendWatch>().map { it.watch }.filterIsInstance<T>()
 internal inline fun <reified T : Watch> List<ChannelAction>.findWatch(): T = findWatches<T>().firstOrNull() ?: fail("cannot find watch ${T::class}")
 internal inline fun <reified T : Watch> List<ChannelAction>.hasWatch() = assertNotNull(findWatches<T>().firstOrNull(), "cannot find watch ${T::class}")
-internal fun List<ChannelAction>.hasWatchFundingSpent(txId: ByteVector32): WatchSpent = hasWatch<WatchSpent>().also { assertEquals(txId, it.txId); assertEquals(BITCOIN_FUNDING_SPENT, it.event) }
-internal fun List<ChannelAction>.hasWatchConfirmed(txId: ByteVector32): WatchConfirmed = assertNotNull(findWatches<WatchConfirmed>().firstOrNull { it.txId == txId })
+internal fun List<ChannelAction>.hasWatchFundingSpent(txId: TxId): WatchSpent = hasWatch<WatchSpent>().also { assertEquals(txId, it.txId); assertEquals(BITCOIN_FUNDING_SPENT, it.event) }
+internal fun List<ChannelAction>.hasWatchConfirmed(txId: TxId): WatchConfirmed = assertNotNull(findWatches<WatchConfirmed>().firstOrNull { it.txId == txId })
 
 // Commands
 internal inline fun <reified T : ChannelCommand> List<ChannelAction>.findCommands(): List<T> = filterIsInstance<ChannelAction.Message.SendToSelf>().map { it.command }.filterIsInstance<T>()
@@ -395,7 +395,7 @@ object TestsHelper {
         val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
         val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
-        val dummyUpdate = ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId(144, 0, 0), 0, 0, 0, CltvExpiryDelta(1), 0.msat, 0.msat, 0, null)
+        val dummyUpdate = ChannelUpdate(ByteVector64.Zeroes, BlockHash(ByteVector32.Zeroes), ShortChannelId(144, 0, 0), 0, 0, 0, CltvExpiryDelta(1), 0.msat, 0.msat, 0, null)
         val cmd = OutgoingPaymentPacket.buildCommand(
             paymentId,
             paymentHash,
@@ -407,7 +407,7 @@ object TestsHelper {
 
     fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, List<WalletState.Utxo>> {
         val (privateKey, script) = keyManager.swapInOnChainWallet.run { Pair(userPrivateKey, pubkeyScript) }
-        val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, script)), 0)
+        val parentTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 3), 0)), listOf(TxOut(amount, script)), 0)
         return privateKey to listOf(WalletState.Utxo(parentTx, 0, 42))
     }
 

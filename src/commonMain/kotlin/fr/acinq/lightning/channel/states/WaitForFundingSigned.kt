@@ -138,7 +138,7 @@ data class WaitForFundingSigned(
             // We use part of the funding txid to create a dummy short channel id.
             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
             // Collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed).
-            val shortChannelId = ShortChannelId(0, Pack.int32BE(action.commitment.fundingTxId.slice(0, 16).toByteArray()).absoluteValue, action.commitment.commitInput.outPoint.index.toInt())
+            val shortChannelId = ShortChannelId(0, Pack.int32BE(action.commitment.fundingTxId.value.slice(0, 16).toByteArray()).absoluteValue, action.commitment.commitInput.outPoint.index.toInt())
             val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady)
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))

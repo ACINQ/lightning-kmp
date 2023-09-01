@@ -2,7 +2,7 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
@@ -15,7 +15,7 @@ class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, IncomingPayment>()
     private val outgoing = mutableMapOf<UUID, LightningOutgoingPayment>()
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
-    override suspend fun setLocked(txId: ByteVector32) {}
+    override suspend fun setLocked(txId: TxId) {}
 
     override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long): IncomingPayment {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
@@ -68,7 +68,7 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun addOutgoingPayment(outgoingPayment: OutgoingPayment) {
         require(!outgoing.contains(outgoingPayment.id)) { "an outgoing payment with id=${outgoingPayment.id} already exists" }
-        when(outgoingPayment) {
+        when (outgoingPayment) {
             is LightningOutgoingPayment -> {
                 outgoingPayment.parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
                 outgoing[outgoingPayment.id] = outgoingPayment.copy(parts = listOf())

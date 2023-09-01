@@ -23,7 +23,7 @@ sealed class Watch {
 // we need a public key script to use electrum apis
 data class WatchConfirmed(
     override val channelId: ByteVector32,
-    val txId: ByteVector32,
+    val txId: TxId,
     val publicKeyScript: ByteVector,
     val minDepth: Long,
     override val event: BitcoinEvent,
@@ -59,7 +59,7 @@ data class WatchConfirmed(
 
 data class WatchSpent(
     override val channelId: ByteVector32,
-    val txId: ByteVector32,
+    val txId: TxId,
     val outputIndex: Int,
     val publicKeyScript: ByteVector,
     override val event: BitcoinEvent
@@ -83,7 +83,3 @@ sealed class WatchEvent {
 
 data class WatchEventConfirmed(override val channelId: ByteVector32, override val event: BitcoinEvent, val blockHeight: Int, val txIndex: Int, val tx: Transaction) : WatchEvent()
 data class WatchEventSpent(override val channelId: ByteVector32, override val event: BitcoinEvent, val tx: Transaction) : WatchEvent()
-
-data class PublishAsap(val tx: Transaction)
-data class GetTxWithMeta(val channelId: ByteVector32, val txid: ByteVector32)
-data class GetTxWithMetaResponse(val txid: ByteVector32, val tx_opt: Transaction?, val lastBlockTimestamp: Long)

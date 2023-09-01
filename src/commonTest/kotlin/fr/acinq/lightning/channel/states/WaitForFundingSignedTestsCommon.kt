@@ -182,12 +182,12 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     fun `recv TxSignatures -- before CommitSig`() {
         val (alice, _, bob, _) = init()
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, randomBytes32(), listOf())))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, TxId(randomBytes32()), listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(alice.channelId).message)
             assertIs<Aborted>(alice1.state)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxSignatures(bob.channelId, randomBytes32(), listOf())))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxSignatures(bob.channelId, TxId(randomBytes32()), listOf())))
             assertEquals(actionsBob1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(bob.channelId).message)
             assertIs<Aborted>(bob1.state)
         }

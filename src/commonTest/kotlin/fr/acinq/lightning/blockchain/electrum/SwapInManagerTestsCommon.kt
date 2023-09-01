@@ -34,8 +34,8 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         val mgr = SwapInManager(listOf(), logger)
         val wallet = run {
             val parentTxs = listOf(
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 2), 0)), listOf(TxOut(50_000.sat, dummyScript), TxOut(75_000.sat, dummyScript)), 0),
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
+                Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0)), listOf(TxOut(50_000.sat, dummyScript), TxOut(75_000.sat, dummyScript)), 0),
+                Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
             )
             val unspent = listOf(
                 UnspentItem(parentTxs[0].txid, 0, 50_000, 100), // deeply confirmed
@@ -56,8 +56,8 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         val mgr = SwapInManager(listOf(), logger)
         val wallet = run {
             val parentTxs = listOf(
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 2), 0)), listOf(TxOut(50_000.sat, dummyScript)), 0),
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
+                Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0)), listOf(TxOut(50_000.sat, dummyScript)), 0),
+                Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
             )
             val unspent = listOf(
                 UnspentItem(parentTxs[0].txid, 0, 50_000, 100), // recently confirmed
@@ -74,8 +74,8 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         val mgr = SwapInManager(listOf(), logger)
         val wallet = run {
             val parentTxs = listOf(
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 2), 0)), listOf(TxOut(50_000.sat, dummyScript)), 0),
-                Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
+                Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0)), listOf(TxOut(50_000.sat, dummyScript)), 0),
+                Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
             )
             val unspent = listOf(
                 UnspentItem(parentTxs[0].txid, 0, 50_000, 100), // exceeds refund delay
@@ -91,9 +91,9 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
     fun `swap funds -- allow unconfirmed in migration`() {
         val mgr = SwapInManager(listOf(), logger)
         val parentTxs = listOf(
-            Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(75_000.sat, dummyScript)), 0),
-            Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 2), 0)), listOf(TxOut(50_000.sat, dummyScript)), 0),
-            Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
+            Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 1), 0)), listOf(TxOut(75_000.sat, dummyScript)), 0),
+            Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0)), listOf(TxOut(50_000.sat, dummyScript)), 0),
+            Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)), listOf(TxOut(25_000.sat, dummyScript)), 0)
         )
         val wallet = run {
             val unspent = listOf(
@@ -114,7 +114,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
     fun `swap funds -- previously used inputs`() {
         val mgr = SwapInManager(listOf(), logger)
         val wallet = run {
-            val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(75_000.sat, dummyScript)), 0)
+            val parentTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 1), 0)), listOf(TxOut(75_000.sat, dummyScript)), 0)
             val unspent = UnspentItem(parentTx.txid, 0, 75_000, 100)
             WalletState(mapOf(dummyAddress to listOf(unspent)), mapOf(parentTx.txid to parentTx))
         }

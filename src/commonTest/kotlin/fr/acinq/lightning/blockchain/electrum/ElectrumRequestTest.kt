@@ -1,5 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import fr.acinq.bitcoin.BlockHash
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -53,7 +54,7 @@ class ElectrumRequestTest : LightningTestSuite() {
         assertEquals(
             Either.Left(HeaderSubscriptionResponse(blockHeight = 520481, BlockHeader(
                 version = 536870912,
-                hashPreviousBlock = ByteVector32.fromValidHex("890208a0ae3a3892aa047c5468725846577cfcd9b512b5000000000000000000"),
+                hashPreviousBlock = BlockHash("890208a0ae3a3892aa047c5468725846577cfcd9b512b5000000000000000000"),
                 hashMerkleRoot = ByteVector32.fromValidHex("5dc2b02f2d297a9064ee103036c14d678f9afc7e3d9409cf53fd58b82e938e8e"),
                 time = 1520495819,
                 bits = 402858285,

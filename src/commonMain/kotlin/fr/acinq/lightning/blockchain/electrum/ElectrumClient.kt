@@ -270,19 +270,19 @@ class ElectrumClient(
         }
     }
 
-    override suspend fun getTx(txid: ByteVector32): Transaction? = rpcCall<GetTransactionResponse>(GetTransaction(txid)).right?.tx
+    override suspend fun getTx(txId: TxId): Transaction? = rpcCall<GetTransactionResponse>(GetTransaction(txId)).right?.tx
 
     override suspend fun getHeader(blockHeight: Int): BlockHeader? = rpcCall<GetHeaderResponse>(GetHeader(blockHeight)).right?.header
 
     override suspend fun getHeaders(startHeight: Int, count: Int): List<BlockHeader> = rpcCall<GetHeadersResponse>(GetHeaders(startHeight, count)).right?.headers ?: listOf()
 
-    override suspend fun getMerkle(txid: ByteVector32, blockHeight: Int, contextOpt: Transaction?): GetMerkleResponse? = rpcCall<GetMerkleResponse>(GetMerkle(txid, blockHeight, contextOpt)).right
+    override suspend fun getMerkle(txId: TxId, blockHeight: Int, contextOpt: Transaction?): GetMerkleResponse? = rpcCall<GetMerkleResponse>(GetMerkle(txId, blockHeight, contextOpt)).right
 
     override suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem> = rpcCall<GetScriptHashHistoryResponse>(GetScriptHashHistory(scriptHash)).right?.history ?: listOf()
 
     override suspend fun getScriptHashUnspents(scriptHash: ByteVector32): List<UnspentItem> = rpcCall<ScriptHashListUnspentResponse>(ScriptHashListUnspent(scriptHash)).right?.unspents ?: listOf()
 
-    override suspend fun broadcastTransaction(tx: Transaction): ByteVector32 = rpcCall<BroadcastTransactionResponse>(BroadcastTransaction(tx)).right?.tx?.txid ?: tx.txid
+    override suspend fun broadcastTransaction(tx: Transaction): TxId = rpcCall<BroadcastTransactionResponse>(BroadcastTransaction(tx)).right?.tx?.txid ?: tx.txid
 
     override suspend fun estimateFees(confirmations: Int): FeeratePerKw? = rpcCall<EstimateFeeResponse>(EstimateFees(confirmations)).right?.feerate
 

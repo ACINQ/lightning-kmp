@@ -128,7 +128,7 @@ data class PaymentRequest(
         )
 
         fun create(
-            chainHash: ByteVector32,
+            chainHash: BlockHash,
             amount: MilliSatoshi?,
             paymentHash: ByteVector32,
             privateKey: PrivateKey,

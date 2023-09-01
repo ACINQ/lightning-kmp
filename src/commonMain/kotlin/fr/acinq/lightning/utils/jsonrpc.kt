@@ -2,6 +2,7 @@ package fr.acinq.lightning.utils
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.TxId
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -32,8 +33,8 @@ fun List<Any>.asJsonRPCParameters(): List<JsonRPCParam> = map {
             it -> 1
             else -> 0
         }.asParam()
-
         is ByteVector -> it.toHex().asParam()
+        is TxId -> it.value.toHex().asParam()
         is Transaction -> Hex.encode(Transaction.write(it)).asParam()
         else -> error("Unsupported type ${it::class} as JSON-RPC parameter")
     }

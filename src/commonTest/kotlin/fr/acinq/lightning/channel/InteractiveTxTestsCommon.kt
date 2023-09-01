@@ -79,7 +79,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(signedTxB.localSigs.swapInServerSigs.size, 3)
 
         // Alice detects invalid signatures from Bob.
-        val sigsInvalidTxId = signedTxB.localSigs.copy(txHash = randomBytes32())
+        val sigsInvalidTxId = signedTxB.localSigs.copy(txId = TxId(randomBytes32()))
         assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidTxId))
         val sigsMissingUserSigs = signedTxB.localSigs.copy(tlvs = TlvStream(TxSignaturesTlv.SwapInUserSigs(listOf()), TxSignaturesTlv.SwapInServerSigs(signedTxB.localSigs.swapInServerSigs)))
         assertNull(sharedTxA.sharedTx.sign(f.keyManagerA, f.fundingParamsA, f.localParamsA, f.localParamsB.nodeId).addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingUserSigs))
@@ -641,7 +641,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             assertIs<FundingContributionFailure.InputBelowDust>(result)
         }
         run {
-            val txIn = (1..1000).map { TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(pubKey, Transactions.PlaceHolderSig)) }
+            val txIn = (1..1000).map { TxIn(OutPoint(TxId(randomBytes32()), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(pubKey, Transactions.PlaceHolderSig)) }
             val txOut = (1..1000).map { i -> TxOut(1000.sat * i, Script.pay2wpkh(pubKey)) }
             val previousTx = Transaction(2, txIn, txOut, 0)
             val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx, 53, 0))).left
@@ -987,13 +987,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         val firstAttempt = FullySignedSharedTransaction(
             SharedTransaction(null, sharedOutput, listOf(), listOf(InteractiveTxInput.RemoteOnly(2, OutPoint(previousTx1, 0), TxOut(125_000.sat, validScript), 0u)), listOf(), listOf(), 0),
-            TxSignatures(f.channelId, randomBytes32(), listOf()),
-            TxSignatures(f.channelId, randomBytes32(), listOf(Script.witnessPay2wpkh(randomKey().publicKey(), ByteVector64.Zeroes))),
+            TxSignatures(f.channelId, TxId(randomBytes32()), listOf()),
+            TxSignatures(f.channelId, TxId(randomBytes32()), listOf(Script.witnessPay2wpkh(randomKey().publicKey(), ByteVector64.Zeroes))),
             sharedSigs = null
         )
         val secondAttempt = PartiallySignedSharedTransaction(
             SharedTransaction(null, sharedOutput, listOf(), firstAttempt.tx.remoteInputs + listOf(InteractiveTxInput.RemoteOnly(4, OutPoint(previousTx2, 1), TxOut(150_000.sat, validScript), 0u)), listOf(), listOf(), 0),
-            TxSignatures(f.channelId, randomBytes32(), listOf()),
+            TxSignatures(f.channelId, TxId(randomBytes32()), listOf()),
         )
         val bob0 = InteractiveTxSession(f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, 0.msat, 0.msat, f.fundingContributionsB, listOf(firstAttempt, secondAttempt))
         // Alice --- tx_add_input --> Bob
@@ -1135,7 +1135,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val redeemScript = Scripts.multiSig2of2(fundingPubkeyA, fundingPubkeyB)
             val fundingScript = Script.write(Script.pay2wsh(redeemScript)).byteVector()
             val previousFundingAmount = (balanceA + balanceB).truncateToSatoshi()
-            val previousFundingTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 0), 0)), listOf(TxOut(previousFundingAmount, fundingScript)), 0)
+            val previousFundingTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)), listOf(TxOut(previousFundingAmount, fundingScript)), 0)
             val inputInfo = Transactions.InputInfo(OutPoint(previousFundingTx, 0), previousFundingTx.txOut[0], redeemScript)
             val sharedInputA = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, channelKeysB.fundingPubKey(fundingTxIndex))
             val nextFundingPubkeyB = channelKeysB.fundingPubKey(fundingTxIndex + 1)
@@ -1169,7 +1169,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val redeemScript = Scripts.multiSig2of2(fundingPubkeyA, fundingPubkeyB)
             val fundingScript = Script.write(Script.pay2wsh(redeemScript)).byteVector()
             val previousFundingAmount = (balanceA + balanceB).truncateToSatoshi()
-            val previousFundingTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 0), 0)), listOf(TxOut(previousFundingAmount, fundingScript)), 0)
+            val previousFundingTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)), listOf(TxOut(previousFundingAmount, fundingScript)), 0)
             val inputInfo = Transactions.InputInfo(OutPoint(previousFundingTx, 0), previousFundingTx.txOut[0], redeemScript)
             val sharedInputA = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, channelKeysB.fundingPubKey(fundingTxIndex))
             val sharedInputB = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, channelKeysA.fundingPubKey(fundingTxIndex))
@@ -1215,7 +1215,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         private fun createWallet(onChainKeys: KeyManager.SwapInOnChainKeys, amounts: List<Satoshi>): List<WalletState.Utxo> {
             return amounts.map { amount ->
-                val txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0))
+                val txIn = listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0))
                 val txOut = listOf(TxOut(amount, onChainKeys.pubkeyScript), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 WalletState.Utxo(parentTx, 0, 0)

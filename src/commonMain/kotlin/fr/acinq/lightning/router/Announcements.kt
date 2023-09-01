@@ -31,7 +31,7 @@ object Announcements {
     }
 
     fun makeChannelUpdate(
-        chainHash: ByteVector32,
+        chainHash: BlockHash,
         nodePrivateKey: PrivateKey,
         remoteNodeId: PublicKey,
         shortChannelId: ShortChannelId,
@@ -51,7 +51,7 @@ object Announcements {
     }
 
     private fun channelUpdateWitnessEncode(
-        chainHash: ByteVector32,
+        chainHash: BlockHash,
         shortChannelId: ShortChannelId,
         timestampSeconds: Long,
         messageFlags: Byte,
@@ -64,7 +64,7 @@ object Announcements {
         unknownFields: ByteVector
     ): ByteVector32 {
         val out = ByteArrayOutput()
-        LightningCodecs.writeBytes(chainHash, out)
+        LightningCodecs.writeBytes(chainHash.value, out)
         LightningCodecs.writeU64(shortChannelId.toLong(), out)
         LightningCodecs.writeU32(timestampSeconds.toInt(), out)
         LightningCodecs.writeByte(messageFlags.toInt(), out)

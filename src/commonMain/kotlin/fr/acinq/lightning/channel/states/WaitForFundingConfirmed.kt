@@ -1,6 +1,6 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
@@ -334,7 +334,7 @@ data class WaitForFundingConfirmed(
     }
 
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
-    fun getUnsignedFundingTxId(): ByteVector32? {
+    fun getUnsignedFundingTxId(): TxId? {
         return when (rbfStatus) {
             is RbfStatus.WaitingForSigs -> rbfStatus.session.fundingTx.txId
             else -> when (latestFundingTx.sharedTx) {

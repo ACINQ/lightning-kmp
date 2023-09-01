@@ -1,12 +1,11 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
-
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -339,7 +338,7 @@ class SyncingTestsCommon : LightningTestSuite() {
             return Pair(alice, bob)
         }
 
-        data class UnsignedRbfFixture(val alice: LNChannel<WaitForFundingConfirmed>, val commitSigAlice: CommitSig, val bob: LNChannel<WaitForFundingConfirmed>, val commitSigBob: CommitSig, val rbfFundingTxId: ByteVector32)
+        data class UnsignedRbfFixture(val alice: LNChannel<WaitForFundingConfirmed>, val commitSigAlice: CommitSig, val bob: LNChannel<WaitForFundingConfirmed>, val commitSigBob: CommitSig, val rbfFundingTxId: TxId)
 
         fun createUnsignedRbf(): UnsignedRbfFixture {
             val (alice, bob, _, wallet) = WaitForFundingConfirmedTestsCommon.init()

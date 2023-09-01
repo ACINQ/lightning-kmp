@@ -1,7 +1,9 @@
 package fr.acinq.lightning.channel
 
+import fr.acinq.bitcoin.BlockHash
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
@@ -14,7 +16,7 @@ open class ChannelException(open val channelId: ByteVector32, override val messa
 }
 
 // @formatter:off
-data class InvalidChainHash                        (override val channelId: ByteVector32, val local: ByteVector32, val remote: ByteVector32) : ChannelException(channelId, "invalid chainHash (local=$local remote=$remote)")
+data class InvalidChainHash                        (override val channelId: ByteVector32, val local: BlockHash, val remote: BlockHash) : ChannelException(channelId, "invalid chainHash (local=$local remote=$remote)")
 data class InvalidFundingAmount                    (override val channelId: ByteVector32, val fundingAmount: Satoshi) : ChannelException(channelId, "invalid funding_amount=$fundingAmount")
 data class InvalidPushAmount                       (override val channelId: ByteVector32, val pushAmount: MilliSatoshi, val max: MilliSatoshi) : ChannelException(channelId, "invalid pushAmount=$pushAmount (max=$max)")
 data class InvalidMaxAcceptedHtlcs                 (override val channelId: ByteVector32, val maxAcceptedHtlcs: Int, val max: Int) : ChannelException(channelId, "invalid max_accepted_htlcs=$maxAcceptedHtlcs (max=$max)")
@@ -30,11 +32,11 @@ data class DualFundingAborted                      (override val channelId: Byte
 data class UnexpectedInteractiveTxMessage          (override val channelId: ByteVector32, val msg: InteractiveTxMessage) : ChannelException(channelId, "unexpected interactive-tx message (${msg::class})")
 data class UnexpectedCommitSig                     (override val channelId: ByteVector32) : ChannelException(channelId, "unexpected commitment signatures (commit_sig)")
 data class UnexpectedFundingSignatures             (override val channelId: ByteVector32) : ChannelException(channelId, "unexpected funding signatures (tx_signatures)")
-data class InvalidFundingSignature                 (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid funding signature: txId=$txId")
+data class InvalidFundingSignature                 (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid funding signature: txId=$txId")
 data class InvalidRbfFeerate                       (override val channelId: ByteVector32, val proposed: FeeratePerKw, val expected: FeeratePerKw) : ChannelException(channelId, "invalid rbf attempt: the feerate must be at least $expected, you proposed $proposed")
 data class InvalidRbfAlreadyInProgress             (override val channelId: ByteVector32) : ChannelException(channelId, "invalid rbf attempt: the current rbf attempt must be completed or aborted first")
 data class InvalidRbfTxAbortNotAcked               (override val channelId: ByteVector32) : ChannelException(channelId, "invalid rbf attempt: our previous tx_abort has not been acked")
-data class InvalidRbfTxConfirmed                   (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "no need to rbf, transaction is already confirmed with txId=$txId")
+data class InvalidRbfTxConfirmed                   (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "no need to rbf, transaction is already confirmed with txId=$txId")
 data class InvalidRbfNonInitiator                  (override val channelId: ByteVector32) : ChannelException(channelId, "cannot initiate rbf: we're not the initiator of this interactive-tx attempt")
 data class InvalidRbfAttempt                       (override val channelId: ByteVector32) : ChannelException(channelId, "invalid rbf attempt")
 data class InvalidSpliceAlreadyInProgress          (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: the current splice attempt must be completed or aborted first")
@@ -46,16 +48,16 @@ data class CannotCloseWithUnsignedOutgoingHtlcs    (override val channelId: Byte
 data class CannotCloseWithUnsignedOutgoingUpdateFee(override val channelId: ByteVector32) : ChannelException(channelId, "cannot close when there is an unsigned fee update")
 data class ChannelUnavailable                      (override val channelId: ByteVector32) : ChannelException(channelId, "channel is unavailable (offline or closing)")
 data class InvalidFinalScript                      (override val channelId: ByteVector32) : ChannelException(channelId, "invalid final script")
-data class FundingTxSpent                          (override val channelId: ByteVector32, val spendingTxId: ByteVector32) : ChannelException(channelId, "funding tx has been spent by txId=$spendingTxId")
+data class FundingTxSpent                          (override val channelId: ByteVector32, val spendingTxId: TxId) : ChannelException(channelId, "funding tx has been spent by txId=$spendingTxId")
 data class HtlcsTimedOutDownstream                 (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs timed out downstream: ids=${htlcs.map { it.id } .joinToString(",")}")
 data class FulfilledHtlcsWillTimeout               (override val channelId: ByteVector32, val htlcs: Set<UpdateAddHtlc>) : ChannelException(channelId, "one or more htlcs that should be fulfilled are close to timing out: ids=${htlcs.map { it.id }.joinToString()}")
 data class HtlcOverriddenByLocalCommit             (override val channelId: ByteVector32, val htlc: UpdateAddHtlc) : ChannelException(channelId, "htlc ${htlc.id} was overridden by local commit")
 data class FeerateTooSmall                         (override val channelId: ByteVector32, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "remote fee rate is too small: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()}")
 data class FeerateTooDifferent                     (override val channelId: ByteVector32, val localFeeratePerKw: FeeratePerKw, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "local/remote feerates are too different: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()} localFeeratePerKw=${localFeeratePerKw.toLong()}")
-data class InvalidCommitmentSignature              (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid commitment signature: txId=$txId")
-data class InvalidHtlcSignature                    (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid htlc signature: txId=$txId")
-data class InvalidCloseSignature                   (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid close signature: txId=$txId")
-data class InvalidCloseAmountBelowDust             (override val channelId: ByteVector32, val txId: ByteVector32) : ChannelException(channelId, "invalid closing tx: some outputs are below dust: txId=$txId")
+data class InvalidCommitmentSignature              (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid commitment signature: txId=$txId")
+data class InvalidHtlcSignature                    (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid htlc signature: txId=$txId")
+data class InvalidCloseSignature                   (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid close signature: txId=$txId")
+data class InvalidCloseAmountBelowDust             (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid closing tx: some outputs are below dust: txId=$txId")
 data class CommitSigCountMismatch                  (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "commit sig count mismatch: expected=$expected actual=$actual")
 data class SwapInSigCountMismatch                  (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "swap-in sig count mismatch: expected=$expected actual=$actual")
 data class HtlcSigCountMismatch                    (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "htlc sig count mismatch: expected=$expected actual: $actual")

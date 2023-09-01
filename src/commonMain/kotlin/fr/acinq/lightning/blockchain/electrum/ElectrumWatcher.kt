@@ -92,9 +92,9 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                     .filter { state.height - item.blockHeight + 1 >= it.minDepth }
                 triggered.forEach { w ->
                     client.getMerkle(w.txId, item.blockHeight)?.let { merkle ->
-                        val confirmations = state.height - merkle.block_height + 1
-                        logger.info { "txid=${w.txId} had confirmations=$confirmations in block=${merkle.block_height} pos=${merkle.pos}" }
-                        _notificationsFlow.emit(WatchEventConfirmed(w.channelId, w.event, merkle.block_height, merkle.pos, txMap[w.txId]!!))
+                        val confirmations = state.height - merkle.blockHeight + 1
+                        logger.info { "txid=${w.txId} had confirmations=$confirmations in block=${merkle.blockHeight} pos=${merkle.pos}" }
+                        _notificationsFlow.emit(WatchEventConfirmed(w.channelId, w.event, merkle.blockHeight, merkle.pos, txMap[w.txId]!!))
 
                         // check whether we have transactions to publish
                         when (val event = w.event) {
@@ -103,7 +103,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                                 logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
                                 val cltvTimeout = Scripts.cltvTimeout(tx)
                                 val csvTimeout = Scripts.csvTimeout(tx)
-                                val absTimeout = max(merkle.block_height + csvTimeout, cltvTimeout)
+                                val absTimeout = max(merkle.blockHeight + csvTimeout, cltvTimeout)
                                 state = if (absTimeout > state.height) {
                                     logger.info { "delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=${state.height})" }
                                     val block2tx = state.block2tx + (absTimeout to state.block2tx.getOrElse(absTimeout) { setOf() } + tx)

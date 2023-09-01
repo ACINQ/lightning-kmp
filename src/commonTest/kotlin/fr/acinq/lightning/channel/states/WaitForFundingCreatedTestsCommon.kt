@@ -1,9 +1,6 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -205,12 +202,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `recv TxSignatures`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, randomBytes32(), listOf())))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, TxId(randomBytes32()), listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(alice.channelId).message)
             assertIs<Aborted>(alice1.state)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxSignatures(bob.channelId, randomBytes32(), listOf())))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(TxSignatures(bob.channelId, TxId(randomBytes32()), listOf())))
             assertEquals(actionsBob1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(bob.channelId).message)
             assertIs<Aborted>(bob1.state)
         }

@@ -1,8 +1,8 @@
 package fr.acinq.lightning.blockchain.electrum
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalFundingStatus
@@ -10,7 +10,7 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 
-suspend fun IElectrumClient.getConfirmations(txId: ByteVector32): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }
+suspend fun IElectrumClient.getConfirmations(txId: TxId): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }
 
 /**
  * @return the number of confirmations, zero if the transaction is in the mempool, null if the transaction is not found

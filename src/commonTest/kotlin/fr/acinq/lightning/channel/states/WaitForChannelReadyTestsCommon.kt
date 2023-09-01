@@ -10,7 +10,6 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
@@ -44,7 +43,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures -- duplicate`() {
         val (alice, _, _, _) = init()
-        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, alice.commitments.latest.fundingTxId.reversed(), listOf())))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, alice.commitments.latest.fundingTxId, listOf())))
         assertEquals(alice1, alice)
         assertTrue(actions1.isEmpty())
     }

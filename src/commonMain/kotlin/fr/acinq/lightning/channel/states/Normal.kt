@@ -1,7 +1,8 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.SigHash
+import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
@@ -639,7 +640,7 @@ data class Normal(
                     val (nextState, actions) = updateFundingTxStatus(watch)
                     if (!staticParams.useZeroConf && nextState.commitments.active.any { it.fundingTxId == watch.tx.txid && it.fundingTxIndex > 0 }) {
                         // We're not using 0-conf and a splice transaction is confirmed, so we send splice_locked.
-                        val spliceLocked = SpliceLocked(channelId, watch.tx.hash)
+                        val spliceLocked = SpliceLocked(channelId, watch.tx.txid)
                         Pair(nextState, actions + ChannelAction.Message.Send(spliceLocked))
                     } else {
                         Pair(nextState, actions)
@@ -718,7 +719,7 @@ data class Normal(
                 ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut(
                     amount = txOut.amount,
                     miningFees = action.fundingTx.sharedTx.tx.fees,
-                    address = Helpers.Closing.btcAddressFromScriptPubKey(scriptPubKey = txOut.publicKeyScript, chainHash = staticParams.nodeParams.chainHash) ?: "unknown",
+                    address = Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, txOut.publicKeyScript.toByteArray()).result ?: "unknown",
                     txId = action.fundingTx.txId
                 )
             })
@@ -731,7 +732,7 @@ data class Normal(
             )
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }
-                val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId.reversed())
+                val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId)
                 add(ChannelAction.Message.Send(spliceLocked))
             }
         }
@@ -748,7 +749,7 @@ data class Normal(
     }
 
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
-    fun getUnsignedFundingTxId(): ByteVector32? = when {
+    fun getUnsignedFundingTxId(): TxId? = when {
         spliceStatus is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.txId
         commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx && commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction -> commitments.latest.localFundingStatus.txId
         else -> null

@@ -384,7 +384,7 @@ object Serialization {
         remoteCommit.run {
             writeNumber(index)
             writeCommitmentSpecWithHtlcs(spec)
-            writeByteVector32(txid)
+            writeTxId(txid)
             writePublicKey(remotePerCommitmentPoint)
         }
     }
@@ -489,14 +489,14 @@ object Serialization {
         remoteCommit.run {
             writeNumber(index)
             writeCommitmentSpecWithoutHtlcs(spec)
-            writeByteVector32(txid)
+            writeTxId(txid)
             writePublicKey(remotePerCommitmentPoint)
         }
         writeNullable(nextRemoteCommit) {
             writeLightningMessage(it.sig)
             writeNumber(it.commit.index)
             writeCommitmentSpecWithoutHtlcs(it.commit.spec)
-            writeByteVector32(it.commit.txid)
+            writeTxId(it.commit.txid)
             writePublicKey(it.commit.remotePerCommitmentPoint)
         }
     }
@@ -638,6 +638,8 @@ object Serialization {
     private fun Output.writeByteVector64(o: ByteVector64) = write(o.toByteArray())
 
     private fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
+
+    private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
 
     private fun Output.writeDelimited(o: ByteArray) {
         writeNumber(o.size)

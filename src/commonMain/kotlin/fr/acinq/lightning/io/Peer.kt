@@ -102,7 +102,7 @@ class Peer(
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
-    private val trustedSwapInTxs: Set<ByteVector32> = emptySet(),
+    private val trustedSwapInTxs: Set<TxId> = emptySet(),
     private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
 ) : CoroutineScope by scope {
     companion object {

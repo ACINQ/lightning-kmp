@@ -258,7 +258,7 @@ object Helpers {
         }
 
         fun makeFundingInputInfo(
-            fundingTxId: ByteVector32,
+            fundingTxId: TxId,
             fundingTxOutputIndex: Int,
             fundingAmount: Satoshi,
             fundingPubkey1: PublicKey,
@@ -292,7 +292,7 @@ object Helpers {
             remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
             fundingTxIndex: Long,
-            fundingTxHash: ByteVector32,
+            fundingTxId: TxId,
             fundingTxOutputIndex: Int,
             remoteFundingPubkey: PublicKey,
             remotePerCommitmentPoint: PublicKey
@@ -313,7 +313,7 @@ object Helpers {
             }
 
             val fundingPubKey = channelKeys.fundingPubKey(fundingTxIndex)
-            val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteFundingPubkey)
+            val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteFundingPubkey)
             val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommitmentIndex)
             val localCommitTx = Commitments.makeLocalTxs(
                 channelKeys,
@@ -363,48 +363,6 @@ object Helpers {
         }
 
         fun isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray(), allowAnySegwit)
-
-        // To be replaced with corresponding function in bitcoin-kmp
-        fun btcAddressFromScriptPubKey(scriptPubKey: ByteVector, chainHash: ByteVector32): String? {
-            return runTrying {
-                val script = Script.parse(scriptPubKey)
-                when {
-                    Script.isPay2pkh(script) -> {
-                        // OP_DUP OP_HASH160 OP_PUSHDATA(20) OP_EQUALVERIFY OP_CHECKSIG
-                        val opPushData = script[2] as OP_PUSHDATA
-                        val prefix = when (chainHash) {
-                            Block.LivenetGenesisBlock.hash -> Base58.Prefix.PubkeyAddress
-                            Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> Base58.Prefix.PubkeyAddressTestnet
-                            else -> null
-                        } ?: return null
-                        Base58Check.encode(prefix, opPushData.data)
-                    }
-                    Script.isPay2sh(script) -> {
-                        // OP_HASH160 OP_PUSHDATA(20) OP_EQUAL
-                        val opPushData = script[1] as OP_PUSHDATA
-                        val prefix = when (chainHash) {
-                            Block.LivenetGenesisBlock.hash -> Base58.Prefix.ScriptAddress
-                            Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash -> Base58.Prefix.ScriptAddressTestnet
-                            else -> null
-                        } ?: return null
-                        Base58Check.encode(prefix, opPushData.data)
-                    }
-                    Script.isPay2wpkh(script) || Script.isPay2wsh(script) -> {
-                        // isPay2wpkh : OP_0 OP_PUSHDATA(20)
-                        // isPay2wsh  : OP_0 OP_PUSHDATA(32)
-                        val opPushData = script[1] as OP_PUSHDATA
-                        val hrp = when (chainHash) {
-                            Block.LivenetGenesisBlock.hash -> "bc"
-                            Block.TestnetGenesisBlock.hash -> "tb"
-                            Block.RegtestGenesisBlock.hash -> "bcrt"
-                            else -> null
-                        } ?: return null
-                        Bech32.encodeWitnessAddress(hrp, 0, opPushData.data.toByteArray())
-                    }
-                    else -> null
-                } // </when>
-            }.getOrElse { null }
-        }
 
         private fun firstClosingFee(commitment: FullCommitment, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: ClosingFeerates): ClosingFees {
             // this is just to estimate the weight which depends on the size of the pubkey scripts

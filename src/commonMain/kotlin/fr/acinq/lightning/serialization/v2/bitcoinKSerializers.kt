@@ -65,6 +65,18 @@ internal object ByteVector64KSerializer : KSerializer<ByteVector64> {
     }
 }
 
+internal object BlockHashKSerializer : KSerializer<BlockHash> {
+    override fun deserialize(decoder: Decoder): BlockHash {
+        return BlockHash(ByteVector32KSerializer.deserialize(decoder))
+    }
+
+    override val descriptor: SerialDescriptor get() = ByteVector32KSerializer.descriptor
+
+    override fun serialize(encoder: Encoder, value: BlockHash) {
+        ByteVector32KSerializer.serialize(encoder, value.value)
+    }
+}
+
 internal object PrivateKeyKSerializer : KSerializer<PrivateKey> {
 
     override fun deserialize(decoder: Decoder): PrivateKey {

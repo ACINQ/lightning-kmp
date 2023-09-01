@@ -21,18 +21,16 @@ class HelpersTestsCommon : LightningTestSuite() {
     fun `compute address from pubkey script`() {
         val pub = PrivateKey(Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
 
-        fun address(script: List<ScriptElt>, chainHash: ByteVector32) =
-            Helpers.Closing.btcAddressFromScriptPubKey(ByteVector(Script.write(script)), chainHash)
-
+        fun address(script: List<ScriptElt>, chainHash: BlockHash) = Bitcoin.addressFromPublicKeyScript(chainHash, Script.write(script)).result
 
         listOf(Block.LivenetGenesisBlock.hash, Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash).forEach {
             assertEquals(address(Script.pay2pkh(pub), it), computeP2PkhAddress(pub, it))
             assertEquals(address(Script.pay2wpkh(pub), it), computeP2WpkhAddress(pub, it))
             assertEquals(address(Script.pay2sh(Script.pay2wpkh(pub)), it), computeP2ShOfP2WpkhAddress(pub, it))
             // all these chain hashes are invalid
-            assertEquals(address(Script.pay2pkh(pub), it.reversed()), null)
-            assertEquals(address(Script.pay2wpkh(pub), it.reversed()), null)
-            assertEquals(address(Script.pay2sh(Script.pay2wpkh(pub)), it.reversed()), null)
+            assertEquals(address(Script.pay2pkh(pub), BlockHash(it.value.reversed())), null)
+            assertEquals(address(Script.pay2wpkh(pub), BlockHash(it.value.reversed())), null)
+            assertEquals(address(Script.pay2sh(Script.pay2wpkh(pub)), BlockHash(it.value.reversed())), null)
         }
 
         listOf(
@@ -46,10 +44,7 @@ class HelpersTestsCommon : LightningTestSuite() {
             Triple("a91481b9ac6a59b53927da7277b5ad5460d781b365d987", Block.LivenetGenesisBlock.hash, "3DWwX7NYjnav66qygrm4mBCpiByjammaWy"),
         ).forEach {
             assertEquals(
-                Helpers.Closing.btcAddressFromScriptPubKey(
-                    scriptPubKey = ByteVector(Hex.decode(it.first)),
-                    chainHash = it.second
-                ),
+                Bitcoin.addressFromPublicKeyScript(it.second, Hex.decode(it.first)).result,
                 it.third
             )
         }
@@ -71,7 +66,7 @@ class HelpersTestsCommon : LightningTestSuite() {
         )
 
         fun toClosingTx(txOut: List<TxOut>): Transactions.TransactionWithInputInfo.ClosingTx {
-            val input = Transactions.InputInfo(OutPoint(ByteVector32.Zeroes, 0), TxOut(1000.sat, listOf()), listOf())
+            val input = Transactions.InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000.sat, listOf()), listOf())
             return Transactions.TransactionWithInputInfo.ClosingTx(input, Transaction(2, listOf(), txOut, 0), null)
         }
 

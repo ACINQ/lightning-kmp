@@ -340,7 +340,7 @@ object Deserialization {
         remoteCommit = RemoteCommit(
             index = readNumber(),
             spec = readCommitmentSpecWithHtlcs(),
-            txid = readByteVector32(),
+            txid = readTxId(),
             remotePerCommitmentPoint = readPublicKey()
         )
     )
@@ -423,7 +423,7 @@ object Deserialization {
                 // We previously didn't store the tx_signatures after the transaction was confirmed.
                 // It is only used to be retransmitted on reconnection if our peer had not received it.
                 // This happens very rarely in practice, so putting dummy values here shouldn't be an issue.
-                localSigs = TxSignatures(ByteVector32.Zeroes, ByteVector32.Zeroes, listOf())
+                localSigs = TxSignatures(ByteVector32.Zeroes, TxId(ByteVector32.Zeroes), listOf())
             )
             0x02 -> LocalFundingStatus.ConfirmedFundingTx(
                 signedTx = readTransaction(),
@@ -454,7 +454,7 @@ object Deserialization {
         remoteCommit = RemoteCommit(
             index = readNumber(),
             spec = readCommitmentSpecWithoutHtlcs(htlcs.map { it.opposite() }.toSet()),
-            txid = readByteVector32(),
+            txid = readTxId(),
             remotePerCommitmentPoint = readPublicKey()
         ),
         nextRemoteCommit = readNullable {
@@ -463,7 +463,7 @@ object Deserialization {
                 commit = RemoteCommit(
                     index = readNumber(),
                     spec = readCommitmentSpecWithoutHtlcs(htlcs.map { it.opposite() }.toSet()),
-                    txid = readByteVector32(),
+                    txid = readTxId(),
                     remotePerCommitmentPoint = readPublicKey()
                 )
             )
@@ -573,6 +573,8 @@ object Deserialization {
     private fun Input.readByteVector64(): ByteVector64 = ByteVector64(ByteArray(64).also { read(it, 0, it.size) })
 
     private fun Input.readPublicKey() = PublicKey(ByteArray(33).also { read(it, 0, it.size) })
+
+    private fun Input.readTxId(): TxId = TxId(readByteVector32())
 
     private fun Input.readDelimitedByteArray(): ByteArray {
         val size = readNumber().toInt()
