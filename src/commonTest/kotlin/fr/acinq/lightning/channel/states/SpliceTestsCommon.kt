@@ -919,6 +919,10 @@ class SpliceTestsCommon : LightningTestSuite() {
 
             assertEquals(alice.commitments.active.size + 1, alice2.commitments.active.size)
             assertEquals(bob.commitments.active.size + 1, bob2.commitments.active.size)
+
+            assertTrue { alice2.commitments.isMoreRecent(alice.commitments) }
+            assertTrue { bob2.commitments.isMoreRecent(bob.commitments) }
+
             assertIs<LNChannel<Normal>>(alice2)
             assertIs<LNChannel<Normal>>(bob2)
             return Pair(alice2, bob2)

@@ -549,7 +549,8 @@ data class Commitments(
     fun isMoreRecent(other: Commitments): Boolean {
         return this.localCommitIndex > other.localCommitIndex ||
                 this.remoteCommitIndex > other.remoteCommitIndex ||
-                (this.remoteCommitIndex == other.remoteCommitIndex && this.remoteNextCommitInfo.isLeft && other.remoteNextCommitInfo.isRight)
+                (this.remoteCommitIndex == other.remoteCommitIndex && this.remoteNextCommitInfo.isLeft && other.remoteNextCommitInfo.isRight) ||
+                this.latest.fundingTxIndex > other.latest.fundingTxIndex
     }
 
     // @formatter:off
