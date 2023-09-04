@@ -2,15 +2,20 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.Connection
+import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.secp256k1.Hex
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 
@@ -176,5 +181,77 @@ class ElectrumClientTest : LightningTestSuite() {
         assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
 
         client.stop()
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    @Test
+    fun `catch coroutine errors`() {
+        val myCustomError = "this is a test error"
+
+        class MyTcpSocket() : TcpSocket {
+            val output = MutableSharedFlow<String>()
+            override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) {
+                if (bytes != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val encoded = bytes.decodeToString(offset, offset + length)
+                        val request = Json.parseToJsonElement(encoded)
+                        val response = when (request.jsonObject["method"]!!.jsonPrimitive.content) {
+                            "server.version" -> """{"jsonrpc": "2.0", "result": ["ElectrumX 1.15.0", "1.4"], "id": 0}"""
+                            "blockchain.headers.subscribe" -> """{"jsonrpc": "2.0", "result": {"hex": "000080209a35ef4422bc37b0e1c3df9d32cfaaef6a6d31047c0202000000000000000000b9f14c32922d305844c739829ef13df9d188953e74a392720c02eeadd93acbf9ae22a464be8e05174bc5c367", "height": 797144}, "id": 1}"""
+                            "blockchain.estimatefee" -> """{"jsonrpc": "2.0", "error": {"code": 42, "message": "$myCustomError"}, "id": 2}""" // we return an error, as if estimatefee had failed
+                            else -> """{"jsonrpc": "2.0", "error": {"code": 43, "message": "unhandled request"}, "id": 2}"""
+                        }
+                        output.emit(response)
+                    }
+                }
+            }
+
+            override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int) = TODO("Not yet implemented")
+            override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int = TODO("Not yet implemented")
+            override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = TODO("Not yet implemented")
+            override fun close() {}
+            override fun linesFlow(): Flow<String> = output.asSharedFlow()
+        }
+
+        class MyBuilder() : TcpSocket.Builder {
+            override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
+                return MyTcpSocket()
+            }
+        }
+
+        val errorFlow = MutableStateFlow<Throwable?>(null)
+        val loggerFactory = LoggerFactory.default
+        val logger = loggerFactory.newLogger(this::class)
+        val myErrorHandler = CoroutineExceptionHandler { _, e ->
+            logger.error(e) { "error caught in custom exception handler" }
+            errorFlow.value = e
+        }
+
+        runBlocking(Dispatchers.IO) {
+            withTimeout(15.seconds) {
+                val builder = MyBuilder()
+                // from Kotlin's documentation:
+                // all children coroutines (coroutines created in the context of another Job) delegate handling of their exceptions to their parent coroutine, which
+                // also delegates to the parent, and so on until the root, so the CoroutineExceptionHandler installed in their context is never used
+                // => here we need to create a new root scope otherwise our exception handler will not be used
+                val client = ElectrumClient(builder, GlobalScope, LoggerFactory.default, myErrorHandler)
+                client.connect(ServerAddress("my-test-node", 50002, TcpSocket.TLS.DISABLED)) // address and port do not matter, but we cannot use TLS (not implemented, see above)
+                errorFlow.filterNotNull().first { it.message!!.contains(myCustomError) }
+                client.stop()
+            }
+
+            // if we use runBlocking's scope, our exception handler will not be used
+            errorFlow.value = null
+            val error = assertFails {
+                withTimeout(15.seconds) {
+                    val builder = MyBuilder()
+                    val client = ElectrumClient(builder, this, LoggerFactory.default, myErrorHandler)
+                    client.connect(ServerAddress("my-test-node", 50002, TcpSocket.TLS.DISABLED)) // address and port do not matter, but we cannot use TLS (not implemented, see above)
+                    errorFlow.filterNotNull().first { it.message!!.contains(myCustomError) }
+                    client.stop()
+                }
+            }
+            assertTrue(error.message!!.contains(myCustomError))
+        }
     }
 }
