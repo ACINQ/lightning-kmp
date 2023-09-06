@@ -203,9 +203,13 @@ class ElectrumClientTest : LightningTestSuite() {
 
     @Test
     fun `get tx confirmations`() = runTest { client ->
-        val blockHeight = 788_370
-        assertEquals(10, client.getConfirmations(ByteVector32("f1c290880b6fc9355e4f1b1b7d13b9a15babbe096adaf13d01f3a56def793fd5"), blockHeight))
-        assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), blockHeight))
+        val confirmedAt = 788_360
+        val currentBlockHeight = when (val status = client.connectionStatus.value) {
+            is ElectrumConnectionStatus.Connected -> status.height
+            else -> null
+        }!!
+        assertEquals(currentBlockHeight - confirmedAt, client.getConfirmations(ByteVector32("f1c290880b6fc9355e4f1b1b7d13b9a15babbe096adaf13d01f3a56def793fd5")))
+        assertNull(client.getConfirmations(ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
         client.stop()
     }
 

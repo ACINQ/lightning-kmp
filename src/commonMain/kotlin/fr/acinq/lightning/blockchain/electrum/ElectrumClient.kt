@@ -8,6 +8,7 @@ import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.Channel.Factory.RENDEZVOUS
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
 import org.kodein.log.LoggerFactory
@@ -57,7 +58,7 @@ class ElectrumClient(
     // When connected, a dedicated coroutine will continuously read from the mailbox, send the corresponding requests to the
     // electrum server, and send the response back when it is received.
     // When disconnected, callers will suspend until we reconnect, at which point their messages will be processed.
-    private val mailbox = Channel<Action>()
+    private val mailbox = Channel<Action>(capacity = RENDEZVOUS)
 
     data class ListenJob(val job: Job, val socket: TcpSocket) {
         fun cancel() {
@@ -70,7 +71,7 @@ class ElectrumClient(
 
     suspend fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder, timeout: Duration = 15.seconds): Boolean {
         if (_connectionStatus.value is ElectrumConnectionStatus.Closed) {
-            listenJob?.cancel()
+            listenJob?.cancel() // the job should already be cancelled, this is for extra safety
             val socket = openSocket(serverAddress, socketBuilder, timeout) ?: return false
             logger.info { "connected to electrumx instance" }
             return try {
