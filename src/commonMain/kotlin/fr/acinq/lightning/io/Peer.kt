@@ -49,6 +49,8 @@ data class OpenChannel(
     val channelType: ChannelType.SupportedChannelType
 ) : PeerCommand()
 
+data class PeerConnection(val id: Long, val output: Channel<ByteArray>)
+data class Connected(val peerConnection: PeerConnection) : PeerCommand()
 data class BytesReceived(val data: ByteArray) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
@@ -333,6 +335,11 @@ class Peer(
         }
         val session = LightningSession(enc, dec, ck)
 
+        // TODO use atomic counter instead
+        val peerConnection = PeerConnection(id = currentTimestampMillis(), output)
+        // inform the peer about the new connection
+        input.send(Connected(peerConnection))
+
         suspend fun send(message: ByteArray) {
             try {
                 session.send(message) { data, flush -> socket.send(data, flush) }
@@ -341,9 +348,6 @@ class Peer(
                 closeSocket(ex)
             }
         }
-
-        logger.info { "sending init $ourInit" }
-        send(LightningMessage.encode(ourInit))
 
         suspend fun doPing() {
             val ping = Ping(10, ByteVector("deadbeef"))
@@ -737,6 +741,10 @@ class Peer(
 
     private suspend fun processEvent(cmd: PeerCommand) {
         when (cmd) {
+            is Connected -> {
+                logger.info { "sending init $ourInit" }
+                sendToPeer(ourInit)
+            }
             is BytesReceived -> {
                 val msg = try {
                     LightningMessage.decode(cmd.data)
