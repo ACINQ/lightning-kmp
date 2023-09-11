@@ -18,7 +18,7 @@ import kotlinx.serialization.json.*
 
 /**
  * Common communication objects between [ElectrumClient] and external ressources (e.g. [ElectrumWatcher])
- * See the documentation for the ElectrumX protocol there: https://electrumx.readthedocs.io
+ * See the documentation for the ElectrumX protocol there: https://electrumx-spesmilo.readthedocs.io
  */
 
 /**

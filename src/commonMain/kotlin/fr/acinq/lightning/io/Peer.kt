@@ -196,7 +196,7 @@ class Peer(
                 }
         }
         launch {
-            watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.collect {
+            watcher.client.connectionStatus.filter { it is ElectrumConnectionStatus.Connected }.collect {
                 // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
                 // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
                 // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
@@ -255,7 +255,7 @@ class Peer(
     }
 
     private suspend fun updateEstimateFees() {
-        watcher.client.connectionState.filter { it == Connection.ESTABLISHED }.first()
+        watcher.client.connectionStatus.filter { it is ElectrumConnectionStatus.Connected }.first()
         val sortedFees = listOf(
             watcher.client.estimateFees(2),
             watcher.client.estimateFees(6),
@@ -265,10 +265,10 @@ class Peer(
         logger.info { "on-chain fees: $sortedFees" }
         // TODO: If some feerates are null, we may implement a retry
         onChainFeeratesFlow.value = OnChainFeerates(
-            fundingFeerate = sortedFees[3].feerate ?: FeeratePerKw(FeeratePerByte(2.sat)),
-            mutualCloseFeerate = sortedFees[2].feerate ?: FeeratePerKw(FeeratePerByte(10.sat)),
-            claimMainFeerate = sortedFees[1].feerate ?: FeeratePerKw(FeeratePerByte(20.sat)),
-            fastFeerate = sortedFees[0].feerate ?: FeeratePerKw(FeeratePerByte(50.sat))
+            fundingFeerate = sortedFees[3] ?: FeeratePerKw(FeeratePerByte(2.sat)),
+            mutualCloseFeerate = sortedFees[2] ?: FeeratePerKw(FeeratePerByte(10.sat)),
+            claimMainFeerate = sortedFees[1] ?: FeeratePerKw(FeeratePerByte(20.sat)),
+            fastFeerate = sortedFees[0] ?: FeeratePerKw(FeeratePerByte(50.sat))
         )
     }
 

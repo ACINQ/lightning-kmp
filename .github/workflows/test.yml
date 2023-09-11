@@ -65,3 +65,12 @@ jobs:
       - name: Check without integration
         if: matrix.os == 'macOS-latest'
         run: ./gradlew build -x jvmTest
+
+      # Uncomment the lines below to store test results for debugging failed tests (useful for iOS)
+      # - name: Store test results
+      #   if: always()
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: test results
+      #     path: build/reports
+      #     retention-days: 1

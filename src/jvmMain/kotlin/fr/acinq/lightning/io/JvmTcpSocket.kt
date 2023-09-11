@@ -3,12 +3,9 @@ package fr.acinq.lightning.io
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
@@ -39,6 +36,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
                 throw TcpSocket.IOException.ConnectionClosed(ex)
             } catch (ex: java.io.IOException) {
                 throw TcpSocket.IOException.ConnectionClosed(ex)
+            } catch (ex: CancellationException) {
+                throw ex
             } catch (ex: Throwable) {
                 throw TcpSocket.IOException.Unknown(ex.message, ex)
             }
@@ -51,6 +50,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
             throw TcpSocket.IOException.ConnectionClosed(ex)
         } catch (ex: java.io.IOException) {
             throw TcpSocket.IOException.ConnectionClosed(ex)
+        } catch (ex: CancellationException) {
+            throw ex
         } catch (ex: Throwable) {
             throw TcpSocket.IOException.Unknown(ex.message, ex)
         }
@@ -92,7 +93,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
     }
 
     override fun close() {
-        socket.close()
+        // NB: this safely calls close(), wrapping it into a try/catch.
+        socket.dispose()
     }
 
     companion object {
@@ -160,19 +162,18 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         val logger = loggerFactory.newLogger(this::class)
-        val context = tlsContext(logger)
-        return withContext(context) {
+        return withContext(Dispatchers.IO) {
             try {
-                val socket = aSocket(SelectorManager(context)).tcp().connect(host, port).let { socket ->
+                val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->
                     when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(context)
-                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(context) {
+                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(tlsContext(logger))
+                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(tlsContext(logger)) {
                             logger.warning { "using unsafe TLS!" }
                             trustManager = JvmTcpSocket.unsafeX509TrustManager()
                         }
                         is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
                             logger.info { "using certificate pinning for connections with $host" }
-                            socket.tls(context, JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
+                            socket.tls(tlsContext(logger), JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
                         }
                         else -> socket
                     }
@@ -189,10 +190,9 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     }
 }
 
-fun tlsExceptionHandler(logger: Logger) = CoroutineExceptionHandler { _, throwable -> logger.error(throwable) { "TLS socket error: " } }
-
 /**
- * Using the IO dispatcher is a good practice, but the TLS internal coroutines sometimes throw exceptions
- * that are fatal on Android and aren't caught in the parent context, so we catch them explicitly.
+ * The TLS internal coroutines are launched in a background scope that doesn't let us do fine-grained supervision.
+ * They may throw exceptions when the socket is remotely closed, which crashes the application on Android.
+ * This should be fixed by https://github.com/ktorio/ktor/pull/3690, but for now we need to explicitly handle exceptions.
  */
-fun tlsContext(logger: Logger) = Dispatchers.IO + tlsExceptionHandler(logger)
+fun tlsContext(logger: Logger) = Dispatchers.IO + CoroutineExceptionHandler { _, throwable -> logger.error(throwable) { "TLS socket error: " } }

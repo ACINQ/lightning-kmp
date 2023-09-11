@@ -67,7 +67,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
         logger.info { "initializing electrum watcher" }
 
         suspend fun processScripHashHistory(history: List<TransactionHistoryItem>) = runCatching {
-            val txs = history.filter { it.blockHeight >= -1 }.map { client.getTx(it.txid) }
+            val txs = history.filter { it.blockHeight >= -1 }.mapNotNull { client.getTx(it.txid) }
 
             // WatchSpent
             txs.forEach { tx ->
@@ -91,30 +91,30 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                     .filter { it.txId == item.txid }
                     .filter { state.height - item.blockHeight + 1 >= it.minDepth }
                 triggered.forEach { w ->
-                    val merkle = client.getMerkle(w.txId, item.blockHeight)
-                    val confirmations = state.height - merkle.block_height + 1
-                    logger.info { "txid=${w.txId} had confirmations=$confirmations in block=${merkle.block_height} pos=${merkle.pos}" }
-                    _notificationsFlow.emit(WatchEventConfirmed(w.channelId, w.event, merkle.block_height, merkle.pos, txMap[w.txId]!!))
+                    client.getMerkle(w.txId, item.blockHeight)?.let { merkle ->
+                        val confirmations = state.height - merkle.block_height + 1
+                        logger.info { "txid=${w.txId} had confirmations=$confirmations in block=${merkle.block_height} pos=${merkle.pos}" }
+                        _notificationsFlow.emit(WatchEventConfirmed(w.channelId, w.event, merkle.block_height, merkle.pos, txMap[w.txId]!!))
 
-                    // check whether we have transactions to publish
-                    when (val event = w.event) {
-                        is BITCOIN_PARENT_TX_CONFIRMED -> {
-                            val tx = event.childTx
-                            logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
-                            val cltvTimeout = Scripts.cltvTimeout(tx)
-                            val csvTimeout = Scripts.csvTimeout(tx)
-                            val absTimeout = max(merkle.block_height + csvTimeout, cltvTimeout)
-                            state = if (absTimeout > state.height) {
-                                logger.info { "delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=${state.height})" }
-                                val block2tx = state.block2tx + (absTimeout to state.block2tx.getOrElse(absTimeout) { setOf() } + tx)
-                                state.copy(block2tx = block2tx)
-                            } else {
-                                client.broadcastTransaction(tx)
-                                state.copy(sent = state.sent + tx)
+                        // check whether we have transactions to publish
+                        when (val event = w.event) {
+                            is BITCOIN_PARENT_TX_CONFIRMED -> {
+                                val tx = event.childTx
+                                logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
+                                val cltvTimeout = Scripts.cltvTimeout(tx)
+                                val csvTimeout = Scripts.csvTimeout(tx)
+                                val absTimeout = max(merkle.block_height + csvTimeout, cltvTimeout)
+                                state = if (absTimeout > state.height) {
+                                    logger.info { "delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=${state.height})" }
+                                    val block2tx = state.block2tx + (absTimeout to state.block2tx.getOrElse(absTimeout) { setOf() } + tx)
+                                    state.copy(block2tx = block2tx)
+                                } else {
+                                    client.broadcastTransaction(tx)
+                                    state.copy(sent = state.sent + tx)
+                                }
                             }
+                            else -> {}
                         }
-
-                        else -> {}
                     }
                 }
                 state = state.copy(watches = state.watches - triggered.toSet())

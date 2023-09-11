@@ -10,21 +10,22 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 
-
-suspend fun IElectrumClient.getConfirmations(txId: ByteVector32): Int? {
-    val tx = kotlin.runCatching { getTx(txId) }.getOrNull()
-    return tx?.let { getConfirmations(tx) }
-}
+suspend fun IElectrumClient.getConfirmations(txId: ByteVector32): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }
 
 /**
- *   @return the number of confirmations, zero if the transaction is in the mempool, null if the transaction is not found
+ * @return the number of confirmations, zero if the transaction is in the mempool, null if the transaction is not found
  */
 suspend fun IElectrumClient.getConfirmations(tx: Transaction): Int? {
-    val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
-    val scriptHashHistory = getScriptHashHistory(scriptHash)
-    val item = scriptHashHistory.find { it.txid == tx.txid }
-    val blockHeight = startHeaderSubscription().blockHeight
-    return item?.let { if (item.blockHeight > 0) blockHeight - item.blockHeight + 1 else 0 }
+    return when (val status = connectionStatus.value) {
+        is ElectrumConnectionStatus.Connected -> {
+            val currentBlockHeight = status.height
+            val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
+            val scriptHashHistory = getScriptHashHistory(scriptHash)
+            val item = scriptHashHistory.find { it.txid == tx.txid }
+            item?.let { if (item.blockHeight > 0) currentBlockHeight - item.blockHeight + 1 else 0 }
+        }
+        else -> null
+    }
 }
 
 suspend fun IElectrumClient.computeSpliceCpfpFeerate(commitments: Commitments, targetFeerate: FeeratePerKw, spliceWeight: Int, logger: MDCLogger): Pair<FeeratePerKw, Satoshi> {

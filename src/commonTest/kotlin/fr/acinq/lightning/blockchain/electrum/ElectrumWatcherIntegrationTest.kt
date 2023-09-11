@@ -38,7 +38,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for confirmed transactions`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
+        val client = ElectrumClient(this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, _) = bitcoincli.getNewAddress()
@@ -65,7 +65,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for confirmed transactions created while being offline`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
+        val client = ElectrumClient(this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, _) = bitcoincli.getNewAddress()
@@ -93,7 +93,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for spent transactions`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
+        val client = ElectrumClient(this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -150,7 +150,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for spent transactions before client is connected`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default)
+        val client = ElectrumClient(this, LoggerFactory.default)
         val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -198,7 +198,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        client.connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED))
+        client.connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder())
 
         val msg = listener.first() as WatchEventSpent
         assertEquals(spendingTx.txid, msg.tx.txid)
@@ -209,7 +209,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `watch for spent transactions while being offline`() = runSuspendTest {
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
+        val client = ElectrumClient(this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
 
         val (address, privateKey) = bitcoincli.getNewAddress()
@@ -268,7 +268,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
     @Test
     fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = 2.minutes) {
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED)) }
+        val client = ElectrumClient(this, LoggerFactory.default).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
         val watcherNotifications = watcher.openWatchNotificationsFlow()
 
@@ -391,7 +391,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     @Test
     fun `notify when ready`() = runSuspendTest(timeout = 50.seconds) {
         // Run on a production server
-        val client = ElectrumClient(TcpSocket.Builder(), this, LoggerFactory.default).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)) }
+        val client = ElectrumClient(this, LoggerFactory.default).apply { connect(ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, LoggerFactory.default)
         val watcherNotifications = watcher.openWatchNotificationsFlow()
         val readyNotifications = watcher.openUpToDateFlow()

@@ -1,10 +1,5 @@
 package fr.acinq.lightning.io
 
-import fr.acinq.lightning.utils.decodeToString
-import fr.acinq.lightning.utils.splitByLines
-import fr.acinq.lightning.utils.subArray
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import org.kodein.log.LoggerFactory
 
 interface TcpSocket {
@@ -69,11 +64,3 @@ suspend fun TcpSocket.receiveAvailable(buffer: ByteArray) = receiveAvailable(buf
 internal expect object PlatformSocketBuilder : TcpSocket.Builder
 
 suspend fun TcpSocket.receiveFully(size: Int): ByteArray = ByteArray(size).also { receiveFully(it) }
-
-fun TcpSocket.linesFlow(): Flow<String> = flow {
-    val buffer = ByteArray(8192)
-    while (true) {
-        val size = receiveAvailable(buffer)
-        emit(buffer.subArray(size))
-    }
-}.decodeToString().splitByLines()
