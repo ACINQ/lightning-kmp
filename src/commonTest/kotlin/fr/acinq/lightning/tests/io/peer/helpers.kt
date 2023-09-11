@@ -2,7 +2,7 @@ package fr.acinq.lightning.tests.io.peer
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.channel.states.ChannelState
-import fr.acinq.lightning.io.BytesReceived
+import fr.acinq.lightning.io.MessageReceived
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.wire.LightningMessage
@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.mapNotNull
 
 suspend inline fun <reified M : LightningMessage> Flow<LightningMessage>.expect(): M = first { it is M } as M
 
-suspend inline fun Peer.forward(message: LightningMessage) = send((BytesReceived(message)))
+suspend inline fun Peer.forward(message: LightningMessage) = send((MessageReceived(message)))
 
 suspend inline fun Peer.expectStatus(await: Connection) = connectionState.first {
     when (await) {
