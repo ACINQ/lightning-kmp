@@ -282,12 +282,11 @@ class Peer(
     fun disconnect() {
         if (this::socket.isInitialized) socket.close()
         _connectionState.value = Connection.CLOSED(null)
-        // TODO in exception handler? output.close()
     }
 
     // Warning : lateinit vars have to be used AFTER their init to avoid any crashes
     //
-    // This shouldn't be used outside the establishedConnection() function
+    // This shouldn't be used outside the establishConnection() function
     // Except from the disconnect() one that check if the lateinit var has been initialized
     private lateinit var socket: TcpSocket
     private fun establishConnection() = launch {
@@ -369,6 +368,8 @@ class Peer(
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP receive: ${ex.message}" }
                 closeSocket(ex)
+            } finally {
+                peerConnection.output.close()
             }
         }
 
@@ -383,6 +384,8 @@ class Peer(
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP send: ${ex.message}" }
                 closeSocket(ex)
+            } finally {
+                peerConnection.output.close()
             }
         }
 
