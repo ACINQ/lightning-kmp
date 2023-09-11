@@ -26,7 +26,6 @@ import fr.acinq.lightning.wire.Init
 import fr.acinq.lightning.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -57,25 +56,23 @@ suspend fun newPeers(
     // Create collectors for Alice and Bob output messages
     val bob2alice = flow {
         while (scope.isActive) {
-            val bytes = bobConnection.output.receive()
-            val msg = LightningMessage.decode(bytes)
+            val msg = bobConnection.output.receive()
             println("Bob sends $msg")
             emit(msg)
         }
     }
     val alice2bob = flow {
         while (scope.isActive) {
-            val bytes = aliceConnection.output.receive()
-            val msg = LightningMessage.decode(bytes)
+            val msg = aliceConnection.output.receive()
             println("Alice sends $msg")
             emit(msg)
         }
     }
 
     // Initialize Bob with Alice's features
-    bob.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.first.features.initFeatures()))))
+    bob.send(BytesReceived(Init(features = nodeParams.first.features.initFeatures())))
     // Initialize Alice with Bob's features
-    alice.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.second.features.initFeatures()))))
+    alice.send(BytesReceived(Init(features = nodeParams.second.features.initFeatures())))
 
     // TODO update to depend on the initChannels size
     if (initChannels.isNotEmpty()) {
@@ -106,12 +103,12 @@ suspend fun newPeers(
     if (automateMessaging) {
         scope.launch {
             bob2alice.collect {
-                alice.send(BytesReceived(LightningMessage.encode(it)))
+                alice.send(BytesReceived(it))
             }
         }
         scope.launch {
             alice2bob.collect {
-                bob.send(BytesReceived(LightningMessage.encode(it)))
+                bob.send(BytesReceived(it))
             }
         }
     }
@@ -136,8 +133,7 @@ suspend fun CoroutineScope.newPeer(
         // send Init from remote node
         val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures())
 
-        val initMsg = LightningMessage.encode(theirInit)
-        peer.send(BytesReceived(initMsg))
+        peer.send(BytesReceived(theirInit))
         peer.expectStatus(Connection.ESTABLISHED)
 
         peer.channelsFlow.first {
@@ -156,8 +152,7 @@ suspend fun CoroutineScope.newPeer(
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
         ).withChannelData(state.commitments.remoteChannelData)
 
-        val msg = LightningMessage.encode(channelReestablish)
-        peer.send(BytesReceived(msg))
+        peer.send(BytesReceived(channelReestablish))
     }
 
     peer.channelsFlow.first {
