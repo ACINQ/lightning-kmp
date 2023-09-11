@@ -342,7 +342,7 @@ class Peer(
             val ping = Ping(10, ByteVector("deadbeef"))
             while (isActive) {
                 delay(30.seconds)
-                sendToPeer(ping)
+                peerConnection.output.trySend(ping)
             }
         }
 
@@ -532,17 +532,16 @@ class Peer(
         return incomingPaymentHandler.createInvoice(paymentPreimage, amount, description, extraHops, expirySeconds)
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
-    suspend fun sendToPeer(msg: LightningMessage) {
-        peerConnection?.output?.run { if (!isClosedForSend) send(msg) }
+    private fun sendToPeer(msg: LightningMessage) {
+        // We can safely use trySend because we use unlimited channel buffers.
+        peerConnection?.output?.run { trySend(msg) }
     }
 
     // The (node_id, fcm_token) tuple only needs to be registered once.
     // And after that, only if the tuple changes (e.g. different fcm_token).
     fun registerFcmToken(token: String?) {
-        launch {
-            sendToPeer(if (token == null) UnsetFCMToken else FCMToken(token))
-        }
+        val message = if (token == null) UnsetFCMToken else FCMToken(token)
+        sendToPeer(message)
     }
 
     private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
@@ -743,7 +742,7 @@ class Peer(
     }
 
     // MUST ONLY BE SET BY processEvent()
-    var peerConnection: PeerConnection? = null
+    private var peerConnection: PeerConnection? = null
 
     private suspend fun processEvent(cmd: PeerCommand) {
         when (cmd) {
@@ -754,7 +753,7 @@ class Peer(
             }
             is MessageReceived -> {
                 if (cmd.connectionId != peerConnection?.id) {
-                    logger.warning { "ignoring ${cmd.msg} for connectionId=${cmd.connectionId}"}
+                    logger.warning { "ignoring ${cmd.msg} for connectionId=${cmd.connectionId}" }
                     return
                 }
                 val msg = cmd.msg
