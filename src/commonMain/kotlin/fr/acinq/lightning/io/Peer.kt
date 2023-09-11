@@ -340,15 +340,6 @@ class Peer(
         // inform the peer about the new connection
         input.send(Connected(peerConnection))
 
-        suspend fun send(message: ByteArray) {
-            try {
-                session.send(message) { data, flush -> socket.send(data, flush) }
-            } catch (ex: TcpSocket.IOException) {
-                logger.warning { "TCP send: ${ex.message}" }
-                closeSocket(ex)
-            }
-        }
-
         suspend fun doPing() {
             val ping = Ping(10, ByteVector("deadbeef"))
             while (isActive) {
@@ -380,7 +371,12 @@ class Peer(
         suspend fun respond() {
             // Reset the output channel to avoid sending obsolete messages
             output = Channel(UNLIMITED)
-            for (msg in output) send(msg)
+            try {
+                for (msg in output) session.send(message) { data, flush -> socket.send(data, flush) }
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { "TCP send: ${ex.message}" }
+                closeSocket(ex)
+            }
         }
 
         launch { doPing() }
