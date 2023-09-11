@@ -352,7 +352,7 @@ class Peer(
             }
         }
 
-        suspend fun listen() {
+        suspend fun receiveLoop() {
             try {
                 while (isActive) {
                     val received = session.receive { size -> socket.receiveFully(size) }
@@ -370,7 +370,7 @@ class Peer(
             }
         }
 
-        suspend fun respond() {
+        suspend fun sendLoop() {
             try {
                 for (msg in peerConnection.output) {
                     // Avoids polluting the logs with pings/pongs
@@ -386,9 +386,9 @@ class Peer(
 
         launch { doPing() }
         launch { checkPaymentsTimeout() }
-        launch { respond() }
+        launch { sendLoop() }
 
-        listen() // This suspends until the coroutines is cancelled or the socket is closed
+        receiveLoop() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
     private suspend fun watchSwapInWallet() {
