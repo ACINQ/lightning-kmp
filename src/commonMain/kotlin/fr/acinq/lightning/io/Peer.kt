@@ -21,7 +21,6 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
-import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
@@ -48,9 +47,9 @@ data class OpenChannel(
     val channelType: ChannelType.SupportedChannelType
 ) : PeerCommand()
 
-data class PeerConnection(val id: Long, val output: Channel<ByteArray>)
+data class PeerConnection(val id: Long, val output: Channel<LightningMessage>)
 data class Connected(val peerConnection: PeerConnection) : PeerCommand()
-data class BytesReceived(val data: ByteArray, val connectionId: Long = 0) : PeerCommand()
+data class BytesReceived(val msg: LightningMessage, val connectionId: Long = 0) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
 object Disconnected : PeerCommand()
@@ -356,7 +355,12 @@ class Peer(
             try {
                 while (isActive) {
                     val received = session.receive { size -> socket.receiveFully(size) }
-                    input.send(BytesReceived(received, peerConnection.id))
+                    try {
+                        val msg = LightningMessage.decode(received)
+                        input.send(BytesReceived(msg, peerConnection.id))
+                    } catch (e: Throwable) {
+                        logger.warning { "cannot deserialized message: ${received.byteVector().toHex()}" }
+                    }
                 }
                 closeSocket(null)
             } catch (ex: TcpSocket.IOException) {
@@ -367,7 +371,12 @@ class Peer(
 
         suspend fun respond() {
             try {
-                for (msg in peerConnection.output) session.send(msg) { data, flush -> socket.send(data, flush) }
+                for (msg in peerConnection.output) {
+                    // Avoids polluting the logs with pings/pongs
+                    if (msg !is Ping && msg !is Pong) logger.info { "sending $msg" }
+                    val encoded = LightningMessage.encode(msg)
+                    session.send(encoded) { data, flush -> socket.send(data, flush) }
+                }
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP send: ${ex.message}" }
                 closeSocket(ex)
@@ -519,10 +528,7 @@ class Peer(
 
     @OptIn(DelicateCoroutinesApi::class)
     suspend fun sendToPeer(msg: LightningMessage) {
-        val encoded = LightningMessage.encode(msg)
-        // Avoids polluting the logs with pings/pongs
-        if (msg !is Ping && msg !is Pong) logger.info { "sending $msg" }
-        peerConnection?.output?.run { if (!isClosedForSend) send(encoded) }
+        peerConnection?.output?.run { if (!isClosedForSend) send(msg) }
     }
 
     // The (node_id, fcm_token) tuple only needs to be registered once.
@@ -742,20 +748,15 @@ class Peer(
             }
             is BytesReceived -> {
                 if (cmd.connectionId != peerConnection?.id) {
-                    logger.warning { "ignoring ${cmd.data} for connectionId=${cmd.connectionId}"}
+                    logger.warning { "ignoring ${cmd.msg} for connectionId=${cmd.connectionId}"}
                     return
                 }
-                val msg = try {
-                    LightningMessage.decode(cmd.data)
-                } catch (e: Throwable) {
-                    logger.warning { "cannot deserialized message: ${cmd.data.byteVector().toHex()}" }
-                    return
-                }
+                val msg = cmd.msg
                 logger.withMDC(msg.mdc()) { logger ->
                     msg.let { if (it !is Ping && it !is Pong) logger.info { "received $it" } }
                     when (msg) {
                         is UnknownMessage -> {
-                            logger.warning { "unhandled code=${msg.type}, cannot decode input=${Hex.encode(cmd.data)}" }
+                            logger.warning { "unhandled code=${msg.type}" }
                         }
                         is Init -> {
                             logger.info { "peer is using features ${msg.features}" }
