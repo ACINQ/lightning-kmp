@@ -26,7 +26,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
-import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
 import org.kodein.log.newLogger
 import kotlin.time.Duration.Companion.seconds
@@ -51,7 +50,7 @@ data class OpenChannel(
 
 data class PeerConnection(val id: Long, val output: Channel<ByteArray>)
 data class Connected(val peerConnection: PeerConnection) : PeerCommand()
-data class BytesReceived(val data: ByteArray) : PeerCommand()
+data class BytesReceived(val data: ByteArray, val connectionId: Long = 0) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
 object Disconnected : PeerCommand()
@@ -116,8 +115,6 @@ class Peer(
     // We use unlimited buffers, otherwise we may end up in a deadlock since we're both
     // receiving *and* sending to those channels in the same coroutine.
     private val input = Channel<PeerCommand>(UNLIMITED)
-    private var output = Channel<ByteArray>(UNLIMITED)
-    val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
     private val swapInCommands = Channel<SwapInCommand>(Channel.UNLIMITED)
 
@@ -283,7 +280,7 @@ class Peer(
     fun disconnect() {
         if (this::socket.isInitialized) socket.close()
         _connectionState.value = Connection.CLOSED(null)
-        output.close()
+        // TODO in exception handler? output.close()
     }
 
     // Warning : lateinit vars have to be used AFTER their init to avoid any crashes
@@ -337,7 +334,7 @@ class Peer(
         val session = LightningSession(enc, dec, ck)
 
         // TODO use atomic counter instead
-        val peerConnection = PeerConnection(id = currentTimestampMillis(), output)
+        val peerConnection = PeerConnection(id = currentTimestampMillis(), output = Channel(UNLIMITED))
         // inform the peer about the new connection
         input.send(Connected(peerConnection))
 
@@ -360,7 +357,7 @@ class Peer(
             try {
                 while (isActive) {
                     val received = session.receive { size -> socket.receiveFully(size) }
-                    input.send(BytesReceived(received))
+                    input.send(BytesReceived(received, peerConnection.id))
                 }
                 closeSocket(null)
             } catch (ex: TcpSocket.IOException) {
@@ -370,10 +367,8 @@ class Peer(
         }
 
         suspend fun respond() {
-            // Reset the output channel to avoid sending obsolete messages
-            output = Channel(UNLIMITED)
             try {
-                for (msg in output) session.send(message) { data, flush -> socket.send(data, flush) }
+                for (msg in peerConnection.output) session.send(msg) { data, flush -> socket.send(data, flush) }
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP send: ${ex.message}" }
                 closeSocket(ex)
@@ -508,7 +503,7 @@ class Peer(
         val encoded = LightningMessage.encode(msg)
         // Avoids polluting the logs with pings/pongs
         if (msg !is Ping && msg !is Pong) logger.info { "sending $msg" }
-        if (!output.isClosedForSend) output.send(encoded)
+        peerConnection?.output?.run { if (!isClosedForSend) send(encoded) }
     }
 
     // The (node_id, fcm_token) tuple only needs to be registered once.
@@ -716,13 +711,21 @@ class Peer(
         }
     }
 
+    // MUST ONLY BE SET BY processEvent()
+    var peerConnection: PeerConnection? = null
+
     private suspend fun processEvent(cmd: PeerCommand) {
         when (cmd) {
             is Connected -> {
-                logger.info { "sending init $ourInit" }
+                logger.info { "new connection with id=${cmd.peerConnection.id}, sending init $ourInit" }
+                peerConnection = cmd.peerConnection
                 sendToPeer(ourInit)
             }
             is BytesReceived -> {
+                if (cmd.connectionId != peerConnection?.id) {
+                    logger.warning { "ignoring ${cmd.data} for connectionId=${cmd.connectionId}"}
+                    return
+                }
                 val msg = try {
                     LightningMessage.decode(cmd.data)
                 } catch (e: Throwable) {

@@ -17,9 +17,7 @@ import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
-import fr.acinq.lightning.io.BytesReceived
-import fr.acinq.lightning.io.Peer
-import fr.acinq.lightning.io.TcpSocket
+import fr.acinq.lightning.io.*
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.ChannelReady
@@ -27,6 +25,8 @@ import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Init
 import fr.acinq.lightning.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -49,10 +49,15 @@ suspend fun newPeers(
         initChannels.forEach { channels.addOrUpdateChannel(it.second.state) }
     })
 
+    val aliceConnection = PeerConnection(0, Channel(Channel.UNLIMITED))
+    val bobConnection = PeerConnection(0, Channel(Channel.UNLIMITED))
+    alice.send(Connected(aliceConnection))
+    bob.send(Connected(bobConnection))
+
     // Create collectors for Alice and Bob output messages
     val bob2alice = flow {
         while (scope.isActive) {
-            val bytes = bob.outputLightningMessages.receive()
+            val bytes = bobConnection.output.receive()
             val msg = LightningMessage.decode(bytes)
             println("Bob sends $msg")
             emit(msg)
@@ -60,7 +65,7 @@ suspend fun newPeers(
     }
     val alice2bob = flow {
         while (scope.isActive) {
-            val bytes = alice.outputLightningMessages.receive()
+            val bytes = aliceConnection.output.receive()
             val msg = LightningMessage.decode(bytes)
             println("Alice sends $msg")
             emit(msg)
@@ -124,6 +129,9 @@ suspend fun CoroutineScope.newPeer(
 
     val peer = buildPeer(this, nodeParams, walletParams, db)
 
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED))
+    peer.send(Connected(connection))
+
     remotedNodeChannelState?.let { state ->
         // send Init from remote node
         val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures())
@@ -160,7 +168,7 @@ suspend fun CoroutineScope.newPeer(
     return peer
 }
 
-fun buildPeer(
+suspend fun buildPeer(
     scope: CoroutineScope,
     nodeParams: NodeParams,
     walletParams: WalletParams,
@@ -177,6 +185,8 @@ fun buildPeer(
         claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
         fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
     )
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED))
+    peer.send(Connected(connection))
 
     return peer
 }
