@@ -271,8 +271,12 @@ class Peer(
     }
 
     fun connect() {
-        if (connectionState.value is Connection.CLOSED) establishConnection()
-        else logger.warning { "Peer is already connecting / connected" }
+        if (connectionState.value is Connection.CLOSED) {
+            _connectionState.value = Connection.ESTABLISHING
+            establishConnection()
+        } else {
+            logger.warning { "Peer is already connecting / connected" }
+        }
     }
 
     fun disconnect() {
@@ -288,7 +292,6 @@ class Peer(
     private lateinit var socket: TcpSocket
     private fun establishConnection() = launch {
         logger.info { "connecting to ${walletParams.trampolineNode.host}" }
-        _connectionState.value = Connection.ESTABLISHING
         socket = try {
             socketBuilder?.connect(
                 host = walletParams.trampolineNode.host,
