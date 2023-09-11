@@ -62,9 +62,9 @@ class PeerTest : LightningTestSuite() {
         val bob = buildPeer(this, TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams)
 
         // start Init for Alice
-        alice.send(MessageReceived(Init(features = TestConstants.Bob.nodeParams.features)))
+        alice.send(MessageReceived(Init(features = TestConstants.Bob.nodeParams.features), connectionId = 0))
         // start Init for Bob
-        bob.send(MessageReceived(Init(features = TestConstants.Alice.nodeParams.features)))
+        bob.send(MessageReceived(Init(features = TestConstants.Alice.nodeParams.features), connectionId = 0))
 
         // Wait until the Peer is ready
         alice.expectStatus(Connection.ESTABLISHED)
@@ -343,7 +343,7 @@ class PeerTest : LightningTestSuite() {
 
         // send Init from remote node
         val theirInit = Init(features = bob0.staticParams.nodeParams.features)
-        peer.send(MessageReceived(theirInit))
+        peer.send(MessageReceived(theirInit, connectionId = 0))
         // Wait until the Peer is ready
         peer.expectStatus(Connection.ESTABLISHED)
 
@@ -367,7 +367,7 @@ class PeerTest : LightningTestSuite() {
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
         ).withChannelData(commitments.remoteChannelData)
 
-        peer.send(MessageReceived(channelReestablish))
+        peer.send(MessageReceived(channelReestablish, connectionId = 0))
 
         // Wait until the channels are Reestablished(=Normal)
         val reestablishChannels = peer.channelsFlow.first { it.values.isNotEmpty() && it.values.all { channelState -> channelState is Normal } }
@@ -388,7 +388,7 @@ class PeerTest : LightningTestSuite() {
     fun `restore channel -- unknown channel`() = runSuspendTest {
         val (alice, _, alice2bob) = newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams))
         val unknownChannelReestablish = ChannelReestablish(randomBytes32(), 1, 0, randomKey(), randomKey().publicKey())
-        alice.send(MessageReceived(unknownChannelReestablish))
+        alice.send(MessageReceived(unknownChannelReestablish, connectionId = 0))
         alice2bob.expect<Error>()
     }
 
@@ -407,11 +407,11 @@ class PeerTest : LightningTestSuite() {
         )
 
         // Simulate a reconnection with Alice.
-        peer.send(MessageReceived(Init(features = alice0.staticParams.nodeParams.features)))
+        peer.send(MessageReceived(Init(features = alice0.staticParams.nodeParams.features), connectionId = 0))
         peer.expectStatus(Connection.ESTABLISHED)
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
         assertFalse(aliceReestablish.channelData.isEmpty())
-        peer.send(MessageReceived(aliceReestablish))
+        peer.send(MessageReceived(aliceReestablish, connectionId = 0))
 
         // Wait until the channels are Syncing
         val restoredChannel = peer.channelsFlow
@@ -437,11 +437,11 @@ class PeerTest : LightningTestSuite() {
         )
 
         // Simulate a reconnection with Alice.
-        peer.send(MessageReceived(Init(features = alice0.staticParams.nodeParams.features)))
+        peer.send(MessageReceived(Init(features = alice0.staticParams.nodeParams.features), connectionId = 0))
         peer.expectStatus(Connection.ESTABLISHED)
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
         assertFalse(aliceReestablish.channelData.isEmpty())
-        peer.send(MessageReceived(aliceReestablish))
+        peer.send(MessageReceived(aliceReestablish, connectionId = 0))
 
         // Wait until the channels are Syncing
         val restoredChannel = peer.channelsFlow
