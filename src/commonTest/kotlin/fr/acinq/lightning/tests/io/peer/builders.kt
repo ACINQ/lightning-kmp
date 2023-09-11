@@ -11,7 +11,7 @@ import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
-import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.LNChannel
 import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
@@ -70,9 +70,9 @@ suspend fun newPeers(
     }
 
     // Initialize Bob with Alice's features
-    bob.send(MessageReceived(Init(features = nodeParams.first.features.initFeatures())))
+    bob.send(MessageReceived(Init(features = nodeParams.first.features.initFeatures()), bobConnection.id))
     // Initialize Alice with Bob's features
-    alice.send(MessageReceived(Init(features = nodeParams.second.features.initFeatures())))
+    alice.send(MessageReceived(Init(features = nodeParams.second.features.initFeatures()), aliceConnection.id))
 
     // TODO update to depend on the initChannels size
     if (initChannels.isNotEmpty()) {
@@ -103,12 +103,12 @@ suspend fun newPeers(
     if (automateMessaging) {
         scope.launch {
             bob2alice.collect {
-                alice.send(MessageReceived(it))
+                alice.send(MessageReceived(it, bobConnection.id))
             }
         }
         scope.launch {
             alice2bob.collect {
-                bob.send(MessageReceived(it))
+                bob.send(MessageReceived(it, aliceConnection.id))
             }
         }
     }
@@ -133,7 +133,7 @@ suspend fun CoroutineScope.newPeer(
         // send Init from remote node
         val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures())
 
-        peer.send(MessageReceived(theirInit))
+        peer.send(MessageReceived(theirInit, connection.id))
         peer.expectStatus(Connection.ESTABLISHED)
 
         peer.channelsFlow.first {
@@ -152,7 +152,7 @@ suspend fun CoroutineScope.newPeer(
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
         ).withChannelData(state.commitments.remoteChannelData)
 
-        peer.send(MessageReceived(channelReestablish))
+        peer.send(MessageReceived(channelReestablish, connection.id))
     }
 
     peer.channelsFlow.first {

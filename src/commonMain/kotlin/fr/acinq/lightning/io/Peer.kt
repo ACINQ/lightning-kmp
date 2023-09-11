@@ -49,7 +49,7 @@ data class OpenChannel(
 
 data class PeerConnection(val id: Long, val output: Channel<LightningMessage>)
 data class Connected(val peerConnection: PeerConnection) : PeerCommand()
-data class MessageReceived(val msg: LightningMessage, val connectionId: Long = 0) : PeerCommand()
+data class MessageReceived(val msg: LightningMessage, val connectionId: Long) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
 object Disconnected : PeerCommand()
