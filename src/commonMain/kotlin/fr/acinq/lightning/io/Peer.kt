@@ -50,6 +50,7 @@ data class OpenChannel(
 data class PeerConnection(val id: Long, val output: Channel<LightningMessage>) {
     fun send(msg: LightningMessage) {
         // We can safely use trySend because we use unlimited channel buffers.
+        // If the connection was closed, the message will automatically be dropped.
         output.run { trySend(msg) }
     }
 }
@@ -120,7 +121,7 @@ class Peer(
     // receiving *and* sending to those channels in the same coroutine.
     private val input = Channel<PeerCommand>(UNLIMITED)
 
-    private val swapInCommands = Channel<SwapInCommand>(Channel.UNLIMITED)
+    private val swapInCommands = Channel<SwapInCommand>(UNLIMITED)
 
     private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
 
@@ -251,7 +252,6 @@ class Peer(
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
                 logger.info { "connection state changed: ${it::class.simpleName}" }
-                if (it is Connection.CLOSED) input.send(Disconnected)
                 previousState = it
             }
         }
@@ -295,6 +295,10 @@ class Peer(
     // Except from the disconnect() one that check if the lateinit var has been initialized
     private lateinit var socket: TcpSocket
     private fun establishConnection() = launch {
+        // Clean up previous connection state: we do this here to ensure that it is handled before the Connected event for the new connection.
+        // That means we're not sending this event if we don't reconnect. It's ok, since that has the same effect as not detecting a disconnection and closing the app.
+        input.send(Disconnected)
+
         logger.info { "connecting to ${walletParams.trampolineNode.host}" }
         socket = try {
             socketBuilder?.connect(
@@ -340,7 +344,7 @@ class Peer(
 
         // TODO use atomic counter instead
         val peerConnection = PeerConnection(id = currentTimestampMillis(), output = Channel(UNLIMITED))
-        // inform the peer about the new connection
+        // Inform the peer about the new connection.
         input.send(Connected(peerConnection))
 
         suspend fun doPing() {
@@ -543,7 +547,7 @@ class Peer(
         val message = if (token == null) UnsetFCMToken else FCMToken(token)
         peerConnection?.send(message)
     }
-    
+
     private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>) {
         // we peek into the actions to see if the id of the channel is going to change, but we're not processing it yet
         val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
@@ -1078,13 +1082,19 @@ class Peer(
                 }
             }
             is Disconnected -> {
-                logger.warning { "disconnecting channels" }
-                _channels.forEach { (key, value) ->
-                    val (state1, actions) = value.process(ChannelCommand.Disconnected)
-                    processActions(key, peerConnection, actions)
-                    _channels = _channels + (key to state1)
+                when (peerConnection) {
+                    null -> logger.info { "ignoring disconnected event, we're already disconnected" }
+                    else -> {
+                        logger.warning { "disconnecting channels from connectionId=${peerConnection?.id}" }
+                        peerConnection = null
+                        _channels.forEach { (key, value) ->
+                            val (state1, actions) = value.process(ChannelCommand.Disconnected)
+                            _channels = _channels + (key to state1)
+                            processActions(key, peerConnection, actions)
+                        }
+                        incomingPaymentHandler.purgePayToOpenRequests()
+                    }
                 }
-                incomingPaymentHandler.purgePayToOpenRequests()
             }
         }
     }
