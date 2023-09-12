@@ -676,7 +676,11 @@ class Peer(
             else -> throw RuntimeException("invalid state")
         }
 
-        val writer = makeWriter(ourKeys, theirPubkey)
+        val writer = HandshakeState.initializeWriter(
+            handshakePatternXK, prologue,
+            ourKeys, Pair(ByteArray(0), ByteArray(0)), theirPubkey, ByteArray(0),
+            Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
+        )
         val (state1, message, _) = writer.write(ByteArray(0))
         w(byteArrayOf(prefix) + message)
 
@@ -689,18 +693,6 @@ class Peer(
         w(byteArrayOf(prefix) + message1)
         return Triple(enc, dec, ck)
     }
-
-    private fun makeWriter(localStatic: Pair<ByteArray, ByteArray>, remoteStatic: ByteArray) = HandshakeState.initializeWriter(
-        handshakePatternXK, prologue,
-        localStatic, Pair(ByteArray(0), ByteArray(0)), remoteStatic, ByteArray(0),
-        Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
-    )
-
-    private fun makeReader(localStatic: Pair<ByteArray, ByteArray>) = HandshakeState.initializeReader(
-        handshakePatternXK, prologue,
-        localStatic, Pair(ByteArray(0), ByteArray(0)), ByteArray(0), ByteArray(0),
-        Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
-    )
 
     private suspend fun run() {
         logger.info { "peer is active" }
