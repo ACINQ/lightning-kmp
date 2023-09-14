@@ -25,6 +25,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
+import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.*
 import org.kodein.log.newLogger
 import kotlin.time.Duration.Companion.seconds
@@ -47,11 +48,12 @@ data class OpenChannel(
     val channelType: ChannelType.SupportedChannelType
 ) : PeerCommand()
 
-data class PeerConnection(val id: Long, val output: Channel<LightningMessage>) {
+data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, private val logger: MDCLogger) {
     fun send(msg: LightningMessage) {
         // We can safely use trySend because we use unlimited channel buffers.
         // If the connection was closed, the message will automatically be dropped.
-        output.run { trySend(msg) }
+        val result = output.trySend(msg)
+        result.onFailure { failure -> logger.warning(failure) { "cannot send $msg" } }
     }
 }
 data class Connected(val peerConnection: PeerConnection) : PeerCommand()
@@ -299,6 +301,9 @@ class Peer(
         // That means we're not sending this event if we don't reconnect. It's ok, since that has the same effect as not detecting a disconnection and closing the app.
         input.send(Disconnected)
 
+        val connectionId = currentTimestampMillis()
+        val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId, "connectionId" to connectionId))
+
         logger.info { "connecting to ${walletParams.trampolineNode.host}" }
         socket = try {
             socketBuilder?.connect(
@@ -343,7 +348,7 @@ class Peer(
         val session = LightningSession(enc, dec, ck)
 
         // TODO use atomic counter instead
-        val peerConnection = PeerConnection(id = currentTimestampMillis(), output = Channel(UNLIMITED))
+        val peerConnection = PeerConnection(connectionId, Channel(UNLIMITED), logger)
         // Inform the peer about the new connection.
         input.send(Connected(peerConnection))
 
@@ -370,7 +375,7 @@ class Peer(
                         val msg = LightningMessage.decode(received)
                         input.send(MessageReceived(peerConnection.id, msg))
                     } catch (e: Throwable) {
-                        logger.warning { "cannot deserialized message: ${received.byteVector().toHex()}" }
+                        logger.warning { "cannot deserialize message: ${received.byteVector().toHex()}" }
                     }
                 }
                 closeSocket(null)

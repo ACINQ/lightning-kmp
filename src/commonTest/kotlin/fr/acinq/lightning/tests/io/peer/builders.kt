@@ -19,6 +19,7 @@ import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.utils.Connection
+import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 
 suspend fun newPeers(
     scope: CoroutineScope,
@@ -48,8 +50,8 @@ suspend fun newPeers(
         initChannels.forEach { channels.addOrUpdateChannel(it.second.state) }
     })
 
-    val aliceConnection = PeerConnection(0, Channel(Channel.UNLIMITED))
-    val bobConnection = PeerConnection(0, Channel(Channel.UNLIMITED))
+    val aliceConnection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
+    val bobConnection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
     alice.send(Connected(aliceConnection))
     bob.send(Connected(bobConnection))
 
@@ -126,7 +128,7 @@ suspend fun CoroutineScope.newPeer(
 
     val peer = buildPeer(this, nodeParams, walletParams, db)
 
-    val connection = PeerConnection(0, Channel(Channel.UNLIMITED))
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
     peer.send(Connected(connection))
 
     remotedNodeChannelState?.let { state ->
@@ -180,7 +182,7 @@ suspend fun buildPeer(
         claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
         fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
     )
-    val connection = PeerConnection(0, Channel(Channel.UNLIMITED))
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
     peer.send(Connected(connection))
 
     return peer
