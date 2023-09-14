@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.mapNotNull
 
 suspend inline fun <reified M : LightningMessage> Flow<LightningMessage>.expect(): M = first { it is M } as M
 
-suspend inline fun Peer.forward(message: LightningMessage) = send((MessageReceived(message, connectionId = 0)))
+suspend inline fun Peer.forward(message: LightningMessage) = send((MessageReceived(connectionId = 0, message)))
 
 suspend inline fun Peer.expectStatus(await: Connection) = connectionState.first {
     when (await) {

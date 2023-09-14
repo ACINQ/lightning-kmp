@@ -70,9 +70,9 @@ suspend fun newPeers(
     }
 
     // Initialize Bob with Alice's features
-    bob.send(MessageReceived(Init(features = nodeParams.first.features.initFeatures()), bobConnection.id))
+    bob.send(MessageReceived(bobConnection.id, Init(features = nodeParams.first.features.initFeatures())))
     // Initialize Alice with Bob's features
-    alice.send(MessageReceived(Init(features = nodeParams.second.features.initFeatures()), aliceConnection.id))
+    alice.send(MessageReceived(aliceConnection.id, Init(features = nodeParams.second.features.initFeatures())))
 
     // TODO update to depend on the initChannels size
     if (initChannels.isNotEmpty()) {
@@ -103,12 +103,12 @@ suspend fun newPeers(
     if (automateMessaging) {
         scope.launch {
             bob2alice.collect {
-                alice.send(MessageReceived(it, bobConnection.id))
+                alice.send(MessageReceived(bobConnection.id, it))
             }
         }
         scope.launch {
             alice2bob.collect {
-                bob.send(MessageReceived(it, aliceConnection.id))
+                bob.send(MessageReceived(aliceConnection.id, it))
             }
         }
     }
@@ -133,7 +133,7 @@ suspend fun CoroutineScope.newPeer(
         // send Init from remote node
         val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures())
 
-        peer.send(MessageReceived(theirInit, connection.id))
+        peer.send(MessageReceived(connection.id, theirInit))
         peer.expectStatus(Connection.ESTABLISHED)
 
         peer.channelsFlow.first {
@@ -152,7 +152,7 @@ suspend fun CoroutineScope.newPeer(
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
         ).withChannelData(state.commitments.remoteChannelData)
 
-        peer.send(MessageReceived(channelReestablish, connection.id))
+        peer.send(MessageReceived(connection.id, channelReestablish))
     }
 
     peer.channelsFlow.first {

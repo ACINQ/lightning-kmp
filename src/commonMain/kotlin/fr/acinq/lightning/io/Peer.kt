@@ -55,7 +55,7 @@ data class PeerConnection(val id: Long, val output: Channel<LightningMessage>) {
     }
 }
 data class Connected(val peerConnection: PeerConnection) : PeerCommand()
-data class MessageReceived(val msg: LightningMessage, val connectionId: Long) : PeerCommand()
+data class MessageReceived(val connectionId: Long, val msg: LightningMessage) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
 object Disconnected : PeerCommand()
@@ -368,7 +368,7 @@ class Peer(
                     val received = session.receive { size -> socket.receiveFully(size) }
                     try {
                         val msg = LightningMessage.decode(received)
-                        input.send(MessageReceived(msg, peerConnection.id))
+                        input.send(MessageReceived(peerConnection.id, msg))
                     } catch (e: Throwable) {
                         logger.warning { "cannot deserialized message: ${received.byteVector().toHex()}" }
                     }
