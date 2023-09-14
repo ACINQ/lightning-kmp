@@ -47,7 +47,12 @@ data class OpenChannel(
     val channelType: ChannelType.SupportedChannelType
 ) : PeerCommand()
 
-data class PeerConnection(val id: Long, val output: Channel<LightningMessage>)
+data class PeerConnection(val id: Long, val output: Channel<LightningMessage>) {
+    fun send(msg: LightningMessage) {
+        // We can safely use trySend because we use unlimited channel buffers.
+        output.run { trySend(msg) }
+    }
+}
 data class Connected(val peerConnection: PeerConnection) : PeerCommand()
 data class MessageReceived(val msg: LightningMessage, val connectionId: Long) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
@@ -342,7 +347,7 @@ class Peer(
             val ping = Ping(10, ByteVector("deadbeef"))
             while (isActive) {
                 delay(30.seconds)
-                peerConnection.output.trySend(ping)
+                peerConnection.send(ping)
             }
         }
 
@@ -532,16 +537,11 @@ class Peer(
         return incomingPaymentHandler.createInvoice(paymentPreimage, amount, description, extraHops, expirySeconds)
     }
 
-    private fun sendToPeer(msg: LightningMessage) {
-        // We can safely use trySend because we use unlimited channel buffers.
-        peerConnection?.output?.run { trySend(msg) }
-    }
-
     // The (node_id, fcm_token) tuple only needs to be registered once.
     // And after that, only if the tuple changes (e.g. different fcm_token).
     fun registerFcmToken(token: String?) {
         val message = if (token == null) UnsetFCMToken else FCMToken(token)
-        sendToPeer(message)
+        peerConnection?.send(message)
     }
 
     private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
@@ -550,7 +550,7 @@ class Peer(
         logger.withMDC(mapOf("channelId" to actualChannelId)) { logger ->
             actions.forEach { action ->
                 when (action) {
-                    is ChannelAction.Message.Send -> if (_connectionState.value == Connection.ESTABLISHED) sendToPeer(action.message) // ignore if disconnected
+                    is ChannelAction.Message.Send -> if (_connectionState.value == Connection.ESTABLISHED) peerConnection?.send(action.message) // ignore if disconnected
                     // sometimes channel actions include "self" command (such as ChannelCommand.Commitment.Sign)
                     is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, action.command))
                     is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
@@ -749,7 +749,7 @@ class Peer(
             is Connected -> {
                 logger.info { "new connection with id=${cmd.peerConnection.id}, sending init $ourInit" }
                 peerConnection = cmd.peerConnection
-                sendToPeer(ourInit)
+                peerConnection?.send(ourInit)
             }
             is MessageReceived -> {
                 if (cmd.connectionId != peerConnection?.id) {
@@ -784,7 +784,7 @@ class Peer(
                         }
                         is Ping -> {
                             val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                            sendToPeer(pong)
+                            peerConnection?.send(pong)
                         }
                         is Pong -> {
                             logger.debug { "received pong" }
@@ -808,7 +808,7 @@ class Peer(
                                                 logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
                                                 nodeParams._nodeEvents.emit(rejected)
                                                 swapInCommands.send(SwapInCommand.UnlockWalletInputs(request.walletInputs.map { it.outPoint }.toSet()))
-                                                sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
+                                                peerConnection?.send(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
                                                 return@withMDC
                                             }
                                             val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.walletInputs.size * Transactions.swapInputWeight)
@@ -822,7 +822,7 @@ class Peer(
 
                                         else -> {
                                             logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: cannot find channel request with requestId=${origin.requestId}" }
-                                            sendToPeer(Error(msg.temporaryChannelId, "no corresponding channel request"))
+                                            peerConnection?.send(Error(msg.temporaryChannelId, "no corresponding channel request"))
                                             return@withMDC
                                         }
                                     }
@@ -830,7 +830,7 @@ class Peer(
                                 }
                                 if (fundingAmount.toMilliSatoshi() < pushAmount) {
                                     logger.warning { "rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
-                                    sendToPeer(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
+                                    peerConnection?.send(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
                                 } else {
                                     val localParams = LocalParams(nodeParams, isInitiator = false)
                                     val state = WaitForInit
@@ -883,7 +883,7 @@ class Peer(
                                 }
                                 local == null && backup == null -> {
                                     logger.warning { "peer sent a reestablish for a unknown channel with no or undecipherable backup" }
-                                    sendToPeer(Error(msg.channelId, "unknown channel"))
+                                    peerConnection?.send(Error(msg.channelId, "unknown channel"))
                                 }
                                 local == null && backup is DeserializationResult.Success -> {
                                     logger.warning { "recovering channel from peer backup" }
@@ -909,7 +909,7 @@ class Peer(
                                 processActions(msg.temporaryChannelId, actions)
                             } ?: run {
                                 logger.error { "received ${msg::class.simpleName} for unknown temporary channel ${msg.temporaryChannelId}" }
-                                sendToPeer(Error(msg.temporaryChannelId, "unknown channel"))
+                                peerConnection?.send(Error(msg.temporaryChannelId, "unknown channel"))
                             }
                         }
                         is HasChannelId -> {
@@ -924,7 +924,7 @@ class Peer(
                                     _channels = _channels + (msg.channelId to state1)
                                 } ?: run {
                                     logger.error { "received ${msg::class.simpleName} for unknown channel ${msg.channelId}" }
-                                    sendToPeer(Error(msg.channelId, "unknown channel"))
+                                    peerConnection?.send(Error(msg.channelId, "unknown channel"))
                                 }
                             }
                         }
@@ -1017,7 +1017,7 @@ class Peer(
                                 TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
                             )
                             logger.info { "sending please_open_channel with ${cmd.walletInputs.size} utxos (amount = ${cmd.walletInputs.balance})" }
-                            sendToPeer(pleaseOpenChannel)
+                            peerConnection?.send(pleaseOpenChannel)
                             nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
                             channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
                         } else {
@@ -1050,7 +1050,7 @@ class Peer(
             }
             is PayToOpenResponseCommand -> {
                 logger.info { "sending ${cmd.payToOpenResponse::class.simpleName}" }
-                sendToPeer(cmd.payToOpenResponse)
+                peerConnection?.send(cmd.payToOpenResponse)
             }
             is SendPayment -> {
                 val currentTip = currentTipFlow.filterNotNull().first()
