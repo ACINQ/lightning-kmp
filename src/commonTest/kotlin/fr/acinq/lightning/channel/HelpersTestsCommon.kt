@@ -61,11 +61,13 @@ class HelpersTestsCommon : LightningTestSuite() {
         val p2shBelowDust = listOf(TxOut(539.sat, Script.pay2sh(Hex.decode("0000000000000000000000000000000000000000"))))
         val p2wpkhBelowDust = listOf(TxOut(293.sat, Script.pay2wpkh(randomKey().publicKey())))
         val p2wshBelowDust = listOf(TxOut(329.sat, Script.pay2wsh(Hex.decode("0000000000000000000000000000000000000000"))))
+        val p2trBelowDust = listOf(TxOut(353.sat, Script.pay2tr(randomKey().publicKey().xOnly())))
         val allOutputsAboveDust = listOf(
             TxOut(546.sat, Script.pay2pkh(randomKey().publicKey())),
             TxOut(540.sat, Script.pay2sh(Hex.decode("0000000000000000000000000000000000000000"))),
             TxOut(294.sat, Script.pay2wpkh(randomKey().publicKey())),
             TxOut(330.sat, Script.pay2wsh(Hex.decode("0000000000000000000000000000000000000000"))),
+            TxOut(354.sat, Script.pay2tr(randomKey().publicKey().xOnly()))
         )
 
         fun toClosingTx(txOut: List<TxOut>): Transactions.TransactionWithInputInfo.ClosingTx {
@@ -78,6 +80,7 @@ class HelpersTestsCommon : LightningTestSuite() {
         assertFalse(checkClosingDustAmounts(toClosingTx(p2shBelowDust)))
         assertFalse(checkClosingDustAmounts(toClosingTx(p2wpkhBelowDust)))
         assertFalse(checkClosingDustAmounts(toClosingTx(p2wshBelowDust)))
+        assertFalse(checkClosingDustAmounts(toClosingTx(p2trBelowDust)))
     }
 
 }

@@ -472,13 +472,14 @@ object Helpers {
          */
         fun checkClosingDustAmounts(closingTx: ClosingTx): Boolean {
             return closingTx.tx.txOut.all { txOut ->
-                val publicKeyScript = txOut.publicKeyScript.toByteArray()
+                val publicKeyScript = Script.parse(txOut.publicKeyScript)
                 when {
                     Script.isPay2pkh(publicKeyScript) -> txOut.amount >= 546.sat
                     Script.isPay2sh(publicKeyScript) -> txOut.amount >= 540.sat
                     Script.isPay2wpkh(publicKeyScript) -> txOut.amount >= 294.sat
                     Script.isPay2wsh(publicKeyScript) -> txOut.amount >= 330.sat
-                    else -> false
+                    Script.isNativeWitnessScript(publicKeyScript) -> txOut.amount >= 354.sat
+                    else -> txOut.amount >= 546.sat
                 }
             }
         }
