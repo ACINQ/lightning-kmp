@@ -11,28 +11,29 @@ import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
-import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.LNChannel
 import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
-import fr.acinq.lightning.io.BytesReceived
-import fr.acinq.lightning.io.Peer
-import fr.acinq.lightning.io.TcpSocket
+import fr.acinq.lightning.io.*
 import fr.acinq.lightning.utils.Connection
+import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Init
 import fr.acinq.lightning.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 
 suspend fun newPeers(
     scope: CoroutineScope,
@@ -49,28 +50,31 @@ suspend fun newPeers(
         initChannels.forEach { channels.addOrUpdateChannel(it.second.state) }
     })
 
+    val aliceConnection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
+    val bobConnection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
+    alice.send(Connected(aliceConnection))
+    bob.send(Connected(bobConnection))
+
     // Create collectors for Alice and Bob output messages
     val bob2alice = flow {
         while (scope.isActive) {
-            val bytes = bob.outputLightningMessages.receive()
-            val msg = LightningMessage.decode(bytes)
+            val msg = bobConnection.output.receive()
             println("Bob sends $msg")
             emit(msg)
         }
     }
     val alice2bob = flow {
         while (scope.isActive) {
-            val bytes = alice.outputLightningMessages.receive()
-            val msg = LightningMessage.decode(bytes)
+            val msg = aliceConnection.output.receive()
             println("Alice sends $msg")
             emit(msg)
         }
     }
 
     // Initialize Bob with Alice's features
-    bob.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.first.features.initFeatures()))))
+    bob.send(MessageReceived(bobConnection.id, Init(features = nodeParams.first.features.initFeatures())))
     // Initialize Alice with Bob's features
-    alice.send(BytesReceived(LightningMessage.encode(Init(features = nodeParams.second.features.initFeatures()))))
+    alice.send(MessageReceived(aliceConnection.id, Init(features = nodeParams.second.features.initFeatures())))
 
     // TODO update to depend on the initChannels size
     if (initChannels.isNotEmpty()) {
@@ -101,12 +105,12 @@ suspend fun newPeers(
     if (automateMessaging) {
         scope.launch {
             bob2alice.collect {
-                alice.send(BytesReceived(LightningMessage.encode(it)))
+                alice.send(MessageReceived(bobConnection.id, it))
             }
         }
         scope.launch {
             alice2bob.collect {
-                bob.send(BytesReceived(LightningMessage.encode(it)))
+                bob.send(MessageReceived(aliceConnection.id, it))
             }
         }
     }
@@ -124,12 +128,14 @@ suspend fun CoroutineScope.newPeer(
 
     val peer = buildPeer(this, nodeParams, walletParams, db)
 
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
+    peer.send(Connected(connection))
+
     remotedNodeChannelState?.let { state ->
         // send Init from remote node
         val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures())
 
-        val initMsg = LightningMessage.encode(theirInit)
-        peer.send(BytesReceived(initMsg))
+        peer.send(MessageReceived(connection.id, theirInit))
         peer.expectStatus(Connection.ESTABLISHED)
 
         peer.channelsFlow.first {
@@ -148,8 +154,7 @@ suspend fun CoroutineScope.newPeer(
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
         ).withChannelData(state.commitments.remoteChannelData)
 
-        val msg = LightningMessage.encode(channelReestablish)
-        peer.send(BytesReceived(msg))
+        peer.send(MessageReceived(connection.id, channelReestablish))
     }
 
     peer.channelsFlow.first {
@@ -160,7 +165,7 @@ suspend fun CoroutineScope.newPeer(
     return peer
 }
 
-fun buildPeer(
+suspend fun buildPeer(
     scope: CoroutineScope,
     nodeParams: NodeParams,
     walletParams: WalletParams,
@@ -177,6 +182,8 @@ fun buildPeer(
         claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
         fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
     )
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
+    peer.send(Connected(connection))
 
     return peer
 }

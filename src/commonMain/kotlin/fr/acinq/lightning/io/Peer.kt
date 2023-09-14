@@ -21,12 +21,11 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
-import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
-import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.*
 import org.kodein.log.newLogger
 import kotlin.time.Duration.Companion.seconds
@@ -49,7 +48,16 @@ data class OpenChannel(
     val channelType: ChannelType.SupportedChannelType
 ) : PeerCommand()
 
-data class BytesReceived(val data: ByteArray) : PeerCommand()
+data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, private val logger: MDCLogger) {
+    fun send(msg: LightningMessage) {
+        // We can safely use trySend because we use unlimited channel buffers.
+        // If the connection was closed, the message will automatically be dropped.
+        val result = output.trySend(msg)
+        result.onFailure { failure -> logger.warning(failure) { "cannot send $msg" } }
+    }
+}
+data class Connected(val peerConnection: PeerConnection) : PeerCommand()
+data class MessageReceived(val connectionId: Long, val msg: LightningMessage) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
 object Disconnected : PeerCommand()
@@ -114,10 +122,8 @@ class Peer(
     // We use unlimited buffers, otherwise we may end up in a deadlock since we're both
     // receiving *and* sending to those channels in the same coroutine.
     private val input = Channel<PeerCommand>(UNLIMITED)
-    private var output = Channel<ByteArray>(UNLIMITED)
-    val outputLightningMessages: ReceiveChannel<ByteArray> get() = output
 
-    private val swapInCommands = Channel<SwapInCommand>(Channel.UNLIMITED)
+    private val swapInCommands = Channel<SwapInCommand>(UNLIMITED)
 
     private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
 
@@ -224,7 +230,7 @@ class Peer(
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
                 val (state1, actions) = state.process(ChannelCommand.Init.Restore(it))
-                processActions(it.channelId, actions)
+                processActions(it.channelId, peerConnection, actions)
                 _channels = _channels + (it.channelId to state1)
                 it.channelId
             }
@@ -248,7 +254,6 @@ class Peer(
             var previousState = connectionState.value
             connectionState.filter { it != previousState }.collect {
                 logger.info { "connection state changed: ${it::class.simpleName}" }
-                if (it is Connection.CLOSED) input.send(Disconnected)
                 previousState = it
             }
         }
@@ -273,24 +278,33 @@ class Peer(
     }
 
     fun connect() {
-        if (connectionState.value is Connection.CLOSED) establishConnection()
-        else logger.warning { "Peer is already connecting / connected" }
+        if (connectionState.value is Connection.CLOSED) {
+            _connectionState.value = Connection.ESTABLISHING
+            establishConnection()
+        } else {
+            logger.warning { "Peer is already connecting / connected" }
+        }
     }
 
     fun disconnect() {
         if (this::socket.isInitialized) socket.close()
         _connectionState.value = Connection.CLOSED(null)
-        output.close()
     }
 
     // Warning : lateinit vars have to be used AFTER their init to avoid any crashes
     //
-    // This shouldn't be used outside the establishedConnection() function
+    // This shouldn't be used outside the establishConnection() function
     // Except from the disconnect() one that check if the lateinit var has been initialized
     private lateinit var socket: TcpSocket
     private fun establishConnection() = launch {
+        // Clean up previous connection state: we do this here to ensure that it is handled before the Connected event for the new connection.
+        // That means we're not sending this event if we don't reconnect. It's ok, since that has the same effect as not detecting a disconnection and closing the app.
+        input.send(Disconnected)
+
+        val connectionId = currentTimestampMillis()
+        val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId, "connectionId" to connectionId))
+
         logger.info { "connecting to ${walletParams.trampolineNode.host}" }
-        _connectionState.value = Connection.ESTABLISHING
         socket = try {
             socketBuilder?.connect(
                 host = walletParams.trampolineNode.host,
@@ -333,23 +347,16 @@ class Peer(
         }
         val session = LightningSession(enc, dec, ck)
 
-        suspend fun send(message: ByteArray) {
-            try {
-                session.send(message) { data, flush -> socket.send(data, flush) }
-            } catch (ex: TcpSocket.IOException) {
-                logger.warning { "TCP send: ${ex.message}" }
-                closeSocket(ex)
-            }
-        }
-
-        logger.info { "sending init $ourInit" }
-        send(LightningMessage.encode(ourInit))
+        // TODO use atomic counter instead
+        val peerConnection = PeerConnection(connectionId, Channel(UNLIMITED), logger)
+        // Inform the peer about the new connection.
+        input.send(Connected(peerConnection))
 
         suspend fun doPing() {
             val ping = Ping(10, ByteVector("deadbeef"))
             while (isActive) {
                 delay(30.seconds)
-                sendToPeer(ping)
+                peerConnection.send(ping)
             }
         }
 
@@ -360,30 +367,47 @@ class Peer(
             }
         }
 
-        suspend fun listen() {
+        suspend fun receiveLoop() {
             try {
                 while (isActive) {
                     val received = session.receive { size -> socket.receiveFully(size) }
-                    input.send(BytesReceived(received))
+                    try {
+                        val msg = LightningMessage.decode(received)
+                        input.send(MessageReceived(peerConnection.id, msg))
+                    } catch (e: Throwable) {
+                        logger.warning { "cannot deserialize message: ${received.byteVector().toHex()}" }
+                    }
                 }
                 closeSocket(null)
             } catch (ex: TcpSocket.IOException) {
                 logger.warning { "TCP receive: ${ex.message}" }
                 closeSocket(ex)
+            } finally {
+                peerConnection.output.close()
             }
         }
 
-        suspend fun respond() {
-            // Reset the output channel to avoid sending obsolete messages
-            output = Channel(UNLIMITED)
-            for (msg in output) send(msg)
+        suspend fun sendLoop() {
+            try {
+                for (msg in peerConnection.output) {
+                    // Avoids polluting the logs with pings/pongs
+                    if (msg !is Ping && msg !is Pong) logger.info { "sending $msg" }
+                    val encoded = LightningMessage.encode(msg)
+                    session.send(encoded) { data, flush -> socket.send(data, flush) }
+                }
+            } catch (ex: TcpSocket.IOException) {
+                logger.warning { "TCP send: ${ex.message}" }
+                closeSocket(ex)
+            } finally {
+                peerConnection.output.close()
+            }
         }
 
         launch { doPing() }
         launch { checkPaymentsTimeout() }
-        launch { respond() }
+        launch { sendLoop() }
 
-        listen() // This suspends until the coroutines is cancelled or the socket is closed
+        receiveLoop() // This suspends until the coroutines is cancelled or the socket is closed
     }
 
     /**
@@ -522,29 +546,20 @@ class Peer(
         return incomingPaymentHandler.createInvoice(paymentPreimage, amount, description, extraHops, expirySeconds)
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
-    suspend fun sendToPeer(msg: LightningMessage) {
-        val encoded = LightningMessage.encode(msg)
-        // Avoids polluting the logs with pings/pongs
-        if (msg !is Ping && msg !is Pong) logger.info { "sending $msg" }
-        if (!output.isClosedForSend) output.send(encoded)
-    }
-
     // The (node_id, fcm_token) tuple only needs to be registered once.
     // And after that, only if the tuple changes (e.g. different fcm_token).
     fun registerFcmToken(token: String?) {
-        launch {
-            sendToPeer(if (token == null) UnsetFCMToken else FCMToken(token))
-        }
+        val message = if (token == null) UnsetFCMToken else FCMToken(token)
+        peerConnection?.send(message)
     }
 
-    private suspend fun processActions(channelId: ByteVector32, actions: List<ChannelAction>) {
+    private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>) {
         // we peek into the actions to see if the id of the channel is going to change, but we're not processing it yet
         val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
         logger.withMDC(mapOf("channelId" to actualChannelId)) { logger ->
             actions.forEach { action ->
                 when (action) {
-                    is ChannelAction.Message.Send -> if (_connectionState.value == Connection.ESTABLISHED) sendToPeer(action.message) // ignore if disconnected
+                    is ChannelAction.Message.Send -> peerConnection?.send(action.message) // ignore if disconnected
                     // sometimes channel actions include "self" command (such as ChannelCommand.Commitment.Sign)
                     is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, action.command))
                     is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
@@ -702,7 +717,11 @@ class Peer(
             else -> throw RuntimeException("invalid state")
         }
 
-        val writer = makeWriter(ourKeys, theirPubkey)
+        val writer = HandshakeState.initializeWriter(
+            handshakePatternXK, prologue,
+            ourKeys, Pair(ByteArray(0), ByteArray(0)), theirPubkey, ByteArray(0),
+            Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
+        )
         val (state1, message, _) = writer.write(ByteArray(0))
         w(byteArrayOf(prefix) + message)
 
@@ -716,18 +735,6 @@ class Peer(
         return Triple(enc, dec, ck)
     }
 
-    private fun makeWriter(localStatic: Pair<ByteArray, ByteArray>, remoteStatic: ByteArray) = HandshakeState.initializeWriter(
-        handshakePatternXK, prologue,
-        localStatic, Pair(ByteArray(0), ByteArray(0)), remoteStatic, ByteArray(0),
-        Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
-    )
-
-    private fun makeReader(localStatic: Pair<ByteArray, ByteArray>) = HandshakeState.initializeReader(
-        handshakePatternXK, prologue,
-        localStatic, Pair(ByteArray(0), ByteArray(0)), ByteArray(0), ByteArray(0),
-        Secp256k1DHFunctions, Chacha20Poly1305CipherFunctions, SHA256HashFunctions
-    )
-
     private suspend fun run() {
         logger.info { "peer is active" }
         for (event in input) {
@@ -735,20 +742,27 @@ class Peer(
         }
     }
 
+    // MUST ONLY BE SET BY processEvent()
+    private var peerConnection: PeerConnection? = null
+
     private suspend fun processEvent(cmd: PeerCommand) {
         when (cmd) {
-            is BytesReceived -> {
-                val msg = try {
-                    LightningMessage.decode(cmd.data)
-                } catch (e: Throwable) {
-                    logger.warning { "cannot deserialized message: ${cmd.data.byteVector().toHex()}" }
+            is Connected -> {
+                logger.info { "new connection with id=${cmd.peerConnection.id}, sending init $ourInit" }
+                peerConnection = cmd.peerConnection
+                peerConnection?.send(ourInit)
+            }
+            is MessageReceived -> {
+                if (cmd.connectionId != peerConnection?.id) {
+                    logger.warning { "ignoring ${cmd.msg} for connectionId=${cmd.connectionId}" }
                     return
                 }
+                val msg = cmd.msg
                 logger.withMDC(msg.mdc()) { logger ->
                     msg.let { if (it !is Ping && it !is Pong) logger.info { "received $it" } }
                     when (msg) {
                         is UnknownMessage -> {
-                            logger.warning { "unhandled code=${msg.type}, cannot decode input=${Hex.encode(cmd.data)}" }
+                            logger.warning { "unhandled code=${msg.type}" }
                         }
                         is Init -> {
                             logger.info { "peer is using features ${msg.features}" }
@@ -763,7 +777,7 @@ class Peer(
                                     _connectionState.value = Connection.ESTABLISHED
                                     _channels = _channels.mapValues { entry ->
                                         val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, theirInit!!))
-                                        processActions(entry.key, actions)
+                                        processActions(entry.key, peerConnection, actions)
                                         state1
                                     }
                                 }
@@ -771,7 +785,7 @@ class Peer(
                         }
                         is Ping -> {
                             val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                            sendToPeer(pong)
+                            peerConnection?.send(pong)
                         }
                         is Pong -> {
                             logger.debug { "received pong" }
@@ -795,7 +809,7 @@ class Peer(
                                                 logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
                                                 nodeParams._nodeEvents.emit(rejected)
                                                 swapInCommands.send(SwapInCommand.UnlockWalletInputs(request.walletInputs.map { it.outPoint }.toSet()))
-                                                sendToPeer(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
+                                                peerConnection?.send(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
                                                 return@withMDC
                                             }
                                             val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.walletInputs.size * Transactions.swapInputWeight)
@@ -809,7 +823,7 @@ class Peer(
 
                                         else -> {
                                             logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: cannot find channel request with requestId=${origin.requestId}" }
-                                            sendToPeer(Error(msg.temporaryChannelId, "no corresponding channel request"))
+                                            peerConnection?.send(Error(msg.temporaryChannelId, "no corresponding channel request"))
                                             return@withMDC
                                         }
                                     }
@@ -817,7 +831,7 @@ class Peer(
                                 }
                                 if (fundingAmount.toMilliSatoshi() < pushAmount) {
                                     logger.warning { "rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
-                                    sendToPeer(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
+                                    peerConnection?.send(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
                                 } else {
                                     val localParams = LocalParams(nodeParams, isInitiator = false)
                                     val state = WaitForInit
@@ -829,7 +843,7 @@ class Peer(
                                         is Origin.PleaseOpenChannelOrigin -> channelRequests = channelRequests - origin.requestId
                                         else -> Unit
                                     }
-                                    processActions(msg.temporaryChannelId, actions1 + actions2)
+                                    processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2)
                                 }
                             }
                         }
@@ -848,15 +862,15 @@ class Peer(
                                 val state = WaitForInit
                                 val event1 = ChannelCommand.Init.Restore(recovered)
                                 val (state1, actions1) = state.process(event1)
-                                processActions(msg.channelId, actions1)
+                                processActions(msg.channelId, peerConnection, actions1)
 
                                 val event2 = ChannelCommand.Connected(ourInit, theirInit!!)
                                 val (state2, actions2) = state1.process(event2)
-                                processActions(msg.channelId, actions2)
+                                processActions(msg.channelId, peerConnection, actions2)
 
                                 val event3 = ChannelCommand.MessageReceived(msg)
                                 val (state3, actions3) = state2.process(event3)
-                                processActions(msg.channelId, actions3)
+                                processActions(msg.channelId, peerConnection, actions3)
                                 _channels = _channels + (msg.channelId to state3)
                             }
 
@@ -870,7 +884,7 @@ class Peer(
                                 }
                                 local == null && backup == null -> {
                                     logger.warning { "peer sent a reestablish for a unknown channel with no or undecipherable backup" }
-                                    sendToPeer(Error(msg.channelId, "unknown channel"))
+                                    peerConnection?.send(Error(msg.channelId, "unknown channel"))
                                 }
                                 local == null && backup is DeserializationResult.Success -> {
                                     logger.warning { "recovering channel from peer backup" }
@@ -882,7 +896,7 @@ class Peer(
                                 }
                                 local is ChannelState -> {
                                     val (state1, actions1) = local.process(ChannelCommand.MessageReceived(msg))
-                                    processActions(msg.channelId, actions1)
+                                    processActions(msg.channelId, peerConnection, actions1)
                                     _channels = _channels + (msg.channelId to state1)
                                 }
                             }
@@ -893,10 +907,10 @@ class Peer(
                                 val event1 = ChannelCommand.MessageReceived(msg)
                                 val (state1, actions) = state.process(event1)
                                 _channels = _channels + (msg.temporaryChannelId to state1)
-                                processActions(msg.temporaryChannelId, actions)
+                                processActions(msg.temporaryChannelId, peerConnection, actions)
                             } ?: run {
                                 logger.error { "received ${msg::class.simpleName} for unknown temporary channel ${msg.temporaryChannelId}" }
-                                sendToPeer(Error(msg.temporaryChannelId, "unknown channel"))
+                                peerConnection?.send(Error(msg.temporaryChannelId, "unknown channel"))
                             }
                         }
                         is HasChannelId -> {
@@ -907,11 +921,11 @@ class Peer(
                                 _channels[msg.channelId]?.let { state ->
                                     val event1 = ChannelCommand.MessageReceived(msg)
                                     val (state1, actions) = state.process(event1)
-                                    processActions(msg.channelId, actions)
+                                    processActions(msg.channelId, peerConnection, actions)
                                     _channels = _channels + (msg.channelId to state1)
                                 } ?: run {
                                     logger.error { "received ${msg::class.simpleName} for unknown channel ${msg.channelId}" }
-                                    sendToPeer(Error(msg.channelId, "unknown channel"))
+                                    peerConnection?.send(Error(msg.channelId, "unknown channel"))
                                 }
                             }
                         }
@@ -920,7 +934,7 @@ class Peer(
                             _channels.values.filterIsInstance<Normal>().find { it.shortChannelId == msg.shortChannelId }?.let { state ->
                                 val event1 = ChannelCommand.MessageReceived(msg)
                                 val (state1, actions) = state.process(event1)
-                                processActions(state.channelId, actions)
+                                processActions(state.channelId, peerConnection, actions)
                                 _channels = _channels + (state.channelId to state1)
                             }
                         }
@@ -962,7 +976,7 @@ class Peer(
                     val state = _channels[cmd.watch.channelId] ?: error("channel ${cmd.watch.channelId} not found")
                     val event1 = ChannelCommand.WatchReceived(cmd.watch)
                     val (state1, actions) = state.process(event1)
-                    processActions(cmd.watch.channelId, actions)
+                    processActions(cmd.watch.channelId, peerConnection, actions)
                     _channels = _channels + (cmd.watch.channelId to state1)
                 }
             }
@@ -1004,7 +1018,7 @@ class Peer(
                                 TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
                             )
                             logger.info { "sending please_open_channel with ${cmd.walletInputs.size} utxos (amount = ${cmd.walletInputs.balance})" }
-                            sendToPeer(pleaseOpenChannel)
+                            peerConnection?.send(pleaseOpenChannel)
                             nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
                             channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
                         } else {
@@ -1033,11 +1047,11 @@ class Peer(
                 )
                 val msg = actions1.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                 _channels = _channels + (msg.temporaryChannelId to state1)
-                processActions(msg.temporaryChannelId, actions1)
+                processActions(msg.temporaryChannelId, peerConnection, actions1)
             }
             is PayToOpenResponseCommand -> {
                 logger.info { "sending ${cmd.payToOpenResponse::class.simpleName}" }
-                sendToPeer(cmd.payToOpenResponse)
+                peerConnection?.send(cmd.payToOpenResponse)
             }
             is SendPayment -> {
                 val currentTip = currentTipFlow.filterNotNull().first()
@@ -1061,25 +1075,31 @@ class Peer(
                     // this is for all channels
                     _channels.forEach { (key, value) ->
                         val (state1, actions) = value.process(cmd.channelCommand)
-                        processActions(key, actions)
+                        processActions(key, peerConnection, actions)
                         _channels = _channels + (key to state1)
                     }
                 } else {
                     _channels[cmd.channelId]?.let { state ->
                         val (state1, actions) = state.process(cmd.channelCommand)
-                        processActions(cmd.channelId, actions)
+                        processActions(cmd.channelId, peerConnection, actions)
                         _channels = _channels + (cmd.channelId to state1)
                     } ?: logger.error { "received ${cmd.channelCommand::class.simpleName} for an unknown channel ${cmd.channelId}" }
                 }
             }
             is Disconnected -> {
-                logger.warning { "disconnecting channels" }
-                _channels.forEach { (key, value) ->
-                    val (state1, actions) = value.process(ChannelCommand.Disconnected)
-                    processActions(key, actions)
-                    _channels = _channels + (key to state1)
+                when (peerConnection) {
+                    null -> logger.info { "ignoring disconnected event, we're already disconnected" }
+                    else -> {
+                        logger.warning { "disconnecting channels from connectionId=${peerConnection?.id}" }
+                        peerConnection = null
+                        _channels.forEach { (key, value) ->
+                            val (state1, actions) = value.process(ChannelCommand.Disconnected)
+                            _channels = _channels + (key to state1)
+                            processActions(key, peerConnection, actions)
+                        }
+                        incomingPaymentHandler.purgePayToOpenRequests()
+                    }
                 }
-                incomingPaymentHandler.purgePayToOpenRequests()
             }
         }
     }
