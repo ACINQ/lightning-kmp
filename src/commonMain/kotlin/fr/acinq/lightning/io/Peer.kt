@@ -468,7 +468,7 @@ class Peer(
             channelsFlow.first { it.values.all { channel -> channel !is Offline && channel !is Syncing } }
         }
         if (result == null) {
-            logger.info { "timeout elapsed, not all channels are synced but proceeding anyway" }
+            logger.info { "peer ready timeout elapsed, not all channels are synced but proceeding anyway" }
         }
     }
 
