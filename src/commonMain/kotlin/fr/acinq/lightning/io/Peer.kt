@@ -420,7 +420,10 @@ class Peer(
         logger.info { "starting swap-in watch job" }
         if (swapInJob != null) return
         // wait to have a swap-in feerate available
+        logger.info { "waiting for feerates" }
         swapInFeeratesFlow.filterNotNull().first()
+        logger.info { "waiting for peer to be ready" }
+        waitForPeerReady()
         swapInJob = launch {
             swapInWallet.walletStateFlow.combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> currentTip.first to walletState }
                 .filter { (_, walletState) -> walletState.consistent }
@@ -450,6 +453,23 @@ class Peer(
 
     suspend fun send(cmd: PeerCommand) {
         input.send(cmd)
+    }
+
+    /**
+     * This function blocks until the peer is connected and existing channels have been fully reestablished.
+     */
+    private suspend fun waitForPeerReady() {
+        // In theory we would only need to verify that no channel is in state Offline/Syncing, but there is a corner
+        // case where a channel permanently stays in Syncing, because it is only present locally, and the peer will
+        // never send a channel_reestablish (this happens e.g. due to an error at funding). That is why we consider
+        // the peer ready if "all channels are synced" OR "peer has been connected for 10s".
+        connectionState.first { it is Connection.ESTABLISHED }
+        val result = withTimeoutOrNull(10.seconds) {
+            channelsFlow.first { it.values.all { channel -> channel !is Offline && channel !is Syncing } }
+        }
+        if (result == null) {
+            logger.info { "peer ready timeout elapsed, not all channels are synced but proceeding anyway" }
+        }
     }
 
     /**
@@ -983,7 +1003,8 @@ class Peer(
             }
             is RequestChannelOpen -> {
                 when (val channel = channels.values.firstOrNull { it is Normal }) {
-                    is ChannelStateWithCommitments -> {
+                    is Normal -> {
+                        // we have a channel and we are connected (otherwise state would be Offline/Syncing)
                         val targetFeerate = swapInFeeratesFlow.filterNotNull().first()
                         val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
                         val (feerate, fee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
