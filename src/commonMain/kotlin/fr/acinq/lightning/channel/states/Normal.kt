@@ -194,7 +194,7 @@ data class Normal(
                                 is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
                             }
                         }
-                        commitments.params.channelFeatures.hasFeature(Feature.DualFunding) && cmd.message.batchSize == 1 && commitSigAlreadyReceived(cmd.message) -> {
+                        commitments.params.channelFeatures.hasFeature(Feature.DualFunding) && ignoreRetransmittedCommitSig(cmd.message) -> {
                             // We haven't received our peer's tx_signatures for the latest funding transaction and asked them to resend it on reconnection.
                             // They also resend their corresponding commit_sig, but we have already received it so we should ignore it.
                             // Note that the funding transaction may have confirmed while we were offline.
@@ -734,11 +734,11 @@ data class Normal(
         return Pair(nextState, actions)
     }
 
-    private fun commitSigAlreadyReceived(commit: CommitSig): Boolean {
-        // If we already have a signed commitment transaction containing their signature,
-        // we must have previously received that commit_sig.
+    /** This function should be used to ignore a commit_sig that we've already received. */
+    private fun ignoreRetransmittedCommitSig(commit: CommitSig): Boolean {
+        // If we already have a signed commitment transaction containing their signature, we must have previously received that commit_sig.
         val commitTx = commitments.latest.localCommit.publishableTxs.commitTx.tx
-        return commitTx.txIn.first().witness.stack.contains(Scripts.der(commit.signature, SigHash.SIGHASH_ALL))
+        return commit.batchSize == 1 && commitTx.txIn.first().witness.stack.contains(Scripts.der(commit.signature, SigHash.SIGHASH_ALL))
     }
 
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
