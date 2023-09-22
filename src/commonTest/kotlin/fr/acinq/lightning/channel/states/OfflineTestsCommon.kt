@@ -19,7 +19,11 @@ class OfflineTestsCommon : LightningTestSuite() {
 
     @Test
     fun `handle disconnect - connect events in WaitForChannelReady -- zeroconf`() {
-        val (alice, aliceCommitSig, bob, _) = WaitForFundingSignedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true, bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient).initFeatures())
+        val (alice, aliceCommitSig, bob, _) = WaitForFundingSignedTestsCommon.init(
+            ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+            zeroConf = true,
+            bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient).initFeatures()
+        )
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(aliceCommitSig))
         assertIs<WaitForChannelReady>(bob1.state)
         assertIs<LNChannel<WaitForChannelReady>>(bob1)
@@ -341,26 +345,106 @@ class OfflineTestsCommon : LightningTestSuite() {
     @Test
     fun `counterparty lies about having a more recent commitment and publishes current commitment`() {
         val (alice0, bob0) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
+        // The current state contains a pending htlc.
+        val (alice1, bob1) = run {
+            val (aliceTmp, bobTmp) = TestsHelper.addHtlc(250_000_000.msat, alice0, bob0).first
+            TestsHelper.crossSign(aliceTmp, bobTmp)
+        }
+        val bobCommitTx = bob1.commitments.latest.localCommit.publishableTxs.commitTx.tx
 
         // We simulate a disconnection followed by a reconnection.
-        val (alice1, bob1) = disconnect(alice0, bob0)
+        val (alice2, bob2) = disconnect(alice1, bob1)
         val localInit = Init(alice0.commitments.params.localParams.features)
         val remoteInit = Init(bob0.commitments.params.localParams.features)
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(localInit, remoteInit))
-        assertIs<Syncing>(alice2.state)
-        actionsAlice2.findOutgoingMessage<ChannelReestablish>()
-        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(remoteInit, localInit))
-        assertIs<Syncing>(bob2.state)
-        val invalidReestablish = actionsBob2.findOutgoingMessage<ChannelReestablish>().copy(nextRemoteRevocationNumber = 42)
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.Connected(localInit, remoteInit))
+        assertIs<LNChannel<Syncing>>(alice3)
+        actionsAlice3.findOutgoingMessage<ChannelReestablish>()
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Connected(remoteInit, localInit))
+        assertIs<LNChannel<Syncing>>(bob3)
+        val invalidReestablish = actionsBob3.findOutgoingMessage<ChannelReestablish>().copy(nextRemoteRevocationNumber = 42)
 
         // Alice then asks Bob to publish his commitment to find out if Bob is lying.
-        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(invalidReestablish))
-        assertIs<WaitForRemotePublishFutureCommitment>(alice3.state)
-        assertEquals(alice3.state.remoteChannelReestablish, invalidReestablish)
-        assertEquals(actionsAlice3.size, 2)
-        val error = actionsAlice3.hasOutgoingMessage<Error>()
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(invalidReestablish))
+        assertIs<LNChannel<WaitForRemotePublishFutureCommitment>>(alice4)
+        assertEquals(alice4.state.remoteChannelReestablish, invalidReestablish)
+        assertEquals(actionsAlice4.size, 2)
+        val error = actionsAlice4.hasOutgoingMessage<Error>()
         assertEquals(error.toAscii(), PleasePublishYourCommitment(alice0.channelId).message)
-        actionsAlice3.has<ChannelAction.Storage.StoreState>()
+        actionsAlice4.has<ChannelAction.Storage.StoreState>()
+
+        // Bob publishes the latest commitment.
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
+        // Alice is able to claim her main output and the htlc (once it times out).
+        assertIs<LNChannel<Closing>>(alice5)
+        assertEquals(actionsAlice5.size, 7)
+        val remoteCommitPublished = alice5.state.remoteCommitPublished
+        assertNotNull(remoteCommitPublished)
+        assertEquals(remoteCommitPublished.claimHtlcTxs.size, 1)
+        val claimMainTx = remoteCommitPublished.claimMainOutputTx!!.tx
+        val claimHtlcTx = remoteCommitPublished.claimHtlcTxs.values.first()!!.tx
+        listOf(claimMainTx, claimHtlcTx).forEach { Transaction.correctlySpends(it, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
+        actionsAlice5.hasPublishTx(claimMainTx)
+        actionsAlice5.hasPublishTx(claimHtlcTx)
+        assertEquals(actionsAlice5.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(bobCommitTx.txid, claimMainTx.txid))
+        val watchHtlcOutputSpent = actionsAlice5.findWatch<WatchSpent>()
+        assertEquals(watchHtlcOutputSpent.event, BITCOIN_OUTPUT_SPENT)
+        assertEquals(watchHtlcOutputSpent.txId, remoteCommitPublished.claimHtlcTxs.keys.first().txid)
+        assertEquals(watchHtlcOutputSpent.outputIndex, remoteCommitPublished.claimHtlcTxs.keys.first().index.toInt())
+        actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        actionsAlice5.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
+    }
+
+    @Test
+    fun `counterparty lies about having a more recent commitment and publishes revoked commitment`() {
+        val (alice0, bob0) = TestsHelper.reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
+        // We sign a new commitment to make sure the first one is revoked.
+        val bobRevokedCommitTx = bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx
+        val (alice1, bob1) = run {
+            val (aliceTmp, bobTmp) = TestsHelper.addHtlc(250_000_000.msat, alice0, bob0).first
+            TestsHelper.crossSign(aliceTmp, bobTmp)
+        }
+
+        // We simulate a disconnection followed by a reconnection.
+        val (alice2, bob2) = disconnect(alice1, bob1)
+        val localInit = Init(alice0.commitments.params.localParams.features)
+        val remoteInit = Init(bob0.commitments.params.localParams.features)
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.Connected(localInit, remoteInit))
+        assertIs<LNChannel<Syncing>>(alice3)
+        actionsAlice3.findOutgoingMessage<ChannelReestablish>()
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Connected(remoteInit, localInit))
+        assertIs<LNChannel<Syncing>>(bob3)
+        val invalidReestablish = actionsBob3.findOutgoingMessage<ChannelReestablish>().copy(nextLocalCommitmentNumber = 42)
+
+        // Alice then asks Bob to publish his commitment to find out if Bob is lying.
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(invalidReestablish))
+        assertIs<LNChannel<WaitForRemotePublishFutureCommitment>>(alice4)
+        assertEquals(alice4.state.remoteChannelReestablish, invalidReestablish)
+        assertEquals(actionsAlice4.size, 2)
+        val error = actionsAlice4.hasOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), PleasePublishYourCommitment(alice0.channelId).message)
+        actionsAlice4.has<ChannelAction.Storage.StoreState>()
+
+        // Bob publishes the revoked commitment.
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobRevokedCommitTx)))
+        // Alice is able to claim all outputs.
+        assertIs<LNChannel<Closing>>(alice5)
+        assertEquals(actionsAlice5.size, 9)
+        val revokedCommitPublished = alice5.state.revokedCommitPublished.firstOrNull()
+        assertNotNull(revokedCommitPublished)
+        val claimMainTx = revokedCommitPublished.claimMainOutputTx!!.tx
+        val claimMainPenaltyTx = revokedCommitPublished.mainPenaltyTx!!.tx
+        listOf(claimMainTx, claimMainPenaltyTx).forEach { Transaction.correctlySpends(it, listOf(bobRevokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
+        actionsAlice5.hasPublishTx(claimMainTx)
+        actionsAlice5.hasPublishTx(claimMainPenaltyTx)
+        assertEquals(actionsAlice5.find<ChannelAction.Storage.GetHtlcInfos>().revokedCommitTxId, bobRevokedCommitTx.txid)
+        assertEquals(actionsAlice5.findWatches<WatchConfirmed>().map { it.txId }.toSet(), setOf(bobRevokedCommitTx.txid, claimMainTx.txid))
+        val watchSpent = actionsAlice5.findWatch<WatchSpent>()
+        assertEquals(watchSpent.event, BITCOIN_OUTPUT_SPENT)
+        assertEquals(watchSpent.txId, bobRevokedCommitTx.txid)
+        assertEquals(watchSpent.outputIndex, claimMainPenaltyTx.txIn.first().outPoint.index.toInt())
+        actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        actionsAlice5.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
+        actionsAlice5.hasOutgoingMessage<Error>()
     }
 
     @Test
