@@ -123,7 +123,7 @@ sealed class LocalFundingStatus {
         override val fee: Satoshi = sharedTx.tx.fees
     }
 
-    data class ConfirmedFundingTx(override val signedTx: Transaction, override val fee: Satoshi) : LocalFundingStatus() {
+    data class ConfirmedFundingTx(override val signedTx: Transaction, override val fee: Satoshi, val localSigs: TxSignatures) : LocalFundingStatus() {
         override val txId: ByteVector32 = signedTx.txid
     }
 }
@@ -832,7 +832,7 @@ data class Commitments(
                 when (c.localFundingStatus) {
                     is LocalFundingStatus.UnconfirmedFundingTx -> {
                         logger.debug { "setting localFundingStatus confirmed for fundingTxId=${fundingTx.txid}" }
-                        c.copy(localFundingStatus = LocalFundingStatus.ConfirmedFundingTx(fundingTx, c.localFundingStatus.sharedTx.tx.fees))
+                        c.copy(localFundingStatus = LocalFundingStatus.ConfirmedFundingTx(fundingTx, c.localFundingStatus.sharedTx.tx.fees, c.localFundingStatus.sharedTx.localSigs))
                     }
                     is LocalFundingStatus.ConfirmedFundingTx -> c
                 }

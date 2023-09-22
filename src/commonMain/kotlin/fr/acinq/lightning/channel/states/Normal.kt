@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.SigHash
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
@@ -9,6 +10,7 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -192,11 +194,10 @@ data class Normal(
                                 is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
                             }
                         }
-                        commitments.params.channelFeatures.hasFeature(Feature.DualFunding) && commitments.latest.localFundingStatus.signedTx == null && cmd.message.batchSize == 1 -> {
-                            // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig that we receive before that should be ignored,
-                            // it's either a retransmission of a commit_sig we've already received or a bug that will eventually lead to a force-close anyway.
-                            // NB: we check the dual-funding feature, because legacy single-funding unconfirmed channels will have `localFundingStatus=UnconfirmedFundingTx`,
-                            // so we cannot just check on the absence of `signedTx`.
+                        ignoreRetransmittedCommitSig(cmd.message) -> {
+                            // We haven't received our peer's tx_signatures for the latest funding transaction and asked them to resend it on reconnection.
+                            // They also resend their corresponding commit_sig, but we have already received it so we should ignore it.
+                            // Note that the funding transaction may have confirmed while we were offline.
                             logger.info { "ignoring commit_sig, we're still waiting for tx_signatures" }
                             Pair(this@Normal, listOf())
                         }
@@ -731,6 +732,15 @@ data class Normal(
             }
         }
         return Pair(nextState, actions)
+    }
+
+    /** This function should be used to ignore a commit_sig that we've already received. */
+    private fun ignoreRetransmittedCommitSig(commit: CommitSig): Boolean {
+        // If we already have a signed commitment transaction containing their signature, we must have previously received that commit_sig.
+        val commitTx = commitments.latest.localCommit.publishableTxs.commitTx.tx
+        return commitments.params.channelFeatures.hasFeature(Feature.DualFunding) &&
+                commit.batchSize == 1 &&
+                commitTx.txIn.first().witness.stack.contains(Scripts.der(commit.signature, SigHash.SIGHASH_ALL))
     }
 
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */

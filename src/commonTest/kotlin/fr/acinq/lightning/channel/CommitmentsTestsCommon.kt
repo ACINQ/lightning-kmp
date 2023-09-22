@@ -26,6 +26,7 @@ import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
+import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.lightning.wire.UpdateAddHtlc
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
@@ -514,7 +515,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     Commitment(
                         fundingTxIndex = 0,
                         remoteFundingPubkey = randomKey().publicKey(),
-                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat),
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), randomBytes32(), listOf())),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
                         RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
@@ -559,7 +560,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     Commitment(
                         fundingTxIndex = 0,
                         remoteFundingPubkey = randomKey().publicKey(),
-                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat),
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), randomBytes32(), listOf())),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
                         RemoteCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey()),

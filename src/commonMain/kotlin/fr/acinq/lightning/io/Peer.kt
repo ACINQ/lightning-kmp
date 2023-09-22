@@ -936,7 +936,6 @@ class Peer(
                         }
                     }
                     is HasChannelId -> {
-                        logger.info { "received ${msg::class.simpleName} for channel ${msg.channelId}" }
                         if (msg is Error && msg.channelId == ByteVector32.Zeroes) {
                             logger.error { "connection error: ${msg.toAscii()}" }
                         } else {
@@ -952,7 +951,6 @@ class Peer(
                         }
                     }
                     is ChannelUpdate -> {
-                        logger.info { "received ${msg::class.simpleName} for channel ${msg.shortChannelId}" }
                         _channels.values.filterIsInstance<Normal>().find { it.shortChannelId == msg.shortChannelId }?.let { state ->
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)

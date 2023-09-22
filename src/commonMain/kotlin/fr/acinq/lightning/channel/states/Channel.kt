@@ -144,7 +144,11 @@ sealed class ChannelState {
     }
 
     internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
+        when (cmd) {
+            is ChannelCommand.MessageReceived -> logger.warning { "unhandled message ${cmd.message::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
+            is ChannelCommand.WatchReceived -> logger.warning { "unhandled watch event ${cmd.watch.event::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
+            else -> logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
+        }
         return Pair(this@ChannelState, listOf())
     }
 
@@ -162,7 +166,11 @@ sealed class ChannelState {
     )
 
     internal fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
-        logger.error(t) { "error on command ${cmd::class.simpleName}" }
+        when (cmd) {
+            is ChannelCommand.MessageReceived -> logger.error(t) { "error on message ${cmd.message::class.simpleName}" }
+            is ChannelCommand.WatchReceived -> logger.error { "error on watch event ${cmd.watch.event::class.simpleName}" }
+            else -> logger.error(t) { "error on command ${cmd::class.simpleName}" }
+        }
 
         fun abort(channelId: ByteVector32?, state: ChannelState): Pair<ChannelState, List<ChannelAction>> {
             val actions = buildList {
@@ -180,7 +188,7 @@ sealed class ChannelState {
             return state.run { spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) } }
         }
 
-        return when(val state = this@ChannelState) {
+        return when (val state = this@ChannelState) {
             is WaitForInit -> abort(null, state)
             is WaitForOpenChannel -> abort(state.temporaryChannelId, state)
             is WaitForAcceptChannel -> abort(state.temporaryChannelId, state)
@@ -213,7 +221,7 @@ sealed class ChannelState {
                     // we already have published a mutual close tx, it's always better to use that
                     Pair(state, emptyList())
                 } else {
-                    state.localCommitPublished ?.let {
+                    state.localCommitPublished?.let {
                         // we're already trying to claim our commitment, there's nothing more we can do
                         Pair(state, emptyList())
                     } ?: state.run { spendLocalCurrent() }
