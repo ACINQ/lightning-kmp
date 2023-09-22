@@ -26,7 +26,11 @@ sealed interface LiquidityEvents : NodeEvents {
     val fee: MilliSatoshi
     val source: Source
 
-    enum class Source { OnChainWallet, OffChainPayment }
+    sealed class Source {
+        data class OffChainPayment(val paymentHash: ByteVector32) : Source()
+        object OnChainWallet : Source()
+    }
+
     data class Rejected(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val reason: Reason) : LiquidityEvents {
         sealed class Reason {
             object PolicySetToDisabled : Reason()

@@ -969,7 +969,7 @@ class Peer(
                                 && !_channels.values.any { it is Normal } // we don't have a channel that can be spliced
                                 && _channels.values.any { it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } // but we will have one soon
                         if (channelInitializing) {
-                            val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
+                            val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment(msg.paymentHash), LiquidityEvents.Rejected.Reason.ChannelInitializing)
                             logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
                             nodeParams._nodeEvents.emit(rejected)
                             val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)

@@ -1,5 +1,6 @@
 package fr.acinq.lightning.payment
 
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.MDCLogger
@@ -23,22 +24,22 @@ class LiquidityPolicyTestsCommon : LightningTestSuite() {
         // fee over both absolute and relative
         assertEquals(
             expected = LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(policy.maxRelativeFeeBasisPoints),
-            actual = policy.maybeReject(amount = 4_000_000.msat, fee = 3_000_000.msat, source = LiquidityEvents.Source.OffChainPayment, logger)?.reason
+            actual = policy.maybeReject(amount = 4_000_000.msat, fee = 3_000_000.msat, source = LiquidityEvents.Source.OffChainPayment(randomBytes32()), logger)?.reason
         )
 
         // fee over absolute
         assertEquals(
             expected = LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(policy.maxAbsoluteFee),
-            actual = policy.maybeReject(amount = 15_000_000.msat, fee = 3_000_000.msat, source = LiquidityEvents.Source.OffChainPayment, logger)?.reason
+            actual = policy.maybeReject(amount = 15_000_000.msat, fee = 3_000_000.msat, source = LiquidityEvents.Source.OffChainPayment(randomBytes32()), logger)?.reason
         )
 
         // fee over relative
         assertEquals(
             expected = LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(policy.maxRelativeFeeBasisPoints),
-            actual = policy.maybeReject(amount = 4_000_000.msat, fee = 2_000_000.msat, source = LiquidityEvents.Source.OffChainPayment, logger)?.reason
+            actual = policy.maybeReject(amount = 4_000_000.msat, fee = 2_000_000.msat, source = LiquidityEvents.Source.OffChainPayment(randomBytes32()), logger)?.reason
         )
 
-        assertNull(policy.maybeReject(amount = 10_000_000.msat, fee = 2_000_000.msat, source = LiquidityEvents.Source.OffChainPayment, logger))
+        assertNull(policy.maybeReject(amount = 10_000_000.msat, fee = 2_000_000.msat, source = LiquidityEvents.Source.OffChainPayment(randomBytes32()), logger))
 
     }
 
@@ -48,7 +49,7 @@ class LiquidityPolicyTestsCommon : LightningTestSuite() {
         val policy = LiquidityPolicy.Auto(maxAbsoluteFee = 1_000.sat, maxRelativeFeeBasisPoints = 5_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = true)
 
         // fee is over absolute, and it's an offchain payment so the check passes
-        assertNull(policy.maybeReject(amount = 4_000_000.msat, fee = 2_000_000.msat, source = LiquidityEvents.Source.OffChainPayment, logger))
+        assertNull(policy.maybeReject(amount = 4_000_000.msat, fee = 2_000_000.msat, source = LiquidityEvents.Source.OffChainPayment(randomBytes32()), logger))
 
         // fee is over absolute, but it's an on-chain payment so the check fails
         assertEquals(
