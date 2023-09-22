@@ -469,6 +469,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishBob))
         assertEquals(actionsAlice3.size, 1)
         val commitSigAlice2 = actionsAlice3.findOutgoingMessage<CommitSig>()
+        assertEquals(commitSigAlice1.signature, commitSigAlice2.signature)
 
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(commitSigBob2))
         assertTrue(actionsAlice4.isEmpty())
@@ -504,6 +505,56 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(actionsBob7.size, 2)
         actionsBob7.find<ChannelAction.Storage.SetLocked>().also { assertEquals(it.txId, spliceTxId) }
         actionsBob7.has<ChannelAction.Storage.StoreState>()
+    }
+
+    @Test
+    fun `disconnect -- tx_signatures sent by alice -- confirms while bob is offline`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, commitSigAlice1, bob1, commitSigBob1) = spliceOutWithoutSigs(alice, bob, 20_000.sat)
+
+        // Bob completes the splice, but is missing Alice's tx_signatures.
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(commitSigAlice1))
+        assertIs<LNChannel<Normal>>(bob2)
+        val txSigsBob = actionsBob2.hasOutgoingMessage<TxSignatures>()
+        assertEquals(bob2.state.spliceStatus, SpliceStatus.None)
+
+        // Alice completes the splice, but Bob doesn't receive her tx_signatures.
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(commitSigBob1))
+        assertTrue(actionsAlice2.isEmpty())
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(txSigsBob))
+        assertIs<LNChannel<Normal>>(alice3)
+        actionsAlice3.hasOutgoingMessage<TxSignatures>()
+        assertEquals(alice3.state.spliceStatus, SpliceStatus.None)
+        val spliceTx = alice3.commitments.latest.localFundingStatus.signedTx!!
+
+        // The transaction confirms.
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 100, 0, spliceTx)))
+        assertIs<LNChannel<Normal>>(alice4)
+        assertEquals(3, actionsAlice4.size)
+        actionsAlice4.hasWatchFundingSpent(spliceTx.txid)
+        actionsAlice4.hasOutgoingMessage<SpliceLocked>()
+        actionsAlice4.has<ChannelAction.Storage.StoreState>()
+
+        val (alice5, bob3, channelReestablishAlice) = disconnect(alice4, bob2)
+        assertNull(channelReestablishAlice.nextFundingTxId)
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        assertEquals(1, actionsBob4.size)
+        val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(channelReestablishBob.nextFundingTxId, spliceTx.txid)
+        val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<LNChannel<Normal>>(alice6)
+        assertEquals(alice6.state.spliceStatus, SpliceStatus.None)
+        assertEquals(2, actionsAlice6.size)
+        val txSigsAlice = actionsAlice6.hasOutgoingMessage<TxSignatures>()
+        actionsAlice6.hasOutgoingMessage<SpliceLocked>()
+
+        // Bob receives tx_signatures, which completes the splice.
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(txSigsAlice))
+        assertIs<LNChannel<Normal>>(bob5)
+        assertEquals(bob5.state.spliceStatus, SpliceStatus.None)
+        assertEquals(2, actionsBob5.size)
+        actionsBob5.hasPublishTx(spliceTx)
+        actionsBob5.has<ChannelAction.Storage.StoreState>()
     }
 
     @Test

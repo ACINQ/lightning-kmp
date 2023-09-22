@@ -172,26 +172,29 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                         actions.add(ChannelAction.Message.Send(commitSig))
                                         state.spliceStatus
                                     } else if (state.commitments.latest.fundingTxId == cmd.message.nextFundingTxId) {
-                                        if (state.commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx) {
-                                            if (state.commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
-                                                // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
-                                                logger.info { "re-sending commit_sig for fundingTxIndex=${state.commitments.latest.fundingTxIndex} fundingTxId=${state.commitments.latest.fundingTxId}" }
-                                                val commitSig = state.commitments.latest.remoteCommit.sign(
-                                                    channelKeys(),
-                                                    state.commitments.params,
-                                                    fundingTxIndex = state.commitments.latest.fundingTxIndex,
-                                                    state.commitments.latest.remoteFundingPubkey,
-                                                    state.commitments.latest.commitInput
-                                                )
-                                                actions.add(ChannelAction.Message.Send(commitSig))
+                                        when (val localFundingStatus = state.commitments.latest.localFundingStatus) {
+                                            is LocalFundingStatus.UnconfirmedFundingTx -> {
+                                                if (localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
+                                                    // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
+                                                    logger.info { "re-sending commit_sig for fundingTxIndex=${state.commitments.latest.fundingTxIndex} fundingTxId=${state.commitments.latest.fundingTxId}" }
+                                                    val commitSig = state.commitments.latest.remoteCommit.sign(
+                                                        channelKeys(),
+                                                        state.commitments.params,
+                                                        fundingTxIndex = state.commitments.latest.fundingTxIndex,
+                                                        state.commitments.latest.remoteFundingPubkey,
+                                                        state.commitments.latest.commitInput
+                                                    )
+                                                    actions.add(ChannelAction.Message.Send(commitSig))
+                                                }
+                                                logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                                actions.add(ChannelAction.Message.Send(localFundingStatus.sharedTx.localSigs))
                                             }
-                                            logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
-                                            actions.add(ChannelAction.Message.Send(state.commitments.latest.localFundingStatus.sharedTx.localSigs))
-                                        } else {
-                                            // The funding tx is confirmed, and they have not received our tx_signatures, but they must have received our commit_sig, otherwise they
-                                            // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
-                                            // recompute our tx_signatures, but instead we do nothing: they will shortly be notified that the funding tx has confirmed.
-                                            logger.warning { "cannot re-send tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}, transaction is already confirmed" }
+                                            is LocalFundingStatus.ConfirmedFundingTx -> {
+                                                // The funding tx is confirmed, and they have not received our tx_signatures, but they must have received our commit_sig, otherwise they
+                                                // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place.
+                                                logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
+                                                actions.add(ChannelAction.Message.Send(localFundingStatus.localSigs))
+                                            }
                                         }
                                         state.spliceStatus
                                     } else if (cmd.message.nextFundingTxId != null) {
