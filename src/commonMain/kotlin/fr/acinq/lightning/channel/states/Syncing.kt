@@ -299,7 +299,14 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                             )
                             Pair(nextState, actions)
                         }
-                        else -> state.run { handlePotentialForceClose(watch) }
+                        else -> {
+                            val (nextState, actions) = state.run { handlePotentialForceClose(watch) }
+                            when (nextState) {
+                                is Closing -> Pair(nextState, actions)
+                                is Closed -> Pair(nextState, actions)
+                                else -> Pair(Syncing(nextState, channelReestablishSent), actions)
+                            }
+                        }
                     }
                     is WatchEventConfirmed -> {
                         if (watch.event is BITCOIN_FUNDING_DEPTHOK) {

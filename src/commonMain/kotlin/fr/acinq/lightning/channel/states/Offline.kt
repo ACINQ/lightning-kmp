@@ -96,7 +96,14 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                             )
                             Pair(nextState, actions)
                         }
-                        else -> state.run { handlePotentialForceClose(watch) }
+                        else -> {
+                            val (nextState, actions) = state.run { handlePotentialForceClose(watch) }
+                            when (nextState) {
+                                is Closing -> Pair(nextState, actions)
+                                is Closed -> Pair(nextState, actions)
+                                else -> Pair(Offline(nextState), actions)
+                            }
+                        }
                     }
                 }
                 is WaitForFundingSigned -> Pair(this@Offline, listOf())

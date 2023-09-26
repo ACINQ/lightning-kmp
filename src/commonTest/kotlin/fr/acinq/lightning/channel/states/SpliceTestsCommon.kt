@@ -729,6 +729,25 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `disconnect -- splice tx published`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, bob1) = spliceOut(alice, bob, 40_000.sat)
+        val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
+
+        val (alice2, _) = alice1.process(ChannelCommand.Disconnected)
+        val (bob2, _) = bob1.process(ChannelCommand.Disconnected)
+        assertIs<Offline>(alice2.state)
+        assertIs<Offline>(bob2.state)
+
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, spliceTx)))
+        assertIs<Offline>(alice3.state)
+        assertTrue(actionsAlice3.isEmpty())
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.WatchReceived(WatchEventSpent(bob.channelId, BITCOIN_FUNDING_SPENT, spliceTx)))
+        assertIs<Offline>(bob3.state)
+        assertTrue(actionsBob3.isEmpty())
+    }
+
+    @Test
     fun `force-close -- latest active commitment`() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1) = spliceOut(alice, bob, 75_000.sat)
