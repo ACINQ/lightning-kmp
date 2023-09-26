@@ -243,7 +243,11 @@ class ElectrumClient(
             ?: ServerError(request, JsonRPCError(0, "timeout"))
         return when (result) {
             is ServerError -> {
-                logger.warning { "received error for ${request.method}: ${result.error.message}" }
+                when (request) {
+                    // Some electrum servers don't seem to respond to ping requests, even though they keep the connection alive.
+                    is Ping -> logger.debug { "received error for ${request.method}: ${result.error.message}" }
+                    else -> logger.warning { "received error for ${request.method}: ${result.error.message}" }
+                }
                 Either.Left(result)
             }
             else -> Either.Right(result as T)
