@@ -434,7 +434,7 @@ class Peer(
                         .filterNot { it.commitments.params.channelFeatures.hasFeature(Feature.DualFunding) }
                         .flatMap { state -> state.mutualClosePublished.map { closingTx -> closingTx.tx.txid } }
                     val trustedTxs = trustedSwapInTxs + mutualCloseTxs
-                    swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, walletState, walletParams.swapInConfirmations, trustedTxs))
+                    swapInCommands.send(SwapInCommand.TrySwapIn(currentBlockHeight, walletState, walletParams.swapInParams, trustedTxs))
                 }
         }
     }

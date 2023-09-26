@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.sat
@@ -47,21 +48,55 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         // This address has 3 transactions confirmed at block 100 002 and 3 transactions confirmed at block 100 003.
         assertEquals(6, walletState.utxos.size)
         assertEquals(30_000_000.sat, walletState.totalBalance)
+        val swapInParams = SwapInParams(minConfirmations = 3, maxConfirmations = 10, refundDelay = 11)
 
         run {
-            val withConf = walletState.withConfirmations(currentBlockHeight = 100_004, minConfirmations = 3)
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_004, swapInParams)
             assertEquals(0, withConf.unconfirmed.size)
             assertEquals(3, withConf.weaklyConfirmed.size)
             assertEquals(3, withConf.deeplyConfirmed.size)
+            assertEquals(0, withConf.lockedUntilRefund.size)
+            assertEquals(0, withConf.readyForRefund.size)
             assertEquals(15_000_000.sat, withConf.weaklyConfirmed.balance)
             assertEquals(15_000_000.sat, withConf.deeplyConfirmed.balance)
         }
         run {
-            val withConf = walletState.withConfirmations(currentBlockHeight = 100_005, minConfirmations = 3)
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_005, swapInParams)
             assertEquals(0, withConf.unconfirmed.size)
             assertEquals(0, withConf.weaklyConfirmed.size)
             assertEquals(6, withConf.deeplyConfirmed.size)
+            assertEquals(0, withConf.lockedUntilRefund.size)
+            assertEquals(0, withConf.readyForRefund.size)
             assertEquals(30_000_000.sat, withConf.deeplyConfirmed.balance)
+        }
+        run {
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_011, swapInParams)
+            assertEquals(0, withConf.unconfirmed.size)
+            assertEquals(0, withConf.weaklyConfirmed.size)
+            assertEquals(3, withConf.deeplyConfirmed.size)
+            assertEquals(3, withConf.lockedUntilRefund.size)
+            assertEquals(0, withConf.readyForRefund.size)
+            assertEquals(15_000_000.sat, withConf.deeplyConfirmed.balance)
+            assertEquals(15_000_000.sat, withConf.lockedUntilRefund.balance)
+        }
+        run {
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_012, swapInParams)
+            assertEquals(0, withConf.unconfirmed.size)
+            assertEquals(0, withConf.weaklyConfirmed.size)
+            assertEquals(0, withConf.deeplyConfirmed.size)
+            assertEquals(3, withConf.lockedUntilRefund.size)
+            assertEquals(3, withConf.readyForRefund.size)
+            assertEquals(15_000_000.sat, withConf.lockedUntilRefund.balance)
+            assertEquals(15_000_000.sat, withConf.readyForRefund.balance)
+        }
+        run {
+            val withConf = walletState.withConfirmations(currentBlockHeight = 100_013, swapInParams)
+            assertEquals(0, withConf.unconfirmed.size)
+            assertEquals(0, withConf.weaklyConfirmed.size)
+            assertEquals(0, withConf.deeplyConfirmed.size)
+            assertEquals(0, withConf.lockedUntilRefund.size)
+            assertEquals(6, withConf.readyForRefund.size)
+            assertEquals(30_000_000.sat, withConf.readyForRefund.balance)
         }
 
         wallet.stop()
