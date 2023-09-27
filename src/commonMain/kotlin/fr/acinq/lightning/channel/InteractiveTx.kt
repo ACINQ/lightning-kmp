@@ -767,14 +767,24 @@ data class InteractiveTxSigningSession(
         is Either.Right -> localCommit.value.publishableTxs.commitTx.input
     }
 
-    fun receiveCommitSig(channelKeys: KeyManager.ChannelKeys, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
+    fun receiveCommitSig(channelKeys: KeyManager.ChannelKeys, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long, logger: MDCLogger): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
         return when (localCommit) {
             is Either.Left -> {
                 val fundingKey = channelKeys.fundingKey(fundingTxIndex)
                 val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, fundingKey)
                 val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingKey.publicKey(), fundingParams.remoteFundingPubkey, localSigOfLocalTx, remoteCommitSig.signature)
                 when (Transactions.checkSpendable(signedLocalCommitTx)) {
-                    is Try.Failure -> Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
+                    is Try.Failure -> {
+                        logger.info { "interactiveTxSession=$this"}
+                        logger.info { "channelKeys=$channelKeys"}
+                        logger.info { "channelParams=$channelParams"}
+                        logger.info { "remoteCommitSig=$remoteCommitSig"}
+                        logger.info { "currentBlockHeight=$currentBlockHeight"}
+                        logger.info { "fundingKey=$fundingKey"}
+                        logger.info { "localSigOfLocalTx=$localSigOfLocalTx"}
+                        logger.info { "signedLocalCommitTx=$signedLocalCommitTx"}
+                        Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
+                    }
                     is Try.Success -> {
                         val signedLocalCommit = LocalCommit(localCommit.value.index, localCommit.value.spec, PublishableTxs(signedLocalCommitTx, listOf()))
                         if (shouldSignFirst(channelParams, fundingTx.tx)) {

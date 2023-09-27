@@ -207,7 +207,7 @@ data class WaitForFundingConfirmed(
                 }
                 is CommitSig -> when (rbfStatus) {
                     is RbfStatus.WaitingForSigs -> {
-                        val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
+                        val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong(), logger)
                         when (action) {
                             is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                 logger.warning { "rbf attempt failed: ${action.reason.message}" }
