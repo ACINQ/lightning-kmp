@@ -180,7 +180,7 @@ data class Normal(
                             Pair(this@Normal, listOf())
                         }
                         spliceStatus is SpliceStatus.WaitingForSigs -> {
-                            val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong())
+                            val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong(), logger)
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                     logger.warning { "splice attempt failed: ${action.reason.message} (fundingTxId=${spliceStatus.session.fundingTx.txId})" }

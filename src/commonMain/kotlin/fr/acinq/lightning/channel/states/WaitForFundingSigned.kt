@@ -51,7 +51,7 @@ data class WaitForFundingSigned(
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is CommitSig -> {
-                    val (signingSession1, action) = signingSession.receiveCommitSig(channelParams.localParams.channelKeys(keyManager), channelParams, cmd.message, currentBlockHeight.toLong())
+                    val (signingSession1, action) = signingSession.receiveCommitSig(channelParams.localParams.channelKeys(keyManager), channelParams, cmd.message, currentBlockHeight.toLong(), logger)
                     when (action) {
                         is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
                         // No need to store their commit_sig, they will re-send it if we disconnect.
