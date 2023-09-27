@@ -3,6 +3,7 @@ package fr.acinq.lightning.crypto
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.lightning.DefaultSwapInParams
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.Scripts
@@ -114,7 +115,7 @@ interface KeyManager {
         private val chain: NodeParams.Chain,
         private val master: DeterministicWallet.ExtendedPrivateKey,
         val remoteServerPublicKey: PublicKey,
-        val refundDelay: Int = SwapInRefundDelay
+        val refundDelay: Int = DefaultSwapInParams.RefundDelay
     ) {
         private val userExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserKeyPath(chain))
         val userPrivateKey: PrivateKey = userExtendedPrivateKey.privateKey
@@ -181,9 +182,6 @@ interface KeyManager {
         }
 
         companion object {
-            /** When doing a swap-in, the user's funds are locked in a 2-of-2: they can claim them unilaterally after that delay. */
-            const val SwapInRefundDelay = 144 * 30 * 6 // ~6 months
-
             private fun swapInKeyBasePath(chain: NodeParams.Chain) = when (chain) {
                 NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> KeyPath.empty / hardened(51) / hardened(0)
                 NodeParams.Chain.Mainnet -> KeyPath.empty / hardened(52) / hardened(0)

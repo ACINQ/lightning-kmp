@@ -25,7 +25,11 @@ object TestConstants {
     val feeratePerKw = FeeratePerKw(5000.sat) // 20 sat/byte
     val emptyOnionPacket = OnionRoutingPacket(0, ByteVector(ByteArray(33)), ByteVector(ByteArray(OnionRoutingPacket.PaymentPacketLength)), ByteVector32.Zeroes)
 
-    const val swapInConfirmations = 3
+    val swapInParams = SwapInParams(
+        minConfirmations = DefaultSwapInParams.MinConfirmations,
+        maxConfirmations = DefaultSwapInParams.MaxConfirmations,
+        refundDelay = DefaultSwapInParams.RefundDelay,
+    )
     val trampolineFees = listOf(
         TrampolineFees(0.sat, 0, CltvExpiryDelta(576)),
         TrampolineFees(1.sat, 100, CltvExpiryDelta(576)),
@@ -44,7 +48,7 @@ object TestConstants {
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, bobSwapInServerXpub)
-        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInConfirmations)
+        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
             loggerFactory = LoggerFactory.default,
@@ -93,7 +97,7 @@ object TestConstants {
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, aliceSwapInServerXpub)
-        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInConfirmations)
+        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
             loggerFactory = LoggerFactory.default,

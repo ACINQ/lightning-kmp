@@ -1,6 +1,7 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -29,8 +30,8 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         })
     }
 
-    fun withConfirmations(currentBlockHeight: Int, minConfirmations: Int): WalletWithConfirmations = WalletWithConfirmations(
-        minConfirmations = minConfirmations, currentBlockHeight = currentBlockHeight, all = utxos,
+    fun withConfirmations(currentBlockHeight: Int, swapInParams: SwapInParams): WalletWithConfirmations = WalletWithConfirmations(
+        swapInParams = swapInParams, currentBlockHeight = currentBlockHeight, all = utxos,
     )
 
     data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
@@ -42,25 +43,37 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
      * The utxos of a wallet may be discriminated against their number of confirmations. Typically, this is used in the
      * context of a funding, which should happen only after a given depth.
      *
-     * @param minConfirmations minimum number of blocks an utxo needs to be deeply confirmed, compared to [currentBlockHeight].
+     * @param swapInParams confirmation parameters for swaps.
      * @param currentBlockHeight the current block height as seen by the wallet.
      * @param all all the utxos of the wallet
      */
-    data class WalletWithConfirmations(val minConfirmations: Int, val currentBlockHeight: Int, val all: List<Utxo>) {
+    data class WalletWithConfirmations(val swapInParams: SwapInParams, val currentBlockHeight: Int, val all: List<Utxo>) {
         /** Unconfirmed utxos that shouldn't be used yet. */
         val unconfirmed by lazy { all.filter { it.blockHeight == 0L } }
 
         /** Confirmed utxos that need more confirmations to be used. */
-        val weaklyConfirmed by lazy { all.filter { it.blockHeight > 0 && confirmationsNeeded(it) > 0 } }
+        val weaklyConfirmed by lazy { all.filter { it.blockHeight > 0 && confirmationsNeeded(it) > 0 && confirmations(it) < swapInParams.maxConfirmations } }
 
         /** Confirmed utxos that are safe to use. */
-        val deeplyConfirmed by lazy { all.filter { it.blockHeight > 0 && confirmationsNeeded(it) == 0 } }
+        val deeplyConfirmed by lazy { all.filter { it.blockHeight > 0 && confirmationsNeeded(it) == 0 && confirmations(it) < swapInParams.maxConfirmations } }
+
+        /** Confirmed utxos that cannot be used anymore because we're too close to the refund delay. */
+        val lockedUntilRefund by lazy { all.filter { swapInParams.maxConfirmations <= confirmations(it) && confirmations(it) < swapInParams.refundDelay } }
+
+        /** Confirmed utxos that cannot be used anymore but can be refunded. */
+        val readyForRefund by lazy { all.filter { swapInParams.refundDelay <= confirmations(it) } }
+
+        /** Returns the number of confirmations an utxo has. */
+        fun confirmations(utxo: Utxo): Int = when (val confirmedAt = utxo.blockHeight.toInt()) {
+            0 -> 0
+            // we add 1 because if a tx is confirmed at current block height, it is considered to have one confirmation
+            else -> currentBlockHeight - confirmedAt + 1
+        }
 
         /** Returns the number of confirmations an utxo must reach to be considered deeply confirmed, 0 if deep enough. */
-        fun confirmationsNeeded(utxo: Utxo): Int = when (val height = utxo.blockHeight.toInt()) {
-            0 -> minConfirmations
-            // we subtract 1 because if a tx is confirmed at current block height, it is considered to have one confirmation
-            else -> height + minConfirmations - currentBlockHeight - 1
+        fun confirmationsNeeded(utxo: Utxo): Int = when (utxo.blockHeight.toInt()) {
+            0 -> swapInParams.minConfirmations
+            else -> swapInParams.minConfirmations - confirmations(utxo)
         }.coerceAtLeast(0)
     }
 

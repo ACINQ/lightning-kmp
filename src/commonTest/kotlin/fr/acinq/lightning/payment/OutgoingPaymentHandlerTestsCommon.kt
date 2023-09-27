@@ -30,7 +30,7 @@ import kotlin.test.*
 
 class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
-    private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), TestConstants.swapInConfirmations)
+    private val defaultWalletParams = WalletParams(NodeUri(TestConstants.Bob.nodeParams.nodeId, "bob.com", 9735), TestConstants.trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), TestConstants.swapInParams)
 
     @Test
     fun `invalid payment amount`() = runSuspendTest {

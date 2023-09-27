@@ -36,16 +36,37 @@ data class TrampolineFees(val feeBase: Satoshi, val feeProportional: Long, val c
 data class InvoiceDefaultRoutingFees(val feeBase: MilliSatoshi, val feeProportional: Long, val cltvExpiryDelta: CltvExpiryDelta)
 
 /**
+ * These parameters must match the parameters used by the wallet provider.
+ *
+ * @param minConfirmations number of confirmations needed on swap-in transactions, before importing those funds into a channel.
+ * @param maxConfirmations maximum number of confirmations for swap-in transactions: funds need to be imported into a channel before reaching that threshold.
+ * @param refundDelay number of confirmations for swap-in transactions after which funds can be unilaterally refunded back to the user.
+ */
+data class SwapInParams(val minConfirmations: Int, val maxConfirmations: Int, val refundDelay: Int)
+
+object DefaultSwapInParams {
+    /** When doing a swap-in, the funds must be confirmed before we can use them in a 0-conf splice. */
+    const val MinConfirmations = 3
+    /**
+     * When doing a swap-in, the corresponding splice must be triggered before we get too close to the refund delay.
+     * Users would otherwise be able to steal funds if the splice transaction doesn't confirm before the refund delay.
+     */
+    const val MaxConfirmations = 144 * 30 * 4 // ~4 months
+    /** When doing a swap-in, the user's funds are locked in a 2-of-2: they can claim them unilaterally after that delay. */
+    const val RefundDelay = 144 * 30 * 6 // ~6 months
+}
+
+/**
  * @param trampolineNode address of the trampoline node used for outgoing payments.
  * @param trampolineFees ordered list of trampoline fees to try when making an outgoing payment.
  * @param invoiceDefaultRoutingFees default routing fees set in invoices when we don't have any channel.
- * @param swapInConfirmations number of confirmations needed on swap-in transactions, before importing those funds into a channel.
+ * @param swapInParams parameters for swap-in transactions.
  */
 data class WalletParams(
     val trampolineNode: NodeUri,
     val trampolineFees: List<TrampolineFees>,
     val invoiceDefaultRoutingFees: InvoiceDefaultRoutingFees,
-    val swapInConfirmations: Int
+    val swapInParams: SwapInParams,
 )
 
 /**
