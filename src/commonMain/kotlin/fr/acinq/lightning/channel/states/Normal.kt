@@ -475,7 +475,8 @@ data class Normal(
                                         interactiveTxAction.sharedTx,
                                         localPushAmount = spliceStatus.localPushAmount,
                                         remotePushAmount = spliceStatus.remotePushAmount,
-                                        commitmentIndex = parentCommitment.localCommit.index, // localCommit.index == remoteCommit.index because the channel is idle
+                                        localCommitmentIndex = parentCommitment.localCommit.index,
+                                        remoteCommitmentIndex = parentCommitment.remoteCommit.index,
                                         parentCommitment.localCommit.spec.feerate,
                                         parentCommitment.remoteCommit.remotePerCommitmentPoint
                                     )

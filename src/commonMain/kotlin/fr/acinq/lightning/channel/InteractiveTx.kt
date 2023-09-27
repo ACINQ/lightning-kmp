@@ -825,7 +825,8 @@ data class InteractiveTxSigningSession(
             sharedTx: SharedTransaction,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
-            commitmentIndex: Long,
+            localCommitmentIndex: Long,
+            remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
             remotePerCommitmentPoint: PublicKey
         ): Either<ChannelException, Pair<InteractiveTxSigningSession, CommitSig>> {
@@ -839,7 +840,8 @@ data class InteractiveTxSigningSession(
                 fundingAmount = sharedTx.sharedOutput.amount,
                 toLocal = sharedTx.sharedOutput.localAmount - localPushAmount + remotePushAmount,
                 toRemote = sharedTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount,
-                commitmentIndex = commitmentIndex,
+                localCommitmentIndex = localCommitmentIndex,
+                remoteCommitmentIndex = remoteCommitmentIndex,
                 commitTxFeerate,
                 fundingTxIndex = fundingTxIndex, fundingTxHash = unsignedTx.hash, fundingTxOutputIndex = sharedOutputIndex,
                 remoteFundingPubkey = fundingParams.remoteFundingPubkey,
@@ -847,8 +849,8 @@ data class InteractiveTxSigningSession(
             ).map { firstCommitTx ->
                 val localSigOfRemoteTx = Transactions.sign(firstCommitTx.remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
                 val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf())
-                val unsignedLocalCommit = UnsignedLocalCommit(commitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
-                val remoteCommit = RemoteCommit(commitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
+                val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
+                val remoteCommit = RemoteCommit(remoteCommitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
                 val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
                 Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
             }

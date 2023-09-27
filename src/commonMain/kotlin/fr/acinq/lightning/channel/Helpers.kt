@@ -288,7 +288,8 @@ object Helpers {
             fundingAmount: Satoshi,
             toLocal: MilliSatoshi,
             toRemote: MilliSatoshi,
-            commitmentIndex: Long,
+            localCommitmentIndex: Long,
+            remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
             fundingTxIndex: Long,
             fundingTxHash: ByteVector32,
@@ -313,10 +314,10 @@ object Helpers {
 
             val fundingPubKey = channelKeys.fundingPubKey(fundingTxIndex)
             val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteFundingPubkey)
-            val localPerCommitmentPoint = channelKeys.commitmentPoint(commitmentIndex)
+            val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommitmentIndex)
             val localCommitTx = Commitments.makeLocalTxs(
                 channelKeys,
-                commitTxNumber = commitmentIndex,
+                commitTxNumber = localCommitmentIndex,
                 localParams,
                 remoteParams,
                 fundingTxIndex = fundingTxIndex,
@@ -327,7 +328,7 @@ object Helpers {
             ).first
             val remoteCommitTx = Commitments.makeRemoteTxs(
                 channelKeys,
-                commitTxNumber = commitmentIndex,
+                commitTxNumber = remoteCommitmentIndex,
                 localParams,
                 remoteParams,
                 fundingTxIndex = fundingTxIndex,
