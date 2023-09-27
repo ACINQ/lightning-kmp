@@ -776,11 +776,8 @@ data class InteractiveTxSigningSession(
                 when (Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> {
                         logger.info { "interactiveTxSession=$this"}
-                        logger.info { "channelKeys=$channelKeys"}
                         logger.info { "channelParams=$channelParams"}
-                        logger.info { "remoteCommitSig=$remoteCommitSig"}
-                        logger.info { "currentBlockHeight=$currentBlockHeight"}
-                        logger.info { "fundingKey=$fundingKey"}
+                        logger.info { "fundingKey=${fundingKey.publicKey()}"}
                         logger.info { "localSigOfLocalTx=$localSigOfLocalTx"}
                         logger.info { "signedLocalCommitTx=$signedLocalCommitTx"}
                         Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
