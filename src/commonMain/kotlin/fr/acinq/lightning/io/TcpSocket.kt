@@ -45,7 +45,11 @@ interface TcpSocket {
              * (I.e. same as PEM format, without BEGIN/END header/footer)
              */
             val pubKey: String
-        ) : TLS()
+        ) : TLS() {
+            override fun toString(): String {
+                return "PINNED_PUBLIC_KEY(pubKey=${pubKey.take(64)}...}"
+            }
+        }
     }
 
     interface Builder {
