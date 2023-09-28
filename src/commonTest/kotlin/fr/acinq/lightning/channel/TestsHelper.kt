@@ -433,53 +433,69 @@ object TestsHelper {
         return payer0 to payee0
     }
 
+    private fun <T : ChannelStateWithCommitments> receiveCommitSigs(receiver: LNChannel<T>, commitSigs: List<CommitSig>): Pair<LNChannel<T>, List<ChannelAction>> {
+        return commitSigs.fold(Pair(receiver, emptyList())) { pair, commitSig ->
+            val (statePrev, actionsPrev) = pair
+            assertTrue(actionsPrev.isEmpty())
+            val (stateNext, actionsNext) = statePrev.process(ChannelCommand.MessageReceived(commitSig))
+            assertIs<LNChannel<T>>(stateNext)
+            Pair(stateNext, actionsNext)
+        }
+    }
+
     /**
      * Cross sign nodes where nodeA initiate the signature exchange
      */
-    fun <T : ChannelStateWithCommitments> crossSign(nodeA: LNChannel<T>, nodeB: LNChannel<T>): Pair<LNChannel<T>, LNChannel<T>> {
+    fun <T : ChannelStateWithCommitments> crossSign(nodeA: LNChannel<T>, nodeB: LNChannel<T>, commitmentsCount: Int = 1): Pair<LNChannel<T>, LNChannel<T>> {
         val sCommitIndex = nodeA.state.commitments.localCommitIndex
         val rCommitIndex = nodeB.state.commitments.localCommitIndex
         val rHasChanges = nodeB.state.commitments.changes.localHasChanges()
 
         val (sender0, sActions0) = nodeA.process(ChannelCommand.Commitment.Sign)
-        val commitSig0 = sActions0.findOutgoingMessage<CommitSig>()
+        val commitSigs0 = sActions0.findOutgoingMessages<CommitSig>()
+        assertEquals(commitmentsCount, commitSigs0.size)
+        commitSigs0.forEach { assertEquals(commitmentsCount, it.batchSize) }
 
-        val (receiver0, rActions0) = nodeB.process(ChannelCommand.MessageReceived(commitSig0))
+        val (receiver0, rActions0) = receiveCommitSigs(nodeB, commitSigs0)
         val revokeAndAck0 = rActions0.findOutgoingMessage<RevokeAndAck>()
         val commandSign0 = rActions0.findCommand<ChannelCommand.Commitment.Sign>()
 
         val (sender1, _) = sender0.process(ChannelCommand.MessageReceived(revokeAndAck0))
+        assertIs<LNChannel<T>>(sender1)
         val (receiver1, rActions1) = receiver0.process(commandSign0)
-        val commitSig1 = rActions1.findOutgoingMessage<CommitSig>()
+        val commitSigs1 = rActions1.findOutgoingMessages<CommitSig>()
+        assertEquals(commitmentsCount, commitSigs1.size)
+        commitSigs1.forEach { assertEquals(commitmentsCount, it.batchSize) }
 
-        val (sender2, sActions2) = sender1.process(ChannelCommand.MessageReceived(commitSig1))
+        val (sender2, sActions2) = receiveCommitSigs(sender1, commitSigs1)
         val revokeAndAck1 = sActions2.findOutgoingMessage<RevokeAndAck>()
         val (receiver2, _) = receiver1.process(ChannelCommand.MessageReceived(revokeAndAck1))
+        assertIs<LNChannel<T>>(receiver2)
 
         if (rHasChanges) {
             val commandSign1 = sActions2.findCommand<ChannelCommand.Commitment.Sign>()
             val (sender3, sActions3) = sender2.process(commandSign1)
-            val commitSig2 = sActions3.findOutgoingMessage<CommitSig>()
+            val commitSigs2 = sActions3.findOutgoingMessages<CommitSig>()
+            assertEquals(commitmentsCount, commitSigs2.size)
 
-            val (receiver3, rActions3) = receiver2.process(ChannelCommand.MessageReceived(commitSig2))
+            val (receiver3, rActions3) = receiveCommitSigs(receiver2, commitSigs2)
             val revokeAndAck2 = rActions3.findOutgoingMessage<RevokeAndAck>()
             val (sender4, _) = sender3.process(ChannelCommand.MessageReceived(revokeAndAck2))
 
             assertIs<LNChannel<T>>(sender4)
             assertIs<LNChannel<T>>(receiver3)
             assertEquals(sCommitIndex + 1, sender4.commitments.localCommitIndex)
-            assertEquals(sCommitIndex + 2, sender4.commitments.remoteCommitIndex)
+            assertEquals(rCommitIndex + 2, sender4.commitments.remoteCommitIndex)
             assertEquals(rCommitIndex + 2, receiver3.commitments.localCommitIndex)
-            assertEquals(rCommitIndex + 1, receiver3.commitments.remoteCommitIndex)
+            assertEquals(sCommitIndex + 1, receiver3.commitments.remoteCommitIndex)
 
             return sender4 to receiver3
         } else {
             assertIs<LNChannel<T>>(sender2)
-            assertIs<LNChannel<T>>(receiver2)
             assertEquals(sCommitIndex + 1, sender2.commitments.localCommitIndex)
-            assertEquals(sCommitIndex + 1, sender2.commitments.remoteCommitIndex)
+            assertEquals(rCommitIndex + 1, sender2.commitments.remoteCommitIndex)
             assertEquals(rCommitIndex + 1, receiver2.commitments.localCommitIndex)
-            assertEquals(rCommitIndex + 1, receiver2.commitments.remoteCommitIndex)
+            assertEquals(sCommitIndex + 1, receiver2.commitments.remoteCommitIndex)
 
             return sender2 to receiver2
         }
