@@ -62,7 +62,8 @@ data class WaitForFundingCreated(
                                 interactiveTxAction.sharedTx,
                                 localPushAmount,
                                 remotePushAmount,
-                                commitmentIndex = 0,
+                                localCommitmentIndex = 0,
+                                remoteCommitmentIndex = 0,
                                 commitTxFeerate,
                                 remoteFirstPerCommitmentPoint
                             )
