@@ -47,7 +47,7 @@ interface TcpSocket {
             val pubKey: String
         ) : TLS() {
             override fun toString(): String {
-                return "PINNED_PUBLIC_KEY(pubKey=${pubKey.take(15)}...${pubKey.takeLast(15)}"
+                return "PINNED_PUBLIC_KEY(pubKey=${pubKey.take(64)}...}"
             }
         }
     }
