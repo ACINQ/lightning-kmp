@@ -225,7 +225,7 @@ class Peer(
         }
         launch {
             // we don't restore closed channels
-            val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
+            val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed || it is LegacyWaitForFundingConfirmed }
             _bootChannelsFlow.value = bootChannels.associateBy { it.channelId }
             val channelIds = bootChannels.map {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
