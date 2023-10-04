@@ -128,15 +128,9 @@ class Peer(
 
     private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
 
-    // The channels map, as initially loaded from the database at "boot" (on Peer.init).
-    // As the channelsFlow is unavailable until the electrum connection is up-and-running,
-    // this may provide useful information for the UI.
-    private val _bootChannelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>?>(null)
-    val bootChannelsFlow: StateFlow<Map<ByteVector32, ChannelState>?> get() = _bootChannelsFlow
-
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once accepted
-    private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
+    private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(emptyMap())
     val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>> get() = _channelsFlow
 
     private var _channels by _channelsFlow
@@ -165,6 +159,10 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
+
+    // signals when the peer has loaded channels from the database, allowing to differentiate between "channels not yet loaded" and "no channels at all".
+    private val _initialized = MutableStateFlow<Boolean>(false)
+    val initialized get() = _initialized.asSharedFlow()
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -226,16 +224,16 @@ class Peer(
         launch {
             // we don't restore closed channels
             val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
-            _bootChannelsFlow.value = bootChannels.associateBy { it.channelId }
-            val channelIds = bootChannels.map {
+            _channels = bootChannels.associateBy { it.channelId }
+            _initialized.emit(true)
+            bootChannels.forEach {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
                 val (state1, actions) = state.process(ChannelCommand.Init.Restore(it))
                 processActions(it.channelId, peerConnection, actions)
                 _channels = _channels + (it.channelId to state1)
-                it.channelId
             }
-            logger.info { "restored ${channelIds.size} channels" }
+            logger.info { "restored ${bootChannels.size} channels" }
             launch {
                 // the swap-in manager executes commands, but will not do anything until startWatchSwapInWallet() is called
                 val swapInManager = SwapInManager(bootChannels, logger)
@@ -246,6 +244,7 @@ class Peer(
                 // But maybe we were offline for too long and it is why our peer couldn't settle these htlcs in time.
                 // We give them a bit of time after we reconnect to send us their latest htlc updates.
                 delay(timeMillis = nodeParams.checkHtlcTimeoutAfterStartupDelaySeconds.toLong() * 1000)
+                val channelIds = channels.keys
                 logger.info { "checking for timed out htlcs for channels: ${channelIds.joinToString(", ")}" }
                 channelIds.forEach { input.send(WrappedChannelCommand(it, ChannelCommand.Commitment.CheckHtlcTimeout)) }
             }
