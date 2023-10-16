@@ -338,7 +338,7 @@ data class Commitment(
         val incomingHtlcs = reduced.htlcs.incomings()
 
         // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
-        val fees = commitTxFee(params.remoteParams.dustLimit, reduced)
+        val fees = commitTxFee(params.localParams.dustLimit, reduced)
         // NB: we don't enforce the initiatorFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
         // We could enforce it once we're confident a large portion of the network implements it.
         val missingForSender = reduced.toRemote - remoteChannelReserve(params).toMilliSatoshi() - (if (params.localParams.isInitiator) 0.sat else fees).toMilliSatoshi()
@@ -388,8 +388,15 @@ data class Commitment(
         // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
         // and it would be tricky to check if the conditions are met at signing
         // (it also means that we need to check the fee of the initial commitment tx somewhere)
-        val fees = commitTxFee(params.remoteParams.dustLimit, reduced)
-        val missing = reduced.toRemote.truncateToSatoshi() - remoteChannelReserve(params) - fees
+        val fees = commitTxFee(params.localParams.dustLimit, reduced)
+        // TODO:
+        //  When migrating to the dual-funded model, we removed the explicit channel reserve from LocalParams.
+        //  For channels that were created before the splicing update, this can result in a mismatch where we think
+        //  the channel reserve is bigger than what is actually is, and incorrectly reject the remote update_fee.
+        //  We temporarily ignore the channel reserve to avoid unnecessary force-close.
+        //  We should restore the correct calculation that takes the reserve into account once all users have migrated.
+        // val missing = reduced.toRemote.truncateToSatoshi() - remoteChannelReserve(params) - fees
+        val missing = reduced.toRemote.truncateToSatoshi() - fees
         return if (missing < 0.sat) {
             Either.Left(CannotAffordFees(params.channelId, -missing, remoteChannelReserve(params), fees))
         } else {
