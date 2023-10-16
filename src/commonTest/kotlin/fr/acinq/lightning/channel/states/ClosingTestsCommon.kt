@@ -20,7 +20,6 @@ import fr.acinq.lightning.channel.TestsHelper.localClose
 import fr.acinq.lightning.channel.TestsHelper.makeCmdAdd
 import fr.acinq.lightning.channel.TestsHelper.mutualCloseAlice
 import fr.acinq.lightning.channel.TestsHelper.mutualCloseBob
-
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.TestsHelper.remoteClose
 import fr.acinq.lightning.db.ChannelClosingType
@@ -708,6 +707,62 @@ class ClosingTestsCommon : LightningTestSuite() {
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
 
+    private fun useAlternativeSig(s: LNChannel<ChannelState>, alternative: CommitSigTlv.AlternativeFeerateSig): Transaction {
+        val channelKeys = s.commitments.params.localParams.channelKeys(s.ctx.keyManager)
+        val alternativeSpec = s.commitments.latest.localCommit.spec.copy(feerate = alternative.feerate)
+        val fundingTxIndex = s.commitments.latest.fundingTxIndex
+        val commitInput = s.commitments.latest.commitInput
+        val remoteFundingPubKey = s.commitments.latest.remoteFundingPubkey
+        val localPerCommitmentPoint = channelKeys.commitmentPoint(s.commitments.localCommitIndex)
+        val (localCommitTx, _) = Commitments.makeLocalTxs(
+            channelKeys,
+            s.commitments.localCommitIndex,
+            s.commitments.params.localParams,
+            s.commitments.params.remoteParams,
+            fundingTxIndex,
+            remoteFundingPubKey,
+            commitInput,
+            localPerCommitmentPoint,
+            alternativeSpec
+        )
+        val localSig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
+        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubKey, localSig, alternative.sig)
+        assertTrue(Transactions.checkSpendable(signedCommitTx).isSuccess)
+        return signedCommitTx.tx
+    }
+
+    @Test
+    fun `recv BITCOIN_TX_CONFIRMED -- remote commit -- alternative feerate`() {
+        val (alice0, bob0) = reachNormal()
+        val (bobClosing, remoteCommitPublished) = run {
+            val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
+            val (alice1, bob1) = nodes1
+            val (alice2, bob2) = crossSign(alice1, bob1)
+            val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
+            val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
+            val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
+            val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
+            val revAlice = actionsAlice4.hasOutgoingMessage<RevokeAndAck>()
+            val (alice5, actionsAlice5) = alice4.process(ChannelCommand.Commitment.Sign)
+            val commitSigAlice = actionsAlice5.hasOutgoingMessage<CommitSig>()
+            val (bob5, _) = bob4.process(ChannelCommand.MessageReceived(revAlice))
+            val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigAlice))
+            val revBob = actionsBob6.hasOutgoingMessage<RevokeAndAck>()
+            val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(revBob))
+            val alternativeCommitTx = useAlternativeSig(alice6, commitSigBob.alternativeFeerateSigs.first())
+            remoteClose(alternativeCommitTx, bob6)
+        }
+
+        assertNotNull(remoteCommitPublished.claimMainOutputTx)
+        val claimMain = remoteCommitPublished.claimMainOutputTx!!.tx
+        Transaction.correctlySpends(claimMain, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 0, remoteCommitPublished.commitTx)))
+        val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob0.channelId, BITCOIN_TX_CONFIRMED(claimMain), 43, 0, claimMain)))
+        assertIs<Closed>(bobClosed.state)
+        assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
+    }
+
     @Test
     fun `recv BITCOIN_OUTPUT_SPENT -- remote commit`() {
         val (alice0, bob0) = reachNormal()
@@ -898,7 +953,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- next remote commit --  followed by CMD_FULFILL_HTLC`() {
+    fun `recv BITCOIN_TX_CONFIRMED -- next remote commit -- followed by CMD_FULFILL_HTLC`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
@@ -947,6 +1002,31 @@ class ClosingTestsCommon : LightningTestSuite() {
             WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
+    }
+
+    @Test
+    fun `recv BITCOIN_TX_CONFIRMED -- next remote commit -- alternative feerate`() {
+        val (alice0, bob0) = reachNormal()
+        val (bobClosing, remoteCommitPublished) = run {
+            val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
+            val (alice1, bob1) = nodes1
+            val (alice2, bob2) = crossSign(alice1, bob1)
+            val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
+            val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
+            val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
+            val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
+            val alternativeCommitTx = useAlternativeSig(alice4, commitSigBob.alternativeFeerateSigs.first())
+            remoteClose(alternativeCommitTx, bob4)
+        }
+
+        assertNotNull(remoteCommitPublished.claimMainOutputTx)
+        val claimMain = remoteCommitPublished.claimMainOutputTx!!.tx
+        Transaction.correctlySpends(claimMain, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 0, remoteCommitPublished.commitTx)))
+        val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob0.channelId, BITCOIN_TX_CONFIRMED(claimMain), 43, 0, claimMain)))
+        assertIs<Closed>(bobClosed.state)
+        assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
     }
 
     @Test

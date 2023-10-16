@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.channel.states.Channel
@@ -421,7 +422,18 @@ data class Commitment(
             "built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txId=${remoteCommitTx.tx.txid} fundingTxId=$fundingTxId"
         }
 
-        val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList())
+        val commitSig = when (spec.htlcs.size) {
+            0 -> {
+                val alternativeSigs = Commitments.alternativeFeerates.map { feerate ->
+                    val alternativeSpec = spec.copy(feerate = feerate)
+                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitInput, remotePerCommitmentPoint = remoteNextPerCommitmentPoint, alternativeSpec)
+                    val alternativeSig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+                    CommitSigTlv.AlternativeFeerateSig(feerate, alternativeSig)
+                }
+                CommitSig(params.channelId, sig, listOf(), TlvStream(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs)))
+            }
+            else -> CommitSig(params.channelId, sig, htlcSigs.toList())
+        }
         val commitment1 = copy(nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)))
         return Pair(commitment1, commitSig)
     }
@@ -932,6 +944,12 @@ data class Commitments(
         const val HTLC_OUTPUT_WEIGHT = 172
         const val HTLC_TIMEOUT_WEIGHT = 666
         const val HTLC_SUCCESS_WEIGHT = 706
+
+        /**
+         * Alternative feerates at which we will sign commitment transactions that have no pending HTLCs.
+         * WARNING: never remove a feerate from this list, we can only add more, otherwise we will not be able to detect when our peer broadcasts the commit tx at the removed feerate.
+         */
+        val alternativeFeerates = listOf(1.sat, 2.sat, 5.sat, 10.sat).map { FeeratePerKw(FeeratePerByte(it)) }
 
         fun makeLocalTxs(
             channelKeys: KeyManager.ChannelKeys,

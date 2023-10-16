@@ -64,7 +64,6 @@
     JsonSerializers.CommitmentChangesSerializer::class,
     JsonSerializers.LocalFundingStatusSerializer::class,
     JsonSerializers.RemoteFundingStatusSerializer::class,
-    JsonSerializers.EncryptedChannelDataSerializer::class,
     JsonSerializers.ShutdownSerializer::class,
     JsonSerializers.ClosingSignedSerializer::class,
     JsonSerializers.UpdateAddHtlcSerializer::class,
@@ -82,6 +81,8 @@
     JsonSerializers.ClosingSignedTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvSerializer::class,
     JsonSerializers.ChannelReadyTlvSerializer::class,
+    JsonSerializers.CommitSigTlvAlternativeFeerateSigSerializer::class,
+    JsonSerializers.CommitSigTlvAlternativeFeerateSigsSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
     JsonSerializers.ClosingSerializer::class,
@@ -184,6 +185,7 @@ object JsonSerializers {
             }
             polymorphic(Tlv::class) {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
+                subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
             }
@@ -485,6 +487,12 @@ object JsonSerializers {
 
     @Serializer(forClass = ShutdownTlv::class)
     object ShutdownTlvSerializer
+
+    @Serializer(forClass = CommitSigTlv.AlternativeFeerateSig::class)
+    object CommitSigTlvAlternativeFeerateSigSerializer
+
+    @Serializer(forClass = CommitSigTlv.AlternativeFeerateSigs::class)
+    object CommitSigTlvAlternativeFeerateSigsSerializer
 
     @Serializer(forClass = CommitSigTlv::class)
     object CommitSigTlvSerializer
