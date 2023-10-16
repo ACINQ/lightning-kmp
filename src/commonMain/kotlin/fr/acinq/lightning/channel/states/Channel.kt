@@ -1,7 +1,12 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.*
-import fr.acinq.lightning.*
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.Transaction
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Feature
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
@@ -13,7 +18,7 @@ import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.serialization.Encryption.from
-import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
+import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 
@@ -517,18 +522,48 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     })
                 }
                 else -> {
-                    logger.warning { "unrecognized tx=${tx.txid}" }
-                    // This can happen if the user has two devices.
-                    // - user creates a wallet on device #1
-                    // - user restores the same wallet on device #2
-                    // - user does a splice on device #2
-                    // - user starts wallet on device #1
-                    // The wallet on device #1 has a previous version of the channel, it is not aware of the splice tx. It won't be able
-                    // to recognize the tx when the watcher notifies that the (old) funding tx was spent.
-                    // However, there is a race with the reconnection logic, because then the device #1 will recover its latest state from the
-                    // remote backup.
-                    // So, the best thing to do here is to ignore the spending tx.
-                    Pair(this@ChannelStateWithCommitments, listOf())
+                    // Our peer may publish an alternative version of their commitment using a different feerate.
+                    val alternativeFeerateCommits = buildList {
+                        add(commitments.latest.remoteCommit)
+                        commitments.latest.nextRemoteCommit?.let { add(it.commit) }
+                    }.filter { remoteCommit ->
+                        remoteCommit.spec.htlcs.isEmpty()
+                    }.flatMap { remoteCommit ->
+                        Commitments.alternativeFeerates.map { feerate ->
+                            val alternativeSpec = remoteCommit.spec.copy(feerate = feerate)
+                            val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(channelKeys(), remoteCommit.index, commitments.params.localParams, commitments.params.remoteParams, commitments.latest.fundingTxIndex, commitments.latest.remoteFundingPubkey, commitments.latest.commitInput, remoteCommit.remotePerCommitmentPoint, alternativeSpec)
+                            RemoteCommit(remoteCommit.index, alternativeSpec, alternativeRemoteCommitTx.tx.txid, remoteCommit.remotePerCommitmentPoint)
+                        }
+                    }
+                    when (val remoteCommit = alternativeFeerateCommits.find { it.txid == tx.txid }) {
+                        null -> {
+                            logger.warning { "unrecognized tx=${tx.txid}" }
+                            // This can happen if the user has two devices.
+                            // - user creates a wallet on device #1
+                            // - user restores the same wallet on device #2
+                            // - user does a splice on device #2
+                            // - user starts wallet on device #1
+                            // The wallet on device #1 has a previous version of the channel, it is not aware of the splice tx. It won't be able
+                            // to recognize the tx when the watcher notifies that the (old) funding tx was spent.
+                            // However, there is a race with the reconnection logic, because then the device #1 will recover its latest state from the
+                            // remote backup.
+                            // So, the best thing to do here is to ignore the spending tx.
+                            Pair(this@ChannelStateWithCommitments, listOf())
+                        }
+                        else -> {
+                            logger.warning { "they published an alternative commitment with feerate=${remoteCommit.spec.feerate} txid=${tx.txid}" }
+                            val remoteCommitPublished = claimRemoteCommitMainOutput(channelKeys(), commitments.params, tx, currentOnChainFeerates.claimMainFeerate)
+                            val nextState = when (this@ChannelStateWithCommitments) {
+                                is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
+                                is Negotiating -> Closing(commitments, waitingSinceBlock = currentBlockHeight.toLong(), mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx }, remoteCommitPublished = remoteCommitPublished)
+                                else -> Closing(commitments, waitingSinceBlock = currentBlockHeight.toLong(), remoteCommitPublished = remoteCommitPublished)
+                            }
+                            return Pair(nextState, buildList {
+                                add(ChannelAction.Storage.StoreState(nextState))
+                                addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
+                            })
+                        }
+                    }
                 }
             }
         }
