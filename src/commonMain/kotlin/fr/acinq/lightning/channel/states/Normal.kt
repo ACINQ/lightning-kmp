@@ -2,9 +2,7 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.SigHash
-import fr.acinq.lightning.Feature
-import fr.acinq.lightning.Features
-import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
@@ -377,6 +375,7 @@ data class Normal(
                                     fundingContributions = FundingContributions(emptyList(), emptyList()), // as non-initiator we don't contribute to this splice for now
                                     previousTxs = emptyList()
                                 )
+                                staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskStarted(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(fundingParams)))
                                 val nextState = this@Normal.copy(spliceStatus = SpliceStatus.InProgress(replyTo = null, session, localPushAmount = 0.msat, remotePushAmount = cmd.message.pushAmount, origins = cmd.message.origins))
                                 Pair(nextState, listOf(ChannelAction.Message.Send(spliceAck)))
                             } else {
@@ -435,6 +434,7 @@ data class Normal(
                                     ).send()
                                     when (interactiveTxAction) {
                                         is InteractiveTxSessionAction.SendMessage -> {
+                                            staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskStarted(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(fundingParams)))
                                             val nextState = this@Normal.copy(
                                                 spliceStatus = SpliceStatus.InProgress(
                                                     replyTo = spliceStatus.command.replyTo,
@@ -484,6 +484,7 @@ data class Normal(
                                         is Either.Left -> {
                                             logger.error(signingSession.value) { "cannot initiate interactive-tx splice signing session" }
                                             spliceStatus.replyTo?.complete(ChannelCommand.Commitment.Splice.Response.Failure.CannotCreateCommitTx(signingSession.value))
+                                            staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(spliceStatus.spliceSession.fundingParams)))
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, signingSession.value.message))))
                                         }
                                         is Either.Right -> {
@@ -514,6 +515,7 @@ data class Normal(
                                 is InteractiveTxSessionAction.RemoteFailure -> {
                                     logger.warning { "interactive-tx failed: $interactiveTxAction" }
                                     spliceStatus.replyTo?.complete(ChannelCommand.Commitment.Splice.Response.Failure.InteractiveTxSessionFailed(interactiveTxAction))
+                                    staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(spliceStatus.spliceSession.fundingParams)))
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, interactiveTxAction.toString()))))
                                 }
                             }
@@ -582,6 +584,7 @@ data class Normal(
                         is SpliceStatus.InProgress -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
                             spliceStatus.replyTo?.complete(ChannelCommand.Commitment.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(spliceStatus.spliceSession.fundingParams)))
                             Pair(
                                 this@Normal.copy(spliceStatus = SpliceStatus.None),
                                 listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
@@ -589,6 +592,7 @@ data class Normal(
                         }
                         is SpliceStatus.WaitingForSigs -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
+                            staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(spliceStatus.session.fundingParams)))
                             val nextState = this@Normal.copy(spliceStatus = SpliceStatus.None)
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
@@ -732,6 +736,8 @@ data class Normal(
                 add(ChannelAction.Message.Send(spliceLocked))
             }
         }
+        // If we are here, both parties have sent and persisted their commit_sig, so the interactive-tx process will survive a disconnection, even if it may still eventually fail.
+        staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskStarted(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(action.fundingTx.fundingParams)))
         return Pair(nextState, actions)
     }
 
