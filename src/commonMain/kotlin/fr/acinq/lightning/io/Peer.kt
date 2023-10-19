@@ -771,6 +771,7 @@ class Peer(
     // MUST ONLY BE SET BY processEvent()
     private var peerConnection: PeerConnection? = null
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun processEvent(cmd: PeerCommand, logger: MDCLogger) {
         when (cmd) {
             is Connected -> {
@@ -1011,12 +1012,6 @@ class Peer(
                         val (feerate, fee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
                         logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
-                        if (channel.spliceStatus != SpliceStatus.None) {
-                            logger.info { "deferring splice, another splice is already in progress" }
-                            swapInCommands.send(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
-                            return
-                        }
-
                         nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
                             logger.info { "rejecting splice: reason=${rejected.reason}" }
                             nodeParams._nodeEvents.emit(rejected)
@@ -1030,6 +1025,12 @@ class Peer(
                             spliceOut = null,
                             feerate = feerate
                         )
+                        // If the splice fails, we immediately unlock the utxos to reuse them in the next attempt.
+                        spliceCommand.replyTo.invokeOnCompletion { ex ->
+                            if (ex == null && spliceCommand.replyTo.getCompleted() is ChannelCommand.Commitment.Splice.Response.Failure) {
+                                swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                            }
+                        }
                         input.send(WrappedChannelCommand(channel.channelId, spliceCommand))
                     }
                     else -> {
