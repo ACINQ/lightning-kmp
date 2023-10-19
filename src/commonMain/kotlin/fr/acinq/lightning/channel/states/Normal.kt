@@ -525,13 +525,16 @@ data class Normal(
                     }
                     is TxSignatures -> when (spliceStatus) {
                         is SpliceStatus.WaitingForSigs -> {
-                            when (val action = spliceStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight.toLong())) {
-                                is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
+                            when (val res = spliceStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight.toLong())) {
+                                is Either.Left -> {
+                                    val action: InteractiveTxSigningSessionAction.AbortFundingAttempt = res.value
                                     logger.warning { "splice attempt failed: ${action.reason.message}" }
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, action.reason.message))))
                                 }
-                                InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@Normal, listOf())
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
+                                is Either.Right -> {
+                                    val action: InteractiveTxSigningSessionAction.SendTxSigs = res.value
+                                    sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
+                                }
                             }
                         }
                         else -> when (commitments.latest.localFundingStatus) {

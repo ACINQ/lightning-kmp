@@ -60,10 +60,15 @@ data class WaitForFundingSigned(
                     }
                 }
                 is TxSignatures -> {
-                    when (val action = signingSession.receiveTxSigs(channelParams.localParams.channelKeys(keyManager), cmd.message, currentBlockHeight.toLong())) {
-                        is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
-                        InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingSigned, listOf())
-                        is InteractiveTxSigningSessionAction.SendTxSigs -> sendTxSigs(action, cmd.message.channelData)
+                    when (val res = signingSession.receiveTxSigs(channelParams.localParams.channelKeys(keyManager), cmd.message, currentBlockHeight.toLong())) {
+                        is Either.Left -> {
+                            val action: InteractiveTxSigningSessionAction.AbortFundingAttempt = res.value
+                            handleLocalError(cmd, action.reason)
+                        }
+                        is Either.Right -> {
+                            val action: InteractiveTxSigningSessionAction.SendTxSigs = res.value
+                            sendTxSigs(action, cmd.message.channelData)
+                        }
                     }
                 }
                 is TxInitRbf -> {
