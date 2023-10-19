@@ -523,19 +523,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 }
                 else -> {
                     // Our peer may publish an alternative version of their commitment using a different feerate.
-                    val alternativeFeerateCommits = buildList {
-                        add(commitments.latest.remoteCommit)
-                        commitments.latest.nextRemoteCommit?.let { add(it.commit) }
-                    }.filter { remoteCommit ->
-                        remoteCommit.spec.htlcs.isEmpty()
-                    }.flatMap { remoteCommit ->
-                        Commitments.alternativeFeerates.map { feerate ->
-                            val alternativeSpec = remoteCommit.spec.copy(feerate = feerate)
-                            val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(channelKeys(), remoteCommit.index, commitments.params.localParams, commitments.params.remoteParams, commitments.latest.fundingTxIndex, commitments.latest.remoteFundingPubkey, commitments.latest.commitInput, remoteCommit.remotePerCommitmentPoint, alternativeSpec)
-                            RemoteCommit(remoteCommit.index, alternativeSpec, alternativeRemoteCommitTx.tx.txid, remoteCommit.remotePerCommitmentPoint)
-                        }
-                    }
-                    when (val remoteCommit = alternativeFeerateCommits.find { it.txid == tx.txid }) {
+                    when (val remoteCommit = Commitments.alternativeFeerateCommits(commitments, channelKeys()).find { it.txid == tx.txid }) {
                         null -> {
                             logger.warning { "unrecognized tx=${tx.txid}" }
                             // This can happen if the user has two devices.
