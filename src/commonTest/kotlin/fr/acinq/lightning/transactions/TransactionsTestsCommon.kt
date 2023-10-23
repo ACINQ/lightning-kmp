@@ -7,6 +7,9 @@ import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.bitcoin.musig2.Musig2
+import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -476,6 +479,124 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val witness = userWallet.swapInProtocol.witnessRefund(userSig)
             val signedTx = fundingTx.updateWitness(0, witness)
             Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+    }
+
+    @Test
+    fun `spend 2-of-2 swap-in taproot without musig2 version`() {
+        val userPrivateKey = PrivateKey(ByteArray(32) { 1 })
+        val serverPrivateKey = PrivateKey(ByteArray(32) { 2 })
+
+        // mutual agreement script is generated from this policy: and_v(v:pk(A),pk(B))
+        val mutualScript = listOf(OP_PUSHDATA(userPrivateKey.xOnlyPublicKey()), OP_CHECKSIGVERIFY, OP_PUSHDATA(serverPrivateKey.xOnlyPublicKey()), OP_CHECKSIG)
+
+        // the refund script is generated from this policy: and_v(v:pk(user),older(refundDelay))
+        val refundDelay = 144
+        val refundScript = listOf(OP_PUSHDATA(userPrivateKey.xOnlyPublicKey()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
+
+        // we have a simple script tree with 2 leaves
+        val scriptTree = ScriptTree.Branch(
+            ScriptTree.Leaf(ScriptLeaf(0, write(mutualScript).byteVector(), Script.TAPROOT_LEAF_TAPSCRIPT)),
+            ScriptTree.Leaf(ScriptLeaf(1, write(refundScript).byteVector(), Script.TAPROOT_LEAF_TAPSCRIPT))
+        )
+        val merkleRoot = ScriptTree.hash(scriptTree)
+
+        // we choose a pubkey that does not have a corresponding private key: our swap-in tx can only be spent through the script path, not the key path
+        val internalPubkey = XonlyPublicKey(PublicKey.fromHex("0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"))
+        val (tweakedKey, parity) = internalPubkey.outputKey(Crypto.TaprootTweak.ScriptTweak(merkleRoot))
+
+        val swapInTx = Transaction(
+            version = 2,
+            txIn = listOf(),
+            txOut = listOf(TxOut(Satoshi(10000), listOf(OP_1, OP_PUSHDATA(tweakedKey)))),
+            lockTime = 0
+        )
+
+        // The transaction can be spent if the user and the server produce a signature.
+        run {
+            val tx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), sequence = TxIn.SEQUENCE_FINAL)),
+                txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
+                lockTime = 0
+            )
+            // we want to spend the left leave of the tree, so we provide the hash of the right leave (to be able to recompute the merkle root of the tree)
+            val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) +
+                    internalPubkey.value.toByteArray() +
+                    ScriptTree.hash(scriptTree.right).toByteArray()
+
+            val txHash = Transaction.hashForSigningSchnorr(tx, 0, swapInTx.txOut, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, Script.ExecutionData(null, ScriptTree.hash(scriptTree.left)))
+            val userSig = Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
+            val serverSig = Crypto.signSchnorr(txHash, serverPrivateKey, Crypto.SchnorrTweak.NoTweak)
+
+            val signedTx = tx.updateWitness(0, ScriptWitness.empty.push(serverSig).push(userSig).push(mutualScript).push(controlBlock))
+            Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+
+        // Or it can be spent with only the user's signature, after a delay.
+        run {
+            val tx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), sequence = refundDelay.toLong())),
+                txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
+                lockTime = 0
+            )
+            val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) +
+                    internalPubkey.value.toByteArray() +
+                    ScriptTree.hash(scriptTree.left).toByteArray()
+            val txHash = Transaction.hashForSigningSchnorr(tx, 0, swapInTx.txOut, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, Script.ExecutionData(null, ScriptTree.hash(scriptTree.right)))
+            val userSig = Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
+            val signedTx = tx.updateWitness(0, ScriptWitness.empty.push(userSig).push(refundScript).push(controlBlock))
+            Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+    }
+
+    @Test
+    fun `spend 2-of-2 swap-in taproot-musig2 version`() {
+        val userPrivateKey = PrivateKey(ByteArray(32) { 1 })
+        val serverPrivateKey = PrivateKey(ByteArray(32) { 2 })
+
+        val swapInProtocolMusig2 = SwapInProtocolMusig2(userPrivateKey.publicKey(), serverPrivateKey.publicKey(), 144)
+        val swapInTx = Transaction(
+            version = 2,
+            txIn = listOf(),
+            txOut = listOf(TxOut(Satoshi(10000), swapInProtocolMusig2.pubkeyScript)),
+            lockTime = 0
+        )
+
+        // The transaction can be spent if the user and the server produce a signature.
+        run {
+            val tx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), sequence = TxIn.SEQUENCE_FINAL)),
+                txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
+                lockTime = 0
+            )
+            // this is the beginning of an interactive musig2 signing session. if user and server are disconnected before they have exchanged partial
+            // signatures they will have to start again with fresh nonces
+            val commonPubKey = Musig2.keyAgg(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey())).Q.xOnly()
+            val userNonce = SecretNonce.generate(userPrivateKey, userPrivateKey.publicKey(), commonPubKey, null, null, randomBytes32())
+            val serverNonce = SecretNonce.generate(serverPrivateKey, serverPrivateKey.publicKey(), commonPubKey, null, null, randomBytes32())
+
+            val userSig = swapInProtocolMusig2.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce, serverNonce.publicNonce())
+            val serverSig = swapInProtocolMusig2.signSwapInputServer(tx, 0, swapInTx.txOut, userNonce.publicNonce(), serverPrivateKey, serverNonce)
+            val ctx = swapInProtocolMusig2.signingCtx(tx, 0, swapInTx.txOut, PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce.publicNonce())))
+            val commonSig = ctx.partialSigAgg(listOf(userSig, serverSig))
+            val signedTx = tx.updateWitness(0, ScriptWitness(listOf(commonSig)))
+            Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        }
+
+        // Or it can be spent with only the user's signature, after a delay.
+        run {
+            val tx = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), sequence = 144)),
+                txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
+                lockTime = 0
+            )
+            val sig = swapInProtocolMusig2.signSwapInputRefund(tx, 0, swapInTx.txOut, userPrivateKey)
+            val signedTx = tx.updateWitness(0, swapInProtocolMusig2.witnessRefund(sig))
+            Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
     }
 
