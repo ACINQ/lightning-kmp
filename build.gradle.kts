@@ -11,7 +11,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.6-SNAPSHOT"
+    version = "1.6-SWAPIN2-SNAPSHOT"
 
     repositories {
         // using the local maven repository with Kotlin Multi Platform can lead to build errors that are hard to diagnose.
@@ -27,8 +27,8 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
 
-    val bitcoinKmpVersion = "0.16.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
-    val secpJniJvmVersion = "0.13.0"
+    val bitcoinKmpVersion = "0.17.0-MUSIG2-SNAPSHOT" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
+    val secpJniJvmVersion = "0.14.0-MUSIG2-SNAPSHOT"
 
     val serializationVersion = "1.6.2"
     val coroutineVersion = "1.7.3"
