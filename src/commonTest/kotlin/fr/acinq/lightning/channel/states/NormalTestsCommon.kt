@@ -430,6 +430,21 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv UpdateAddHtlc -- zero-conf -- zero-reserve -- initiator`() {
+        val (alice0, bob0) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 10_000_000.sat, bobFundingAmount = 5_000_000.sat, alicePushAmount = 9_800_000_000.msat, zeroConf = true)
+        assertEquals(alice0.commitments.latest.fundingAmount, 15_000_000.sat)
+        assertEquals(alice0.commitments.latest.localCommit.spec.toLocal, 200_000_000.msat)
+        // If we applied the default 1% reserve, Alice's balance couldn't go below 150 000 sats.
+        // Alice still needs to pay the commit tx fees, so she cannot spend her entire balance.
+        val (nodes1, r, htlc) = addHtlc(160_000_000.msat, alice0, bob0)
+        val (alice2, bob2) = crossSign(nodes1.first, nodes1.second)
+        val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
+        val (bob4, alice4) = crossSign(bob3, alice3)
+        assertEquals(alice4.commitments.latest.localCommit.spec.toLocal, 40_000_000.msat)
+        assertEquals(bob4.commitments.latest.localCommit.spec.toRemote, 40_000_000.msat)
+    }
+
+    @Test
     fun `recv UpdateAddHtlc -- unexpected id`() {
         val (_, bob0) = reachNormal()
         val add = UpdateAddHtlc(bob0.channelId, 0, 15_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
@@ -1419,8 +1434,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(bob.commitments.copy(changes = bob.commitments.changes.copy(remoteChanges = bob.commitments.changes.remoteChanges.copy(proposed = bob.commitments.changes.remoteChanges.proposed + fee2))), bob2.commitments)
     }
 
-    // TODO: restore this test once we take the reserve into account (see canReceiveFee)
-    @Ignore
+    @Test
     fun `recv UpdateFee -- sender cannot afford it`() {
         val (alice, bob) = reachNormal()
         // We put all the balance on Bob's side, so that Alice cannot afford a feerate increase.

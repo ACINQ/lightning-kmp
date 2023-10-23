@@ -146,12 +146,12 @@ data class Commitment(
     val fundingAmount: Satoshi = commitInput.txOut.amount
 
     fun localChannelReserve(params: ChannelParams): Satoshi = when {
-        params.channelFeatures.hasFeature(Feature.ZeroReserveChannels) && !params.localParams.isInitiator -> 0.sat
+        params.channelFeatures.hasFeature(Feature.ZeroReserveChannels) -> 0.sat
         else -> (fundingAmount / 100).max(params.remoteParams.dustLimit)
     }
 
     fun remoteChannelReserve(params: ChannelParams): Satoshi = when {
-        params.channelFeatures.hasFeature(Feature.ZeroReserveChannels) && params.localParams.isInitiator -> 0.sat
+        params.channelFeatures.hasFeature(Feature.ZeroReserveChannels) -> 0.sat
         else -> (fundingAmount / 100).max(params.localParams.dustLimit)
     }
 
@@ -390,14 +390,7 @@ data class Commitment(
         // and it would be tricky to check if the conditions are met at signing
         // (it also means that we need to check the fee of the initial commitment tx somewhere)
         val fees = commitTxFee(params.localParams.dustLimit, reduced)
-        // TODO:
-        //  When migrating to the dual-funded model, we removed the explicit channel reserve from LocalParams.
-        //  For channels that were created before the splicing update, this can result in a mismatch where we think
-        //  the channel reserve is bigger than what is actually is, and incorrectly reject the remote update_fee.
-        //  We temporarily ignore the channel reserve to avoid unnecessary force-close.
-        //  We should restore the correct calculation that takes the reserve into account once all users have migrated.
-        // val missing = reduced.toRemote.truncateToSatoshi() - remoteChannelReserve(params) - fees
-        val missing = reduced.toRemote.truncateToSatoshi() - fees
+        val missing = reduced.toRemote.truncateToSatoshi() - remoteChannelReserve(params) - fees
         return if (missing < 0.sat) {
             Either.Left(CannotAffordFees(params.channelId, -missing, remoteChannelReserve(params), fees))
         } else {
@@ -515,11 +508,11 @@ data class FullCommitment(
     val fundingTxId: ByteVector32 = commitInput.outPoint.txid
     val fundingAmount = commitInput.txOut.amount
     val localChannelReserve = when {
-        params.channelFeatures.hasFeature(Feature.ZeroReserveChannels) && !params.localParams.isInitiator -> 0.sat
+        params.channelFeatures.hasFeature(Feature.ZeroReserveChannels) -> 0.sat
         else -> (fundingAmount / 100).max(params.remoteParams.dustLimit)
     }
     val remoteChannelReserve = when {
-        params.channelFeatures.hasFeature(Feature.ZeroReserveChannels) && params.localParams.isInitiator -> 0.sat
+        params.channelFeatures.hasFeature(Feature.ZeroReserveChannels) -> 0.sat
         else -> (fundingAmount / 100).max(params.localParams.dustLimit)
     }
 }
