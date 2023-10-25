@@ -205,7 +205,8 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         ): Either<FundingContributionFailure, FundingContributions> {
             walletInputs.forEach { (tx, txOutput) ->
                 if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
-                if (tx.txOut[txOutput].amount < params.dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, params.dustLimit))
+                val dustLimit = Transactions.dustLimit(tx.txOut[txOutput].publicKeyScript)
+                if (tx.txOut[txOutput].amount < dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, dustLimit))
                 if (Transaction.write(tx.stripInputWitnesses()).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(tx))
             }
             val previousFundingAmount = sharedUtxo?.second?.fundingAmount ?: 0.sat
@@ -775,11 +776,11 @@ data class InteractiveTxSigningSession(
                 val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingKey.publicKey(), fundingParams.remoteFundingPubkey, localSigOfLocalTx, remoteCommitSig.signature)
                 when (Transactions.checkSpendable(signedLocalCommitTx)) {
                     is Try.Failure -> {
-                        logger.info { "interactiveTxSession=$this"}
-                        logger.info { "channelParams=$channelParams"}
-                        logger.info { "fundingKey=${fundingKey.publicKey()}"}
-                        logger.info { "localSigOfLocalTx=$localSigOfLocalTx"}
-                        logger.info { "signedLocalCommitTx=$signedLocalCommitTx"}
+                        logger.info { "interactiveTxSession=$this" }
+                        logger.info { "channelParams=$channelParams" }
+                        logger.info { "fundingKey=${fundingKey.publicKey()}" }
+                        logger.info { "localSigOfLocalTx=$localSigOfLocalTx" }
+                        logger.info { "signedLocalCommitTx=$signedLocalCommitTx" }
                         Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
                     }
                     is Try.Success -> {

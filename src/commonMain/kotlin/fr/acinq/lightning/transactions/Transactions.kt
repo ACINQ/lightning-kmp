@@ -181,6 +181,21 @@ object Transactions {
      */
     fun fee2rate(fee: Satoshi, weight: Int): FeeratePerKw = FeeratePerKw((fee * 1000L) / weight.toLong())
 
+    /** As defined in https://github.com/lightning/bolts/blob/master/03-transactions.md#dust-limits */
+    fun dustLimit(scriptPubKey: ByteVector): Satoshi {
+        return runTrying {
+            val script = Script.parse(scriptPubKey)
+            when {
+                Script.isPay2pkh(script) -> 546.sat
+                Script.isPay2sh(script) -> 540.sat
+                Script.isPay2wpkh(script) -> 294.sat
+                Script.isPay2wsh(script) -> 330.sat
+                Script.isNativeWitnessScript(script) -> 354.sat
+                else -> 546.sat
+            }
+        }.getOrElse { 546.sat }
+    }
+
     /** Offered HTLCs below this amount will be trimmed. */
     fun offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = dustLimit + weight2fee(spec.feerate, Commitments.HTLC_TIMEOUT_WEIGHT)
 
