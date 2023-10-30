@@ -9,7 +9,6 @@ import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -458,10 +457,10 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
                 lockTime = 0
             )
-            val userSig = Transactions.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPrivateKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
-            val serverWallet = TestConstants.Bob.keyManager.swapInOnChainWallet
-            val serverSig = Transactions.signSwapInputServer(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPublicKey, serverWallet.localServerPrivateKey(TestConstants.Alice.nodeParams.nodeId), serverWallet.refundDelay)
-            val witness = Scripts.witnessSwapIn2of2(userSig, userWallet.userPublicKey, serverSig, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val userSig = userWallet.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first())
+            val serverKey = TestConstants.Bob.keyManager.swapInOnChainWallet.localServerPrivateKey(TestConstants.Alice.nodeParams.nodeId)
+            val serverSig = userWallet.swapInProtocol.signSwapInputServer(fundingTx, 0, swapInTx.txOut.first(), serverKey)
+            val witness = userWallet.swapInProtocol.witness(userSig, serverSig)
             val signedTx = fundingTx.updateWitness(0, witness)
             Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
@@ -473,8 +472,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
                 lockTime = 0
             )
-            val userSig = Transactions.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first(), userWallet.userPrivateKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
-            val witness = Scripts.witnessSwapIn2of2Refund(userSig, userWallet.userPublicKey, userWallet.remoteServerPublicKey, userWallet.refundDelay)
+            val userSig = userWallet.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first())
+            val witness = userWallet.swapInProtocol.witnessRefund(userSig)
             val signedTx = fundingTx.updateWitness(0, witness)
             Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
@@ -484,10 +483,10 @@ class TransactionsTestsCommon : LightningTestSuite() {
     fun `swap-in input weight`() {
         val pubkey = randomKey().publicKey()
         // DER-encoded ECDSA signatures usually take up to 72 bytes.
-        val sig = randomBytes(72).toByteVector()
+        val sig = ByteVector64.fromValidHex("90b658d172a51f1b3f1a2becd30942397f5df97da8cd2c026854607e955ad815ccfd87d366e348acc32aaf15ff45263aebbb7ecc913a0e5999133f447aee828c")
         val tx = Transaction(2, listOf(TxIn(OutPoint(ByteVector32.Zeroes, 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
-        val redeemScript = Scripts.swapIn2of2(pubkey, pubkey, 144)
-        val witness = ScriptWitness(listOf(sig, sig, write(redeemScript).byteVector()))
+        val swapInProtocol = SwapInProtocol(pubkey, pubkey, 144)
+        val witness = swapInProtocol.witness(sig, sig)
         val swapInput = TxIn(OutPoint(ByteVector32.Zeroes, 3), ByteVector.empty, 0, witness)
         val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))
         val inputWeight = txWithAdditionalInput.weight() - tx.weight()
