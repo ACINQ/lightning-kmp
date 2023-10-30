@@ -11,6 +11,7 @@ import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.DirectedHtlc
 import fr.acinq.lightning.transactions.Scripts
+import fr.acinq.lightning.transactions.SwapInProtocol
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -351,14 +352,18 @@ data class SharedTransaction(
         val swapUserSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
             localInputs
                 .find { txIn.outPoint == it.outPoint }
-                ?.let { input -> Transactions.signSwapInputUser(unsignedTx, i, input.txOut, keyManager.swapInOnChainWallet.userPrivateKey, keyManager.swapInOnChainWallet.remoteServerPublicKey, keyManager.swapInOnChainWallet.refundDelay) }
+                ?.let { input -> keyManager.swapInOnChainWallet.signSwapInputUser(unsignedTx, i, input.txOut) }
         }.filterNotNull()
         // If the remote is swapping funds in, they'll need our partial signatures to finalize their witness.
         val swapServerSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
             remoteInputs
                 .filterIsInstance<InteractiveTxInput.RemoteSwapIn>()
                 .find { txIn.outPoint == it.outPoint }
-                ?.let { input -> Transactions.signSwapInputServer(unsignedTx, i, input.txOut, input.userKey, keyManager.swapInOnChainWallet.localServerPrivateKey(remoteNodeId), keyManager.swapInOnChainWallet.refundDelay) }
+                ?.let { input ->
+                    val serverKey = keyManager.swapInOnChainWallet.localServerPrivateKey(remoteNodeId)
+                    val swapInProtocol = SwapInProtocol(input.userKey, serverKey.publicKey(), input.refundDelay)
+                    swapInProtocol.signSwapInputServer(unsignedTx, i, input.txOut, serverKey)
+                }
         }.filterNotNull()
         return PartiallySignedSharedTransaction(this, TxSignatures(fundingParams.channelId, unsignedTx, listOf(), sharedSig, swapUserSigs, swapServerSigs))
     }
@@ -410,13 +415,15 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
         val localOnlyTxIn = tx.localOnlyInputs().sortedBy { i -> i.serialId }.zip(localSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong(), w)) }
         val localSwapTxIn = tx.localSwapInputs().sortedBy { i -> i.serialId }.zip(localSigs.swapInUserSigs.zip(remoteSigs.swapInServerSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
-            val witness = Scripts.witnessSwapIn2of2(userSig, i.userKey, serverSig, i.serverKey, i.refundDelay)
+            val swapInProtocol = SwapInProtocol(i.userKey, i.serverKey, i.refundDelay)
+            val witness = swapInProtocol.witness(userSig, serverSig)
             Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong(), witness))
         }
         val remoteOnlyTxIn = tx.remoteOnlyInputs().sortedBy { i -> i.serialId }.zip(remoteSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), w)) }
         val remoteSwapTxIn = tx.remoteSwapInputs().sortedBy { i -> i.serialId }.zip(remoteSigs.swapInUserSigs.zip(localSigs.swapInServerSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
-            val witness = Scripts.witnessSwapIn2of2(userSig, i.userKey, serverSig, i.serverKey, i.refundDelay)
+            val swapInProtocol = SwapInProtocol(i.userKey, i.serverKey, i.refundDelay)
+            val witness = swapInProtocol.witness(userSig, serverSig)
             Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), witness))
         }
         val inputs = (sharedTxIn + localOnlyTxIn + localSwapTxIn + remoteOnlyTxIn + remoteSwapTxIn).sortedBy { (serialId, _) -> serialId }.map { (_, i) -> i }
