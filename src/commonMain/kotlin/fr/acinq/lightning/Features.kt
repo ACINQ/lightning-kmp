@@ -242,6 +242,12 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
+    @Serializable
+    object OnTheFlyFunding : Feature() {
+        override val rfcName get() = "on_the_fly_funding"
+        override val mandatory get() = 260
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
 }
 
 @Serializable
@@ -320,6 +326,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ChannelBackupClient,
             Feature.ChannelBackupProvider,
             Feature.ExperimentalSplice,
+            Feature.OnTheFlyFunding,
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())

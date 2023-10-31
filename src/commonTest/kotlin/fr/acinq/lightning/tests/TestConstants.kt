@@ -70,6 +70,7 @@ object TestConstants {
                 Feature.WakeUpNotificationProvider to FeatureSupport.Optional,
                 Feature.PayToOpenProvider to FeatureSupport.Optional,
                 Feature.ChannelBackupProvider to FeatureSupport.Optional,
+                Feature.OnTheFlyFunding to FeatureSupport.Optional,
             ),
             dustLimit = 1_100.sat,
             maxRemoteDustLimit = 1_500.sat,
