@@ -8,6 +8,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.channel.OnTheFlyFunding
 import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.utils.*
 
@@ -61,6 +62,17 @@ sealed class ChannelTlv : Tlv {
         override fun write(out: Output) = Unit
 
         override fun read(input: Input): RequireConfirmedInputsTlv = this
+    }
+
+    /** This field is provided when the sender will deduce funding fees from future HTLCs forwarded on that channel. */
+    data class FundingFee(val amount: MilliSatoshi) : ChannelTlv() {
+        override val tag: Long get() = FundingFee.tag
+        override fun write(out: Output) = LightningCodecs.writeU64(amount.toLong(), out)
+
+        companion object : TlvValueReader<FundingFee> {
+            const val tag: Long = 65537
+            override fun read(input: Input): FundingFee = FundingFee(LightningCodecs.u64(input).msat)
+        }
     }
 
     data class OriginTlv(val origin: Origin) : ChannelTlv() {
@@ -162,6 +174,22 @@ sealed class ChannelReadyTlv : Tlv {
     }
 }
 
+sealed class UpdateAddHtlcTlv : Tlv {
+    /**
+     * This field is provided when the sender deduced a fee from the HTLC amount.
+     * This fee usually matches a funding transaction they made to provide us with more inbound liquidity.
+     */
+    data class FundingFee(val amount: MilliSatoshi) : UpdateAddHtlcTlv() {
+        override val tag: Long get() = FundingFee.tag
+        override fun write(out: Output) = LightningCodecs.writeU64(amount.toLong(), out)
+
+        companion object : TlvValueReader<FundingFee> {
+            const val tag: Long = 65537
+            override fun read(input: Input): FundingFee = FundingFee(LightningCodecs.u64(input).msat)
+        }
+    }
+}
+
 sealed class CommitSigTlv : Tlv {
     data class ChannelData(val ecb: EncryptedChannelData) : CommitSigTlv() {
         override val tag: Long get() = ChannelData.tag
@@ -223,6 +251,46 @@ sealed class RevokeAndAckTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
+
+sealed class ProposeFundingHtlcTlv : Tlv {
+    data class FundingRates(val rates: OnTheFlyFunding.FundingRates) : ProposeFundingHtlcTlv() {
+        override val tag: Long get() = FundingRates.tag
+        override fun write(out: Output) = rates.write(out)
+
+        companion object : TlvValueReader<FundingRates> {
+            const val tag: Long = 0
+            override fun read(input: Input): FundingRates = FundingRates(rates = OnTheFlyFunding.FundingRates.read(input))
+        }
+    }
+}
+
+sealed class AcceptFundingHtlcsTlv : Tlv {
+    data class FundingRates(val rates: OnTheFlyFunding.FundingRates) : AcceptFundingHtlcsTlv() {
+        override val tag: Long get() = FundingRates.tag
+        override fun write(out: Output) = rates.write(out)
+
+        companion object : TlvValueReader<FundingRates> {
+            const val tag: Long = 0
+            override fun read(input: Input): FundingRates = FundingRates(rates = OnTheFlyFunding.FundingRates.read(input))
+        }
+    }
+
+    data class ProposedHtlcs(val paymentHashes: List<ByteVector32>) : AcceptFundingHtlcsTlv() {
+        override val tag: Long get() = ProposedHtlcs.tag
+        override fun write(out: Output) {
+            paymentHashes.forEach { h -> LightningCodecs.writeBytes(h, out) }
+        }
+
+        companion object : TlvValueReader<ProposedHtlcs> {
+            const val tag: Long = 1
+            override fun read(input: Input): ProposedHtlcs {
+                val count = input.availableBytes / 32
+                val paymentHashes = (1..count).map { LightningCodecs.bytes(input, 32).byteVector32() }
+                return ProposedHtlcs(paymentHashes)
+            }
         }
     }
 }

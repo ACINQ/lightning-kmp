@@ -16,6 +16,7 @@
     ClosingSignedSerializer::class,
     SatoshiKSerializer::class,
     UpdateAddHtlcSerializer::class,
+    UpdateAddHtlcTlvSerializer::class,
     CommitSigSerializer::class,
     EncryptedChannelDataSerializer::class,
     ChannelReestablishDataSerializer::class,
@@ -76,6 +77,12 @@ object ChannelAnnouncementSerializer
 
 @Serializer(forClass = UpdateAddHtlc::class)
 object UpdateAddHtlcSerializer
+
+@Serializer(forClass = UpdateAddHtlcTlv.FundingFee::class)
+object UpdateAddHtlcTlvFundingFeeSerializer
+
+@Serializer(forClass = UpdateAddHtlcTlv::class)
+object UpdateAddHtlcTlvSerializer
 
 @Serializer(forClass = UpdateFulfillHtlc::class)
 object UpdateFulfillHtlcSerializer

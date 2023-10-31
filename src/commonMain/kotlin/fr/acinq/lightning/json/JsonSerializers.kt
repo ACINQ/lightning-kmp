@@ -67,6 +67,8 @@
     JsonSerializers.ShutdownSerializer::class,
     JsonSerializers.ClosingSignedSerializer::class,
     JsonSerializers.UpdateAddHtlcSerializer::class,
+    JsonSerializers.UpdateAddHtlcTlvFundingFeeSerializer::class,
+    JsonSerializers.UpdateAddHtlcTlvSerializer::class,
     JsonSerializers.CommitSigSerializer::class,
     JsonSerializers.EncryptedChannelDataSerializer::class,
     JsonSerializers.ChannelReestablishDataSerializer::class,
@@ -439,6 +441,12 @@ object JsonSerializers {
 
     @Serializer(forClass = UpdateAddHtlc::class)
     object UpdateAddHtlcSerializer
+
+    @Serializer(forClass = UpdateAddHtlcTlv.FundingFee::class)
+    object UpdateAddHtlcTlvFundingFeeSerializer
+
+    @Serializer(forClass = UpdateAddHtlcTlv::class)
+    object UpdateAddHtlcTlvSerializer
 
     @Serializer(forClass = UpdateFulfillHtlc::class)
     object UpdateFulfillHtlcSerializer

@@ -46,6 +46,7 @@ object Serialization {
             subclass(ChannelReadyTlvShortChannelIdTlvSerializer)
             subclass(ClosingSignedTlvFeeRangeSerializer)
             subclass(ShutdownTlvChannelDataSerializer)
+            subclass(UpdateAddHtlcTlvFundingFeeSerializer)
             subclass(GenericTlvSerializer)
         }
     }
