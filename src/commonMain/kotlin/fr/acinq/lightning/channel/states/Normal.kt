@@ -31,9 +31,18 @@ data class Normal(
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        if (cmd is ChannelCommand.ForbiddenDuringSplice && spliceStatus !is SpliceStatus.None) {
-            val error = ForbiddenDuringSplice(channelId, cmd::class.simpleName)
-            return handleCommandError(cmd, error, channelUpdate)
+        val forbiddenPreSplice = cmd is ChannelCommand.ForbiddenDuringQuiescence && spliceStatus is QuiescenceNegotiation
+        val forbiddenDuringSplice = cmd is ChannelCommand.ForbiddenDuringSplice && spliceStatus is QuiescentSpliceStatus
+        if (forbiddenPreSplice || forbiddenDuringSplice) {
+            return when (cmd) {
+                is ChannelCommand.Htlc.Settlement -> {
+                    // Htlc settlement commands are ignored and will be replayed when the splice completes.
+                    // This could create issues if we're keeping htlcs that should be settled pending for too long, as they could timeout.
+                    logger.warning { "ignoring ${cmd::class.simpleName} for htlc #${cmd.id} during splice: will be replayed once splice is complete" }
+                    Pair(this@Normal, listOf())
+                }
+                else -> handleCommandError(cmd, ForbiddenDuringSplice(channelId, cmd::class.simpleName), channelUpdate)
+            }
         }
         return when (cmd) {
             is ChannelCommand.Htlc.Add -> {
@@ -100,45 +109,10 @@ data class Normal(
             is ChannelCommand.Funding.BumpFundingFee -> unhandled(cmd)
             is ChannelCommand.Commitment.Splice.Request -> when (spliceStatus) {
                 is SpliceStatus.None -> {
-                    if (commitments.isIdle()) {
-                        val parentCommitment = commitments.active.first()
-                        val fundingContribution = FundingContributions.computeSpliceContribution(
-                            isInitiator = true,
-                            commitment = parentCommitment,
-                            walletInputs = cmd.spliceIn?.walletInputs ?: emptyList(),
-                            localOutputs = cmd.spliceOutputs,
-                            targetFeerate = cmd.feerate
-                        )
-                        if (fundingContribution < 0.sat && parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < parentCommitment.localChannelReserve(commitments.params)) {
-                            logger.warning { "cannot do splice: insufficient funds" }
-                            cmd.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
-                            Pair(this@Normal, emptyList())
-                        } else if (cmd.spliceOut?.scriptPubKey?.let { Helpers.Closing.isValidFinalScriptPubkey(it, allowAnySegwit = true) } == false) {
-                            logger.warning { "cannot do splice: invalid splice-out script" }
-                            cmd.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidSpliceOutPubKeyScript)
-                            Pair(this@Normal, emptyList())
-                        } else if (cmd.requestRemoteFunding?.let { r -> r.rate.fees(cmd.feerate, r.fundingAmount, r.fundingAmount).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() } == false) {
-                            val missing = cmd.requestRemoteFunding.let { r -> r.rate.fees(cmd.feerate, r.fundingAmount, r.fundingAmount).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
-                            logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
-                            cmd.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
-                            Pair(this@Normal, emptyList())
-                        } else {
-                            val spliceInit = SpliceInit(
-                                channelId,
-                                fundingContribution = fundingContribution,
-                                lockTime = currentBlockHeight.toLong(),
-                                feerate = cmd.feerate,
-                                fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
-                                pushAmount = cmd.pushAmount,
-                                requestFunds = cmd.requestRemoteFunding?.requestFunds,
-                            )
-                            logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount} requesting ${cmd.requestRemoteFunding?.fundingAmount ?: 0.sat} from our peer" }
-                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(cmd, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
-                        }
+                    if (commitments.localIsQuiescent()) {
+                        Pair(this@Normal.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)), listOf(ChannelAction.Message.Send(Stfu(channelId, initiator = true))))
                     } else {
-                        logger.warning { "cannot initiate splice, channel not idle" }
-                        cmd.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.ChannelNotIdle)
-                        Pair(this@Normal, emptyList())
+                        Pair(this@Normal.copy(spliceStatus = SpliceStatus.QuiescenceRequested(cmd)), emptyList())
                     }
                 }
                 else -> {
@@ -148,11 +122,18 @@ data class Normal(
                 }
             }
             is ChannelCommand.MessageReceived -> when {
-                cmd.message is ForbiddenMessageDuringSplice && spliceStatus !is SpliceStatus.None && spliceStatus !is SpliceStatus.Requested -> {
-                    // In case of a race between our splice_init and a forbidden message from our peer, we accept their message, because
-                    // we know they are going to reject our splice attempt
-                    val error = ForbiddenDuringSplice(channelId, cmd.message::class.simpleName)
-                    handleLocalError(cmd, error)
+                cmd.message is ForbiddenMessageDuringSplice && spliceStatus is QuiescentSpliceStatus -> {
+                    logger.warning { "received forbidden message ${cmd::class.simpleName} during splicing with status ${spliceStatus::class.simpleName}" }
+                    // Instead of force-closing (which would cost us on-chain fees), we try to resolve this issue by disconnecting.
+                    // This will abort the splice attempt if it hasn't been signed yet, and restore the channel to a clean state.
+                    // If the splice attempt was signed, it gives us an opportunity to re-exchange signatures on reconnection before
+                    // the forbidden message. It also provides the opportunity for our peer to update their node to get rid of that
+                    // bug and resume normal execution.
+                    val actions = buildList {
+                        add(ChannelAction.Message.Send(Warning(channelId, ForbiddenDuringSplice(channelId, cmd.message::class.simpleName).message)))
+                        add(ChannelAction.Disconnect)
+                    }
+                    Pair(this@Normal, actions)
                 }
                 else -> when (cmd.message) {
                     is UpdateAddHtlc -> when (val result = commitments.receiveAdd(cmd.message)) {
@@ -216,12 +197,24 @@ data class Normal(
                                 is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, channelKeys(), logger)) {
                                     is Either.Left -> handleLocalError(cmd, result.value)
                                     is Either.Right -> {
-                                        val nextState = this@Normal.copy(commitments = result.value.first)
+                                        val commitments1 = result.value.first
+                                        val spliceStatus1 = when {
+                                            spliceStatus is SpliceStatus.QuiescenceRequested && commitments1.localIsQuiescent() -> SpliceStatus.InitiatorQuiescent(spliceStatus.command)
+                                            spliceStatus is SpliceStatus.ReceivedStfu && commitments1.localIsQuiescent() -> SpliceStatus.NonInitiatorQuiescent
+                                            else -> spliceStatus
+                                        }
+                                        val nextState = this@Normal.copy(commitments = commitments1, spliceStatus = spliceStatus1)
                                         val actions = mutableListOf<ChannelAction>()
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         actions.add(ChannelAction.Message.Send(result.value.second))
-                                        if (result.value.first.changes.localHasChanges()) {
+                                        if (commitments1.changes.localHasChanges()) {
                                             actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
+                                        }
+                                        // If we're now quiescent, we may send our stfu message.
+                                        when {
+                                            spliceStatus is SpliceStatus.QuiescenceRequested && commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = true)))
+                                            spliceStatus is SpliceStatus.ReceivedStfu && commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = false)))
+                                            else -> {}
                                         }
                                         Pair(nextState, actions)
                                     }
@@ -353,9 +346,113 @@ data class Normal(
                             }
                         }
                     }
+                    is Stfu -> when {
+                        localShutdown != null -> {
+                            logger.warning { "our peer sent stfu but we sent shutdown first" }
+                            // We don't need to do anything, they should accept our shutdown.
+                            Pair(this@Normal, listOf())
+                        }
+                        !commitments.remoteIsQuiescent() -> {
+                            logger.warning { "our peer sent stfu but is not quiescent" }
+                            val actions = buildList {
+                                add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceNotQuiescent(channelId).message)))
+                                add(ChannelAction.Disconnect)
+                            }
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                        }
+                        else -> when (spliceStatus) {
+                            is SpliceStatus.None -> {
+                                if (commitments.localIsQuiescent()) {
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent), listOf(ChannelAction.Message.Send(Stfu(channelId, initiator = false))))
+                                } else {
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.ReceivedStfu(cmd.message)), emptyList())
+                                }
+                            }
+                            is SpliceStatus.QuiescenceRequested -> {
+                                // We could keep track of our splice attempt and merge it with the remote splice instead of cancelling it.
+                                // But this is an edge case that should rarely occur, so it's probably not worth the additional complexity.
+                                logger.warning { "our peer initiated quiescence before us, cancelling our splice attempt" }
+                                spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.ConcurrentRemoteSplice)
+                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.ReceivedStfu(cmd.message)), emptyList())
+                            }
+                            is SpliceStatus.InitiatorQuiescent -> {
+                                // if both sides send stfu at the same time, the quiescence initiator is the channel initiator
+                                if (!cmd.message.initiator || commitments.params.localParams.isInitiator) {
+                                    if (commitments.isQuiescent()) {
+                                        val parentCommitment = commitments.active.first()
+                                        val fundingContribution = FundingContributions.computeSpliceContribution(
+                                            isInitiator = true,
+                                            commitment = parentCommitment,
+                                            walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
+                                            localOutputs = spliceStatus.command.spliceOutputs,
+                                            targetFeerate = spliceStatus.command.feerate
+                                        )
+                                        val commitTxFees = when {
+                                            commitments.params.localParams.isInitiator -> Transactions.commitTxFee(commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec)
+                                            else -> 0.sat
+                                        }
+                                        if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < parentCommitment.localChannelReserve(commitments.params).max(commitTxFees)) {
+                                            logger.warning { "cannot do splice: insufficient funds" }
+                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
+                                            val actions = buildList {
+                                                add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
+                                                add(ChannelAction.Disconnect)
+                                            }
+                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                                        } else if (spliceStatus.command.spliceOut?.scriptPubKey?.let { Helpers.Closing.isValidFinalScriptPubkey(it, allowAnySegwit = true) } == false) {
+                                            logger.warning { "cannot do splice: invalid splice-out script" }
+                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidSpliceOutPubKeyScript)
+                                            val actions = buildList {
+                                                add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
+                                                add(ChannelAction.Disconnect)
+                                            }
+                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                                        } else if (spliceStatus.command.requestRemoteFunding?.let { r -> r.rate.fees(spliceStatus.command.feerate, r.fundingAmount, r.fundingAmount).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() } == false) {
+                                            val missing = spliceStatus.command.requestRemoteFunding.let { r -> r.rate.fees(spliceStatus.command.feerate, r.fundingAmount, r.fundingAmount).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
+                                            logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
+                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
+                                            Pair(this@Normal, emptyList())
+                                        } else {
+                                            val spliceInit = SpliceInit(
+                                                channelId,
+                                                fundingContribution = fundingContribution,
+                                                lockTime = currentBlockHeight.toLong(),
+                                                feerate = spliceStatus.command.feerate,
+                                                fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
+                                                pushAmount = spliceStatus.command.pushAmount,
+                                                requestFunds = spliceStatus.command.requestRemoteFunding?.requestFunds,
+                                            )
+                                            logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
+                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(spliceStatus.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
+                                        }
+                                    } else {
+                                        logger.warning { "cannot initiate splice, channel not quiescent" }
+                                        spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.ChannelNotQuiescent)
+                                        val actions = buildList {
+                                            add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceNotQuiescent(channelId).message)))
+                                            add(ChannelAction.Disconnect)
+                                        }
+                                        Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                                    }
+                                } else {
+                                    logger.warning { "concurrent stfu received and our peer is the channel initiator, cancelling our splice attempt" }
+                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.ConcurrentRemoteSplice)
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent), emptyList())
+                                }
+                            }
+                            else -> {
+                                logger.warning { "ignoring duplicate stfu" }
+                                Pair(this@Normal, emptyList())
+                            }
+                        }
+                    }
                     is SpliceInit -> when (spliceStatus) {
-                        is SpliceStatus.None ->
-                            if (commitments.isIdle()) {
+                        is SpliceStatus.None -> {
+                            logger.warning { "rejecting splice attempt: quiescence not negotiated" }
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceNotQuiescent(channelId).message))))
+                        }
+                        is SpliceStatus.NonInitiatorQuiescent ->
+                            if (commitments.isQuiescent()) {
                                 logger.info { "accepting splice with remote.amount=${cmd.message.fundingContribution} remote.push=${cmd.message.pushAmount}" }
                                 val parentCommitment = commitments.active.first()
                                 val spliceAck = SpliceAck(
@@ -398,8 +495,8 @@ data class Normal(
                                 )
                                 Pair(nextState, listOf(ChannelAction.Message.Send(spliceAck)))
                             } else {
-                                logger.info { "rejecting splice attempt: channel is not idle" }
-                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceChannelNotIdle(channelId).message))))
+                                logger.warning { "rejecting splice attempt: channel is not quiescent" }
+                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceNotQuiescent(channelId).message))))
                             }
                         is SpliceStatus.Aborted -> {
                             logger.info { "rejecting splice attempt: our previous tx_abort was not acked" }
@@ -615,42 +712,55 @@ data class Normal(
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer rejected our splice request: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
                             spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
-                            Pair(
-                                this@Normal.copy(spliceStatus = SpliceStatus.None),
-                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
-                            )
+                            val actions = buildList {
+                                add(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                                addAll(endQuiescence())
+                            }
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
                         }
                         is SpliceStatus.InProgress -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
                             spliceStatus.replyTo?.complete(ChannelCommand.Commitment.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
-                            Pair(
-                                this@Normal.copy(spliceStatus = SpliceStatus.None),
-                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
-                            )
+                            val actions = buildList {
+                                add(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                                addAll(endQuiescence())
+                            }
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
                         }
                         is SpliceStatus.WaitingForSigs -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
                             val nextState = this@Normal.copy(spliceStatus = SpliceStatus.None)
-                            val actions = listOf(
-                                ChannelAction.Storage.StoreState(nextState),
-                                ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message))
-                            )
+                            val actions = buildList {
+                                add(ChannelAction.Storage.StoreState(nextState))
+                                add(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                                addAll(endQuiescence())
+                            }
                             Pair(nextState, actions)
                         }
                         is SpliceStatus.Aborted -> {
                             logger.info { "our peer acked our previous tx_abort" }
-                            Pair(
-                                this@Normal.copy(spliceStatus = SpliceStatus.None),
-                                emptyList()
-                            )
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), endQuiescence())
                         }
                         is SpliceStatus.None -> {
                             logger.info { "our peer wants to abort the splice, but we've already negotiated a splice transaction: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
                             // We ack their tx_abort but we keep monitoring the funding transaction until it's confirmed or double-spent.
-                            Pair(
-                                this@Normal,
-                                listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
-                            )
+                            Pair(this@Normal, listOf(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message))))
+                        }
+                        is SpliceStatus.NonInitiatorQuiescent -> {
+                            logger.info { "our peer aborted their own splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
+                            val actions = buildList {
+                                add(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
+                                addAll(endQuiescence())
+                            }
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                        }
+                        is QuiescenceNegotiation -> {
+                            logger.info { "our peer aborted the splice during quiescence negotiation, disconnecting: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
+                            val actions = buildList {
+                                add(ChannelAction.Message.Send(Warning(channelId, UnexpectedInteractiveTxMessage(channelId, cmd.message).message)))
+                                add(ChannelAction.Disconnect)
+                            }
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
                         }
                     }
                     is SpliceLocked -> {
@@ -707,6 +817,12 @@ data class Normal(
                         SpliceStatus.None
                     }
                     is SpliceStatus.WaitingForSigs -> spliceStatus
+                    is SpliceStatus.NonInitiatorQuiescent -> SpliceStatus.None
+                    is QuiescenceNegotiation.NonInitiator -> SpliceStatus.None
+                    is QuiescenceNegotiation.Initiator -> {
+                        spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.Disconnected)
+                        SpliceStatus.None
+                    }
                 }
                 // reset the commit_sig batch
                 sigStash = emptyList()
@@ -780,6 +896,7 @@ data class Normal(
                 val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId)
                 add(ChannelAction.Message.Send(spliceLocked))
             }
+            addAll(endQuiescence())
         }
         return Pair(nextState, actions)
     }
@@ -812,5 +929,9 @@ data class Normal(
                 Pair(this@Normal.copy(commitments = commitments1), actions)
             }
         }
+    }
+
+    private fun endQuiescence(): List<ChannelAction> {
+        return commitments.reprocessIncomingHtlcs()
     }
 }

@@ -4,7 +4,6 @@ import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
@@ -428,16 +427,9 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
             // When a channel is reestablished after a wallet restarts, we need to reprocess incoming HTLCs that may have been only partially processed
             // (either because they didn't reach the payment handler, or because the payment handler response didn't reach the channel).
             // Otherwise these HTLCs will stay in our commitment until they timeout and our peer closes the channel.
-            //
-            // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been forwarded to the payment handler).
-            // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when we subsequently sign it.
-            // That's why we need to look in *their* commitment with direction=OUT.
-            //
-            // We also need to filter out htlcs that we already settled and signed (the settlement messages are being retransmitted).
-            val alreadySettled = commitments1.changes.localChanges.signed.filterIsInstance<HtlcSettlementMessage>().map { it.id }.toSet()
-            val htlcsToReprocess = commitments1.latest.remoteCommit.spec.htlcs.outgoings().filter { !alreadySettled.contains(it.id) }
-            logger.debug { "re-processing signed IN: $htlcsToReprocess" }
-            sendQueue.addAll(htlcsToReprocess.map { ChannelAction.ProcessIncomingHtlc(it) })
+            val htlcsToReprocess = commitments1.reprocessIncomingHtlcs()
+            logger.debug { "re-processing signed IN: ${htlcsToReprocess.map { it.add.id }.joinToString()}" }
+            sendQueue.addAll(htlcsToReprocess)
 
             return Pair(commitments1, sendQueue)
         }

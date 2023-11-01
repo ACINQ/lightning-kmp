@@ -331,6 +331,22 @@ class SyncingTestsCommon : LightningTestSuite() {
         actions1.hasOutgoingMessage<Error>()
     }
 
+    @Test
+    fun `recv Disconnect after adding htlc but before processing settlement`() {
+        val (alice, bob) = init()
+        val (nodes1, _, add) = TestsHelper.addHtlc(55_000_000.msat, payer = bob, payee = alice)
+        val (bob1, alice1) = nodes1
+        val (bob2, alice2) = TestsHelper.crossSign(bob1, alice1)
+
+        // Disconnect before Alice's payment handler processes the htlc.
+        val (alice3, _, reestablish) = disconnect(alice2, bob2)
+
+        // After reconnecting, Alice forwards the htlc again to her payment handler.
+        val (_, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(reestablish.second))
+        val processIncomingHtlc = actionsAlice4.find<ChannelAction.ProcessIncomingHtlc>()
+        assertEquals(processIncomingHtlc.add, add)
+    }
+
     companion object {
         fun init(): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             // NB: we disable channel backups to ensure Bob sends his channel_reestablish on reconnection.

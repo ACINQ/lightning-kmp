@@ -1,7 +1,7 @@
 package fr.acinq.lightning.io.peer
 
-import fr.acinq.lightning.channel.states.Offline
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
+import fr.acinq.lightning.channel.states.Offline
 import fr.acinq.lightning.io.Disconnected
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.newPeer

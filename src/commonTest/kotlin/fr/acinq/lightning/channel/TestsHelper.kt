@@ -108,11 +108,15 @@ data class LNChannel<out S : ChannelState>(
     // we check that serialization works by checking that deserialize(serialize(state)) == state
     private fun checkSerialization(state: PersistedChannelState) {
 
-        // We don't persist unsigned funding RBF attempts.
-        fun removeRbfAttempt(state: PersistedChannelState): PersistedChannelState = when (state) {
+        // We don't persist unsigned funding RBF or splice attempts.
+        fun removeTemporaryStatuses(state: PersistedChannelState): PersistedChannelState = when (state) {
             is WaitForFundingConfirmed -> when (state.rbfStatus) {
                 is RbfStatus.WaitingForSigs -> state
                 else -> state.copy(rbfStatus = RbfStatus.None)
+            }
+            is Normal -> when (state.spliceStatus) {
+                is SpliceStatus.WaitingForSigs -> state
+                else -> state.copy(spliceStatus = SpliceStatus.None)
             }
             else -> state
         }
@@ -120,7 +124,7 @@ data class LNChannel<out S : ChannelState>(
         val serialized = Serialization.serialize(state)
         val deserialized = Serialization.deserialize(serialized).value
 
-        assertEquals(removeRbfAttempt(state), deserialized, "serialization error")
+        assertEquals(removeTemporaryStatuses(state), deserialized, "serialization error")
     }
 
     private fun checkSerialization(actions: List<ChannelAction>) {

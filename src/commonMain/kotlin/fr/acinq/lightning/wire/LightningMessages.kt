@@ -861,6 +861,29 @@ data class ChannelReady(
     }
 }
 
+data class Stfu(
+    override val channelId: ByteVector32,
+    val initiator: Boolean
+) : SetupMessage, HasChannelId {
+    override val type: Long get() = Stfu.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeByte(if (initiator) 1 else 0, out)
+    }
+
+    companion object : LightningMessageReader<Stfu> {
+        const val type: Long = 2
+
+        override fun read(input: Input): Stfu {
+            return Stfu(
+                ByteVector32(LightningCodecs.bytes(input, 32)),
+                LightningCodecs.byte(input) == 1
+            )
+        }
+    }
+}
+
 data class SpliceInit(
     override val channelId: ByteVector32,
     val fundingContribution: Satoshi,

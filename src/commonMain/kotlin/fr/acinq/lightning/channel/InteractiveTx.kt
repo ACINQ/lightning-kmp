@@ -900,9 +900,30 @@ sealed class RbfStatus {
     object RbfAborted : RbfStatus()
 }
 
+/** We're waiting for the channel to be quiescent. */
+sealed class QuiescenceNegotiation : SpliceStatus() {
+    abstract class Initiator : QuiescenceNegotiation() {
+        abstract val command: ChannelCommand.Commitment.Splice.Request
+    }
+    abstract class NonInitiator : QuiescenceNegotiation()
+}
+
+/** The channel is quiescent and a splice attempt was initiated. */
+sealed class QuiescentSpliceStatus : SpliceStatus()
+
 sealed class SpliceStatus {
     object None : SpliceStatus()
-    data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : SpliceStatus()
+    /** We stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+    data class QuiescenceRequested(override val command: ChannelCommand.Commitment.Splice.Request) : QuiescenceNegotiation.Initiator()
+    /** Our updates have been added to the local and remote commitments, we wait for our peer to do the same. */
+    data class InitiatorQuiescent(override val command: ChannelCommand.Commitment.Splice.Request) : QuiescenceNegotiation.Initiator()
+    /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+    data class ReceivedStfu(val stfu: Stfu) : QuiescenceNegotiation.NonInitiator()
+    /** Our updates have been added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
+    object NonInitiatorQuiescent : QuiescentSpliceStatus()
+    /** We told our peer we want to splice funds in the channel. */
+    data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : QuiescentSpliceStatus()
+    /** We both agreed to splice and are building the splice transaction. */
     data class InProgress(
         val replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>?,
         val spliceSession: InteractiveTxSession,
@@ -910,7 +931,9 @@ sealed class SpliceStatus {
         val remotePushAmount: MilliSatoshi,
         val liquidityLease: LiquidityAds.Lease?,
         val origins: List<Origin.PayToOpenOrigin>
-    ) : SpliceStatus()
-    data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
-    object Aborted : SpliceStatus()
+    ) : QuiescentSpliceStatus()
+    /** The splice transaction has been negotiated, we're exchanging signatures. */
+    data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : QuiescentSpliceStatus()
+    /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
+    object Aborted : QuiescentSpliceStatus()
 }
