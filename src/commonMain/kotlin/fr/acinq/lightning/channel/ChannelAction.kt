@@ -129,5 +129,7 @@ sealed class ChannelAction {
     }
 
     data class EmitEvent(val event: ChannelEvents) : ChannelAction()
+
+    object Disconnect : ChannelAction()
     // @formatter:on
 }

@@ -62,10 +62,11 @@ sealed class ChannelCommand {
     data class WatchReceived(val watch: WatchEvent) : ChannelCommand()
 
     sealed interface ForbiddenDuringSplice
+    sealed interface ForbiddenDuringQuiescence
     sealed class Htlc : ChannelCommand() {
-        data class Add(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val paymentId: UUID, val commit: Boolean = false) : Htlc(), ForbiddenDuringSplice
+        data class Add(val amount: MilliSatoshi, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry, val onion: OnionRoutingPacket, val paymentId: UUID, val commit: Boolean = false) : Htlc(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
 
-        sealed class Settlement : Htlc(), ForbiddenDuringSplice {
+        sealed class Settlement : Htlc(), ForbiddenDuringSplice, ForbiddenDuringQuiescence {
             abstract val id: Long
 
             data class Fulfill(override val id: Long, val r: ByteVector32, val commit: Boolean = false) : Settlement()
@@ -81,8 +82,8 @@ sealed class ChannelCommand {
 
     sealed class Commitment : ChannelCommand() {
         object Sign : Commitment(), ForbiddenDuringSplice
-        data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice
-        data object CheckHtlcTimeout : Commitment()
+        data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
+        object CheckHtlcTimeout : Commitment()
         sealed class Splice : Commitment() {
             data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
@@ -116,7 +117,8 @@ sealed class ChannelCommand {
                     data object InsufficientFunds : Failure()
                     data object InvalidSpliceOutPubKeyScript : Failure()
                     data object SpliceAlreadyInProgress : Failure()
-                    data object ChannelNotIdle : Failure()
+                    data object ConcurrentRemoteSplice : Failure()
+                    data object ChannelNotQuiescent : Failure()
                     data class InvalidLiquidityAds(val reason: ChannelException) : Failure()
                     data class FundingFailure(val reason: FundingContributionFailure) : Failure()
                     data object CannotStartSession : Failure()
@@ -130,7 +132,7 @@ sealed class ChannelCommand {
     }
 
     sealed class Close : ChannelCommand() {
-        data class MutualClose(val scriptPubKey: ByteVector?, val feerates: ClosingFeerates?) : Close()
+        data class MutualClose(val scriptPubKey: ByteVector?, val feerates: ClosingFeerates?) : Close(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
         data object ForceClose : Close()
     }
 

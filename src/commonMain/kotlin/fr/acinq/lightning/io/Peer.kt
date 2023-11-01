@@ -782,6 +782,11 @@ class Peer(
                     }
 
                     is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
+
+                    is ChannelAction.Disconnect -> {
+                        logger.warning { "channel disconnected due to a protocol error" }
+                        disconnect()
+                    }
                 }
             }
         }

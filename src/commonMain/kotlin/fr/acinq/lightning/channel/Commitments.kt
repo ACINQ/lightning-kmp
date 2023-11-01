@@ -252,8 +252,6 @@ data class Commitment(
         return hasNoPendingHtlcs() && hasNoPendingFeeUpdate
     }
 
-    fun isIdle(changes: CommitmentChanges): Boolean = hasNoPendingHtlcs() && changes.localChanges.all.isEmpty() && changes.remoteChanges.all.isEmpty()
-
     fun timedOutOutgoingHtlcs(blockHeight: Long): Set<UpdateAddHtlc> {
         fun expired(add: UpdateAddHtlc) = blockHeight >= add.cltvExpiry.toLong()
 
@@ -599,14 +597,31 @@ data class Commitments(
     }
 
     // @formatter:off
+    fun localIsQuiescent(): Boolean = changes.localChanges.all.isEmpty()
+    fun remoteIsQuiescent(): Boolean = changes.remoteChanges.all.isEmpty()
+    fun isQuiescent(): Boolean = localIsQuiescent() && remoteIsQuiescent()
     // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-    fun isIdle(): Boolean = active.first().isIdle(changes)
     fun hasNoPendingHtlcsOrFeeUpdate(): Boolean = active.first().hasNoPendingHtlcsOrFeeUpdate(changes)
     fun timedOutOutgoingHtlcs(currentHeight: Long): Set<UpdateAddHtlc> = active.first().timedOutOutgoingHtlcs(currentHeight)
     fun almostTimedOutIncomingHtlcs(currentHeight: Long, fulfillSafety: CltvExpiryDelta): Set<UpdateAddHtlc> = active.first().almostTimedOutIncomingHtlcs(currentHeight, fulfillSafety, changes)
     fun getOutgoingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? = active.first().getOutgoingHtlcCrossSigned(htlcId)
     fun getIncomingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? = active.first().getIncomingHtlcCrossSigned(htlcId)
     // @formatter:on
+
+    /**
+     * Whenever we're not sure the `IncomingPaymentHandler` has received our previous `ChannelAction.ProcessIncomingHtlcs`,
+     * or when we may have ignored the responses from the `IncomingPaymentHandler` (eg. while quiescent or disconnected),
+     * we need to reprocess those incoming HTLCs.
+     */
+    fun reprocessIncomingHtlcs(): List<ChannelAction.ProcessIncomingHtlc> {
+        // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been forwarded to the payment handler).
+        // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when we subsequently sign it.
+        // That's why we need to look in *their* commitment with direction=OUT.
+        //
+        // We also need to filter out htlcs that we already settled and signed (the settlement messages are being retransmitted).
+        val alreadySettled = changes.localChanges.signed.filterIsInstance<HtlcSettlementMessage>().map { it.id }.toSet()
+        return latest.remoteCommit.spec.htlcs.outgoings().filter { !alreadySettled.contains(it.id) }.map { ChannelAction.ProcessIncomingHtlc(it) }
+    }
 
     fun sendAdd(cmd: ChannelCommand.Htlc.Add, paymentId: UUID, blockHeight: Long): Either<ChannelException, Pair<Commitments, UpdateAddHtlc>> {
         val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
