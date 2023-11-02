@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.SensitiveTaskEvents
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
