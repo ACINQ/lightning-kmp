@@ -78,10 +78,26 @@ sealed class ChannelState {
             is Syncing -> this@ChannelState.state
             else -> this@ChannelState
         }
+        maybeSignalSensitiveTask(oldState, newState)
         return when {
             // we only want to fire the PaymentSent event when we transition to Closing for the first time
             oldState is ChannelStateWithCommitments && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState, newState)
             else -> emptyList()
+        }
+    }
+
+    /** Some transitions imply that we are in the middle of tasks that may require some time. */
+    private fun ChannelContext.maybeSignalSensitiveTask(oldState: ChannelState, newState: ChannelState) {
+        val spliceStatusBefore = (oldState as? Normal)?.spliceStatus
+        val spliceStatusAfter = (newState as? Normal)?.spliceStatus
+        when {
+            spliceStatusBefore !is SpliceStatus.InProgress && spliceStatusAfter is SpliceStatus.InProgress -> // splice initiated
+                staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskStarted(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(spliceStatusAfter.spliceSession.fundingParams)))
+            spliceStatusBefore is SpliceStatus.InProgress && spliceStatusAfter !is SpliceStatus.WaitingForSigs -> // splice aborted before reaching signing phase
+                staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(spliceStatusBefore.spliceSession.fundingParams)))
+            spliceStatusBefore is SpliceStatus.WaitingForSigs && spliceStatusAfter !is SpliceStatus.WaitingForSigs -> // splice leaving signing phase (successfully or not)
+                staticParams.nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.InteractiveTx(spliceStatusBefore.session.fundingParams)))
+            else -> {}
         }
     }
 

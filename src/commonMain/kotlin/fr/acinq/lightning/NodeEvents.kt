@@ -2,6 +2,8 @@ package fr.acinq.lightning
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.lightning.channel.InteractiveTxParams
+import fr.acinq.lightning.channel.SharedFundingInput
 import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
@@ -39,6 +41,18 @@ sealed interface LiquidityEvents : NodeEvents {
     }
 
     data class ApprovalRequested(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val replyTo: CompletableDeferred<Boolean>) : LiquidityEvents
+}
+
+/** This is useful on iOS to ask the OS for time to finish some sensitive tasks. */
+sealed interface SensitiveTaskEvents : NodeEvents {
+    sealed class TaskIdentifier {
+        data class InteractiveTx(val channelId: ByteVector32, val fundingTxIndex: Long) : TaskIdentifier() {
+            constructor(fundingParams: InteractiveTxParams) : this(fundingParams.channelId, (fundingParams.sharedInput as? SharedFundingInput.Multisig2of2)?.fundingTxIndex?.let { it + 1 } ?: 0)
+        }
+    }
+    data class TaskStarted(val id: TaskIdentifier) : SensitiveTaskEvents
+    data class TaskEnded(val id: TaskIdentifier) : SensitiveTaskEvents
+
 }
 
 /** This will be emitted in a corner case where the user restores a wallet on an older version of the app, which is unable to read the channel data. */
