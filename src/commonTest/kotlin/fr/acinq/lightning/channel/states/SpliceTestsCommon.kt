@@ -11,6 +11,7 @@ import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.TestsHelper.fulfillHtlc
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
+import fr.acinq.lightning.channel.TestsHelper.useAlternativeCommitSig
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
@@ -825,6 +826,21 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `force-close -- latest active commitment -- alternative feerate`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, commitSigAlice, bob1, commitSigBob) = spliceOutWithoutSigs(alice, bob, 75_000.sat)
+        val (alice2, bob2) = exchangeSpliceSigs(alice1, commitSigAlice, bob1, commitSigBob)
+
+        // Bob force-closes using the latest active commitment and an optional feerate.
+        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), commitSigAlice.alternativeFeerateSigs.last())
+        val commitment = alice1.commitments.active.first()
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
+        assertIs<LNChannel<Closing>>(alice3)
+        actionsAlice3.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
+        handleRemoteClose(alice3, actionsAlice3, commitment, bobCommitTx)
+    }
+
+    @Test
     fun `force-close -- previous active commitment`() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1) = spliceOut(alice, bob, 75_000.sat)
@@ -833,6 +849,20 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(bob1.commitments.active.map { it.localCommit.publishableTxs.commitTx.tx }.toSet().size, 2)
         val bobCommitTx = bob1.commitments.active.last().localCommit.publishableTxs.commitTx.tx
         handlePreviousRemoteClose(alice1, bobCommitTx)
+    }
+
+    @Test
+    fun `force-close -- previous active commitment -- alternative feerate`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, commitSigAlice1, bob1, commitSigBob1) = spliceOutWithoutSigs(alice, bob, 75_000.sat)
+        val (alice2, bob2) = exchangeSpliceSigs(alice1, commitSigAlice1, bob1, commitSigBob1)
+        val (alice3, commitSigAlice3, bob3, commitSigBob3) = spliceOutWithoutSigs(alice2, bob2, 75_000.sat)
+        val (alice4, bob4) = exchangeSpliceSigs(alice3, commitSigAlice3, bob3, commitSigBob3)
+
+        // Bob force-closes using an older active commitment with an alternative feerate.
+        assertEquals(bob4.commitments.active.map { it.localCommit.publishableTxs.commitTx.tx }.toSet().size, 3)
+        val bobCommitTx = useAlternativeCommitSig(bob4, bob4.commitments.active[1], commitSigAlice1.alternativeFeerateSigs.first())
+        handlePreviousRemoteClose(alice4, bobCommitTx)
     }
 
     @Test
@@ -867,6 +897,23 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         // Bob force-closes using the revoked commitment.
         handleCurrentRevokedRemoteClose(alice3, bobCommitTx)
+    }
+
+    @Test
+    fun `force-close -- revoked latest active commitment -- alternative feerate`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, commitSigAlice, bob1, commitSigBob) = spliceOutWithoutSigs(alice, bob, 50_000.sat)
+        val (alice2, bob2) = exchangeSpliceSigs(alice1, commitSigAlice, bob1, commitSigBob)
+        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), commitSigAlice.alternativeFeerateSigs.first())
+
+        // Alice sends an HTLC to Bob, which revokes the previous commitment.
+        val (nodes3, _, _) = addHtlc(25_000_000.msat, alice2, bob2)
+        val (alice4, bob4) = crossSign(nodes3.first, nodes3.second, commitmentsCount = 2)
+        assertEquals(alice4.commitments.active.size, 2)
+        assertEquals(bob4.commitments.active.size, 2)
+
+        // Bob force-closes using the revoked commitment.
+        handleCurrentRevokedRemoteClose(alice4, bobCommitTx)
     }
 
     @Test
@@ -1142,7 +1189,6 @@ class SpliceTestsCommon : LightningTestSuite() {
         /** Full remote commit resolution from tx detection to channel close */
         private fun handleRemoteClose(channel1: LNChannel<Closing>, actions1: List<ChannelAction>, commitment: Commitment, remoteCommitTx: Transaction) {
             assertIs<Closing>(channel1.state)
-            assertEquals(commitment.remoteCommit.txid, remoteCommitTx.txid)
             assertEquals(0, commitment.remoteCommit.spec.htlcs.size, "this helper only supports remote-closing without htlcs")
 
             // Spend our outputs from the remote commitment.
@@ -1185,9 +1231,9 @@ class SpliceTestsCommon : LightningTestSuite() {
             val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice2.channelId, BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED, alice2.currentBlockHeight, 43, bobCommitTx)))
             assertIs<LNChannel<Closing>>(alice3)
             // Alice cleans up the commitments.
-            assertEquals(2, alice2.commitments.active.size)
+            assertTrue(alice2.commitments.active.size > 1)
             assertEquals(1, alice3.commitments.active.size)
-            assertEquals(alice3.commitments.active.first().fundingTxId, alice2.commitments.active.last().fundingTxId)
+            assertEquals(alice3.commitments.active.first().fundingTxId, bobCommitTx.txIn.first().outPoint.txid)
             // And processes the remote commit.
             actionsAlice3.doesNotHave<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
             handleRemoteClose(alice3, actionsAlice3, alice3.commitments.active.first(), bobCommitTx)

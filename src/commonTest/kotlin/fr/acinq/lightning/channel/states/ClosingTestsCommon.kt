@@ -22,6 +22,7 @@ import fr.acinq.lightning.channel.TestsHelper.mutualCloseAlice
 import fr.acinq.lightning.channel.TestsHelper.mutualCloseBob
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.TestsHelper.remoteClose
+import fr.acinq.lightning.channel.TestsHelper.useAlternativeCommitSig
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -707,30 +708,6 @@ class ClosingTestsCommon : LightningTestSuite() {
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
 
-    private fun useAlternativeSig(s: LNChannel<ChannelState>, alternative: CommitSigTlv.AlternativeFeerateSig): Transaction {
-        val channelKeys = s.commitments.params.localParams.channelKeys(s.ctx.keyManager)
-        val alternativeSpec = s.commitments.latest.localCommit.spec.copy(feerate = alternative.feerate)
-        val fundingTxIndex = s.commitments.latest.fundingTxIndex
-        val commitInput = s.commitments.latest.commitInput
-        val remoteFundingPubKey = s.commitments.latest.remoteFundingPubkey
-        val localPerCommitmentPoint = channelKeys.commitmentPoint(s.commitments.localCommitIndex)
-        val (localCommitTx, _) = Commitments.makeLocalTxs(
-            channelKeys,
-            s.commitments.localCommitIndex,
-            s.commitments.params.localParams,
-            s.commitments.params.remoteParams,
-            fundingTxIndex,
-            remoteFundingPubKey,
-            commitInput,
-            localPerCommitmentPoint,
-            alternativeSpec
-        )
-        val localSig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
-        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubKey, localSig, alternative.sig)
-        assertTrue(Transactions.checkSpendable(signedCommitTx).isSuccess)
-        return signedCommitTx.tx
-    }
-
     @Test
     fun `recv BITCOIN_TX_CONFIRMED -- remote commit -- alternative feerate`() {
         val (alice0, bob0) = reachNormal()
@@ -749,7 +726,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigAlice))
             val revBob = actionsBob6.hasOutgoingMessage<RevokeAndAck>()
             val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(revBob))
-            val alternativeCommitTx = useAlternativeSig(alice6, commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
             remoteClose(alternativeCommitTx, bob6)
         }
 
@@ -1015,7 +992,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
             val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
             val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
-            val alternativeCommitTx = useAlternativeSig(alice4, commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
             remoteClose(alternativeCommitTx, bob4)
         }
 

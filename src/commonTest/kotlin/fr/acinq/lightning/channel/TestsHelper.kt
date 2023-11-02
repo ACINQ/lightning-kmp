@@ -358,6 +358,30 @@ object TestsHelper {
         return s1 to remoteCommitPublished
     }
 
+    fun useAlternativeCommitSig(s: LNChannel<ChannelState>, commitment: Commitment, alternative: CommitSigTlv.AlternativeFeerateSig): Transaction {
+        val channelKeys = s.commitments.params.localParams.channelKeys(s.ctx.keyManager)
+        val alternativeSpec = commitment.localCommit.spec.copy(feerate = alternative.feerate)
+        val fundingTxIndex = commitment.fundingTxIndex
+        val commitInput = commitment.commitInput
+        val remoteFundingPubKey = commitment.remoteFundingPubkey
+        val localPerCommitmentPoint = channelKeys.commitmentPoint(commitment.localCommit.index)
+        val (localCommitTx, _) = Commitments.makeLocalTxs(
+            channelKeys,
+            commitment.localCommit.index,
+            s.commitments.params.localParams,
+            s.commitments.params.remoteParams,
+            fundingTxIndex,
+            remoteFundingPubKey,
+            commitInput,
+            localPerCommitmentPoint,
+            alternativeSpec
+        )
+        val localSig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
+        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubKey, localSig, alternative.sig)
+        assertTrue(Transactions.checkSpendable(signedCommitTx).isSuccess)
+        return signedCommitTx.tx
+    }
+
     fun signAndRevack(alice: LNChannel<ChannelState>, bob: LNChannel<ChannelState>): Pair<LNChannel<ChannelState>, LNChannel<ChannelState>> {
         val (alice1, actions1) = alice.process(ChannelCommand.Commitment.Sign)
         val commitSig = actions1.findOutgoingMessage<CommitSig>()
