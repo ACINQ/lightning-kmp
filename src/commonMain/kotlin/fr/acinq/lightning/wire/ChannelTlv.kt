@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.utils.*
@@ -169,6 +170,37 @@ sealed class CommitSigTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+
+    data class AlternativeFeerateSig(val feerate: FeeratePerKw, val sig: ByteVector64)
+
+    /**
+     * When there are no pending HTLCs, we provide a list of signatures for the commitment transaction signed at various feerates.
+     * This gives more options to the remote node to recover their funds if the user disappears without closing channels.
+     */
+    data class AlternativeFeerateSigs(val sigs: List<AlternativeFeerateSig>) : CommitSigTlv() {
+        override val tag: Long get() = AlternativeFeerateSigs.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeByte(sigs.size, out)
+            sigs.forEach {
+                LightningCodecs.writeU32(it.feerate.toLong().toInt(), out)
+                LightningCodecs.writeBytes(it.sig, out)
+            }
+        }
+
+        companion object : TlvValueReader<AlternativeFeerateSigs> {
+            const val tag: Long = 0x47010001
+            override fun read(input: Input): AlternativeFeerateSigs {
+                val count = LightningCodecs.byte(input)
+                val sigs = (0 until count).map {
+                    AlternativeFeerateSig(
+                        FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
+                        LightningCodecs.bytes(input, 64).toByteVector64()
+                    )
+                }
+                return AlternativeFeerateSigs(sigs)
+            }
         }
     }
 

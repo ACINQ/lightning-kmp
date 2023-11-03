@@ -849,7 +849,23 @@ data class InteractiveTxSigningSession(
                 remotePerCommitmentPoint = remotePerCommitmentPoint
             ).map { firstCommitTx ->
                 val localSigOfRemoteTx = Transactions.sign(firstCommitTx.remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
-                val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf())
+                val alternativeSigs = Commitments.alternativeFeerates.map { feerate ->
+                    val alternativeSpec = firstCommitTx.remoteSpec.copy(feerate = feerate)
+                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(
+                        channelKeys,
+                        remoteCommitmentIndex,
+                        channelParams.localParams,
+                        channelParams.remoteParams,
+                        fundingTxIndex,
+                        fundingParams.remoteFundingPubkey,
+                        firstCommitTx.remoteCommitTx.input,
+                        remotePerCommitmentPoint,
+                        alternativeSpec
+                    )
+                    val alternativeSig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+                    CommitSigTlv.AlternativeFeerateSig(feerate, alternativeSig)
+                }
+                val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf(), TlvStream(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs)))
                 val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
                 val remoteCommit = RemoteCommit(remoteCommitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
                 val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
