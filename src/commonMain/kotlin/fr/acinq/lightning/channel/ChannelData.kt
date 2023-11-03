@@ -397,6 +397,8 @@ sealed class Origin {
     abstract val amount: MilliSatoshi
     abstract val serviceFee: MilliSatoshi
     abstract val miningFee: Satoshi
+    // TODO: rename it and add to the spec as extensions of open_channel2 and splice_init (and maybe tweak the fields if necessary)
+    // TODO: or remove that one? We don't need to link it that way, it's rather the other way around? But maybe we need to reference the latest funding_rates?
     data class PayToOpenOrigin(val paymentHash: ByteVector32, override val serviceFee: MilliSatoshi, override val miningFee: Satoshi, override val amount: MilliSatoshi) : Origin()
     data class PleaseOpenChannelOrigin(val requestId: ByteVector32, override val serviceFee: MilliSatoshi, override val miningFee: Satoshi, override val amount: MilliSatoshi) : Origin()
 }

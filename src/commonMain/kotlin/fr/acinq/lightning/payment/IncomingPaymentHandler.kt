@@ -14,8 +14,8 @@ import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
-import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.PeerCommand
+import fr.acinq.lightning.io.RejectProposedFundingHtlc
 import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -25,6 +25,7 @@ sealed class PaymentPart {
     abstract val amount: MilliSatoshi
     abstract val totalAmount: MilliSatoshi
     abstract val paymentHash: ByteVector32
+    abstract val expiry: CltvExpiry
     abstract val finalPayload: PaymentOnion.FinalPayload
 }
 
@@ -32,12 +33,14 @@ data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: PaymentO
     override val amount: MilliSatoshi = htlc.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = htlc.paymentHash
+    override val expiry: CltvExpiry = htlc.cltvExpiry
 }
 
-data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {
-    override val amount: MilliSatoshi = payToOpenRequest.amountMsat
+data class ProposedHtlcPart(val proposal: ProposeFundingHtlc, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {
+    override val amount: MilliSatoshi = proposal.amount
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
-    override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
+    override val paymentHash: ByteVector32 = proposal.paymentHash
+    override val expiry: CltvExpiry = proposal.expiry
 }
 
 class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb) {
@@ -71,6 +74,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
     private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class))
     private val pending = mutableMapOf<ByteVector32, PendingPayment>()
+    // TODO: the fundingDebt needs to be persisted (or somehow recomputed on restart?)
+    //  -> also needs different stages (map an open_channel2 or splice to our accept_funding_htlcs to verify the funding rates)
+    private val fundingDebt = 0.msat
     private val privateKey = nodeParams.nodePrivateKey
 
     suspend fun createInvoice(
@@ -104,6 +110,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
     }
 
     /**
+     * TODO: this is probably unnecessary now, we will instead use the funding_fee in update_add_htlc to save the fact that this required an on-chain operation
      * Save the "received-with" details of an incoming amount.
      *
      * - for a pay-to-open origin, the payment already exists and we only add a received-with.
@@ -133,6 +140,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 )
         }
         when (val origin = action.origin) {
+            // TODO: do we need a new Origin? Or can we hack it into PayToOpenOrigin?
             is Origin.PayToOpenOrigin ->
                 // there already is a corresponding Lightning invoice in the db
                 db.receivePayment(
@@ -174,11 +182,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
     }
 
     /**
-     * Process an incoming pay-to-open request.
-     * This is very similar to the processing of an htlc.
+     * Process an incoming propose_funding_htlc.
+     * We treat this as if it were a normal htlc, but not attached to a specific channel.
      */
-    suspend fun process(payToOpenRequest: PayToOpenRequest, currentBlockHeight: Int): ProcessAddResult {
-        return when (val res = toPaymentPart(privateKey, payToOpenRequest)) {
+    suspend fun process(htlc: ProposeFundingHtlc, currentBlockHeight: Int): ProcessAddResult {
+        return when (val res = toPaymentPart(privateKey, htlc)) {
             is Either.Left -> res.value
             is Either.Right -> processPaymentPart(res.value, currentBlockHeight)
         }
@@ -187,10 +195,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
     /** Main payment processing, that handles payment parts. */
     private suspend fun processPaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): ProcessAddResult {
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
-        when (paymentPart) {
-            is HtlcPart -> logger.info { "processing htlc part expiry=${paymentPart.htlc.cltvExpiry}" }
-            is PayToOpenPart -> logger.info { "processing pay-to-open part amount=${paymentPart.payToOpenRequest.amountMsat} funding=${paymentPart.payToOpenRequest.fundingSatoshis} fees=${paymentPart.payToOpenRequest.payToOpenFeeSatoshis}" }
-        }
+        logger.info { "processing payment part amount=${paymentPart.amount} expiry=${paymentPart.expiry}" }
         return when (val validationResult = validatePaymentPart(paymentPart, currentBlockHeight)) {
             is Either.Left -> validationResult.value
             is Either.Right -> {
@@ -218,9 +223,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                                 ProcessAddResult.Rejected(listOf(action), incomingPayment)
                             }
                         }
-                        is PayToOpenPart -> {
+                        is ProposedHtlcPart -> {
                             logger.info { "rejecting pay-to-open part for an invoice that has already been paid" }
-                            val action = actionForPayToOpenFailure(privateKey, IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong()), paymentPart.payToOpenRequest)
+                            val action = actionForProposedHtlcFailure(privateKey, IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong()), paymentPart.proposal)
                             ProcessAddResult.Rejected(listOf(action), incomingPayment)
                         }
                     }
@@ -235,7 +240,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                                 val failureMsg = IncorrectOrUnknownPaymentDetails(part.totalAmount, currentBlockHeight.toLong())
                                 when (part) {
                                     is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
-                                    is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
+                                    is ProposedHtlcPart -> actionForProposedHtlcFailure(privateKey, failureMsg, part.proposal)
                                 }
                             }
                             pending.remove(paymentPart.paymentHash)
@@ -247,7 +252,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             return ProcessAddResult.Pending(incomingPayment)
                         }
                         else -> {
-                            if (payment.parts.filterIsInstance<PayToOpenPart>().isNotEmpty()) {
+                            if (payment.parts.filterIsInstance<ProposedHtlcPart>().isNotEmpty()) {
                                 // We consider the total amount received (not only the pay-to-open parts) to evaluate whether or not to accept the payment
                                 val payToOpenFee = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenFeeSatoshis }.sum()
                                 nodeParams.liquidityPolicy.value.maybeReject(payment.amountReceived, payToOpenFee.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, logger)?.let { rejected ->
@@ -355,8 +360,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 logger.warning { "invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
-            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
-                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
+            paymentPart.expiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
+                logger.warning { "payment with expiry too small: ${paymentPart.expiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
             }
             else -> Either.Right(incomingPayment)
@@ -378,7 +383,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 payment.parts.forEach { part ->
                     when (part) {
                         is HtlcPart -> actions += actionForFailureMessage(PaymentTimeout, part.htlc)
-                        is PayToOpenPart -> actions += actionForPayToOpenFailure(privateKey, PaymentTimeout, part.payToOpenRequest)
+                        is ProposedHtlcPart -> actions += actionForProposedHtlcFailure(privateKey, PaymentTimeout, part.proposal)
                     }
                 }
             }
@@ -402,11 +407,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
     }
 
     /**
-     * If we are disconnected, the LSP will forget pending pay-to-open requests. We need to do the same otherwise we
-     * will accept outdated ones.
+     * If we are disconnected, we must forget any pending propose_funding_htlc.
+     * The LSP will resubmit them on reconnection if they still make sense.
      */
-    fun purgePayToOpenRequests() {
-        val valuesToReplace = pending.mapValues { entry -> entry.value.copy(parts = entry.value.parts.filter { it !is PayToOpenPart }.toSet()) }
+    fun purgeFundingProposals() {
+        val valuesToReplace = pending.mapValues { entry -> entry.value.copy(parts = entry.value.parts.filterIsInstance<HtlcPart>().toSet()) }
         pending.plusAssign(valuesToReplace)
         val keysToRemove = pending.filterValues { it.parts.isEmpty() }.keys
         pending.minusAssign(keysToRemove)
@@ -415,9 +420,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
     companion object {
         /** Convert an incoming htlc to a payment part abstraction. Payment parts are then summed together to reach the full payment amount. */
         private fun toPaymentPart(privateKey: PrivateKey, htlc: UpdateAddHtlc): Either<ProcessAddResult.Rejected, HtlcPart> {
-            // NB: IncomingPacket.decrypt does additional validation on top of IncomingPacket.decryptOnion
             return when (val decrypted = IncomingPaymentPacket.decrypt(htlc, privateKey)) {
-                is Either.Left -> { // Unable to decrypt onion
+                is Either.Left -> {
                     val failureMsg = decrypted.value
                     val action = actionForFailureMessage(failureMsg, htlc)
                     Either.Left(ProcessAddResult.Rejected(listOf(action), null))
@@ -426,18 +430,17 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             }
         }
 
-        /**
-         * Convert a incoming pay-to-open request to a payment part abstraction.
-         * This is very similar to the processing of a htlc, except that we only have a packet, to decrypt into a final payload.
-         */
-        private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult.Rejected, PayToOpenPart> {
-            return when (val decrypted = IncomingPaymentPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, payToOpenRequest.finalPacket.payload.size(), privateKey)) {
+        /** Convert an incoming proposed htlc that includes on-the-fly funding to a payment part abstraction. */
+        private fun toPaymentPart(privateKey: PrivateKey, htlc: ProposeFundingHtlc): Either<ProcessAddResult.Rejected, ProposedHtlcPart> {
+            // NB: we treat this as if it were a normal HTLC, even though we don't have a suitable channel for it yet.
+            val dummyHtlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, htlc.amount, htlc.paymentHash, htlc.expiry, htlc.onionRoutingPacket)
+            return when (val decrypted = IncomingPaymentPacket.decrypt(dummyHtlc, privateKey)) {
                 is Either.Left -> {
                     val failureMsg = decrypted.value
-                    val action = actionForPayToOpenFailure(privateKey, failureMsg, payToOpenRequest)
+                    val action = actionForProposedHtlcFailure(privateKey, failureMsg, htlc)
                     Either.Left(ProcessAddResult.Rejected(listOf(action), null))
                 }
-                is Either.Right -> Either.Right(PayToOpenPart(payToOpenRequest, decrypted.value))
+                is Either.Right -> Either.Right(ProposedHtlcPart(htlc, decrypted.value))
             }
         }
 
@@ -445,7 +448,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
             val rejectedAction = when (paymentPart) {
                 is HtlcPart -> actionForFailureMessage(failureMsg, paymentPart.htlc)
-                is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, paymentPart.payToOpenRequest)
+                is ProposedHtlcPart -> actionForProposedHtlcFailure(privateKey, failureMsg, paymentPart.proposal)
             }
             return ProcessAddResult.Rejected(listOf(rejectedAction), incomingPayment)
         }
@@ -458,13 +461,13 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             return WrappedChannelCommand(htlc.channelId, cmd)
         }
 
-        fun actionForPayToOpenFailure(privateKey: PrivateKey, failure: FailureMessage, payToOpenRequest: PayToOpenRequest): PayToOpenResponseCommand {
+        private fun actionForProposedHtlcFailure(privateKey: PrivateKey, failure: FailureMessage, htlc: ProposeFundingHtlc): RejectProposedFundingHtlc {
             val reason = ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(failure)
-            val encryptedReason = when (val result = OutgoingPaymentPacket.buildHtlcFailure(privateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
+            val encryptedReason = when (val result = OutgoingPaymentPacket.buildHtlcFailure(privateKey, htlc.paymentHash, htlc.onionRoutingPacket, reason)) {
                 is Either.Right -> result.value
-                is Either.Left -> null
+                is Either.Left -> ByteVector.empty
             }
-            return PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Failure(encryptedReason)))
+            return RejectProposedFundingHtlc(FailFundingHtlc(htlc.id, encryptedReason))
         }
 
         private fun minFinalCltvExpiry(paymentRequest: PaymentRequest, currentBlockHeight: Int): CltvExpiry {

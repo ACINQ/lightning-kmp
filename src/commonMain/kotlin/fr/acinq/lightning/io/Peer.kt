@@ -60,9 +60,11 @@ data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
 object Disconnected : PeerCommand()
 
+// TODO: will probably instead need to be a trait with Failure/Success cases.
+data class RejectProposedFundingHtlc(val response: FailFundingHtlc) : PeerCommand()
+
 sealed class PaymentCommand : PeerCommand()
 private object CheckPaymentsTimeout : PaymentCommand()
-data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash
 }
@@ -709,7 +711,7 @@ class Peer(
         }
     }
 
-    private suspend fun processIncomingPayment(item: Either<PayToOpenRequest, UpdateAddHtlc>) {
+    private suspend fun processIncomingPayment(item: Either<ProposeFundingHtlc, UpdateAddHtlc>) {
         val currentBlockHeight = currentTipFlow.filterNotNull().first().first
         val result = when (item) {
             is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight)
@@ -962,25 +964,17 @@ class Peer(
                             _channels = _channels + (state.channelId to state1)
                         }
                     }
-                    is PayToOpenRequest -> {
-                        logger.info { "received ${msg::class.simpleName}" }
-                        // If a channel is currently being created, it can't process splices yet. We could accept this payment, but
-                        // it wouldn't be reflected in the user balance until the channel is ready, because we only insert
-                        // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
-                        // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
-                        // payment rather that having the user wonder where their money went.
-                        val channelInitializing = _channels.isNotEmpty()
-                                && !_channels.values.any { it is Normal } // we don't have a channel that can be spliced
-                                && _channels.values.any { it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } // but we will have one soon
-                        if (channelInitializing) {
-                            val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
-                            logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
-                            nodeParams._nodeEvents.emit(rejected)
-                            val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)
-                            input.send(action)
-                        } else {
-                            processIncomingPayment(Either.Left(msg))
-                        }
+                    is ProposeFundingHtlc -> {
+                        // TODO: this should be handled by the incoming-payment-handler since it may mix with normal HTLCs.
+                        // Flow should be:
+                        //  - keep aggregating propose_funding_htlc in-memory until we either accept or fail them
+                        //  - on disconnection, discard all pending propose_funding_htlc
+                        //  - when we accept them, keep track of the funding rate we accepted -> use liquidity policy to accept funding rates?
+                        //  - when we receive an open_channel2 / splice_init that contains funding rates, verify it matches ours
+                        //      - must add the funding_rate TLV to open_channel2 / splice_init in the spec
+                        //  - once such an open_channel2 / splice_init is complete, track the fees we owe the LSP
+                        //  - when we fulfill update_add_htlc with funding fees, deduce from the fees we still owe the LSP
+                        processIncomingPayment(Either.Left(msg))
                     }
                     is PhoenixAndroidLegacyInfo -> {
                         logger.info { "received ${msg::class.simpleName} hasChannels=${msg.hasChannels}" }
@@ -1078,9 +1072,9 @@ class Peer(
                 _channels = _channels + (msg.temporaryChannelId to state1)
                 processActions(msg.temporaryChannelId, peerConnection, actions1)
             }
-            is PayToOpenResponseCommand -> {
-                logger.info { "sending ${cmd.payToOpenResponse::class.simpleName}" }
-                peerConnection?.send(cmd.payToOpenResponse)
+            is RejectProposedFundingHtlc -> {
+                logger.info { "rejecting proposed funding htlc id=${cmd.response.id}" }
+                peerConnection?.send(cmd.response)
             }
             is SendPayment -> {
                 val currentTip = currentTipFlow.filterNotNull().first()
@@ -1126,7 +1120,7 @@ class Peer(
                             _channels = _channels + (key to state1)
                             processActions(key, peerConnection, actions)
                         }
-                        incomingPaymentHandler.purgePayToOpenRequests()
+                        incomingPaymentHandler.purgeFundingProposals()
                     }
                 }
             }

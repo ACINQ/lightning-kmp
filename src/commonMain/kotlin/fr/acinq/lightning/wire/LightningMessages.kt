@@ -76,8 +76,6 @@ interface LightningMessage {
                 Shutdown.type -> Shutdown.read(stream)
                 ClosingSigned.type -> ClosingSigned.read(stream)
                 OnionMessage.type -> OnionMessage.read(stream)
-                PayToOpenRequest.type -> PayToOpenRequest.read(stream)
-                PayToOpenResponse.type -> PayToOpenResponse.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
@@ -1525,106 +1523,6 @@ data class OnionMessage(
     }
 }
 
-/**
- * When we don't have enough incoming liquidity to receive a payment, our peer may open a channel to us on-the-fly to carry that payment.
- * This message contains details that allow us to recalculate the fee that our peer will take in exchange for the new channel.
- * This allows us to combine multiple requests for the same payment and figure out the final fee that will be applied.
- *
- * @param chainHash chain we're on.
- * @param fundingSatoshis total capacity of the channel our peer will open to us (some of the funds may be on their side).
- * @param amountMsat payment amount covered by this new channel: we will receive push_msat = amountMsat - fees.
- * @param payToOpenMinAmountMsat minimum amount for a pay-to-open to be attempted, this should be compared to the total amount in the case of an MPP payment.
- * @param payToOpenFeeSatoshis fees that will be deducted from the amount pushed to us (this fee covers the on-chain fees our peer will pay to open the channel).
- * @param paymentHash payment hash.
- * @param expireAt after the proposal expires, our peer will fail the payment and won't open a channel to us.
- * @param finalPacket onion packet that we would have received if there had been a channel to forward the payment to.
- */
-data class PayToOpenRequest(
-    override val chainHash: ByteVector32,
-    val fundingSatoshis: Satoshi,
-    val amountMsat: MilliSatoshi,
-    val payToOpenMinAmountMsat: MilliSatoshi,
-    val payToOpenFeeSatoshis: Satoshi,
-    val paymentHash: ByteVector32,
-    val expireAt: Long,
-    val finalPacket: OnionRoutingPacket
-) : LightningMessage, HasChainHash {
-    override val type: Long get() = PayToOpenRequest.type
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(chainHash, out)
-        LightningCodecs.writeU64(fundingSatoshis.toLong(), out)
-        LightningCodecs.writeU64(amountMsat.toLong(), out)
-        LightningCodecs.writeU64(payToOpenMinAmountMsat.toLong(), out)
-        LightningCodecs.writeU64(payToOpenFeeSatoshis.toLong(), out)
-        LightningCodecs.writeBytes(paymentHash, out)
-        LightningCodecs.writeU32(expireAt.toInt(), out)
-        LightningCodecs.writeU16(finalPacket.payload.size(), out)
-        OnionRoutingPacketSerializer(finalPacket.payload.size()).write(finalPacket, out)
-    }
-
-    companion object : LightningMessageReader<PayToOpenRequest> {
-        const val type: Long = 35021
-
-        override fun read(input: Input): PayToOpenRequest {
-            return PayToOpenRequest(
-                chainHash = ByteVector32(LightningCodecs.bytes(input, 32)),
-                fundingSatoshis = Satoshi(LightningCodecs.u64(input)),
-                amountMsat = MilliSatoshi(LightningCodecs.u64(input)),
-                payToOpenMinAmountMsat = MilliSatoshi(LightningCodecs.u64(input)),
-                payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
-                paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
-                expireAt = LightningCodecs.u32(input).toLong(),
-                finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input)
-            )
-        }
-    }
-}
-
-data class PayToOpenResponse(override val chainHash: ByteVector32, val paymentHash: ByteVector32, val result: Result) : LightningMessage, HasChainHash {
-    override val type: Long get() = PayToOpenResponse.type
-
-    sealed class Result {
-        // @formatter:off
-        data class Success(val paymentPreimage: ByteVector32) : Result()
-        /** reason is an onion-encrypted failure message, like those in UpdateFailHtlc */
-        data class Failure(val reason: ByteVector?) : Result()
-        // @formatter:on
-    }
-
-    override fun write(out: Output) {
-        LightningCodecs.writeBytes(chainHash, out)
-        LightningCodecs.writeBytes(paymentHash, out)
-        when (result) {
-            is Result.Success -> LightningCodecs.writeBytes(result.paymentPreimage, out)
-            is Result.Failure -> {
-                LightningCodecs.writeBytes(ByteVector32.Zeroes, out) // this is for backward compatibility
-                result.reason?.let {
-                    LightningCodecs.writeU16(it.size(), out)
-                    LightningCodecs.writeBytes(it, out)
-                }
-            }
-        }
-    }
-
-    companion object : LightningMessageReader<PayToOpenResponse> {
-        const val type: Long = 35003
-
-        override fun read(input: Input): PayToOpenResponse {
-            val chainHash = LightningCodecs.bytes(input, 32).toByteVector32()
-            val paymentHash = LightningCodecs.bytes(input, 32).toByteVector32()
-            return when (val preimage = LightningCodecs.bytes(input, 32).toByteVector32()) {
-                ByteVector32.Zeroes -> {
-                    val failure = if (input.availableBytes > 0) LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector() else null
-                    PayToOpenResponse(chainHash, paymentHash, Result.Failure(failure))
-                }
-
-                else -> PayToOpenResponse(chainHash, paymentHash, Result.Success(preimage))
-            }
-        }
-    }
-}
-
 data class FCMToken(val token: ByteVector) : LightningMessage {
     constructor(token: String) : this(ByteVector(token.encodeToByteArray()))
 
@@ -1671,7 +1569,6 @@ data class PhoenixAndroidLegacyInfo(
 
 /**
  * This message is used to request a channel open from a remote node, with local contributions to the funding transaction.
- * If the remote node won't open a channel, it will respond with [PleaseOpenChannelRejected].
  * Otherwise, it will respond with [OpenDualFundedChannel] and a fee that must be paid by a corresponding push_amount
  * in the [AcceptDualFundedChannel] message.
  */

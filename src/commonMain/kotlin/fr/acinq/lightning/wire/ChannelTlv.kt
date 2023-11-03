@@ -376,15 +376,3 @@ sealed class PleaseOpenChannelTlv : Tlv {
         }
     }
 }
-
-sealed class PleaseOpenChannelRejectedTlv : Tlv {
-    data class ExpectedFees(val fees: MilliSatoshi) : PleaseOpenChannelRejectedTlv() {
-        override val tag: Long get() = ExpectedFees.tag
-        override fun write(out: Output) = LightningCodecs.writeTU64(fees.toLong(), out)
-
-        companion object : TlvValueReader<ExpectedFees> {
-            const val tag: Long = 1
-            override fun read(input: Input): ExpectedFees = ExpectedFees(LightningCodecs.tu64(input).msat)
-        }
-    }
-}
