@@ -131,6 +131,10 @@ sealed class InteractiveTxInput {
     /** A remote input from a swap-in: our peer needs our signature to build a witness for that input. */
     data class RemoteSwapIn(override val serialId: Long, override val outPoint: OutPoint, override val txOut: TxOut, override val sequence: UInt, val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : Remote()
 
+    data class RemoteSwapInV2(override val serialId: Long, override val outPoint: OutPoint, val txOuts: List<TxOut>, override val sequence: UInt, val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : Remote() {
+        override val txOut: TxOut get() = txOuts[outPoint.index.toInt()]
+    }
+
     /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
     data class Shared(override val serialId: Long, override val outPoint: OutPoint, override val sequence: UInt, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxInput(), Incoming, Outgoing
 }
