@@ -253,6 +253,15 @@ object Deserialization {
             serverKey = readPublicKey(),
             refundDelay = readNumber().toInt()
         )
+        0x03 -> InteractiveTxInput.RemoteSwapInV2(
+            serialId = readNumber(),
+            outPoint = readOutPoint(),
+            txOuts =  readCollection { TxOut.read(readDelimitedByteArray()) }.toList(),
+            sequence = readNumber().toUInt(),
+            userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            refundDelay = readNumber().toInt()
+        )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Remote::class}")
     }
 

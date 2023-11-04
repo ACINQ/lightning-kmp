@@ -300,6 +300,16 @@ object Serialization {
             writePublicKey(serverKey)
             writeNumber(refundDelay)
         }
+        is InteractiveTxInput.RemoteSwapInV2 -> i.run {
+            write(0x03)
+            writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeCollection(i.txOuts) { o -> writeBtcObject(o) }
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writeNumber(refundDelay)
+        }
     }
 
     private fun Output.writeSharedInteractiveTxOutput(o: InteractiveTxOutput.Shared) = o.run {
