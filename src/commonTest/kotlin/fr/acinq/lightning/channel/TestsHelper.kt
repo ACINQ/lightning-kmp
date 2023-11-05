@@ -18,6 +18,7 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import io.ktor.util.reflect.*
 import kotlinx.serialization.encodeToString
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
@@ -120,6 +121,9 @@ data class LNChannel<out S : ChannelState>(
         val serialized = Serialization.serialize(state)
         val deserialized = Serialization.deserialize(serialized).value
 
+        if (deserialized != state) {
+            error("serialization error")
+        }
         assertEquals(removeRbfAttempt(state), deserialized, "serialization error")
     }
 
@@ -406,7 +410,7 @@ object TestsHelper {
     }
 
     fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, List<WalletState.Utxo>> {
-        val (privateKey, script) = keyManager.swapInOnChainWallet.run { Pair(userPrivateKey, pubkeyScript) }
+        val (privateKey, script) = keyManager.swapInOnChainWallet.run { Pair(userPrivateKey, swapInProtocolMusig2.pubkeyScript) }
         val parentTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 3), 0)), listOf(TxOut(amount, script)), 0)
         return privateKey to listOf(WalletState.Utxo(parentTx, 0, 42))
     }

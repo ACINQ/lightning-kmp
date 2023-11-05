@@ -468,6 +468,7 @@ data class Normal(
                                 is InteractiveTxSessionAction.SignSharedTx -> {
                                     val parentCommitment = commitments.active.first()
                                     val signingSession = InteractiveTxSigningSession.create(
+                                        interactiveTxSession,
                                         keyManager,
                                         commitments.params,
                                         spliceStatus.spliceSession.fundingParams,

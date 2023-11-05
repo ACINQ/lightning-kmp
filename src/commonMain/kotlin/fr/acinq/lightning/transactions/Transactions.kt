@@ -159,7 +159,10 @@ object Transactions {
      *     - [[ClaimDelayedOutputPenaltyTx]] spends [[HtlcTimeoutTx]] using the revocation secret (published by local)
      *   - [[HtlcPenaltyTx]] spends competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] for the same outputs (published by local)
      */
+    // legacy swap-in. witness is 2 signatures (73 bytes) + redeem script (77 bytes))
     const val swapInputWeight = 392
+    // musig2 swap-in. witness is a single Schnorr signature (64 bytes)
+    const val swapInputWeightMusig2 = 233
 
     // The following values are specific to lightning and used to estimate fees.
     const val claimP2WPKHOutputWeight = 438
