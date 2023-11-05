@@ -3,6 +3,7 @@ package fr.acinq.lightning.serialization.v4
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.musig2.PublicNonce
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
@@ -254,9 +255,10 @@ object Serialization {
     }
 
     private fun Output.writeSharedInteractiveTxInput(i: InteractiveTxInput.Shared) = i.run {
-        write(0x01)
+        write(0x02)
         writeNumber(serialId)
         writeBtcObject(outPoint)
+        writeBtcObject(txOut)
         writeNumber(sequence.toLong())
         writeNumber(localAmount.toLong())
         writeNumber(remoteAmount.toLong())
@@ -276,9 +278,7 @@ object Serialization {
             writeBtcObject(previousTx)
             writeNumber(previousTxOutput)
             writeNumber(sequence.toLong())
-            writePublicKey(userKey)
-            writePublicKey(serverKey)
-            writeNumber(refundDelay)
+            swapInParams.write(this@writeLocalInteractiveTxInput)
         }
     }
 
@@ -296,19 +296,7 @@ object Serialization {
             writeBtcObject(outPoint)
             writeBtcObject(txOut)
             writeNumber(sequence.toLong())
-            writePublicKey(userKey)
-            writePublicKey(serverKey)
-            writeNumber(refundDelay)
-        }
-        is InteractiveTxInput.RemoteSwapInV2 -> i.run {
-            write(0x03)
-            writeNumber(serialId)
-            writeBtcObject(outPoint)
-            writeCollection(i.txOuts) { o -> writeBtcObject(o) }
-            writeNumber(sequence.toLong())
-            writePublicKey(userKey)
-            writePublicKey(serverKey)
-            writeNumber(refundDelay)
+            swapInParams.write(this@writeRemoteInteractiveTxInput)
         }
     }
 
@@ -695,6 +683,8 @@ object Serialization {
     private fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
 
     private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
+
+    private fun Output.writePublicNonce(o: PublicNonce) = write(o.toByteArray())
 
     private fun Output.writeDelimited(o: ByteArray) {
         writeNumber(o.size)

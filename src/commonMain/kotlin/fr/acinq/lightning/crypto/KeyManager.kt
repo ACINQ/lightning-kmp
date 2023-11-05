@@ -3,10 +3,13 @@ package fr.acinq.lightning.crypto
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.lightning.DefaultSwapInParams
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.SwapInProtocol
+import fr.acinq.lightning.transactions.SwapInProtocolMusig2
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toByteVector
@@ -128,9 +131,7 @@ interface KeyManager {
         fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
 
         val swapInProtocol = SwapInProtocol(userPublicKey, remoteServerPublicKey, refundDelay)
-        val redeemScript: List<ScriptElt> = swapInProtocol.redeemScript
-        val pubkeyScript: List<ScriptElt> = swapInProtocol.pubkeyScript
-        val address: String = swapInProtocol.address(chain)
+        val swapInProtocolMusig2 = SwapInProtocolMusig2(userPublicKey, remoteServerPublicKey, refundDelay)
 
         /**
          * The output script descriptor matching our swap-in addresses.
@@ -146,13 +147,13 @@ interface KeyManager {
             "wsh(and_v(v:pk($userKey),or_d(pk(${remoteServerPublicKey.toHex()}),older($refundDelay))))"
         }
 
-        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut): ByteVector64 {
-            return swapInProtocol.signSwapInputUser(fundingTx, index, parentTxOut, userPrivateKey)
+        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>): ByteVector64 {
+            return swapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()] , userPrivateKey)
         }
 
-        fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, remoteNodeId: PublicKey): ByteVector64 {
-            return swapInProtocol.signSwapInputServer(fundingTx, index, parentTxOut, localServerPrivateKey(remoteNodeId))
-         }
+        fun signSwapInputUserMusig2(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: SecretNonce, serverNonce: PublicNonce): ByteVector32 {
+            return swapInProtocolMusig2.signSwapInputUser(fundingTx, index, parentTxOuts, userPrivateKey, userNonce, serverNonce)
+        }
 
         /**
          * Create a recovery transaction that spends a swap-in transaction after the refund delay has passed
@@ -162,7 +163,7 @@ interface KeyManager {
          * @return a signed transaction that spends our swap-in transaction. It cannot be published until `swapInTx` has enough confirmations
          */
         fun createRecoveryTransaction(swapInTx: Transaction, address: String, feeRate: FeeratePerKw): Transaction? {
-            val utxos = swapInTx.txOut.filter { it.publicKeyScript.contentEquals(Script.write(pubkeyScript)) }
+            val utxos = swapInTx.txOut.filter { it.publicKeyScript.contentEquals(Script.write(swapInProtocol.pubkeyScript)) || it.publicKeyScript.contentEquals(Script.write(swapInProtocolMusig2.pubkeyScript))}
             return if (utxos.isEmpty()) {
                 null
             } else {
@@ -175,17 +176,26 @@ interface KeyManager {
                         txOut = listOf(ourOutput),
                         lockTime = 0
                     )
-                    val fees = run {
-                        val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo ->
+
+                    fun sign(tx: Transaction, index: Int, utxo: TxOut): Transaction {
+                        return if (swapInProtocol.isMine(utxo)) {
                             val sig = swapInProtocol.signSwapInputUser(tx, index, utxo, userPrivateKey)
                             tx.updateWitness(index, swapInProtocol.witnessRefund(sig))
+                        } else {
+                            val sig = swapInProtocolMusig2.signSwapInputRefund(tx, index, utxos, userPrivateKey)
+                            tx.updateWitness(index, swapInProtocolMusig2.witnessRefund(sig))
+                        }
+                    }
+
+                    val fees = run {
+                        val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo ->
+                            sign(tx, index, utxo)
                         }
                         Transactions.weight2fee(feeRate, recoveryTx.weight())
                     }
                     val unsignedTx1 = unsignedTx.copy(txOut = listOf(ourOutput.copy(amount = ourOutput.amount - fees)))
                     val recoveryTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo ->
-                        val sig = swapInProtocol.signSwapInputUser(tx, index, utxo, userPrivateKey)
-                        tx.updateWitness(index, swapInProtocol.witnessRefund(sig))
+                        sign(tx, index, utxo)
                     }
                     // this tx is signed but cannot be published until swapInTx has `refundDelay` confirmations
                     recoveryTx

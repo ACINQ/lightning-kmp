@@ -55,6 +55,7 @@ data class WaitForFundingCreated(
                         is InteractiveTxSessionAction.SignSharedTx -> {
                             val channelParams = ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
                             val signingSession = InteractiveTxSigningSession.create(
+                                interactiveTxSession1,
                                 keyManager,
                                 channelParams,
                                 interactiveTxSession.fundingParams,
