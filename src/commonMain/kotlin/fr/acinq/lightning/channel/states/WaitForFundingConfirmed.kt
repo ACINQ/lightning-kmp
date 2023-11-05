@@ -169,6 +169,7 @@ data class WaitForFundingConfirmed(
                             is InteractiveTxSessionAction.SignSharedTx -> {
                                 val replacedCommitment = commitments.latest
                                 val signingSession = InteractiveTxSigningSession.create(
+                                    rbfSession1,
                                     keyManager,
                                     commitments.params,
                                     rbfSession1.fundingParams,

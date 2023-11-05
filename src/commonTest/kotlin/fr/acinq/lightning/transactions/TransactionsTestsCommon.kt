@@ -53,6 +53,7 @@ import fr.acinq.lightning.transactions.Transactions.makeHtlcTxs
 import fr.acinq.lightning.transactions.Transactions.makeMainPenaltyTx
 import fr.acinq.lightning.transactions.Transactions.sign
 import fr.acinq.lightning.transactions.Transactions.swapInputWeight
+import fr.acinq.lightning.transactions.Transactions.swapInputWeightMusig2
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
@@ -449,7 +450,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val swapInTx = Transaction(
             version = 2,
             txIn = listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0)),
-            txOut = listOf(TxOut(100_000.sat, userWallet.pubkeyScript)),
+            txOut = listOf(TxOut(100_000.sat, userWallet.swapInProtocol.pubkeyScript)),
             lockTime = 0
         )
         // The transaction can be spent if the user and the server produce a signature.
@@ -460,7 +461,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
                 lockTime = 0
             )
-            val userSig = userWallet.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first())
+            val userSig = userWallet.signSwapInputUser(fundingTx, 0, swapInTx.txOut)
             val serverKey = TestConstants.Bob.keyManager.swapInOnChainWallet.localServerPrivateKey(TestConstants.Alice.nodeParams.nodeId)
             val serverSig = userWallet.swapInProtocol.signSwapInputServer(fundingTx, 0, swapInTx.txOut.first(), serverKey)
             val witness = userWallet.swapInProtocol.witness(userSig, serverSig)
@@ -475,7 +476,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 txOut = listOf(TxOut(90_000.sat, pay2wpkh(randomKey().publicKey()))),
                 lockTime = 0
             )
-            val userSig = userWallet.signSwapInputUser(fundingTx, 0, swapInTx.txOut.first())
+            val userSig = userWallet.signSwapInputUser(fundingTx, 0, swapInTx.txOut)
             val witness = userWallet.swapInProtocol.witnessRefund(userSig)
             val signedTx = fundingTx.updateWitness(0, witness)
             Transaction.correctlySpends(signedTx, listOf(swapInTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -582,7 +583,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val serverSig = swapInProtocolMusig2.signSwapInputServer(tx, 0, swapInTx.txOut, userNonce.publicNonce(), serverPrivateKey, serverNonce)
             val ctx = swapInProtocolMusig2.signingCtx(tx, 0, swapInTx.txOut, PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce.publicNonce())))
             val commonSig = ctx.partialSigAgg(listOf(userSig, serverSig))
-            val signedTx = tx.updateWitness(0, ScriptWitness(listOf(commonSig)))
+            val signedTx = tx.updateWitness(0, swapInProtocolMusig2.witness(commonSig))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
 
@@ -612,6 +613,20 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))
         val inputWeight = txWithAdditionalInput.weight() - tx.weight()
         assertEquals(inputWeight, swapInputWeight)
+    }
+
+    @Test
+    fun `swap-in input weight -- musig2 version`() {
+        val pubkey = randomKey().publicKey()
+        // DER-encoded ECDSA signatures usually take up to 72 bytes.
+        val sig = ByteVector64.fromValidHex("90b658d172a51f1b3f1a2becd30942397f5df97da8cd2c026854607e955ad815ccfd87d366e348acc32aaf15ff45263aebbb7ecc913a0e5999133f447aee828c")
+        val tx = Transaction(2, listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
+        val swapInProtocol = SwapInProtocolMusig2(pubkey, pubkey, 144)
+        val witness = swapInProtocol.witness(sig)
+        val swapInput = TxIn(OutPoint(TxId(ByteVector32.Zeroes), 3), ByteVector.empty, 0, witness)
+        val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))
+        val inputWeight = txWithAdditionalInput.weight() - tx.weight()
+        assertEquals(inputWeight, swapInputWeightMusig2)
     }
 
     @Test

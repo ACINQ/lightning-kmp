@@ -5,6 +5,8 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
@@ -453,12 +455,22 @@ data class TxComplete(
 ) : InteractiveTxConstructionMessage(), HasChannelId {
     override val type: Long get() = TxComplete.type
 
-    override fun write(out: Output) = LightningCodecs.writeBytes(channelId.toByteArray(), out)
+    val publicNonces: Map<Long, PublicNonce> = tlvs.get<TxCompleteTlv.Nonces>()?.nonces?.toMap() ?: mapOf()
+
+    constructor(channelId: ByteVector32, publicNonces: Map<Long, PublicNonce>) : this(channelId, TlvStream(TxCompleteTlv.Nonces(publicNonces)))
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId.toByteArray(), out)
+        TlvStreamSerializer(false, readers).write(tlvs, out)
+    }
 
     companion object : LightningMessageReader<TxComplete> {
         const val type: Long = 70
 
-        override fun read(input: Input): TxComplete = TxComplete(LightningCodecs.bytes(input, 32).byteVector32())
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(TxCompleteTlv.Nonces.tag to TxCompleteTlv.Nonces.Companion as TlvValueReader<TxCompleteTlv>)
+
+        override fun read(input: Input): TxComplete = TxComplete(LightningCodecs.bytes(input, 32).byteVector32(), TlvStreamSerializer(false, readers).read(input))
     }
 }
 
@@ -468,7 +480,7 @@ data class TxSignatures(
     val witnesses: List<ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
 ) : InteractiveTxMessage(), HasChannelId, HasEncryptedChannelData {
-    constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>, previousFundingSig: ByteVector64?, swapInUserSigs: List<ByteVector64>, swapInServerSigs: List<ByteVector64>) : this(
+    constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>, previousFundingSig: ByteVector64?, swapInUserSigs: List<ByteVector64>, swapInServerSigs: List<ByteVector64>, swapInUserPartialSigs: List<PartialSignature>, swapInServerPartialSigs: List<PartialSignature>) : this(
         channelId,
         tx.txid,
         witnesses,
@@ -477,6 +489,8 @@ data class TxSignatures(
                 previousFundingSig?.let { TxSignaturesTlv.PreviousFundingTxSig(it) },
                 if (swapInUserSigs.isNotEmpty()) TxSignaturesTlv.SwapInUserSigs(swapInUserSigs) else null,
                 if (swapInServerSigs.isNotEmpty()) TxSignaturesTlv.SwapInServerSigs(swapInServerSigs) else null,
+                if (swapInUserPartialSigs.isNotEmpty()) TxSignaturesTlv.SwapInUserPartialSigs(swapInUserPartialSigs) else null,
+                if (swapInServerPartialSigs.isNotEmpty()) TxSignaturesTlv.SwapInServerPartialSigs(swapInServerPartialSigs) else null,
             ).toSet()
         ),
     )
@@ -486,6 +500,8 @@ data class TxSignatures(
     val previousFundingTxSig: ByteVector64? = tlvs.get<TxSignaturesTlv.PreviousFundingTxSig>()?.sig
     val swapInUserSigs: List<ByteVector64> = tlvs.get<TxSignaturesTlv.SwapInUserSigs>()?.sigs ?: listOf()
     val swapInServerSigs: List<ByteVector64> = tlvs.get<TxSignaturesTlv.SwapInServerSigs>()?.sigs ?: listOf()
+    val swapInUserPartialSigs: List<PartialSignature> = tlvs.get<TxSignaturesTlv.SwapInUserPartialSigs>()?.psigs ?: listOf()
+    val swapInServerPartialSigs: List<PartialSignature> = tlvs.get<TxSignaturesTlv.SwapInServerPartialSigs>()?.psigs ?: listOf()
 
     override val channelData: EncryptedChannelData get() = tlvs.get<TxSignaturesTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): TxSignatures = copy(tlvs = tlvs.addOrUpdate(TxSignaturesTlv.ChannelData(ecd)))
@@ -506,11 +522,15 @@ data class TxSignatures(
     companion object : LightningMessageReader<TxSignatures> {
         const val type: Long = 71
 
+        data class PartialSignature(val sig: ByteVector32, val nonce: PublicNonce)
+
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             TxSignaturesTlv.PreviousFundingTxSig.tag to TxSignaturesTlv.PreviousFundingTxSig.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInUserSigs.tag to TxSignaturesTlv.SwapInUserSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInServerSigs.tag to TxSignaturesTlv.SwapInServerSigs.Companion as TlvValueReader<TxSignaturesTlv>,
+            TxSignaturesTlv.SwapInUserPartialSigs.tag to TxSignaturesTlv.SwapInUserPartialSigs.Companion as TlvValueReader<TxSignaturesTlv>,
+            TxSignaturesTlv.SwapInServerPartialSigs.tag to TxSignaturesTlv.SwapInServerPartialSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>,
         )
 

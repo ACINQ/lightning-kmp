@@ -193,7 +193,8 @@ class Peer(
     val finalAddress: String = nodeParams.keyManager.finalOnChainWallet.address(addressIndex = 0L).also { finalWallet.addAddress(it) }
 
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
-    val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.address.also { swapInWallet.addAddress(it) }
+    val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.swapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it) }
+    val swapInAddressMusig2: String = nodeParams.keyManager.swapInOnChainWallet.swapInProtocolMusig2.address(nodeParams.chain).also { swapInWallet.addAddress(it) }
 
     private var swapInJob: Job? = null
 
@@ -930,7 +931,7 @@ class Peer(
                                             peerConnection?.send(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
                                             return
                                         }
-                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, request.walletInputs.size * Transactions.swapInputWeight)
+                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, FundingContributions.weight(request.walletInputs))
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
                                         val fundingAmount = request.walletInputs.balance - fundingFee
                                         // We pay the other fees by pushing the corresponding amount
@@ -1136,7 +1137,7 @@ class Peer(
                                 cmd.requestId,
                                 cmd.walletInputs.balance,
                                 cmd.walletInputs.size,
-                                cmd.walletInputs.size * Transactions.swapInputWeight,
+                                FundingContributions.weight(cmd.walletInputs),
                                 TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
                             )
                             logger.info { "sending please_open_channel with ${cmd.walletInputs.size} utxos (amount = ${cmd.walletInputs.balance})" }

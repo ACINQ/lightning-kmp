@@ -2,6 +2,7 @@ package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -195,12 +196,16 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val swapInTx = Transaction(version = 2,
             txIn = listOf(),
             txOut = listOf(
-                TxOut(Satoshi(100000), Bitcoin.addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, TestConstants.Alice.keyManager.swapInOnChainWallet.address).result!!),
-                TxOut(Satoshi(150000), Bitcoin.addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, TestConstants.Alice.keyManager.swapInOnChainWallet.address).result!!)
+                TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript),
+                TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript),
+                TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey())),
+                TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocolMusig2.pubkeyScript),
+                TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocolMusig2.pubkeyScript),
+                TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey()))
             ),
             lockTime = 0)
         val recoveryTx = TestConstants.Alice.keyManager.swapInOnChainWallet.createRecoveryTransaction(swapInTx, TestConstants.Alice.keyManager.finalOnChainWallet.address(0), FeeratePerKw(FeeratePerByte(Satoshi(5))))!!
-        assertEquals(swapInTx.txOut.size, recoveryTx.txIn.size)
+        assertEquals(4, recoveryTx.txIn.size)
         Transaction.correctlySpends(recoveryTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 

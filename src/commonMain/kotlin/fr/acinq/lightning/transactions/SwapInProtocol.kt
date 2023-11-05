@@ -7,8 +7,13 @@ import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.bitcoin.musig2.SessionCtx
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.wire.TxAddInputTlv
+import org.kodein.log.newLogger
 
 class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKey, val refundDelay: Int) {
+
+     constructor(swapInParams: TxAddInputTlv.SwapInParams) : this(swapInParams.userKey, swapInParams.serverKey, swapInParams.refundDelay)
+
     // This script was generated with https://bitcoin.sipa.be/miniscript/ using the following miniscript policy:
     // and(pk(<user_key>),or(99@pk(<server_key>),older(<delayed_refund>)))
     // @formatter:off
@@ -21,6 +26,8 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
     // @formatter:on
 
     val pubkeyScript: List<ScriptElt> = Script.pay2wsh(redeemScript)
+
+    fun isMine(txOut: TxOut): Boolean = txOut.publicKeyScript.contentEquals(Script.write(pubkeyScript))
 
     fun address(chain: NodeParams.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).result!!
 
@@ -43,6 +50,8 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
 }
 
 class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: PublicKey, val refundDelay: Int) {
+    constructor(swapInParams: TxAddInputTlv.SwapInParams) : this(swapInParams.userKey, swapInParams.serverKey, swapInParams.refundDelay)
+
     // the redeem script is just the refund script. it is generated from this policy: and_v(v:pk(user),older(refundDelay))
     val redeemScript = listOf(OP_PUSHDATA(userPublicKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
     private val scriptTree = ScriptTree.Leaf(ScriptLeaf(0, Script.write(redeemScript).byteVector(), Script.TAPROOT_LEAF_TAPSCRIPT))
@@ -55,6 +64,8 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
     private val executionData = Script.ExecutionData(annex = null, tapleafHash = merkleRoot)
     private val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) + internalPubKey.value.toByteArray()
 
+    fun isMine(txOut: TxOut): Boolean = txOut.publicKeyScript.contentEquals(Script.write(pubkeyScript))
+
     fun address(chain: NodeParams.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).result!!
 
     fun witness(commonSig: ByteVector64): ScriptWitness = ScriptWitness(listOf(commonSig))
@@ -64,9 +75,9 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
     fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, serverNonce: PublicNonce): ByteVector32 {
         require(userPrivateKey.publicKey() == userPublicKey)
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-
+        val commonNonce = PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
         val ctx = SessionCtx(
-            PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce)),
+            commonNonce,
             listOf(userPrivateKey.publicKey(), serverPublicKey),
             listOf(Pair(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)),
             txHash
@@ -81,9 +92,9 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: PublicNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): ByteVector32 {
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-
+        val commonNonce = PublicNonce.aggregate(listOf(userNonce, serverNonce.publicNonce()))
         val ctx = SessionCtx(
-            PublicNonce.aggregate(listOf(userNonce, serverNonce.publicNonce())),
+            commonNonce,
             listOf(userPublicKey, serverPrivateKey.publicKey()),
             listOf(Pair(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)),
             txHash

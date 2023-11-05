@@ -2,6 +2,9 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
+import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.SecretNonce
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -13,6 +16,7 @@ import fr.acinq.lightning.transactions.DirectedHtlc
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.SwapInProtocol
 import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
@@ -83,8 +87,10 @@ data class InteractiveTxParams(
 
     /** Amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
     val fundingAmount: Satoshi = (sharedInput?.info?.txOut?.amount ?: 0.sat) + localContribution + remoteContribution
+
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
+
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity = if (isInitiator) 0 else 1
 
@@ -98,6 +104,7 @@ sealed class InteractiveTxInput {
     abstract val serialId: Long
     abstract val outPoint: OutPoint
     abstract val sequence: UInt
+    abstract val txOut: TxOut
 
     sealed interface Outgoing
     sealed interface Incoming
@@ -105,41 +112,44 @@ sealed class InteractiveTxInput {
     sealed class Local : InteractiveTxInput(), Outgoing {
         abstract val previousTx: Transaction
         abstract val previousTxOutput: Long
-        abstract val txOut: TxOut
+        override val txOut: TxOut
+            get() = previousTx.txOut[previousTxOutput.toInt()]
     }
 
     /** A local-only input that funds the interactive transaction. */
     data class LocalOnly(override val serialId: Long, override val previousTx: Transaction, override val previousTxOutput: Long, override val sequence: UInt) : Local() {
         override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput)
-        override val txOut: TxOut = previousTx.txOut[previousTxOutput.toInt()]
     }
 
     /** A local input that funds the interactive transaction, coming from a 2-of-2 swap-in transaction. */
-    data class LocalSwapIn(override val serialId: Long, override val previousTx: Transaction, override val previousTxOutput: Long, override val sequence: UInt, val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : Local() {
+    data class LocalSwapIn(
+        override val serialId: Long,
+        override val previousTx: Transaction,
+        override val previousTxOutput: Long,
+        override val sequence: UInt,
+        val swapInParams: TxAddInputTlv.SwapInParams) : Local() {
         override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput)
-        override val txOut: TxOut = previousTx.txOut[previousTxOutput.toInt()]
     }
 
     /**
      * A remote input that funds the interactive transaction.
      * We only keep the data we need from our peer's TxAddInput to avoid storing potentially large messages in our DB.
      */
-    sealed class Remote : InteractiveTxInput(), Incoming {
-        abstract val txOut: TxOut
-    }
+    sealed class Remote : InteractiveTxInput(), Incoming
 
     /** A remote-only input that funds the interactive transaction. */
     data class RemoteOnly(override val serialId: Long, override val outPoint: OutPoint, override val txOut: TxOut, override val sequence: UInt) : Remote()
 
     /** A remote input from a swap-in: our peer needs our signature to build a witness for that input. */
-    data class RemoteSwapIn(override val serialId: Long, override val outPoint: OutPoint, override val txOut: TxOut, override val sequence: UInt, val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : Remote()
-
-    data class RemoteSwapInV2(override val serialId: Long, override val outPoint: OutPoint, val txOuts: List<TxOut>, override val sequence: UInt, val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : Remote() {
-        override val txOut: TxOut get() = txOuts[outPoint.index.toInt()]
-    }
+    data class RemoteSwapIn(
+        override val serialId: Long,
+        override val outPoint: OutPoint,
+        override val txOut: TxOut,
+        override val sequence: UInt,
+        val swapInParams: TxAddInputTlv.SwapInParams) : Remote()
 
     /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
-    data class Shared(override val serialId: Long, override val outPoint: OutPoint, override val sequence: UInt, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxInput(), Incoming, Outgoing
+    data class Shared(override val serialId: Long, override val outPoint: OutPoint, override val txOut: TxOut, override val sequence: UInt, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxInput(), Incoming, Outgoing
 }
 
 sealed class InteractiveTxOutput {
@@ -253,8 +263,17 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                     }
                 }
             }
-            val sharedInput = sharedUtxo?.let { (i, balances) -> listOf(InteractiveTxInput.Shared(0, i.info.outPoint, 0xfffffffdU, balances.toLocal, balances.toRemote)) } ?: listOf()
-            val localInputs = walletInputs.map { i -> InteractiveTxInput.LocalSwapIn(0, i.previousTx.stripInputWitnesses(), i.outputIndex.toLong(), 0xfffffffdU, swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay) }
+            val sharedInput = sharedUtxo?.let { (i, balances) -> listOf(InteractiveTxInput.Shared(0, i.info.outPoint, i.info.txOut, 0xfffffffdU, balances.toLocal, balances.toRemote)) } ?: listOf()
+            val localInputs = walletInputs.map { i ->
+                val version = if (Script.isPay2wsh(i.previousTx.txOut[i.outputIndex].publicKeyScript.toByteArray())) 1 else 2
+                InteractiveTxInput.LocalSwapIn(
+                    0,
+                    i.previousTx.stripInputWitnesses(),
+                    i.outputIndex.toLong(),
+                    0xfffffffdU,
+                    TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay, version)
+                )
+            }
             return if (params.isInitiator) {
                 Either.Right(sortFundingContributions(params, sharedInput + localInputs, sharedOutput + nonChangeOutputs + changeOutput))
             } else {
@@ -267,7 +286,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
 
         /** Compute the weight we need to pay on-chain fees for. */
         private fun computeWeightPaid(isInitiator: Boolean, sharedInput: SharedFundingInput?, sharedOutputScript: ByteVector, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>): Int {
-            val walletInputsWeight = walletInputs.size * Transactions.swapInputWeight
+            val walletInputsWeight = weight(walletInputs)
             val localOutputsWeight = localOutputs.sumOf { it.weight() }
             return if (isInitiator) {
                 // The initiator must add the shared input, the shared output and pay for the fees of the common transaction fields.
@@ -288,6 +307,13 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 walletInputs,
                 localOutputs
             )
+
+        fun weight(walletInputs: List<WalletState.Utxo>): Int = walletInputs.sumOf {
+                when {
+                    Script.isPay2wsh(it.previousTx.txOut[it.outputIndex].publicKeyScript.toByteArray()) -> Transactions.swapInputWeight
+                    else -> Transactions.swapInputWeightMusig2
+                }
+            }
 
         /** We always randomize the order of inputs and outputs. */
         private fun sortFundingContributions(params: InteractiveTxParams, inputs: List<InteractiveTxInput.Outgoing>, outputs: List<InteractiveTxOutput.Outgoing>): FundingContributions {
@@ -328,6 +354,13 @@ data class SharedTransaction(
     val localFees: MilliSatoshi = localAmountIn - localAmountOut
     val remoteFees: MilliSatoshi = remoteAmountIn - remoteAmountOut
     val fees: Satoshi = (localFees + remoteFees).truncateToSatoshi()
+    // tx outputs spent by this transaction
+    val spentOutputs: Map<OutPoint, TxOut> = run {
+        val sharedOutput = sharedInput?.let { i -> mapOf(i.outPoint to i.txOut) } ?: mapOf()
+        val localOutputs = localInputs.associate { i -> i.outPoint to i.txOut }
+        val remoteOutputs = remoteInputs.associate { i -> i.outPoint to i.txOut }
+        sharedOutput + localOutputs + remoteOutputs
+    }
 
     fun localOnlyInputs(): List<InteractiveTxInput.LocalOnly> = localInputs.filterIsInstance<InteractiveTxInput.LocalOnly>()
 
@@ -349,27 +382,72 @@ data class SharedTransaction(
         return Transaction(2, inputs, outputs, lockTime)
     }
 
-    fun sign(keyManager: KeyManager, fundingParams: InteractiveTxParams, localParams: LocalParams, remoteNodeId: PublicKey): PartiallySignedSharedTransaction {
+    fun sign(session: InteractiveTxSession, keyManager: KeyManager, fundingParams: InteractiveTxParams, localParams: LocalParams, remoteNodeId: PublicKey): PartiallySignedSharedTransaction {
         val unsignedTx = buildUnsignedTx()
         val sharedSig = fundingParams.sharedInput?.sign(keyManager.channelKeys(localParams.fundingKeyPath), unsignedTx)
+        val sharedOutput = fundingParams.sharedInput?.let { i -> mapOf(i.info.outPoint to i.info.txOut) } ?: mapOf()
+        val localOutputs = localInputs.associate { i -> i.outPoint to i.txOut }
+        val remoteOutputs = remoteInputs.associate { i -> i.outPoint to i.txOut }
+        val previousOutputsMap = sharedOutput + localOutputs + remoteOutputs
+        val previousOutputs = unsignedTx.txIn.map { previousOutputsMap[it.outPoint]!! }.toList()
+
         // If we are swapping funds in, we provide our partial signatures to the corresponding inputs.
         val swapUserSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
             localInputs
+                .filterIsInstance<InteractiveTxInput.LocalSwapIn>()
+                .filter { it.swapInParams.version == 1 }
                 .find { txIn.outPoint == it.outPoint }
-                ?.let { input -> keyManager.swapInOnChainWallet.signSwapInputUser(unsignedTx, i, input.txOut) }
+                ?.let { input -> keyManager.swapInOnChainWallet.signSwapInputUser(unsignedTx, i, input.previousTx.txOut) }
         }.filterNotNull()
+
+        val swapUserPartialSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
+            localInputs
+                .filterIsInstance<InteractiveTxInput.LocalSwapIn>()
+                .filter { it.swapInParams.version == 2 }
+                .find { txIn.outPoint == it.outPoint }
+                ?.let { input ->
+                    val userNonce =  session.secretNonces[input.serialId]
+                    require(userNonce != null)
+                    require(session.txCompleteReceived != null)
+                    val serverNonce = session.txCompleteReceived.publicNonces[input.serialId]
+                    require(serverNonce != null)
+                    val commonNonce = PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
+                    TxSignatures.Companion.PartialSignature(keyManager.swapInOnChainWallet.signSwapInputUserMusig2(unsignedTx, i, previousOutputs, userNonce, serverNonce), commonNonce)
+                }
+        }.filterNotNull()
+
         // If the remote is swapping funds in, they'll need our partial signatures to finalize their witness.
         val swapServerSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
             remoteInputs
                 .filterIsInstance<InteractiveTxInput.RemoteSwapIn>()
+                .filter { it.swapInParams.version == 1 }
                 .find { txIn.outPoint == it.outPoint }
                 ?.let { input ->
                     val serverKey = keyManager.swapInOnChainWallet.localServerPrivateKey(remoteNodeId)
-                    val swapInProtocol = SwapInProtocol(input.userKey, serverKey.publicKey(), input.refundDelay)
+                    val swapInProtocol = SwapInProtocol(input.swapInParams.userKey, serverKey.publicKey(), input.swapInParams.refundDelay)
                     swapInProtocol.signSwapInputServer(unsignedTx, i, input.txOut, serverKey)
                 }
         }.filterNotNull()
-        return PartiallySignedSharedTransaction(this, TxSignatures(fundingParams.channelId, unsignedTx, listOf(), sharedSig, swapUserSigs, swapServerSigs))
+
+        val swapServerPartialSigs = unsignedTx.txIn.mapIndexed { i, txIn ->
+            remoteInputs
+                .filterIsInstance<InteractiveTxInput.RemoteSwapIn>()
+                .filter { it.swapInParams.version == 2 }
+                .find { txIn.outPoint == it.outPoint }
+                ?.let { input ->
+                    val serverKey = keyManager.swapInOnChainWallet.localServerPrivateKey(remoteNodeId)
+                    val userNonce =  session.secretNonces[input.serialId]
+                    require(userNonce != null)
+                    require(session.txCompleteReceived != null)
+                    val serverNonce = session.txCompleteReceived.publicNonces[input.serialId]
+                    require(serverNonce != null)
+                    val commonNonce = PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
+                    val swapInProtocol = SwapInProtocolMusig2(input.swapInParams.userKey, serverKey.publicKey(), input.swapInParams.refundDelay)
+                    TxSignatures.Companion.PartialSignature(swapInProtocol.signSwapInputServer(unsignedTx, i, previousOutputs, serverNonce, serverKey, userNonce), commonNonce)
+                }
+        }.filterNotNull()
+
+        return PartiallySignedSharedTransaction(this, TxSignatures(fundingParams.channelId, unsignedTx, listOf(), sharedSig, swapUserSigs, swapServerSigs, swapUserPartialSigs, swapServerPartialSigs))
     }
 }
 
@@ -386,10 +464,13 @@ data class PartiallySignedSharedTransaction(override val tx: SharedTransaction, 
     override val signedTx = null
 
     fun addRemoteSigs(channelKeys: KeyManager.ChannelKeys, fundingParams: InteractiveTxParams, remoteSigs: TxSignatures): FullySignedSharedTransaction? {
-        if (localSigs.swapInUserSigs.size != tx.localInputs.size) return null
+        if (localSigs.swapInUserSigs.size != tx.localInputs.filterIsInstance<InteractiveTxInput.LocalSwapIn>().filter { it.swapInParams.version == 1 }.size) return null
+        if (localSigs.swapInUserPartialSigs.size != tx.localInputs.filterIsInstance<InteractiveTxInput.LocalSwapIn>().filter { it.swapInParams.version == 2 }.size) return null
+        if (remoteSigs.swapInUserSigs.size != tx.remoteSwapInputs().filter { it.swapInParams.version ==1 }.size) return null
+        if (remoteSigs.swapInUserPartialSigs.size != tx.remoteSwapInputs().filter { it.swapInParams.version ==2 }.size) return null
+        if (remoteSigs.swapInServerSigs.size != tx.localInputs.filter { it is InteractiveTxInput.LocalSwapIn && it.swapInParams.version == 1}.size) return null
+        if (remoteSigs.swapInServerPartialSigs.size != tx.localInputs.filter { it is InteractiveTxInput.LocalSwapIn && it.swapInParams.version == 2}.size) return null
         if (remoteSigs.witnesses.size != tx.remoteOnlyInputs().size) return null
-        if (remoteSigs.swapInUserSigs.size != tx.remoteSwapInputs().size) return null
-        if (remoteSigs.swapInServerSigs.size != tx.localInputs.size) return null
         if (remoteSigs.txId != localSigs.txId) return null
         val sharedSigs = fundingParams.sharedInput?.let {
             when (it) {
@@ -402,11 +483,7 @@ data class PartiallySignedSharedTransaction(override val tx: SharedTransaction, 
             }
         }
         val fullySignedTx = FullySignedSharedTransaction(tx, localSigs, remoteSigs, sharedSigs)
-        val sharedOutput = fundingParams.sharedInput?.let { i -> mapOf(i.info.outPoint to i.info.txOut) } ?: mapOf()
-        val localOutputs = tx.localInputs.associate { i -> i.outPoint to i.txOut }
-        val remoteOutputs = tx.remoteInputs.associate { i -> i.outPoint to i.txOut }
-        val previousOutputs = sharedOutput + localOutputs + remoteOutputs
-        return when (runTrying { Transaction.correctlySpends(fullySignedTx.signedTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
+        return when (runTrying { Transaction.correctlySpends(fullySignedTx.signedTx, tx.spentOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
             is Try.Success -> fullySignedTx
             is Try.Failure -> null
         }
@@ -417,20 +494,43 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
     override val signedTx = run {
         val sharedTxIn = tx.sharedInput?.let { i -> listOf(Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), sharedSigs ?: ScriptWitness.empty))) } ?: listOf()
         val localOnlyTxIn = tx.localOnlyInputs().sortedBy { i -> i.serialId }.zip(localSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong(), w)) }
-        val localSwapTxIn = tx.localSwapInputs().sortedBy { i -> i.serialId }.zip(localSigs.swapInUserSigs.zip(remoteSigs.swapInServerSigs)).map { (i, sigs) ->
+        val localSwapTxIn = tx.localSwapInputs().filter { it.swapInParams.version == 1 }.sortedBy { i -> i.serialId }.zip(localSigs.swapInUserSigs.zip(remoteSigs.swapInServerSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
-            val swapInProtocol = SwapInProtocol(i.userKey, i.serverKey, i.refundDelay)
+            val swapInProtocol = SwapInProtocol(i.swapInParams)
             val witness = swapInProtocol.witness(userSig, serverSig)
             Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong(), witness))
         }
-        val remoteOnlyTxIn = tx.remoteOnlyInputs().sortedBy { i -> i.serialId }.zip(remoteSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), w)) }
-        val remoteSwapTxIn = tx.remoteSwapInputs().sortedBy { i -> i.serialId }.zip(remoteSigs.swapInUserSigs.zip(localSigs.swapInServerSigs)).map { (i, sigs) ->
+        val localSwapTxInMusig2 = tx.localSwapInputs().filter { it.swapInParams.version == 2 }.sortedBy { i -> i.serialId }.zip(localSigs.swapInUserPartialSigs.zip(remoteSigs.swapInServerPartialSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
-            val swapInProtocol = SwapInProtocol(i.userKey, i.serverKey, i.refundDelay)
+            val swapInProtocol = SwapInProtocolMusig2(i.swapInParams)
+            require(userSig.nonce == serverSig.nonce){ "user and server public nonces mismatch for local input ${i.serialId}"}
+            val commonNonce = userSig.nonce
+            val unsignedTx = tx.buildUnsignedTx()
+            val ctx = swapInProtocol.signingCtx(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, unsignedTx.txIn.map { tx.spentOutputs[it.outPoint]!! }, commonNonce)
+            val commonSig = ctx.partialSigAgg(listOf(userSig.sig, serverSig.sig))
+            val witness = swapInProtocol.witness(commonSig)
+            Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong(), witness))
+        }
+
+        val remoteOnlyTxIn = tx.remoteOnlyInputs().sortedBy { i -> i.serialId }.zip(remoteSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), w)) }
+        val remoteSwapTxIn = tx.remoteSwapInputs().filter { it.swapInParams.version == 1 }.sortedBy { i -> i.serialId }.zip(remoteSigs.swapInUserSigs.zip(localSigs.swapInServerSigs)).map { (i, sigs) ->
+            val (userSig, serverSig) = sigs
+            val swapInProtocol = SwapInProtocol(i.swapInParams.userKey, i.swapInParams.serverKey, i.swapInParams.refundDelay)
             val witness = swapInProtocol.witness(userSig, serverSig)
             Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), witness))
         }
-        val inputs = (sharedTxIn + localOnlyTxIn + localSwapTxIn + remoteOnlyTxIn + remoteSwapTxIn).sortedBy { (serialId, _) -> serialId }.map { (_, i) -> i }
+        val remoteSwapTxInMusig2 = tx.remoteSwapInputs().filter { it.swapInParams.version == 2 }.sortedBy { i -> i.serialId }.zip(remoteSigs.swapInUserPartialSigs.zip(localSigs.swapInServerPartialSigs)).map { (i, sigs) ->
+            val (userSig, serverSig) = sigs
+            val swapInProtocol = SwapInProtocolMusig2(i.swapInParams)
+            require(userSig.nonce == serverSig.nonce){ "user and server public nonces mismatch for remote input ${i.serialId}"}
+            val commonNonce = userSig.nonce
+            val unsignedTx = tx.buildUnsignedTx()
+            val ctx = swapInProtocol.signingCtx(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, unsignedTx.txIn.map { tx.spentOutputs[it.outPoint]!! }, commonNonce)
+            val commonSig = ctx.partialSigAgg(listOf(userSig.sig, serverSig.sig))
+            val witness = swapInProtocol.witness(commonSig)
+            Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), witness))
+        }
+        val inputs = (sharedTxIn + localOnlyTxIn + localSwapTxIn + localSwapTxInMusig2 + remoteOnlyTxIn + remoteSwapTxIn + remoteSwapTxInMusig2).sortedBy { (serialId, _) -> serialId }.map { (_, i) -> i }
         val sharedTxOut = listOf(Pair(tx.sharedOutput.serialId, TxOut(tx.sharedOutput.amount, tx.sharedOutput.pubkeyScript)))
         val localTxOut = tx.localOutputs.map { o -> Pair(o.serialId, TxOut(o.amount, o.pubkeyScript)) }
         val remoteTxOut = tx.remoteOutputs.map { o -> Pair(o.serialId, TxOut(o.amount, o.pubkeyScript)) }
@@ -466,6 +566,7 @@ sealed class InteractiveTxSessionAction {
     data class InvalidTxWeight(val channelId: ByteVector32, val txId: TxId) : RemoteFailure() { override fun toString(): String = "transaction weight is too big for standardness rules (txId=$txId)" }
     data class InvalidTxFeerate(val channelId: ByteVector32, val txId: TxId, val targetFeerate: FeeratePerKw, val actualFeerate: FeeratePerKw) : RemoteFailure() { override fun toString(): String = "transaction feerate too low (txId=$txId, targetFeerate=$targetFeerate, actualFeerate=$actualFeerate" }
     data class InvalidTxDoesNotDoubleSpendPreviousTx(val channelId: ByteVector32, val txId: TxId, val previousTxId: TxId) : RemoteFailure() { override fun toString(): String = "transaction replacement with txId=$txId doesn't double-spend previous attempt (txId=$previousTxId)" }
+    data class MissingNonce(val channelId: ByteVector32, val serialId: Long): RemoteFailure() { override fun toString(): String = "missing musig2 nonce for input serial_id=$serialId)" }
     // @formatter:on
 }
 
@@ -481,10 +582,11 @@ data class InteractiveTxSession(
     val remoteInputs: List<InteractiveTxInput.Incoming> = listOf(),
     val localOutputs: List<InteractiveTxOutput.Outgoing> = listOf(),
     val remoteOutputs: List<InteractiveTxOutput.Incoming> = listOf(),
-    val txCompleteSent: Boolean = false,
-    val txCompleteReceived: Boolean = false,
+    val txCompleteSent: TxComplete? = null,
+    val txCompleteReceived: TxComplete? = null,
     val inputsReceivedCount: Int = 0,
     val outputsReceivedCount: Int = 0,
+    val secretNonces: Map<Long, SecretNonce> = mapOf()
 ) {
 
     //                      Example flow:
@@ -520,31 +622,45 @@ data class InteractiveTxSession(
         localHtlcs
     )
 
-    val isComplete: Boolean = txCompleteSent && txCompleteReceived
+    val isComplete: Boolean = txCompleteSent != null && txCompleteReceived != null
 
     fun send(): Pair<InteractiveTxSession, InteractiveTxSessionAction> {
         return when (val msg = toSend.firstOrNull()) {
             null -> {
-                val txComplete = TxComplete(fundingParams.channelId)
-                val next = copy(txCompleteSent = true)
+                // generate a new secret nonce for each musig2 new swapin every time we send TxComplete
+                val currentNonces = secretNonces
+                fun userNonce(serialId: Long) = currentNonces.getOrElse(serialId) { SecretNonce.generate(swapInKeys.userPrivateKey, swapInKeys.userPublicKey, null, null, null, randomBytes32()) }
+                fun serverNonce(serialId: Long, serverKey: PublicKey) = currentNonces.getOrElse(serialId) { SecretNonce.generate(null, serverKey, null, null, null, randomBytes32()) }
+                val localMusig2SwapIns = localInputs.filterIsInstance<InteractiveTxInput.LocalSwapIn>().filter { swapInKeys.swapInProtocolMusig2.isMine(it.txOut) }
+                val localNonces = localMusig2SwapIns.map { it.serialId to userNonce(it.serialId) }.toMap()
+                val remoteMusig2SwapIns = remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapIn>().filter { it.swapInParams.version == 2 }
+                val remoteNonces = remoteMusig2SwapIns.map { it.serialId to serverNonce(it.serialId, it.swapInParams.serverKey) }.toMap()
+                val txComplete = TxComplete(fundingParams.channelId, (localNonces + remoteNonces).mapValues { it.value.publicNonce() })
+                val next = copy(txCompleteSent = txComplete, secretNonces = localNonces + remoteNonces)
                 if (next.isComplete) {
                     Pair(next, next.validateTx(txComplete))
                 } else {
                     Pair(next, InteractiveTxSessionAction.SendMessage(txComplete))
                 }
             }
+
             is Either.Left -> {
-                val next = copy(toSend = toSend.tail(), localInputs = localInputs + msg.value, txCompleteSent = false)
-                val swapInParams = TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay)
+                val next = copy(toSend = toSend.tail(), localInputs = localInputs + msg.value, txCompleteSent = null)
                 val txAddInput = when (msg.value) {
                     is InteractiveTxInput.LocalOnly -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence)
-                    is InteractiveTxInput.LocalSwapIn -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence, TlvStream(swapInParams))
+                    is InteractiveTxInput.LocalSwapIn -> {
+                        val version = if (swapInKeys.swapInProtocolMusig2.isMine(msg.value.txOut)) 2 else 1
+                        val swapInParams = TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay, version)
+                        TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence, TlvStream(swapInParams))
+                    }
+
                     is InteractiveTxInput.Shared -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.outPoint, msg.value.sequence)
                 }
                 Pair(next, InteractiveTxSessionAction.SendMessage(txAddInput))
             }
+
             is Either.Right -> {
-                val next = copy(toSend = toSend.tail(), localOutputs = localOutputs + msg.value, txCompleteSent = false)
+                val next = copy(toSend = toSend.tail(), localOutputs = localOutputs + msg.value, txCompleteSent = null)
                 val txAddOutput = when (msg.value) {
                     is InteractiveTxOutput.Local -> TxAddOutput(fundingParams.channelId, msg.value.serialId, msg.value.amount, msg.value.pubkeyScript)
                     is InteractiveTxOutput.Shared -> TxAddOutput(fundingParams.channelId, msg.value.serialId, msg.value.amount, msg.value.pubkeyScript)
@@ -567,8 +683,9 @@ data class InteractiveTxSession(
                 val expectedSharedOutpoint = fundingParams.sharedInput?.info?.outPoint ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 val receivedSharedOutpoint = message.sharedInput ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 if (expectedSharedOutpoint != receivedSharedOutpoint) return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
-                InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, message.sequence, previousFunding.toLocal, previousFunding.toRemote)
+                InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, fundingParams.sharedInput.info.txOut, message.sequence, previousFunding.toLocal, previousFunding.toRemote)
             }
+
             else -> {
                 if (message.previousTx.txOut.size <= message.previousTxOutput) {
                     return Either.Left(InteractiveTxSessionAction.InputOutOfBounds(message.channelId, message.serialId, message.previousTx.txid, message.previousTxOutput))
@@ -585,7 +702,7 @@ data class InteractiveTxSession(
                 val txOut = message.previousTx.txOut[message.previousTxOutput.toInt()]
                 when (message.swapInParams) {
                     null -> InteractiveTxInput.RemoteOnly(message.serialId, outpoint, txOut, message.sequence)
-                    else -> InteractiveTxInput.RemoteSwapIn(message.serialId, outpoint, txOut, message.sequence, message.swapInParams.userKey, message.swapInParams.serverKey, message.swapInParams.refundDelay)
+                    else -> InteractiveTxInput.RemoteSwapIn(message.serialId, outpoint, txOut, message.sequence, message.swapInParams)
                 }
             }
         }
@@ -624,35 +741,39 @@ data class InteractiveTxSession(
             is TxAddInput -> {
                 receiveInput(message).fold(
                     { f -> Pair(this, f) },
-                    { input -> copy(remoteInputs = remoteInputs + input, inputsReceivedCount = inputsReceivedCount + 1, txCompleteReceived = false).send() }
+                    { input -> copy(remoteInputs = remoteInputs + input, inputsReceivedCount = inputsReceivedCount + 1, txCompleteReceived = null).send() }
                 )
             }
+
             is TxAddOutput -> {
                 receiveOutput(message).fold(
                     { f -> Pair(this, f) },
-                    { output -> copy(remoteOutputs = remoteOutputs + output, outputsReceivedCount = outputsReceivedCount + 1, txCompleteReceived = false).send() }
+                    { output -> copy(remoteOutputs = remoteOutputs + output, outputsReceivedCount = outputsReceivedCount + 1, txCompleteReceived = null).send() }
                 )
             }
+
             is TxRemoveInput -> {
                 val remoteInputs1 = remoteInputs.filterNot { i -> (i as InteractiveTxInput).serialId == message.serialId }
                 if (remoteInputs.size != remoteInputs1.size) {
-                    val next = copy(remoteInputs = remoteInputs1, txCompleteReceived = false)
+                    val next = copy(remoteInputs = remoteInputs1, txCompleteReceived = null)
                     next.send()
                 } else {
                     Pair(this, InteractiveTxSessionAction.UnknownSerialId(message.channelId, message.serialId))
                 }
             }
+
             is TxRemoveOutput -> {
                 val remoteOutputs1 = remoteOutputs.filterNot { o -> (o as InteractiveTxOutput).serialId == message.serialId }
                 if (remoteOutputs.size != remoteOutputs1.size) {
-                    val next = copy(remoteOutputs = remoteOutputs1, txCompleteReceived = false)
+                    val next = copy(remoteOutputs = remoteOutputs1, txCompleteReceived = null)
                     next.send()
                 } else {
                     Pair(this, InteractiveTxSessionAction.UnknownSerialId(message.channelId, message.serialId))
                 }
             }
+
             is TxComplete -> {
-                val next = copy(txCompleteReceived = true)
+                val next = copy(txCompleteReceived = message)
                 if (next.isComplete) {
                     Pair(next, next.validateTx(null))
                 } else {
@@ -663,6 +784,10 @@ data class InteractiveTxSession(
     }
 
     private fun validateTx(txComplete: TxComplete?): InteractiveTxSessionAction {
+        // tx_complete MUST have been sent and received for us to reach this state, require is used here to tell the compiler that txCompleteSent and txCompleteReceived are not null
+        require(txCompleteSent != null)
+        require(txCompleteReceived != null)
+
         if (localInputs.size + remoteInputs.size > 252 || localOutputs.size + remoteOutputs.size > 252) {
             return InteractiveTxSessionAction.InvalidTxInputOutputCount(fundingParams.channelId, localInputs.size + remoteInputs.size, localOutputs.size + remoteOutputs.size)
         }
@@ -697,8 +822,32 @@ data class InteractiveTxSession(
             }
             sharedInputs.first()
         }
+        val localOnlyInputsWithNonces = localOnlyInputs.map {
+            when {
+                it is InteractiveTxInput.LocalSwapIn && swapInKeys.swapInProtocolMusig2.isMine(it.txOut) -> {
+                    val userNonce = secretNonces[it.serialId]
+                    val serverNonce = txCompleteReceived.publicNonces[it.serialId]
+                    if (userNonce == null || serverNonce == null) return InteractiveTxSessionAction.MissingNonce(fundingParams.channelId, it.serialId)
+                    it
+                }
 
-        val sharedTx = SharedTransaction(sharedInput, sharedOutput, localOnlyInputs, remoteOnlyInputs, localOnlyOutputs, remoteOnlyOutputs, fundingParams.lockTime)
+                else -> it
+            }
+        }
+        val remoteOnlyInputsWithNonces = remoteOnlyInputs.map {
+            when {
+                it is InteractiveTxInput.RemoteSwapIn && it.swapInParams.version == 2 -> {
+                    val userNonce = secretNonces[it.serialId]
+                    val serverNonce = txCompleteReceived.publicNonces[it.serialId]
+                    if (userNonce == null || serverNonce == null) return InteractiveTxSessionAction.MissingNonce(fundingParams.channelId, it.serialId)
+                    it
+                }
+
+                else -> it
+            }
+        }
+
+        val sharedTx = SharedTransaction(sharedInput, sharedOutput, localOnlyInputsWithNonces, remoteOnlyInputsWithNonces, localOnlyOutputs, remoteOnlyOutputs, fundingParams.lockTime)
         val tx = sharedTx.buildUnsignedTx()
         if (sharedTx.localAmountIn < sharedTx.localAmountOut || sharedTx.remoteAmountIn < sharedTx.remoteAmountOut) {
             return InteractiveTxSessionAction.InvalidTxChangeAmount(fundingParams.channelId, tx.txid)
@@ -815,6 +964,7 @@ data class InteractiveTxSigningSession(
                     }
                 }
             }
+
             is Either.Right -> Pair(this, InteractiveTxSigningSessionAction.WaitForTxSigs)
         }
     }
@@ -838,6 +988,7 @@ data class InteractiveTxSigningSession(
         data class UnsignedLocalCommit(val index: Long, val spec: CommitmentSpec, val commitTx: Transactions.TransactionWithInputInfo.CommitTx, val htlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>)
 
         fun create(
+            session: InteractiveTxSession,
             keyManager: KeyManager,
             channelParams: ChannelParams,
             fundingParams: InteractiveTxParams,
@@ -899,7 +1050,7 @@ data class InteractiveTxSigningSession(
                 // We haven't received the remote commit_sig: we don't have local htlc txs yet.
                 val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
                 val remoteCommit = RemoteCommit(remoteCommitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
-                val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
+                val signedFundingTx = sharedTx.sign(session, keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
                 Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, liquidityLease, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
             }
         }
