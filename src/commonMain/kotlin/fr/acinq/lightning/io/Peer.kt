@@ -226,6 +226,13 @@ class Peer(
             _bootChannelsFlow.value = bootChannels.associateBy { it.channelId }
             val channelIds = bootChannels.map {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
+                when (it) {
+                    is ChannelStateWithCommitments -> {
+                        logger.info { "fundingPubkey1=${nodeParams.keyManager.channelKeys(it.commitments.params.localParams.fundingKeyPath).fundingKey(1).publicKey().toHex()}"}
+                        logger.info { "fundingPrivkey1=${nodeParams.keyManager.channelKeys(it.commitments.params.localParams.fundingKeyPath).fundingKey(1).toHex()}"}
+                    }
+                    else -> {}
+                }
                 val state = WaitForInit
                 val (state1, actions) = state.process(ChannelCommand.Init.Restore(it))
                 processActions(it.channelId, peerConnection, actions)
