@@ -25,7 +25,7 @@ sealed class LiquidityPolicy {
         return when (this) {
             is Disable -> LiquidityEvents.Rejected.Reason.PolicySetToDisabled
             is Auto -> {
-                val maxAbsoluteFee = if (skipAbsoluteFeeCheck && source == LiquidityEvents.Source.OffChainPayment) Long.MAX_VALUE.msat else this.maxAbsoluteFee.toMilliSatoshi()
+                val maxAbsoluteFee = if (skipAbsoluteFeeCheck && source is LiquidityEvents.Source.OffChainPayment) Long.MAX_VALUE.msat else this.maxAbsoluteFee.toMilliSatoshi()
                 val maxRelativeFee = amount * maxRelativeFeeBasisPoints / 10_000
                 logger.info { "liquidity policy check: fee=$fee maxAbsoluteFee=$maxAbsoluteFee maxRelativeFee=$maxRelativeFee policy=$this" }
                 if (fee > maxRelativeFee) {
