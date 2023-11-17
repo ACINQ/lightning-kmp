@@ -121,6 +121,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
  * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
  * @param minFinalCltvExpiryDelta cltv-expiry-delta that we require when receiving a payment.
+ * @param maxFinalCltvExpiryDelta maximum cltv-expiry-delta that we accept when receiving a payment.
  * @param bolt12invoiceExpiry duration for which bolt12 invoices that we create are valid.
  */
 data class NodeParams(
@@ -152,6 +153,7 @@ data class NodeParams(
     val zeroConfPeers: Set<PublicKey>,
     val liquidityPolicy: MutableStateFlow<LiquidityPolicy>,
     val minFinalCltvExpiryDelta: CltvExpiryDelta,
+    val maxFinalCltvExpiryDelta: CltvExpiryDelta,
     val bolt12invoiceExpiry: Duration
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
@@ -227,6 +229,7 @@ data class NodeParams(
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
         liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false)),
         minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
+        maxFinalCltvExpiryDelta = CltvExpiryDelta(500),
         bolt12invoiceExpiry = 60.seconds
     )
 
