@@ -6,22 +6,14 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
 
-sealed class RouteBlindingEncryptedDataTlv : Tlv {
-    /** Some padding can be added to ensure all payloads are the same size to improve privacy. */
-    data class Padding(val dummy: ByteVector) : RouteBlindingEncryptedDataTlv() {
-        override val tag: Long get() = Padding.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(dummy, out)
-
-        companion object : TlvValueReader<Padding> {
-            const val tag: Long = 1
-            override fun read(input: Input): Padding =
-                Padding(ByteVector(LightningCodecs.bytes(input, input.availableBytes)))
-        }
-    }
-
+@Serializable
+sealed class RecipientDataTlv : Tlv {
     /** Id of the next node. */
-    data class OutgoingNodeId(val nodeId: PublicKey) : RouteBlindingEncryptedDataTlv() {
+    @Serializable
+    data class OutgoingNodeId(@Contextual val nodeId: PublicKey) : RecipientDataTlv() {
         override val tag: Long get() = OutgoingNodeId.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(nodeId.value, out)
 
@@ -38,7 +30,8 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
      * It should use that field to detect when blinded routes are used outside of their intended use (malicious probing)
      * and react accordingly (ignore the message or send an error depending on the use-case).
      */
-    data class PathId(val data: ByteVector) : RouteBlindingEncryptedDataTlv() {
+    @Serializable
+    data class PathId(@Contextual val data: ByteVector) : RecipientDataTlv() {
         override val tag: Long get() = PathId.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(data, out)
 
@@ -50,7 +43,8 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
     }
 
     /** Blinding override for the rest of the route. */
-    data class NextBlinding(val blinding: PublicKey) : RouteBlindingEncryptedDataTlv() {
+    @Serializable
+    data class NextBlinding(@Contextual val blinding: PublicKey) : RecipientDataTlv() {
         override val tag: Long get() = NextBlinding.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(blinding.value, out)
 
@@ -62,10 +56,10 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
     }
 }
 
-data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryptedDataTlv>) {
-    val nextNodeId = records.get<RouteBlindingEncryptedDataTlv.OutgoingNodeId>()?.nodeId
-    val pathId = records.get<RouteBlindingEncryptedDataTlv.PathId>()?.data
-    val nextBlindingOverride = records.get<RouteBlindingEncryptedDataTlv.NextBlinding>()?.blinding
+data class RecipientData(val records: TlvStream<RecipientDataTlv>) {
+    val nextNodeId = records.get<RecipientDataTlv.OutgoingNodeId>()?.nodeId
+    val pathId = records.get<RecipientDataTlv.PathId>()?.data
+    val nextBlindingOverride = records.get<RecipientDataTlv.NextBlinding>()?.blinding
 
     fun write(out: Output) = tlvSerializer.write(records, out)
 
@@ -77,16 +71,15 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
 
     companion object {
         val tlvSerializer = TlvStreamSerializer(
-            false, @Suppress("UNCHECKED_CAST") mapOf(
-                RouteBlindingEncryptedDataTlv.Padding.tag to RouteBlindingEncryptedDataTlv.Padding.Companion as TlvValueReader<RouteBlindingEncryptedDataTlv>,
-                RouteBlindingEncryptedDataTlv.OutgoingNodeId.tag to RouteBlindingEncryptedDataTlv.OutgoingNodeId.Companion as TlvValueReader<RouteBlindingEncryptedDataTlv>,
-                RouteBlindingEncryptedDataTlv.PathId.tag to RouteBlindingEncryptedDataTlv.PathId.Companion as TlvValueReader<RouteBlindingEncryptedDataTlv>,
-                RouteBlindingEncryptedDataTlv.NextBlinding.tag to RouteBlindingEncryptedDataTlv.NextBlinding.Companion as TlvValueReader<RouteBlindingEncryptedDataTlv>,
+            true, @Suppress("UNCHECKED_CAST") mapOf(
+                RecipientDataTlv.OutgoingNodeId.tag to RecipientDataTlv.OutgoingNodeId.Companion as TlvValueReader<RecipientDataTlv>,
+                RecipientDataTlv.PathId.tag to RecipientDataTlv.PathId.Companion as TlvValueReader<RecipientDataTlv>,
+                RecipientDataTlv.NextBlinding.tag to RecipientDataTlv.NextBlinding.Companion as TlvValueReader<RecipientDataTlv>,
             )
         )
 
-        fun read(input: Input): RouteBlindingEncryptedData = RouteBlindingEncryptedData(tlvSerializer.read(input))
+        fun read(input: Input): RecipientData = RecipientData(tlvSerializer.read(input))
 
-        fun read(bytes: ByteArray): RouteBlindingEncryptedData = read(ByteArrayInput(bytes))
+        fun read(bytes: ByteArray): RecipientData = read(ByteArrayInput(bytes))
     }
 }

@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.*
 import fr.acinq.lightning.payment.*
+import fr.acinq.lightning.message.Postman
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
 import fr.acinq.lightning.transactions.Transactions
@@ -191,6 +192,8 @@ class Peer(
     val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.address.also { swapInWallet.addAddress(it) }
 
     private var swapInJob: Job? = null
+
+    private val postman = Postman(nodeParams.nodePrivateKey, this)
 
     init {
         logger.info { "initializing peer" }
@@ -1011,7 +1014,7 @@ class Peer(
                     }
                     is OnionMessage -> {
                         logger.info { "received ${msg::class.simpleName}" }
-                        // TODO: process onion message
+                        postman.processOnionMessage(msg)
                     }
                 }
             }
@@ -1153,6 +1156,18 @@ class Peer(
                     }
                 }
             }
+        }
+    }
+
+    fun sendOnionMessage(nextNodeId: PublicKey, onionMessage: OnionMessage): Postman.SendMessageError? {
+        return if (nextNodeId == remoteNodeId) {
+            if(peerConnection?.send(onionMessage) == null){
+                Postman.SendMessageError("Not connected to peer")
+            } else {
+                null
+            }
+        } else {
+            Postman.SendMessageError("Invalid next node id")
         }
     }
 }

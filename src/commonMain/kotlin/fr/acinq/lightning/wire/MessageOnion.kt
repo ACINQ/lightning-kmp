@@ -19,6 +19,7 @@ sealed class OnionMessagePayloadTlv : Tlv {
         override fun write(out: Output) {
             LightningCodecs.writeBytes(blindedRoute.introductionNodeId.value, out)
             LightningCodecs.writeBytes(blindedRoute.blindingKey.value, out)
+            LightningCodecs.writeByte(blindedRoute.blindedNodes.size, out)
             for (hop in blindedRoute.blindedNodes) {
                 LightningCodecs.writeBytes(hop.blindedPublicKey.value, out)
                 LightningCodecs.writeU16(hop.encryptedPayload.size(), out)
@@ -31,13 +32,12 @@ sealed class OnionMessagePayloadTlv : Tlv {
             override fun read(input: Input): ReplyPath {
                 val firstNodeId = PublicKey(LightningCodecs.bytes(input, 33))
                 val blinding = PublicKey(LightningCodecs.bytes(input, 33))
-                val path = sequence {
-                    while (input.availableBytes > 0) {
-                        val blindedPublicKey = PublicKey(LightningCodecs.bytes(input, 33))
-                        val encryptedPayload = ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
-                        yield(RouteBlinding.BlindedNode(blindedPublicKey, encryptedPayload))
-                    }
-                }.toList()
+                val numHops = LightningCodecs.byte(input)
+                val path = (0 until numHops).map {
+                    val blindedPublicKey = PublicKey(LightningCodecs.bytes(input, 33))
+                    val encryptedPayload = ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
+                    RouteBlinding.BlindedNode(blindedPublicKey, encryptedPayload)
+                }
                 return ReplyPath(RouteBlinding.BlindedRoute(firstNodeId, blinding, path))
             }
         }
