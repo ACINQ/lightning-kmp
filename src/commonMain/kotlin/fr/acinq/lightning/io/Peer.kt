@@ -13,7 +13,9 @@ import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.*
 import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.payment.OnionMessageAction
 import fr.acinq.lightning.payment.*
+import fr.acinq.lightning.payment.OfferManager
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
 import fr.acinq.lightning.transactions.Transactions
@@ -74,8 +76,11 @@ data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : 
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash
 }
+data class PayOffer(val paymentId: UUID, val amount: MilliSatoshi, val quantity: Long, val offer: OfferTypes.Offer, val minReplyPathHops: Int, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand()
 
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
+
+data class SendMessage(val message: OnionMessage) : PeerCommand()
 
 sealed class PeerEvent
 @Deprecated("Replaced by NodeEvents", replaceWith = ReplaceWith("PaymentEvents.PaymentReceived", "fr.acinq.lightning.PaymentEvents"))
@@ -86,6 +91,8 @@ sealed class SendPaymentResult : PeerEvent() {
 }
 data class PaymentNotSent(override val request: SendPayment, val reason: OutgoingPaymentFailure) : SendPaymentResult()
 data class PaymentSent(override val request: SendPayment, val payment: LightningOutgoingPayment) : SendPaymentResult()
+data class OfferNotPaid(val request: PayOffer, val reason: OfferPaymentFailure) : PeerEvent()
+data class OfferInvoiceReceived(val request: PayOffer, val invoice: Bolt12Invoice, val payerKey: PrivateKey) : PeerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 /**
@@ -199,6 +206,8 @@ class Peer(
     val swapInWallet = SwapInWallet(nodeParams.chain, nodeParams.keyManager.swapInOnChainWallet, watcher.client, scope, nodeParams.loggerFactory)
 
     private var swapInJob: Job? = null
+
+    private val offerManager = OfferManager(nodeParams, walletParams, logger)
 
     init {
         logger.info { "initializing peer" }
@@ -1091,7 +1100,7 @@ class Peer(
                     }
                     is OnionMessage -> {
                         logger.info { "received ${msg::class.simpleName}" }
-                        // TODO: process onion message
+                        offerManager.receiveMessage(msg, _channels, currentTipFlow.filterNotNull().first().first)?.let { processOnionMessageAction(it) }
                     }
                 }
             }
@@ -1240,6 +1249,26 @@ class Peer(
                     }
                 }
             }
+            is PayOffer -> {
+                val invoiceRequests = offerManager.requestInvoice(cmd)
+                invoiceRequests.forEach { input.send(SendMessage(it)) }
+                if (invoiceRequests.isEmpty()) {
+                    _eventsFlow.emit(OfferNotPaid(cmd, OfferPaymentFailure.NoResponse))
+                }
+            }
+            is SendMessage -> peerConnection?.send(cmd.message)
+            // TODO: timeout invoice requests
+        }
+    }
+
+    private suspend fun processOnionMessageAction(action: OnionMessageAction) {
+        when (action) {
+            is OnionMessageAction.PayInvoice -> {
+                _eventsFlow.emit(OfferInvoiceReceived(action.payOffer, action.invoice, action.payerKey))
+                input.send(SendPayment(action.payOffer.paymentId, action.payOffer.amount, action.invoice.nodeId, action.invoice, action.payOffer.trampolineFeesOverride))
+            }
+            is OnionMessageAction.ReportPaymentFailure -> _eventsFlow.emit(OfferNotPaid(action.payOffer, action.failure))
+            is OnionMessageAction.SendMessage -> input.send(SendMessage(action.message))
         }
     }
 }
