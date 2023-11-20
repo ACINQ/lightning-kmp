@@ -57,31 +57,34 @@ class SwapInManager(private var reservedUtxos: Set<OutPoint>, private val logger
 
     companion object {
         /**
-         * Return the list of wallet inputs used in pending unconfirmed channel funding attempts.
+         * Return the list of wallet inputs already used in channel funding attempts.
          * These inputs should not be reused in other funding attempts, otherwise we would double-spend ourselves.
          */
         fun reservedWalletInputs(channels: List<PersistedChannelState>): Set<OutPoint> {
-            val unconfirmedFundingTxs: List<SignedSharedTransaction> = buildList {
+            return buildSet {
                 for (channel in channels) {
                     // Add all unsigned inputs currently used to build a funding tx that isn't broadcast yet (creation, rbf, splice).
                     when {
-                        channel is WaitForFundingSigned -> add(channel.signingSession.fundingTx)
-                        channel is WaitForFundingConfirmed && channel.rbfStatus is RbfStatus.WaitingForSigs -> add(channel.rbfStatus.session.fundingTx)
-                        channel is Normal && channel.spliceStatus is SpliceStatus.WaitingForSigs -> add(channel.spliceStatus.session.fundingTx)
+                        channel is WaitForFundingSigned -> addAll(channel.signingSession.fundingTx.tx.localInputs.map { it.outPoint })
+                        channel is WaitForFundingConfirmed && channel.rbfStatus is RbfStatus.WaitingForSigs -> addAll(channel.rbfStatus.session.fundingTx.tx.localInputs.map { it.outPoint })
+                        channel is Normal && channel.spliceStatus is SpliceStatus.WaitingForSigs -> addAll(channel.spliceStatus.session.fundingTx.tx.localInputs.map { it.outPoint })
                         else -> {}
                     }
-                    // Add all inputs in unconfirmed funding txs (utxos spent by confirmed transactions will never appear in our wallet).
+                    // Add all inputs from previously broadcast funding txs.
+                    // We include confirmed transactions as well, in case our electrum server (and thus our wallet) isn't up-to-date.
                     when (channel) {
                         is ChannelStateWithCommitments -> channel.commitments.all
                             .map { it.localFundingStatus }
-                            .filterIsInstance<LocalFundingStatus.UnconfirmedFundingTx>()
-                            .forEach { add(it.sharedTx) }
+                            .forEach { fundingStatus ->
+                                when (fundingStatus) {
+                                    is LocalFundingStatus.UnconfirmedFundingTx -> addAll(fundingStatus.sharedTx.tx.localInputs.map { it.outPoint })
+                                    is LocalFundingStatus.ConfirmedFundingTx -> addAll(fundingStatus.signedTx.txIn.map { it.outPoint })
+                                }
+                            }
                         else -> {}
                     }
                 }
             }
-            val localInputs = unconfirmedFundingTxs.flatMap { fundingTx -> fundingTx.tx.localInputs.map { it.outPoint } }
-            return localInputs.toSet()
         }
     }
 }
