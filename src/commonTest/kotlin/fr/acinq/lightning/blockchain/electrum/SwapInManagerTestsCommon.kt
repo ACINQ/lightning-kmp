@@ -4,19 +4,22 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.SwapInParams
+import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
+import fr.acinq.lightning.blockchain.WatchEventConfirmed
+import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.channel.LNChannel
 import fr.acinq.lightning.channel.LocalFundingStatus
 import fr.acinq.lightning.channel.TestsHelper
+import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.SpliceTestsCommon
 import fr.acinq.lightning.channel.states.WaitForFundingSignedTestsCommon
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.wire.SpliceLocked
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
+import kotlin.test.*
 
 class SwapInManagerTestsCommon : LightningTestSuite() {
 
@@ -168,6 +171,30 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
             assertNotNull(result)
             assertEquals(3, result.walletInputs.size)
         }
+    }
+
+    @Test
+    fun `swap funds -- ignore inputs from confirmed splice`() {
+        val (alice, bob) = TestsHelper.reachNormal(zeroConf = true)
+        val (alice1, _) = SpliceTestsCommon.spliceIn(alice, bob, listOf(50_000.sat, 75_000.sat))
+        assertEquals(2, alice1.commitments.active.size)
+        assertIs<LocalFundingStatus.UnconfirmedFundingTx>(alice1.commitments.latest.localFundingStatus)
+        val inputs = (alice1.commitments.latest.localFundingStatus as LocalFundingStatus.UnconfirmedFundingTx).sharedTx.tx.localInputs
+        assertEquals(2, inputs.size) // 2 splice inputs
+        val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
+        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 100, 2, spliceTx)))
+        val (alice3, _) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.hash)))
+        assertIs<LNChannel<Normal>>(alice3)
+        assertEquals(1, alice3.commitments.all.size)
+        assertIs<LocalFundingStatus.ConfirmedFundingTx>(alice3.commitments.latest.localFundingStatus)
+        val wallet = run {
+            val parentTxs = inputs.map { it.previousTx }
+            val unspent = inputs.map { i -> UnspentItem(i.outPoint.txid, i.outPoint.index.toInt(), i.txOut.amount.toLong(), 100) }
+            WalletState(mapOf(dummyAddress to unspent), parentTxs.associateBy { it.txid })
+        }
+        val mgr = SwapInManager(listOf(alice3.state), logger)
+        val cmd = SwapInCommand.TrySwapIn(currentBlockHeight = 150, wallet = wallet, swapInParams = SwapInParams(minConfirmations = 5, maxConfirmations = 720, refundDelay = 900), trustedTxs = emptySet())
+        mgr.process(cmd).also { assertNull(it) }
     }
 
 }
