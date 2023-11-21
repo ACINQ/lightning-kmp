@@ -480,6 +480,7 @@ data class Normal(
                                     fundingParams,
                                     previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                     previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
+                                    localHtlcs = parentCommitment.localCommit.spec.htlcs,
                                     fundingContributions = FundingContributions(emptyList(), emptyList()), // as non-initiator we don't contribute to this splice for now
                                     previousTxs = emptyList()
                                 )
@@ -543,7 +544,7 @@ data class Normal(
                                         channelKeys = channelKeys(),
                                         swapInKeys = keyManager.swapInOnChainWallet,
                                         params = fundingParams,
-                                        sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
+                                        sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote, toHtlcs = parentCommitment.localCommit.spec.htlcs.map { it.add.amountMsat }.sum())),
                                         walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                         localOutputs = spliceStatus.command.spliceOutputs,
                                         changePubKey = null // we don't want a change output: we're spending every funds available
@@ -561,6 +562,7 @@ data class Normal(
                                                 fundingParams,
                                                 previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                                 previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
+                                                localHtlcs = parentCommitment.localCommit.spec.htlcs,
                                                 fundingContributions.value, previousTxs = emptyList()
                                             ).send()
                                             when (interactiveTxAction) {
@@ -612,7 +614,8 @@ data class Normal(
                                         localCommitmentIndex = parentCommitment.localCommit.index,
                                         remoteCommitmentIndex = parentCommitment.remoteCommit.index,
                                         parentCommitment.localCommit.spec.feerate,
-                                        parentCommitment.remoteCommit.remotePerCommitmentPoint
+                                        parentCommitment.remoteCommit.remotePerCommitmentPoint,
+                                        localHtlcs = parentCommitment.localCommit.spec.htlcs
                                     )
                                     when (signingSession) {
                                         is Either.Left -> {

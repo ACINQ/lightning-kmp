@@ -93,12 +93,66 @@ data class HtlcTxAndSigs(val txinfo: HtlcTx, val localSig: ByteVector64, val rem
 data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcTxAndSigs>)
 
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
-data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs)
+data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs) {
+    companion object {
+        fun fromCommitSig(keyManager: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long,
+                          remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo, commit: CommitSig,
+                          localCommitIndex: Long, spec: CommitmentSpec, localPerCommitmentPoint: PublicKey, log: MDCLogger): Either<ChannelException, LocalCommit> {
+            val (localCommitTx, sortedHtlcTxs) = Commitments.makeLocalTxs(
+                keyManager,
+                commitTxNumber = localCommitIndex,
+                params.localParams,
+                params.remoteParams,
+                fundingTxIndex = fundingTxIndex,
+                remoteFundingPubKey = remoteFundingPubKey,
+                commitInput,
+                localPerCommitmentPoint = localPerCommitmentPoint,
+                spec
+            )
+            val sig = Transactions.sign(localCommitTx, keyManager.fundingKey(fundingTxIndex))
+
+            // no need to compute htlc sigs if commit sig doesn't check out
+            val signedCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPubKey(fundingTxIndex), remoteFundingPubKey, sig, commit.signature)
+            when (val check = Transactions.checkSpendable(signedCommitTx)) {
+                is Try.Failure -> {
+                    log.error(check.error) { "remote signature $commit is invalid" }
+                    return Either.Left(InvalidCommitmentSignature(params.channelId, signedCommitTx.tx.txid))
+                }
+                else -> {}
+            }
+            if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
+                return Either.Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
+            }
+            val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, keyManager.htlcKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL) }
+            val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.deriveForCommitment(localPerCommitmentPoint)
+            // combine the sigs to make signed txs
+            val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->
+                when (htlcTx) {
+                    is HtlcTx.HtlcTimeoutTx -> {
+                        if (Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isFailure) {
+                            return Either.Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
+                        }
+                        HtlcTxAndSigs(htlcTx, localSig, remoteSig)
+                    }
+                    is HtlcTx.HtlcSuccessTx -> {
+                        // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
+                        // which was created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
+                        if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)) {
+                            return Either.Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
+                        }
+                        HtlcTxAndSigs(htlcTx, localSig, remoteSig)
+                    }
+                }
+            }
+            return Either.Right(LocalCommit(localCommitIndex, spec, PublishableTxs(signedCommitTx, htlcTxsAndSigs)))
+        }
+    }
+}
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxId, val remotePerCommitmentPoint: PublicKey) {
     fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo): CommitSig {
-        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(
+        val (remoteCommitTx, sortedHtlcsTxs) = Commitments.makeRemoteTxs(
             channelKeys,
             index,
             params.localParams,
@@ -111,7 +165,6 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         )
         val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-        val sortedHtlcsTxs = htlcTxs.sortedBy { it.input.outPoint.index }
         val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
         return CommitSig(params.channelId, sig, htlcSigs.toList())
     }
@@ -409,7 +462,7 @@ data class Commitment(
     fun sendCommit(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, batchSize: Int, log: MDCLogger): Pair<Commitment, CommitSig> {
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
-        val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(
+        val (remoteCommitTx, sortedHtlcTxs) = Commitments.makeRemoteTxs(
             channelKeys,
             commitTxNumber = remoteCommit.index + 1,
             params.localParams,
@@ -422,7 +475,6 @@ data class Commitment(
         )
         val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
 
-        val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remoteNextPerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
@@ -467,62 +519,15 @@ data class Commitment(
         // receiving money i.e its commit tx has one output for them
         val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
         val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommit.index + 1)
-        val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(
-            channelKeys,
-            commitTxNumber = localCommit.index + 1,
-            params.localParams,
-            params.remoteParams,
-            fundingTxIndex = fundingTxIndex,
-            remoteFundingPubKey = remoteFundingPubkey,
-            commitInput,
-            localPerCommitmentPoint = localPerCommitmentPoint,
-            spec
-        )
-        val sig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
 
-        log.info {
-            val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
-            val htlcsOut = spec.htlcs.outgoings().map { it.id }.joinToString(",")
-            "built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txId=${localCommitTx.tx.txid} fundingTxId=$fundingTxId"
-        }
-
-        // no need to compute htlc sigs if commit sig doesn't check out
-        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubkey, sig, commit.signature)
-        when (val check = Transactions.checkSpendable(signedCommitTx)) {
-            is Try.Failure -> {
-                log.error(check.error) { "remote signature $commit is invalid" }
-                return Either.Left(InvalidCommitmentSignature(params.channelId, signedCommitTx.tx.txid))
+        return LocalCommit.fromCommitSig(channelKeys, params, fundingTxIndex, remoteFundingPubkey, commitInput, commit, localCommit.index + 1, spec, localPerCommitmentPoint, log).map { localCommit1 ->
+            log.info {
+                val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
+                val htlcsOut = spec.htlcs.outgoings().map { it.id }.joinToString(",")
+                "built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${localCommit1.publishableTxs.commitTx.tx.txid} fundingTxId=$fundingTxId"
             }
-            else -> {}
+            copy(localCommit = localCommit1)
         }
-
-        val sortedHtlcTxs: List<HtlcTx> = htlcTxs.sortedBy { it.input.outPoint.index }
-        if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
-            return Either.Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
-        }
-        val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL) }
-        val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.deriveForCommitment(localPerCommitmentPoint)
-        // combine the sigs to make signed txs
-        val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->
-            when (htlcTx) {
-                is HtlcTx.HtlcTimeoutTx -> {
-                    if (Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isFailure) {
-                        return Either.Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
-                    }
-                    HtlcTxAndSigs(htlcTx, localSig, remoteSig)
-                }
-                is HtlcTx.HtlcSuccessTx -> {
-                    // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-                    // which was created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-                    if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)) {
-                        return Either.Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
-                    }
-                    HtlcTxAndSigs(htlcTx, localSig, remoteSig)
-                }
-            }
-        }
-        val localCommit1 = LocalCommit(localCommit.index + 1, spec, PublishableTxs(signedCommitTx, htlcTxsAndSigs))
-        return Either.Right(copy(localCommit = localCommit1))
     }
 }
 

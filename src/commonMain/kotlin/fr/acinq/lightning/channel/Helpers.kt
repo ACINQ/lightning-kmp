@@ -277,14 +277,14 @@ object Helpers {
             )
         }
 
-        data class PairOfCommitTxs(val localSpec: CommitmentSpec, val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val remoteSpec: CommitmentSpec, val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx)
+        data class PairOfCommitTxs(val localSpec: CommitmentSpec, val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val localHtlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>, val remoteSpec: CommitmentSpec, val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val remoteHtlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>)
 
         /**
          * Creates both sides' first commitment transaction.
          *
          * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
          */
-        fun makeCommitTxsWithoutHtlcs(
+        fun makeCommitTxs(
             channelKeys: KeyManager.ChannelKeys,
             channelId: ByteVector32,
             localParams: LocalParams,
@@ -292,6 +292,7 @@ object Helpers {
             fundingAmount: Satoshi,
             toLocal: MilliSatoshi,
             toRemote: MilliSatoshi,
+            localHtlcs: Set<DirectedHtlc>,
             localCommitmentIndex: Long,
             remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
@@ -301,8 +302,8 @@ object Helpers {
             remoteFundingPubkey: PublicKey,
             remotePerCommitmentPoint: PublicKey
         ): Either<ChannelException, PairOfCommitTxs> {
-            val localSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
-            val remoteSpec = CommitmentSpec(setOf(), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
+            val localSpec = CommitmentSpec(localHtlcs, commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
+            val remoteSpec = CommitmentSpec(localHtlcs.map{ it.opposite() }.toSet(), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
             if (!localParams.isInitiator) {
                 // They initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
@@ -319,7 +320,7 @@ object Helpers {
             val fundingPubKey = channelKeys.fundingPubKey(fundingTxIndex)
             val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, fundingPubKey, remoteFundingPubkey)
             val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommitmentIndex)
-            val localCommitTx = Commitments.makeLocalTxs(
+            val (localCommitTx, localHtlcTxs) = Commitments.makeLocalTxs(
                 channelKeys,
                 commitTxNumber = localCommitmentIndex,
                 localParams,
@@ -329,8 +330,8 @@ object Helpers {
                 commitmentInput,
                 localPerCommitmentPoint = localPerCommitmentPoint,
                 localSpec
-            ).first
-            val remoteCommitTx = Commitments.makeRemoteTxs(
+            )
+            val (remoteCommitTx, remoteHtlcTxs) = Commitments.makeRemoteTxs(
                 channelKeys,
                 commitTxNumber = remoteCommitmentIndex,
                 localParams,
@@ -340,9 +341,9 @@ object Helpers {
                 commitmentInput,
                 remotePerCommitmentPoint = remotePerCommitmentPoint,
                 remoteSpec
-            ).first
+            )
 
-            return Either.Right(PairOfCommitTxs(localSpec, localCommitTx, remoteSpec, remoteCommitTx))
+            return Either.Right(PairOfCommitTxs(localSpec, localCommitTx, localHtlcTxs, remoteSpec, remoteCommitTx, remoteHtlcTxs))
         }
 
     }
@@ -961,6 +962,10 @@ object Helpers {
                 // NB: from the point of view of the remote, their incoming htlcs are our outgoing htlcs
                 htlcsInRemoteCommit.incomings().toSet() - localCommit.spec.htlcs.outgoings().toSet()
             }
+            revokedCommitPublished.map { it.commitTx.txid }.contains(tx.txid) -> {
+                // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment
+                (nextRemoteCommit ?: remoteCommit).spec.htlcs.incomings().toSet()
+            }
             remoteCommit.txid == tx.txid -> when (nextRemoteCommit) {
                 null -> emptySet() // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
                 else -> {
@@ -968,10 +973,6 @@ object Helpers {
                     // any htlc that we signed in the new commitment that they didn't sign will never reach the chain
                     nextRemoteCommit.spec.htlcs.incomings().toSet() - localCommit.spec.htlcs.outgoings().toSet()
                 }
-            }
-            revokedCommitPublished.map { it.commitTx.txid }.contains(tx.txid) -> {
-                // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment
-                (nextRemoteCommit ?: remoteCommit).spec.htlcs.incomings().toSet()
             }
             else -> emptySet()
         }
