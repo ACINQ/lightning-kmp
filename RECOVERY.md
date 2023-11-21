@@ -19,24 +19,29 @@ For example, when using [electrum](https://electrum.org/):
 
 When swapping funds to a `lightning-kmp` wallet, the following steps are performed:
 
-- funds are sent to a swap-in address via a swap transaction
+- funds are sent to a swap-in address via a swap transaction. 
 - we wait for that transaction to have enough confirmations
 - then, if the fees don't exceed the user's liquidity policy, these funds are moved into a lightning channel
 
+We use musig2 to aggregate user keys (user being the wallet) and server keys (server being the LSP: the ACINQ node): swap-in addresses are standard p2tr addresses, and
+swap-in transactions to your wallet are indistinguishable from other p2tr transactions.
+
 The swap transaction's output can be spent using either:
 
-1. A signature from the user's wallet and a signature from the remote node
+1. A aggregated musig2 signature built from a partial signature from the user's wallet and a partial signature from the remote node
 2. A signature from the user's wallet after a refund delay
 
 Funds can be recovered using the second option and [Bitcoin Core](https://github.com/bitcoin/bitcoin).
-This process needs at least Bitcoin Core 25.0.
+This process needs at least Bitcoin Core 26.0.
 
 This process will become simpler once popular on-chain wallets (such as [electrum](https://electrum.org/)) add supports for output script descriptors.
 
-### Extract master keys
+### Get your wallet descriptor
 
-We don't directly export your extended master private key for security reasons, so you will need to manually insert it in the descriptor.
-You can obtain your extended master private key in [electrum](https://electrum.org/). After restoring your seed, type `wallet.keystore.xprv` in the console to obtain your master `xprv`.
+lighting-kmp provides both a public descriptor and private descriptor for your swap-in wallet.
+The public descriptor can be used to create a watch-only wallet for your swap-in funds.
+The private descriptor can be used to recover your swap-in funds, after the refund delay has passed.
+:warning: Do not share this private descriptor with anyone ! 
 
 ### Create recovery wallet
 
@@ -48,43 +53,28 @@ bitcoin-cli createwallet recovery
 
 ### Import descriptor into the recovery wallet
 
-`lightning-kmp` provides the public descriptor for your swap-in address, which uses the following template:
+`lightning-kmp` provides a public and private descriptor for your swap-in wallet, which both use the following template:
 
 ```txt
-wsh(and_v(v:pk([<master_fingerprint>/<derivation_path>]<extended_public_key>),or_d(pk(<swap_server_public_key>),older(<refund_delay>))))
+tr(<extended_public_key>,and_v(v:pk(<master_key>/<derivation_path>),older(<refund_delay>)))
 ```
 
-For example, it will look like this:
+For example, your public descriptor will look like this:
 
 ```txt
-wsh(and_v(v:pk([14620948/51h/0h/0h]tpubDCvYeHUZisCMV3h1zPevPWQmNPfA3g3vnu7gDqskXVCbJB1VKk2F7LApV6TTdm1sCyGout8ma27CCHvYTuMZxpwrcHnLwL4kaXW8z2KfFcW),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))
+tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tprv8h9x3k1njDX6to9q2G3aEvcic81MJk64SUVMXFc2Eo2YQqPGCBpQa8uJDkTz3DMHVXEmvhuwf4ShjLQ7YaVr34x9DFT3y43cPzVKGB94r1n/*),older(25920)))#7dne06j5
 ```
 
-Replace the `extended_public_key` and the `derivation_path` with the extended private key obtained in the [first step](#extract-master-keys).
-In our example, the extended private key matching our seed is `tprv8ZgxMBicQKsPdKRFLVct6VDpfmCxk6aC7iAF8tb6roQ7hv1zFCyGwDLBUUxMVJ95dTiQS5VvCbQ6J7CcGqguw5SbnDpNjbjpfVwcMwUtmjS`, so we create the following private descriptor:
+And your private descriptor will look like this: 
 
-```txt
-wsh(and_v(v:pk(tprv8ZgxMBicQKsPdKRFLVct6VDpfmCxk6aC7iAF8tb6roQ7hv1zFCyGwDLBUUxMVJ95dTiQS5VvCbQ6J7CcGqguw5SbnDpNjbjpfVwcMwUtmjS/51h/0h/0h),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))
+```
+tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tpubDDqzCA42sbCmnGBcuuiAeLGqB9XHU5Gy1n68omeKf4pwFKe2padzkdXAPsDMWMdee879oPYrGrTS8sioqyjv8b6TztunE526eo4Au9kTef3/*),older(25920)))#z6mq2a3u
 ```
 
-We need to obtain a checksum for this descriptor, which is provided by Bitcoin Core:
+We can import our private descriptor into our recovery wallet:
 
 ```sh
-bitcoin-cli getdescriptorinfo "wsh(and_v(v:pk(tprv8ZgxMBicQKsPdKRFLVct6VDpfmCxk6aC7iAF8tb6roQ7hv1zFCyGwDLBUUxMVJ95dTiQS5VvCbQ6J7CcGqguw5SbnDpNjbjpfVwcMwUtmjS/51h/0h/0h),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))"
-
-{
-  "descriptor": "wsh(and_v(v:pk(tpubD6NzVbkrYhZ4WnT3E9HUVtswEnituRm6h1m2RQdQH5CWYQGksbns7hx3ediWHpFEkEQC4vPssnQN2gQpzkodRDuMA7nQtWiQ5EDzkGpGVNw/51'/0'/0'),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))#m8v4e6vu",
-  "checksum": "dlcgkrnc",
-  "isrange": false,
-  "issolvable": true,
-  "hasprivatekeys": true
-}
-```
-
-We can the append this checksum to our private descriptor and import it into our recovery wallet:
-
-```sh
-bitcoin-cli -rpcwallet=recovery importdescriptors '[{ "desc": "wsh(and_v(v:pk(tprv8ZgxMBicQKsPdKRFLVct6VDpfmCxk6aC7iAF8tb6roQ7hv1zFCyGwDLBUUxMVJ95dTiQS5VvCbQ6J7CcGqguw5SbnDpNjbjpfVwcMwUtmjS/51h/0h/0h),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))#dlcgkrnc", "timestamp": 0 }]'
+bitcoin-cli -rpcwallet=recovery importdescriptors '[{ "desc": "tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tprv8ZgxMBicQKsPdKRFLVct6VDpfmCxk6aC7iAF8tb6roQ7hv1zFCyGwDLBUUxMVJ95dTiQS5VvCbQ6J7CcGqguw5SbnDpNjbjpfVwcMwUtmjS/51h/0h/0h/*),older(25920)))#rn7cy7yr", "timestamp": 0 }]'
 
 [
   {
@@ -130,25 +120,25 @@ bitcoin-cli -rpcwallet=recovery listtransactions
 
 [
   {
-    "address": "bcrt1qw78cdcsn55vwsvmwe9qgwnx0fwffzqej7keuqfjnwj5xm0f5u6js2hp66f",
+    "address": "bcrt1pzz7rudhpqyy6zdnuwrg3dpnethckfzncma2urxghuc62dz49zenqv0p0q6",
     "parent_descs": [
-      "wsh(and_v(v:pk(tpubD6NzVbkrYhZ4WnT3E9HUVtswEnituRm6h1m2RQdQH5CWYQGksbns7hx3ediWHpFEkEQC4vPssnQN2gQpzkodRDuMA7nQtWiQ5EDzkGpGVNw/51'/0'/0'),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))#m8v4e6vu"
+      "tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tpubDDqzCA42sbCmnGBcuuiAeLGqB9XHU5Gy1n68omeKf4pwFKe2padzkdXAPsDMWMdee879oPYrGrTS8sioqyjv8b6TztunE526eo4Au9kTef3/*),older(144)))#zqam8e56"
     ],
     "category": "receive",
-    "amount": 1.50000000,
-    "label": "",
-    "vout": 1,
-    "confirmations": 5,
-    "blockhash": "6e1048a8d7829d36a766188b499ddcc2e497193427678d115fd341b2b452c0bd",
-    "blockheight": 151,
+    "amount": 0.10000000,
+    "vout": 0,
+    "abandoned": false,
+    "confirmations": 1,
+    "blockhash": "06361beb06e7d24bea80fc6800f4b5f374f09542a07fae77a7f8c26a9f7544b2",
+    "blockheight": 146,
     "blockindex": 1,
-    "blocktime": 1687759025,
-    "txid": "d9940b7eb709ff8eaec307bdd6d20633e30a6eb1627d9ef8c8e03dfd28298c75",
-    "wtxid": "261492e5f930b82f65f269bb3006db9c3ef14423e5f52f2a185ace18704bb7b0",
+    "blocktime": 1700670588,
+    "txid": "4c3236b1fa1f3ed124ab83b1667be95f855952e68729eae54a9f511c8c8cb993",
+    "wtxid": "16ab0b31f680e5bd4f149527148b542e16de96ce2d14db9c41552752f3d8e655",
     "walletconflicts": [
     ],
-    "time": 1687759025,
-    "timereceived": 1687759181,
+    "time": 1700670571,
+    "timereceived": 1700670571,
     "bip125-replaceable": "no"
   }
 ]
@@ -160,29 +150,22 @@ Once those funds have been recovered and the refund delay has expired (the `conf
 Compute the total amount received (in our example, 1.5 BTC), choose the address to send to (for example, `bcrt1q9ez7rt33wynwpah582lnqlj3u0tpzsrkj2flas`) and create a transaction using all of the received funds:
 
 ```sh
-bitcoin-cli -rpcwallet=recovery walletcreatefundedpsbt '[{"txid":"d9940b7eb709ff8eaec307bdd6d20633e30a6eb1627d9ef8c8e03dfd28298c75","vout":1,"sequence":25920}]' '[{"bcrt1q9ez7rt33wynwpah582lnqlj3u0tpzsrkj2flas":1.5}]' 0 '{"subtractFeeFromOutputs":[0]}'
-
+bitcoin-cli -rpcwallet=recovery walletcreatefundedpsbt '[{"txid":"4c3236b1fa1f3ed124ab83b1667be95f855952e68729eae54a9f511c8c8cb993", "vout":0, "sequence":144}]' '[{"bcrt1qzy4h8dux6pjl8ys979632uynqffd53vjkzffjl":0.09}]'
 {
-  "psbt": "cHNidP8BAFICAAAAAXWMKSj9PeDI+J59YrFuCuMzBtLWvQfDro7/Cbd+C5TZAQAAAABAZQAAAQzI8AgAAAAAFgAULkXhrjFxJuD29Dq/MH5R49YRQHYAAAAAAAEAiQIAAAABsDXoV21bcbM8ii+Nyo4r8ZWmMEJIiaYqYg6pKaXiOiMAAAAAAP3///8CnBMVIQEAAAAiUSA520UqAgN8jz9APGIBbNHksiweuAEnMZvjgpMKiRUKkoDR8AgAAAAAIgAgd4+G4hOlGOgzbslAh0zPS5KRAzL1s8AmU3Sobb005qWWAAAAAQErgNHwCAAAAAAiACB3j4biE6UY6DNuyUCHTM9LkpEDMvWzwCZTdKhtvTTmpQEFTSED1ZiIPcIwgcWSbaso29B11ULE+6VERxkh27lqMde8SRmtIQJW6UgYDzPwZyRnEKQWVghPwkW5ftoIHv4eSIshV31g/axzZAJAZbJoIgYCVulIGA8z8GckZxCkFlYIT8JFuX7aCB7+HkiLIVd9YP0EsxuziiIGA9WYiD3CMIHFkm2rKNvQddVCxPulREcZIdu5ajHXvEkZEBRiCUgzAACAAAAAgAAAAIAAAA==",
-  "fee": 0.00002420,
-  "changepos": -1
+  "psbt": "cHNidP8BAHECAAAAAZO5jIwcUZ9K5eoph+ZSWYVf6XtmsYOrJNE+H/qxNjJMAAAAAACQAAAAAkBUiQAAAAAAFgAUEStzt4bQZfOSBfF1FXCTAlLaRZIEOA8AAAAAABYAFEx1yJgBL6kfpf2sybIL0WajM0rXAAAAAAABASuAlpgAAAAAACJRIBC8PjbhAQmhNnxw0RaGeV3xZIp431XBmRfmNKaKpRZmIhXBH8VZ2clsWVOJXTFQ5k6/PdaWoLCOdYZQtI/2JR1+YNEnIG0cAcgg4JAO3Y5ZtLOD5zp/WFAHJFWAT5z/6Z+k+FQbrQKQALLAIRYfxVnZyWxZU4ldMVDmTr891pagsI51hlC0j/YlHX5g0QUA0EkObyEWbRwByCDgkA7djlm0s4PnOn9YUAckVYBPnP/pn6T4VBspAWR9Jdbf5zHI25Gs69RTMJILBCLUX82cmJj59Bk4SZKgTHUGgQAAAAABFyAfxVnZyWxZU4ldMVDmTr891pagsI51hlC0j/YlHX5g0QEYIGR9Jdbf5zHI25Gs69RTMJILBCLUX82cmJj59Bk4SZKgAAAiAgMhzD3XSvW4p+oRyBAvB6rUHaOCIyjVxJV9tEin3sUiqxjpcZ0vVAAAgAEAAIAAAACAAQAAAAEAAAAA",
+  "fee": 0.00002620,
+  "changepos": 1
 }
 
-bitcoin-cli -rpcwallet=recovery walletprocesspsbt "cHNidP8BAFICAAAAAXWMKSj9PeDI+J59YrFuCuMzBtLWvQfDro7/Cbd+C5TZAQAAAABAZQAAAQzI8AgAAAAAFgAULkXhrjFxJuD29Dq/MH5R49YRQHYAAAAAAAEAiQIAAAABsDXoV21bcbM8ii+Nyo4r8ZWmMEJIiaYqYg6pKaXiOiMAAAAAAP3///8CnBMVIQEAAAAiUSA520UqAgN8jz9APGIBbNHksiweuAEnMZvjgpMKiRUKkoDR8AgAAAAAIgAgd4+G4hOlGOgzbslAh0zPS5KRAzL1s8AmU3Sobb005qWWAAAAAQErgNHwCAAAAAAiACB3j4biE6UY6DNuyUCHTM9LkpEDMvWzwCZTdKhtvTTmpQEFTSED1ZiIPcIwgcWSbaso29B11ULE+6VERxkh27lqMde8SRmtIQJW6UgYDzPwZyRnEKQWVghPwkW5ftoIHv4eSIshV31g/axzZAJAZbJoIgYCVulIGA8z8GckZxCkFlYIT8JFuX7aCB7+HkiLIVd9YP0EsxuziiIGA9WYiD3CMIHFkm2rKNvQddVCxPulREcZIdu5ajHXvEkZEBRiCUgzAACAAAAAgAAAAIAAAA=="
-
+bitcoin-cli -rpcwallet=recovery walletprocesspsbt "cHNidP8BAHECAAAAAZO5jIwcUZ9K5eoph+ZSWYVf6XtmsYOrJNE+H/qxNjJMAAAAAACQAAAAAkBUiQAAAAAAFgAUEStzt4bQZfOSBfF1FXCTAlLaRZIEOA8AAAAAABYAFEx1yJgBL6kfpf2sybIL0WajM0rXAAAAAAABASuAlpgAAAAAACJRIBC8PjbhAQmhNnxw0RaGeV3xZIp431XBmRfmNKaKpRZmIhXBH8VZ2clsWVOJXTFQ5k6/PdaWoLCOdYZQtI/2JR1+YNEnIG0cAcgg4JAO3Y5ZtLOD5zp/WFAHJFWAT5z/6Z+k+FQbrQKQALLAIRYfxVnZyWxZU4ldMVDmTr891pagsI51hlC0j/YlHX5g0QUA0EkObyEWbRwByCDgkA7djlm0s4PnOn9YUAckVYBPnP/pn6T4VBspAWR9Jdbf5zHI25Gs69RTMJILBCLUX82cmJj59Bk4SZKgTHUGgQAAAAABFyAfxVnZyWxZU4ldMVDmTr891pagsI51hlC0j/YlHX5g0QEYIGR9Jdbf5zHI25Gs69RTMJILBCLUX82cmJj59Bk4SZKgAAAiAgMhzD3XSvW4p+oRyBAvB6rUHaOCIyjVxJV9tEin3sUiqxjpcZ0vVAAAgAEAAIAAAACAAQAAAAEAAAAA"
 {
-  "psbt": "cHNidP8BAFICAAAAAXWMKSj9PeDI+J59YrFuCuMzBtLWvQfDro7/Cbd+C5TZAQAAAABAZQAAAQzI8AgAAAAAFgAULkXhrjFxJuD29Dq/MH5R49YRQHYAAAAAAAEAiQIAAAABsDXoV21bcbM8ii+Nyo4r8ZWmMEJIiaYqYg6pKaXiOiMAAAAAAP3///8CnBMVIQEAAAAiUSA520UqAgN8jz9APGIBbNHksiweuAEnMZvjgpMKiRUKkoDR8AgAAAAAIgAgd4+G4hOlGOgzbslAh0zPS5KRAzL1s8AmU3Sobb005qWWAAAAAQErgNHwCAAAAAAiACB3j4biE6UY6DNuyUCHTM9LkpEDMvWzwCZTdKhtvTTmpQEImAMARzBEAiBNe5Y/fGWNfCIh2oBoZZHh5Em1kR3GFumpa0bgn9WRCQIgTDKGl/F59wpGRhdJ/jLlOTHqszmHonQTD4qgVNNJIc4BTSED1ZiIPcIwgcWSbaso29B11ULE+6VERxkh27lqMde8SRmtIQJW6UgYDzPwZyRnEKQWVghPwkW5ftoIHv4eSIshV31g/axzZAJAZbJoAAA=",
-  "complete": true
+  "psbt": "cHNidP8BAHECAAAAAZO5jIwcUZ9K5eoph+ZSWYVf6XtmsYOrJNE+H/qxNjJMAAAAAACQAAAAAkBUiQAAAAAAFgAUEStzt4bQZfOSBfF1FXCTAlLaRZIEOA8AAAAAABYAFEx1yJgBL6kfpf2sybIL0WajM0rXAAAAAAABASuAlpgAAAAAACJRIBC8PjbhAQmhNnxw0RaGeV3xZIp431XBmRfmNKaKpRZmAQiLA0D59zl6TLlwXk2oCio3Ffff8dpRQmpYWs7MaY+cUk1Zfl03hzxj1vwIAHBQQbyh33PCX7JoDrlXxlo/Le86jMjQJiBtHAHIIOCQDt2OWbSzg+c6f1hQByRVgE+c/+mfpPhUG60CkACyIcEfxVnZyWxZU4ldMVDmTr891pagsI51hlC0j/YlHX5g0QAAIgIDIcw910r1uKfqEcgQLweq1B2jgiMo1cSVfbRIp97FIqsY6XGdL1QAAIABAACAAAAAgAEAAAABAAAAAA==",
+  "complete": true,
+  "hex": "0200000000010193b98c8c1c519f4ae5ea2987e65259855fe97b66b183ab24d13e1ffab136324c000000000090000000024054890000000000160014112b73b786d065f39205f1751570930252da459204380f00000000001600144c75c898012fa91fa5fdacc9b20bd166a3334ad70340f9f7397a4cb9705e4da80a2a3715f7dff1da51426a585acecc698f9c524d597e5d37873c63d6fc0800705041bca1df73c25fb2680eb957c65a3f2def3a8cc8d026206d1c01c820e0900edd8e59b4b383e73a7f5850072455804f9cffe99fa4f8541bad029000b221c11fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d100000000"
 }
 
-bitcoin-cli -rpcwallet=recovery finalizepsbt "cHNidP8BAFICAAAAAXWMKSj9PeDI+J59YrFuCuMzBtLWvQfDro7/Cbd+C5TZAQAAAABAZQAAAQzI8AgAAAAAFgAULkXhrjFxJuD29Dq/MH5R49YRQHYAAAAAAAEAiQIAAAABsDXoV21bcbM8ii+Nyo4r8ZWmMEJIiaYqYg6pKaXiOiMAAAAAAP3///8CnBMVIQEAAAAiUSA520UqAgN8jz9APGIBbNHksiweuAEnMZvjgpMKiRUKkoDR8AgAAAAAIgAgd4+G4hOlGOgzbslAh0zPS5KRAzL1s8AmU3Sobb005qWWAAAAAQErgNHwCAAAAAAiACB3j4biE6UY6DNuyUCHTM9LkpEDMvWzwCZTdKhtvTTmpQEImAMARzBEAiBNe5Y/fGWNfCIh2oBoZZHh5Em1kR3GFumpa0bgn9WRCQIgTDKGl/F59wpGRhdJ/jLlOTHqszmHonQTD4qgVNNJIc4BTSED1ZiIPcIwgcWSbaso29B11ULE+6VERxkh27lqMde8SRmtIQJW6UgYDzPwZyRnEKQWVghPwkW5ftoIHv4eSIshV31g/axzZAJAZbJoAAA="
-
-{
-  "hex": "02000000000101758c2928fd3de0c8f89e7d62b16e0ae33306d2d6bd07c3ae8eff09b77e0b94d9010000000040650000010cc8f008000000001600142e45e1ae317126e0f6f43abf307e51e3d6114076030047304402204d7b963f7c658d7c2221da80686591e1e449b5911dc616e9a96b46e09fd5910902204c328697f179f70a46461749fe32e53931eab33987a274130f8aa054d34921ce014d2103d598883dc23081c5926dab28dbd075d542c4fba544471921dbb96a31d7bc4919ad210256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fdac7364024065b26800000000",
-  "complete": true
-}
-
-bitcoin-cli -rpcwallet=recovery sendrawtransaction 02000000000101758c2928fd3de0c8f89e7d62b16e0ae33306d2d6bd07c3ae8eff09b77e0b94d9010000000040650000010cc8f008000000001600142e45e1ae317126e0f6f43abf307e51e3d6114076030047304402204d7b963f7c658d7c2221da80686591e1e449b5911dc616e9a96b46e09fd5910902204c328697f179f70a46461749fe32e53931eab33987a274130f8aa054d34921ce014d2103d598883dc23081c5926dab28dbd075d542c4fba544471921dbb96a31d7bc4919ad210256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fdac7364024065b26800000000
+bitcoin-cli sendrawtransaction 0200000000010193b98c8c1c519f4ae5ea2987e65259855fe97b66b183ab24d13e1ffab136324c000000000090000000024054890000000000160014112b73b786d065f39205f1751570930252da459204380f00000000001600144c75c898012fa91fa5fdacc9b20bd166a3334ad70340f9f7397a4cb9705e4da80a2a3715f7dff1da51426a585acecc698f9c524d597e5d37873c63d6fc0800705041bca1df73c25fb2680eb957c65a3f2def3a8cc8d026206d1c01c820e0900edd8e59b4b383e73a7f5850072455804f9cffe99fa4f8541bad029000b221c11fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d100000000
+09efe025805b2db8ae845a94639e5ad415756fb0d010aad54bf3f74ae71e015d
 ```
 
 Wait for that transaction to confirm, and your funds will have been successfully recovered!

@@ -24,13 +24,12 @@ sealed class TxAddInputTlv : Tlv {
     }
 
     /** When adding a swap-in input to an interactive-tx, the user needs to provide the corresponding script parameters. */
-    data class SwapInParams(val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int, val version: Int) : TxAddInputTlv() {
+    data class SwapInParams(val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : TxAddInputTlv() {
         override val tag: Long get() = SwapInParams.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(userKey.value, out)
             LightningCodecs.writeBytes(serverKey.value, out)
             LightningCodecs.writeU32(refundDelay, out)
-            LightningCodecs.writeU32(version, out)
         }
 
         companion object : TlvValueReader<SwapInParams> {
@@ -38,8 +37,28 @@ sealed class TxAddInputTlv : Tlv {
             override fun read(input: Input): SwapInParams = SwapInParams(
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
-                LightningCodecs.u32(input),
-                if (input.availableBytes >= 4) LightningCodecs.u32(input) else 1
+                LightningCodecs.u32(input)
+            )
+        }
+    }
+
+    /** When adding a swap-in input to an interactive-tx, the user needs to provide the corresponding script parameters. */
+    data class SwapInParamsMusig2(val userKey: PublicKey, val serverKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) : TxAddInputTlv() {
+        override val tag: Long get() = SwapInParamsMusig2.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(userKey.value, out)
+            LightningCodecs.writeBytes(serverKey.value, out)
+            LightningCodecs.writeBytes(userRefundKey.value, out)
+            LightningCodecs.writeU32(refundDelay, out)
+        }
+
+        companion object : TlvValueReader<SwapInParamsMusig2> {
+            const val tag: Long = 1109
+            override fun read(input: Input): SwapInParamsMusig2 = SwapInParamsMusig2(
+                PublicKey(LightningCodecs.bytes(input, 33)),
+                PublicKey(LightningCodecs.bytes(input, 33)),
+                PublicKey(LightningCodecs.bytes(input, 33)),
+                LightningCodecs.u32(input)
             )
         }
     }
