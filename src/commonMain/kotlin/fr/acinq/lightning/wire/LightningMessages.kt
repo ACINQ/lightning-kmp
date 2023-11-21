@@ -331,6 +331,7 @@ data class TxAddInput(
     override val type: Long get() = TxAddInput.type
     val sharedInput: OutPoint? = tlvs.get<TxAddInputTlv.SharedInputTxId>()?.let { OutPoint(it.txId.reversed(), previousTxOutput) }
     val swapInParams = tlvs.get<TxAddInputTlv.SwapInParams>()
+    val swapInParamsMusig2 = tlvs.get<TxAddInputTlv.SwapInParamsMusig2>()
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -355,6 +356,7 @@ data class TxAddInput(
         val readers = mapOf(
             TxAddInputTlv.SharedInputTxId.tag to TxAddInputTlv.SharedInputTxId.Companion as TlvValueReader<TxAddInputTlv>,
             TxAddInputTlv.SwapInParams.tag to TxAddInputTlv.SwapInParams.Companion as TlvValueReader<TxAddInputTlv>,
+            TxAddInputTlv.SwapInParamsMusig2.tag to TxAddInputTlv.SwapInParamsMusig2.Companion as TlvValueReader<TxAddInputTlv>,
         )
 
         override fun read(input: Input): TxAddInput = TxAddInput(
