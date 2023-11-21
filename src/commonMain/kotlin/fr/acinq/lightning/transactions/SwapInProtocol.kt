@@ -5,14 +5,15 @@ import fr.acinq.bitcoin.musig2.Musig2
 import fr.acinq.bitcoin.musig2.PublicNonce
 import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.bitcoin.musig2.SessionCtx
-import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.wire.TxAddInputTlv
-import org.kodein.log.newLogger
 
+/**
+ * legacy swap-in protocol, that uses p2wsh and a single "user + server OR user + delay" script
+ */
 class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKey, val refundDelay: Int) {
 
-     constructor(swapInParams: TxAddInputTlv.SwapInParams) : this(swapInParams.userKey, swapInParams.serverKey, swapInParams.refundDelay)
+    constructor(swapInParams: TxAddInputTlv.SwapInParams) : this(swapInParams.userKey, swapInParams.serverKey, swapInParams.refundDelay)
 
     // This script was generated with https://bitcoin.sipa.be/miniscript/ using the following miniscript policy:
     // and(pk(<user_key>),or(99@pk(<server_key>),older(<delayed_refund>)))
@@ -49,18 +50,31 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
     }
 }
 
-class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: PublicKey, val refundDelay: Int) {
-    constructor(swapInParams: TxAddInputTlv.SwapInParams) : this(swapInParams.userKey, swapInParams.serverKey, swapInParams.refundDelay)
+/**
+ * new swap-in protocol based on musig2 and taproot: (user key + server key) OR (user refund key + delay)
+ * for the common case, we use the musig2 aggregate of the user and server keys, spent through the key-spend path
+ * for the refund case, we use the refund script, spent through the script-spend path
+ * we use a different user key for the refund case: this allows us to generate generic descriptor for all swap-in addresses
+ * (see the descriptor() method below)
+ */
+class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) {
+    constructor(swapInParams: TxAddInputTlv.SwapInParamsMusig2) : this(swapInParams.userKey, swapInParams.serverKey, swapInParams.userRefundKey, swapInParams.refundDelay)
 
     // the redeem script is just the refund script. it is generated from this policy: and_v(v:pk(user),older(refundDelay))
-    val redeemScript = listOf(OP_PUSHDATA(userPublicKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
+    // it does not depend upon the user's or server's key, just the user's refund key and the refund delay
+    val redeemScript = listOf(OP_PUSHDATA(userRefundKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
     private val scriptTree = ScriptTree.Leaf(ScriptLeaf(0, Script.write(redeemScript).byteVector(), Script.TAPROOT_LEAF_TAPSCRIPT))
     private val merkleRoot = ScriptTree.hash(scriptTree)
+
+    // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
     private val internalPubKey = Musig2.keyAgg(listOf(userPublicKey, serverPublicKey)).Q.xOnly()
+
+    // it is tweaked with the script's merkle root to get the pubkey that will be exposed
     private val commonPubKeyAndParity = internalPubKey.outputKey(Crypto.TaprootTweak.ScriptTweak(merkleRoot))
     val commonPubKey = commonPubKeyAndParity.first
     private val parity = commonPubKeyAndParity.second
     val pubkeyScript: List<ScriptElt> = Script.pay2tr(commonPubKey)
+
     private val executionData = Script.ExecutionData(annex = null, tapleafHash = merkleRoot)
     private val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) + internalPubKey.value.toByteArray()
 
@@ -110,5 +124,41 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
             listOf(Pair(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)),
             txHash
         )
+    }
+
+    /**
+     *
+     * @param chain chain we're on
+     * @param masterRefundKey master private key for the refund keys. we assume that there is a single level of derivation to compute the refund keys
+     * @return a taproot descriptor that can be imported in bitcoin core (from version 26 on) to recover user funds once the funding delay has passed
+     */
+    fun descriptor(chain: NodeParams.Chain, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): String {
+        val prefix = when (chain) {
+            NodeParams.Chain.Mainnet -> DeterministicWallet.xprv
+            else -> DeterministicWallet.tprv
+        }
+        val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
+        val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
+        val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv$path/*),older($refundDelay)))"
+        val checksum = Descriptor.checksum(desc)
+        return "$desc#$checksum"
+    }
+
+    /**
+     *
+     * @param chain chain we're on
+     * @param masterRefundKey master public key for the refund keys. we assume that there is a single level of derivation to compute the refund keys
+     * @return a taproot descriptor that can be imported in bitcoin core (from version 26 on) to create a watch-only wallet for your swap-in transactions
+     */
+    fun descriptor(chain: NodeParams.Chain, masterRefundKey: DeterministicWallet.ExtendedPublicKey): String {
+        val prefix = when (chain) {
+            NodeParams.Chain.Mainnet -> DeterministicWallet.xpub
+            else -> DeterministicWallet.tpub
+        }
+        val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
+        val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
+        val desc = "tr(${internalPubKey.value},and_v(v:pk($xpub$path/*),older($refundDelay)))"
+        val checksum = Descriptor.checksum(desc)
+        return "$desc#$checksum"
     }
 }

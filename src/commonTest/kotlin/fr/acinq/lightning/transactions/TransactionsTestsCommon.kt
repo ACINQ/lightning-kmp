@@ -14,6 +14,7 @@ import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
@@ -556,8 +557,14 @@ class TransactionsTestsCommon : LightningTestSuite() {
     fun `spend 2-of-2 swap-in taproot-musig2 version`() {
         val userPrivateKey = PrivateKey(ByteArray(32) { 1 })
         val serverPrivateKey = PrivateKey(ByteArray(32) { 2 })
+        val refundDelay = 25920
 
-        val swapInProtocolMusig2 = SwapInProtocolMusig2(userPrivateKey.publicKey(), serverPrivateKey.publicKey(), 144)
+        val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
+        val seed = MnemonicCode.toSeed(mnemonics, "")
+        val masterPrivateKey = DeterministicWallet.derivePrivateKey(DeterministicWallet.generate(seed), "/51'/0'/0'").copy(path = KeyPath.empty)
+        val userRefundPrivateKey = DeterministicWallet.derivePrivateKey(masterPrivateKey, "0").privateKey
+        val swapInProtocolMusig2 = SwapInProtocolMusig2(userPrivateKey.publicKey(), serverPrivateKey.publicKey(), userRefundPrivateKey.publicKey(), refundDelay)
+
         val swapInTx = Transaction(
             version = 2,
             txIn = listOf(),
@@ -591,11 +598,11 @@ class TransactionsTestsCommon : LightningTestSuite() {
         run {
             val tx = Transaction(
                 version = 2,
-                txIn = listOf(TxIn(OutPoint(swapInTx, 0), sequence = 144)),
+                txIn = listOf(TxIn(OutPoint(swapInTx, 0), sequence = refundDelay.toLong())),
                 txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
                 lockTime = 0
             )
-            val sig = swapInProtocolMusig2.signSwapInputRefund(tx, 0, swapInTx.txOut, userPrivateKey)
+            val sig = swapInProtocolMusig2.signSwapInputRefund(tx, 0, swapInTx.txOut, userRefundPrivateKey)
             val signedTx = tx.updateWitness(0, swapInProtocolMusig2.witnessRefund(sig))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
@@ -621,7 +628,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         // DER-encoded ECDSA signatures usually take up to 72 bytes.
         val sig = ByteVector64.fromValidHex("90b658d172a51f1b3f1a2becd30942397f5df97da8cd2c026854607e955ad815ccfd87d366e348acc32aaf15ff45263aebbb7ecc913a0e5999133f447aee828c")
         val tx = Transaction(2, listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
-        val swapInProtocol = SwapInProtocolMusig2(pubkey, pubkey, 144)
+        val swapInProtocol = SwapInProtocolMusig2(pubkey, pubkey, pubkey, 144)
         val witness = swapInProtocol.witness(sig)
         val swapInput = TxIn(OutPoint(TxId(ByteVector32.Zeroes), 3), ByteVector.empty, 0, witness)
         val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))

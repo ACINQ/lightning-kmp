@@ -280,6 +280,14 @@ object Serialization {
             writeNumber(sequence.toLong())
             swapInParams.write(this@writeLocalInteractiveTxInput)
         }
+        is InteractiveTxInput.LocalMusig2SwapIn -> i.run {
+            write(0x03)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+            swapInParams.write(this@writeLocalInteractiveTxInput)
+        }
     }
 
     private fun Output.writeRemoteInteractiveTxInput(i: InteractiveTxInput.Remote) = when (i) {
@@ -292,6 +300,14 @@ object Serialization {
         }
         is InteractiveTxInput.RemoteSwapIn -> i.run {
             write(0x02)
+            writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
+            writeNumber(sequence.toLong())
+            swapInParams.write(this@writeRemoteInteractiveTxInput)
+        }
+        is InteractiveTxInput.RemoteSwapInMusig2 -> i.run {
+            write(0x03)
             writeNumber(serialId)
             writeBtcObject(outPoint)
             writeBtcObject(txOut)

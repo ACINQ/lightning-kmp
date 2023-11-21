@@ -121,17 +121,21 @@ interface KeyManager {
         val refundDelay: Int = DefaultSwapInParams.RefundDelay
     ) {
         private val userExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserKeyPath(chain))
+        private val userRefundExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserRefundKeyPath(chain))
         private val swapExtendedPublicKey = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, swapInLocalServerKeyPath(chain)))
         private val xpub = DeterministicWallet.encode(swapExtendedPublicKey, DeterministicWallet.tpub)
 
         val userPrivateKey: PrivateKey = userExtendedPrivateKey.privateKey
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
 
+        val userRefundPrivateKey: PrivateKey = userRefundExtendedPrivateKey.privateKey
+        val userRefundPublicKey: PublicKey = userPrivateKey.publicKey()
+
         private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInLocalServerKeyPath(chain))
         fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
 
         val swapInProtocol = SwapInProtocol(userPublicKey, remoteServerPublicKey, refundDelay)
-        val swapInProtocolMusig2 = SwapInProtocolMusig2(userPublicKey, remoteServerPublicKey, refundDelay)
+        val swapInProtocolMusig2 = SwapInProtocolMusig2(userPublicKey, remoteServerPublicKey, userRefundPublicKey, refundDelay)
 
         /**
          * The output script descriptor matching our swap-in addresses.
@@ -210,6 +214,8 @@ interface KeyManager {
             }
 
             fun swapInUserKeyPath(chain: NodeParams.Chain) = swapInKeyBasePath(chain) / hardened(0)
+
+            fun swapInUserRefundKeyPath(chain: NodeParams.Chain) = swapInKeyBasePath(chain) / hardened(0) / 0L
 
             fun swapInLocalServerKeyPath(chain: NodeParams.Chain) = swapInKeyBasePath(chain) / hardened(1)
 
