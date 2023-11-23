@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.toByteVector64
 
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */

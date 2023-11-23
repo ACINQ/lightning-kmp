@@ -1,9 +1,6 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.PublicKey
-import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.NodeParams

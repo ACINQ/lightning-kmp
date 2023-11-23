@@ -183,7 +183,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         assertEquals(2, inputs.size) // 2 splice inputs
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
         val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 100, 2, spliceTx)))
-        val (alice3, _) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.hash)))
+        val (alice3, _) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.txid)))
         assertIs<LNChannel<Normal>>(alice3)
         assertEquals(1, alice3.commitments.all.size)
         assertIs<LocalFundingStatus.ConfirmedFundingTx>(alice3.commitments.latest.localFundingStatus)
