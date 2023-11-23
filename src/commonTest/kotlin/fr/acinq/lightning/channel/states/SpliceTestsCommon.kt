@@ -38,6 +38,12 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `splice funds in -- non-initiator`() {
+        val (alice, bob) = reachNormal()
+        spliceIn(bob, alice, listOf(50_000.sat))
+    }
+
+    @Test
     fun `splice funds in -- many utxos`() {
         val (alice, bob) = reachNormal()
         spliceIn(alice, bob, listOf(30_000.sat, 40_000.sat, 25_000.sat))

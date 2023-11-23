@@ -785,7 +785,7 @@ data class InteractiveTxSigningSession(
                     }
                     is Try.Success -> {
                         val signedLocalCommit = LocalCommit(localCommit.value.index, localCommit.value.spec, PublishableTxs(signedLocalCommitTx, listOf()))
-                        if (shouldSignFirst(channelParams, fundingTx.tx)) {
+                        if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
                             val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
                             val commitment = Commitment(fundingTxIndex, fundingParams.remoteFundingPubkey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, nextRemoteCommit = null)
                             val action = InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
@@ -873,13 +873,16 @@ data class InteractiveTxSigningSession(
             }
         }
 
-        fun shouldSignFirst(channelParams: ChannelParams, tx: SharedTransaction): Boolean {
-            return if (tx.localAmountIn == tx.remoteAmountIn) {
+        fun shouldSignFirst(isInitiator: Boolean, channelParams: ChannelParams, tx: SharedTransaction): Boolean {
+            val sharedAmountIn = tx.sharedInput?.let { it.localAmount + it.remoteAmount } ?: 0.msat
+            val localAmountIn = tx.localInputs.map { it.txOut.amount }.sum().toMilliSatoshi() + if (isInitiator) sharedAmountIn else 0.msat
+            val remoteAmountIn = tx.remoteInputs.map { it.txOut.amount }.sum().toMilliSatoshi() + if (isInitiator) 0.msat else sharedAmountIn
+            return if (localAmountIn == remoteAmountIn) {
                 // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
                 LexicographicalOrdering.isLessThan(channelParams.localParams.nodeId, channelParams.remoteParams.nodeId)
             } else {
                 // Otherwise, the peer with the lowest total of input amount must transmit its `tx_signatures` first.
-                tx.localAmountIn < tx.remoteAmountIn
+                localAmountIn < remoteAmountIn
             }
         }
     }
