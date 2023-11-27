@@ -72,27 +72,20 @@ sealed class TxRemoveInputTlv : Tlv
 sealed class TxRemoveOutputTlv : Tlv
 
 sealed class TxCompleteTlv : Tlv {
-    data class Nonces(val nonces: Map<Long, PublicNonce>): TxCompleteTlv() {
+    /** nonces for all Musig2 swap-in inputs, ordered by serial id */
+    data class Nonces(val nonces: List<PublicNonce>): TxCompleteTlv() {
         override val tag: Long get() = Nonces.tag
 
         override fun write(out: Output) {
-            LightningCodecs.writeU16(nonces.size, out)
-            nonces.forEach { (serialId, nonce) ->
-                LightningCodecs.writeBigSize(serialId, out)
-                LightningCodecs.writeBytes(nonce.toByteArray(), out)
-            }
+            nonces.forEach { LightningCodecs.writeBytes(it.toByteArray(), out) }
         }
 
         companion object : TlvValueReader<Nonces> {
             const val tag: Long = 101
             override fun read(input: Input): Nonces {
-                val noncesCount = LightningCodecs.u16(input)
-                val nonces = (1..noncesCount).map {
-                    val serialId = LightningCodecs.bigSize(input)
-                    val nonce = PublicNonce.fromBin(LightningCodecs.bytes(input, 66))
-                    serialId to nonce
-                }
-                return Nonces(nonces.toMap())
+                val count = input.availableBytes / 66
+                val nonces = (0 until count).map { PublicNonce.fromBin(LightningCodecs.bytes(input, 66)) }
+                return Nonces(nonces)
             }
         }
     }
