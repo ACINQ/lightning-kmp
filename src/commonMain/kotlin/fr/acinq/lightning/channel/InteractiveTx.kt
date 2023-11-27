@@ -524,8 +524,8 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
         val localSwapTxInMusig2 = tx.localInputs.filterIsInstance<InteractiveTxInput.LocalMusig2SwapIn>().sortedBy { i -> i.serialId }.zip(localSigs.swapInUserPartialSigs.zip(remoteSigs.swapInServerPartialSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
             val swapInProtocol = SwapInProtocolMusig2(i.swapInParams)
-            require(userSig.nonce == serverSig.nonce){ "user and server public nonces mismatch for local input ${i.serialId}"}
-            val commonNonce = userSig.nonce
+            require(userSig.aggregatedPublicNonce == serverSig.aggregatedPublicNonce){ "aggregated public nonces mismatch for local input ${i.serialId}"}
+            val commonNonce = userSig.aggregatedPublicNonce
             val unsignedTx = tx.buildUnsignedTx()
             val ctx = swapInProtocol.signingCtx(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, unsignedTx.txIn.map { tx.spentOutputs[it.outPoint]!! }, commonNonce)
             val commonSig = ctx.partialSigAgg(listOf(userSig.sig, serverSig.sig))
@@ -543,8 +543,8 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
         val remoteSwapTxInMusig2 = tx.remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapInMusig2>().sortedBy { i -> i.serialId }.zip(remoteSigs.swapInUserPartialSigs.zip(localSigs.swapInServerPartialSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
             val swapInProtocol = SwapInProtocolMusig2(i.swapInParams)
-            require(userSig.nonce == serverSig.nonce){ "user and server public nonces mismatch for remote input ${i.serialId}"}
-            val commonNonce = userSig.nonce
+            require(userSig.aggregatedPublicNonce == serverSig.aggregatedPublicNonce){ "aggregated public nonces mismatch for remote input ${i.serialId}"}
+            val commonNonce = userSig.aggregatedPublicNonce
             val unsignedTx = tx.buildUnsignedTx()
             val ctx = swapInProtocol.signingCtx(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, unsignedTx.txIn.map { tx.spentOutputs[it.outPoint]!! }, commonNonce)
             val commonSig = ctx.partialSigAgg(listOf(userSig.sig, serverSig.sig))
