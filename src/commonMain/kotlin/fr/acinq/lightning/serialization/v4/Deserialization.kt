@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
@@ -240,6 +241,7 @@ object Deserialization {
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
             swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this),
+            secretNonce = SecretNonce(PrivateKey(ByteVector32.One), PrivateKey(ByteVector32.One), PrivateKey(ByteVector32.One).publicKey())
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Local::class}")
     }
@@ -263,7 +265,8 @@ object Deserialization {
             outPoint = readOutPoint(),
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this)
+            swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this),
+            secretNonce = SecretNonce(PrivateKey(ByteVector32.One), PrivateKey(ByteVector32.One), PrivateKey(ByteVector32.One).publicKey())
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Remote::class}")
     }
