@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.bitcoin.musig2.PublicNonce
-import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
@@ -519,7 +518,7 @@ data class TxSignatures(
     companion object : LightningMessageReader<TxSignatures> {
         const val type: Long = 71
 
-        data class PartialSignature(val sig: ByteVector32, val nonce: PublicNonce)
+        data class PartialSignature(val sig: ByteVector32, val aggregatedPublicNonce: PublicNonce)
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(

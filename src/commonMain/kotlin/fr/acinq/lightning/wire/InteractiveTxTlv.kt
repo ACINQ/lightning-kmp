@@ -144,7 +144,7 @@ sealed class TxSignaturesTlv : Tlv {
         override val tag: Long get() = SwapInUserPartialSigs.tag
         override fun write(out: Output) = psigs.forEach { psig ->
             LightningCodecs.writeBytes(psig.sig, out)
-            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+            LightningCodecs.writeBytes(psig.aggregatedPublicNonce.toByteArray(), out)
         }
 
         companion object : TlvValueReader<SwapInUserPartialSigs> {
@@ -165,7 +165,7 @@ sealed class TxSignaturesTlv : Tlv {
         override val tag: Long get() = SwapInServerPartialSigs.tag
         override fun write(out: Output) = psigs.forEach { psig ->
             LightningCodecs.writeBytes(psig.sig, out)
-            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+            LightningCodecs.writeBytes(psig.aggregatedPublicNonce.toByteArray(), out)
         }
 
         companion object : TlvValueReader<SwapInServerPartialSigs> {
