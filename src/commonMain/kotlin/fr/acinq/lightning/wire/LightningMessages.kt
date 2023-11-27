@@ -456,9 +456,9 @@ data class TxComplete(
 ) : InteractiveTxConstructionMessage(), HasChannelId {
     override val type: Long get() = TxComplete.type
 
-    val publicNonces: Map<Long, PublicNonce> = tlvs.get<TxCompleteTlv.Nonces>()?.nonces?.toMap() ?: mapOf()
+    val publicNonces: List<PublicNonce> = tlvs.get<TxCompleteTlv.Nonces>()?.nonces ?: listOf()
 
-    constructor(channelId: ByteVector32, publicNonces: Map<Long, PublicNonce>) : this(channelId, TlvStream(TxCompleteTlv.Nonces(publicNonces)))
+    constructor(channelId: ByteVector32, publicNonces: List<PublicNonce>) : this(channelId, TlvStream(TxCompleteTlv.Nonces(publicNonces)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
