@@ -136,8 +136,35 @@ sealed class InteractiveTxInput {
         override val previousTx: Transaction,
         override val previousTxOutput: Long,
         override val sequence: UInt,
-        val swapInParams: TxAddInputTlv.SwapInParamsMusig2) : Local() {
+        val swapInParams: TxAddInputTlv.SwapInParamsMusig2,
+        val secretNonce: SecretNonce) : Local() {
         override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput)
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other == null || this::class != other::class) return false
+
+            other as LocalMusig2SwapIn
+
+            if (serialId != other.serialId) return false
+            if (previousTx != other.previousTx) return false
+            if (previousTxOutput != other.previousTxOutput) return false
+            if (sequence != other.sequence) return false
+            if (swapInParams != other.swapInParams) return false
+            if (outPoint != other.outPoint) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = serialId.hashCode()
+            result = 31 * result + previousTx.hashCode()
+            result = 31 * result + previousTxOutput.hashCode()
+            result = 31 * result + sequence.hashCode()
+            result = 31 * result + swapInParams.hashCode()
+            result = 31 * result + outPoint.hashCode()
+            return result
+        }
+
     }
     /**
      * A remote input that funds the interactive transaction.
@@ -161,7 +188,32 @@ sealed class InteractiveTxInput {
         override val outPoint: OutPoint,
         override val txOut: TxOut,
         override val sequence: UInt,
-        val swapInParams: TxAddInputTlv.SwapInParamsMusig2) : Remote()
+        val swapInParams: TxAddInputTlv.SwapInParamsMusig2,
+        val secretNonce: SecretNonce) : Remote() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other == null || this::class != other::class) return false
+
+            other as RemoteSwapInMusig2
+
+            if (serialId != other.serialId) return false
+            if (outPoint != other.outPoint) return false
+            if (txOut != other.txOut) return false
+            if (sequence != other.sequence) return false
+            if (swapInParams != other.swapInParams) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = serialId.hashCode()
+            result = 31 * result + outPoint.hashCode()
+            result = 31 * result + txOut.hashCode()
+            result = 31 * result + sequence.hashCode()
+            result = 31 * result + swapInParams.hashCode()
+            return result
+        }
+    }
 
     /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
     data class Shared(override val serialId: Long, override val outPoint: OutPoint, override val txOut: TxOut, override val sequence: UInt, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxInput(), Incoming, Outgoing
@@ -294,7 +346,8 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                         i.previousTx.stripInputWitnesses(),
                         i.outputIndex.toLong(),
                         0xfffffffdU,
-                        TxAddInputTlv.SwapInParamsMusig2(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.userRefundPublicKey, swapInKeys.refundDelay)
+                        TxAddInputTlv.SwapInParamsMusig2(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.userRefundPublicKey, swapInKeys.refundDelay),
+                        SecretNonce.generate(swapInKeys.userPrivateKey, swapInKeys.userPrivateKey.publicKey(), null, null, null, randomBytes32()),
                     )
                 }
             }
@@ -429,8 +482,7 @@ data class SharedTransaction(
                 .filterIsInstance<InteractiveTxInput.LocalMusig2SwapIn>()
                 .find { txIn.outPoint == it.outPoint }
                 ?.let { input ->
-                    val userNonce =  session.secretNonces[input.serialId]
-                    require(userNonce != null)
+                    val userNonce =  input.secretNonce
                     require(session.txCompleteReceived != null)
                     val serverNonce = session.txCompleteReceived.publicNonces[input.serialId]
                     require(serverNonce != null)
@@ -457,8 +509,7 @@ data class SharedTransaction(
                 .find { txIn.outPoint == it.outPoint }
                 ?.let { input ->
                     val serverKey = keyManager.swapInOnChainWallet.localServerPrivateKey(remoteNodeId)
-                    val userNonce =  session.secretNonces[input.serialId]
-                    require(userNonce != null)
+                    val userNonce =  input.secretNonce
                     require(session.txCompleteReceived != null)
                     val serverNonce = session.txCompleteReceived.publicNonces[input.serialId]
                     require(serverNonce != null)
@@ -606,9 +657,7 @@ data class InteractiveTxSession(
     val txCompleteSent: TxComplete? = null,
     val txCompleteReceived: TxComplete? = null,
     val inputsReceivedCount: Int = 0,
-    val outputsReceivedCount: Int = 0,
-    val secretNonces: Map<Long, SecretNonce> = mapOf()
-) {
+    val outputsReceivedCount: Int = 0) {
 
     //                      Example flow:
     //     +-------+                             +-------+
@@ -649,15 +698,12 @@ data class InteractiveTxSession(
         return when (val msg = toSend.firstOrNull()) {
             null -> {
                 // generate a new secret nonce for each musig2 new swapin every time we send TxComplete
-                val currentNonces = secretNonces
-                fun userNonce(serialId: Long) = currentNonces.getOrElse(serialId) { SecretNonce.generate(swapInKeys.userPrivateKey, swapInKeys.userPublicKey, null, null, null, randomBytes32()) }
-                fun serverNonce(serialId: Long, serverKey: PublicKey) = currentNonces.getOrElse(serialId) { SecretNonce.generate(null, serverKey, null, null, null, randomBytes32()) }
                 val localMusig2SwapIns = localInputs.filterIsInstance<InteractiveTxInput.LocalMusig2SwapIn>()
-                val localNonces = localMusig2SwapIns.map { it.serialId to userNonce(it.serialId) }.toMap()
+                val localNonces = localMusig2SwapIns.map { it.serialId to it.secretNonce.publicNonce() }.toMap()
                 val remoteMusig2SwapIns = remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapInMusig2>()
-                val remoteNonces = remoteMusig2SwapIns.map { it.serialId to serverNonce(it.serialId, it.swapInParams.serverKey) }.toMap()
-                val txComplete = TxComplete(fundingParams.channelId, (localNonces + remoteNonces).mapValues { it.value.publicNonce() })
-                val next = copy(txCompleteSent = txComplete, secretNonces = localNonces + remoteNonces)
+                val remoteNonces = remoteMusig2SwapIns.map { it.serialId to it.secretNonce.publicNonce() }.toMap()
+                val txComplete = TxComplete(fundingParams.channelId, (localNonces + remoteNonces))
+                val next = copy(txCompleteSent = txComplete)
                 if (next.isComplete) {
                     Pair(next, next.validateTx(txComplete))
                 } else {
@@ -724,7 +770,10 @@ data class InteractiveTxSession(
                 val outpoint = OutPoint(message.previousTx, message.previousTxOutput)
                 val txOut = message.previousTx.txOut[message.previousTxOutput.toInt()]
                 when {
-                    message.swapInParamsMusig2 != null -> InteractiveTxInput.RemoteSwapInMusig2(message.serialId, outpoint, txOut, message.sequence, message.swapInParamsMusig2)
+                    message.swapInParamsMusig2 != null -> {
+                        val secretNonce = SecretNonce.generate(null, message.swapInParamsMusig2.serverKey, null, null, null, randomBytes32())
+                        InteractiveTxInput.RemoteSwapInMusig2(message.serialId, outpoint, txOut, message.sequence, message.swapInParamsMusig2, secretNonce)
+                    }
                     message.swapInParams != null -> InteractiveTxInput.RemoteSwapIn(message.serialId, outpoint, txOut, message.sequence, message.swapInParams)
                     else -> InteractiveTxInput.RemoteOnly(message.serialId, outpoint, txOut, message.sequence)
                 }
@@ -846,32 +895,13 @@ data class InteractiveTxSession(
             }
             sharedInputs.first()
         }
-        val localOnlyInputsWithNonces = localOnlyInputs.map {
-            when {
-                it is InteractiveTxInput.LocalSwapIn && swapInKeys.swapInProtocolMusig2.isMine(it.txOut) -> {
-                    val userNonce = secretNonces[it.serialId]
-                    val serverNonce = txCompleteReceived.publicNonces[it.serialId]
-                    if (userNonce == null || serverNonce == null) return InteractiveTxSessionAction.MissingNonce(fundingParams.channelId, it.serialId)
-                    it
-                }
-
-                else -> it
-            }
+        localOnlyInputs.filterIsInstance<InteractiveTxInput.LocalMusig2SwapIn>().forEach {
+            txCompleteReceived.publicNonces[it.serialId] ?: return InteractiveTxSessionAction.MissingNonce(fundingParams.channelId, it.serialId)
         }
-        val remoteOnlyInputsWithNonces = remoteOnlyInputs.map {
-            when {
-                it is InteractiveTxInput.RemoteSwapInMusig2 -> {
-                    val userNonce = secretNonces[it.serialId]
-                    val serverNonce = txCompleteReceived.publicNonces[it.serialId]
-                    if (userNonce == null || serverNonce == null) return InteractiveTxSessionAction.MissingNonce(fundingParams.channelId, it.serialId)
-                    it
-                }
-
-                else -> it
-            }
+        remoteOnlyInputs.filterIsInstance<InteractiveTxInput.RemoteSwapInMusig2>().forEach {
+            txCompleteReceived.publicNonces[it.serialId] ?: return InteractiveTxSessionAction.MissingNonce(fundingParams.channelId, it.serialId)
         }
-
-        val sharedTx = SharedTransaction(sharedInput, sharedOutput, localOnlyInputsWithNonces, remoteOnlyInputsWithNonces, localOnlyOutputs, remoteOnlyOutputs, fundingParams.lockTime)
+        val sharedTx = SharedTransaction(sharedInput, sharedOutput, localOnlyInputs, remoteOnlyInputs, localOnlyOutputs, remoteOnlyOutputs, fundingParams.lockTime)
         val tx = sharedTx.buildUnsignedTx()
         if (sharedTx.localAmountIn < sharedTx.localAmountOut || sharedTx.remoteAmountIn < sharedTx.remoteAmountOut) {
             return InteractiveTxSessionAction.InvalidTxChangeAmount(fundingParams.channelId, tx.txid)
