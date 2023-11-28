@@ -7,8 +7,6 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.ChannelAction
-import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
@@ -175,7 +173,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             serviceFee = payToOpenRequest.payToOpenFeeSatoshis.toMilliSatoshi(),
             miningFee = 0.sat,
             localInputs = emptySet(),
-            txId = randomBytes32(),
+            txId = TxId(randomBytes32()),
             origin = Origin.PayToOpenOrigin(amount = payToOpenRequest.amountMsat, paymentHash = payToOpenRequest.paymentHash, serviceFee = 0.msat, miningFee = payToOpenRequest.payToOpenFeeSatoshis)
         )
         paymentHandler.process(channelId, amountOrigin)
@@ -242,7 +240,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `receive pay-to-open payment with an unknown payment hash`() = runSuspendTest {
         val (paymentHandler, _, _) = createFixture(defaultAmount)
         val payToOpenRequest = PayToOpenRequest(
-            chainHash = ByteVector32.Zeroes,
+            chainHash = BlockHash(ByteVector32.Zeroes),
             fundingSatoshis = 100_000.sat,
             amountMsat = defaultAmount,
             payToOpenMinAmountMsat = 1_000_000.msat,
@@ -337,7 +335,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             NodeHop(TestConstants.Alice.nodeParams.nodeId, TestConstants.Bob.nodeParams.nodeId, CltvExpiryDelta(144), 0.msat)
         )
         val payToOpenRequest = PayToOpenRequest(
-            chainHash = ByteVector32.Zeroes,
+            chainHash = BlockHash(ByteVector32.Zeroes),
             fundingSatoshis = 100_000.sat,
             amountMsat = defaultAmount,
             payToOpenMinAmountMsat = 1_000_000.msat,
@@ -1067,7 +1065,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         paymentHandler.db.receivePayment(
             paidInvoice.paymentHash,
-            receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null, lockedAt = null)),
+            receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = TxId(randomBytes32()), confirmedAt = null, lockedAt = null)),
             receivedAt = 101
         ) // simulate incoming payment being paid before it expired
 
@@ -1097,7 +1095,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
             val dummyUpdate = ChannelUpdate(
                 signature = ByteVector64.Zeroes,
-                chainHash = ByteVector32.Zeroes,
+                chainHash = BlockHash(ByteVector32.Zeroes),
                 shortChannelId = ShortChannelId(144, 0, 0),
                 timestampSeconds = 0,
                 messageFlags = 0,
@@ -1160,7 +1158,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         private fun makeReceivedWithNewChannel(payToOpen: PayToOpenRequest, feeRatio: Double = 0.1): IncomingPayment.ReceivedWith.NewChannel {
             val fee = payToOpen.amountMsat * feeRatio
-            return IncomingPayment.ReceivedWith.NewChannel(amount = payToOpen.amountMsat - fee, serviceFee = fee, miningFee = 0.sat, channelId = randomBytes32(), txId = randomBytes32(), confirmedAt = null, lockedAt = null)
+            return IncomingPayment.ReceivedWith.NewChannel(amount = payToOpen.amountMsat - fee, serviceFee = fee, miningFee = 0.sat, channelId = randomBytes32(), txId = TxId(randomBytes32()), confirmedAt = null, lockedAt = null)
         }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {

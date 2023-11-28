@@ -1,9 +1,6 @@
 package fr.acinq.lightning.channel
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.TxOut
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.WatchEvent
@@ -102,7 +99,7 @@ sealed class ChannelCommand {
                 data class Created(
                     val channelId: ByteVector32,
                     val fundingTxIndex: Long,
-                    val fundingTxId: ByteVector32,
+                    val fundingTxId: TxId,
                     val capacity: Satoshi,
                     val balance: MilliSatoshi
                 ) : Response()
@@ -129,7 +126,7 @@ sealed class ChannelCommand {
     }
 
     sealed class Closing : ChannelCommand() {
-        data class GetHtlcInfosResponse(val revokedCommitTxId: ByteVector32, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : Closing()
+        data class GetHtlcInfosResponse(val revokedCommitTxId: TxId, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : Closing()
     }
     // @formatter:on
 }

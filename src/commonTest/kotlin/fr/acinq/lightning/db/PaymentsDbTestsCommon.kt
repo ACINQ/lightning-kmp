@@ -70,7 +70,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
             pr.paymentHash, listOf(
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 57_000.msat, channelId = channelId1, htlcId = 1L),
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 43_000.msat, channelId = channelId2, htlcId = 54L),
-                IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, serviceFee = 1_000.msat, miningFee = 0.sat, txId = randomBytes32(), confirmedAt = null, lockedAt = null)
+                IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, serviceFee = 1_000.msat, miningFee = 0.sat, txId = TxId(randomBytes32()), confirmedAt = null, lockedAt = null)
             ), 110
         )
         val received = db.getIncomingPayment(pr.paymentHash)
@@ -146,7 +146,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
                     serviceFee = 15_000.msat,
                     miningFee = 0.sat,
                     channelId = randomBytes32(),
-                    txId = randomBytes32(),
+                    txId = TxId(randomBytes32()),
                     confirmedAt = null,
                     lockedAt = null
                 )

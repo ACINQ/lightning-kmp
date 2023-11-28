@@ -87,15 +87,15 @@ data class GetScriptHashHistory(val scriptHash: ByteVector32) : ElectrumRequest(
     override val method: String = "blockchain.scripthash.get_history"
 }
 
-data class TransactionHistoryItem(val blockHeight: Int, val txid: ByteVector32)
+data class TransactionHistoryItem(val blockHeight: Int, val txid: TxId)
 data class GetScriptHashHistoryResponse(val scriptHash: ByteVector32, val history: List<TransactionHistoryItem>) : ElectrumResponse
 
 data class ScriptHashListUnspent(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.listunspent"
 }
 
-data class UnspentItem(val txid: ByteVector32, val outputIndex: Int, val value: Long, val blockHeight: Long) {
-    val outPoint by lazy { OutPoint(txid.reversed(), outputIndex.toLong()) }
+data class UnspentItem(val txid: TxId, val outputIndex: Int, val value: Long, val blockHeight: Long) {
+    val outPoint by lazy { OutPoint(txid, outputIndex.toLong()) }
 }
 
 data class ScriptHashListUnspentResponse(val scriptHash: ByteVector32, val unspents: List<UnspentItem>) : ElectrumResponse
@@ -110,9 +110,9 @@ data class GetTransactionIdFromPosition(val blockHeight: Int, val txIndex: Int, 
     override val method: String = "blockchain.transaction.id_from_pos"
 }
 
-data class GetTransactionIdFromPositionResponse(val txid: ByteVector32, val blockHeight: Int, val txIndex: Int, val merkle: List<ByteVector32> = emptyList()) : ElectrumResponse
+data class GetTransactionIdFromPositionResponse(val txid: TxId, val blockHeight: Int, val txIndex: Int, val merkleProof: List<ByteVector32> = emptyList()) : ElectrumResponse
 
-data class GetTransaction(val txid: ByteVector32, val contextOpt: Any? = null) : ElectrumRequest(txid) {
+data class GetTransaction(val txid: TxId, val contextOpt: Any? = null) : ElectrumRequest(txid) {
     override val method: String = "blockchain.transaction.get"
 }
 
@@ -132,11 +132,11 @@ data class GetHeadersResponse(val start_height: Int, val headers: List<BlockHead
     override fun toString(): String = "GetHeadersResponse($start_height, ${headers.size}, ${headers.first()}, ${headers.last()}, $max)"
 }
 
-data class GetMerkle(val txid: ByteVector32, val blockHeight: Int, val contextOpt: Transaction? = null) : ElectrumRequest(txid, blockHeight) {
+data class GetMerkle(val txid: TxId, val blockHeight: Int, val contextOpt: Transaction? = null) : ElectrumRequest(txid, blockHeight) {
     override val method: String = "blockchain.transaction.get_merkle"
 }
 
-data class GetMerkleResponse(val txid: ByteVector32, val merkle: List<ByteVector32>, val block_height: Int, val pos: Int, val contextOpt: Transaction? = null) : ElectrumResponse {
+data class GetMerkleResponse(val txid: TxId, val merkleProof: List<ByteVector32>, val blockHeight: Int, val pos: Int, val contextOpt: Transaction? = null) : ElectrumResponse {
     val root: ByteVector32 by lazy {
         tailrec fun loop(pos: Int, hashes: List<ByteVector32>): ByteVector32 {
             return if (hashes.size == 1) hashes[0]
@@ -146,8 +146,7 @@ data class GetMerkleResponse(val txid: ByteVector32, val merkle: List<ByteVector
             }
         }
 
-        @Suppress("UNCHECKED_CAST")
-        loop(pos, listOf(txid.reversed()) + merkle.map { it.reversed() })
+        loop(pos, listOf(txid.value.reversed()) + merkleProof.map { it.reversed() })
     }
 }
 
@@ -264,8 +263,9 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             val jsonArray = rpcResponse.result.jsonArray
             val items = jsonArray.map {
                 val height = it.jsonObject.getValue("height").jsonPrimitive.int
-                val txHash = it.jsonObject.getValue("tx_hash").jsonPrimitive.content
-                TransactionHistoryItem(height, ByteVector32.fromValidHex(txHash))
+                // Electrum calls this field tx_hash but actually returns the tx_id.
+                val txId = TxId(it.jsonObject.getValue("tx_hash").jsonPrimitive.content)
+                TransactionHistoryItem(height, txId)
             }
             GetScriptHashHistoryResponse(request.scriptHash, items)
         }
@@ -273,25 +273,27 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
         is ScriptHashListUnspent -> {
             val jsonArray = rpcResponse.result.jsonArray
             val items = jsonArray.map {
-                val txHash = it.jsonObject.getValue("tx_hash").jsonPrimitive.content
+                // Electrum calls this field tx_hash but actually returns the tx_id.
+                val txId = TxId(it.jsonObject.getValue("tx_hash").jsonPrimitive.content)
                 val txPos = it.jsonObject.getValue("tx_pos").jsonPrimitive.int
                 val value = it.jsonObject.getValue("value").jsonPrimitive.long
                 val height = it.jsonObject.getValue("height").jsonPrimitive.long
-                UnspentItem(ByteVector32.fromValidHex(txHash), txPos, value, height)
+                UnspentItem(txId, txPos, value, height)
             }
             ScriptHashListUnspentResponse(request.scriptHash, items)
         }
 
         is GetTransactionIdFromPosition -> {
-            val (txHash, leaves) = if (rpcResponse.result is JsonPrimitive) {
-                rpcResponse.result.content to emptyList()
+            val (txId, merkleProof) = if (rpcResponse.result is JsonPrimitive) {
+                Pair(TxId(rpcResponse.result.content), emptyList())
             } else {
                 val jsonObject = rpcResponse.result.jsonObject
-                jsonObject.getValue("tx_hash").jsonPrimitive.content to
-                        jsonObject.getValue("merkle").jsonArray.map { ByteVector32.fromValidHex(it.jsonPrimitive.content) }
+                // Electrum calls this field tx_hash but actually returns the tx_id.
+                val txId = TxId(jsonObject.getValue("tx_hash").jsonPrimitive.content)
+                val merkleProof = jsonObject.getValue("merkle").jsonArray.map { ByteVector32.fromValidHex(it.jsonPrimitive.content) }
+                Pair(txId, merkleProof)
             }
-
-            GetTransactionIdFromPositionResponse(ByteVector32.fromValidHex(txHash), request.blockHeight, request.txIndex, leaves)
+            GetTransactionIdFromPositionResponse(txId, request.blockHeight, request.txIndex, merkleProof)
         }
 
         is GetTransaction -> {
@@ -312,15 +314,14 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
             // if we got here, it means that the server's response does not contain an error and message should be our
             // transaction id. However, it seems that at least on testnet some servers still use an older version of the
             // Electrum protocol and return an error message in the result field
-            val result = runTrying<ByteVector32> {
-                ByteVector32.fromValidHex(message)
+            val txId = runTrying {
+                TxId(message)
             }
-            when (result) {
+            when (txId) {
                 is Try.Success -> {
-                    if (result.result == request.tx.txid) BroadcastTransactionResponse(request.tx)
-                    else BroadcastTransactionResponse(request.tx, JsonRPCError(1, "response txid $result does not match request txid ${request.tx.txid}"))
+                    if (txId.result == request.tx.txid) BroadcastTransactionResponse(request.tx)
+                    else BroadcastTransactionResponse(request.tx, JsonRPCError(1, "response txid $txId does not match request txid ${request.tx.txid}"))
                 }
-
                 is Try.Failure -> {
                     BroadcastTransactionResponse(request.tx, JsonRPCError(1, message))
                 }
@@ -356,10 +357,10 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
 
         is GetMerkle -> {
             val jsonObject = rpcResponse.result.jsonObject
-            val leaves = jsonObject.getValue("merkle").jsonArray.map { ByteVector32.fromValidHex(it.jsonPrimitive.content) }
+            val merkleProof = jsonObject.getValue("merkle").jsonArray.map { ByteVector32.fromValidHex(it.jsonPrimitive.content) }
             val blockHeight = jsonObject.getValue("block_height").jsonPrimitive.int
             val pos = jsonObject.getValue("pos").jsonPrimitive.int
-            GetMerkleResponse(request.txid, leaves, blockHeight, pos, request.contextOpt)
+            GetMerkleResponse(request.txid, merkleProof, blockHeight, pos, request.contextOpt)
         }
 
         is EstimateFees -> {

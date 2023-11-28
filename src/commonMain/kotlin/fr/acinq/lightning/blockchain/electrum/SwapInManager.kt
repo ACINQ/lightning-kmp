@@ -1,7 +1,7 @@
 package fr.acinq.lightning.blockchain.electrum
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.OutPoint
+import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.channel.LocalFundingStatus
@@ -14,7 +14,7 @@ import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 
 internal sealed class SwapInCommand {
-    data class TrySwapIn(val currentBlockHeight: Int, val wallet: WalletState, val swapInParams: SwapInParams, val trustedTxs: Set<ByteVector32>) : SwapInCommand()
+    data class TrySwapIn(val currentBlockHeight: Int, val wallet: WalletState, val swapInParams: SwapInParams, val trustedTxs: Set<TxId>) : SwapInCommand()
     data class UnlockWalletInputs(val inputs: Set<OutPoint>) : SwapInCommand()
 }
 

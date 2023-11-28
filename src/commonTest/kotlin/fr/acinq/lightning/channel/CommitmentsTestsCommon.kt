@@ -493,7 +493,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             )
             val fundingAmount = (toLocal + toRemote).truncateToSatoshi()
             val dummyFundingScript = Scripts.multiSig2of2(randomKey().publicKey(), randomKey().publicKey())
-            val dummyFundingTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(fundingAmount, Script.pay2wsh(dummyFundingScript))), 0)
+            val dummyFundingTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 1), 0)), listOf(TxOut(fundingAmount, Script.pay2wsh(dummyFundingScript))), 0)
             val commitmentInput = Transactions.InputInfo(OutPoint(dummyFundingTx, 0), dummyFundingTx.txOut[0], dummyFundingScript)
             val localCommitTx = Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0))
             return Commitments(
@@ -515,10 +515,10 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     Commitment(
                         fundingTxIndex = 0,
                         remoteFundingPubkey = randomKey().publicKey(),
-                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), randomBytes32(), listOf())),
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), TxId(randomBytes32()), listOf())),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
-                        RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
+                        RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), TxId(randomBytes32()), randomKey().publicKey()),
                         nextRemoteCommit = null,
                     )
                 ),
@@ -538,7 +538,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             )
             val fundingAmount = (toLocal + toRemote).truncateToSatoshi()
             val dummyFundingScript = Scripts.multiSig2of2(randomKey().publicKey(), randomKey().publicKey())
-            val dummyFundingTx = Transaction(2, listOf(TxIn(OutPoint(randomBytes32(), 1), 0)), listOf(TxOut(fundingAmount, Script.pay2wsh(dummyFundingScript))), 0)
+            val dummyFundingTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 1), 0)), listOf(TxOut(fundingAmount, Script.pay2wsh(dummyFundingScript))), 0)
             val commitmentInput = Transactions.InputInfo(OutPoint(dummyFundingTx, 0), dummyFundingTx.txOut[0], dummyFundingScript)
             val localCommitTx = Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0))
             return Commitments(
@@ -560,10 +560,10 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     Commitment(
                         fundingTxIndex = 0,
                         remoteFundingPubkey = randomKey().publicKey(),
-                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), randomBytes32(), listOf())),
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), TxId(randomBytes32()), listOf())),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
-                        RemoteCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey()),
+                        RemoteCommit(0, CommitmentSpec(setOf(), FeeratePerKw(0.sat), toRemote, toLocal), TxId(randomBytes32()), randomKey().publicKey()),
                         nextRemoteCommit = null
                     )
                 ),

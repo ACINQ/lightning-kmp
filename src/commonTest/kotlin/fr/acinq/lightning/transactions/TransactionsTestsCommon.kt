@@ -67,7 +67,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
     private val remotePaymentPriv = PrivateKey(randomBytes32())
     private val localHtlcPriv = PrivateKey(randomBytes32())
     private val remoteHtlcPriv = PrivateKey(randomBytes32())
-    private val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
+    private val commitInput = Funding.makeFundingInputInfo(TxId(randomBytes32()), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
     private val toLocalDelay = CltvExpiryDelta(144)
     private val localDustLimit = 546.sat
     private val feerate = FeeratePerKw(22_000.sat)
@@ -120,7 +120,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             // ClaimHtlcDelayedTx
             // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the ClaimDelayedOutputTx
             val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey())))
-            val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
+            val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
             val claimHtlcDelayedTx = makeClaimLocalDelayedOutputTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey(), finalPubKeyScript, feeratePerKw)
             assertTrue(claimHtlcDelayedTx is Success, "is $claimHtlcDelayedTx")
             // we use dummy signatures to compute the weight
@@ -132,7 +132,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             // MainPenaltyTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
             val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey())))
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
             val mainPenaltyTx = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey(), finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey(), feeratePerKw)
             assertTrue(mainPenaltyTx is Success, "is $mainPenaltyTx")
             // we use dummy signatures to compute the weight
@@ -147,7 +147,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), CltvExpiryDelta(144).toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val redeemScript = htlcReceived(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash), htlc.cltvExpiry)
             val pubKeyScript = write(pay2wsh(redeemScript))
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
             val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, 0, write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
             assertTrue(htlcPenaltyTx is Success, "is $htlcPenaltyTx")
             // we use dummy signatures to compute the weight
@@ -175,7 +175,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcSuccessTx =
                 makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
             assertTrue(claimHtlcSuccessTx is Success, "is $claimHtlcSuccessTx")
@@ -204,7 +204,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(ByteVector32.Zeroes, 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
+            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcTimeoutTx =
                 makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
             assertTrue(claimHtlcTimeoutTx is Success, "is $claimHtlcTimeoutTx")
@@ -218,7 +218,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
     @Test
     fun `generate valid commitment and htlc transactions`() {
         val finalPubKeyScript = write(pay2wpkh(PrivateKey(ByteVector32("01".repeat(32))).publicKey()))
-        val commitInput = Funding.makeFundingInputInfo(ByteVector32("02".repeat(32)), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
+        val commitInput = Funding.makeFundingInputInfo(TxId(ByteVector32("02".repeat(32))), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
 
         // htlc1 and htlc2 are regular IN/OUT htlcs
         val paymentPreimage1 = ByteVector32("03".repeat(32))
@@ -446,7 +446,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val userWallet = TestConstants.Alice.keyManager.swapInOnChainWallet
         val swapInTx = Transaction(
             version = 2,
-            txIn = listOf(TxIn(OutPoint(randomBytes32(), 2), 0)),
+            txIn = listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0)),
             txOut = listOf(TxOut(100_000.sat, userWallet.pubkeyScript)),
             lockTime = 0
         )
@@ -485,10 +485,10 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val pubkey = randomKey().publicKey()
         // DER-encoded ECDSA signatures usually take up to 72 bytes.
         val sig = randomBytes(72).toByteVector()
-        val tx = Transaction(2, listOf(TxIn(OutPoint(ByteVector32.Zeroes, 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
+        val tx = Transaction(2, listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
         val redeemScript = Scripts.swapIn2of2(pubkey, pubkey, 144)
         val witness = ScriptWitness(listOf(sig, sig, write(redeemScript).byteVector()))
-        val swapInput = TxIn(OutPoint(ByteVector32.Zeroes, 3), ByteVector.empty, 0, witness)
+        val swapInput = TxIn(OutPoint(TxId(ByteVector32.Zeroes), 3), ByteVector.empty, 0, witness)
         val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))
         val inputWeight = txWithAdditionalInput.weight() - tx.weight()
         assertEquals(inputWeight, swapInputWeight)
@@ -504,7 +504,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val remotePaymentPriv = PrivateKey.fromHex("a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
         val localHtlcPriv = PrivateKey.fromHex("a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
         val remoteHtlcPriv = PrivateKey.fromHex("a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
-        val commitInput = Funding.makeFundingInputInfo(ByteVector32.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
+        val commitInput = Funding.makeFundingInputInfo(TxId("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
 
         // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
         // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey

@@ -4,6 +4,7 @@
     EitherSerializer::class,
     ShaChainSerializer::class,
     BlockHeaderKSerializer::class,
+    BlockHashKSerializer::class,
     FundingSignedSerializer::class,
     ChannelUpdateSerializer::class,
     ByteVectorKSerializer::class,
@@ -223,7 +224,7 @@ internal data class RemoteCommit(
     val txid: ByteVector32,
     val remotePerCommitmentPoint: PublicKey
 ) {
-    fun export() = fr.acinq.lightning.channel.RemoteCommit(index, spec.export(), txid, remotePerCommitmentPoint)
+    fun export() = fr.acinq.lightning.channel.RemoteCommit(index, spec.export(), TxId(txid), remotePerCommitmentPoint)
 }
 
 @Serializable
@@ -397,7 +398,7 @@ internal data class Commitments(
                     fr.acinq.lightning.channel.PartiallySignedSharedTransaction(
                         fr.acinq.lightning.channel.SharedTransaction(null, InteractiveTxOutput.Shared(0, commitInput.txOut.publicKeyScript, localCommit.spec.toLocal, localCommit.spec.toRemote), listOf(), listOf(), listOf(), listOf(), 0),
                         // We must correctly set the txId here.
-                        TxSignatures(channelId, commitInput.outPoint.hash, listOf()),
+                        TxSignatures(channelId, commitInput.outPoint.txid, listOf()),
                     ),
                     fr.acinq.lightning.channel.InteractiveTxParams(channelId, localParams.isFunder, commitInput.txOut.amount, commitInput.txOut.amount, remoteParams.fundingPubKey, 0, localParams.dustLimit, localCommit.spec.feerate),
                     0

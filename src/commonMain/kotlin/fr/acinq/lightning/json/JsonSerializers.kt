@@ -20,8 +20,10 @@
     JsonSerializers.ByteVectorSerializer::class,
     JsonSerializers.ByteVector32Serializer::class,
     JsonSerializers.ByteVector64Serializer::class,
+    JsonSerializers.BlockHashSerializer::class,
     JsonSerializers.PublicKeySerializer::class,
     JsonSerializers.PrivateKeySerializer::class,
+    JsonSerializers.TxIdSerializer::class,
     JsonSerializers.KeyPathSerializer::class,
     JsonSerializers.SatoshiSerializer::class,
     JsonSerializers.MilliSatoshiSerializer::class,
@@ -265,7 +267,7 @@ object JsonSerializers {
     object SignedSharedTransactionSerializer
 
     @Serializable
-    data class InteractiveTxSigningSessionSurrogate(val fundingParams: InteractiveTxParams, val fundingTxId: ByteVector32)
+    data class InteractiveTxSigningSessionSurrogate(val fundingParams: InteractiveTxParams, val fundingTxId: TxId)
     object InteractiveTxSigningSessionSerializer : SurrogateSerializer<InteractiveTxSigningSession, InteractiveTxSigningSessionSurrogate>(
         transform = { s -> InteractiveTxSigningSessionSurrogate(s.fundingParams, s.fundingTx.txId) },
         delegateSerializer = InteractiveTxSigningSessionSurrogate.serializer()
@@ -286,7 +288,7 @@ object JsonSerializers {
     object CommitmentChangesSerializer
 
     @Serializable
-    data class LocalFundingStatusSurrogate(val status: String, val txId: ByteVector32)
+    data class LocalFundingStatusSurrogate(val status: String, val txId: TxId)
     object LocalFundingStatusSerializer : SurrogateSerializer<LocalFundingStatus, LocalFundingStatusSurrogate>(
         transform = { o ->
             when (o) {
@@ -359,7 +361,9 @@ object JsonSerializers {
     object ByteVectorSerializer : StringSerializer<ByteVector>()
     object ByteVector32Serializer : StringSerializer<ByteVector32>()
     object ByteVector64Serializer : StringSerializer<ByteVector64>()
+    object BlockHashSerializer : StringSerializer<BlockHash>()
     object PublicKeySerializer : StringSerializer<PublicKey>()
+    object TxIdSerializer : StringSerializer<TxId>()
     object KeyPathSerializer : StringSerializer<KeyPath>()
     object ShortChannelIdSerializer : StringSerializer<ShortChannelId>()
     object OutPointSerializer : StringSerializer<OutPoint>({ "${it.txid}:${it.index}" })

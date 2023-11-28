@@ -267,7 +267,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice1, bob1) = spliceOut(alice, bob, 60_000.sat)
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
 
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.hash)))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.txid)))
         assertEquals(actionsAlice2.size, 2)
         actionsAlice2.has<ChannelAction.Storage.StoreState>()
         actionsAlice2.has<ChannelAction.Storage.SetLocked>()
@@ -275,7 +275,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertNotEquals(alice2.commitments.latest.fundingTxId, alice.commitments.latest.fundingTxId)
         assertIs<LocalFundingStatus.UnconfirmedFundingTx>(alice2.commitments.latest.localFundingStatus)
 
-        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.hash)))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.txid)))
         assertEquals(actionsBob2.size, 2)
         actionsBob2.has<ChannelAction.Storage.StoreState>()
         actionsBob2.has<ChannelAction.Storage.SetLocked>()
@@ -292,7 +292,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice2, _) = spliceOut(alice1, bob1, 60_000.sat)
         val spliceTx2 = alice2.commitments.latest.localFundingStatus.signedTx!!
 
-        val (_, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx2.hash)))
+        val (_, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx2.txid)))
         assertEquals(3, actionsAlice3.size)
         actionsAlice3.has<ChannelAction.Storage.StoreState>()
         assertContains(actionsAlice3, ChannelAction.Storage.SetLocked(spliceTx1.txid))
@@ -310,10 +310,10 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (nodes2, preimage, htlc) = addHtlc(15_000_000.msat, alice1, bob1)
         val (alice3, bob3) = crossSign(nodes2.first, nodes2.second, commitmentsCount = 2)
 
-        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.hash)))
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.txid)))
         actionsAlice4.has<ChannelAction.Storage.StoreState>()
         assertEquals(alice4.commitments.active.size, 1)
-        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.hash)))
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.txid)))
         actionsBob4.has<ChannelAction.Storage.StoreState>()
         assertEquals(bob4.commitments.active.size, 1)
 
@@ -339,7 +339,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(alice2.commitments.active.size, 3)
         assertEquals(bob2.commitments.active.size, 3)
         val spliceTx = alice2.commitments.latest.localFundingStatus.signedTx!!
-        val spliceLocked = SpliceLocked(alice.channelId, spliceTx.hash)
+        val spliceLocked = SpliceLocked(alice.channelId, spliceTx.txid)
 
         // Alice adds a new HTLC, and sends commit_sigs before receiving Bob's splice_locked.
         //
@@ -876,10 +876,10 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx(zeroConf = true)
         val (alice1, bob1) = spliceOut(alice, bob, 50_000.sat)
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
-        val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.hash)))
+        val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.txid)))
         assertEquals(alice2.commitments.active.size, 1)
         assertEquals(alice2.commitments.inactive.size, 1)
-        val (bob2, _) = bob1.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.hash)))
+        val (bob2, _) = bob1.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.txid)))
         assertEquals(bob2.commitments.active.size, 1)
         assertEquals(bob2.commitments.inactive.size, 1)
 
@@ -945,11 +945,11 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx(zeroConf = true)
         val (alice1, bob1) = spliceOut(alice, bob, 50_000.sat)
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
-        val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.hash)))
+        val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.txid)))
         assertIs<LNChannel<Normal>>(alice2)
         assertEquals(alice2.commitments.active.size, 1)
         assertEquals(alice2.commitments.inactive.size, 1)
-        val (bob2, _) = bob1.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.hash)))
+        val (bob2, _) = bob1.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.txid)))
         assertIs<LNChannel<Normal>>(bob2)
         assertEquals(bob2.commitments.active.size, 1)
         assertEquals(bob2.commitments.inactive.size, 1)
@@ -1098,7 +1098,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             return exchangeSpliceSigs(alice4, commitSigAlice, bob4, commitSigBob)
         }
 
-        private fun checkCommandResponse(replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>, parentCommitment: Commitment, spliceInit: SpliceInit): ByteVector32 = runBlocking {
+        private fun checkCommandResponse(replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>, parentCommitment: Commitment, spliceInit: SpliceInit): TxId = runBlocking {
             val response = replyTo.await()
             assertIs<ChannelCommand.Commitment.Splice.Response.Created>(response)
             assertEquals(response.capacity, parentCommitment.fundingAmount + spliceInit.fundingContribution)
@@ -1166,7 +1166,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): List<WalletState.Utxo> {
             val script = keyManager.swapInOnChainWallet.pubkeyScript
             return amounts.map { amount ->
-                val txIn = listOf(TxIn(OutPoint(Lightning.randomBytes32(), 2), 0))
+                val txIn = listOf(TxIn(OutPoint(TxId(Lightning.randomBytes32()), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 WalletState.Utxo(parentTx, 0, 42)

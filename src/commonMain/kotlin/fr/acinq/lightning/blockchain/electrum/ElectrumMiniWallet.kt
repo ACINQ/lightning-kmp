@@ -15,7 +15,7 @@ import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<ByteVector32, Transaction>) {
+data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<TxId, Transaction>) {
     /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent */
     val consistent: Boolean = addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
     val utxos: List<Utxo> = addresses
@@ -96,7 +96,7 @@ private sealed interface WalletCommand {
  * A very simple wallet that only watches one address and publishes its utxos.
  */
 class ElectrumMiniWallet(
-    val chainHash: ByteVector32,
+    val chainHash: BlockHash,
     private val client: IElectrumClient,
     private val scope: CoroutineScope,
     loggerFactory: LoggerFactory,

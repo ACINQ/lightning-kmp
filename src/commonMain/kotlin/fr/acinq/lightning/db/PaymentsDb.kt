@@ -29,7 +29,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
      * the transaction is not yet confirmed. In the case of a force-close, the outgoing payment will only be considered confirmed
      * when the channel is closed, meaning that all related transactions have been confirmed.
      */
-    suspend fun setLocked(txId: ByteVector32)
+    suspend fun setLocked(txId: TxId)
 }
 
 interface IncomingPaymentsDb {
@@ -154,7 +154,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         data class SwapIn(val address: String?) : Origin()
 
         /** Trustless swap-in (dual-funding or splice-in) */
-        data class OnChain(val txid: ByteVector32, val localInputs: Set<OutPoint>) : Origin()
+        data class OnChain(val txId: TxId, val localInputs: Set<OutPoint>) : Origin()
     }
 
     data class Received(val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
@@ -180,10 +180,9 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         sealed class OnChainIncomingPayment : ReceivedWith() {
             abstract val serviceFee: MilliSatoshi
             abstract val miningFee: Satoshi
-            override val fees: MilliSatoshi
-                get() = serviceFee + miningFee.toMilliSatoshi()
+            override val fees: MilliSatoshi get() = serviceFee + miningFee.toMilliSatoshi()
             abstract val channelId: ByteVector32
-            abstract val txId: ByteVector32
+            abstract val txId: TxId
             abstract val confirmedAt: Long?
             abstract val lockedAt: Long?
         }
@@ -201,7 +200,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             override val serviceFee: MilliSatoshi,
             override val miningFee: Satoshi,
             override val channelId: ByteVector32,
-            override val txId: ByteVector32,
+            override val txId: TxId,
             override val confirmedAt: Long?,
             override val lockedAt: Long?
         ) : OnChainIncomingPayment()
@@ -211,7 +210,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             override val serviceFee: MilliSatoshi,
             override val miningFee: Satoshi,
             override val channelId: ByteVector32,
-            override val txId: ByteVector32,
+            override val txId: TxId,
             override val confirmedAt: Long?,
             override val lockedAt: Long?
         ) : OnChainIncomingPayment()
@@ -352,7 +351,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract override val id: UUID
     abstract val miningFees: Satoshi
     abstract val channelId: ByteVector32
-    abstract val txId: ByteVector32
+    abstract val txId: TxId
     abstract override val createdAt: Long
     abstract val confirmedAt: Long?
     abstract val lockedAt: Long?
@@ -364,7 +363,7 @@ data class SpliceOutgoingPayment(
     val address: String,
     override val miningFees: Satoshi,
     override val channelId: ByteVector32,
-    override val txId: ByteVector32,
+    override val txId: TxId,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
@@ -378,7 +377,7 @@ data class SpliceCpfpOutgoingPayment(
     override val id: UUID,
     override val miningFees: Satoshi,
     override val channelId: ByteVector32,
-    override val txId: ByteVector32,
+    override val txId: TxId,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
@@ -403,7 +402,7 @@ data class ChannelCloseOutgoingPayment(
     val isSentToDefaultAddress: Boolean,
     override val miningFees: Satoshi,
     override val channelId: ByteVector32,
-    override val txId: ByteVector32,
+    override val txId: TxId,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,

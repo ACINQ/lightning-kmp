@@ -72,24 +72,24 @@ sealed class ChannelAction {
         data class RemoveChannel(val data: PersistedChannelState) : Storage()
         data class HtlcInfo(val channelId: ByteVector32, val commitmentNumber: Long, val paymentHash: ByteVector32, val cltvExpiry: CltvExpiry)
         data class StoreHtlcInfos(val htlcs: List<HtlcInfo>) : Storage()
-        data class GetHtlcInfos(val revokedCommitTxId: ByteVector32, val commitmentNumber: Long) : Storage()
+        data class GetHtlcInfos(val revokedCommitTxId: TxId, val commitmentNumber: Long) : Storage()
         /** Payment received through on-chain operations (channel creation or splice-in) */
         sealed class StoreIncomingPayment : Storage() {
             abstract val origin: Origin?
-            abstract val txId: ByteVector32
+            abstract val txId: TxId
             abstract val localInputs: Set<OutPoint>
-            data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin?) : StoreIncomingPayment()
-            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: ByteVector32, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
+            data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
+            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
         }
         /** Payment sent through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {
             abstract val miningFees: Satoshi
-            abstract val txId: ByteVector32
-            data class ViaSpliceOut(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: ByteVector32) : StoreOutgoingPayment()
-            data class ViaSpliceCpfp(override val miningFees: Satoshi, override val txId: ByteVector32) : StoreOutgoingPayment()
-            data class ViaClose(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: ByteVector32, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
+            abstract val txId: TxId
+            data class ViaSpliceOut(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: TxId) : StoreOutgoingPayment()
+            data class ViaSpliceCpfp(override val miningFees: Satoshi, override val txId: TxId) : StoreOutgoingPayment()
+            data class ViaClose(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: TxId, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
         }
-        data class SetLocked(val txId: ByteVector32) : Storage()
+        data class SetLocked(val txId: TxId) : Storage()
     }
 
     data class ProcessIncomingHtlc(val add: UpdateAddHtlc) : ChannelAction()

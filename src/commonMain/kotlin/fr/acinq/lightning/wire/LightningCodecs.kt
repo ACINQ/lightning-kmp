@@ -2,6 +2,8 @@ package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.TxHash
+import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
@@ -204,6 +206,18 @@ object LightningCodecs {
 
     @JvmStatic
     fun writeBytes(input: ByteVector32, out: Output): Unit = writeBytes(input.toByteArray(), out)
+
+    @JvmStatic
+    fun txId(input: Input): TxId = TxId(bytes(input, 32))
+
+    @JvmStatic
+    fun writeTxId(input: TxId, out: Output): Unit = writeBytes(input.value.toByteArray(), out)
+
+    @JvmStatic
+    fun txHash(input: Input): TxHash = TxHash(bytes(input, 32))
+
+    @JvmStatic
+    fun writeTxHash(input: TxHash, out: Output): Unit = writeBytes(input.value.toByteArray(), out)
 
     @JvmStatic
     fun script(input: Input): ByteArray {

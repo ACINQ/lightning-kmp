@@ -534,7 +534,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             localCommitPublished.commitTx.txIn.first().outPoint,
             localCommitPublished.htlcTimeoutTxs().first().input.outPoint,
         )
-        assertEquals(actions1.findWatches<WatchSpent>().map { OutPoint(it.txId.reversed(), it.outputIndex.toLong()) }, watchSpent)
+        assertEquals(actions1.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }, watchSpent)
     }
 
     @Test
@@ -859,7 +859,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             remoteCommitPublished.commitTx.txIn.first().outPoint,
             remoteCommitPublished.claimHtlcTimeoutTxs().first().input.outPoint,
         )
-        assertEquals(actions1.findWatches<WatchSpent>().map { OutPoint(it.txId.reversed(), it.outputIndex.toLong()) }, watchSpent)
+        assertEquals(actions1.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }, watchSpent)
     }
 
     @Test
@@ -1140,7 +1140,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             remoteCommitPublished.claimHtlcTimeoutTxs().first().input.outPoint,
             remoteCommitPublished.claimHtlcTimeoutTxs().last().input.outPoint,
         )
-        assertEquals(actions1.findWatches<WatchSpent>().map { OutPoint(it.txId.reversed(), it.outputIndex.toLong()) }, watchSpent)
+        assertEquals(actions1.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }, watchSpent)
     }
 
     @Test
@@ -1222,7 +1222,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertEquals(alice3, alice4)
             assertEquals(actions4.findPublishTxs(), listOf(futureRemoteCommitPublished.claimMainOutputTx!!.tx))
             assertEquals(actions4.findWatches<WatchConfirmed>().map { it.txId }, listOf(bobCommitTx.txid, futureRemoteCommitPublished.claimMainOutputTx!!.tx.txid))
-            assertEquals(actions4.findWatches<WatchSpent>().map { OutPoint(it.txId.reversed(), it.outputIndex.toLong()) }, listOf(bobCommitTx.txIn.first().outPoint))
+            assertEquals(actions4.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }, listOf(bobCommitTx.txIn.first().outPoint))
             actions4.doesNotHave<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         }
 
@@ -1308,7 +1308,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             addAll(revokedCommitPublished.htlcPenaltyTxs.map { it.input.outPoint })
         }
         assertEquals(3, outputsToWatch.size)
-        assertEquals(outputsToWatch, aliceActions2.findWatches<WatchSpent>().map { OutPoint(it.txId.reversed(), it.outputIndex.toLong()) }.toSet())
+        assertEquals(outputsToWatch, aliceActions2.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet())
 
         // simulate a wallet restart
         run {
@@ -1322,7 +1322,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertEquals(aliceTxs, actions3.findPublishTxs().toSet())
             assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx!!.tx.txid), actions3.findWatches<WatchConfirmed>().map { it.txId }.toSet())
             val watchSpent = outputsToWatch + alice3.commitments.latest.commitInput.outPoint
-            assertEquals(watchSpent, actions3.findWatches<WatchSpent>().map { OutPoint(it.txId.reversed(), it.outputIndex.toLong()) }.toSet())
+            assertEquals(watchSpent, actions3.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet())
         }
 
         val watchConfirmed = listOf(
@@ -1642,7 +1642,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         val bobHtlcTx = Transaction(
             2,
             listOf(
-                TxIn(OutPoint(Lightning.randomBytes32(), 4), listOf(), 1), // unrelated utxo (maybe used for fee bumping)
+                TxIn(OutPoint(TxId(Lightning.randomBytes32()), 4), listOf(), 1), // unrelated utxo (maybe used for fee bumping)
                 bobRevokedTx.htlcTxsAndSigs[0].txinfo.tx.txIn.first(),
                 bobRevokedTx.htlcTxsAndSigs[1].txinfo.tx.txIn.first(),
                 bobRevokedTx.htlcTxsAndSigs[2].txinfo.tx.txIn.first(),

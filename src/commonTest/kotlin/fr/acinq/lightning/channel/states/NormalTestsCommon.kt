@@ -1996,7 +1996,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val htlcInputs = htlcPenaltyTxs.map { it.txIn.first().outPoint }.toSet()
         assertEquals(4, htlcInputs.size) // each htlc-penalty tx spends a different output
         assertEquals(5, actions2.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
-        assertEquals(htlcInputs + mainPenaltyTx.txIn.first().outPoint, actions2.findWatches<WatchSpent>().map { OutPoint(it.txId.reversed(), it.outputIndex.toLong()) }.toSet())
+        assertEquals(htlcInputs + mainPenaltyTx.txIn.first().outPoint, actions2.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet())
 
         // two main outputs are 760 000 and 200 000 (minus fees)
         assertEquals(748_070.sat, mainOutputTx.txOut[0].amount)

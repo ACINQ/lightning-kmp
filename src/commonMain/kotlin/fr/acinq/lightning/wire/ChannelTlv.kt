@@ -9,7 +9,10 @@ import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.channel.Origin
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.toByteVector64
 
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
@@ -228,13 +231,13 @@ sealed class RevokeAndAckTlv : Tlv {
 }
 
 sealed class ChannelReestablishTlv : Tlv {
-    data class NextFunding(val txHash: ByteVector32) : ChannelReestablishTlv() {
+    data class NextFunding(val txId: TxId) : ChannelReestablishTlv() {
         override val tag: Long get() = NextFunding.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(txHash, out)
+        override fun write(out: Output) = LightningCodecs.writeTxHash(TxHash(txId), out)
 
         companion object : TlvValueReader<NextFunding> {
             const val tag: Long = 0
-            override fun read(input: Input): NextFunding = NextFunding(LightningCodecs.bytes(input, 32).toByteVector32())
+            override fun read(input: Input): NextFunding = NextFunding(TxId(LightningCodecs.txHash(input)))
         }
     }
 
@@ -293,7 +296,7 @@ sealed class PleaseOpenChannelTlv : Tlv {
         override val tag: Long get() = GrandParents.tag
         override fun write(out: Output) {
             outpoints.forEach { outpoint ->
-                LightningCodecs.writeBytes(outpoint.hash.toByteArray(), out)
+                LightningCodecs.writeTxHash(outpoint.hash, out)
                 LightningCodecs.writeU64(outpoint.index, out)
             }
         }
@@ -302,7 +305,7 @@ sealed class PleaseOpenChannelTlv : Tlv {
             const val tag: Long = 561
             override fun read(input: Input): GrandParents {
                 val count = input.availableBytes / 40
-                val outpoints = (0 until count).map { OutPoint(LightningCodecs.bytes(input, 32).toByteVector32(), LightningCodecs.u64(input)) }
+                val outpoints = (0 until count).map { OutPoint(LightningCodecs.txHash(input), LightningCodecs.u64(input)) }
                 return GrandParents(outpoints)
             }
         }

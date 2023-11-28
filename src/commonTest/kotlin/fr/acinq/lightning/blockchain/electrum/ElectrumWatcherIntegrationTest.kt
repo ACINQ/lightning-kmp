@@ -284,7 +284,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
                 val mempool = bitcoincli.getRawMempool()
                 if (mempool.isNotEmpty()) {
                     assertEquals(1, mempool.size)
-                    assertEquals(tx.txid.toHex(), mempool.first())
+                    assertEquals(tx.txid.value.toHex(), mempool.first())
                 }
                 delay(1.seconds)
             } while (mempool.isEmpty())

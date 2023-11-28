@@ -216,7 +216,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                         .firstOrNull { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
                                         ?.let {
                                             logger.debug { "re-sending splice_locked for fundingTxId=${it.fundingTxId}" }
-                                            val spliceLocked = SpliceLocked(channelId, it.fundingTxId.reversed())
+                                            val spliceLocked = SpliceLocked(channelId, it.fundingTxId)
                                             actions.add(ChannelAction.Message.Send(spliceLocked))
                                         }
 

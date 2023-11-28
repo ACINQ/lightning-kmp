@@ -326,7 +326,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
         private fun createClosingTransactions(): Triple<LocalCommitPublished, RemoteCommitPublished, RevokedCommitPublished> {
             val commitTx = Transaction(
                 2,
-                listOf(TxIn(OutPoint(randomBytes32(), 0), 0)),
+                listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)),
                 listOf(
                     TxOut(50_000.sat, ByteVector.empty), // main output Alice
                     TxOut(40_000.sat, ByteVector.empty), // main output Bob
