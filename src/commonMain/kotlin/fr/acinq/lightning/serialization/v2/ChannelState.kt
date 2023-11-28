@@ -405,7 +405,7 @@ internal data class Commitments(
                     fr.acinq.lightning.channel.PartiallySignedSharedTransaction(
                         fr.acinq.lightning.channel.SharedTransaction(null, InteractiveTxOutput.Shared(0, commitInput.txOut.publicKeyScript, localCommit.spec.toLocal, localCommit.spec.toRemote), listOf(), listOf(), listOf(), listOf(), 0),
                         // We must correctly set the txId here.
-                        TxSignatures(channelId, TxId(commitInput.outPoint.hash), listOf()),
+                        TxSignatures(channelId, commitInput.outPoint.txid, listOf()),
                     ),
                     fr.acinq.lightning.channel.InteractiveTxParams(channelId, localParams.isFunder, commitInput.txOut.amount, commitInput.txOut.amount, remoteParams.fundingPubKey, 0, localParams.dustLimit, localCommit.spec.feerate),
                     0
