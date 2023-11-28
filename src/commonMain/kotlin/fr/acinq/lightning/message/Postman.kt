@@ -72,9 +72,13 @@ class Postman(
     }
 
     fun sendMessage(
-        destination: OnionMessages.Destination,
+        recipient: OfferTypes.ContactInfo,
         messageContent: TlvStream<OnionMessagePayloadTlv>,
     ): SendMessageError? {
+        val destination: OnionMessages.Destination = when (recipient) {
+            is OfferTypes.ContactInfo.BlindedPath -> OnionMessages.Destination.BlindedPath(recipient.route)
+            is OfferTypes.ContactInfo.RecipientNodeId -> OnionMessages.Destination.Recipient(recipient.nodeId, null)
+        }
         val intermediateNodes = if (destination.introductionNodeId == NodeId(remoteNodeId)) listOf() else listOf(remoteNodeId)
         when (val message = OnionMessages.buildMessage(
             privateKey,
@@ -95,11 +99,15 @@ class Postman(
     }
 
     suspend fun sendMessageExpectingReply(
-        destination: OnionMessages.Destination,
+        recipient: OfferTypes.ContactInfo,
         messageContent: TlvStream<OnionMessagePayloadTlv>,
         minReplyPathHops: Int,
         timeout: Duration
     ): Either<SendMessageError, MessageWithRecipientData?> {
+        val destination: OnionMessages.Destination = when (recipient) {
+            is OfferTypes.ContactInfo.BlindedPath -> OnionMessages.Destination.BlindedPath(recipient.route)
+            is OfferTypes.ContactInfo.RecipientNodeId -> OnionMessages.Destination.Recipient(recipient.nodeId, null)
+        }
         val intermediateNodes = if (destination.introductionNodeId == NodeId(remoteNodeId)) listOf() else listOf(remoteNodeId)
         val messageId = randomBytes32()
         val numHopsToAdd = max(0, minReplyPathHops - 1)

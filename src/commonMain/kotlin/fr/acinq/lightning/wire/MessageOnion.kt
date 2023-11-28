@@ -58,6 +58,97 @@ sealed interface OnionMessagePayloadTlv : Tlv {
                 EncryptedData(ByteVector(LightningCodecs.bytes(input, input.availableBytes)))
         }
     }
+
+    /**
+     * In order to pay a Bolt 12 offer, we must send an onion message to request an invoice corresponding to that offer.
+     * The creator of the offer will send us an invoice back through our blinded reply path.
+     */
+    data class InvoiceRequest(val tlvs: TlvStream<OfferTypes.InvoiceRequestTlv>) : OnionMessagePayloadTlv {
+        override val tag: Long get() = InvoiceRequest.tag
+        override fun write(out: Output) = OfferTypes.InvoiceRequest.tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<InvoiceRequest> {
+            const val tag: Long = 64
+
+            override fun read(input: Input): InvoiceRequest =
+                InvoiceRequest(OfferTypes.InvoiceRequest.tlvSerializer.read(input))
+        }
+    }
+
+    /**
+     * When receiving an invoice request, we must send an onion message back containing an invoice corresponding to the
+     * requested offer (if it was an offer we published).
+     */
+    data class Invoice(val tlvs: TlvStream<OfferTypes.InvoiceTlv>) : OnionMessagePayloadTlv {
+        override val tag: Long get() = Invoice.tag
+        override fun write(out: Output) = tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<Invoice> {
+            const val tag: Long = 66
+
+            val tlvSerializer = TlvStreamSerializer(
+                true, @Suppress("UNCHECKED_CAST") mapOf(
+                    // Invoice request part that must be copy-pasted from above
+                    OfferTypes.InvoiceRequestMetadata.tag to OfferTypes.InvoiceRequestMetadata.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferChains.tag to OfferTypes.OfferChains.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferMetadata.tag to OfferTypes.OfferMetadata.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferCurrency.tag to OfferTypes.OfferCurrency.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferAmount.tag to OfferTypes.OfferAmount.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferDescription.tag to OfferTypes.OfferDescription.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferFeatures.tag to OfferTypes.OfferFeatures.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferAbsoluteExpiry.tag to OfferTypes.OfferAbsoluteExpiry.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferPaths.tag to OfferTypes.OfferPaths.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferIssuer.tag to OfferTypes.OfferIssuer.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferQuantityMax.tag to OfferTypes.OfferQuantityMax.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.OfferNodeId.tag to OfferTypes.OfferNodeId.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceRequestChain.tag to OfferTypes.InvoiceRequestChain.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceRequestAmount.tag to OfferTypes.InvoiceRequestAmount.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceRequestFeatures.tag to OfferTypes.InvoiceRequestFeatures.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceRequestQuantity.tag to OfferTypes.InvoiceRequestQuantity.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceRequestPayerId.tag to OfferTypes.InvoiceRequestPayerId.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceRequestPayerNote.tag to OfferTypes.InvoiceRequestPayerNote.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    // Invoice part
+                    OfferTypes.InvoicePaths.tag to OfferTypes.InvoicePaths.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceBlindedPay.tag to OfferTypes.InvoiceBlindedPay.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceCreatedAt.tag to OfferTypes.InvoiceCreatedAt.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceRelativeExpiry.tag to OfferTypes.InvoiceRelativeExpiry.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoicePaymentHash.tag to OfferTypes.InvoicePaymentHash.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceAmount.tag to OfferTypes.InvoiceAmount.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceFallbacks.tag to OfferTypes.InvoiceFallbacks.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceFeatures.tag to OfferTypes.InvoiceFeatures.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.InvoiceNodeId.tag to OfferTypes.InvoiceNodeId.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                    OfferTypes.Signature.tag to OfferTypes.Signature.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
+                )
+            )
+
+            override fun read(input: Input): Invoice =
+                Invoice(tlvSerializer.read(input))
+        }
+    }
+
+    /**
+     * This message may be used when we receive an invalid invoice or invoice request.
+     * It contains information helping senders figure out why their message was invalid.
+     */
+    data class InvoiceError(val tlvs: TlvStream<OfferTypes.InvoiceErrorTlv>) : OnionMessagePayloadTlv {
+        override val tag: Long get() = InvoiceError.tag
+        override fun write(out: Output) = tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<InvoiceError> {
+            const val tag: Long = 68
+
+            val tlvSerializer = TlvStreamSerializer(
+                true, @Suppress("UNCHECKED_CAST") mapOf(
+                    OfferTypes.ErroneousField.tag to OfferTypes.ErroneousField.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
+                    OfferTypes.SuggestedValue.tag to OfferTypes.SuggestedValue.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
+                    OfferTypes.Error.tag to OfferTypes.Error.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
+                )
+            )
+
+            override fun read(input: Input): InvoiceError =
+                InvoiceError(tlvSerializer.read(input))
+        }
+    }
 }
 
 data class MessageOnion(val records: TlvStream<OnionMessagePayloadTlv>) {
