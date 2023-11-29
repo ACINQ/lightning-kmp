@@ -123,7 +123,8 @@ data class Normal(
                                 lockTime = currentBlockHeight.toLong(),
                                 feerate = cmd.feerate,
                                 fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
-                                pushAmount = cmd.pushAmount
+                                pushAmount = cmd.pushAmount,
+                                requestFunds = null,
                             )
                             logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(cmd, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
@@ -356,6 +357,7 @@ data class Normal(
                                     fundingContribution = 0.sat, // only remote contributes to the splice
                                     pushAmount = 0.msat,
                                     fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
+                                    willFund = null,
                                 )
                                 val fundingParams = InteractiveTxParams(
                                     channelId = channelId,

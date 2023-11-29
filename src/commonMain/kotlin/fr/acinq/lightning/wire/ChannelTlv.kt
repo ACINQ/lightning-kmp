@@ -66,6 +66,46 @@ sealed class ChannelTlv : Tlv {
         override fun read(input: Input): RequireConfirmedInputsTlv = this
     }
 
+    /** Request inbound liquidity from our peer. */
+    data class RequestFunds(val amount: Satoshi, val leaseExpiry: Int, val leaseDuration: Int) : ChannelTlv() {
+        override val tag: Long get() = RequestFunds.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeU64(amount.toLong(), out)
+            LightningCodecs.writeU32(leaseExpiry, out)
+            LightningCodecs.writeU32(leaseDuration, out)
+        }
+
+        companion object : TlvValueReader<RequestFunds> {
+            const val tag: Long = 1337
+
+            override fun read(input: Input): RequestFunds = RequestFunds(
+                amount = LightningCodecs.u64(input).sat,
+                leaseExpiry = LightningCodecs.u32(input),
+                leaseDuration = LightningCodecs.u32(input),
+            )
+        }
+    }
+
+    /** Liquidity rates applied to an incoming [[RequestFunds]]. */
+    data class WillFund(val sig: ByteVector64, val leaseRates: LiquidityAds.LeaseRates) : ChannelTlv() {
+        override val tag: Long get() = WillFund.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(sig, out)
+            leaseRates.write(out)
+        }
+
+        companion object : TlvValueReader<WillFund> {
+            const val tag: Long = 1337
+
+            override fun read(input: Input): WillFund = WillFund(
+                sig = LightningCodecs.bytes(input, 64).toByteVector64(),
+                leaseRates = LiquidityAds.LeaseRates.read(input),
+            )
+        }
+    }
+
     data class OriginTlv(val origin: Origin) : ChannelTlv() {
         override val tag: Long get() = OriginTlv.tag
 
