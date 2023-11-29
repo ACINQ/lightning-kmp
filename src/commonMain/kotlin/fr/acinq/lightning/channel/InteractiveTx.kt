@@ -826,6 +826,7 @@ data class InteractiveTxSigningSession(
             sharedTx: SharedTransaction,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
+            liquidityPurchased: LiquidityAds.Lease?,
             localCommitmentIndex: Long,
             remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
@@ -834,13 +835,14 @@ data class InteractiveTxSigningSession(
             val channelKeys = channelParams.localParams.channelKeys(keyManager)
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript(channelKeys) }
+            val liquidityFees = liquidityPurchased?.fees?.toMilliSatoshi() ?: 0.msat
             return Helpers.Funding.makeCommitTxsWithoutHtlcs(
                 channelKeys,
                 channelParams.channelId,
                 channelParams.localParams, channelParams.remoteParams,
                 fundingAmount = sharedTx.sharedOutput.amount,
-                toLocal = sharedTx.sharedOutput.localAmount - localPushAmount + remotePushAmount,
-                toRemote = sharedTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount,
+                toLocal = sharedTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFees,
+                toRemote = sharedTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount + liquidityFees,
                 localCommitmentIndex = localCommitmentIndex,
                 remoteCommitmentIndex = remoteCommitmentIndex,
                 commitTxFeerate,
@@ -900,7 +902,14 @@ sealed class RbfStatus {
 sealed class SpliceStatus {
     object None : SpliceStatus()
     data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : SpliceStatus()
-    data class InProgress(val replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>?, val spliceSession: InteractiveTxSession, val localPushAmount: MilliSatoshi, val remotePushAmount: MilliSatoshi, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
+    data class InProgress(
+        val replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>?,
+        val spliceSession: InteractiveTxSession,
+        val localPushAmount: MilliSatoshi,
+        val remotePushAmount: MilliSatoshi,
+        val liquidityPurchased: LiquidityAds.Lease?,
+        val origins: List<Origin.PayToOpenOrigin>
+    ) : SpliceStatus()
     data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
     object Aborted : SpliceStatus()
 }

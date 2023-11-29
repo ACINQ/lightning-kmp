@@ -108,6 +108,47 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `splice to purchase inbound liquidity`() {
+        val (alice, bob) = reachNormal()
+        val liquidityRequest = LiquidityAds.RequestRemoteFunding(200_000.sat, 10_000.sat, alice.currentBlockHeight, 2016)
+        val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+        val (alice1, actionsAlice1) = alice.process(cmd)
+        val spliceInit = actionsAlice1.findOutgoingMessage<SpliceInit>()
+        assertEquals(spliceInit.requestFunds, liquidityRequest.requestFunds)
+        // Alice's contribution is negative: she needs to pay on-chain fees for the splice.
+        assertTrue(spliceInit.fundingContribution < 0.sat)
+        // We haven't implemented the seller side, so we mock it.
+        val bobFundingKey = randomKey()
+        run {
+            val bobLiquidityRates = LiquidityAds.LeaseRates(250, 250 /* 2.5% */, 200, 10.sat, 100.msat)
+            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, bobFundingKey.publicKey(), spliceInit.requestFunds!!)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, bobFundingKey.publicKey(), willFund)
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
+            assertIs<Normal>(alice2.state)
+            assertIs<SpliceStatus.InProgress>(alice2.state.spliceStatus)
+            actionsAlice2.hasOutgoingMessage<TxAddInput>()
+        }
+        run {
+            // Fees exceed Alice's maximum fee.
+            val bobLiquidityRates = LiquidityAds.LeaseRates(250, 500 /* 5% */, 200, 10.sat, 100.msat)
+            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, bobFundingKey.publicKey(), spliceInit.requestFunds!!)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, bobFundingKey.publicKey(), willFund)
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
+            assertIs<Normal>(alice2.state)
+            assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
+            actionsAlice2.hasOutgoingMessage<TxAbort>()
+        }
+        run {
+            // Bob doesn't fund the splice.
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, bobFundingKey.publicKey(), willFund = null)
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
+            assertIs<Normal>(alice2.state)
+            assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
+            actionsAlice2.hasOutgoingMessage<TxAbort>()
+        }
+    }
+
+    @Test
     fun `reject splice_init`() {
         val cmd = createSpliceOutRequest(25_000.sat)
         val (alice, _) = reachNormal()
@@ -985,6 +1026,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             replyTo = CompletableDeferred(),
             spliceIn = null,
             spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
+            requestRemoteFunding = null,
             feerate = FeeratePerKw(253.sat)
         )
 
@@ -1030,6 +1072,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 replyTo = CompletableDeferred(),
                 spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(createWalletWithFunds(alice.staticParams.nodeParams.keyManager, amounts)),
                 spliceOut = null,
+                requestRemoteFunding = null,
                 feerate = FeeratePerKw(253.sat)
             )
 
@@ -1069,6 +1112,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 replyTo = CompletableDeferred(),
                 spliceIn = null,
                 spliceOut = null,
+                requestRemoteFunding = null,
                 feerate = FeeratePerKw(253.sat)
             )
 

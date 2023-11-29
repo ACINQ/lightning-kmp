@@ -47,6 +47,12 @@ object LiquidityAds {
             return leaseFeeBase + proportionalFee + onChainFees
         }
 
+        fun signLease(nodeKey: PrivateKey, localFundingPubKey: PublicKey, requestFunds: ChannelTlv.RequestFunds): ChannelTlv.WillFund {
+            val witness = LeaseWitness(localFundingPubKey, requestFunds.leaseExpiry, requestFunds.leaseDuration, maxRelayFeeProportional, maxRelayFeeBase)
+            val sig = witness.sign(nodeKey)
+            return ChannelTlv.WillFund(sig, this)
+        }
+
         fun write(out: Output) {
             LightningCodecs.writeU16(fundingWeight, out)
             LightningCodecs.writeU16(leaseFeeProportional, out)
@@ -71,7 +77,14 @@ object LiquidityAds {
         private val leaseExpiry: Int = leaseStart + leaseDuration
         val requestFunds: ChannelTlv.RequestFunds = ChannelTlv.RequestFunds(fundingAmount, leaseExpiry, leaseDuration)
 
-        fun validateLeaseRates(remoteNodeId: PublicKey, channelId: ByteVector32, remoteFundingPubKey: PublicKey, remoteFundingAmount: Satoshi, fundingFeerate: FeeratePerKw, willFund: ChannelTlv.WillFund?): Either<ChannelException, Lease> {
+        fun validateLeaseRates(
+            remoteNodeId: PublicKey,
+            channelId: ByteVector32,
+            remoteFundingPubKey: PublicKey,
+            remoteFundingAmount: Satoshi,
+            fundingFeerate: FeeratePerKw,
+            willFund: ChannelTlv.WillFund?
+        ): Either<ChannelException, Lease> {
             return when (willFund) {
                 // If the remote peer doesn't want to provide inbound liquidity, we immediately fail the attempt.
                 // The user should retry this funding attempt without requesting inbound liquidity.
@@ -91,6 +104,21 @@ object LiquidityAds {
                     }
                 }
             }
+        }
+    }
+
+    fun validateLeaseRates(
+        remoteNodeId: PublicKey,
+        channelId: ByteVector32,
+        remoteFundingPubKey: PublicKey,
+        remoteFundingAmount: Satoshi,
+        fundingFeerate: FeeratePerKw,
+        willFund: ChannelTlv.WillFund?,
+        request: RequestRemoteFunding?
+    ): Either<ChannelException, Lease?> {
+        return when (request) {
+            null -> Either.Right(null)
+            else -> request.validateLeaseRates(remoteNodeId, channelId, remoteFundingPubKey, remoteFundingAmount, fundingFeerate, willFund)
         }
     }
 

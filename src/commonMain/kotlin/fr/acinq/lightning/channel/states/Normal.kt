@@ -124,9 +124,9 @@ data class Normal(
                                 feerate = cmd.feerate,
                                 fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                 pushAmount = cmd.pushAmount,
-                                requestFunds = null,
+                                requestFunds = cmd.requestRemoteFunding?.requestFunds,
                             )
-                            logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
+                            logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount} requesting ${cmd.requestRemoteFunding?.fundingAmount ?: 0.sat} from our peer" }
                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(cmd, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
                         }
                     } else {
@@ -380,7 +380,7 @@ data class Normal(
                                     fundingContributions = FundingContributions(emptyList(), emptyList()), // as non-initiator we don't contribute to this splice for now
                                     previousTxs = emptyList()
                                 )
-                                val nextState = this@Normal.copy(spliceStatus = SpliceStatus.InProgress(replyTo = null, session, localPushAmount = 0.msat, remotePushAmount = cmd.message.pushAmount, origins = cmd.message.origins))
+                                val nextState = this@Normal.copy(spliceStatus = SpliceStatus.InProgress(replyTo = null, session, localPushAmount = 0.msat, remotePushAmount = cmd.message.pushAmount, liquidityPurchased = null, origins = cmd.message.origins))
                                 Pair(nextState, listOf(ChannelAction.Message.Send(spliceAck)))
                             } else {
                                 logger.info { "rejecting splice attempt: channel is not idle" }
@@ -398,61 +398,79 @@ data class Normal(
                     is SpliceAck -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
-                            val parentCommitment = commitments.active.first()
-                            val sharedInput = SharedFundingInput.Multisig2of2(parentCommitment)
-                            val fundingParams = InteractiveTxParams(
-                                channelId = channelId,
-                                isInitiator = true,
-                                localContribution = spliceStatus.spliceInit.fundingContribution,
-                                remoteContribution = cmd.message.fundingContribution,
-                                sharedInput = sharedInput,
-                                remoteFundingPubkey = cmd.message.fundingPubkey,
-                                localOutputs = spliceStatus.command.spliceOutputs,
-                                lockTime = spliceStatus.spliceInit.lockTime,
-                                dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
-                                targetFeerate = spliceStatus.spliceInit.feerate
-                            )
-                            when (val fundingContributions = FundingContributions.create(
-                                channelKeys = channelKeys(),
-                                swapInKeys = keyManager.swapInOnChainWallet,
-                                params = fundingParams,
-                                sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
-                                walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
-                                localOutputs = spliceStatus.command.spliceOutputs,
-                                changePubKey = null // we don't want a change output: we're spending every funds available
+                            when (val liquidityPurchased = LiquidityAds.validateLeaseRates(
+                                remoteNodeId,
+                                channelId,
+                                cmd.message.fundingPubkey,
+                                cmd.message.fundingContribution,
+                                spliceStatus.spliceInit.feerate,
+                                cmd.message.willFund,
+                                spliceStatus.command.requestRemoteFunding
                             )) {
                                 is Either.Left -> {
-                                    logger.error { "could not create splice contributions: ${fundingContributions.value}" }
-                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.FundingFailure(fundingContributions.value))
-                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
+                                    logger.error { "rejecting liquidity proposal: ${liquidityPurchased.value.message}" }
+                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidLiquidityAds(liquidityPurchased.value))
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, liquidityPurchased.value.message))))
                                 }
                                 is Either.Right -> {
-                                    // The splice initiator always sends the first interactive-tx message.
-                                    val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
-                                        channelKeys(),
-                                        keyManager.swapInOnChainWallet,
-                                        fundingParams,
-                                        previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
-                                        previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
-                                        fundingContributions.value, previousTxs = emptyList()
-                                    ).send()
-                                    when (interactiveTxAction) {
-                                        is InteractiveTxSessionAction.SendMessage -> {
-                                            val nextState = this@Normal.copy(
-                                                spliceStatus = SpliceStatus.InProgress(
-                                                    replyTo = spliceStatus.command.replyTo,
-                                                    interactiveTxSession,
-                                                    localPushAmount = spliceStatus.spliceInit.pushAmount,
-                                                    remotePushAmount = cmd.message.pushAmount,
-                                                    origins = spliceStatus.spliceInit.origins
-                                                )
-                                            )
-                                            Pair(nextState, listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
-                                        }
-                                        else -> {
-                                            logger.error { "could not start interactive-tx session: $interactiveTxAction" }
-                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.CannotStartSession)
+                                    val parentCommitment = commitments.active.first()
+                                    val sharedInput = SharedFundingInput.Multisig2of2(parentCommitment)
+                                    val fundingParams = InteractiveTxParams(
+                                        channelId = channelId,
+                                        isInitiator = true,
+                                        localContribution = spliceStatus.spliceInit.fundingContribution,
+                                        remoteContribution = cmd.message.fundingContribution,
+                                        sharedInput = sharedInput,
+                                        remoteFundingPubkey = cmd.message.fundingPubkey,
+                                        localOutputs = spliceStatus.command.spliceOutputs,
+                                        lockTime = spliceStatus.spliceInit.lockTime,
+                                        dustLimit = commitments.params.localParams.dustLimit.max(commitments.params.remoteParams.dustLimit),
+                                        targetFeerate = spliceStatus.spliceInit.feerate
+                                    )
+                                    when (val fundingContributions = FundingContributions.create(
+                                        channelKeys = channelKeys(),
+                                        swapInKeys = keyManager.swapInOnChainWallet,
+                                        params = fundingParams,
+                                        sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote)),
+                                        walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
+                                        localOutputs = spliceStatus.command.spliceOutputs,
+                                        changePubKey = null // we don't want a change output: we're spending every funds available
+                                    )) {
+                                        is Either.Left -> {
+                                            logger.error { "could not create splice contributions: ${fundingContributions.value}" }
+                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.FundingFailure(fundingContributions.value))
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
+                                        }
+                                        is Either.Right -> {
+                                            // The splice initiator always sends the first interactive-tx message.
+                                            val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
+                                                channelKeys(),
+                                                keyManager.swapInOnChainWallet,
+                                                fundingParams,
+                                                previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
+                                                previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
+                                                fundingContributions.value, previousTxs = emptyList()
+                                            ).send()
+                                            when (interactiveTxAction) {
+                                                is InteractiveTxSessionAction.SendMessage -> {
+                                                    val nextState = this@Normal.copy(
+                                                        spliceStatus = SpliceStatus.InProgress(
+                                                            replyTo = spliceStatus.command.replyTo,
+                                                            interactiveTxSession,
+                                                            localPushAmount = spliceStatus.spliceInit.pushAmount,
+                                                            remotePushAmount = cmd.message.pushAmount,
+                                                            liquidityPurchased = liquidityPurchased.value,
+                                                            origins = spliceStatus.spliceInit.origins
+                                                        )
+                                                    )
+                                                    Pair(nextState, listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
+                                                }
+                                                else -> {
+                                                    logger.error { "could not start interactive-tx session: $interactiveTxAction" }
+                                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.CannotStartSession)
+                                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -478,6 +496,7 @@ data class Normal(
                                         interactiveTxAction.sharedTx,
                                         localPushAmount = spliceStatus.localPushAmount,
                                         remotePushAmount = spliceStatus.remotePushAmount,
+                                        liquidityPurchased = spliceStatus.liquidityPurchased,
                                         localCommitmentIndex = parentCommitment.localCommit.index,
                                         remoteCommitmentIndex = parentCommitment.remoteCommit.index,
                                         parentCommitment.localCommit.spec.feerate,
@@ -501,7 +520,8 @@ data class Normal(
                                                     fundingTxIndex = session.fundingTxIndex,
                                                     fundingTxId = session.fundingTx.txId,
                                                     capacity = session.fundingParams.fundingAmount,
-                                                    balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal
+                                                    balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal,
+                                                    liquidityPurchased = spliceStatus.liquidityPurchased,
                                                 )
                                             )
                                             val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(session, spliceStatus.origins))

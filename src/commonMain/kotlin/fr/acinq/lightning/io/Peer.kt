@@ -549,6 +549,7 @@ class Peer(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
                     spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, scriptPubKey),
+                    requestRemoteFunding = null,
                     feerate = feerate
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
@@ -566,6 +567,25 @@ class Peer(
                     // no additional inputs or outputs, the splice is only meant to bump fees
                     spliceIn = null,
                     spliceOut = null,
+                    requestRemoteFunding = null,
+                    feerate = feerate
+                )
+                send(WrappedChannelCommand(channel.channelId, spliceCommand))
+                spliceCommand.replyTo.await()
+            }
+    }
+
+    suspend fun purchaseInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, maxFee: Satoshi, leaseDuration: Int): ChannelCommand.Commitment.Splice.Response? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .firstOrNull()
+            ?.let { channel ->
+                val leaseStart = currentTipFlow.filterNotNull().first().first
+                val spliceCommand = ChannelCommand.Commitment.Splice.Request(
+                    replyTo = CompletableDeferred(),
+                    spliceIn = null,
+                    spliceOut = null,
+                    requestRemoteFunding = LiquidityAds.RequestRemoteFunding(amount, maxFee, leaseStart, leaseDuration),
                     feerate = feerate
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
@@ -1051,6 +1071,7 @@ class Peer(
                             replyTo = CompletableDeferred(),
                             spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(cmd.walletInputs),
                             spliceOut = null,
+                            requestRemoteFunding = null,
                             feerate = feerate
                         )
                         // If the splice fails, we immediately unlock the utxos to reuse them in the next attempt.
