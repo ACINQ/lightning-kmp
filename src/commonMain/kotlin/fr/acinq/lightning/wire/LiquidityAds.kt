@@ -1,11 +1,17 @@
 package fr.acinq.lightning.wire
 
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.ChannelException
+import fr.acinq.lightning.channel.InvalidLiquidityAdsSig
+import fr.acinq.lightning.channel.LiquidityRatesRejected
+import fr.acinq.lightning.channel.MissingLiquidityAds
 import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 
@@ -57,6 +63,62 @@ object LiquidityAds {
                 leaseFeeBase = LightningCodecs.u32(input).sat,
                 maxRelayFeeBase = LightningCodecs.tu32(input).msat,
             )
+        }
+    }
+
+    /** Request inbound liquidity from a remote peer that supports liquidity ads. */
+    data class RequestRemoteFunding(val fundingAmount: Satoshi, val maxFee: Satoshi, val leaseStart: Int, val leaseDuration: Int) {
+        private val leaseExpiry: Int = leaseStart + leaseDuration
+        val requestFunds: ChannelTlv.RequestFunds = ChannelTlv.RequestFunds(fundingAmount, leaseExpiry, leaseDuration)
+
+        fun validateLeaseRates(remoteNodeId: PublicKey, channelId: ByteVector32, remoteFundingPubKey: PublicKey, remoteFundingAmount: Satoshi, fundingFeerate: FeeratePerKw, willFund: ChannelTlv.WillFund?): Either<ChannelException, Lease> {
+            return when (willFund) {
+                // If the remote peer doesn't want to provide inbound liquidity, we immediately fail the attempt.
+                // The user should retry this funding attempt without requesting inbound liquidity.
+                null -> Either.Left(MissingLiquidityAds(channelId))
+                else -> {
+                    val witness = LeaseWitness(remoteFundingPubKey, leaseExpiry, leaseDuration, willFund.leaseRates.maxRelayFeeProportional, willFund.leaseRates.maxRelayFeeBase)
+                    val fees = willFund.leaseRates.fees(fundingFeerate, fundingAmount, remoteFundingAmount)
+                    return if (!LeaseWitness.verify(remoteNodeId, willFund.sig, witness)) {
+                        Either.Left(InvalidLiquidityAdsSig(channelId))
+                    } else if (remoteFundingAmount <= 0.sat) {
+                        Either.Left(LiquidityRatesRejected(channelId))
+                    } else if (maxFee < fees) {
+                        Either.Left(LiquidityRatesRejected(channelId))
+                    } else {
+                        val leaseAmount = fundingAmount.min(remoteFundingAmount)
+                        Either.Right(Lease(leaseAmount, fees, willFund.sig, witness))
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Once a liquidity ads has been paid, we should keep track of the lease, and check that our peer doesn't raise their
+     * routing fees above the values they signed up for.
+     */
+    data class Lease(val amount: Satoshi, val fees: Satoshi, val sellerSig: ByteVector64, val witness: LeaseWitness) {
+        val expiry: Int = witness.leaseEnd
+    }
+
+    /** The seller signs the lease parameters: if they cheat, the buyer can use that signature to prove they cheated. */
+    data class LeaseWitness(val fundingPubKey: PublicKey, val leaseEnd: Int, val leaseDuration: Int, val maxRelayFeeProportional: Int, val maxRelayFeeBase: MilliSatoshi) {
+        fun sign(nodeKey: PrivateKey): ByteVector64 = Crypto.sign(Crypto.sha256(encode()), nodeKey)
+
+        fun encode(): ByteArray {
+            val out = ByteArrayOutput()
+            LightningCodecs.writeBytes("option_will_fund".encodeToByteArray(), out)
+            LightningCodecs.writeBytes(fundingPubKey.value, out)
+            LightningCodecs.writeU32(leaseEnd, out)
+            LightningCodecs.writeU32(leaseDuration, out)
+            LightningCodecs.writeU16(maxRelayFeeProportional, out)
+            LightningCodecs.writeU32(maxRelayFeeBase.msat.toInt(), out)
+            return out.toByteArray()
+        }
+
+        companion object {
+            fun verify(nodeId: PublicKey, sig: ByteVector64, witness: LeaseWitness): Boolean = Crypto.verifySignature(Crypto.sha256(witness.encode()), sig, nodeId)
         }
     }
 

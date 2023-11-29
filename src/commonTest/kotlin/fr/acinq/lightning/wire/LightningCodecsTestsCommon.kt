@@ -8,9 +8,9 @@ import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.channel.Origin
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.assertArrayEquals
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
@@ -769,5 +769,36 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             val encoded = LightningMessage.encode(decoded)
             assertArrayEquals(it.second, encoded)
         }
+    }
+
+    @Test
+    fun `validate liquidity ads lease`() {
+        // The following lease has been signed by eclair.
+        val channelId = randomBytes32()
+        val remoteNodeId = PublicKey.fromHex("023d1d3fc041ca0417e60abffb1d44acf3db3bc1bfcab89031df4920f4ac68b91e")
+        val remoteFundingPubKey = PublicKey.fromHex("03fda99086f3426ccc6f7bcb5a163e1f93fdfd23e2770d462138ddf9f8db779933")
+        val remoteWillFund = ChannelTlv.WillFund(
+            sig = ByteVector64("293f412e6a2b2b3eeab7e67134dc0458e9f068f7e1bc9c0460ed0cdb285096eb592d7881f0dd0777b8176a9f8e232af9d3f21c8925617a3e33bca4d41f30a2fe"),
+            leaseRates = LiquidityAds.LeaseRates(500, 100, 250, 10.sat, 2000.msat),
+        )
+        assertEquals(remoteWillFund.leaseRates.fees(FeeratePerKw(FeeratePerByte(5.sat)), 500_000.sat, 500_000.sat), 5635.sat)
+        assertEquals(remoteWillFund.leaseRates.fees(FeeratePerKw(FeeratePerByte(5.sat)), 500_000.sat, 600_000.sat), 5635.sat)
+        assertEquals(remoteWillFund.leaseRates.fees(FeeratePerKw(FeeratePerByte(5.sat)), 500_000.sat, 400_000.sat), 4635.sat)
+
+        data class TestCase(val remoteFundingAmount: Satoshi, val feerate: FeeratePerKw, val willFund: ChannelTlv.WillFund?, val failure: ChannelException?)
+
+        val testCases = listOf(
+            TestCase(500_000.sat, FeeratePerKw(FeeratePerByte(5.sat)), remoteWillFund, failure = null),
+            TestCase(500_000.sat, FeeratePerKw(FeeratePerByte(5.sat)), willFund = null, failure = MissingLiquidityAds(channelId)),
+            TestCase(500_000.sat, FeeratePerKw(FeeratePerByte(5.sat)), remoteWillFund.copy(sig = randomBytes64()), failure = InvalidLiquidityAdsSig(channelId)),
+            TestCase(0.sat, FeeratePerKw(FeeratePerByte(5.sat)), remoteWillFund, failure = LiquidityRatesRejected(channelId)),
+            TestCase(800_000.sat, FeeratePerKw(FeeratePerByte(20.sat)), remoteWillFund, failure = LiquidityRatesRejected(channelId)), // exceeds maximum fee
+        )
+        testCases.forEach {
+            val request = LiquidityAds.RequestRemoteFunding(it.remoteFundingAmount, 10_000.sat, leaseStart = 819_000, leaseDuration = 1000)
+            val result = request.validateLeaseRates(remoteNodeId, channelId, remoteFundingPubKey, it.remoteFundingAmount, it.feerate, it.willFund)
+            assertEquals(result.left, it.failure)
+        }
+
     }
 }
