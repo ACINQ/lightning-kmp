@@ -248,8 +248,7 @@ object Deserialization {
             previousTx = readTransaction(),
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this),
-            secretNonce = SecretNonce(PrivateKey(ByteVector32.One), PrivateKey(ByteVector32.One), PrivateKey(ByteVector32.One).publicKey())
+            swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this)
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Local::class}")
     }
@@ -273,8 +272,7 @@ object Deserialization {
             outPoint = readOutPoint(),
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this),
-            secretNonce = SecretNonce(PrivateKey(ByteVector32.One), PrivateKey(ByteVector32.One), PrivateKey(ByteVector32.One).publicKey())
+            swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this)
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Remote::class}")
     }
