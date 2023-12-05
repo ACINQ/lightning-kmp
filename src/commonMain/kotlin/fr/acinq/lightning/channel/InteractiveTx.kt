@@ -2,7 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
-import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.IndividualNonce
 import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
@@ -410,7 +410,7 @@ data class SharedTransaction(
         val previousOutputs = unsignedTx.txIn.map { previousOutputsMap[it.outPoint]!! }.toList()
 
         // nonces that we've received for all musig2 swap-in
-        val receivedNonces: Map<Long, PublicNonce> = when (session.txCompleteReceived) {
+        val receivedNonces: Map<Long, IndividualNonce> = when (session.txCompleteReceived) {
             null -> mapOf()
             else -> (localInputs.filterIsInstance<InteractiveTxInput.LocalMusig2SwapIn>() + remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapInMusig2>())
                 .sortedBy { it.serialId }
@@ -437,7 +437,7 @@ data class SharedTransaction(
                     require(session.txCompleteReceived != null)
                     val serverNonce = receivedNonces[input.serialId]
                     require(serverNonce != null) { "missing server nonce for input ${input.serialId}" }
-                    val commonNonce = PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
+                    val commonNonce = IndividualNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
                     TxSignatures.Companion.PartialSignature(keyManager.swapInOnChainWallet.signSwapInputUserMusig2(unsignedTx, i, previousOutputs, userNonce, serverNonce), commonNonce)
                 }
         }.filterNotNull()
@@ -465,7 +465,7 @@ data class SharedTransaction(
                     require(session.txCompleteReceived != null)
                     val serverNonce = receivedNonces[input.serialId]
                     require(serverNonce != null) { "missing server nonce for input ${input.serialId}" }
-                    val commonNonce = PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
+                    val commonNonce = IndividualNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
                     val swapInProtocol = SwapInProtocolMusig2(input.swapInParams.userKey, serverKey.publicKey(), input.swapInParams.userRefundKey, input.swapInParams.refundDelay)
                     TxSignatures.Companion.PartialSignature(swapInProtocol.signSwapInputServer(unsignedTx, i, previousOutputs, serverNonce, serverKey, userNonce), commonNonce)
                 }

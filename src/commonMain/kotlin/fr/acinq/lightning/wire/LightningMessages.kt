@@ -5,7 +5,8 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.IndividualNonce
+import fr.acinq.bitcoin.musig2.AggregatedNonce
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
@@ -455,9 +456,9 @@ data class TxComplete(
 ) : InteractiveTxConstructionMessage(), HasChannelId {
     override val type: Long get() = TxComplete.type
 
-    val publicNonces: List<PublicNonce> = tlvs.get<TxCompleteTlv.Nonces>()?.nonces ?: listOf()
+    val publicNonces: List<IndividualNonce> = tlvs.get<TxCompleteTlv.Nonces>()?.nonces ?: listOf()
 
-    constructor(channelId: ByteVector32, publicNonces: List<PublicNonce>) : this(channelId, TlvStream(TxCompleteTlv.Nonces(publicNonces)))
+    constructor(channelId: ByteVector32, publicNonces: List<IndividualNonce>) : this(channelId, TlvStream(TxCompleteTlv.Nonces(publicNonces)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -522,7 +523,7 @@ data class TxSignatures(
     companion object : LightningMessageReader<TxSignatures> {
         const val type: Long = 71
 
-        data class PartialSignature(val sig: ByteVector32, val aggregatedPublicNonce: PublicNonce)
+        data class PartialSignature(val sig: ByteVector32, val aggregatedPublicNonce: AggregatedNonce)
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(

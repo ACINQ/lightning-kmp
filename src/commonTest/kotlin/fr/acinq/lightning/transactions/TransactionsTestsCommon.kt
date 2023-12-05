@@ -8,13 +8,12 @@ import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.musig2.Musig2
-import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.IndividualNonce
 import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
@@ -588,7 +587,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
 
             val userSig = swapInProtocolMusig2.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce, serverNonce.publicNonce())
             val serverSig = swapInProtocolMusig2.signSwapInputServer(tx, 0, swapInTx.txOut, userNonce.publicNonce(), serverPrivateKey, serverNonce)
-            val ctx = swapInProtocolMusig2.signingCtx(tx, 0, swapInTx.txOut, PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce.publicNonce())))
+            val ctx = swapInProtocolMusig2.signingCtx(tx, 0, swapInTx.txOut, IndividualNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce.publicNonce())))
             val commonSig = ctx.partialSigAgg(listOf(userSig, serverSig))
             val signedTx = tx.updateWitness(0, swapInProtocolMusig2.witness(commonSig))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

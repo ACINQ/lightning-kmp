@@ -3,7 +3,7 @@ package fr.acinq.lightning.serialization.v4
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.IndividualNonce
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
@@ -700,7 +700,7 @@ object Serialization {
 
     private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
 
-    private fun Output.writePublicNonce(o: PublicNonce) = write(o.toByteArray())
+    private fun Output.writePublicNonce(o: IndividualNonce) = write(o.toByteArray())
 
     private fun Output.writeDelimited(o: ByteArray) {
         writeNumber(o.size)

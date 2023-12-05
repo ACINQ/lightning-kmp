@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.readNBytes
-import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.IndividualNonce
 import fr.acinq.bitcoin.musig2.SecretNonce
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Features
@@ -626,7 +626,7 @@ object Deserialization {
 
     private fun Input.readTxId(): TxId = TxId(readByteVector32())
 
-    private fun Input.readPublicNonce() = PublicNonce.fromBin(ByteArray(66).also { read(it, 0, it.size) })
+    private fun Input.readPublicNonce() = IndividualNonce.fromBin(ByteArray(66).also { read(it, 0, it.size) })
 
     private fun Input.readDelimitedByteArray(): ByteArray {
         val size = readNumber().toInt()
