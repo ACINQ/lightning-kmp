@@ -3,7 +3,7 @@ package fr.acinq.lightning.wire
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
-import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.AggregatedNonce
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -392,8 +392,8 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val pubKey1 = PrivateKey.fromHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").publicKey()
         val pubKey2 = PrivateKey.fromHex("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").publicKey()
         val swapInPartialSignatures = listOf(
-            TxSignatures.Companion.PartialSignature(ByteVector32("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"), PublicNonce(pubKey1, pubKey2)),
-            TxSignatures.Companion.PartialSignature(ByteVector32("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"), PublicNonce(pubKey1, pubKey2))
+            TxSignatures.Companion.PartialSignature(ByteVector32("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"), AggregatedNonce(pubKey1, pubKey2)),
+            TxSignatures.Companion.PartialSignature(ByteVector32("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"), AggregatedNonce(pubKey1, pubKey2))
         )
         val signature = ByteVector64("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
         // This is a random mainnet transaction.

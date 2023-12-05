@@ -3,7 +3,8 @@ package fr.acinq.lightning.wire
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.bitcoin.musig2.PublicNonce
+import fr.acinq.bitcoin.musig2.AggregatedNonce
+import fr.acinq.bitcoin.musig2.IndividualNonce
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector64
@@ -72,7 +73,7 @@ sealed class TxRemoveOutputTlv : Tlv
 
 sealed class TxCompleteTlv : Tlv {
     /** nonces for all Musig2 swap-in inputs, ordered by serial id */
-    data class Nonces(val nonces: List<PublicNonce>): TxCompleteTlv() {
+    data class Nonces(val nonces: List<IndividualNonce>): TxCompleteTlv() {
         override val tag: Long get() = Nonces.tag
 
         override fun write(out: Output) {
@@ -83,7 +84,7 @@ sealed class TxCompleteTlv : Tlv {
             const val tag: Long = 101
             override fun read(input: Input): Nonces {
                 val count = input.availableBytes / 66
-                val nonces = (0 until count).map { PublicNonce.fromBin(LightningCodecs.bytes(input, 66)) }
+                val nonces = (0 until count).map { IndividualNonce.fromBin(LightningCodecs.bytes(input, 66)) }
                 return Nonces(nonces)
             }
         }
@@ -145,7 +146,7 @@ sealed class TxSignaturesTlv : Tlv {
                 val count = input.availableBytes / (32 + 66)
                 val psigs = (0 until count).map {
                     val sig = LightningCodecs.bytes(input, 32).byteVector32()
-                    val nonce = PublicNonce.fromBin(LightningCodecs.bytes(input, 66))
+                    val nonce = AggregatedNonce.fromBin(LightningCodecs.bytes(input, 66))
                     TxSignatures.Companion.PartialSignature(sig, nonce)
                 }
                 return SwapInUserPartialSigs(psigs)
@@ -166,7 +167,7 @@ sealed class TxSignaturesTlv : Tlv {
                 val count = input.availableBytes / (32 + 66)
                 val psigs = (0 until count).map {
                     val sig = LightningCodecs.bytes(input, 32).byteVector32()
-                    val nonce = PublicNonce.fromBin(LightningCodecs.bytes(input, 66))
+                    val nonce = AggregatedNonce.fromBin(LightningCodecs.bytes(input, 66))
                     TxSignatures.Companion.PartialSignature(sig, nonce)
                 }
                 return SwapInServerPartialSigs(psigs)

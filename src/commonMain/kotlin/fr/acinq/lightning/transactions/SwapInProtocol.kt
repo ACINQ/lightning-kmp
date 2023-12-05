@@ -1,10 +1,7 @@
 package fr.acinq.lightning.transactions
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.musig2.Musig2
-import fr.acinq.bitcoin.musig2.PublicNonce
-import fr.acinq.bitcoin.musig2.SecretNonce
-import fr.acinq.bitcoin.musig2.SessionCtx
+import fr.acinq.bitcoin.musig2.*
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.wire.TxAddInputTlv
 
@@ -86,10 +83,10 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
 
     fun witnessRefund(userSig: ByteVector64): ScriptWitness = ScriptWitness.empty.push(userSig).push(redeemScript).push(controlBlock)
 
-    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, serverNonce: PublicNonce): ByteVector32 {
+    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, serverNonce: IndividualNonce): ByteVector32 {
         require(userPrivateKey.publicKey() == userPublicKey)
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        val commonNonce = PublicNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
+        val commonNonce = IndividualNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
         val ctx = SessionCtx(
             commonNonce,
             listOf(userPrivateKey.publicKey(), serverPublicKey),
@@ -104,9 +101,9 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
         return Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
     }
 
-    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: PublicNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): ByteVector32 {
+    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: IndividualNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): ByteVector32 {
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        val commonNonce = PublicNonce.aggregate(listOf(userNonce, serverNonce.publicNonce()))
+        val commonNonce = IndividualNonce.aggregate(listOf(userNonce, serverNonce.publicNonce()))
         val ctx = SessionCtx(
             commonNonce,
             listOf(userPublicKey, serverPrivateKey.publicKey()),
@@ -116,7 +113,7 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
         return ctx.sign(serverNonce, serverPrivateKey)
     }
 
-    fun signingCtx(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: PublicNonce): SessionCtx {
+    fun signingCtx(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce): SessionCtx {
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
         return SessionCtx(
             commonNonce,
