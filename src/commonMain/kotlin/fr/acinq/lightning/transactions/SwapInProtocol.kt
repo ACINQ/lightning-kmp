@@ -1,7 +1,11 @@
 package fr.acinq.lightning.transactions
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.musig2.*
+import fr.acinq.bitcoin.crypto.*
+import fr.acinq.bitcoin.crypto.musig2.AggregatedNonce
+import fr.acinq.bitcoin.crypto.musig2.KeyAggCache
+import fr.acinq.bitcoin.crypto.musig2.SecretNonce
+import fr.acinq.bitcoin.crypto.musig2.Session
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.wire.TxAddInputTlv
 
@@ -64,7 +68,9 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
     private val merkleRoot = ScriptTree.hash(scriptTree)
 
     // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
-    private val internalPubKey = Musig2.keyAgg(listOf(userPublicKey, serverPublicKey)).Q.xOnly()
+    private val internalPubKeyAndCache = KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey), null)
+    private val internalPubKey = internalPubKeyAndCache.first
+    private val cache = internalPubKeyAndCache.second
 
     // it is tweaked with the script's merkle root to get the pubkey that will be exposed
     private val commonPubKeyAndParity = internalPubKey.outputKey(Crypto.TaprootTweak.ScriptTweak(merkleRoot))
@@ -83,17 +89,12 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
 
     fun witnessRefund(userSig: ByteVector64): ScriptWitness = ScriptWitness.empty.push(userSig).push(redeemScript).push(controlBlock)
 
-    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, serverNonce: IndividualNonce): ByteVector32 {
+    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, commonNonce: AggregatedNonce): Result<ByteVector32> {
         require(userPrivateKey.publicKey() == userPublicKey)
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        val commonNonce = IndividualNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce))
-        val ctx = SessionCtx(
-            commonNonce,
-            listOf(userPrivateKey.publicKey(), serverPublicKey),
-            listOf(Pair(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)),
-            txHash
-        )
-        return ctx.sign(userNonce, userPrivateKey)
+        val cache1 = cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true).first
+        val session = Session.build(commonNonce, txHash, cache1)
+        return kotlin.runCatching { session.sign(userNonce, userPrivateKey, cache1) }
     }
 
     fun signSwapInputRefund(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey): ByteVector64 {
@@ -101,26 +102,17 @@ class SwapInProtocolMusig2(val userPublicKey: PublicKey, val serverPublicKey: Pu
         return Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
     }
 
-    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: IndividualNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): ByteVector32 {
+    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): Result<ByteVector32> {
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        val commonNonce = IndividualNonce.aggregate(listOf(userNonce, serverNonce.publicNonce()))
-        val ctx = SessionCtx(
-            commonNonce,
-            listOf(userPublicKey, serverPrivateKey.publicKey()),
-            listOf(Pair(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)),
-            txHash
-        )
-        return ctx.sign(serverNonce, serverPrivateKey)
+        val cache1 = cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true).first
+        val session = Session.build(commonNonce, txHash, cache1)
+        return kotlin.runCatching { session.sign(serverNonce, serverPrivateKey, cache1) }
     }
 
-    fun signingCtx(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce): SessionCtx {
+    fun session(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce): Session {
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        return SessionCtx(
-            commonNonce,
-            listOf(userPublicKey, serverPublicKey),
-            listOf(Pair(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)),
-            txHash
-        )
+        val cache1 = cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true).first
+        return Session.build(commonNonce, txHash, cache1)
     }
 
     /**

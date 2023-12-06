@@ -1,12 +1,12 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.AggregatedNonce
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.bitcoin.musig2.IndividualNonce
-import fr.acinq.bitcoin.musig2.AggregatedNonce
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
