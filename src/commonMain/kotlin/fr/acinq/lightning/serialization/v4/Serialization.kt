@@ -3,7 +3,7 @@ package fr.acinq.lightning.serialization.v4
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.bitcoin.musig2.IndividualNonce
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*

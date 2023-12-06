@@ -138,6 +138,11 @@ kotlin {
             languageSettings.optIn("kotlin.ExperimentalStdlibApi")
         }
     }
+    
+    configurations.all {
+        // do not cache changing (i.e. SNAPSHOT) dependencies
+        resolutionStrategy.cacheChangingModulesFor(0, TimeUnit.SECONDS)
+    }
 
     targets.all {
         compilations.all {

@@ -7,9 +7,9 @@ import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.bitcoin.musig2.Musig2
-import fr.acinq.bitcoin.musig2.IndividualNonce
-import fr.acinq.bitcoin.musig2.SecretNonce
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.bitcoin.crypto.musig2.KeyAggCache
+import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -581,14 +581,14 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             // this is the beginning of an interactive musig2 signing session. if user and server are disconnected before they have exchanged partial
             // signatures they will have to start again with fresh nonces
-            val commonPubKey = Musig2.keyAgg(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey())).Q.xOnly()
-            val userNonce = SecretNonce.generate(userPrivateKey, userPrivateKey.publicKey(), commonPubKey, null, null, randomBytes32())
-            val serverNonce = SecretNonce.generate(serverPrivateKey, serverPrivateKey.publicKey(), commonPubKey, null, null, randomBytes32())
-
-            val userSig = swapInProtocolMusig2.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce, serverNonce.publicNonce())
-            val serverSig = swapInProtocolMusig2.signSwapInputServer(tx, 0, swapInTx.txOut, userNonce.publicNonce(), serverPrivateKey, serverNonce)
-            val ctx = swapInProtocolMusig2.signingCtx(tx, 0, swapInTx.txOut, IndividualNonce.aggregate(listOf(userNonce.publicNonce(), serverNonce.publicNonce())))
-            val commonSig = ctx.partialSigAgg(listOf(userSig, serverSig))
+            val (_, cache) = KeyAggCache.add(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()), null)
+            val userNonce = SecretNonce.generate(randomBytes32(), userPrivateKey, userPrivateKey.publicKey(), null, cache, null)
+            val serverNonce = SecretNonce.generate(randomBytes32(), serverPrivateKey, serverPrivateKey.publicKey(), null, cache, null)
+            val commonNonce = IndividualNonce.aggregate(listOf(userNonce.second, serverNonce.second))
+            val userSig = swapInProtocolMusig2.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce).getOrThrow()
+            val serverSig = swapInProtocolMusig2.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first).getOrThrow()
+            val ctx = swapInProtocolMusig2.session(tx, 0, swapInTx.txOut, commonNonce)
+            val commonSig = ctx.add(listOf(userSig, serverSig))
             val signedTx = tx.updateWitness(0, swapInProtocolMusig2.witness(commonSig))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
