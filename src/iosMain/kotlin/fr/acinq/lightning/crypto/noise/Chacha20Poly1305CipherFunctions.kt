@@ -3,6 +3,8 @@ package fr.acinq.lightning.crypto.noise
 import swift.phoenix_crypto.*
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.*
+import kotlinx.cinterop.BetaInteropApi
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.autoreleasepool
 
 
@@ -13,6 +15,7 @@ actual object Chacha20Poly1305CipherFunctions : CipherFunctions {
     fun nonce(n: Long): ByteArray = ByteArray(4) + ChaCha20Poly1305.write64(n)
 
     // Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique.
+    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
     override fun encrypt(k: ByteArray, n: Long, ad: ByteArray, plaintext: ByteArray): ByteArray {
         autoreleasepool {
             val ciphertextAndMac = NativeChaChaPoly.chachapoly_encryptWithKey(
@@ -25,7 +28,9 @@ actual object Chacha20Poly1305CipherFunctions : CipherFunctions {
         }
     }
 
+
     // Decrypts ciphertext using a cipher key k of 32 bytes, an 8-byte unsigned integer nonce n, and associated data ad.
+    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
     @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray {
         autoreleasepool {

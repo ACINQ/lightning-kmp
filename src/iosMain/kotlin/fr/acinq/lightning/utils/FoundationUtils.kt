@@ -1,13 +1,11 @@
 package fr.acinq.lightning.utils
 
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.autoreleasepool
-import kotlinx.cinterop.pin
-import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.*
 import platform.Foundation.create
 import platform.Foundation.NSData
 import platform.posix.memcpy
 
+@OptIn(ExperimentalForeignApi::class)
 fun NSData.toByteArray(): ByteArray {
     val data = this
     return ByteArray(data.length.toInt()).apply {
@@ -19,6 +17,7 @@ fun NSData.toByteArray(): ByteArray {
     }
 }
 
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 fun NSData.copyTo(buffer: ByteArray, offset: Int = 0) {
     if (offset + length.toInt() > buffer.size) {
         throw IllegalArgumentException(
@@ -35,6 +34,7 @@ fun NSData.copyTo(buffer: ByteArray, offset: Int = 0) {
     }
 }
 
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 fun ByteArray.toNSData(offset: Int, length: Int): NSData {
     if (offset + length > size) {
         throw IllegalArgumentException(
@@ -50,6 +50,7 @@ fun ByteArray.toNSData(offset: Int, length: Int): NSData {
     )
 }
 
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 fun ByteArray.toNSData(): NSData {
     if (isEmpty()) return NSData()
     val pinned = pin()
