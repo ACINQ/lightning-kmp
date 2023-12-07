@@ -67,13 +67,13 @@ sealed class ChannelTlv : Tlv {
     }
 
     /** Request inbound liquidity from our peer. */
-    data class RequestFunds(val amount: Satoshi, val leaseExpiry: Int, val leaseDuration: Int) : ChannelTlv() {
+    data class RequestFunds(val amount: Satoshi, val leaseDuration: Int, val leaseExpiry: Int) : ChannelTlv() {
         override val tag: Long get() = RequestFunds.tag
 
         override fun write(out: Output) {
             LightningCodecs.writeU64(amount.toLong(), out)
+            LightningCodecs.writeU16(leaseDuration, out)
             LightningCodecs.writeU32(leaseExpiry, out)
-            LightningCodecs.writeU32(leaseDuration, out)
         }
 
         companion object : TlvValueReader<RequestFunds> {
@@ -81,19 +81,25 @@ sealed class ChannelTlv : Tlv {
 
             override fun read(input: Input): RequestFunds = RequestFunds(
                 amount = LightningCodecs.u64(input).sat,
+                leaseDuration = LightningCodecs.u16(input),
                 leaseExpiry = LightningCodecs.u32(input),
-                leaseDuration = LightningCodecs.u32(input),
             )
         }
     }
 
     /** Liquidity rates applied to an incoming [[RequestFunds]]. */
-    data class WillFund(val sig: ByteVector64, val leaseRates: LiquidityAds.LeaseRates) : ChannelTlv() {
+    data class WillFund(val sig: ByteVector64, val fundingWeight: Int, val leaseFeeProportional: Int, val leaseFeeBase: Satoshi, val maxRelayFeeProportional: Int, val maxRelayFeeBase: MilliSatoshi) : ChannelTlv() {
         override val tag: Long get() = WillFund.tag
+
+        fun leaseRate(leaseDuration: Int): LiquidityAds.LeaseRate = LiquidityAds.LeaseRate(leaseDuration, fundingWeight, leaseFeeProportional, leaseFeeBase, maxRelayFeeProportional, maxRelayFeeBase)
 
         override fun write(out: Output) {
             LightningCodecs.writeBytes(sig, out)
-            leaseRates.write(out)
+            LightningCodecs.writeU16(fundingWeight, out)
+            LightningCodecs.writeU16(leaseFeeProportional, out)
+            LightningCodecs.writeU32(leaseFeeBase.sat.toInt(), out)
+            LightningCodecs.writeU16(maxRelayFeeProportional, out)
+            LightningCodecs.writeU32(maxRelayFeeBase.msat.toInt(), out)
         }
 
         companion object : TlvValueReader<WillFund> {
@@ -101,7 +107,11 @@ sealed class ChannelTlv : Tlv {
 
             override fun read(input: Input): WillFund = WillFund(
                 sig = LightningCodecs.bytes(input, 64).toByteVector64(),
-                leaseRates = LiquidityAds.LeaseRates.read(input),
+                fundingWeight = LightningCodecs.u16(input),
+                leaseFeeProportional = LightningCodecs.u16(input),
+                leaseFeeBase = LightningCodecs.u32(input).sat,
+                maxRelayFeeProportional = LightningCodecs.u16(input),
+                maxRelayFeeBase = LightningCodecs.u32(input).msat,
             )
         }
     }

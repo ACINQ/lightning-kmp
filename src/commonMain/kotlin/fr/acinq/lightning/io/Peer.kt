@@ -168,6 +168,7 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
+    val liquidityRatesFlow = MutableStateFlow<LiquidityAds.LeaseRate?>(null)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -575,17 +576,23 @@ class Peer(
             }
     }
 
-    suspend fun purchaseInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, maxFee: Satoshi, leaseDuration: Int): ChannelCommand.Commitment.Splice.Response? {
+    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw): LiquidityAds.LeaseFees {
+        val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
+        return leaseRate.fees(feerate, amount, amount)
+    }
+
+    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw): ChannelCommand.Commitment.Splice.Response? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
             ?.let { channel ->
                 val leaseStart = currentTipFlow.filterNotNull().first().first
+                val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
                 val spliceCommand = ChannelCommand.Commitment.Splice.Request(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
                     spliceOut = null,
-                    requestRemoteFunding = LiquidityAds.RequestRemoteFunding(amount, maxFee, leaseStart, leaseDuration),
+                    requestRemoteFunding = LiquidityAds.RequestRemoteFunding(amount, leaseStart, leaseRate),
                     feerate = feerate
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
@@ -845,10 +852,10 @@ class Peer(
                                 logger.error(error) { "feature validation error" }
                                 // TODO: disconnect peer
                             }
-
                             else -> {
                                 theirInit = msg
                                 _connectionState.value = Connection.ESTABLISHED
+                                msg.liquidityRates.forEach { liquidityRatesFlow.emit(it) }
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, theirInit!!))
                                     processActions(entry.key, peerConnection, actions)

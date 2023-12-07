@@ -380,7 +380,16 @@ data class Normal(
                                     fundingContributions = FundingContributions(emptyList(), emptyList()), // as non-initiator we don't contribute to this splice for now
                                     previousTxs = emptyList()
                                 )
-                                val nextState = this@Normal.copy(spliceStatus = SpliceStatus.InProgress(replyTo = null, session, localPushAmount = 0.msat, remotePushAmount = cmd.message.pushAmount, liquidityPurchased = null, origins = cmd.message.origins))
+                                val nextState = this@Normal.copy(
+                                    spliceStatus = SpliceStatus.InProgress(
+                                        replyTo = null,
+                                        session,
+                                        localPushAmount = 0.msat,
+                                        remotePushAmount = cmd.message.pushAmount,
+                                        liquidityPurchased = null,
+                                        origins = cmd.message.origins
+                                    )
+                                )
                                 Pair(nextState, listOf(ChannelAction.Message.Send(spliceAck)))
                             } else {
                                 logger.info { "rejecting splice attempt: channel is not idle" }
@@ -398,14 +407,14 @@ data class Normal(
                     is SpliceAck -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
-                            when (val liquidityPurchased = LiquidityAds.validateLeaseRates(
+                            when (val liquidityPurchased = LiquidityAds.validateLease(
+                                spliceStatus.command.requestRemoteFunding,
                                 remoteNodeId,
                                 channelId,
-                                cmd.message.fundingPubkey,
+                                Helpers.Funding.makeFundingPubKeyScript(spliceStatus.spliceInit.fundingPubkey, cmd.message.fundingPubkey),
                                 cmd.message.fundingContribution,
                                 spliceStatus.spliceInit.feerate,
                                 cmd.message.willFund,
-                                spliceStatus.command.requestRemoteFunding
                             )) {
                                 is Either.Left -> {
                                     logger.error { "rejecting liquidity proposal: ${liquidityPurchased.value.message}" }

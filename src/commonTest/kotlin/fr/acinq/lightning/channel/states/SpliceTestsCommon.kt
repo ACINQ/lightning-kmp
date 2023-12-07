@@ -110,7 +110,8 @@ class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `splice to purchase inbound liquidity`() {
         val (alice, bob) = reachNormal()
-        val liquidityRequest = LiquidityAds.RequestRemoteFunding(200_000.sat, 10_000.sat, alice.currentBlockHeight, 2016)
+        val leaseRate = LiquidityAds.LeaseRate(0, 250, 250 /* 2.5% */, 10.sat, 200, 100.msat)
+        val liquidityRequest = LiquidityAds.RequestRemoteFunding(200_000.sat, alice.currentBlockHeight, leaseRate)
         val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
         val (alice1, actionsAlice1) = alice.process(cmd)
         val spliceInit = actionsAlice1.findOutgoingMessage<SpliceInit>()
@@ -118,21 +119,23 @@ class SpliceTestsCommon : LightningTestSuite() {
         // Alice's contribution is negative: she needs to pay on-chain fees for the splice.
         assertTrue(spliceInit.fundingContribution < 0.sat)
         // We haven't implemented the seller side, so we mock it.
-        val bobFundingKey = randomKey()
+        val (_, actionsBob2) = bob.process(ChannelCommand.MessageReceived(spliceInit))
+        val defaultSpliceAck = actionsBob2.findOutgoingMessage<SpliceAck>()
+        assertNull(defaultSpliceAck.willFund)
+        val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey)
         run {
-            val bobLiquidityRates = LiquidityAds.LeaseRates(250, 250 /* 2.5% */, 200, 10.sat, 100.msat)
-            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, bobFundingKey.publicKey(), spliceInit.requestFunds!!)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, bobFundingKey.publicKey(), willFund)
+            val willFund = leaseRate.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.InProgress>(alice2.state.spliceStatus)
             actionsAlice2.hasOutgoingMessage<TxAddInput>()
         }
         run {
-            // Fees exceed Alice's maximum fee.
-            val bobLiquidityRates = LiquidityAds.LeaseRates(250, 500 /* 5% */, 200, 10.sat, 100.msat)
-            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, bobFundingKey.publicKey(), spliceInit.requestFunds!!)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, bobFundingKey.publicKey(), willFund)
+            // Bob proposes different fees from what Alice expects.
+            val bobLiquidityRates = leaseRate.copy(leaseFeeProportional = 500 /* 5% */)
+            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -140,7 +143,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         }
         run {
             // Bob doesn't fund the splice.
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, bobFundingKey.publicKey(), willFund = null)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)

@@ -257,6 +257,10 @@ object Helpers {
             }
         }
 
+        fun makeFundingPubKeyScript(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey): ByteVector {
+            return write(pay2wsh(multiSig2of2(localFundingPubkey, remoteFundingPubkey))).toByteVector()
+        }
+
         fun makeFundingInputInfo(
             fundingTxId: TxId,
             fundingTxOutputIndex: Int,

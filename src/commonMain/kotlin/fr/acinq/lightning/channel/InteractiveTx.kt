@@ -86,7 +86,7 @@ data class InteractiveTxParams(
 
     fun fundingPubkeyScript(channelKeys: KeyManager.ChannelKeys): ByteVector {
         val fundingTxIndex = (sharedInput as? SharedFundingInput.Multisig2of2)?.let { it.fundingTxIndex + 1 } ?: 0
-        return Script.write(Script.pay2wsh(Scripts.multiSig2of2(channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubkey))).toByteVector()
+        return Helpers.Funding.makeFundingPubKeyScript(channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubkey)
     }
 }
 
@@ -835,7 +835,7 @@ data class InteractiveTxSigningSession(
             val channelKeys = channelParams.localParams.channelKeys(keyManager)
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript(channelKeys) }
-            val liquidityFees = liquidityPurchased?.fees?.toMilliSatoshi() ?: 0.msat
+            val liquidityFees = liquidityPurchased?.fees?.total?.toMilliSatoshi() ?: 0.msat
             return Helpers.Funding.makeCommitTxsWithoutHtlcs(
                 channelKeys,
                 channelParams.channelId,

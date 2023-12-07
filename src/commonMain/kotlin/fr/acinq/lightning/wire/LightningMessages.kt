@@ -180,8 +180,17 @@ interface ChannelMessage
 
 data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
     val networks = tlvs.get<InitTlv.Networks>()?.chainHashes ?: listOf()
+    val liquidityRates = tlvs.get<InitTlv.LiquidityAdsRates>()?.leaseRates ?: listOf()
 
-    constructor(features: Features, chainHashs: List<ByteVector32>) : this(features, TlvStream(InitTlv.Networks(chainHashs)))
+    constructor(features: Features, chainHashs: List<ByteVector32>, liquidityRates: List<LiquidityAds.LeaseRate>) : this(
+        features,
+        TlvStream(
+            setOfNotNull(
+                if (chainHashs.isNotEmpty()) InitTlv.Networks(chainHashs) else null,
+                if (liquidityRates.isNotEmpty()) InitTlv.LiquidityAdsRates(liquidityRates) else null,
+            )
+        )
+    )
 
     override val type: Long get() = Init.type
 
@@ -191,17 +200,18 @@ data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream
             LightningCodecs.writeU16(it.size, out)
             LightningCodecs.writeBytes(it, out)
         }
-        val tlvReaders = HashMap<Long, TlvValueReader<InitTlv>>()
-        @Suppress("UNCHECKED_CAST")
-        tlvReaders[InitTlv.Networks.tag] = InitTlv.Networks.Companion as TlvValueReader<InitTlv>
-        @Suppress("UNCHECKED_CAST")
-        tlvReaders[InitTlv.PhoenixAndroidLegacyNodeId.tag] = InitTlv.PhoenixAndroidLegacyNodeId.Companion as TlvValueReader<InitTlv>
-        val serializer = TlvStreamSerializer(false, tlvReaders)
-        serializer.write(tlvs, out)
+        TlvStreamSerializer(false, readers).write(tlvs, out)
     }
 
     companion object : LightningMessageReader<Init> {
         const val type: Long = 16
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            InitTlv.Networks.tag to InitTlv.Networks.Companion as TlvValueReader<InitTlv>,
+            InitTlv.LiquidityAdsRates.tag to InitTlv.LiquidityAdsRates.Companion as TlvValueReader<InitTlv>,
+            InitTlv.PhoenixAndroidLegacyNodeId.tag to InitTlv.PhoenixAndroidLegacyNodeId.Companion as TlvValueReader<InitTlv>,
+        )
 
         override fun read(input: Input): Init {
             val gflen = LightningCodecs.u16(input)
@@ -211,13 +221,7 @@ data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream
             val len = max(gflen, lflen)
             // merge features together
             val features = Features(ByteVector(globalFeatures.leftPaddedCopyOf(len).or(localFeatures.leftPaddedCopyOf(len))))
-            val tlvReaders = HashMap<Long, TlvValueReader<InitTlv>>()
-            @Suppress("UNCHECKED_CAST")
-            tlvReaders[InitTlv.Networks.tag] = InitTlv.Networks.Companion as TlvValueReader<InitTlv>
-            @Suppress("UNCHECKED_CAST")
-            tlvReaders[InitTlv.PhoenixAndroidLegacyNodeId.tag] = InitTlv.PhoenixAndroidLegacyNodeId.Companion as TlvValueReader<InitTlv>
-            val serializer = TlvStreamSerializer(false, tlvReaders)
-            val tlvs = serializer.read(input)
+            val tlvs = TlvStreamSerializer(false, readers).read(input)
             return Init(features, tlvs)
         }
     }
