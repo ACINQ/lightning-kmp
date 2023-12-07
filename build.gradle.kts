@@ -129,6 +129,9 @@ kotlin {
         compilations.all {
             kotlinOptions {
                 allWarningsAsErrors = true
+                // We use expect/actual for classes (see Chacha20Poly1305CipherFunctions). This feature is in beta and raises a warning.
+                // See https://youtrack.jetbrains.com/issue/KT-61573
+                kotlinOptions.freeCompilerArgs += "-Xexpect-actual-classes"
             }
         }
     }
