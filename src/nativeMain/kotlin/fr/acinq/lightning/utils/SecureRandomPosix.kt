@@ -9,6 +9,7 @@ import kotlin.random.Random
 
 object SecureRandomPosix : Random() {
 
+    @OptIn(ExperimentalForeignApi::class)
     override fun nextBytes(array: ByteArray, fromIndex: Int, toIndex: Int): ByteArray {
         val size = toIndex - fromIndex
         require(size >= 0) { "negative size" }
