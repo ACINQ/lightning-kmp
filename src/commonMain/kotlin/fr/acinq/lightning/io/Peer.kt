@@ -1076,6 +1076,7 @@ class Peer(
                         } else {
                             // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet
                             logger.info { "ignoring channel request, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
+                            swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                         }
                     }
                 }
