@@ -19,7 +19,7 @@ sealed class ChannelConfigOption {
      *  - retrieve the commit tx from the bitcoin network, extract your funding pubkey from its witness data
      *  - recompute your channel keys and spend your output
      */
-    object FundingPubKeyBasedChannelKeyPath : ChannelConfigOption() {
+    data object FundingPubKeyBasedChannelKeyPath : ChannelConfigOption() {
         override val name: String get() = "funding_pubkey_based_channel_keypath"
         override val supportBit: Int get() = 0
     }

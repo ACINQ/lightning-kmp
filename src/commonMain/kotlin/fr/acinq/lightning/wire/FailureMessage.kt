@@ -227,7 +227,7 @@ data class ChannelDisabled(val messageFlags: Byte, val channelFlags: Byte, overr
     override val message get() = "channel is currently disabled"
     companion object { const val code = UPDATE or 20 }
 }
-object ExpiryTooFar : FailureMessage() {
+data object ExpiryTooFar : FailureMessage() {
     override val code get() = 21
     override val message get() = "payment expiry is too far in the future"
 }
@@ -236,7 +236,7 @@ data class InvalidOnionPayload(val tag: ULong, val offset: Int) : FailureMessage
     override val message get() = "onion per-hop payload is invalid"
     companion object { const val code = PERM or 22 }
 }
-object PaymentTimeout : FailureMessage() {
+data object PaymentTimeout : FailureMessage() {
     override val code get() = 23
     override val message get() = "the complete payment amount was not received within a reasonable time"
 }

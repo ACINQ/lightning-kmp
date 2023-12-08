@@ -28,28 +28,28 @@ sealed class BitcoindRequest(vararg params: Any) {
 }
 
 sealed class BitcoindResponse
-object GetNetworkInfo : BitcoindRequest() {
+data object GetNetworkInfo : BitcoindRequest() {
     override val method: String = "getnetworkinfo"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetNetworkInfoResponse =
         GetNetworkInfoResponse(rpcResponse.result)
 }
 
 data class GetNetworkInfoResponse(val result: JsonElement) : BitcoindResponse()
-object GetBlockCount : BitcoindRequest() {
+data object GetBlockCount : BitcoindRequest() {
     override val method: String = "getblockcount"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetBlockCountResponse =
         GetBlockCountResponse(rpcResponse.result.jsonPrimitive.int)
 }
 
 data class GetBlockCountResponse(val blockcount: Int) : BitcoindResponse()
-object GetRawMempool : BitcoindRequest() {
+data object GetRawMempool : BitcoindRequest() {
     override val method: String = "getrawmempool"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetRawMempoolResponse =
         GetRawMempoolResponse(rpcResponse.result.jsonArray.map { it.jsonPrimitive.content })
 }
 
 data class GetRawMempoolResponse(val txids: List<String>) : BitcoindResponse()
-object GetNewAddress : BitcoindRequest() {
+data object GetNewAddress : BitcoindRequest() {
     override val method: String = "getnewaddress"
     override fun parseResponse(rpcResponse: JsonRPCResponse): GetNewAddressResponse =
         GetNewAddressResponse(rpcResponse.result.jsonPrimitive.content)
