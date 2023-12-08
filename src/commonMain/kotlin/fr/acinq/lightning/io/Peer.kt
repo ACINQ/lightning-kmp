@@ -453,7 +453,6 @@ class Peer(
                 .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip.first) }
                 .combine(swapInFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerate -> Triple(walletState, currentTip, feerate) }
                 .combine(nodeParams.liquidityPolicy) { (walletState, currentTip, feerate), policy -> TrySwapInFlow(currentTip, walletState, feerate, policy) }
-                .combine(channelsFlow.filter { it.values.all { channel -> channel !is Offline && channel !is Syncing } }) { req, _ -> req } // this is only for synchronization, we discard the channels data
                 .collect { w ->
                     // Local mutual close txs from pre-splice channels can be used as zero-conf inputs for swap-in to facilitate migration
                     val mutualCloseTxs = channels.values
