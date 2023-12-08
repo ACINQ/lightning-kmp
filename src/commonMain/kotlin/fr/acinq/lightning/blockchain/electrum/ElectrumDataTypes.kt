@@ -77,11 +77,11 @@ data class ServerVersion(
 
 data class ServerVersionResponse(val clientName: String, val protocolVersion: String) : ElectrumResponse
 
-object Ping : ElectrumRequest() {
+data object Ping : ElectrumRequest() {
     override val method: String = "server.ping"
 }
 
-object PingResponse : ElectrumResponse
+data object PingResponse : ElectrumResponse
 
 data class GetScriptHashHistory(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.get_history"
@@ -164,7 +164,7 @@ data class ScriptHashSubscription(val scriptHash: ByteVector32) : ElectrumReques
 
 data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String = "") : ElectrumSubscriptionResponse
 
-object HeaderSubscription : ElectrumRequest() {
+data object HeaderSubscription : ElectrumRequest() {
     override val method: String = "blockchain.headers.subscribe"
 }
 

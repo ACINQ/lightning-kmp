@@ -59,10 +59,10 @@ data class Connected(val peerConnection: PeerConnection) : PeerCommand()
 data class MessageReceived(val connectionId: Long, val msg: LightningMessage) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
-object Disconnected : PeerCommand()
+data object Disconnected : PeerCommand()
 
 sealed class PaymentCommand : PeerCommand()
-private object CheckPaymentsTimeout : PaymentCommand()
+private data object CheckPaymentsTimeout : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash

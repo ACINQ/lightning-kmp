@@ -7,8 +7,8 @@ import fr.acinq.lightning.wire.*
 import kotlinx.serialization.Transient
 
 sealed class CommitmentOutput {
-    object ToLocal : CommitmentOutput()
-    object ToRemote : CommitmentOutput()
+    data object ToLocal : CommitmentOutput()
+    data object ToRemote : CommitmentOutput()
 
     data class ToLocalAnchor(val pub: PublicKey) : CommitmentOutput()
     data class ToRemoteAnchor(val pub: PublicKey) : CommitmentOutput()

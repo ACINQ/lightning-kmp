@@ -31,12 +31,12 @@ sealed interface LiquidityEvents : NodeEvents {
     enum class Source { OnChainWallet, OffChainPayment }
     data class Rejected(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val reason: Reason) : LiquidityEvents {
         sealed class Reason {
-            object PolicySetToDisabled : Reason()
+            data object PolicySetToDisabled : Reason()
             sealed class TooExpensive : Reason() {
                 data class OverAbsoluteFee(val maxAbsoluteFee: Satoshi) : TooExpensive()
                 data class OverRelativeFee(val maxRelativeFeeBasisPoints: Int) : TooExpensive()
             }
-            object ChannelInitializing : Reason()
+            data object ChannelInitializing : Reason()
         }
     }
 
@@ -56,4 +56,4 @@ sealed interface SensitiveTaskEvents : NodeEvents {
 }
 
 /** This will be emitted in a corner case where the user restores a wallet on an older version of the app, which is unable to read the channel data. */
-object UpgradeRequired : NodeEvents
+data object UpgradeRequired : NodeEvents

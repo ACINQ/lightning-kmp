@@ -10,7 +10,7 @@ import fr.acinq.lightning.wire.ChannelTlv
 import fr.acinq.lightning.wire.OpenDualFundedChannel
 import fr.acinq.lightning.wire.TlvStream
 
-object WaitForInit : ChannelState() {
+data object WaitForInit : ChannelState() {
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.Init.NonInitiator -> {

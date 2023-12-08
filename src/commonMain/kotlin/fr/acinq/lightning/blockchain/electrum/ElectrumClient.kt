@@ -18,7 +18,7 @@ import kotlin.time.Duration.Companion.seconds
 
 sealed class ElectrumConnectionStatus {
     data class Closed(val reason: TcpSocket.IOException?) : ElectrumConnectionStatus()
-    object Connecting : ElectrumConnectionStatus()
+    data object Connecting : ElectrumConnectionStatus()
     data class Connected(val version: ServerVersionResponse, val height: Int, val header: BlockHeader) : ElectrumConnectionStatus()
 
     fun toConnectionState(): Connection = when (this) {

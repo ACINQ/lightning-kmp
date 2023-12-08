@@ -148,7 +148,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         data class Invoice(val paymentRequest: PaymentRequest) : Origin()
 
         /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
-        object KeySend : Origin()
+        data object KeySend : Origin()
 
         /** DEPRECATED: this is the legacy trusted swap-in, which we keep for backwards-compatibility (previous payments inside the DB). */
         data class SwapIn(val address: String?) : Origin()
@@ -302,7 +302,7 @@ data class LightningOutgoingPayment(
     }
 
     sealed class Status {
-        object Pending : Status()
+        data object Pending : Status()
         sealed class Completed : Status() {
             abstract val completedAt: Long
 
@@ -333,7 +333,7 @@ data class LightningOutgoingPayment(
         val createdAt: Long = currentTimestampMillis()
     ) {
         sealed class Status {
-            object Pending : Status()
+            data object Pending : Status()
             data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
 
             /**

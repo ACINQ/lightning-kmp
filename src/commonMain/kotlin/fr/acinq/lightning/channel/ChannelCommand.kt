@@ -21,7 +21,7 @@ import fr.acinq.lightning.wire.Init as InitMessage
 sealed class ChannelCommand {
     // @formatter:off
     data class Connected(val localInit: InitMessage, val remoteInit: InitMessage) : ChannelCommand()
-    object Disconnected : ChannelCommand()
+    data object Disconnected : ChannelCommand()
     sealed class Init : ChannelCommand() {
         data class Initiator(
             val fundingAmount: Satoshi,
@@ -81,7 +81,7 @@ sealed class ChannelCommand {
     sealed class Commitment : ChannelCommand() {
         object Sign : Commitment(), ForbiddenDuringSplice
         data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice
-        object CheckHtlcTimeout : Commitment()
+        data object CheckHtlcTimeout : Commitment()
         sealed class Splice : Commitment() {
             data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
@@ -105,16 +105,16 @@ sealed class ChannelCommand {
                 ) : Response()
 
                 sealed class Failure : Response() {
-                    object InsufficientFunds : Failure()
-                    object InvalidSpliceOutPubKeyScript : Failure()
-                    object SpliceAlreadyInProgress : Failure()
-                    object ChannelNotIdle : Failure()
+                    data object InsufficientFunds : Failure()
+                    data object InvalidSpliceOutPubKeyScript : Failure()
+                    data object SpliceAlreadyInProgress : Failure()
+                    data object ChannelNotIdle : Failure()
                     data class FundingFailure(val reason: FundingContributionFailure) : Failure()
-                    object CannotStartSession : Failure()
+                    data object CannotStartSession : Failure()
                     data class InteractiveTxSessionFailed(val reason: InteractiveTxSessionAction.RemoteFailure) : Failure()
                     data class CannotCreateCommitTx(val reason: ChannelException) : Failure()
                     data class AbortedByPeer(val reason: String) : Failure()
-                    object Disconnected : Failure()
+                    data object Disconnected : Failure()
                 }
             }
         }
@@ -122,7 +122,7 @@ sealed class ChannelCommand {
 
     sealed class Close : ChannelCommand() {
         data class MutualClose(val scriptPubKey: ByteVector?, val feerates: ClosingFeerates?) : Close()
-        object ForceClose : Close()
+        data object ForceClose : Close()
     }
 
     sealed class Closing : ChannelCommand() {

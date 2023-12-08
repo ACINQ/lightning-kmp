@@ -733,7 +733,7 @@ data class InteractiveTxSession(
 
 sealed class InteractiveTxSigningSessionAction {
     /** Wait for their tx_signatures before sending ours. */
-    object WaitForTxSigs : InteractiveTxSigningSessionAction()
+    data object WaitForTxSigs : InteractiveTxSigningSessionAction()
 
     /** Send our tx_signatures: we cannot forget the channel until it has been spent or double-spent. */
     data class SendTxSigs(val fundingTx: LocalFundingStatus.UnconfirmedFundingTx, val commitment: Commitment, val localSigs: TxSignatures) : InteractiveTxSigningSessionAction()
@@ -890,17 +890,17 @@ data class InteractiveTxSigningSession(
 }
 
 sealed class RbfStatus {
-    object None : RbfStatus()
+    data object None : RbfStatus()
     data class RbfRequested(val command: ChannelCommand.Funding.BumpFundingFee) : RbfStatus()
     data class InProgress(val rbfSession: InteractiveTxSession) : RbfStatus()
     data class WaitingForSigs(val session: InteractiveTxSigningSession) : RbfStatus()
-    object RbfAborted : RbfStatus()
+    data object RbfAborted : RbfStatus()
 }
 
 sealed class SpliceStatus {
-    object None : SpliceStatus()
+    data object None : SpliceStatus()
     data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : SpliceStatus()
     data class InProgress(val replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>?, val spliceSession: InteractiveTxSession, val localPushAmount: MilliSatoshi, val remotePushAmount: MilliSatoshi, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
     data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
-    object Aborted : SpliceStatus()
+    data object Aborted : SpliceStatus()
 }

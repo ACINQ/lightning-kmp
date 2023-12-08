@@ -10,7 +10,7 @@ import fr.acinq.lightning.utils.toMilliSatoshi
 
 sealed class LiquidityPolicy {
     /** Never initiates swap-ins, never accept pay-to-open */
-    object Disable : LiquidityPolicy()
+    data object Disable : LiquidityPolicy()
 
     /**
      * Allow automated liquidity managements, within relative and absolute fee limits. Both conditions must be met.
