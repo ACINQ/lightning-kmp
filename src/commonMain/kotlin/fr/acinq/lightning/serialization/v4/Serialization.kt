@@ -12,6 +12,7 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.LightningCodecs
 import fr.acinq.lightning.wire.LightningMessage
+import fr.acinq.lightning.wire.LiquidityAds
 
 /**
  * Serialization for [ChannelStateWithCommitments].
@@ -356,31 +357,68 @@ object Serialization {
         }
     }
 
+    private fun Output.writeUnsignedLocalCommitWithHtlcs(localCommit: InteractiveTxSigningSession.Companion.UnsignedLocalCommit) {
+        writeNumber(localCommit.index)
+        writeCommitmentSpecWithHtlcs(localCommit.spec)
+        writeTransactionWithInputInfo(localCommit.commitTx)
+        writeCollection(localCommit.htlcTxs) { writeTransactionWithInputInfo(it) }
+    }
+
+    private fun Output.writeLocalCommitWithHtlcs(localCommit: LocalCommit) {
+        writeNumber(localCommit.index)
+        writeCommitmentSpecWithHtlcs(localCommit.spec)
+        localCommit.publishableTxs.run {
+            writeTransactionWithInputInfo(commitTx)
+            writeCollection(htlcTxsAndSigs) { htlc ->
+                writeTransactionWithInputInfo(htlc.txinfo)
+                writeByteVector64(htlc.localSig)
+                writeByteVector64(htlc.remoteSig)
+            }
+        }
+    }
+
+    private fun Output.writeLiquidityPurchase(lease: LiquidityAds.Lease) {
+        writeNumber(lease.amount.toLong())
+        writeNumber(lease.fees.miningFee.toLong())
+        writeNumber(lease.fees.serviceFee.toLong())
+        writeByteVector64(lease.sellerSig)
+        writeNumber(lease.witness.fundingScript.size())
+        write(lease.witness.fundingScript.toByteArray())
+        writeNumber(lease.witness.leaseDuration)
+        writeNumber(lease.witness.leaseEnd)
+        writeNumber(lease.witness.maxRelayFeeProportional)
+        writeNumber(lease.witness.maxRelayFeeBase.toLong())
+    }
+
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
         // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel cannot be used for payments.
-        writeEither(localCommit,
-            writeLeft = { localCommit ->
-                writeNumber(localCommit.index)
-                writeCommitmentSpecWithHtlcs(localCommit.spec)
-                writeTransactionWithInputInfo(localCommit.commitTx)
-                writeCollection(localCommit.htlcTxs) { writeTransactionWithInputInfo(it) }
-            },
-            writeRight = { localCommit ->
-                writeNumber(localCommit.index)
-                writeCommitmentSpecWithHtlcs(localCommit.spec)
-                localCommit.publishableTxs.run {
-                    writeTransactionWithInputInfo(commitTx)
-                    writeCollection(htlcTxsAndSigs) { htlc ->
-                        writeTransactionWithInputInfo(htlc.txinfo)
-                        writeByteVector64(htlc.localSig)
-                        writeByteVector64(htlc.remoteSig)
-                    }
+        when (liquidityPurchased) {
+            null -> when (localCommit) {
+                is Either.Left -> {
+                    writeNumber(0)
+                    writeUnsignedLocalCommitWithHtlcs(localCommit.value)
+                }
+                is Either.Right -> {
+                    writeNumber(1)
+                    writeLocalCommitWithHtlcs(localCommit.value)
                 }
             }
-        )
+            else -> when (localCommit) {
+                is Either.Left -> {
+                    writeNumber(2)
+                    writeLiquidityPurchase(liquidityPurchased)
+                    writeUnsignedLocalCommitWithHtlcs(localCommit.value)
+                }
+                is Either.Right -> {
+                    writeNumber(3)
+                    writeLiquidityPurchase(liquidityPurchased)
+                    writeLocalCommitWithHtlcs(localCommit.value)
+                }
+            }
+        }
         remoteCommit.run {
             writeNumber(index)
             writeCommitmentSpecWithHtlcs(spec)

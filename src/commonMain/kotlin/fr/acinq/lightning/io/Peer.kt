@@ -724,6 +724,16 @@ class Peer(
                                         confirmedAt = null,
                                         lockedAt = null
                                     )
+                                is ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest ->
+                                    InboundLiquidityOutgoingPayment(
+                                        id = UUID.randomUUID(),
+                                        channelId = channelId,
+                                        txId = action.txId,
+                                        lease = action.lease,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null,
+                                        lockedAt = null
+                                    )
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
                                     ChannelCloseOutgoingPayment(
                                         id = UUID.randomUUID(),

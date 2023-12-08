@@ -8,6 +8,7 @@ import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.FailureMessage
+import fr.acinq.lightning.wire.LiquidityAds
 
 interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
     /**
@@ -384,6 +385,21 @@ data class SpliceCpfpOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = miningFees.toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val completedAt: Long? = confirmedAt
+}
+
+data class InboundLiquidityOutgoingPayment(
+    override val id: UUID,
+    override val channelId: ByteVector32,
+    override val txId: TxId,
+    val lease: LiquidityAds.Lease,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?,
+) : OnChainOutgoingPayment() {
+    override val amount: MilliSatoshi = lease.fees.total.toMilliSatoshi()
+    override val miningFees: Satoshi = lease.fees.miningFee
+    override val fees: MilliSatoshi = lease.fees.total.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
 }
 

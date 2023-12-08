@@ -751,8 +751,9 @@ data class InteractiveTxSigningSession(
     val fundingParams: InteractiveTxParams,
     val fundingTxIndex: Long,
     val fundingTx: PartiallySignedSharedTransaction,
+    val liquidityPurchased: LiquidityAds.Lease?,
     val localCommit: Either<UnsignedLocalCommit, LocalCommit>,
-    val remoteCommit: RemoteCommit
+    val remoteCommit: RemoteCommit,
 ) {
 
     //                      Example flow:
@@ -871,7 +872,7 @@ data class InteractiveTxSigningSession(
                 val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
                 val remoteCommit = RemoteCommit(remoteCommitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
                 val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
-                Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
+                Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, liquidityPurchased, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
             }
         }
 

@@ -193,7 +193,7 @@ data class Normal(
                                     logger.info { "waiting for tx_sigs" }
                                     Pair(this@Normal.copy(spliceStatus = spliceStatus.copy(session = signingSession1)), listOf())
                                 }
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
+                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityPurchased, cmd.message.channelData)
                             }
                         }
                         ignoreRetransmittedCommitSig(cmd.message) -> {
@@ -565,7 +565,7 @@ data class Normal(
                                 }
                                 is Either.Right -> {
                                     val action: InteractiveTxSigningSessionAction.SendTxSigs = res.value
-                                    sendSpliceTxSigs(spliceStatus.origins, action, cmd.message.channelData)
+                                    sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityPurchased, cmd.message.channelData)
                                 }
                             }
                         }
@@ -712,7 +712,12 @@ data class Normal(
         }
     }
 
-    private fun ChannelContext.sendSpliceTxSigs(origins: List<Origin.PayToOpenOrigin>, action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<Normal, List<ChannelAction>> {
+    private fun ChannelContext.sendSpliceTxSigs(
+        origins: List<Origin.PayToOpenOrigin>,
+        action: InteractiveTxSigningSessionAction.SendTxSigs,
+        liquidityPurchase: LiquidityAds.Lease?,
+        remoteChannelData: EncryptedChannelData
+    ): Pair<Normal, List<ChannelAction>> {
         logger.info { "sending tx_sigs" }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
@@ -754,13 +759,16 @@ data class Normal(
                     txId = action.fundingTx.txId
                 )
             })
-            // If we initiated the splice but there are no new inputs or outputs, it's a cpfp
-            if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) add(
+            // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp
+            if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) add(
                 ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(
                     miningFees = action.fundingTx.sharedTx.tx.fees,
                     txId = action.fundingTx.txId
                 )
             )
+            liquidityPurchase?.let {
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, lease = it))
+            }
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }
                 val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId)
