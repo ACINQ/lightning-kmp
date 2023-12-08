@@ -51,7 +51,12 @@ data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, v
         // We can safely use trySend because we use unlimited channel buffers.
         // If the connection was closed, the message will automatically be dropped.
         val result = output.trySend(msg)
-        result.onFailure { failure -> logger.warning(failure) { "cannot send $msg" } }
+        result.onFailure { failure ->
+            when (msg) {
+                is Ping -> logger.warning { "cannot send $msg: ${failure?.message}" } // no need to display the full stack trace for pings, they will spam the logs when user is disconnected
+                else -> logger.warning(failure) { "cannot send $msg" }
+            }
+        }
     }
 }
 
@@ -363,7 +368,7 @@ class Peer(
         val job = launch {
             fun closeSocket(ex: TcpSocket.IOException?) {
                 if (_connectionState.value is Connection.CLOSED) return
-                logger.warning(ex) { "closing TCP socket: " }
+                logger.warning { "closing TCP socket: ${ex?.message}" }
                 socket.close()
                 _connectionState.value = Connection.CLOSED(ex)
                 cancel()
