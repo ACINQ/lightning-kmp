@@ -139,6 +139,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		DC9B8ED925D6DAAD00E13818 /* Copy PhoenixCrypto-Swift.h */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
