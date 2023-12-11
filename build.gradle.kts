@@ -44,26 +44,27 @@ kotlin {
 
     linuxX64()
 
-
-    iosX64 { // ios simulator on intel devices
-        compilations["main"].cinterops.create("PhoenixCrypto") {
-            val platform = "iphonesimulator"
-            val interopTask = tasks[interopProcessingTaskName]
-            interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-            includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+    if (currentOs.isMacOsX) {
+        iosX64 { // ios simulator on intel devices
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                val platform = "iphonesimulator"
+                val interopTask = tasks[interopProcessingTaskName]
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+            }
         }
-    }
 
-    iosArm64 { // actual ios devices
-        compilations["main"].cinterops.create("PhoenixCrypto") {
-            val platform = "iphoneos"
-            val interopTask = tasks[interopProcessingTaskName]
-            interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-            includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+        iosArm64 { // actual ios devices
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                val platform = "iphoneos"
+                val interopTask = tasks[interopProcessingTaskName]
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+            }
         }
-    }
 
-    // iosSimulatorArm64() : ios simulator on Apple Silicon devices. Disabled for now, until all dependencies support it.
+        // iosSimulatorArm64() : ios simulator on Apple Silicon devices. Disabled for now, until all dependencies support it.
+    }
 
     sourceSets {
         commonMain {
@@ -110,9 +111,11 @@ kotlin {
             }
         }
 
-        iosTest {
-            dependencies {
-                implementation(ktor("client-ios"))
+        if (currentOs.isMacOsX) {
+            iosTest {
+                dependencies {
+                    implementation(ktor("client-ios"))
+                }
             }
         }
 
