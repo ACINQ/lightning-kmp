@@ -42,32 +42,28 @@ kotlin {
         }
     }
 
-    if (currentOs.isLinux) {
-        linuxX64("linux")
+    linuxX64()
+
+
+    iosX64 { // ios simulator on intel devices
+        compilations["main"].cinterops.create("PhoenixCrypto") {
+            val platform = "iphonesimulator"
+            val interopTask = tasks[interopProcessingTaskName]
+            interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+            includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+        }
     }
 
-    if (currentOs.isMacOsX) {
-        // ios simulator on intel devices
-        iosX64 {
-            compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "iphonesimulator"
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
-            }
+    iosArm64 { // actual ios devices
+        compilations["main"].cinterops.create("PhoenixCrypto") {
+            val platform = "iphoneos"
+            val interopTask = tasks[interopProcessingTaskName]
+            interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+            includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
         }
-        // actual ios devices
-        iosArm64 {
-            compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "iphoneos"
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
-            }
-        }
-        // ios simulator on Apple Silicon devices. Disabled for now, until all dependencies support it.
-        // iosSimulatorArm64()
     }
+
+    // iosSimulatorArm64() : ios simulator on Apple Silicon devices. Disabled for now, until all dependencies support it.
 
     sourceSets {
         commonMain {
@@ -114,7 +110,7 @@ kotlin {
             }
         }
 
-        iosMain {
+        iosTest {
             dependencies {
                 implementation(ktor("client-ios"))
             }
@@ -145,7 +141,6 @@ kotlin {
 }
 
 val dokkaOutputDir = buildDir.resolve("dokka")
-
 tasks.dokkaHtml {
     outputDirectory.set(file(dokkaOutputDir))
     dokkaSourceSets {
