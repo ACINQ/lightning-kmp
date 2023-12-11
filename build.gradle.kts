@@ -26,105 +26,112 @@ allprojects {
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-    val ktorVersion: String by extra { "2.3.2" }
-    fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
+
+    val bitcoinKmpVersion = "0.15.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
+    val secpJniJvmVersion = "0.12.0"
+
     val serializationVersion = "1.6.2"
     val coroutineVersion = "1.7.2"
-
-    val commonMain by sourceSets.getting {
-        dependencies {
-            api("fr.acinq.bitcoin:bitcoin-kmp:0.15.0") // when upgrading, keep secp256k1-kmp-jni-jvm in sync below
-            api("org.kodein.log:canard:0.18.0")
-            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
-            api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
-            api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
-            api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
-            api("org.jetbrains.kotlinx:kotlinx-datetime:0.4.0")
-        }
-    }
-    val commonTest by sourceSets.getting {
-        dependencies {
-            api(ktor("client-core"))
-            api(ktor("client-auth"))
-            api(ktor("client-json"))
-            api(ktor("client-content-negotiation"))
-            api(ktor("serialization-kotlinx-json"))
-            implementation(kotlin("test-common"))
-            implementation(kotlin("test-annotations-common"))
-            implementation("org.kodein.memory:kodein-memory-files:0.8.1")
-        }
-    }
+    val datetimeVersion = "0.4.0"
+    val ktorVersion = "2.3.2"
+    fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
 
     jvm {
         compilations.all {
             kotlinOptions.jvmTarget = "1.8"
         }
-        compilations["main"].defaultSourceSet.dependencies {
-            api(ktor("client-okhttp"))
-            api(ktor("network"))
-            api(ktor("network-tls"))
-            implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.12.0")
-            implementation("org.slf4j:slf4j-api:1.7.36")
-            api("org.xerial:sqlite-jdbc:3.32.3.2")
-        }
-        compilations["test"].defaultSourceSet.dependencies {
-            implementation(kotlin("test-junit"))
-            implementation("org.bouncycastle:bcprov-jdk15on:1.64")
-            implementation("ch.qos.logback:logback-classic:1.2.3")
-        }
     }
 
-    if (currentOs.isLinux || currentOs.isMacOsX) {
+    if (currentOs.isLinux) {
+        linuxX64("linux")
+    }
 
-        val nativeMain by sourceSets.creating { dependsOn(commonMain) }
-        val nativeTest by sourceSets.creating { dependsOn(commonTest) }
+    if (currentOs.isMacOsX) {
+        // ios simulator on intel devices
+        iosX64 {
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                val platform = "iphonesimulator"
+                val interopTask = tasks[interopProcessingTaskName]
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+            }
+        }
+        // actual ios devices
+        iosArm64 {
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                val platform = "iphoneos"
+                val interopTask = tasks[interopProcessingTaskName]
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+            }
+        }
+        // ios simulator on Apple Silicon devices. Disabled for now, until all dependencies support it.
+        // iosSimulatorArm64()
+    }
 
-        if (currentOs.isLinux) {
-            linuxX64("linux") {
-                compilations["main"].defaultSourceSet {
-                    dependsOn(nativeMain)
-                }
-                compilations["test"].defaultSourceSet {
-                    dependsOn(nativeTest)
-                    dependencies {
-                        implementation(ktor("client-curl"))
-                    }
-                }
+    sourceSets {
+        commonMain {
+            dependencies {
+                api("fr.acinq.bitcoin:bitcoin-kmp:$bitcoinKmpVersion")
+                api("org.kodein.log:canard:0.18.0")
+                api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
+                api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
             }
         }
 
-        if (currentOs.isMacOsX) {
-            ios {
-                val platform = when (name) {
-                    "iosX64" -> "iphonesimulator"
-                    "iosArm64" -> "iphoneos"
-                    else -> error("Unsupported target $name")
-                }
-
-                compilations["main"].cinterops.create("PhoenixCrypto") {
-                    val interopTask = tasks[interopProcessingTaskName]
-                    interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                    includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
-                }
-                compilations["main"].defaultSourceSet {
-                    dependsOn(nativeMain)
-                }
-                compilations["test"].defaultSourceSet {
-                    dependsOn(nativeTest)
-                    dependencies {
-                        implementation(ktor("client-ios"))
-                    }
-                }
+        commonTest {
+            dependencies {
+                api(ktor("client-core"))
+                api(ktor("client-auth"))
+                api(ktor("client-json"))
+                api(ktor("client-content-negotiation"))
+                api(ktor("serialization-kotlinx-json"))
+                implementation(kotlin("test-common"))
+                implementation(kotlin("test-annotations-common"))
+                implementation("org.kodein.memory:kodein-memory-files:0.8.1")
             }
+        }
+
+        jvmMain {
+            dependencies {
+                api(ktor("client-okhttp"))
+                api(ktor("network"))
+                api(ktor("network-tls"))
+                implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:$secpJniJvmVersion")
+                implementation("org.slf4j:slf4j-api:1.7.36")
+                api("org.xerial:sqlite-jdbc:3.32.3.2")
+            }
+        }
+
+        jvmTest {
+            dependencies {
+                implementation(kotlin("test-junit"))
+                implementation("org.bouncycastle:bcprov-jdk15on:1.64")
+                implementation("ch.qos.logback:logback-classic:1.2.3")
+            }
+        }
+
+        iosMain {
+            dependencies {
+                implementation(ktor("client-ios"))
+            }
+        }
+
+        linuxTest {
+            dependencies {
+                implementation(ktor("client-curl"))
+            }
+        }
+
+        all {
+            languageSettings.optIn("kotlin.RequiresOptIn")
+            languageSettings.optIn("kotlin.ExperimentalStdlibApi")
         }
     }
 
-    sourceSets.all {
-        languageSettings.optIn("kotlin.RequiresOptIn")
-        languageSettings.optIn("kotlin.ExperimentalStdlibApi")
-    }
-
-    // Configure all compilations of all targets:
     targets.all {
         compilations.all {
             kotlinOptions {
@@ -164,7 +171,6 @@ val deleteDokkaOutputDir by tasks.register<Delete>("deleteDokkaOutputDirectory")
     delete(dokkaOutputDir)
 }
 
-
 val javadocJar = tasks.create<Jar>("javadocJar") {
     archiveClassifier.set("javadoc")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -203,7 +209,6 @@ publishing {
         }
     }
 }
-
 
 // Disable cross compilation
 afterEvaluate {
@@ -260,9 +265,7 @@ afterEvaluate {
     }
 }
 
-/*
-Electrum integration test environment + tasks configuration
- */
+/** Electrum integration test environment + tasks configuration */
 val dockerTestEnv by tasks.creating(Exec::class) {
     workingDir = projectDir.resolve("docker-local-test")
     commandLine("bash", "env.sh", "remove", "net-create", "btc-create", "elx-create", "btc-start", "elx-start")
