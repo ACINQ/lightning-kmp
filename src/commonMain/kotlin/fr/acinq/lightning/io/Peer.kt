@@ -537,6 +537,25 @@ class Peer(
     }
 
     /**
+     * Estimate the actual feerate to use (and corresponding fee to pay) to purchase inbound liquidity with a splice
+     * that reaches the target feerate.
+     */
+    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, LiquidityAds.LeaseFees>? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .firstOrNull()
+            ?.let { channel ->
+                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
+                // The mining fee below pays for the shared input and output of the splice transaction.
+                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
+                // The mining fee in the lease only covers the remote node's inputs and outputs.
+                val leaseFees = leaseRate.fees(actualFeerate, amount, amount)
+                Pair(actualFeerate, leaseFees.copy(miningFee = leaseFees.miningFee + miningFee))
+            }
+    }
+
+    /**
      * Do a splice out using any suitable channel
      * @return  [ChannelCommand.Commitment.Splice.Response] if a splice was attempted, or {null} if no suitable
      *          channel was found
@@ -574,11 +593,6 @@ class Peer(
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
             }
-    }
-
-    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw): LiquidityAds.LeaseFees {
-        val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
-        return leaseRate.fees(feerate, amount, amount)
     }
 
     suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw): ChannelCommand.Commitment.Splice.Response? {
