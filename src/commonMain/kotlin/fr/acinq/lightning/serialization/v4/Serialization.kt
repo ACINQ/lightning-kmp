@@ -394,26 +394,31 @@ object Serialization {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
-        // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel cannot be used for payments.
+        // The liquidity purchase field was added afterwards. For backwards-compatibility, we extend the discriminator
+        // we previously used for the local commit to insert the liquidity purchase if available.
+        // Note that we don't bother removing the duplication across HTLCs in the local commit: this is a short-lived
+        // state during which the channel cannot be used for payments.
         when (liquidityPurchased) {
+            // Before introducing the liquidity purchase field, we serialized the local commit as an Either, with
+            // discriminators 0 and 1.
             null -> when (localCommit) {
                 is Either.Left -> {
-                    writeNumber(0)
+                    write(0)
                     writeUnsignedLocalCommitWithHtlcs(localCommit.value)
                 }
                 is Either.Right -> {
-                    writeNumber(1)
+                    write(1)
                     writeLocalCommitWithHtlcs(localCommit.value)
                 }
             }
             else -> when (localCommit) {
                 is Either.Left -> {
-                    writeNumber(2)
+                    write(2)
                     writeLiquidityPurchase(liquidityPurchased)
                     writeUnsignedLocalCommitWithHtlcs(localCommit.value)
                 }
                 is Either.Right -> {
-                    writeNumber(3)
+                    write(3)
                     writeLiquidityPurchase(liquidityPurchased)
                     writeLocalCommitWithHtlcs(localCommit.value)
                 }

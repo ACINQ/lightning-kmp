@@ -347,6 +347,8 @@ object Deserialization {
         val fundingParams = readInteractiveTxParams()
         val fundingTxIndex = readNumber()
         val fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction
+        // liquidityPurchase and localCommit are logically independent, this is just a serialization trick for backwards
+        // compatibility since the liquidityPurchase field was introduced later.
         val (liquidityPurchase, localCommit) = when (val discriminator = read()) {
             0 -> Pair(null, Either.Left(readUnsignedLocalCommitWithHtlcs()))
             1 -> Pair(null, Either.Right(readLocalCommitWithHtlcs()))
