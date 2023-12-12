@@ -145,6 +145,11 @@ object Serialization {
                 write(0x00)
             }
         }
+        if (liquidityPurchases.isNotEmpty()) {
+            write(0x01)
+            writeNumber(liquidityPurchases.size)
+            liquidityPurchases.forEach { writeLiquidityPurchase(it) }
+        }
     }
 
     private fun Output.writeShuttingDown(o: ShuttingDown) = o.run {

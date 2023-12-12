@@ -100,6 +100,16 @@ object Deserialization {
                 origins = readCollection { readChannelOrigin() as Origin.PayToOpenOrigin }.toList()
             )
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
+        },
+        liquidityPurchases = when {
+            availableBytes == 0 -> listOf()
+            else -> when (val discriminator = read()) {
+                0x01 -> {
+                    val liquidityPurchaseCount = readNumber()
+                    (0 until liquidityPurchaseCount).map { readLiquidityPurchase() }
+                }
+                else -> error("unknown discriminator $discriminator for class ${Normal::class}")
+            }
         }
     )
 

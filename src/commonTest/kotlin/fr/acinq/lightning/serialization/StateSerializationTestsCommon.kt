@@ -1,6 +1,9 @@
 package fr.acinq.lightning.serialization
 
+import fr.acinq.bitcoin.byteVector
 import fr.acinq.lightning.Feature
+import fr.acinq.lightning.Lightning.randomBytes
+import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.*
@@ -8,10 +11,13 @@ import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.value
 import fr.acinq.lightning.wire.CommitSig
 import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.LightningMessage
+import fr.acinq.lightning.wire.LiquidityAds
 import fr.acinq.secp256k1.Hex
 import kotlin.math.max
 import kotlin.test.*
@@ -111,6 +117,13 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             assertNull(splice.session.liquidityPurchased)
             assertTrue(splice.session.localCommit.isLeft)
             assertContentEquals(bin, Serialization.serialize(state))
+            assertTrue(state.liquidityPurchases.isEmpty())
+            val state1 = state.copy(
+                liquidityPurchases = listOf(
+                    LiquidityAds.Lease(50_000.sat, LiquidityAds.LeaseFees(1337.sat, 1329.sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(23).byteVector(), 0, 850_000, 100, 1_000.msat))
+                )
+            )
+            assertEquals(state1, Serialization.deserialize(Serialization.serialize(state1)).value)
         }
         run {
             val bin = Hex.decode(
@@ -123,7 +136,14 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             assertNull(splice.session.liquidityPurchased)
             assertTrue(splice.session.localCommit.isRight)
             assertContentEquals(bin, Serialization.serialize(state))
+            assertTrue(state.liquidityPurchases.isEmpty())
+            val state1 = state.copy(
+                liquidityPurchases = listOf(
+                    LiquidityAds.Lease(50_000.sat, LiquidityAds.LeaseFees(1337.sat, 1329.sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(23).byteVector(), 0, 850_000, 100, 1_000.msat)),
+                    LiquidityAds.Lease(37_000.sat, LiquidityAds.LeaseFees(2500.sat, 4001.sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(23).byteVector(), 0, 900_000, 100, 1_000.msat))
+                )
+            )
+            assertEquals(state1, Serialization.deserialize(Serialization.serialize(state1)).value)
         }
-
     }
 }

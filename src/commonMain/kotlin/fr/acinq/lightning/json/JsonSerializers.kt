@@ -61,6 +61,9 @@
     JsonSerializers.InteractiveTxSigningSessionSerializer::class,
     JsonSerializers.RbfStatusSerializer::class,
     JsonSerializers.SpliceStatusSerializer::class,
+    JsonSerializers.LiquidityLeaseFeesSerializer::class,
+    JsonSerializers.LiquidityLeaseWitnessSerializer::class,
+    JsonSerializers.LiquidityLeaseSerializer::class,
     JsonSerializers.ChannelParamsSerializer::class,
     JsonSerializers.ChannelOriginSerializer::class,
     JsonSerializers.CommitmentChangesSerializer::class,
@@ -105,7 +108,9 @@ import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.json.JsonSerializers.LongSerializer
 import fr.acinq.lightning.json.JsonSerializers.StringSerializer
 import fr.acinq.lightning.json.JsonSerializers.SurrogateSerializer
-import fr.acinq.lightning.transactions.*
+import fr.acinq.lightning.transactions.CommitmentSpec
+import fr.acinq.lightning.transactions.IncomingHtlc
+import fr.acinq.lightning.transactions.OutgoingHtlc
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.*
@@ -277,6 +282,15 @@ object JsonSerializers {
     object RbfStatusSerializer
 
     object SpliceStatusSerializer : StringSerializer<SpliceStatus>({ it::class.simpleName!! })
+
+    @Serializer(forClass = LiquidityAds.LeaseFees::class)
+    object LiquidityLeaseFeesSerializer
+
+    @Serializer(forClass = LiquidityAds.LeaseWitness::class)
+    object LiquidityLeaseWitnessSerializer
+
+    @Serializer(forClass = LiquidityAds.Lease::class)
+    object LiquidityLeaseSerializer
 
     @Serializer(forClass = ChannelParams::class)
     object ChannelParamsSerializer

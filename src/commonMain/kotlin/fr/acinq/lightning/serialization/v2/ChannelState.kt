@@ -510,7 +510,8 @@ internal data class Normal(
         localShutdown,
         remoteShutdown,
         null,
-        SpliceStatus.None
+        SpliceStatus.None,
+        listOf(),
     )
 }
 

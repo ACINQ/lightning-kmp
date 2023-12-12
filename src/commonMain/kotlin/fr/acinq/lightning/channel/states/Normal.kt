@@ -24,7 +24,8 @@ data class Normal(
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?,
     val closingFeerates: ClosingFeerates?,
-    val spliceStatus: SpliceStatus
+    val spliceStatus: SpliceStatus,
+    val liquidityPurchases: List<LiquidityAds.Lease>,
 ) : ChannelStateWithCommitments() {
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -728,7 +729,7 @@ data class Normal(
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
         val commitments = commitments.add(action.commitment).copy(remoteChannelData = remoteChannelData)
-        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None)
+        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None, liquidityPurchases = liquidityPurchases + listOfNotNull(liquidityPurchase))
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }

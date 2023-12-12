@@ -259,5 +259,7 @@
     },
     "remoteShutdown": null,
     "closingFeerates": null,
-    "spliceStatus": "None"
+    "spliceStatus": "None",
+    "liquidityPurchases": [
+    ]
 }
