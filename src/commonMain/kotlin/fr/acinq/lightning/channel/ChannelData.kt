@@ -9,9 +9,9 @@ import fr.acinq.lightning.channel.Helpers.publishIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
-import fr.acinq.lightning.utils.LoggingContext
 import fr.acinq.lightning.wire.ClosingSigned
 
 /**

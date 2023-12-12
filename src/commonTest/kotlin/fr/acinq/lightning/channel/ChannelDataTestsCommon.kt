@@ -1,5 +1,6 @@
 package fr.acinq.lightning.channel
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -14,6 +15,7 @@ import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.states.Closing
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions.InputInfo
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
@@ -21,17 +23,13 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Cla
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
-import fr.acinq.lightning.utils.LoggingContext
-import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.test.*
 
 class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
 
-    override val logger: MDCLogger = MDCLogger(LoggerFactory.default.newLogger(this::class))
+    override val logger: MDCLogger = MDCLogger(Logger.testLogger.appendingTag("ChannelDataTestsCommon"))
 
     @Test
     fun `local commit published`() {

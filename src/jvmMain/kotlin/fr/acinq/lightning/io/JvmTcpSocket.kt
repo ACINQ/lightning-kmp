@@ -1,14 +1,13 @@
 package fr.acinq.lightning.io
 
+import co.touchlab.kermit.Logger
+import fr.acinq.lightning.logging.*
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import java.net.ConnectException
 import java.net.SocketException
 import java.security.KeyFactory
@@ -20,9 +19,9 @@ import java.util.*
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
-class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
+class JvmTcpSocket(val socket: Socket, val loggerFactory: Logger) : TcpSocket {
 
-    private val logger = loggerFactory.newLogger(this::class)
+    private val logger = loggerFactory.appendingTag("JvmTcpSocket")
 
     private val connection = socket.connection()
 
@@ -160,8 +159,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 }
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
-        val logger = loggerFactory.newLogger(this::class)
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: Logger): TcpSocket {
+        val logger = loggerFactory.appendingTag("PlatformSocketBuilder")
         return withContext(Dispatchers.IO) {
             try {
                 val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->

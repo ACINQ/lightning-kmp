@@ -1,8 +1,8 @@
 package fr.acinq.lightning.io
 
-import org.kodein.log.LoggerFactory
+import co.touchlab.kermit.Logger
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket =
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: Logger): TcpSocket =
         error("Not implemented")
 }

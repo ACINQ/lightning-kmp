@@ -1,20 +1,19 @@
 package fr.acinq.lightning.payment
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.states.ChannelState
 import fr.acinq.lightning.channel.states.Normal
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.Either
-import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 
-class RouteCalculation(loggerFactory: LoggerFactory) {
+class RouteCalculation(loggerFactory: Logger) {
 
-    private val logger = loggerFactory.newLogger(this::class)
+    private val logger = loggerFactory.appendingTag("RouteCalculation")
 
     data class Route(val amount: MilliSatoshi, val channel: Normal)
 

@@ -13,11 +13,11 @@ import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.io.WrappedChannelCommand
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import org.kodein.log.newLogger
 
 class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
 
@@ -37,7 +37,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     /** The payment was successfully made. */
     data class Success(val request: SendPayment, val payment: LightningOutgoingPayment, val preimage: ByteVector32) : ProcessFailureResult, ProcessFulfillResult
 
-    private val logger = nodeParams.loggerFactory.newLogger(this::class)
+    private val logger = nodeParams.loggerFactory.appendingTag("OutgoingPaymentHandler")
     private val childToParentId = mutableMapOf<UUID, UUID>()
     private val pending = mutableMapOf<UUID, PaymentAttempt>()
     private val routeCalculation = RouteCalculation(nodeParams.loggerFactory)

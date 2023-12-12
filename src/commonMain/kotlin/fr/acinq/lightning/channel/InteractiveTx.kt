@@ -6,6 +6,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions

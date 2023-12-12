@@ -1,7 +1,9 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -11,9 +13,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 
 data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<TxId, Transaction>) {
     /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent */
@@ -99,20 +98,16 @@ class ElectrumMiniWallet(
     val chainHash: BlockHash,
     private val client: IElectrumClient,
     private val scope: CoroutineScope,
-    loggerFactory: LoggerFactory,
+    loggerFactory: Logger,
     private val name: String = ""
 ) : CoroutineScope by scope {
 
-    private val logger = loggerFactory.newLogger(this::class)
-    private fun Logger.mdcinfo(msgCreator: () -> String) {
-        log(
-            level = Logger.Level.INFO,
-            meta = mapOf(
-                "wallet" to name,
-                "utxos" to walletStateFlow.value.utxos.size,
-                "balance" to walletStateFlow.value.totalBalance
-            ),
-            msgCreator = msgCreator
+    private val logger = MDCLogger(loggerFactory.appendingTag("ElectrumMiniWallet"))
+    private fun mdc(): Map<String, Any> {
+        return mapOf(
+            "wallet" to name,
+            "utxos" to walletStateFlow.value.utxos.size,
+            "balance" to walletStateFlow.value.totalBalance
         )
     }
 
@@ -151,9 +146,9 @@ class ElectrumMiniWallet(
                     val newUtxos = unspents.minus((_walletStateFlow.value.addresses[bitcoinAddress] ?: emptyList()).toSet())
                     // request new parent txs
                     val parentTxs = newUtxos.mapNotNull { utxo -> client.getTx(utxo.txid) }
-                    parentTxs.forEach { tx -> logger.mdcinfo { "received parent transaction with txid=${tx.txid}" } }
+                    parentTxs.forEach { tx -> logger.info(mdc()) { "received parent transaction with txid=${tx.txid}" } }
                     val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to unspents), parentTxs = this.parentTxs + parentTxs.associateBy { it.txid })
-                    logger.mdcinfo { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
+                    logger.info(mdc()) { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                     nextWalletState
                 }
@@ -196,7 +191,7 @@ class ElectrumMiniWallet(
                 mailbox.consumeAsFlow().collect {
                     when (it) {
                         is WalletCommand.Companion.ElectrumConnected -> {
-                            logger.mdcinfo { "electrum connected" }
+                            logger.info(mdc()) { "electrum connected" }
                             scriptHashes.values.forEach { scriptHash -> subscribe(scriptHash) }
                         }
                         is WalletCommand.Companion.ElectrumNotification -> {
@@ -205,7 +200,7 @@ class ElectrumMiniWallet(
                             }
                         }
                         is WalletCommand.Companion.AddAddress -> {
-                            logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
+                            logger.info(mdc()) { "adding new address=${it.bitcoinAddress}" }
                             subscribe(it.bitcoinAddress)?.let {
                                 scriptHashes = scriptHashes + it
                             }

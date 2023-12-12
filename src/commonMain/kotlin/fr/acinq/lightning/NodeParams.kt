@@ -1,5 +1,6 @@
 package fr.acinq.lightning
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
@@ -15,7 +16,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import org.kodein.log.LoggerFactory
 
 data class NodeUri(val id: PublicKey, val host: String, val port: Int)
 
@@ -123,7 +123,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
  */
 data class NodeParams(
-    val loggerFactory: LoggerFactory,
+    val loggerFactory: Logger,
     val keyManager: KeyManager,
     val alias: String,
     val features: Features,
@@ -181,7 +181,7 @@ data class NodeParams(
     /**
      * Library integrators should use this constructor and override values.
      */
-    constructor(chain: Chain, loggerFactory: LoggerFactory, keyManager: KeyManager) : this(
+    constructor(chain: Chain, loggerFactory: Logger, keyManager: KeyManager) : this(
         loggerFactory = loggerFactory,
         keyManager = keyManager,
         alias = "lightning-kmp",

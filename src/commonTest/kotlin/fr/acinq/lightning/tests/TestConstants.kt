@@ -1,5 +1,6 @@
 package fr.acinq.lightning.tests
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.MnemonicCode
@@ -9,12 +10,12 @@ import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import fr.acinq.secp256k1.Hex
-import org.kodein.log.LoggerFactory
 
 object TestConstants {
     const val defaultBlockHeight = 400_000
@@ -51,7 +52,7 @@ object TestConstants {
         val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
-            loggerFactory = LoggerFactory.default,
+            loggerFactory = Logger.testLogger,
             keyManager = keyManager,
         ).copy(
             alias = "alice",
@@ -100,7 +101,7 @@ object TestConstants {
         val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
         val nodeParams = NodeParams(
             chain = NodeParams.Chain.Regtest,
-            loggerFactory = LoggerFactory.default,
+            loggerFactory = Logger.testLogger,
             keyManager = keyManager,
         ).copy(
             alias = "bob",

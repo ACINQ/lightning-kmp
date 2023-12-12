@@ -15,6 +15,7 @@ import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutp
 import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelClosingType
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.*
