@@ -3,7 +3,7 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.utils.MDCLogger
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toMilliSatoshi
 

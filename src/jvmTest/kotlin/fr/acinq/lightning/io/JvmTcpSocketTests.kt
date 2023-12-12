@@ -1,16 +1,16 @@
 package fr.acinq.lightning.io
 
+import co.touchlab.kermit.Logger
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import org.junit.Test
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import java.util.*
 import kotlin.test.assertEquals
 
 
 class JvmTcpSocketTests : LightningTestSuite() {
 
-    val logger = LoggerFactory.default.newLogger(this::class)
+    val logger = Logger.testLogger.appendingTag("JvmTcpSocketTests")
 
     @Test
     fun `build public key from base64`() {

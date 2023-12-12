@@ -24,6 +24,7 @@ import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForRevocation
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Scripts.multiSig2of2
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx

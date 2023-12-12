@@ -1,5 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.NodeParams
@@ -13,17 +14,15 @@ import fr.acinq.lightning.channel.TestsHelper
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.SpliceTestsCommon
 import fr.acinq.lightning.channel.states.WaitForFundingSignedTestsCommon
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.SpliceLocked
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.test.*
 
 class SwapInManagerTestsCommon : LightningTestSuite() {
 
-    private val logger = MDCLogger(LoggerFactory.default.newLogger(SwapInManager::class))
+    private val logger = MDCLogger(Logger.testLogger.appendingTag("SwapInManager"))
 
     private val dummyPubkey = PublicKey.fromHex("02eae982c8563a1c256ee9b4655af7d4c0dc545d1e5c350a68c5f8902cd4cf3021")
     private val dummyScript = Script.pay2wpkh(dummyPubkey)

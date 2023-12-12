@@ -1,9 +1,11 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.io.send
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
@@ -11,8 +13,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.RENDEZVOUS
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -30,12 +30,12 @@ sealed class ElectrumConnectionStatus {
 
 class ElectrumClient(
     private val scope: CoroutineScope,
-    private val loggerFactory: LoggerFactory,
+    private val loggerFactory: Logger,
     private val pingInterval: Duration = 30.seconds,
     private var rpcTimeout: Duration = 10.seconds
 ) : IElectrumClient {
 
-    private val logger = loggerFactory.newLogger(this::class)
+    private val logger = loggerFactory.appendingTag("ElectrumClient")
 
     private val json = Json { ignoreUnknownKeys = true }
 

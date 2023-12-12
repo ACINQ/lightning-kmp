@@ -1,8 +1,10 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.currentTimestampMillis
 import kotlinx.coroutines.*
@@ -12,13 +14,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.consumeAsFlow
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.math.max
 
-class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : CoroutineScope by scope {
+class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, loggerFactory: Logger) : CoroutineScope by scope {
 
-    private val logger = loggerFactory.newLogger(this::class)
+    private val logger = loggerFactory.appendingTag("ElectrumWatcher")
     private val mailbox = Channel<WatcherCommand>(Channel.BUFFERED)
 
     private val _notificationsFlow = MutableSharedFlow<WatchEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)

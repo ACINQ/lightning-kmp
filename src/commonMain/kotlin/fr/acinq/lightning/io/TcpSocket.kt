@@ -1,6 +1,6 @@
 package fr.acinq.lightning.io
 
-import org.kodein.log.LoggerFactory
+import co.touchlab.kermit.Logger
 
 interface TcpSocket {
 
@@ -53,7 +53,7 @@ interface TcpSocket {
     }
 
     interface Builder {
-        suspend fun connect(host: String, port: Int, tls: TLS, loggerFactory: LoggerFactory): TcpSocket
+        suspend fun connect(host: String, port: Int, tls: TLS, loggerFactory: Logger): TcpSocket
 
         companion object {
             operator fun invoke(): Builder = PlatformSocketBuilder

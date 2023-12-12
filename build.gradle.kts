@@ -77,12 +77,12 @@ kotlin {
         commonMain {
             dependencies {
                 api("fr.acinq.bitcoin:bitcoin-kmp:$bitcoinKmpVersion")
-                api("org.kodein.log:canard:0.18.0")
                 api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
+                implementation("co.touchlab:kermit:2.0.2")
             }
         }
 

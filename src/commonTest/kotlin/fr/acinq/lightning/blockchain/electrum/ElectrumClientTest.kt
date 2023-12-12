@@ -1,8 +1,10 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.io.TcpSocket
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
@@ -14,7 +16,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.*
-import org.kodein.log.LoggerFactory
 import kotlin.test.*
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -224,7 +225,7 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `TCP socket closed by remote`() = runSuspendTest {
         val socketBuilder = TestTcpSocketBuilder(TcpSocket.Builder())
-        val client = ElectrumClient(this, LoggerFactory.default, pingInterval = 100.milliseconds)
+        val client = ElectrumClient(this, Logger.testLogger, pingInterval = 100.milliseconds)
         client.connect(ElectrumMainnetServerAddress, socketBuilder)
         client.connectionStatus.first { it is ElectrumConnectionStatus.Connected }
         delay(100.milliseconds)
@@ -322,7 +323,7 @@ class ElectrumClientTest : LightningTestSuite() {
         class TestTcpSocketBuilder(private val builder: TcpSocket.Builder) : TcpSocket.Builder {
             var socket: TcpSocket? = null
 
-            override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
+            override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: Logger): TcpSocket {
                 val actualSocket = builder.connect(host, port, tls, loggerFactory)
                 socket = actualSocket
                 return actualSocket
