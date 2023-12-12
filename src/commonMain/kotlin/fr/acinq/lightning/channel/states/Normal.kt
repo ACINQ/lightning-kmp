@@ -116,6 +116,11 @@ data class Normal(
                             logger.warning { "cannot do splice: invalid splice-out script" }
                             cmd.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidSpliceOutPubKeyScript)
                             Pair(this@Normal, emptyList())
+                        } else if (cmd.requestRemoteFunding?.let { r -> r.rate.fees(cmd.feerate, r.fundingAmount, r.fundingAmount).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() } == false) {
+                            val missing = cmd.requestRemoteFunding.let { r -> r.rate.fees(cmd.feerate, r.fundingAmount, r.fundingAmount).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
+                            logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
+                            cmd.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
+                            Pair(this@Normal, emptyList())
                         } else {
                             val spliceInit = SpliceInit(
                                 channelId,

@@ -20,6 +20,7 @@ import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
@@ -148,6 +149,29 @@ class SpliceTestsCommon : LightningTestSuite() {
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
             actionsAlice2.hasOutgoingMessage<TxAbort>()
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `splice to purchase inbound liquidity -- not enough funds`() {
+        val (_, bob) = reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 10_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val leaseRate = LiquidityAds.LeaseRate(0, 0, 100 /* 5% */, 1.sat, 200, 100.msat)
+        run {
+            val liquidityRequest = LiquidityAds.RequestRemoteFunding(1_000_000.sat, bob.currentBlockHeight, leaseRate)
+            assertEquals(10_001.sat, liquidityRequest.rate.fees(FeeratePerKw(1000.sat), liquidityRequest.fundingAmount, liquidityRequest.fundingAmount).total)
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+            val (_, actions1) = bob.process(cmd)
+            assertTrue(actions1.isEmpty())
+            assertTrue(cmd.replyTo.isCompleted)
+            assertEquals(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds, cmd.replyTo.getCompleted())
+        }
+        run {
+            val liquidityRequest = LiquidityAds.RequestRemoteFunding(1_000_000.sat, bob.currentBlockHeight, leaseRate.copy(leaseFeeBase = 0.sat))
+            assertEquals(10_000.sat, liquidityRequest.rate.fees(FeeratePerKw(1000.sat), liquidityRequest.fundingAmount, liquidityRequest.fundingAmount).total)
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+            val (_, actions1) = bob.process(cmd)
+            actions1.hasOutgoingMessage<SpliceInit>()
         }
     }
 
