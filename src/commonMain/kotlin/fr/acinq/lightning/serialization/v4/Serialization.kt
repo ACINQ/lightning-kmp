@@ -145,11 +145,8 @@ object Serialization {
                 write(0x00)
             }
         }
-        if (liquidityLeases.isNotEmpty()) {
-            write(0x01)
-            writeNumber(liquidityLeases.size)
-            liquidityLeases.forEach { writeLiquidityLease(it) }
-        }
+        write(0x01)
+        writeCollection(liquidityLeases) { writeLiquidityLease(it) }
     }
 
     private fun Output.writeShuttingDown(o: ShuttingDown) = o.run {

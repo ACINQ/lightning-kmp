@@ -104,10 +104,7 @@ object Deserialization {
         liquidityLeases = when {
             availableBytes == 0 -> listOf()
             else -> when (val discriminator = read()) {
-                0x01 -> {
-                    val leaseCount = readNumber()
-                    (0 until leaseCount).map { readLiquidityLease() }
-                }
+                0x01 -> readCollection { readLiquidityLease() }.toList()
                 else -> error("unknown discriminator $discriminator for class ${Normal::class}")
             }
         }
