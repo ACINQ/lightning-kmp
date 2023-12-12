@@ -114,12 +114,12 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             assertIs<Normal>(state)
             val splice = state.spliceStatus
             assertIs<SpliceStatus.WaitingForSigs>(splice)
-            assertNull(splice.session.liquidityPurchased)
+            assertNull(splice.session.liquidityLease)
             assertTrue(splice.session.localCommit.isLeft)
             assertContentEquals(bin, Serialization.serialize(state))
-            assertTrue(state.liquidityPurchases.isEmpty())
+            assertTrue(state.liquidityLeases.isEmpty())
             val state1 = state.copy(
-                liquidityPurchases = listOf(
+                liquidityLeases = listOf(
                     LiquidityAds.Lease(50_000.sat, LiquidityAds.LeaseFees(1337.sat, 1329.sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(23).byteVector(), 0, 850_000, 100, 1_000.msat))
                 )
             )
@@ -133,12 +133,12 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             assertIs<Normal>(state)
             val splice = state.spliceStatus
             assertIs<SpliceStatus.WaitingForSigs>(splice)
-            assertNull(splice.session.liquidityPurchased)
+            assertNull(splice.session.liquidityLease)
             assertTrue(splice.session.localCommit.isRight)
             assertContentEquals(bin, Serialization.serialize(state))
-            assertTrue(state.liquidityPurchases.isEmpty())
+            assertTrue(state.liquidityLeases.isEmpty())
             val state1 = state.copy(
-                liquidityPurchases = listOf(
+                liquidityLeases = listOf(
                     LiquidityAds.Lease(50_000.sat, LiquidityAds.LeaseFees(1337.sat, 1329.sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(23).byteVector(), 0, 850_000, 100, 1_000.msat)),
                     LiquidityAds.Lease(37_000.sat, LiquidityAds.LeaseFees(2500.sat, 4001.sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(23).byteVector(), 0, 900_000, 100, 1_000.msat))
                 )

@@ -751,7 +751,7 @@ data class InteractiveTxSigningSession(
     val fundingParams: InteractiveTxParams,
     val fundingTxIndex: Long,
     val fundingTx: PartiallySignedSharedTransaction,
-    val liquidityPurchased: LiquidityAds.Lease?,
+    val liquidityLease: LiquidityAds.Lease?,
     val localCommit: Either<UnsignedLocalCommit, LocalCommit>,
     val remoteCommit: RemoteCommit,
 ) {
@@ -827,7 +827,7 @@ data class InteractiveTxSigningSession(
             sharedTx: SharedTransaction,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
-            liquidityPurchased: LiquidityAds.Lease?,
+            liquidityLease: LiquidityAds.Lease?,
             localCommitmentIndex: Long,
             remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
@@ -836,7 +836,7 @@ data class InteractiveTxSigningSession(
             val channelKeys = channelParams.localParams.channelKeys(keyManager)
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript(channelKeys) }
-            val liquidityFees = liquidityPurchased?.fees?.total?.toMilliSatoshi() ?: 0.msat
+            val liquidityFees = liquidityLease?.fees?.total?.toMilliSatoshi() ?: 0.msat
             return Helpers.Funding.makeCommitTxsWithoutHtlcs(
                 channelKeys,
                 channelParams.channelId,
@@ -872,7 +872,7 @@ data class InteractiveTxSigningSession(
                 val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
                 val remoteCommit = RemoteCommit(remoteCommitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
                 val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
-                Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, liquidityPurchased, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
+                Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, liquidityLease, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
             }
         }
 
@@ -908,7 +908,7 @@ sealed class SpliceStatus {
         val spliceSession: InteractiveTxSession,
         val localPushAmount: MilliSatoshi,
         val remotePushAmount: MilliSatoshi,
-        val liquidityPurchased: LiquidityAds.Lease?,
+        val liquidityLease: LiquidityAds.Lease?,
         val origins: List<Origin.PayToOpenOrigin>
     ) : SpliceStatus()
     data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()

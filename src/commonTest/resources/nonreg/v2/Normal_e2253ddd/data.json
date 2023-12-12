@@ -362,6 +362,6 @@
     "remoteShutdown": null,
     "closingFeerates": null,
     "spliceStatus": "None",
-    "liquidityPurchases": [
+    "liquidityLeases": [
     ]
 }

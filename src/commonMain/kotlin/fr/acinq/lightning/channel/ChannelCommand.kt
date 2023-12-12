@@ -109,7 +109,7 @@ sealed class ChannelCommand {
                     val fundingTxId: TxId,
                     val capacity: Satoshi,
                     val balance: MilliSatoshi,
-                    val liquidityPurchased: LiquidityAds.Lease?,
+                    val liquidityLease: LiquidityAds.Lease?,
                 ) : Response()
 
                 sealed class Failure : Response() {

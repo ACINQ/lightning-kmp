@@ -145,10 +145,10 @@ object Serialization {
                 write(0x00)
             }
         }
-        if (liquidityPurchases.isNotEmpty()) {
+        if (liquidityLeases.isNotEmpty()) {
             write(0x01)
-            writeNumber(liquidityPurchases.size)
-            liquidityPurchases.forEach { writeLiquidityPurchase(it) }
+            writeNumber(liquidityLeases.size)
+            liquidityLeases.forEach { writeLiquidityLease(it) }
         }
     }
 
@@ -382,7 +382,7 @@ object Serialization {
         }
     }
 
-    private fun Output.writeLiquidityPurchase(lease: LiquidityAds.Lease) {
+    private fun Output.writeLiquidityLease(lease: LiquidityAds.Lease) {
         writeNumber(lease.amount.toLong())
         writeNumber(lease.fees.miningFee.toLong())
         writeNumber(lease.fees.serviceFee.toLong())
@@ -403,7 +403,7 @@ object Serialization {
         // we previously used for the local commit to insert the liquidity purchase if available.
         // Note that we don't bother removing the duplication across HTLCs in the local commit: this is a short-lived
         // state during which the channel cannot be used for payments.
-        when (liquidityPurchased) {
+        when (liquidityLease) {
             // Before introducing the liquidity purchase field, we serialized the local commit as an Either, with
             // discriminators 0 and 1.
             null -> when (localCommit) {
@@ -419,12 +419,12 @@ object Serialization {
             else -> when (localCommit) {
                 is Either.Left -> {
                     write(2)
-                    writeLiquidityPurchase(liquidityPurchased)
+                    writeLiquidityLease(liquidityLease)
                     writeUnsignedLocalCommitWithHtlcs(localCommit.value)
                 }
                 is Either.Right -> {
                     write(3)
-                    writeLiquidityPurchase(liquidityPurchased)
+                    writeLiquidityLease(liquidityLease)
                     writeLocalCommitWithHtlcs(localCommit.value)
                 }
             }

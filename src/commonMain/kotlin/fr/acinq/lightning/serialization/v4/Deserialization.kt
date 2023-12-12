@@ -101,12 +101,12 @@ object Deserialization {
             )
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
         },
-        liquidityPurchases = when {
+        liquidityLeases = when {
             availableBytes == 0 -> listOf()
             else -> when (val discriminator = read()) {
                 0x01 -> {
-                    val liquidityPurchaseCount = readNumber()
-                    (0 until liquidityPurchaseCount).map { readLiquidityPurchase() }
+                    val leaseCount = readNumber()
+                    (0 until leaseCount).map { readLiquidityLease() }
                 }
                 else -> error("unknown discriminator $discriminator for class ${Normal::class}")
             }
@@ -340,7 +340,7 @@ object Deserialization {
         )
     )
 
-    private fun Input.readLiquidityPurchase(): LiquidityAds.Lease = LiquidityAds.Lease(
+    private fun Input.readLiquidityLease(): LiquidityAds.Lease = LiquidityAds.Lease(
         amount = readNumber().sat,
         fees = LiquidityAds.LeaseFees(miningFee = readNumber().sat, serviceFee = readNumber().sat),
         sellerSig = readByteVector64(),
@@ -357,13 +357,13 @@ object Deserialization {
         val fundingParams = readInteractiveTxParams()
         val fundingTxIndex = readNumber()
         val fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction
-        // liquidityPurchase and localCommit are logically independent, this is just a serialization trick for backwards
-        // compatibility since the liquidityPurchase field was introduced later.
-        val (liquidityPurchase, localCommit) = when (val discriminator = read()) {
+        // liquidityLease and localCommit are logically independent, this is just a serialization trick for backwards
+        // compatibility since the liquidityLease field was introduced later.
+        val (liquidityLease, localCommit) = when (val discriminator = read()) {
             0 -> Pair(null, Either.Left(readUnsignedLocalCommitWithHtlcs()))
             1 -> Pair(null, Either.Right(readLocalCommitWithHtlcs()))
-            2 -> Pair(readLiquidityPurchase(), Either.Left(readUnsignedLocalCommitWithHtlcs()))
-            3 -> Pair(readLiquidityPurchase(), Either.Right(readLocalCommitWithHtlcs()))
+            2 -> Pair(readLiquidityLease(), Either.Left(readUnsignedLocalCommitWithHtlcs()))
+            3 -> Pair(readLiquidityLease(), Either.Right(readLocalCommitWithHtlcs()))
             else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
         }
         val remoteCommit = RemoteCommit(
@@ -372,7 +372,7 @@ object Deserialization {
             txid = readTxId(),
             remotePerCommitmentPoint = readPublicKey()
         )
-        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, liquidityPurchase, localCommit, remoteCommit)
+        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, liquidityLease, localCommit, remoteCommit)
     }
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {

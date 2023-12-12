@@ -62,7 +62,7 @@ data class WaitForFundingCreated(
                                 interactiveTxAction.sharedTx,
                                 localPushAmount,
                                 remotePushAmount,
-                                liquidityPurchased = null,
+                                liquidityLease = null,
                                 localCommitmentIndex = 0,
                                 remoteCommitmentIndex = 0,
                                 commitTxFeerate,

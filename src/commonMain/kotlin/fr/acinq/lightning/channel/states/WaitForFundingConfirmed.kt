@@ -176,7 +176,7 @@ data class WaitForFundingConfirmed(
                                     interactiveTxAction.sharedTx,
                                     localPushAmount,
                                     remotePushAmount,
-                                    liquidityPurchased = null,
+                                    liquidityLease = null,
                                     localCommitmentIndex = replacedCommitment.localCommit.index,
                                     remoteCommitmentIndex = replacedCommitment.remoteCommit.index,
                                     replacedCommitment.localCommit.spec.feerate,

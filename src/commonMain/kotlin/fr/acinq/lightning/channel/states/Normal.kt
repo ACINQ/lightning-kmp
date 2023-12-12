@@ -25,7 +25,7 @@ data class Normal(
     val remoteShutdown: Shutdown?,
     val closingFeerates: ClosingFeerates?,
     val spliceStatus: SpliceStatus,
-    val liquidityPurchases: List<LiquidityAds.Lease>,
+    val liquidityLeases: List<LiquidityAds.Lease>,
 ) : ChannelStateWithCommitments() {
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -199,7 +199,7 @@ data class Normal(
                                     logger.info { "waiting for tx_sigs" }
                                     Pair(this@Normal.copy(spliceStatus = spliceStatus.copy(session = signingSession1)), listOf())
                                 }
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityPurchased, cmd.message.channelData)
+                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityLease, cmd.message.channelData)
                             }
                         }
                         ignoreRetransmittedCommitSig(cmd.message) -> {
@@ -392,7 +392,7 @@ data class Normal(
                                         session,
                                         localPushAmount = 0.msat,
                                         remotePushAmount = cmd.message.pushAmount,
-                                        liquidityPurchased = null,
+                                        liquidityLease = null,
                                         origins = cmd.message.origins
                                     )
                                 )
@@ -413,7 +413,7 @@ data class Normal(
                     is SpliceAck -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
-                            when (val liquidityPurchased = LiquidityAds.validateLease(
+                            when (val liquidityLease = LiquidityAds.validateLease(
                                 spliceStatus.command.requestRemoteFunding,
                                 remoteNodeId,
                                 channelId,
@@ -423,9 +423,9 @@ data class Normal(
                                 cmd.message.willFund,
                             )) {
                                 is Either.Left -> {
-                                    logger.error { "rejecting liquidity proposal: ${liquidityPurchased.value.message}" }
-                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidLiquidityAds(liquidityPurchased.value))
-                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, liquidityPurchased.value.message))))
+                                    logger.error { "rejecting liquidity proposal: ${liquidityLease.value.message}" }
+                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidLiquidityAds(liquidityLease.value))
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, liquidityLease.value.message))))
                                 }
                                 is Either.Right -> {
                                     val parentCommitment = commitments.active.first()
@@ -474,7 +474,7 @@ data class Normal(
                                                             interactiveTxSession,
                                                             localPushAmount = spliceStatus.spliceInit.pushAmount,
                                                             remotePushAmount = cmd.message.pushAmount,
-                                                            liquidityPurchased = liquidityPurchased.value,
+                                                            liquidityLease = liquidityLease.value,
                                                             origins = spliceStatus.spliceInit.origins
                                                         )
                                                     )
@@ -511,7 +511,7 @@ data class Normal(
                                         interactiveTxAction.sharedTx,
                                         localPushAmount = spliceStatus.localPushAmount,
                                         remotePushAmount = spliceStatus.remotePushAmount,
-                                        liquidityPurchased = spliceStatus.liquidityPurchased,
+                                        liquidityLease = spliceStatus.liquidityLease,
                                         localCommitmentIndex = parentCommitment.localCommit.index,
                                         remoteCommitmentIndex = parentCommitment.remoteCommit.index,
                                         parentCommitment.localCommit.spec.feerate,
@@ -536,7 +536,7 @@ data class Normal(
                                                     fundingTxId = session.fundingTx.txId,
                                                     capacity = session.fundingParams.fundingAmount,
                                                     balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal,
-                                                    liquidityPurchased = spliceStatus.liquidityPurchased,
+                                                    liquidityLease = spliceStatus.liquidityLease,
                                                 )
                                             )
                                             val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(session, spliceStatus.origins))
@@ -571,7 +571,7 @@ data class Normal(
                                 }
                                 is Either.Right -> {
                                     val action: InteractiveTxSigningSessionAction.SendTxSigs = res.value
-                                    sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityPurchased, cmd.message.channelData)
+                                    sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityLease, cmd.message.channelData)
                                 }
                             }
                         }
@@ -721,7 +721,7 @@ data class Normal(
     private fun ChannelContext.sendSpliceTxSigs(
         origins: List<Origin.PayToOpenOrigin>,
         action: InteractiveTxSigningSessionAction.SendTxSigs,
-        liquidityPurchase: LiquidityAds.Lease?,
+        liquidityLease: LiquidityAds.Lease?,
         remoteChannelData: EncryptedChannelData
     ): Pair<Normal, List<ChannelAction>> {
         logger.info { "sending tx_sigs" }
@@ -729,7 +729,7 @@ data class Normal(
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
         val commitments = commitments.add(action.commitment).copy(remoteChannelData = remoteChannelData)
-        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None, liquidityPurchases = liquidityPurchases + listOfNotNull(liquidityPurchase))
+        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None, liquidityLeases = liquidityLeases + listOfNotNull(liquidityLease))
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
@@ -772,7 +772,7 @@ data class Normal(
                     txId = action.fundingTx.txId
                 )
             )
-            liquidityPurchase?.let {
+            liquidityLease?.let {
                 add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, lease = it))
             }
             if (staticParams.useZeroConf) {
