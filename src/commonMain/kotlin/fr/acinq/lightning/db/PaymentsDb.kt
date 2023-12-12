@@ -390,6 +390,7 @@ data class SpliceCpfpOutgoingPayment(
 
 data class InboundLiquidityOutgoingPayment(
     override val id: UUID,
+    override val miningFees: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
     val lease: LiquidityAds.Lease,
@@ -397,9 +398,8 @@ data class InboundLiquidityOutgoingPayment(
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val amount: MilliSatoshi = lease.fees.total.toMilliSatoshi()
-    override val miningFees: Satoshi = lease.fees.miningFee
-    override val fees: MilliSatoshi = lease.fees.total.toMilliSatoshi()
+    override val amount: MilliSatoshi = (lease.fees.serviceFee + miningFees).toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
     override val completedAt: Long? = confirmedAt
 }
 

@@ -773,7 +773,7 @@ data class Normal(
                 )
             )
             liquidityLease?.let {
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, lease = it))
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(miningFees = action.fundingTx.sharedTx.tx.fees, txId = action.fundingTx.txId, lease = it))
             }
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }

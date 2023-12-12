@@ -743,6 +743,7 @@ class Peer(
                                 is ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest ->
                                     InboundLiquidityOutgoingPayment(
                                         id = UUID.randomUUID(),
+                                        miningFees = action.miningFees,
                                         channelId = channelId,
                                         txId = action.txId,
                                         lease = action.lease,
