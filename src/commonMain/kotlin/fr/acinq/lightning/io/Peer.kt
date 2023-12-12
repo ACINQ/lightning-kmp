@@ -508,13 +508,14 @@ class Peer(
      * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
      * for a splice out, taking into account potential unconfirmed parent splices.
      */
-    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
+    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
-                watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
             }
     }
 
@@ -526,13 +527,14 @@ class Peer(
      *         NB: if the output feerate is equal to the input feerate then the cpfp is useless and
      *         should not be attempted.
      */
-    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
+    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .find { it.channelId == channelId }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
-                watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
             }
     }
 
@@ -540,7 +542,7 @@ class Peer(
      * Estimate the actual feerate to use (and corresponding fee to pay) to purchase inbound liquidity with a splice
      * that reaches the target feerate.
      */
-    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, LiquidityAds.LeaseFees>? {
+    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
@@ -549,9 +551,9 @@ class Peer(
                 // The mining fee below pays for the shared input and output of the splice transaction.
                 val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
-                // The mining fee in the lease only covers the remote node's inputs and outputs.
+                // The mining fee in the lease covers the remote node's inputs and outputs, depending on the weight they're requesting.
                 val leaseFees = leaseRate.fees(actualFeerate, amount, amount)
-                Pair(actualFeerate, leaseFees.copy(miningFee = leaseFees.miningFee + miningFee))
+                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee + leaseFees.miningFee, leaseFees.serviceFee.toMilliSatoshi()))
             }
     }
 

@@ -92,6 +92,12 @@ sealed class ChannelCommand {
                 data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
             }
 
+            /**
+             * @param miningFee on-chain fee that will be paid for the splice transaction.
+             * @param serviceFee service-fee that will be paid to the remote node for a service they provide with the splice transaction.
+             */
+            data class Fees(val miningFee: Satoshi, val serviceFee: MilliSatoshi)
+
             sealed class Response {
                 /**
                  * This response doesn't fully guarantee that the splice will confirm, because our peer may potentially double-spend
