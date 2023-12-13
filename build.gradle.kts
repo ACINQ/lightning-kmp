@@ -11,7 +11,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.5.13-SNAPSHOT"
+    version = "1.5.13"
 
     repositories {
         // using the local maven repository with Kotlin Multi Platform can lead to build errors that are hard to diagnose.
