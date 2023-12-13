@@ -87,9 +87,7 @@ sealed class ChannelAction {
             abstract val txId: TxId
             data class ViaSpliceOut(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: TxId) : StoreOutgoingPayment()
             data class ViaSpliceCpfp(override val miningFees: Satoshi, override val txId: TxId) : StoreOutgoingPayment()
-            data class ViaInboundLiquidityRequest(override val txId: TxId, val spliceFees: Satoshi, val lease: LiquidityAds.Lease) : StoreOutgoingPayment() {
-                override val miningFees: Satoshi = spliceFees + lease.fees.miningFee
-            }
+            data class ViaInboundLiquidityRequest(override val txId: TxId, override val miningFees: Satoshi, val lease: LiquidityAds.Lease) : StoreOutgoingPayment()
             data class ViaClose(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: TxId, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
         }
         data class SetLocked(val txId: TxId) : Storage()

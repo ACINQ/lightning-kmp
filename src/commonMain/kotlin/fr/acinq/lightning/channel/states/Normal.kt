@@ -749,9 +749,9 @@ data class Normal(
             // If we added some funds ourselves it's a swap-in
             if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
-                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.fees.toMilliSatoshi(),
+                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.localFees,
                     serviceFee = 0.msat,
-                    miningFee = action.fundingTx.sharedTx.tx.fees,
+                    miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
                     txId = action.fundingTx.txId,
                     origin = null
@@ -760,20 +760,20 @@ data class Normal(
             addAll(action.fundingTx.fundingParams.localOutputs.map { txOut ->
                 ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut(
                     amount = txOut.amount,
-                    miningFees = action.fundingTx.sharedTx.tx.fees,
+                    miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
                     address = Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, txOut.publicKeyScript.toByteArray()).result ?: "unknown",
                     txId = action.fundingTx.txId
                 )
             })
             // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp
-            if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) add(
-                ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(
-                    miningFees = action.fundingTx.sharedTx.tx.fees,
-                    txId = action.fundingTx.txId
-                )
-            )
-            liquidityLease?.let {
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, spliceFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(), lease = it))
+            if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(), txId = action.fundingTx.txId))
+            }
+            liquidityLease?.let { lease ->
+                // The actual mining fees contain the inputs and outputs we paid for in the interactive-tx transaction,
+                // and what we refunded the remote peer for some of their inputs and outputs via the lease.
+                val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + lease.fees.miningFee
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, lease = lease))
             }
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }
