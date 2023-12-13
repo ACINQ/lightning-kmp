@@ -133,6 +133,7 @@ object LiquidityAds {
      * routing fees above the values they signed up for.
      */
     data class Lease(val amount: Satoshi, val fees: LeaseFees, val sellerSig: ByteVector64, val witness: LeaseWitness) {
+        val start: Int = witness.leaseEnd - witness.leaseDuration
         val expiry: Int = witness.leaseEnd
     }
 
