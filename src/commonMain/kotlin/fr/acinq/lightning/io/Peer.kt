@@ -745,6 +745,7 @@ class Peer(
                                         id = UUID.randomUUID(),
                                         channelId = channelId,
                                         txId = action.txId,
+                                        spliceFees = action.spliceFees,
                                         lease = action.lease,
                                         createdAt = currentTimestampMillis(),
                                         confirmedAt = null,
