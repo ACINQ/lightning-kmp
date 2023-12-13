@@ -12,6 +12,7 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.LightningCodecs
 import fr.acinq.lightning.wire.LightningMessage
+import fr.acinq.lightning.wire.LiquidityAds
 
 /**
  * Serialization for [ChannelStateWithCommitments].
@@ -144,6 +145,8 @@ object Serialization {
                 write(0x00)
             }
         }
+        write(0x01)
+        writeCollection(liquidityLeases) { writeLiquidityLease(it) }
     }
 
     private fun Output.writeShuttingDown(o: ShuttingDown) = o.run {
@@ -356,31 +359,73 @@ object Serialization {
         }
     }
 
+    private fun Output.writeUnsignedLocalCommitWithHtlcs(localCommit: InteractiveTxSigningSession.Companion.UnsignedLocalCommit) {
+        writeNumber(localCommit.index)
+        writeCommitmentSpecWithHtlcs(localCommit.spec)
+        writeTransactionWithInputInfo(localCommit.commitTx)
+        writeCollection(localCommit.htlcTxs) { writeTransactionWithInputInfo(it) }
+    }
+
+    private fun Output.writeLocalCommitWithHtlcs(localCommit: LocalCommit) {
+        writeNumber(localCommit.index)
+        writeCommitmentSpecWithHtlcs(localCommit.spec)
+        localCommit.publishableTxs.run {
+            writeTransactionWithInputInfo(commitTx)
+            writeCollection(htlcTxsAndSigs) { htlc ->
+                writeTransactionWithInputInfo(htlc.txinfo)
+                writeByteVector64(htlc.localSig)
+                writeByteVector64(htlc.remoteSig)
+            }
+        }
+    }
+
+    private fun Output.writeLiquidityLease(lease: LiquidityAds.Lease) {
+        writeNumber(lease.amount.toLong())
+        writeNumber(lease.fees.miningFee.toLong())
+        writeNumber(lease.fees.serviceFee.toLong())
+        writeByteVector64(lease.sellerSig)
+        writeNumber(lease.witness.fundingScript.size())
+        write(lease.witness.fundingScript.toByteArray())
+        writeNumber(lease.witness.leaseDuration)
+        writeNumber(lease.witness.leaseEnd)
+        writeNumber(lease.witness.maxRelayFeeProportional)
+        writeNumber(lease.witness.maxRelayFeeBase.toLong())
+    }
+
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
-        // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel cannot be used for payments.
-        writeEither(localCommit,
-            writeLeft = { localCommit ->
-                writeNumber(localCommit.index)
-                writeCommitmentSpecWithHtlcs(localCommit.spec)
-                writeTransactionWithInputInfo(localCommit.commitTx)
-                writeCollection(localCommit.htlcTxs) { writeTransactionWithInputInfo(it) }
-            },
-            writeRight = { localCommit ->
-                writeNumber(localCommit.index)
-                writeCommitmentSpecWithHtlcs(localCommit.spec)
-                localCommit.publishableTxs.run {
-                    writeTransactionWithInputInfo(commitTx)
-                    writeCollection(htlcTxsAndSigs) { htlc ->
-                        writeTransactionWithInputInfo(htlc.txinfo)
-                        writeByteVector64(htlc.localSig)
-                        writeByteVector64(htlc.remoteSig)
-                    }
+        // The liquidity purchase field was added afterwards. For backwards-compatibility, we extend the discriminator
+        // we previously used for the local commit to insert the liquidity purchase if available.
+        // Note that we don't bother removing the duplication across HTLCs in the local commit: this is a short-lived
+        // state during which the channel cannot be used for payments.
+        when (liquidityLease) {
+            // Before introducing the liquidity purchase field, we serialized the local commit as an Either, with
+            // discriminators 0 and 1.
+            null -> when (localCommit) {
+                is Either.Left -> {
+                    write(0)
+                    writeUnsignedLocalCommitWithHtlcs(localCommit.value)
+                }
+                is Either.Right -> {
+                    write(1)
+                    writeLocalCommitWithHtlcs(localCommit.value)
                 }
             }
-        )
+            else -> when (localCommit) {
+                is Either.Left -> {
+                    write(2)
+                    writeLiquidityLease(liquidityLease)
+                    writeUnsignedLocalCommitWithHtlcs(localCommit.value)
+                }
+                is Either.Right -> {
+                    write(3)
+                    writeLiquidityLease(liquidityLease)
+                    writeLocalCommitWithHtlcs(localCommit.value)
+                }
+            }
+        }
         remoteCommit.run {
             writeNumber(index)
             writeCommitmentSpecWithHtlcs(spec)

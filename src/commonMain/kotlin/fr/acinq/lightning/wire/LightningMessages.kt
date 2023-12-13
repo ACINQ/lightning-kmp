@@ -180,8 +180,17 @@ interface ChannelMessage
 
 data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
     val networks = tlvs.get<InitTlv.Networks>()?.chainHashes ?: listOf()
+    val liquidityRates = tlvs.get<InitTlv.LiquidityAdsRates>()?.leaseRates ?: listOf()
 
-    constructor(features: Features, chainHashs: List<ByteVector32>) : this(features, TlvStream(InitTlv.Networks(chainHashs)))
+    constructor(features: Features, chainHashs: List<ByteVector32>, liquidityRates: List<LiquidityAds.LeaseRate>) : this(
+        features,
+        TlvStream(
+            setOfNotNull(
+                if (chainHashs.isNotEmpty()) InitTlv.Networks(chainHashs) else null,
+                if (liquidityRates.isNotEmpty()) InitTlv.LiquidityAdsRates(liquidityRates) else null,
+            )
+        )
+    )
 
     override val type: Long get() = Init.type
 
@@ -191,17 +200,18 @@ data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream
             LightningCodecs.writeU16(it.size, out)
             LightningCodecs.writeBytes(it, out)
         }
-        val tlvReaders = HashMap<Long, TlvValueReader<InitTlv>>()
-        @Suppress("UNCHECKED_CAST")
-        tlvReaders[InitTlv.Networks.tag] = InitTlv.Networks.Companion as TlvValueReader<InitTlv>
-        @Suppress("UNCHECKED_CAST")
-        tlvReaders[InitTlv.PhoenixAndroidLegacyNodeId.tag] = InitTlv.PhoenixAndroidLegacyNodeId.Companion as TlvValueReader<InitTlv>
-        val serializer = TlvStreamSerializer(false, tlvReaders)
-        serializer.write(tlvs, out)
+        TlvStreamSerializer(false, readers).write(tlvs, out)
     }
 
     companion object : LightningMessageReader<Init> {
         const val type: Long = 16
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            InitTlv.Networks.tag to InitTlv.Networks.Companion as TlvValueReader<InitTlv>,
+            InitTlv.LiquidityAdsRates.tag to InitTlv.LiquidityAdsRates.Companion as TlvValueReader<InitTlv>,
+            InitTlv.PhoenixAndroidLegacyNodeId.tag to InitTlv.PhoenixAndroidLegacyNodeId.Companion as TlvValueReader<InitTlv>,
+        )
 
         override fun read(input: Input): Init {
             val gflen = LightningCodecs.u16(input)
@@ -211,13 +221,7 @@ data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream
             val len = max(gflen, lflen)
             // merge features together
             val features = Features(ByteVector(globalFeatures.leftPaddedCopyOf(len).or(localFeatures.leftPaddedCopyOf(len))))
-            val tlvReaders = HashMap<Long, TlvValueReader<InitTlv>>()
-            @Suppress("UNCHECKED_CAST")
-            tlvReaders[InitTlv.Networks.tag] = InitTlv.Networks.Companion as TlvValueReader<InitTlv>
-            @Suppress("UNCHECKED_CAST")
-            tlvReaders[InitTlv.PhoenixAndroidLegacyNodeId.tag] = InitTlv.PhoenixAndroidLegacyNodeId.Companion as TlvValueReader<InitTlv>
-            val serializer = TlvStreamSerializer(false, tlvReaders)
-            val tlvs = serializer.read(input)
+            val tlvs = TlvStreamSerializer(false, readers).read(input)
             return Init(features, tlvs)
         }
     }
@@ -635,6 +639,7 @@ data class OpenDualFundedChannel(
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
     val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
+    val requestFunds: ChannelTlv.RequestFunds? get() = tlvStream.get<ChannelTlv.RequestFunds>()
     val origin: Origin? get() = tlvStream.get<ChannelTlv.OriginTlv>()?.origin
 
     override val type: Long get() = OpenDualFundedChannel.type
@@ -670,6 +675,7 @@ data class OpenDualFundedChannel(
             ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.RequestFunds.tag to ChannelTlv.RequestFunds as TlvValueReader<ChannelTlv>,
             ChannelTlv.OriginTlv.tag to ChannelTlv.OriginTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
@@ -718,6 +724,7 @@ data class AcceptDualFundedChannel(
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
+    val willFund: ChannelTlv.WillFund? get() = tlvStream.get<ChannelTlv.WillFund>()
     val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
 
     override val type: Long get() = AcceptDualFundedChannel.type
@@ -749,6 +756,7 @@ data class AcceptDualFundedChannel(
             ChannelTlv.UpfrontShutdownScriptTlv.tag to ChannelTlv.UpfrontShutdownScriptTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.WillFund.tag to ChannelTlv.WillFund as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
 
@@ -863,16 +871,17 @@ data class SpliceInit(
 ) : ChannelMessage, HasChannelId {
     override val type: Long get() = SpliceInit.type
     val requireConfirmedInputs: Boolean = tlvStream.get<ChannelTlv.RequireConfirmedInputsTlv>()?.let { true } ?: false
+    val requestFunds: ChannelTlv.RequestFunds? get() = tlvStream.get<ChannelTlv.RequestFunds>()
     val pushAmount: MilliSatoshi = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
     val origins: List<Origin.PayToOpenOrigin> = tlvStream.get<ChannelTlv.OriginsTlv>()?.origins?.filterIsInstance<Origin.PayToOpenOrigin>() ?: emptyList()
 
-    constructor(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi, feerate: FeeratePerKw, lockTime: Long, fundingPubkey: PublicKey) : this(
+    constructor(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi, feerate: FeeratePerKw, lockTime: Long, fundingPubkey: PublicKey, requestFunds: ChannelTlv.RequestFunds?) : this(
         channelId,
         fundingContribution,
         feerate,
         lockTime,
         fundingPubkey,
-        TlvStream(ChannelTlv.PushAmountTlv(pushAmount))
+        TlvStream(setOfNotNull(if (pushAmount > 0.msat) ChannelTlv.PushAmountTlv(pushAmount) else null, requestFunds))
     )
 
     override fun write(out: Output) {
@@ -890,6 +899,7 @@ data class SpliceInit(
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.RequestFunds.tag to ChannelTlv.RequestFunds as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.OriginsTlv.tag to ChannelTlv.OriginsTlv.Companion as TlvValueReader<ChannelTlv>
         )
@@ -913,13 +923,14 @@ data class SpliceAck(
 ) : ChannelMessage, HasChannelId {
     override val type: Long get() = SpliceAck.type
     val requireConfirmedInputs: Boolean = tlvStream.get<ChannelTlv.RequireConfirmedInputsTlv>()?.let { true } ?: false
+    val willFund: ChannelTlv.WillFund? get() = tlvStream.get<ChannelTlv.WillFund>()
     val pushAmount: MilliSatoshi = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
 
-    constructor(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi, fundingPubkey: PublicKey) : this(
+    constructor(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi, fundingPubkey: PublicKey, willFund: ChannelTlv.WillFund?) : this(
         channelId,
         fundingContribution,
         fundingPubkey,
-        TlvStream(ChannelTlv.PushAmountTlv(pushAmount))
+        TlvStream(setOfNotNull(if (pushAmount > 0.msat) ChannelTlv.PushAmountTlv(pushAmount) else null, willFund))
     )
 
     override fun write(out: Output) {
@@ -935,6 +946,7 @@ data class SpliceAck(
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.WillFund.tag to ChannelTlv.WillFund as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
 

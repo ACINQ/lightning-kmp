@@ -20,6 +20,7 @@ import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
@@ -105,6 +106,73 @@ class SpliceTestsCommon : LightningTestSuite() {
         spliceIn(alice, bob, listOf(50_000.sat))
         spliceOut(alice, bob, 50_000.sat)
         spliceCpfp(alice, bob)
+    }
+
+    @Test
+    fun `splice to purchase inbound liquidity`() {
+        val (alice, bob) = reachNormal()
+        val leaseRate = LiquidityAds.LeaseRate(0, 250, 250 /* 2.5% */, 10.sat, 200, 100.msat)
+        val liquidityRequest = LiquidityAds.RequestRemoteFunding(200_000.sat, alice.currentBlockHeight, leaseRate)
+        val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+        val (alice1, actionsAlice1) = alice.process(cmd)
+        val spliceInit = actionsAlice1.findOutgoingMessage<SpliceInit>()
+        assertEquals(spliceInit.requestFunds, liquidityRequest.requestFunds)
+        // Alice's contribution is negative: she needs to pay on-chain fees for the splice.
+        assertTrue(spliceInit.fundingContribution < 0.sat)
+        // We haven't implemented the seller side, so we mock it.
+        val (_, actionsBob2) = bob.process(ChannelCommand.MessageReceived(spliceInit))
+        val defaultSpliceAck = actionsBob2.findOutgoingMessage<SpliceAck>()
+        assertNull(defaultSpliceAck.willFund)
+        val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey)
+        run {
+            val willFund = leaseRate.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
+            assertIs<Normal>(alice2.state)
+            assertIs<SpliceStatus.InProgress>(alice2.state.spliceStatus)
+            actionsAlice2.hasOutgoingMessage<TxAddInput>()
+        }
+        run {
+            // Bob proposes different fees from what Alice expects.
+            val bobLiquidityRates = leaseRate.copy(leaseFeeProportional = 500 /* 5% */)
+            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
+            assertIs<Normal>(alice2.state)
+            assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
+            actionsAlice2.hasOutgoingMessage<TxAbort>()
+        }
+        run {
+            // Bob doesn't fund the splice.
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund = null)
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
+            assertIs<Normal>(alice2.state)
+            assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
+            actionsAlice2.hasOutgoingMessage<TxAbort>()
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `splice to purchase inbound liquidity -- not enough funds`() {
+        val (_, bob) = reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 10_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val leaseRate = LiquidityAds.LeaseRate(0, 0, 100 /* 5% */, 1.sat, 200, 100.msat)
+        run {
+            val liquidityRequest = LiquidityAds.RequestRemoteFunding(1_000_000.sat, bob.currentBlockHeight, leaseRate)
+            assertEquals(10_001.sat, liquidityRequest.rate.fees(FeeratePerKw(1000.sat), liquidityRequest.fundingAmount, liquidityRequest.fundingAmount).total)
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+            val (_, actions1) = bob.process(cmd)
+            assertTrue(actions1.isEmpty())
+            assertTrue(cmd.replyTo.isCompleted)
+            assertEquals(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds, cmd.replyTo.getCompleted())
+        }
+        run {
+            val liquidityRequest = LiquidityAds.RequestRemoteFunding(1_000_000.sat, bob.currentBlockHeight, leaseRate.copy(leaseFeeBase = 0.sat))
+            assertEquals(10_000.sat, liquidityRequest.rate.fees(FeeratePerKw(1000.sat), liquidityRequest.fundingAmount, liquidityRequest.fundingAmount).total)
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+            val (_, actions1) = bob.process(cmd)
+            actions1.hasOutgoingMessage<SpliceInit>()
+        }
     }
 
     @Test
@@ -985,6 +1053,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             replyTo = CompletableDeferred(),
             spliceIn = null,
             spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
+            requestRemoteFunding = null,
             feerate = FeeratePerKw(253.sat)
         )
 
@@ -1030,6 +1099,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 replyTo = CompletableDeferred(),
                 spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(createWalletWithFunds(alice.staticParams.nodeParams.keyManager, amounts)),
                 spliceOut = null,
+                requestRemoteFunding = null,
                 feerate = FeeratePerKw(253.sat)
             )
 
@@ -1069,6 +1139,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 replyTo = CompletableDeferred(),
                 spliceIn = null,
                 spliceOut = null,
+                requestRemoteFunding = null,
                 feerate = FeeratePerKw(253.sat)
             )
 

@@ -168,6 +168,7 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
+    val liquidityRatesFlow = MutableStateFlow<LiquidityAds.LeaseRate?>(null)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -507,13 +508,14 @@ class Peer(
      * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
      * for a splice out, taking into account potential unconfirmed parent splices.
      */
-    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
+    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
-                watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
             }
     }
 
@@ -525,13 +527,33 @@ class Peer(
      *         NB: if the output feerate is equal to the input feerate then the cpfp is useless and
      *         should not be attempted.
      */
-    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, Satoshi>? {
+    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .find { it.channelId == channelId }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
-                watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
+            }
+    }
+
+    /**
+     * Estimate the actual feerate to use (and corresponding fee to pay) to purchase inbound liquidity with a splice
+     * that reaches the target feerate.
+     */
+    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .firstOrNull()
+            ?.let { channel ->
+                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
+                // The mining fee below pays for the shared input and output of the splice transaction.
+                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
+                // The mining fee in the lease covers the remote node's inputs and outputs, depending on the weight they're requesting.
+                val leaseFees = leaseRate.fees(actualFeerate, amount, amount)
+                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee + leaseFees.miningFee, leaseFees.serviceFee.toMilliSatoshi()))
             }
     }
 
@@ -549,6 +571,7 @@ class Peer(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
                     spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, scriptPubKey),
+                    requestRemoteFunding = null,
                     feerate = feerate
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
@@ -566,6 +589,26 @@ class Peer(
                     // no additional inputs or outputs, the splice is only meant to bump fees
                     spliceIn = null,
                     spliceOut = null,
+                    requestRemoteFunding = null,
+                    feerate = feerate
+                )
+                send(WrappedChannelCommand(channel.channelId, spliceCommand))
+                spliceCommand.replyTo.await()
+            }
+    }
+
+    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw): ChannelCommand.Commitment.Splice.Response? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .firstOrNull()
+            ?.let { channel ->
+                val leaseStart = currentTipFlow.filterNotNull().first().first
+                val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
+                val spliceCommand = ChannelCommand.Commitment.Splice.Request(
+                    replyTo = CompletableDeferred(),
+                    spliceIn = null,
+                    spliceOut = null,
+                    requestRemoteFunding = LiquidityAds.RequestRemoteFunding(amount, leaseStart, leaseRate),
                     feerate = feerate
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
@@ -693,6 +736,17 @@ class Peer(
                                         miningFees = action.miningFees,
                                         channelId = channelId,
                                         txId = action.txId,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null,
+                                        lockedAt = null
+                                    )
+                                is ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest ->
+                                    InboundLiquidityOutgoingPayment(
+                                        id = UUID.randomUUID(),
+                                        channelId = channelId,
+                                        txId = action.txId,
+                                        miningFees = action.miningFees,
+                                        lease = action.lease,
                                         createdAt = currentTimestampMillis(),
                                         confirmedAt = null,
                                         lockedAt = null
@@ -825,10 +879,10 @@ class Peer(
                                 logger.error(error) { "feature validation error" }
                                 // TODO: disconnect peer
                             }
-
                             else -> {
                                 theirInit = msg
                                 _connectionState.value = Connection.ESTABLISHED
+                                msg.liquidityRates.forEach { liquidityRatesFlow.emit(it) }
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, theirInit!!))
                                     processActions(entry.key, peerConnection, actions)
@@ -1051,6 +1105,7 @@ class Peer(
                             replyTo = CompletableDeferred(),
                             spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(cmd.walletInputs),
                             spliceOut = null,
+                            requestRemoteFunding = null,
                             feerate = feerate
                         )
                         // If the splice fails, we immediately unlock the utxos to reuse them in the next attempt.

@@ -13,6 +13,7 @@ import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.LightningMessage
+import fr.acinq.lightning.wire.LiquidityAds
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import kotlinx.coroutines.CompletableDeferred
 import fr.acinq.lightning.wire.Init as InitMessage
@@ -83,13 +84,19 @@ sealed class ChannelCommand {
         data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice
         object CheckHtlcTimeout : Commitment()
         sealed class Splice : Commitment() {
-            data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Splice() {
+            data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
                 val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 
                 data class SpliceIn(val walletInputs: List<WalletState.Utxo>, val pushAmount: MilliSatoshi = 0.msat)
                 data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
             }
+
+            /**
+             * @param miningFee on-chain fee that will be paid for the splice transaction.
+             * @param serviceFee service-fee that will be paid to the remote node for a service they provide with the splice transaction.
+             */
+            data class Fees(val miningFee: Satoshi, val serviceFee: MilliSatoshi)
 
             sealed class Response {
                 /**
@@ -101,7 +108,8 @@ sealed class ChannelCommand {
                     val fundingTxIndex: Long,
                     val fundingTxId: TxId,
                     val capacity: Satoshi,
-                    val balance: MilliSatoshi
+                    val balance: MilliSatoshi,
+                    val liquidityLease: LiquidityAds.Lease?,
                 ) : Response()
 
                 sealed class Failure : Response() {
@@ -109,6 +117,7 @@ sealed class ChannelCommand {
                     object InvalidSpliceOutPubKeyScript : Failure()
                     object SpliceAlreadyInProgress : Failure()
                     object ChannelNotIdle : Failure()
+                    data class InvalidLiquidityAds(val reason: ChannelException) : Failure()
                     data class FundingFailure(val reason: FundingContributionFailure) : Failure()
                     object CannotStartSession : Failure()
                     data class InteractiveTxSessionFailed(val reason: InteractiveTxSessionAction.RemoteFailure) : Failure()

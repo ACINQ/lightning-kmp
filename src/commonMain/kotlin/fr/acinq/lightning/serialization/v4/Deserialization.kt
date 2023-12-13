@@ -3,6 +3,7 @@ package fr.acinq.lightning.serialization.v4
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
+import fr.acinq.bitcoin.io.readNBytes
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
@@ -99,6 +100,13 @@ object Deserialization {
                 origins = readCollection { readChannelOrigin() as Origin.PayToOpenOrigin }.toList()
             )
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
+        },
+        liquidityLeases = when {
+            availableBytes == 0 -> listOf()
+            else -> when (val discriminator = read()) {
+                0x01 -> readCollection { readLiquidityLease() }.toList()
+                else -> error("unknown discriminator $discriminator for class ${Normal::class}")
+            }
         }
     )
 
@@ -307,43 +315,62 @@ object Deserialization {
         else -> error("unknown discriminator $discriminator for class ${SignedSharedTransaction::class}")
     }
 
-    private fun Input.readInteractiveTxSigningSession(): InteractiveTxSigningSession = InteractiveTxSigningSession(
-        fundingParams = readInteractiveTxParams(),
-        fundingTxIndex = readNumber(),
-        fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
-        localCommit = readEither(
-            readLeft = {
-                InteractiveTxSigningSession.Companion.UnsignedLocalCommit(
-                    index = readNumber(),
-                    spec = readCommitmentSpecWithHtlcs(),
-                    commitTx = readTransactionWithInputInfo() as CommitTx,
-                    htlcTxs = readCollection { readTransactionWithInputInfo() as HtlcTx }.toList(),
+    private fun Input.readUnsignedLocalCommitWithHtlcs(): InteractiveTxSigningSession.Companion.UnsignedLocalCommit = InteractiveTxSigningSession.Companion.UnsignedLocalCommit(
+        index = readNumber(),
+        spec = readCommitmentSpecWithHtlcs(),
+        commitTx = readTransactionWithInputInfo() as CommitTx,
+        htlcTxs = readCollection { readTransactionWithInputInfo() as HtlcTx }.toList(),
+    )
+
+    private fun Input.readLocalCommitWithHtlcs(): LocalCommit = LocalCommit(
+        index = readNumber(),
+        spec = readCommitmentSpecWithHtlcs(),
+        publishableTxs = PublishableTxs(
+            commitTx = readTransactionWithInputInfo() as CommitTx,
+            htlcTxsAndSigs = readCollection {
+                HtlcTxAndSigs(
+                    txinfo = readTransactionWithInputInfo() as HtlcTx,
+                    localSig = readByteVector64(),
+                    remoteSig = readByteVector64()
                 )
-            },
-            readRight = {
-                LocalCommit(
-                    index = readNumber(),
-                    spec = readCommitmentSpecWithHtlcs(),
-                    publishableTxs = PublishableTxs(
-                        commitTx = readTransactionWithInputInfo() as CommitTx,
-                        htlcTxsAndSigs = readCollection {
-                            HtlcTxAndSigs(
-                                txinfo = readTransactionWithInputInfo() as HtlcTx,
-                                localSig = readByteVector64(),
-                                remoteSig = readByteVector64()
-                            )
-                        }.toList()
-                    )
-                )
-            },
+            }.toList()
+        )
+    )
+
+    private fun Input.readLiquidityLease(): LiquidityAds.Lease = LiquidityAds.Lease(
+        amount = readNumber().sat,
+        fees = LiquidityAds.LeaseFees(miningFee = readNumber().sat, serviceFee = readNumber().sat),
+        sellerSig = readByteVector64(),
+        witness = LiquidityAds.LeaseWitness(
+            fundingScript = readNBytes(readNumber().toInt())!!.toByteVector(),
+            leaseDuration = readNumber().toInt(),
+            leaseEnd = readNumber().toInt(),
+            maxRelayFeeProportional = readNumber().toInt(),
+            maxRelayFeeBase = readNumber().msat,
         ),
-        remoteCommit = RemoteCommit(
+    )
+
+    private fun Input.readInteractiveTxSigningSession(): InteractiveTxSigningSession {
+        val fundingParams = readInteractiveTxParams()
+        val fundingTxIndex = readNumber()
+        val fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction
+        // liquidityLease and localCommit are logically independent, this is just a serialization trick for backwards
+        // compatibility since the liquidityLease field was introduced later.
+        val (liquidityLease, localCommit) = when (val discriminator = read()) {
+            0 -> Pair(null, Either.Left(readUnsignedLocalCommitWithHtlcs()))
+            1 -> Pair(null, Either.Right(readLocalCommitWithHtlcs()))
+            2 -> Pair(readLiquidityLease(), Either.Left(readUnsignedLocalCommitWithHtlcs()))
+            3 -> Pair(readLiquidityLease(), Either.Right(readLocalCommitWithHtlcs()))
+            else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
+        }
+        val remoteCommit = RemoteCommit(
             index = readNumber(),
             spec = readCommitmentSpecWithHtlcs(),
             txid = readTxId(),
             remotePerCommitmentPoint = readPublicKey()
         )
-    )
+        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, liquidityLease, localCommit, remoteCommit)
+    }
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
         0x01 -> Origin.PayToOpenOrigin(
