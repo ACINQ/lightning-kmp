@@ -79,7 +79,7 @@ class ElectrumClient(
                 listenJob = listen(socket)
                 true
             } catch (ex: Throwable) {
-                logger.warning { "electrum connection handshake failed: ${ex?.message}" }
+                logger.warning { "electrum connection handshake failed: ${ex.message}" }
                 val ioException = when (ex) {
                     is TcpSocket.IOException -> ex
                     else -> TcpSocket.IOException.Unknown(ex.message, ex)
@@ -111,7 +111,7 @@ class ElectrumClient(
                 socket
             }
         } catch (ex: Throwable) {
-            logger.warning { "could not connect to electrum server: ${ex?.message}" }
+            logger.warning { "could not connect to electrum server: ${ex.message}" }
             val ioException = when (ex) {
                 is TcpSocket.IOException -> ex
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
@@ -160,7 +160,7 @@ class ElectrumClient(
         // We use a SupervisorJob to ensure that our CoroutineExceptionHandler is used and exceptions don't propagate
         // to our parent scope: we simply disconnect and wait for the application to initiate a reconnection.
         val job = scope.launch(CoroutineName("electrum-client") + SupervisorJob() + CoroutineExceptionHandler { _, ex ->
-            logger.warning { "electrum connection error: ${ex?.message}" }
+            logger.warning { "electrum connection error: ${ex.message}" }
             socket.close()
             val ioException = when (ex) {
                 is TcpSocket.IOException -> ex
