@@ -400,7 +400,7 @@ data class InboundLiquidityOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val fees: MilliSatoshi = (miningFees + lease.fees.serviceFee).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
-    override val completedAt: Long? = confirmedAt
+    override val completedAt: Long? = lockedAt
 }
 
 enum class ChannelClosingType {
