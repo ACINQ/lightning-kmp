@@ -547,13 +547,13 @@ class Peer(
             .filterIsInstance<Normal>()
             .firstOrNull()
             ?.let { channel ->
-                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
-                // The mining fee below pays for the shared input and output of the splice transaction.
-                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
-                // The mining fee in the lease covers the remote node's inputs and outputs, depending on the weight they're requesting.
+                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList()) + leaseRate.fundingWeight
+                // The mining fee below pays for the entirety of the splice transaction, including inputs and outputs from the liquidity provider.
+                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                // The mining fee in the lease only covers the remote node's inputs and outputs, they are already included in the mining fee above.
                 val leaseFees = leaseRate.fees(actualFeerate, amount, amount)
-                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee + leaseFees.miningFee, leaseFees.serviceFee.toMilliSatoshi()))
+                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, leaseFees.serviceFee.toMilliSatoshi()))
             }
     }
 
