@@ -28,6 +28,9 @@ suspend fun IElectrumClient.getConfirmations(tx: Transaction): Int? {
     }
 }
 
+/**
+ * @weight must be the total estimated weight of the splice tx, otherwise the feerate estimation will be wrong
+ */
 suspend fun IElectrumClient.computeSpliceCpfpFeerate(commitments: Commitments, targetFeerate: FeeratePerKw, spliceWeight: Int, logger: MDCLogger): Pair<FeeratePerKw, Satoshi> {
     val (parentsWeight, parentsFees) = commitments.all
         .takeWhile { getConfirmations(it.fundingTxId).let { confirmations -> confirmations == null || confirmations == 0 } } // we check for null in case the tx has been evicted
