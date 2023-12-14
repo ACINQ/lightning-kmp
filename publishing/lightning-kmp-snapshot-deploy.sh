@@ -21,7 +21,7 @@ mvn deploy:deploy-file -DrepositoryId=ossrh -Durl=https://oss.sonatype.org/conte
   -Djavadoc=$ARTIFACT_ID_BASE-$VERSION-javadoc.jar
 popd
 pushd .
-for i in iosarm64 iosx64 jvm linux; do
+for i in iosarm64 iosx64 jvm linuxx64; do
   cd fr/acinq/lightning/lightning-kmp-$i/$VERSION
   if [ $i == iosarm64 ] || [ $i == iosx64 ]; then
     mvn deploy:deploy-file -DrepositoryId=ossrh -Durl=https://oss.sonatype.org/content/repositories/snapshots/ \
@@ -32,7 +32,7 @@ for i in iosarm64 iosx64 jvm linux; do
       -Dclassifiers=metadata,,cinterop-PhoenixCrypto \
       -Dsources=$ARTIFACT_ID_BASE-$i-$VERSION-sources.jar \
       -Djavadoc=$ARTIFACT_ID_BASE-$i-$VERSION-javadoc.jar
-  elif [ $i == linux ]; then
+  elif [ $i == linuxx64 ]; then
     mvn deploy:deploy-file -DrepositoryId=ossrh -Durl=https://oss.sonatype.org/content/repositories/snapshots/ \
       -DpomFile=$ARTIFACT_ID_BASE-$i-$VERSION.pom \
       -Dfile=$ARTIFACT_ID_BASE-$i-$VERSION.klib \
