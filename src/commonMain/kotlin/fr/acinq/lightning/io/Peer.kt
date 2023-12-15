@@ -168,7 +168,6 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
-    val liquidityRatesFlow = MutableStateFlow<LiquidityAds.LeaseRate?>(null)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -542,12 +541,11 @@ class Peer(
      * Estimate the actual feerate to use (and corresponding fee to pay) to purchase inbound liquidity with a splice
      * that reaches the target feerate.
      */
-    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
+    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw, leaseRate: LiquidityAds.LeaseRate): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
             ?.let { channel ->
-                val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList()) + leaseRate.fundingWeight
                 // The mining fee below pays for the entirety of the splice transaction, including inputs and outputs from the liquidity provider.
                 val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
@@ -597,13 +595,12 @@ class Peer(
             }
     }
 
-    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw): ChannelCommand.Commitment.Splice.Response? {
+    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, leaseRate: LiquidityAds.LeaseRate): ChannelCommand.Commitment.Splice.Response? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
             ?.let { channel ->
                 val leaseStart = currentTipFlow.filterNotNull().first().first
-                val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
                 val spliceCommand = ChannelCommand.Commitment.Splice.Request(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
@@ -882,7 +879,6 @@ class Peer(
                             else -> {
                                 theirInit = msg
                                 _connectionState.value = Connection.ESTABLISHED
-                                msg.liquidityRates.forEach { liquidityRatesFlow.emit(it) }
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, theirInit!!))
                                     processActions(entry.key, peerConnection, actions)
