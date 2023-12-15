@@ -168,7 +168,6 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
-    val liquidityRatesFlow = MutableStateFlow<LiquidityAds.LeaseRate?>(null)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -547,7 +546,7 @@ class Peer(
             .filterIsInstance<Normal>()
             .firstOrNull()
             ?.let { channel ->
-                val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
+                val leaseRate = LiquidityAds.phoenixLeaseRate(amount)
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList()) + leaseRate.fundingWeight
                 // The mining fee below pays for the entirety of the splice transaction, including inputs and outputs from the liquidity provider.
                 val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
@@ -603,7 +602,7 @@ class Peer(
             .firstOrNull()
             ?.let { channel ->
                 val leaseStart = currentTipFlow.filterNotNull().first().first
-                val leaseRate = liquidityRatesFlow.filterNotNull().first { it.leaseDuration == 0 }
+                val leaseRate = LiquidityAds.phoenixLeaseRate(amount)
                 val spliceCommand = ChannelCommand.Commitment.Splice.Request(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
@@ -882,7 +881,6 @@ class Peer(
                             else -> {
                                 theirInit = msg
                                 _connectionState.value = Connection.ESTABLISHED
-                                msg.liquidityRates.forEach { liquidityRatesFlow.emit(it) }
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, theirInit!!))
                                     processActions(entry.key, peerConnection, actions)
