@@ -115,14 +115,9 @@ sealed class InteractiveTxInput {
     }
 
     /** A local input that funds the interactive transaction, coming from a 2-of-2 swap-in transaction. */
-    data class LocalSwapIn(
-        override val serialId: Long,
-        override val previousTx: Transaction,
-        override val previousTxOutput: Long,
-        override val sequence: UInt,
-        val swapInParams: TxAddInputTlv.SwapInParams
-    ) : Local() {
+    data class LocalSwapIn(override val serialId: Long, override val previousTx: Transaction, override val previousTxOutput: Long, override val sequence: UInt, val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : Local() {
         override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput)
+        override val txOut: TxOut = previousTx.txOut[previousTxOutput.toInt()]
     }
 
     data class LocalMusig2SwapIn(
@@ -145,13 +140,7 @@ sealed class InteractiveTxInput {
     data class RemoteOnly(override val serialId: Long, override val outPoint: OutPoint, override val txOut: TxOut, override val sequence: UInt) : Remote()
 
     /** A remote input from a swap-in: our peer needs our signature to build a witness for that input. */
-    data class RemoteSwapIn(
-        override val serialId: Long,
-        override val outPoint: OutPoint,
-        override val txOut: TxOut,
-        override val sequence: UInt,
-        val swapInParams: TxAddInputTlv.SwapInParams
-    ) : Remote()
+    data class RemoteSwapIn(override val serialId: Long, override val outPoint: OutPoint, override val txOut: TxOut, override val sequence: UInt, val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : Remote()
 
     data class RemoteSwapInMusig2(
         override val serialId: Long,
@@ -286,8 +275,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                             i.previousTx.stripInputWitnesses(),
                             i.outputIndex.toLong(),
                             0xfffffffdU,
-                            TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay)
-                        )
+                            swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay)
 
                     else -> InteractiveTxInput.LocalMusig2SwapIn(
                         0,
@@ -458,7 +446,7 @@ data class SharedTransaction(
                 .find { txIn.outPoint == it.outPoint }
                 ?.let { input ->
                     val serverKey = keyManager.swapInOnChainWallet.localServerPrivateKey(remoteNodeId)
-                    val swapInProtocol = SwapInProtocol(input.swapInParams.userKey, serverKey.publicKey(), input.swapInParams.refundDelay)
+                    val swapInProtocol = SwapInProtocol(input.userKey, serverKey.publicKey(), input.refundDelay)
                     swapInProtocol.signSwapInputServer(unsignedTx, i, input.txOut, serverKey)
                 }
         }.filterNotNull()
@@ -530,7 +518,7 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
         val localOnlyTxIn = tx.localOnlyInputs().sortedBy { i -> i.serialId }.zip(localSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong(), w)) }
         val localSwapTxIn = tx.localInputs.filterIsInstance<InteractiveTxInput.LocalSwapIn>().sortedBy { i -> i.serialId }.zip(localSigs.swapInUserSigs.zip(remoteSigs.swapInServerSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
-            val swapInProtocol = SwapInProtocol(i.swapInParams)
+            val swapInProtocol = SwapInProtocol(i.userKey, i.serverKey, i.refundDelay)
             val witness = swapInProtocol.witness(userSig, serverSig)
             Pair(i.serialId, TxIn(OutPoint(i.previousTx, i.previousTxOutput), ByteVector.empty, i.sequence.toLong(), witness))
         }
@@ -549,7 +537,7 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
         val remoteOnlyTxIn = tx.remoteOnlyInputs().sortedBy { i -> i.serialId }.zip(remoteSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), w)) }
         val remoteSwapTxIn = tx.remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapIn>().sortedBy { i -> i.serialId }.zip(remoteSigs.swapInUserSigs.zip(localSigs.swapInServerSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
-            val swapInProtocol = SwapInProtocol(i.swapInParams.userKey, i.swapInParams.serverKey, i.swapInParams.refundDelay)
+            val swapInProtocol = SwapInProtocol(i.userKey, i.serverKey, i.refundDelay)
             val witness = swapInProtocol.witness(userSig, serverSig)
             Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), witness))
         }
@@ -743,7 +731,7 @@ data class InteractiveTxSession(
                         InteractiveTxInput.RemoteSwapInMusig2(message.serialId, outpoint, txOut, message.sequence, message.swapInParamsMusig2)
                     }
 
-                    message.swapInParams != null -> InteractiveTxInput.RemoteSwapIn(message.serialId, outpoint, txOut, message.sequence, message.swapInParams)
+                    message.swapInParams != null -> InteractiveTxInput.RemoteSwapIn(message.serialId, outpoint, txOut, message.sequence, message.swapInParams.userKey, message.swapInParams.serverKey, message.swapInParams.refundDelay)
                     else -> InteractiveTxInput.RemoteOnly(message.serialId, outpoint, txOut, message.sequence)
                 }
             }
