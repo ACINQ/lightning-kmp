@@ -241,7 +241,9 @@ object Deserialization {
             previousTx = readTransaction(),
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParams.read(this),
+            userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            refundDelay = readNumber().toInt(),
         )
         0x03 -> InteractiveTxInput.LocalMusig2SwapIn(
             serialId = readNumber(),
@@ -265,8 +267,10 @@ object Deserialization {
             outPoint = readOutPoint(),
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParams.read(this)
-        )
+            userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            refundDelay = readNumber().toInt()
+       )
         0x03 -> InteractiveTxInput.RemoteSwapInMusig2(
             serialId = readNumber(),
             outPoint = readOutPoint(),
