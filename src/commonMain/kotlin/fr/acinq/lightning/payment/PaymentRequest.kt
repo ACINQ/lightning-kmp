@@ -174,7 +174,7 @@ data class PaymentRequest(
             return loop(input, listOf())
         }
 
-        fun read(input: String): PaymentRequest {
+        fun read(input: String): Try<PaymentRequest> = runTrying {
             val (hrp, data) = Bech32.decode(input)
             val prefix = prefixes.values.find { hrp.startsWith(it) } ?: throw IllegalArgumentException("unknown prefix $hrp")
             val amount = decodeAmount(hrp.drop(prefix.length))
@@ -217,8 +217,8 @@ data class PaymentRequest(
 
             loop(data.drop(7).dropLast(104))
             val pr = PaymentRequest(prefix, amount, timestamp, nodeId, tags, sigandrecid.toByteVector())
-            require(pr.signedPreimage().contentEquals(tohash))
-            return pr
+            require(pr.signedPreimage().contentEquals(tohash)) { "invoice isn't canonically encoded" }
+            pr
         }
 
         fun decodeAmount(input: String): MilliSatoshi? {
