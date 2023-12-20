@@ -63,7 +63,14 @@ kotlin {
             }
         }
 
-        // iosSimulatorArm64() : ios simulator on Apple Silicon devices. Disabled for now, until all dependencies support it.
+        iosSimulatorArm64 { // actual ios devices
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                val platform = "iphonesimulator"
+                val interopTask = tasks[interopProcessingTaskName]
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+            }
+        }
     }
 
     sourceSets {
@@ -88,7 +95,7 @@ kotlin {
                 api(ktor("serialization-kotlinx-json"))
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
-                implementation("org.kodein.memory:kodein-memory-files:0.8.1")
+                implementation("org.kodein.memory:klio-files:0.12.0")
             }
         }
 
