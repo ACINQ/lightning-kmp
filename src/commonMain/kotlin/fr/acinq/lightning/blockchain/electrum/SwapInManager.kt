@@ -1,9 +1,11 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.OutPoint
+import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.SwapInParams
+import fr.acinq.lightning.channel.FundingContributions.Companion.stripInputWitnesses
 import fr.acinq.lightning.channel.LocalFundingStatus
 import fr.acinq.lightning.channel.RbfStatus
 import fr.acinq.lightning.channel.SignedSharedTransaction
@@ -38,7 +40,7 @@ class SwapInManager(private var reservedUtxos: Set<OutPoint>, private val logger
             val utxos = buildSet {
                 // some utxos may be used for swap-in even if they are not confirmed, for example when migrating from the legacy phoenix android app
                 addAll(availableWallet.all.filter { cmd.trustedTxs.contains(it.outPoint.txid) })
-                addAll(availableWallet.deeplyConfirmed)
+                addAll(availableWallet.deeplyConfirmed.filter { Transaction.write(it.previousTx.stripInputWitnesses()).size < 65_000 })
             }.toList()
             if (utxos.balance > 0.sat) {
                 logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
