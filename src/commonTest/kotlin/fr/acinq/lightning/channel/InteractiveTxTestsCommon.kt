@@ -1216,7 +1216,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         private fun createWallet(onChainKeys: KeyManager.SwapInOnChainKeys, amounts: List<Satoshi>): List<WalletState.Utxo> {
             return amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0))
-                val txOut = listOf(TxOut(amount, onChainKeys.swapInProtocol.pubkeyScript), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
+                val txOut = listOf(TxOut(amount, onChainKeys.legacySwapInProtocol.pubkeyScript), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 WalletState.Utxo(parentTx.txid, 0, 0, parentTx)
             }

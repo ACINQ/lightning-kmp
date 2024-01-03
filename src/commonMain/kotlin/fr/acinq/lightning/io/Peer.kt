@@ -193,8 +193,8 @@ class Peer(
     val finalAddress: String = nodeParams.keyManager.finalOnChainWallet.address(addressIndex = 0L).also { finalWallet.addAddress(it) }
 
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
+    val legacySwapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.legacySwapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it) }
     val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.swapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it) }
-    val swapInAddressMusig2: String = nodeParams.keyManager.swapInOnChainWallet.swapInProtocolMusig2.address(nodeParams.chain).also { swapInWallet.addAddress(it) }
 
     private var swapInJob: Job? = null
 
