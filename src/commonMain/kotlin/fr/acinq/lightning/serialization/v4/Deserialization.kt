@@ -2,7 +2,6 @@ package fr.acinq.lightning.serialization.v4
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
-import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.readNBytes
@@ -236,7 +235,7 @@ object Deserialization {
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
         )
-        0x02 -> InteractiveTxInput.LocalSwapIn(
+        0x02 -> InteractiveTxInput.LocalLegacySwapIn(
             serialId = readNumber(),
             previousTx = readTransaction(),
             previousTxOutput = readNumber(),
@@ -245,12 +244,12 @@ object Deserialization {
             serverKey = readPublicKey(),
             refundDelay = readNumber().toInt(),
         )
-        0x03 -> InteractiveTxInput.LocalMusig2SwapIn(
+        0x03 -> InteractiveTxInput.LocalSwapIn(
             serialId = readNumber(),
             previousTx = readTransaction(),
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this)
+            swapInParams = TxAddInputTlv.SwapInParams.read(this)
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Local::class}")
     }
@@ -262,7 +261,7 @@ object Deserialization {
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
         )
-        0x02 -> InteractiveTxInput.RemoteSwapIn(
+        0x02 -> InteractiveTxInput.RemoteLegacySwapIn(
             serialId = readNumber(),
             outPoint = readOutPoint(),
             txOut = TxOut.read(readDelimitedByteArray()),
@@ -271,12 +270,12 @@ object Deserialization {
             serverKey = readPublicKey(),
             refundDelay = readNumber().toInt()
        )
-        0x03 -> InteractiveTxInput.RemoteSwapInMusig2(
+        0x03 -> InteractiveTxInput.RemoteSwapIn(
             serialId = readNumber(),
             outPoint = readOutPoint(),
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParamsMusig2.read(this)
+            swapInParams = TxAddInputTlv.SwapInParams.read(this)
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Remote::class}")
     }

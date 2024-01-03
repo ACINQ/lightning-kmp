@@ -25,17 +25,17 @@ sealed class TxAddInputTlv : Tlv {
     }
 
     /** When adding a swap-in input to an interactive-tx, the user needs to provide the corresponding script parameters. */
-    data class SwapInParams(val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : TxAddInputTlv() {
-        override val tag: Long get() = SwapInParams.tag
+    data class SwapInParamsLegacy(val userKey: PublicKey, val serverKey: PublicKey, val refundDelay: Int) : TxAddInputTlv() {
+        override val tag: Long get() = SwapInParamsLegacy.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(userKey.value, out)
             LightningCodecs.writeBytes(serverKey.value, out)
             LightningCodecs.writeU32(refundDelay, out)
         }
 
-        companion object : TlvValueReader<SwapInParams> {
+        companion object : TlvValueReader<SwapInParamsLegacy> {
             const val tag: Long = 1107
-            override fun read(input: Input): SwapInParams = SwapInParams(
+            override fun read(input: Input): SwapInParamsLegacy = SwapInParamsLegacy(
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 LightningCodecs.u32(input)
@@ -44,8 +44,8 @@ sealed class TxAddInputTlv : Tlv {
     }
 
     /** When adding a swap-in input to an interactive-tx, the user needs to provide the corresponding script parameters. */
-    data class SwapInParamsMusig2(val userKey: PublicKey, val serverKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) : TxAddInputTlv() {
-        override val tag: Long get() = SwapInParamsMusig2.tag
+    data class SwapInParams(val userKey: PublicKey, val serverKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) : TxAddInputTlv() {
+        override val tag: Long get() = SwapInParams.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(userKey.value, out)
             LightningCodecs.writeBytes(serverKey.value, out)
@@ -53,9 +53,9 @@ sealed class TxAddInputTlv : Tlv {
             LightningCodecs.writeU32(refundDelay, out)
         }
 
-        companion object : TlvValueReader<SwapInParamsMusig2> {
+        companion object : TlvValueReader<SwapInParams> {
             const val tag: Long = 1109
-            override fun read(input: Input): SwapInParamsMusig2 = SwapInParamsMusig2(
+            override fun read(input: Input): SwapInParams = SwapInParams(
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),

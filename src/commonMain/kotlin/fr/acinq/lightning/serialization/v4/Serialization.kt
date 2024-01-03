@@ -272,7 +272,7 @@ object Serialization {
             writeNumber(previousTxOutput)
             writeNumber(sequence.toLong())
         }
-        is InteractiveTxInput.LocalSwapIn -> i.run {
+        is InteractiveTxInput.LocalLegacySwapIn -> i.run {
             write(0x02)
             writeNumber(serialId)
             writeBtcObject(previousTx)
@@ -282,7 +282,7 @@ object Serialization {
             writePublicKey(serverKey)
             writeNumber(refundDelay)
         }
-        is InteractiveTxInput.LocalMusig2SwapIn -> i.run {
+        is InteractiveTxInput.LocalSwapIn -> i.run {
             write(0x03)
             writeNumber(serialId)
             writeBtcObject(previousTx)
@@ -300,7 +300,7 @@ object Serialization {
             writeBtcObject(txOut)
             writeNumber(sequence.toLong())
         }
-        is InteractiveTxInput.RemoteSwapIn -> i.run {
+        is InteractiveTxInput.RemoteLegacySwapIn -> i.run {
             write(0x02)
             writeNumber(serialId)
             writeBtcObject(outPoint)
@@ -310,7 +310,7 @@ object Serialization {
             writePublicKey(serverKey)
             writeNumber(refundDelay)
         }
-        is InteractiveTxInput.RemoteSwapInMusig2 -> i.run {
+        is InteractiveTxInput.RemoteSwapIn -> i.run {
             write(0x03)
             writeNumber(serialId)
             writeBtcObject(outPoint)

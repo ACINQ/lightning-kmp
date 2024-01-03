@@ -183,11 +183,11 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         assertEquals(TestConstants.Bob.keyManager.swapInOnChainWallet.remoteServerPublicKey, PublicKey.fromHex("02d8c2f4fe8a017ff3a30eb2a4477f3ebe64ae930f67f907270712a70b18cb8951"))
         assertEquals(
             "wsh(and_v(v:pk([14620948/51h/0h/0h]tpubDCvYeHUZisCMV3h1zPevPWQmNPfA3g3vnu7gDqskXVCbJB1VKk2F7LApV6TTdm1sCyGout8ma27CCHvYTuMZxpwrcHnLwL4kaXW8z2KfFcW),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))",
-            TestConstants.Alice.keyManager.swapInOnChainWallet.descriptor
+            TestConstants.Alice.keyManager.swapInOnChainWallet.legacyDescriptor
         )
         assertEquals(
             "wsh(and_v(v:pk([85185511/51h/0h/0h]tpubDDt5vQap1awkteTeYioVGLQvj75xrFvjuW6WjNumsedvckEHAMUACubuKtmjmXViDPYMvtnEQt6EGj3eeMVSGRKxRZqCme37j5jAUMhkX5L),or_d(pk(02d8c2f4fe8a017ff3a30eb2a4477f3ebe64ae930f67f907270712a70b18cb8951),older(25920))))",
-            TestConstants.Bob.keyManager.swapInOnChainWallet.descriptor
+            TestConstants.Bob.keyManager.swapInOnChainWallet.legacyDescriptor
         )
     }
 
@@ -196,11 +196,11 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val swapInTx = Transaction(version = 2,
             txIn = listOf(),
             txOut = listOf(
+                TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript),
+                TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript),
+                TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey())),
                 TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript),
                 TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript),
-                TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey())),
-                TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocolMusig2.pubkeyScript),
-                TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocolMusig2.pubkeyScript),
                 TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey()))
             ),
             lockTime = 0)
