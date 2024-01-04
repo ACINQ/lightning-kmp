@@ -27,7 +27,7 @@ data class WalletState(val addresses: Map<String, AddressState>) {
         swapInParams = swapInParams, currentBlockHeight = currentBlockHeight, all = utxos,
     )
 
-    data class Utxo(val txId: TxId, val outputIndex: Int, val blockHeight: Long, val previousTx: Transaction) {
+    data class Utxo(val txId: TxId, val outputIndex: Int, val blockHeight: Long, val previousTx: Transaction, val addressMeta: AddressMeta) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
         val amount = previousTx.txOut[outputIndex].amount
     }
@@ -157,7 +157,7 @@ class ElectrumMiniWallet(
                     val previouslysKnownTxs = (_walletStateFlow.value.addresses[bitcoinAddress]?.utxos ?: emptyList()).map { it.txId to it.previousTx }.toMap()
                     val utxos = unspents
                         .mapNotNull { item -> (previouslysKnownTxs[item.txid] ?: client.getTx(item.txid))?.let { item to it } } // only retrieve txs from electrum if necessary and ignore the utxo if the parent tx cannot be retrieved
-                        .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx) }
+                        .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx, addressMeta) }
                     val nextAddressState = WalletState.Companion.AddressState(addressMeta, utxos)
                     val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to nextAddressState))
                     logger.info(mdc()) { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }

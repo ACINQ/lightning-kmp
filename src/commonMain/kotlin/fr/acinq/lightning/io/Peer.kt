@@ -195,7 +195,13 @@ class Peer(
 
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
     val legacySwapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.legacySwapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it, WalletState.Companion.AddressMeta.Single) }
-    val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.swapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it, WalletState.Companion.AddressMeta.Single) }
+    val swapInAddressFlow = MutableStateFlow<String?>(null)
+    val swapInAddresses: List<String> = (0 until 100)
+        .map { nodeParams.keyManager.swapInOnChainWallet.getSwapInProtocol(it) }
+        .map { it.address(nodeParams.chain) }
+        .withIndex().onEach { swapInWallet.addAddress(it.value, WalletState.Companion.AddressMeta.Derived(it.index)) }
+        .map { it.value }
+        .toList()
 
     private var swapInJob: Job? = null
 
@@ -456,6 +462,10 @@ class Peer(
         waitForPeerReady()
         swapInJob = launch {
             swapInWallet.walletStateFlow
+                .onEach {
+                    // take the first unused address, or a random address if there are none
+                    swapInAddressFlow.value = it.addresses.filter { it.value.utxos.isEmpty() }.map { it.key }.firstOrNull() ?: it.addresses.keys.random()
+                }
                 .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip.first) }
                 .combine(swapInFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerate -> Triple(walletState, currentTip, feerate) }
                 .combine(nodeParams.liquidityPolicy) { (walletState, currentTip, feerate), policy -> TrySwapInFlow(currentTip, walletState, feerate, policy) }

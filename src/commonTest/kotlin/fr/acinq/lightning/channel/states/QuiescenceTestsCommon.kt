@@ -504,12 +504,12 @@ class QuiescenceTestsCommon : LightningTestSuite() {
 
     companion object {
         private fun createWalletWithFunds(keyManager: KeyManager, utxos: List<Satoshi>): List<WalletState.Utxo> {
-            val script = keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript
-            return utxos.map { amount ->
+            return utxos.mapIndexed { index, amount ->
+                val script = keyManager.swapInOnChainWallet.getSwapInProtocol(index).pubkeyScript
                 val txIn = listOf(TxIn(OutPoint(TxId(Lightning.randomBytes32()), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(Lightning.randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
-                WalletState.Utxo(parentTx.txid, 0, 42, parentTx)
+                WalletState.Utxo(parentTx.txid, 0, 42, parentTx, WalletState.Companion.AddressMeta.Derived(index))
             }
         }
 

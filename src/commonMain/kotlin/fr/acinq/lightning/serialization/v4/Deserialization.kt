@@ -261,6 +261,7 @@ object Deserialization {
             previousTx = readTransaction(),
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
+            addressIndex = readNumber().toInt(),
             userKey = readPublicKey(),
             serverKey = readPublicKey(),
             userRefundKey = readPublicKey(),
