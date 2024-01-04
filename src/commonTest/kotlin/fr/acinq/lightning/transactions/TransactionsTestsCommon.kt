@@ -497,10 +497,10 @@ class TransactionsTestsCommon : LightningTestSuite() {
 
         // we have a simple script tree with 2 leaves
         val scriptTree = ScriptTree.Branch(
-            ScriptTree.Leaf(ScriptLeaf(0, write(mutualScript).byteVector(), Script.TAPROOT_LEAF_TAPSCRIPT)),
-            ScriptTree.Leaf(ScriptLeaf(1, write(refundScript).byteVector(), Script.TAPROOT_LEAF_TAPSCRIPT))
+            ScriptTree.Leaf(0, mutualScript),
+            ScriptTree.Leaf(1, refundScript)
         )
-        val merkleRoot = ScriptTree.hash(scriptTree)
+        val merkleRoot = scriptTree.hash()
 
         // we choose a pubkey that does not have a corresponding private key: our swap-in tx can only be spent through the script path, not the key path
         val internalPubkey = XonlyPublicKey(PublicKey.fromHex("0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"))
@@ -524,9 +524,9 @@ class TransactionsTestsCommon : LightningTestSuite() {
             // we want to spend the left leave of the tree, so we provide the hash of the right leave (to be able to recompute the merkle root of the tree)
             val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) +
                     internalPubkey.value.toByteArray() +
-                    ScriptTree.hash(scriptTree.right).toByteArray()
+                    scriptTree.right.hash().toByteArray()
 
-            val txHash = Transaction.hashForSigningSchnorr(tx, 0, swapInTx.txOut, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, Script.ExecutionData(null, ScriptTree.hash(scriptTree.left)))
+            val txHash = Transaction.hashForSigningSchnorr(tx, 0, swapInTx.txOut, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, scriptTree.left.hash())
             val userSig = Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
             val serverSig = Crypto.signSchnorr(txHash, serverPrivateKey, Crypto.SchnorrTweak.NoTweak)
 
@@ -544,8 +544,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) +
                     internalPubkey.value.toByteArray() +
-                    ScriptTree.hash(scriptTree.left).toByteArray()
-            val txHash = Transaction.hashForSigningSchnorr(tx, 0, swapInTx.txOut, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, Script.ExecutionData(null, ScriptTree.hash(scriptTree.right)))
+                    scriptTree.left.hash().toByteArray()
+            val txHash = Transaction.hashForSigningSchnorr(tx, 0, swapInTx.txOut, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, scriptTree.right.hash())
             val userSig = Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
             val signedTx = tx.updateWitness(0, ScriptWitness.empty.push(userSig).push(refundScript).push(controlBlock))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -585,8 +585,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val userNonce = SecretNonce.generate(randomBytes32(), userPrivateKey, userPrivateKey.publicKey(), null, cache, null)
             val serverNonce = SecretNonce.generate(randomBytes32(), serverPrivateKey, serverPrivateKey.publicKey(), null, cache, null)
             val commonNonce = IndividualNonce.aggregate(listOf(userNonce.second, serverNonce.second))
-            val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce).getOrThrow()
-            val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first).getOrThrow()
+            val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce)
+            val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first)
             val ctx = swapInProtocol.session(tx, 0, swapInTx.txOut, commonNonce)
             val commonSig = ctx.add(listOf(userSig, serverSig))
             val signedTx = tx.updateWitness(0, swapInProtocol.witness(commonSig))
