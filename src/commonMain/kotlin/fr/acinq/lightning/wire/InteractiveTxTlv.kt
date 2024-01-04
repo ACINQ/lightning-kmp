@@ -8,6 +8,25 @@ import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector64
 
 sealed class TxAddInputTlv : Tlv {
+    /** When inputs use segwit v1+, we only need to include the previous txOut instead of the whole transaction. */
+    data class PreviousTxOut(val txId: TxId, val amount: Satoshi, val publicKeyScript: ByteVector) : TxAddInputTlv() {
+        override val tag: Long get() = PreviousTxOut.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeTxHash(TxHash(txId), out)
+            LightningCodecs.writeU64(amount.toLong(), out)
+            LightningCodecs.writeBytes(publicKeyScript, out)
+        }
+
+        companion object : TlvValueReader<PreviousTxOut> {
+            const val tag: Long = 0
+            override fun read(input: Input): PreviousTxOut = PreviousTxOut(
+                txId = TxId(LightningCodecs.txHash(input)),
+                amount = LightningCodecs.u64(input).sat,
+                publicKeyScript = LightningCodecs.bytes(input, input.availableBytes).byteVector(),
+            )
+        }
+    }
+
     /**
      * When doing a splice, the initiator must provide the previous funding txId instead of the whole transaction.
      * Note that we actually encode this as a tx_hash to be consistent with other lightning messages.

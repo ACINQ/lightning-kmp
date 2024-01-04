@@ -207,7 +207,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
                 val dustLimit = Transactions.dustLimit(tx.txOut[txOutput].publicKeyScript)
                 if (tx.txOut[txOutput].amount < dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, dustLimit))
-                if (Transaction.write(tx.stripInputWitnesses()).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(tx))
+                if (Script.getWitnessVersion(tx.txOut[txOutput].publicKeyScript) == 0 && Transaction.write(tx.stripInputWitnesses()).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(tx))
             }
             val previousFundingAmount = sharedUtxo?.second?.fundingAmount ?: 0.sat
             val totalAmountIn = previousFundingAmount + walletInputs.map { it.amount }.sum()
@@ -520,7 +520,11 @@ data class InteractiveTxSession(
                 val next = copy(toSend = toSend.tail(), localInputs = localInputs + msg.value, txCompleteSent = false)
                 val swapInParams = TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay)
                 val txAddInput = when (msg.value) {
-                    is InteractiveTxInput.LocalOnly -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence)
+                    is InteractiveTxInput.LocalOnly -> when (Script.getWitnessVersion(msg.value.txOut.publicKeyScript)) {
+                        // When using segwit v0, we must include the whole previous transaction.
+                        0 -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence)
+                        else -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.outPoint, msg.value.txOut, msg.value.sequence)
+                    }
                     is InteractiveTxInput.LocalSwapIn -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence, TlvStream(swapInParams))
                     is InteractiveTxInput.Shared -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.outPoint, msg.value.sequence)
                 }
@@ -546,11 +550,18 @@ data class InteractiveTxSession(
         }
         // We check whether this is the shared input or a remote input.
         val input = when (message.previousTx) {
-            null -> {
-                val expectedSharedOutpoint = fundingParams.sharedInput?.info?.outPoint ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
-                val receivedSharedOutpoint = message.sharedInput ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
-                if (expectedSharedOutpoint != receivedSharedOutpoint) return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
-                InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, message.sequence, previousFunding.toLocal, previousFunding.toRemote)
+            null -> when (val previousTxOut = message.tlvs.get<TxAddInputTlv.PreviousTxOut>()) {
+                null -> {
+                    val expectedSharedOutpoint = fundingParams.sharedInput?.info?.outPoint ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
+                    val receivedSharedOutpoint = message.sharedInput ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
+                    if (expectedSharedOutpoint != receivedSharedOutpoint) return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
+                    InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, message.sequence, previousFunding.toLocal, previousFunding.toRemote)
+                }
+                else -> when (Script.getWitnessVersion(previousTxOut.publicKeyScript)) {
+                    null -> return Either.Left(InteractiveTxSessionAction.NonSegwitInput(message.channelId, message.serialId, previousTxOut.txId, message.previousTxOutput))
+                    0 -> return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
+                    else -> InteractiveTxInput.RemoteOnly(message.serialId, OutPoint(previousTxOut.txId, message.previousTxOutput), TxOut(previousTxOut.amount, previousTxOut.publicKeyScript), message.sequence)
+                }
             }
             else -> {
                 if (message.previousTx.txOut.size <= message.previousTxOutput) {

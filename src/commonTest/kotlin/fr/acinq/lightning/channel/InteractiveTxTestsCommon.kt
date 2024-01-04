@@ -680,6 +680,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             TxAddInput(f.channelId, 7, previousTx, 1, 0U) to InteractiveTxSessionAction.NonSegwitInput(f.channelId, 7, previousTx.txid, 1),
             TxAddInput(f.channelId, 9, previousTx, 2, 0xfffffffeU) to InteractiveTxSessionAction.NonReplaceableInput(f.channelId, 9, previousTx.txid, 2, 0xfffffffe),
             TxAddInput(f.channelId, 9, previousTx, 2, 0xffffffffU) to InteractiveTxSessionAction.NonReplaceableInput(f.channelId, 9, previousTx.txid, 2, 0xffffffff),
+            TxAddInput(f.channelId, 11, OutPoint(previousTx, 0), previousTx.txOut[0], 0U) to InteractiveTxSessionAction.PreviousTxMissing(f.channelId, 11),
+            TxAddInput(f.channelId, 11, OutPoint(previousTx, 1), previousTx.txOut[1], 0U) to InteractiveTxSessionAction.NonSegwitInput(f.channelId, 11, previousTx.txid, 1)
         )
         testCases.forEach { (input, expected) ->
             val alice0 = InteractiveTxSession(f.channelKeysA, f.keyManagerA.swapInOnChainWallet, f.fundingParamsA, 0.msat, 0.msat, f.fundingContributionsA)
@@ -940,9 +942,18 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     fun `missing previous tx`() {
         val f = createFixture(100_000.sat, listOf(120_000.sat), 0.sat, listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
         val bob0 = InteractiveTxSession(f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, 0.msat, 0.msat, f.fundingContributionsB)
-        // Alice --- tx_add_output --> Bob
-        val failure = receiveInvalidMessage(bob0, TxAddInput(f.channelId, 0, null, 3, 0u))
-        assertIs<InteractiveTxSessionAction.PreviousTxMissing>(failure)
+        run {
+            // Input is missing the previous tx and the previous txOut.
+            val failure = receiveInvalidMessage(bob0, TxAddInput(f.channelId, 0, null, 3, 0u))
+            assertIs<InteractiveTxSessionAction.PreviousTxMissing>(failure)
+        }
+        run {
+            // Input is missing the previous tx but provides the previous txOut.
+            val input = TxAddInput(f.channelId, 0, OutPoint(TxId(randomBytes32()), 0), TxOut(150_000.sat, Script.pay2tr(randomKey().xOnlyPublicKey())), 0u)
+            val (bob1, _) = receiveMessage<TxComplete>(bob0, input)
+            assertEquals(1, bob1.remoteInputs.size)
+            assertIs<InteractiveTxInput.RemoteOnly>(bob1.remoteInputs.first())
+        }
     }
 
     @Test

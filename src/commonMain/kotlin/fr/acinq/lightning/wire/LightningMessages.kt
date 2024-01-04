@@ -330,6 +330,15 @@ data class TxAddInput(
         TlvStream(TxAddInputTlv.SharedInputTxId(sharedInput.txid))
     )
 
+    constructor(channelId: ByteVector32, serialId: Long, input: OutPoint, txOut: TxOut, sequence: UInt) : this(
+        channelId,
+        serialId,
+        null,
+        input.index,
+        sequence,
+        TlvStream(TxAddInputTlv.PreviousTxOut(input.txid, txOut.amount, txOut.publicKeyScript))
+    )
+
     override val type: Long get() = TxAddInput.type
     val sharedInput: OutPoint? = tlvs.get<TxAddInputTlv.SharedInputTxId>()?.let { OutPoint(it.txId, previousTxOutput) }
     val swapInParams = tlvs.get<TxAddInputTlv.SwapInParams>()
@@ -355,6 +364,7 @@ data class TxAddInput(
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
+            TxAddInputTlv.PreviousTxOut.tag to TxAddInputTlv.PreviousTxOut.Companion as TlvValueReader<TxAddInputTlv>,
             TxAddInputTlv.SharedInputTxId.tag to TxAddInputTlv.SharedInputTxId.Companion as TlvValueReader<TxAddInputTlv>,
             TxAddInputTlv.SwapInParams.tag to TxAddInputTlv.SwapInParams.Companion as TlvValueReader<TxAddInputTlv>,
         )
