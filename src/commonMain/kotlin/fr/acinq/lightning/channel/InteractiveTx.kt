@@ -441,7 +441,7 @@ data class SharedTransaction(
                     val serverNonce = receivedNonces[input.serialId]
                     require(serverNonce != null) { "missing server nonce for input ${input.serialId}" }
                     val commonNonce = IndividualNonce.aggregate(listOf(userNonce.second, serverNonce))
-                    val psig = keyManager.swapInOnChainWallet.signSwapInputUser(unsignedTx, i, previousOutputs, userNonce.first, commonNonce).getOrThrow()
+                    val psig = keyManager.swapInOnChainWallet.signSwapInputUser(unsignedTx, i, previousOutputs, userNonce.first, commonNonce)
                     TxSignatures.Companion.PartialSignature(psig, commonNonce)
                 }
         }.filterNotNull()
@@ -471,7 +471,7 @@ data class SharedTransaction(
                     require(serverNonce != null) { "missing server nonce for input ${input.serialId}" }
                     val commonNonce = IndividualNonce.aggregate(listOf(userNonce.second, serverNonce))
                     val swapInProtocol = SwapInProtocol(input.swapInParams.userKey, serverKey.publicKey(), input.swapInParams.userRefundKey, input.swapInParams.refundDelay)
-                    val psig = swapInProtocol.signSwapInputServer(unsignedTx, i, previousOutputs, commonNonce, serverKey, userNonce.first).getOrThrow()
+                    val psig = swapInProtocol.signSwapInputServer(unsignedTx, i, previousOutputs, commonNonce, serverKey, userNonce.first)
                     TxSignatures.Companion.PartialSignature(psig, commonNonce)
                 }
         }.filterNotNull()

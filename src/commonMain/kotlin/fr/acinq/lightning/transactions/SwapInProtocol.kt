@@ -21,8 +21,8 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
     // the redeem script is just the refund script. it is generated from this policy: and_v(v:pk(user),older(refundDelay))
     // it does not depend upon the user's or server's key, just the user's refund key and the refund delay
     val redeemScript = listOf(OP_PUSHDATA(userRefundKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
-    private val scriptTree = ScriptTree.Leaf(ScriptLeaf(0, Script.write(redeemScript).byteVector(), Script.TAPROOT_LEAF_TAPSCRIPT))
-    private val merkleRoot = ScriptTree.hash(scriptTree)
+    private val scriptTree = ScriptTree.Leaf(0, redeemScript)
+    private val merkleRoot = scriptTree.hash()
 
     // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
     private val internalPubKeyAndCache = KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey), null)
@@ -35,7 +35,6 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
     private val parity = commonPubKeyAndParity.second
     val pubkeyScript: List<ScriptElt> = Script.pay2tr(commonPubKey)
 
-    private val executionData = Script.ExecutionData(annex = null, tapleafHash = merkleRoot)
     private val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) + internalPubKey.value.toByteArray()
 
     fun isMine(txOut: TxOut): Boolean = txOut.publicKeyScript.contentEquals(Script.write(pubkeyScript))
@@ -46,24 +45,24 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
 
     fun witnessRefund(userSig: ByteVector64): ScriptWitness = ScriptWitness.empty.push(userSig).push(redeemScript).push(controlBlock)
 
-    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, commonNonce: AggregatedNonce): Result<ByteVector32> {
+    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, commonNonce: AggregatedNonce): ByteVector32 {
         require(userPrivateKey.publicKey() == userPublicKey)
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
         val cache1 = cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true).first
         val session = Session.build(commonNonce, txHash, cache1)
-        return kotlin.runCatching { session.sign(userNonce, userPrivateKey, cache1) }
+        return session.sign(userNonce, userPrivateKey, cache1)
     }
 
     fun signSwapInputRefund(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey): ByteVector64 {
-        val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, executionData)
+        val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, merkleRoot)
         return Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
     }
 
-    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): Result<ByteVector32> {
+    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): ByteVector32 {
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
         val cache1 = cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true).first
         val session = Session.build(commonNonce, txHash, cache1)
-        return kotlin.runCatching { session.sign(serverNonce, serverPrivateKey, cache1) }
+        return session.sign(serverNonce, serverPrivateKey, cache1)
     }
 
     fun session(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce): Session {

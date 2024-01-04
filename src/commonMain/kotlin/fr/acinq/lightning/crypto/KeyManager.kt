@@ -157,7 +157,7 @@ interface KeyManager {
             return legacySwapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()] , userPrivateKey)
         }
 
-        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: SecretNonce, commonNonce: AggregatedNonce): Result<ByteVector32> {
+        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: SecretNonce, commonNonce: AggregatedNonce): ByteVector32 {
             return swapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts, userPrivateKey, userNonce, commonNonce)
         }
 
