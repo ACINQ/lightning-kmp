@@ -212,7 +212,7 @@ object Deserialization {
         0x01 -> InteractiveTxInput.Shared(
             serialId = readNumber(),
             outPoint = readOutPoint(),
-            txOut = TxOut(Satoshi(0), ByteVector.empty),
+            publicKeyScript = ByteVector.empty,
             sequence = readNumber().toUInt(),
             localAmount = readNumber().msat,
             remoteAmount = readNumber().msat,
@@ -220,7 +220,7 @@ object Deserialization {
         0x02 -> InteractiveTxInput.Shared(
             serialId = readNumber(),
             outPoint = readOutPoint(),
-            txOut = readTxOut(),
+            publicKeyScript = readDelimitedByteArray().byteVector(),
             sequence = readNumber().toUInt(),
             localAmount = readNumber().msat,
             remoteAmount = readNumber().msat,

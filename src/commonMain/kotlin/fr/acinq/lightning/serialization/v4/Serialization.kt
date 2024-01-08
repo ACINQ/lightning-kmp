@@ -258,7 +258,7 @@ object Serialization {
         write(0x02)
         writeNumber(serialId)
         writeBtcObject(outPoint)
-        writeBtcObject(txOut)
+        writeDelimited(publicKeyScript.toByteArray())
         writeNumber(sequence.toLong())
         writeNumber(localAmount.toLong())
         writeNumber(remoteAmount.toLong())

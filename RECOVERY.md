@@ -28,7 +28,7 @@ swap-in transactions to your wallet are indistinguishable from other p2tr transa
 
 The swap transaction's output can be spent using either:
 
-1. A aggregated musig2 signature built from a partial signature from the user's wallet and a partial signature from the remote node
+1. An aggregated musig2 signature built from a partial signature from the user's wallet and a partial signature from the remote node
 2. A signature from the user's wallet after a refund delay
 
 Funds can be recovered using the second option and [Bitcoin Core](https://github.com/bitcoin/bitcoin).
@@ -38,7 +38,7 @@ This process will become simpler once popular on-chain wallets (such as [electru
 
 ### Get your wallet descriptor
 
-lighting-kmp provides both a public descriptor and private descriptor for your swap-in wallet.
+lightning-kmp provides both a public descriptor and private descriptor for your swap-in wallet.
 The public descriptor can be used to create a watch-only wallet for your swap-in funds.
 The private descriptor can be used to recover your swap-in funds, after the refund delay has passed.
 :warning: Do not share this private descriptor with anyone ! 
@@ -62,13 +62,13 @@ tr(<extended_public_key>,and_v(v:pk(<master_key>/<derivation_path>),older(<refun
 For example, your public descriptor will look like this:
 
 ```txt
-tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tprv8h9x3k1njDX6to9q2G3aEvcic81MJk64SUVMXFc2Eo2YQqPGCBpQa8uJDkTz3DMHVXEmvhuwf4ShjLQ7YaVr34x9DFT3y43cPzVKGB94r1n/*),older(25920)))#7dne06j5
+tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tpubDDqzCA42sbCmnGBcuuiAeLGqB9XHU5Gy1n68omeKf4pwFKe2padzkdXAPsDMWMdee879oPYrGrTS8sioqyjv8b6TztunE526eo4Au9kTef3/*),older(25920)))#z6mq2a3u
 ```
 
 And your private descriptor will look like this: 
 
 ```
-tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tpubDDqzCA42sbCmnGBcuuiAeLGqB9XHU5Gy1n68omeKf4pwFKe2padzkdXAPsDMWMdee879oPYrGrTS8sioqyjv8b6TztunE526eo4Au9kTef3/*),older(25920)))#z6mq2a3u
+tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tprv8h9x3k1njDX6to9q2G3aEvcic81MJk64SUVMXFc2Eo2YQqPGCBpQa8uJDkTz3DMHVXEmvhuwf4ShjLQ7YaVr34x9DFT3y43cPzVKGB94r1n/*),older(25920)))#7dne06j5
 ```
 
 We can import our private descriptor into our recovery wallet:

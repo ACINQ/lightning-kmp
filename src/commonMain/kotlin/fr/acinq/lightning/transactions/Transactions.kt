@@ -159,7 +159,7 @@ object Transactions {
      *     - [[ClaimDelayedOutputPenaltyTx]] spends [[HtlcTimeoutTx]] using the revocation secret (published by local)
      *   - [[HtlcPenaltyTx]] spends competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] for the same outputs (published by local)
      */
-    // legacy swap-in. witness is 2 signatures (73 bytes) + redeem script (77 bytes))
+    // legacy swap-in. witness is 2 signatures (73 bytes) + redeem script (77 bytes)
     const val swapInputWeightLegacy = 392
     // musig2 swap-in. witness is a single Schnorr signature (64 bytes)
     const val swapInputWeight = 233
