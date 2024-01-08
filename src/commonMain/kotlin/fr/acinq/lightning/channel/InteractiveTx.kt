@@ -255,7 +255,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         }
 
         /** Strip input witnesses to save space (there is a max size on txs due to lightning message limits). */
-        private fun Transaction.stripInputWitnesses(): Transaction = copy(txIn = txIn.map { it.updateWitness(ScriptWitness.empty) })
+        fun Transaction.stripInputWitnesses(): Transaction = copy(txIn = txIn.map { it.updateWitness(ScriptWitness.empty) })
 
         /** Compute the weight we need to pay on-chain fees for. */
         private fun computeWeightPaid(isInitiator: Boolean, sharedInput: SharedFundingInput?, sharedOutputScript: ByteVector, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>): Int {
