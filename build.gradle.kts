@@ -3,8 +3,8 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.9.21"
-    kotlin("plugin.serialization") version "1.9.21"
+    kotlin("multiplatform") version "1.9.22"
+    kotlin("plugin.serialization") version "1.9.22"
     id("org.jetbrains.dokka") version "1.9.10"
     `maven-publish`
 }
@@ -31,9 +31,9 @@ kotlin {
     val secpJniJvmVersion = "0.12.0"
 
     val serializationVersion = "1.6.2"
-    val coroutineVersion = "1.7.2"
+    val coroutineVersion = "1.7.3"
     val datetimeVersion = "0.4.0"
-    val ktorVersion = "2.3.2"
+    val ktorVersion = "2.3.7"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
 
     jvm {
