@@ -719,6 +719,29 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `disconnect -- new changes before splice_locked`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, bob1) = spliceOut(alice, bob, 70_000.sat)
+        val (nodes2, _, htlc) = addHtlc(50_000_000.msat, alice1, bob1)
+        val (alice3, actionsAlice3) = nodes2.first.process(ChannelCommand.Commitment.Sign)
+        assertIs<LNChannel<Normal>>(alice3)
+        assertEquals(2, actionsAlice3.findOutgoingMessages<CommitSig>().size)
+        actionsAlice3.findOutgoingMessages<CommitSig>().forEach { assertEquals(2, it.batchSize) }
+        // Bob disconnects before receiving Alice's commit_sig.
+        val (alice4, bob3, channelReestablishAlice) = disconnect(alice3, nodes2.second)
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
+        val (_, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        actionsAlice5.hasOutgoingMessage<UpdateAddHtlc>().also { assertEquals(htlc, it) }
+        assertEquals(2, actionsAlice5.findOutgoingMessages<CommitSig>().size)
+        actionsAlice5.findOutgoingMessages<CommitSig>().forEach { assertEquals(2, it.batchSize) }
+        val (bob5, _) = bob4.process(ChannelCommand.MessageReceived(htlc))
+        val (bob6, _) = bob5.process(ChannelCommand.MessageReceived(actionsAlice5.findOutgoingMessages<CommitSig>().first()))
+        val (_, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(actionsAlice5.findOutgoingMessages<CommitSig>().last()))
+        actionsBob7.findOutgoingMessage<RevokeAndAck>()
+    }
+
+    @Test
     fun `disconnect -- splice_locked sent`() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1) = spliceOut(alice, bob, 70_000.sat)

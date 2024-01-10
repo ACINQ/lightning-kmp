@@ -88,6 +88,7 @@
     JsonSerializers.ChannelReadyTlvSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigsSerializer::class,
+    JsonSerializers.CommitSigTlvBatchSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
     JsonSerializers.ClosingSerializer::class,
@@ -193,6 +194,7 @@ object JsonSerializers {
             polymorphic(Tlv::class) {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
+                subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
             }
@@ -511,6 +513,9 @@ object JsonSerializers {
 
     @Serializer(forClass = CommitSigTlv.AlternativeFeerateSigs::class)
     object CommitSigTlvAlternativeFeerateSigsSerializer
+
+    @Serializer(forClass = CommitSigTlv.Batch::class)
+    object CommitSigTlvBatchSerializer
 
     @Serializer(forClass = CommitSigTlv::class)
     object CommitSigTlvSerializer

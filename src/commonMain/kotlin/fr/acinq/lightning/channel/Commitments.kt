@@ -408,7 +408,7 @@ data class Commitment(
         }
     }
 
-    fun sendCommit(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, log: MDCLogger): Pair<Commitment, CommitSig> {
+    fun sendCommit(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, batchSize: Int, log: MDCLogger): Pair<Commitment, CommitSig> {
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
         val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(
@@ -444,6 +444,9 @@ data class Commitment(
                     CommitSigTlv.AlternativeFeerateSig(feerate, alternativeSig)
                 }
                 add(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs))
+            }
+            if (batchSize > 1) {
+                add(CommitSigTlv.Batch(batchSize))
             }
         }
         val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList(), TlvStream(tlvs))
@@ -732,7 +735,7 @@ data class Commitments(
     fun sendCommit(channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, List<CommitSig>>> {
         val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Either.Left(CannotSignBeforeRevocation(channelId))
         if (!changes.localHasChanges()) return Either.Left(CannotSignWithoutChanges(channelId))
-        val (active1, sigs) = active.map { it.sendCommit(channelKeys, params, changes, remoteNextPerCommitmentPoint, log) }.unzip()
+        val (active1, sigs) = active.map { it.sendCommit(channelKeys, params, changes, remoteNextPerCommitmentPoint, active.size, log) }.unzip()
         val commitments1 = copy(
             active = active1,
             remoteNextCommitInfo = Either.Left(WaitingForRevocation(localCommitIndex)),
@@ -741,15 +744,7 @@ data class Commitments(
                 remoteChanges = changes.remoteChanges.copy(acked = emptyList(), signed = changes.remoteChanges.acked)
             )
         )
-        val sigs1 = if (sigs.size > 1) {
-            sigs.map { sig ->
-                sig.copy(tlvStream = sig.tlvStream.copy(records = buildSet {
-                    addAll(sig.tlvStream.records)
-                    add(CommitSigTlv.Batch(sigs.size))
-                }))
-            }
-        } else sigs
-        return Either.Right(Pair(commitments1, sigs1))
+        return Either.Right(Pair(commitments1, sigs))
     }
 
     fun receiveCommit(commits: List<CommitSig>, channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
