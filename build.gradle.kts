@@ -90,6 +90,10 @@ kotlin {
                         implementation(ktor("client-curl"))
                     }
                 }
+                binaries {
+                    executable {
+                    }
+                }
             }
         }
 
