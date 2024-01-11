@@ -92,6 +92,7 @@ kotlin {
                 }
                 binaries {
                     executable {
+                        entryPoint = "fr.acinq.lightning.main"
                     }
                 }
             }
