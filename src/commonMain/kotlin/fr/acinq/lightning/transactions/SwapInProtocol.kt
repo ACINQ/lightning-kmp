@@ -89,8 +89,7 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
                 else -> DeterministicWallet.tprv
             }
             val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
-            val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
-            val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv$path/*),older($refundDelay)))"
+            val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
             val checksum = Descriptor.checksum(desc)
             return "$desc#$checksum"
         }

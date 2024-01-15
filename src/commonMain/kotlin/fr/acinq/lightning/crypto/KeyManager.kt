@@ -138,6 +138,7 @@ interface KeyManager {
         val legacySwapInProtocol = SwapInProtocolLegacy(userPublicKey, remoteServerPublicKey, refundDelay)
 
         val swapInProtocol = SwapInProtocol(userPublicKey, remoteServerPublicKey, userRefundPublicKey, refundDelay)
+        val descriptor = SwapInProtocol.descriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey)
 
         /**
          * The output script descriptor matching our legacy swap-in addresses.
