@@ -2,6 +2,7 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
+import fr.acinq.lightning.blockchain.electrum.WalletState.Companion.indexOrNull
 import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
@@ -79,6 +80,12 @@ data class WalletState(val addresses: Map<String, AddressState>) {
             data object Single : AddressMeta()
             data class Derived(val index: Int) : AddressMeta()
         }
+
+        val AddressMeta.indexOrNull: Int?
+            get() = when (this) {
+                is AddressMeta.Single -> null
+                is AddressMeta.Derived -> this.index
+            }
     }
 }
 
@@ -89,6 +96,10 @@ private sealed interface WalletCommand {
         data object ElectrumConnected : WalletCommand
         data class ElectrumNotification(val msg: ElectrumResponse) : WalletCommand
         data class AddAddress(val bitcoinAddress: String, val meta: WalletState.Companion.AddressMeta) : WalletCommand
+        data class AddAddressGenerator(val generator: AddressGenerator) : WalletCommand
+        data class GenerateAddress(val index: Int) : WalletCommand
+
+        class AddressGenerator(val generateAddress: (Int) -> String, val window: Int)
     }
 }
 
@@ -116,6 +127,9 @@ class ElectrumMiniWallet(
     private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
+    // generator, if used
+    private var addressGenerator: Pair<WalletCommand.Companion.AddressGenerator, Int>? = null
+
     // all current meta associated to each address
     private var addressMetas: Map<String, WalletState.Companion.AddressMeta> = emptyMap()
 
@@ -125,9 +139,15 @@ class ElectrumMiniWallet(
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
 
-    fun addAddress(bitcoinAddress: String, meta: WalletState.Companion.AddressMeta) {
+    fun addAddress(bitcoinAddress: String) {
         launch {
-            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, meta))
+            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, WalletState.Companion.AddressMeta.Single))
+        }
+    }
+
+    fun addAddressGenerator(generator: (Int) -> String, window: Int) {
+        launch {
+            mailbox.send(WalletCommand.Companion.AddAddressGenerator(WalletCommand.Companion.AddressGenerator(generator, window)))
         }
     }
 
@@ -160,8 +180,17 @@ class ElectrumMiniWallet(
                         .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx, addressMeta) }
                     val nextAddressState = WalletState.Companion.AddressState(addressMeta, utxos)
                     val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to nextAddressState))
-                    logger.info(mdc()) { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
+                    logger.info(mdc()) { "${unspents.size} utxo(s) for address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} balance=${nextWalletState.totalBalance}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
+                    when (val generator = addressGenerator) {
+                        null -> {}
+                        else -> if (addressMeta.indexOrNull == generator.second - 1 && nextAddressState.utxos.isNotEmpty()) {
+                            logger.info { "requesting generation of next sequence of addresses" }
+                            // if the window = 10 then the first series of address is 0 to 9 and addressGenerator.second = 10
+                            // then when address 9 has utxos, we request generation up until (and excluding) index 10 + 10 = 20, this will generate addresses 10 to 19
+                            mailbox.send(WalletCommand.Companion.GenerateAddress(addressMeta.indexOrNull!! + 1 + generator.first.window))
+                        }
+                    }
                     nextWalletState
                 }
             }
@@ -211,13 +240,30 @@ class ElectrumMiniWallet(
                         is WalletCommand.Companion.AddAddress -> {
                             computeScriptHash(it.bitcoinAddress)?.let { scriptHash ->
                                 if (!scriptHashes.containsKey(scriptHash)) {
-                                    logger.info(mdc()) { "adding new address=${it.bitcoinAddress}" }
+                                    logger.info(mdc())  { "adding new address=${it.bitcoinAddress} index=${it.meta.indexOrNull ?: "n/a"}" }
                                     scriptHashes = scriptHashes + (scriptHash to it.bitcoinAddress)
                                     addressMetas = addressMetas + (it.bitcoinAddress to it.meta)
                                     subscribe(scriptHash, it.bitcoinAddress)
                                 }
                             }
                         }
+                        is WalletCommand.Companion.AddAddressGenerator -> {
+                            if (addressGenerator == null) {
+                                logger.info(mdc())  { "adding new address generator" }
+                                addressGenerator = it.generator to 0
+                                mailbox.send(WalletCommand.Companion.GenerateAddress(it.generator.window))
+                            }
+                        }
+                        is WalletCommand.Companion.GenerateAddress -> {
+                            addressGenerator = addressGenerator?.let { (generator, currentIndex) ->
+                                logger.info { "generating addresses with index $currentIndex to ${it.index - 1}" }
+                                (currentIndex until it.index).forEach { addressIndex ->
+                                    mailbox.send(WalletCommand.Companion.AddAddress(generator.generateAddress(addressIndex), WalletState.Companion.AddressMeta.Derived(addressIndex)))
+                                }
+                                generator to maxOf(currentIndex, it.index)
+                            }
+                        }
+
                     }
                 }
             }
