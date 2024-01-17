@@ -20,7 +20,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     fun `single address with no utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory)
-        wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
+        wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz", WalletState.Companion.AddressMeta.Single)
 
         val walletState = wallet.walletStateFlow.first { it.addresses.isNotEmpty() }
 
@@ -35,7 +35,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     fun `single address with existing utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory)
-        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
+        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", WalletState.Companion.AddressMeta.Single)
 
         val walletState = wallet.walletStateFlow.first { it.addresses.isNotEmpty() }
 
@@ -101,9 +101,9 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     fun `multiple addresses`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory)
-        wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
-        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
-        wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV")
+        wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8", WalletState.Companion.AddressMeta.Single)
+        wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", WalletState.Companion.AddressMeta.Single)
+        wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV", WalletState.Companion.AddressMeta.Single)
 
         val walletState = wallet.walletStateFlow.first { it.utxos.size == 11 }
 
@@ -152,8 +152,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val client = connectToMainnetServer()
         val wallet1 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory, name = "addr-16MmJT")
         val wallet2 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory, name = "addr-14xb2H")
-        wallet1.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
-        wallet2.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
+        wallet1.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8", WalletState.Companion.AddressMeta.Single)
+        wallet2.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2", WalletState.Companion.AddressMeta.Single)
 
         val walletState1 = wallet1.walletStateFlow.first { it.utxos.size == 4 }
         val walletState2 = wallet2.walletStateFlow.first { it.utxos.size == 6 }

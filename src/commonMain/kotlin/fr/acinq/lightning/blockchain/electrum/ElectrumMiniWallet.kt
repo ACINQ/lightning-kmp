@@ -13,13 +13,13 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 
-data class WalletState(val addresses: Map<String, List<Utxo>>) {
-    val utxos: List<Utxo> = addresses.flatMap { it.value }
+data class WalletState(val addresses: Map<String, AddressState>) {
+    val utxos: List<Utxo> = addresses.flatMap { it.value.utxos }
     val totalBalance = utxos.map { it.amount }.sum()
 
     fun withoutReservedUtxos(reserved: Set<OutPoint>): WalletState {
         return copy(addresses = addresses.mapValues {
-            it.value.filter { item -> !reserved.contains(item.outPoint) }
+            it.value.copy(utxos = it.value.utxos.filter { item -> !reserved.contains(item.outPoint) })
         })
     }
 
@@ -72,6 +72,13 @@ data class WalletState(val addresses: Map<String, List<Utxo>>) {
 
     companion object {
         val empty: WalletState = WalletState(emptyMap())
+
+        data class AddressState(val meta: AddressMeta, val utxos: List<Utxo>)
+
+        sealed class AddressMeta {
+            data object Single : AddressMeta()
+            data class Derived(val index: Int) : AddressMeta()
+        }
     }
 }
 
@@ -81,7 +88,7 @@ private sealed interface WalletCommand {
     companion object {
         data object ElectrumConnected : WalletCommand
         data class ElectrumNotification(val msg: ElectrumResponse) : WalletCommand
-        data class AddAddress(val bitcoinAddress: String) : WalletCommand
+        data class AddAddress(val bitcoinAddress: String, val meta: WalletState.Companion.AddressMeta) : WalletCommand
     }
 }
 
@@ -109,15 +116,18 @@ class ElectrumMiniWallet(
     private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
+    // all current meta associated to each address
+    private var addressMetas: Map<String, WalletState.Companion.AddressMeta> = emptyMap()
+
     // all currently watched script hashes and their corresponding bitcoin address
     private var scriptHashes: Map<ByteVector32, String> = emptyMap()
 
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
 
-    fun addAddress(bitcoinAddress: String) {
+    fun addAddress(bitcoinAddress: String, meta: WalletState.Companion.AddressMeta) {
         launch {
-            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
+            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, meta))
         }
     }
 
@@ -131,22 +141,25 @@ class ElectrumMiniWallet(
     private val job: Job
 
     init {
+
         suspend fun WalletState.processSubscriptionResponse(msg: ScriptHashSubscriptionResponse): WalletState {
             val bitcoinAddress = scriptHashes[msg.scriptHash]
+            val addressMeta = bitcoinAddress?.let { addressMetas[it] }
             return when {
-                bitcoinAddress == null -> {
+                bitcoinAddress == null || addressMeta == null -> {
                     // this should never happen
                     logger.error { "received subscription response for script hash ${msg.scriptHash} that does not match any address" }
                     this
                 }
-                msg.status == null -> this.copy(addresses = this.addresses + (bitcoinAddress to listOf()))
+                msg.status == null -> this.copy(addresses = this.addresses + (bitcoinAddress to WalletState.Companion.AddressState(addressMeta, listOf())))
                 else -> {
                     val unspents = client.getScriptHashUnspents(msg.scriptHash)
-                    val previouslysKnownTxs = (_walletStateFlow.value.addresses[bitcoinAddress] ?: emptyList()).map { it.txId to it.previousTx }.toMap()
+                    val previouslysKnownTxs = (_walletStateFlow.value.addresses[bitcoinAddress]?.utxos ?: emptyList()).map { it.txId to it.previousTx }.toMap()
                     val utxos = unspents
                         .mapNotNull { item -> (previouslysKnownTxs[item.txid] ?: client.getTx(item.txid))?.let { item to it } } // only retrieve txs from electrum if necessary and ignore the utxo if the parent tx cannot be retrieved
                         .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx) }
-                    val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to utxos))
+                    val nextAddressState = WalletState.Companion.AddressState(addressMeta, utxos)
+                    val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to nextAddressState))
                     logger.info(mdc()) { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                     nextWalletState
@@ -182,7 +195,7 @@ class ElectrumMiniWallet(
                 client.notifications.collect { mailbox.send(WalletCommand.Companion.ElectrumNotification(it)) }
             }
             launch {
-                mailbox.consumeAsFlow().collect {
+                mailbox.consumeAsFlow().collect { it ->
                     when (it) {
                         is WalletCommand.Companion.ElectrumConnected -> {
                             logger.info(mdc()) { "electrum connected" }
@@ -200,6 +213,7 @@ class ElectrumMiniWallet(
                                 if (!scriptHashes.containsKey(scriptHash)) {
                                     logger.info(mdc()) { "adding new address=${it.bitcoinAddress}" }
                                     scriptHashes = scriptHashes + (scriptHash to it.bitcoinAddress)
+                                    addressMetas = addressMetas + (it.bitcoinAddress to it.meta)
                                     subscribe(scriptHash, it.bitcoinAddress)
                                 }
                             }

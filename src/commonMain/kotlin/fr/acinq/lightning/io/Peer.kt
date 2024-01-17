@@ -191,11 +191,11 @@ class Peer(
     }
 
     val finalWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "final")
-    val finalAddress: String = nodeParams.keyManager.finalOnChainWallet.address(addressIndex = 0L).also { finalWallet.addAddress(it) }
+    val finalAddress: String = nodeParams.keyManager.finalOnChainWallet.address(addressIndex = 0L).also { finalWallet.addAddress(it, WalletState.Companion.AddressMeta.Single) }
 
     val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
-    val legacySwapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.legacySwapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it) }
-    val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.swapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it) }
+    val legacySwapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.legacySwapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it, WalletState.Companion.AddressMeta.Single) }
+    val swapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.swapInProtocol.address(nodeParams.chain).also { swapInWallet.addAddress(it, WalletState.Companion.AddressMeta.Single) }
 
     private var swapInJob: Job? = null
 
