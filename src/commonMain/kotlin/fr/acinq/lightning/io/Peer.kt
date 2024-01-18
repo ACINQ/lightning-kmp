@@ -190,14 +190,8 @@ class Peer(
             }
     }
 
-    val finalWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "final")
-    val finalAddress: String = nodeParams.keyManager.finalOnChainWallet.address(addressIndex = 0L).also { finalWallet.addAddress(it) }
-
-    val swapInWallet = ElectrumMiniWallet(nodeParams.chainHash, watcher.client, scope, nodeParams.loggerFactory, name = "swap-in")
-    val legacySwapInAddress: String = nodeParams.keyManager.swapInOnChainWallet.legacySwapInProtocol.address(nodeParams.chain)
-        .also { swapInWallet.addAddress(it) }
-    val swapInAddressFlow = MutableStateFlow<String?>(null)
-        .also { swapInWallet.addAddressGenerator({ index -> nodeParams.keyManager.swapInOnChainWallet.getSwapInProtocol(index).address(nodeParams.chain) }, 20) }
+    val finalWallet = FinalWallet(nodeParams.chain, nodeParams.keyManager.finalOnChainWallet, watcher.client, scope, nodeParams.loggerFactory)
+    val swapInWallet = SwapInWallet(nodeParams.chain, nodeParams.keyManager.swapInOnChainWallet, watcher.client, addressGenerationWindow = 20, scope, nodeParams.loggerFactory)
 
     private var swapInJob: Job? = null
 
@@ -222,24 +216,6 @@ class Peer(
                 logger.debug { "notification: $it" }
                 input.send(WrappedChannelCommand(it.channelId, ChannelCommand.WatchReceived(it)))
             }
-        }
-        launch {
-            finalWallet.walletStateFlow
-                .distinctUntilChangedBy { it.totalBalance }
-                .collect { wallet ->
-                    logger.info { "${wallet.totalBalance} available on final wallet with ${wallet.utxos.size} utxos" }
-                }
-        }
-        launch {
-            // address rotation
-            swapInWallet.walletStateFlow
-                .onEach { it ->
-                    // take the first unused address with the lowest index
-                    swapInAddressFlow.value = it.addresses
-                        .filter { it.value.utxos.isEmpty() && it.value.meta is WalletState.Companion.AddressMeta.Derived }
-                        .minByOrNull { (it.value.meta as WalletState.Companion.AddressMeta.Derived).index }
-                        ?.key
-                }
         }
         launch {
             // we don't restore closed channels
@@ -468,7 +444,7 @@ class Peer(
         logger.info { "waiting for peer to be ready" }
         waitForPeerReady()
         swapInJob = launch {
-            swapInWallet.walletStateFlow
+            swapInWallet.wallet.walletStateFlow
                 .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip.first) }
                 .combine(swapInFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerate -> Triple(walletState, currentTip, feerate) }
                 .combine(nodeParams.liquidityPolicy) { (walletState, currentTip, feerate), policy -> TrySwapInFlow(currentTip, walletState, feerate, policy) }

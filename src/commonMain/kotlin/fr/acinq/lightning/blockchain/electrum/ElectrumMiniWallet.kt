@@ -1,9 +1,9 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.blockchain.electrum.WalletState.Companion.indexOrNull
-import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -110,18 +110,8 @@ class ElectrumMiniWallet(
     val chainHash: BlockHash,
     private val client: IElectrumClient,
     private val scope: CoroutineScope,
-    loggerFactory: LoggerFactory,
-    private val name: String = ""
+    private val logger: Logger
 ) : CoroutineScope by scope {
-
-    private val logger = MDCLogger(loggerFactory.newLogger(this::class))
-    private fun mdc(): Map<String, Any> {
-        return mapOf(
-            "wallet" to name,
-            "utxos" to walletStateFlow.value.utxos.size,
-            "balance" to walletStateFlow.value.totalBalance
-        )
-    }
 
     // state flow with the current balance
     private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap()))
@@ -180,7 +170,7 @@ class ElectrumMiniWallet(
                         .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx, addressMeta) }
                     val nextAddressState = WalletState.Companion.AddressState(addressMeta, utxos)
                     val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to nextAddressState))
-                    logger.info(mdc()) { "${unspents.size} utxo(s) for address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} balance=${nextWalletState.totalBalance}" }
+                    logger.info { "${unspents.size} utxo(s) for address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} balance=${nextWalletState.totalBalance}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                     when (val generator = addressGenerator) {
                         null -> {}
@@ -224,10 +214,10 @@ class ElectrumMiniWallet(
                 client.notifications.collect { mailbox.send(WalletCommand.Companion.ElectrumNotification(it)) }
             }
             launch {
-                mailbox.consumeAsFlow().collect { it ->
+                mailbox.consumeAsFlow().collect {
                     when (it) {
                         is WalletCommand.Companion.ElectrumConnected -> {
-                            logger.info(mdc()) { "electrum connected" }
+                            logger.info { "electrum connected" }
                             scriptHashes.forEach { (scriptHash, address) -> subscribe(scriptHash, address) }
                         }
 
@@ -240,7 +230,7 @@ class ElectrumMiniWallet(
                         is WalletCommand.Companion.AddAddress -> {
                             computeScriptHash(it.bitcoinAddress)?.let { scriptHash ->
                                 if (!scriptHashes.containsKey(scriptHash)) {
-                                    logger.info(mdc())  { "adding new address=${it.bitcoinAddress} index=${it.meta.indexOrNull ?: "n/a"}" }
+                                    logger.info { "adding new address=${it.bitcoinAddress} index=${it.meta.indexOrNull ?: "n/a"}" }
                                     scriptHashes = scriptHashes + (scriptHash to it.bitcoinAddress)
                                     addressMetas = addressMetas + (it.bitcoinAddress to it.meta)
                                     subscribe(scriptHash, it.bitcoinAddress)
@@ -249,7 +239,7 @@ class ElectrumMiniWallet(
                         }
                         is WalletCommand.Companion.AddAddressGenerator -> {
                             if (addressGenerator == null) {
-                                logger.info(mdc())  { "adding new address generator" }
+                                logger.info { "adding new address generator" }
                                 addressGenerator = it.generator to 0
                                 mailbox.send(WalletCommand.Companion.GenerateAddress(it.generator.window))
                             }

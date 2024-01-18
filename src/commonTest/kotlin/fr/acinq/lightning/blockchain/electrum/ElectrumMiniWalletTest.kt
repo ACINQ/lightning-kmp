@@ -7,6 +7,8 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.flow.first
+import org.kodein.log.LoggerFactory
+import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -14,10 +16,12 @@ import kotlin.time.Duration.Companion.seconds
 
 class ElectrumMiniWalletTest : LightningTestSuite() {
 
+    val logger = LoggerFactory.default.newLogger(this::class)
+
     @Test
     fun `single address with no utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger)
         wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
         val walletState = wallet.walletStateFlow.first { it.addresses.isNotEmpty() }
@@ -32,7 +36,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `single address with existing utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger)
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow.first { it.addresses.isNotEmpty() }
@@ -98,7 +102,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `multiple addresses`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger)
         wallet.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
         wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV")
@@ -149,15 +153,15 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `multiple addresses with generator`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger)
         wallet.addAddressGenerator(
             {
-            when (it) {
-                0 -> "16MmJT8VqW465GEyckWae547jKVfMB14P8"
-                1 -> "14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2"
-                2 -> "1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV"
-                else -> Bitcoin.addressFromPublicKeyScript(Block.LivenetGenesisBlock.hash, Script.pay2pkh(randomKey().publicKey())).result!!
-            }
+                when (it) {
+                    0 -> "16MmJT8VqW465GEyckWae547jKVfMB14P8"
+                    1 -> "14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2"
+                    2 -> "1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV"
+                    else -> Bitcoin.addressFromPublicKeyScript(Block.LivenetGenesisBlock.hash, Script.pay2pkh(randomKey().publicKey())).right!!
+                }
             },
             10
         )
@@ -209,8 +213,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `parallel wallets`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet1 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory, name = "addr-16MmJT")
-        val wallet2 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, loggerFactory, name = "addr-14xb2H")
+        val wallet1 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger)
+        val wallet2 = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger)
         wallet1.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
         wallet2.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
