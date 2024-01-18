@@ -8,6 +8,7 @@ import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.sat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import org.kodein.log.LoggerFactory
@@ -39,6 +40,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     fun `single address with existing utxos`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
+        delay(5.seconds)
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
         val walletState = wallet.walletStateFlow
