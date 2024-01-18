@@ -9,9 +9,9 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
@@ -402,15 +402,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
     }
 
     /**
-     * If we are disconnected, the LSP will forget pending pay-to-open requests. We need to do the same otherwise we
-     * will accept outdated ones.
+     * If we are disconnected, we must forget pending payment parts.
+     * Pay-to-open requests will be forgotten by the LSP, so we need to do the same otherwise we will accept outdated ones.
+     * Offered HTLCs that haven't been resolved will be re-processed when we reconnect.
      */
-    fun purgePayToOpenRequests() {
-        val valuesToReplace = pending.mapValues { entry -> entry.value.copy(parts = entry.value.parts.filter { it !is PayToOpenPart }.toSet()) }
-        pending.plusAssign(valuesToReplace)
-        val keysToRemove = pending.filterValues { it.parts.isEmpty() }.keys
-        pending.minusAssign(keysToRemove)
-    }
+    fun purgePendingPayments() = pending.clear()
 
     companion object {
         /** Convert an incoming htlc to a payment part abstraction. Payment parts are then summed together to reach the full payment amount. */
