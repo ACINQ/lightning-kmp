@@ -32,12 +32,14 @@ data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: PaymentO
     override val amount: MilliSatoshi = htlc.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = htlc.paymentHash
+    override fun toString(): String = "htlc(channelId=${htlc.channelId},id=${htlc.id})"
 }
 
 data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {
     override val amount: MilliSatoshi = payToOpenRequest.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
+    override fun toString(): String = "pay-to-open(amount=${payToOpenRequest.amountMsat})"
 }
 
 class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb) {
@@ -397,6 +399,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
      */
     suspend fun purgeExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): Int {
         return db.listExpiredPayments(fromCreatedAt, toCreatedAt).count {
+            logger.info { "purging unpaid expired payment for paymentHash=${it.paymentHash} from DB" }
             db.removeIncomingPayment(it.paymentHash)
         }
     }
@@ -406,7 +409,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
      * Pay-to-open requests will be forgotten by the LSP, so we need to do the same otherwise we will accept outdated ones.
      * Offered HTLCs that haven't been resolved will be re-processed when we reconnect.
      */
-    fun purgePendingPayments() = pending.clear()
+    fun purgePendingPayments() {
+        pending.forEach { (paymentHash, pending) -> logger.info { "purging pending incoming payments for paymentHash=$paymentHash: ${pending.parts.map { it.toString() }.joinToString(", ")}" } }
+        pending.clear()
+    }
 
     companion object {
         /** Convert an incoming htlc to a payment part abstraction. Payment parts are then summed together to reach the full payment amount. */

@@ -1211,7 +1211,6 @@ class Peer(
                         // another instance of the application may resolve them, which would lead to inconsistent
                         // payment handler state (whereas the channel state is kept consistent thanks to the encrypted
                         // channel backup).
-                        logger.info { "purging pending incoming payments from payment handler" }
                         incomingPaymentHandler.purgePendingPayments()
                     }
                 }
