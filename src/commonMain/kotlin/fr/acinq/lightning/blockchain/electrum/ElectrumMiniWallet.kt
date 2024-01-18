@@ -6,7 +6,6 @@ import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.consumeAsFlow
@@ -15,7 +14,6 @@ import kotlinx.coroutines.launch
 import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
-import kotlin.time.Duration.Companion.seconds
 
 data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<TxId, Transaction>) {
     /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent */
@@ -209,10 +207,12 @@ class ElectrumMiniWallet(
                             }
                         }
                         is WalletCommand.Companion.AddAddress -> {
-                            logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
                             computeScriptHash(it.bitcoinAddress)?.let { scriptHash ->
-                                scriptHashes = scriptHashes + (scriptHash to it.bitcoinAddress)
-                                subscribe(scriptHash, it.bitcoinAddress)
+                                if (!scriptHashes.containsKey(scriptHash)) {
+                                    logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
+                                    scriptHashes = scriptHashes + (scriptHash to it.bitcoinAddress)
+                                    subscribe(scriptHash, it.bitcoinAddress)
+                                }
                             }
                         }
                     }
