@@ -28,9 +28,11 @@ import fr.acinq.lightning.wire.LightningMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
@@ -42,16 +44,26 @@ suspend fun newPeers(
     initChannels: List<Pair<LNChannel<PersistedChannelState>, LNChannel<PersistedChannelState>>> = emptyList(),
     automateMessaging: Boolean = true
 ): PeerTuple {
-    // Create Alice and Bob peers
     val alice = buildPeer(scope, nodeParams.first, walletParams.first, databases = InMemoryDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.first.state) }
     })
     val bob = buildPeer(scope, nodeParams.second, walletParams.second, databases = InMemoryDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.second.state) }
     })
+    return connect(scope, 0, alice, bob, initChannels.size, expectChannelReady = true, automateMessaging)
+}
 
-    val aliceConnection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
-    val bobConnection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
+suspend fun connect(
+    scope: CoroutineScope,
+    connectionId: Long,
+    alice: Peer,
+    bob: Peer,
+    channelsCount: Int,
+    expectChannelReady: Boolean = true,
+    automateMessaging: Boolean = true
+): PeerTuple {
+    val aliceConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
+    val bobConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), MDCLogger(LoggerFactory.default.newLogger(PeerConnection::class)))
     alice.send(Connected(aliceConnection))
     bob.send(Connected(bobConnection))
 
@@ -59,58 +71,57 @@ suspend fun newPeers(
     val bob2alice = flow {
         while (scope.isActive) {
             val msg = bobConnection.output.receive()
-            println("Bob sends $msg")
+            println("[connection #$connectionId] Bob sends $msg")
             emit(msg)
         }
     }
     val alice2bob = flow {
         while (scope.isActive) {
             val msg = aliceConnection.output.receive()
-            println("Alice sends $msg")
+            println("[connection #$connectionId] Alice sends $msg")
             emit(msg)
         }
     }
 
     // Initialize Bob with Alice's features
-    bob.send(MessageReceived(bobConnection.id, Init(features = nodeParams.first.features.initFeatures())))
+    bob.send(MessageReceived(bobConnection.id, Init(features = alice.nodeParams.features.initFeatures())))
     // Initialize Alice with Bob's features
-    alice.send(MessageReceived(aliceConnection.id, Init(features = nodeParams.second.features.initFeatures())))
+    alice.send(MessageReceived(aliceConnection.id, Init(features = bob.nodeParams.features.initFeatures())))
 
-    // TODO update to depend on the initChannels size
-    if (initChannels.isNotEmpty()) {
-        val bobInit = scope.launch {
-            val bobChannelReestablish = bob2alice.expect<ChannelReestablish>()
-            alice.forward(bobChannelReestablish)
-            val bobChannelReady = bob2alice.expect<ChannelReady>()
-            alice.forward(bobChannelReady)
+    if (channelsCount > 0) {
+        // When there are multiple channels, the channel_reestablish and channel_ready messages from different channels
+        // may be interleaved, so we cannot guarantee a deterministic ordering and thus need independent coroutines.
+        val channelReestablish = listOf(
+            scope.launch { (0 until channelsCount).forEach { _ -> bob.forward(alice2bob.filterIsInstance<ChannelReestablish>().first(), connectionId) } },
+            scope.launch { (0 until channelsCount).forEach { _ -> alice.forward(bob2alice.filterIsInstance<ChannelReestablish>().first(), connectionId) } }
+        )
+        val channelReady = when (expectChannelReady) {
+            true -> listOf(
+                scope.launch { (0 until channelsCount).forEach { _ -> bob.forward(alice2bob.filterIsInstance<ChannelReady>().first(), connectionId) } },
+                scope.launch { (0 until channelsCount).forEach { _ -> alice.forward(bob2alice.filterIsInstance<ChannelReady>().first(), connectionId) } },
+            )
+            false -> listOf()
         }
-        val aliceInit = scope.launch {
-            val aliceChannelReestablish = alice2bob.expect<ChannelReestablish>()
-            bob.forward(aliceChannelReestablish)
-            val aliceChannelReady = alice2bob.expect<ChannelReady>()
-            bob.forward(aliceChannelReady)
-        }
-        bobInit.join()
-        aliceInit.join()
+        (channelReestablish + channelReady).joinAll()
     }
 
     // Wait until the Peers are ready
     alice.expectStatus(Connection.ESTABLISHED)
     bob.expectStatus(Connection.ESTABLISHED)
 
-    // Wait until the [Channels] are synchronised
-    alice.channelsFlow.first { it.size == initChannels.size && it.values.all { state -> state is Normal } }
-    bob.channelsFlow.first { it.size == initChannels.size && it.values.all { state -> state is Normal } }
+    // Wait until the Channels are synchronised
+    alice.channelsFlow.first { it.size == channelsCount && it.values.all { state -> state is Normal } }
+    bob.channelsFlow.first { it.size == channelsCount && it.values.all { state -> state is Normal } }
 
     if (automateMessaging) {
         scope.launch {
             bob2alice.collect {
-                alice.send(MessageReceived(bobConnection.id, it))
+                alice.send(MessageReceived(connectionId, it))
             }
         }
         scope.launch {
             alice2bob.collect {
-                bob.send(MessageReceived(aliceConnection.id, it))
+                bob.send(MessageReceived(connectionId, it))
             }
         }
     }

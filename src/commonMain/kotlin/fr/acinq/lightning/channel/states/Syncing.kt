@@ -436,7 +436,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
             // We also need to filter out htlcs that we already settled and signed (the settlement messages are being retransmitted).
             val alreadySettled = commitments1.changes.localChanges.signed.filterIsInstance<HtlcSettlementMessage>().map { it.id }.toSet()
             val htlcsToReprocess = commitments1.latest.remoteCommit.spec.htlcs.outgoings().filter { !alreadySettled.contains(it.id) }
-            logger.debug { "re-processing signed IN: $htlcsToReprocess" }
+            logger.info { "re-processing signed incoming HTLCs: ${htlcsToReprocess.map { it.id }.joinToString(", ")}" }
             sendQueue.addAll(htlcsToReprocess.map { ChannelAction.ProcessIncomingHtlc(it) })
 
             return Pair(commitments1, sendQueue)

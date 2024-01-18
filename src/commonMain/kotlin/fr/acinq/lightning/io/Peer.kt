@@ -1206,7 +1206,12 @@ class Peer(
                             _channels = _channels + (key to state1)
                             processActions(key, peerConnection, actions)
                         }
-                        incomingPaymentHandler.purgePayToOpenRequests()
+                        // We must purge pending incoming payments: incoming HTLCs that aren't settled yet will be
+                        // re-processed on reconnection, and we must not keep HTLCs pending in the payment handler since
+                        // another instance of the application may resolve them, which would lead to inconsistent
+                        // payment handler state (whereas the channel state is kept consistent thanks to the encrypted
+                        // channel backup).
+                        incomingPaymentHandler.purgePendingPayments()
                     }
                 }
             }

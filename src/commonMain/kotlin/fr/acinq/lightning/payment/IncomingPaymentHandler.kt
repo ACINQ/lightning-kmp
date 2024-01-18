@@ -9,9 +9,9 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
@@ -32,12 +32,14 @@ data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: PaymentO
     override val amount: MilliSatoshi = htlc.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = htlc.paymentHash
+    override fun toString(): String = "htlc(channelId=${htlc.channelId},id=${htlc.id})"
 }
 
 data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {
     override val amount: MilliSatoshi = payToOpenRequest.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
+    override fun toString(): String = "pay-to-open(amount=${payToOpenRequest.amountMsat})"
 }
 
 class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb) {
@@ -397,19 +399,19 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
      */
     suspend fun purgeExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): Int {
         return db.listExpiredPayments(fromCreatedAt, toCreatedAt).count {
+            logger.info { "purging unpaid expired payment for paymentHash=${it.paymentHash} from DB" }
             db.removeIncomingPayment(it.paymentHash)
         }
     }
 
     /**
-     * If we are disconnected, the LSP will forget pending pay-to-open requests. We need to do the same otherwise we
-     * will accept outdated ones.
+     * If we are disconnected, we must forget pending payment parts.
+     * Pay-to-open requests will be forgotten by the LSP, so we need to do the same otherwise we will accept outdated ones.
+     * Offered HTLCs that haven't been resolved will be re-processed when we reconnect.
      */
-    fun purgePayToOpenRequests() {
-        val valuesToReplace = pending.mapValues { entry -> entry.value.copy(parts = entry.value.parts.filter { it !is PayToOpenPart }.toSet()) }
-        pending.plusAssign(valuesToReplace)
-        val keysToRemove = pending.filterValues { it.parts.isEmpty() }.keys
-        pending.minusAssign(keysToRemove)
+    fun purgePendingPayments() {
+        pending.forEach { (paymentHash, pending) -> logger.info { "purging pending incoming payments for paymentHash=$paymentHash: ${pending.parts.map { it.toString() }.joinToString(", ")}" } }
+        pending.clear()
     }
 
     companion object {

@@ -503,7 +503,7 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
-    fun `payment test between two phoenix nodes -- manual mode`() = runSuspendTest {
+    fun `payment between two nodes -- manual mode`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
         val walletParams = Pair(
@@ -547,7 +547,108 @@ class PeerTest : LightningTestSuite() {
     }
 
     @Test
-    fun `payment test between two phoenix nodes -- automated messaging`() = runSuspendTest {
+    fun `payment between two nodes -- with disconnection`() = runSuspendTest {
+        // We create two channels between Alice and Bob to ensure that the payment is split in two parts.
+        val (aliceChan1, bobChan1) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 100_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val (aliceChan2, bobChan2) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 100_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val nodeParams = Pair(aliceChan1.staticParams.nodeParams, bobChan1.staticParams.nodeParams)
+        val walletParams = Pair(
+            // Alice must declare Bob as her trampoline node to enable direct payments.
+            TestConstants.Alice.walletParams.copy(trampolineNode = NodeUri(nodeParams.second.nodeId, "bob.com", 9735)),
+            TestConstants.Bob.walletParams
+        )
+        // Bob sends a multipart payment to Alice.
+        val (alice, bob, alice2bob1, bob2alice1) = newPeers(this, nodeParams, walletParams, listOf(aliceChan1 to bobChan1, aliceChan2 to bobChan2), automateMessaging = false)
+        val invoice = alice.createInvoice(randomBytes32(), 150_000_000.msat, Either.Left("test invoice"), null)
+        bob.send(SendPayment(UUID.randomUUID(), invoice.amount!!, alice.nodeParams.nodeId, invoice))
+
+        // Bob sends one HTLC on each channel.
+        val htlcs = listOf(
+            bob2alice1.expect<UpdateAddHtlc>(),
+            bob2alice1.expect<UpdateAddHtlc>(),
+        )
+        assertEquals(2, htlcs.map { it.channelId }.toSet().size)
+        val commitSigsBob = listOf(
+            bob2alice1.expect<CommitSig>(),
+            bob2alice1.expect<CommitSig>(),
+        )
+
+        // We cross-sign the HTLC on the first channel.
+        run {
+            val htlc = htlcs.find { it.channelId == aliceChan1.channelId }
+            assertNotNull(htlc)
+            alice.forward(htlc)
+            val commitSigBob = commitSigsBob.find { it.channelId == aliceChan1.channelId }
+            assertNotNull(commitSigBob)
+            alice.forward(commitSigBob)
+            bob.forward(alice2bob1.expect<RevokeAndAck>())
+            bob.forward(alice2bob1.expect<CommitSig>())
+            alice.forward(bob2alice1.expect<RevokeAndAck>())
+        }
+        // We start cross-signing the HTLC on the second channel.
+        run {
+            val htlc = htlcs.find { it.channelId == aliceChan2.channelId }
+            assertNotNull(htlc)
+            alice.forward(htlc)
+            val commitSigBob = commitSigsBob.find { it.channelId == aliceChan2.channelId }
+            assertNotNull(commitSigBob)
+            alice.forward(commitSigBob)
+            bob.forward(alice2bob1.expect<RevokeAndAck>())
+            bob.forward(alice2bob1.expect<CommitSig>())
+            bob2alice1.expect<RevokeAndAck>() // Alice doesn't receive Bob's revocation.
+        }
+
+        // We disconnect before Alice receives Bob's revocation on the second channel.
+        alice.disconnect()
+        alice.send(Disconnected)
+        bob.disconnect()
+        bob.send(Disconnected)
+
+        // On reconnection, Bob retransmits its revocation.
+        val (_, _, alice2bob2, bob2alice2) = connect(this, connectionId = 1, alice, bob, channelsCount = 2, expectChannelReady = false, automateMessaging = false)
+        alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
+
+        // Alice has now received the complete payment and fulfills it.
+        val fulfills = listOf(
+            alice2bob2.expect<UpdateFulfillHtlc>(),
+            alice2bob2.expect<UpdateFulfillHtlc>(),
+        )
+        val commitSigsAlice = listOf(
+            alice2bob2.expect<CommitSig>(),
+            alice2bob2.expect<CommitSig>(),
+        )
+
+        // We fulfill the first HTLC.
+        run {
+            val fulfill = fulfills.find { it.channelId == aliceChan1.channelId }
+            assertNotNull(fulfill)
+            bob.forward(fulfill, connectionId = 1)
+            val commitSigAlice = commitSigsAlice.find { it.channelId == aliceChan1.channelId }
+            assertNotNull(commitSigAlice)
+            bob.forward(commitSigAlice, connectionId = 1)
+            alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
+            alice.forward(bob2alice2.expect<CommitSig>(), connectionId = 1)
+            bob.forward(alice2bob2.expect<RevokeAndAck>(), connectionId = 1)
+        }
+
+        // We fulfill the second HTLC.
+        run {
+            val fulfill = fulfills.find { it.channelId == aliceChan2.channelId }
+            assertNotNull(fulfill)
+            bob.forward(fulfill, connectionId = 1)
+            val commitSigAlice = commitSigsAlice.find { it.channelId == aliceChan2.channelId }
+            assertNotNull(commitSigAlice)
+            bob.forward(commitSigAlice, connectionId = 1)
+            alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
+            alice.forward(bob2alice2.expect<CommitSig>(), connectionId = 1)
+            bob.forward(alice2bob2.expect<RevokeAndAck>(), connectionId = 1)
+        }
+
+        assertEquals(invoice.amount, alice.db.payments.getIncomingPayment(invoice.paymentHash)?.received?.amount)
+    }
+
+    @Test
+    fun `payment between two nodes -- automated messaging`() = runSuspendTest {
         val (alice0, bob0) = TestsHelper.reachNormal()
         val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
         val walletParams = Pair(
@@ -563,4 +664,5 @@ class PeerTest : LightningTestSuite() {
 
         alice.expectState<Normal> { commitments.availableBalanceForReceive() > alice0.commitments.availableBalanceForReceive() }
     }
+
 }
