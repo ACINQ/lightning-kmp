@@ -49,7 +49,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
         data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : ProcessAddResult()
         data class Rejected(override val actions: List<PeerCommand>, val incomingPayment: IncomingPayment?) : ProcessAddResult()
-        data class Pending(val incomingPayment: IncomingPayment) : ProcessAddResult() {
+        data class Pending(val incomingPayment: IncomingPayment, val pendingPayment: PendingPayment) : ProcessAddResult() {
             override val actions: List<PeerCommand> = listOf()
         }
     }
@@ -63,7 +63,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
      * @param totalAmount total amount that should be received.
      * @param startedAtSeconds time at which we received the first partial payment (in seconds).
      */
-    private data class PendingPayment(val parts: Set<PaymentPart>, val totalAmount: MilliSatoshi, val startedAtSeconds: Long) {
+    data class PendingPayment(val parts: Set<PaymentPart>, val totalAmount: MilliSatoshi, val startedAtSeconds: Long) {
         constructor(firstPart: PaymentPart) : this(setOf(firstPart), firstPart.totalAmount, currentTimestampSeconds())
 
         val amountReceived: MilliSatoshi = parts.map { it.amount }.sum()
@@ -246,7 +246,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                         payment.amountReceived < payment.totalAmount -> {
                             // Still waiting for more payments.
                             pending[paymentPart.paymentHash] = payment
-                            return ProcessAddResult.Pending(incomingPayment)
+                            return ProcessAddResult.Pending(incomingPayment, payment)
                         }
                         else -> {
                             if (payment.parts.filterIsInstance<PayToOpenPart>().isNotEmpty()) {
