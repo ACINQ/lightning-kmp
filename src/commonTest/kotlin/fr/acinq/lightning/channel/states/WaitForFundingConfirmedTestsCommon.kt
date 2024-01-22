@@ -226,7 +226,13 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         assertIs<RbfStatus.InProgress>(bob1.state.rbfStatus)
         assertEquals(actions1.size, 1)
         actions1.hasOutgoingMessage<TxAckRbf>()
-        val txAddInput = alice.state.latestFundingTx.sharedTx.tx.localInputs.first().run { TxAddInput(alice.channelId, serialId, previousTx, previousTxOutput, sequence) }
+        val input = alice.state.latestFundingTx.sharedTx.tx.localInputs.first()
+        val tlvs = when (input) {
+            is InteractiveTxInput.LocalSwapIn -> TlvStream<TxAddInputTlv>(input.swapInParams)
+            is InteractiveTxInput.LocalLegacySwapIn -> TlvStream<TxAddInputTlv>(TxAddInputTlv.SwapInParamsLegacy(input.userKey, input.serverKey, input.refundDelay))
+            is InteractiveTxInput.LocalOnly -> TlvStream.empty()
+        }
+        val txAddInput = input.run { TxAddInput(alice.channelId, serialId, previousTx, previousTxOutput, sequence, tlvs) }
         val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(txAddInput))
         assertEquals(actions2.size, 1)
         actions2.hasOutgoingMessage<TxAddInput>()
