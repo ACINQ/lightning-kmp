@@ -133,8 +133,10 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
     @Test
     fun `swap funds -- ignore inputs from pending channel`() {
         val (waitForFundingSigned, _) = WaitForFundingSignedTestsCommon.init()
+        val inputs = waitForFundingSigned.state.signingSession.fundingTx.tx.localInputs
         val wallet = run {
-            val utxos = waitForFundingSigned.state.signingSession.fundingTx.tx.localInputs.map { i -> WalletState.Utxo(i.outPoint.txid, i.outPoint.index.toInt(), 100, i.previousTx) }
+            val parentTxs = inputs.associate { it.outPoint.txid to Transaction(version = 2, txIn = listOf(), txOut = listOf(it.txOut), lockTime = 0) }
+            val utxos = inputs.map { i -> WalletState.Utxo(i.outPoint.txid, i.outPoint.index.toInt(), 100, parentTxs[i.outPoint.txid]!!) }
             WalletState(mapOf(dummyAddress to utxos))
         }
         val mgr = SwapInManager(listOf(waitForFundingSigned.state), logger)
@@ -142,7 +144,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         mgr.process(cmd).also { assertNull(it) }
 
         // The pending channel is aborted: we can reuse those inputs.
-        mgr.process(SwapInCommand.UnlockWalletInputs(wallet.utxos.map { it.outPoint }.toSet()))
+        mgr.process(SwapInCommand.UnlockWalletInputs(inputs.map { it.outPoint }.toSet()))
         mgr.process(cmd).also { assertNotNull(it) }
     }
 
@@ -154,7 +156,8 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         val inputs = alice1.commitments.active.map { it.localFundingStatus }.filterIsInstance<LocalFundingStatus.UnconfirmedFundingTx>().flatMap { it.sharedTx.tx.localInputs }
         assertEquals(3, inputs.size) // 1 initial funding input and 2 splice inputs
         val wallet = run {
-            val utxos = inputs.map { i -> WalletState.Utxo(i.outPoint.txid, i.outPoint.index.toInt(), 100, i.previousTx) }
+            val parentTxs = inputs.associate { it.outPoint.txid to Transaction(version = 2, txIn = listOf(), txOut = listOf(it.txOut), lockTime = 0) }
+            val utxos = inputs.map { i -> WalletState.Utxo(i.outPoint.txid, i.outPoint.index.toInt(), 100, parentTxs[i.outPoint.txid]!!) }
             WalletState(mapOf(dummyAddress to utxos))
         }
         val mgr = SwapInManager(listOf(alice1.state), logger)
@@ -162,7 +165,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         mgr.process(cmd).also { assertNull(it) }
 
         // The channel is aborted: we can reuse those inputs.
-        mgr.process(SwapInCommand.UnlockWalletInputs(wallet.utxos.map { it.outPoint }.toSet()))
+        mgr.process(SwapInCommand.UnlockWalletInputs(inputs.map { it.outPoint }.toSet()))
         mgr.process(cmd).also { result ->
             assertNotNull(result)
             assertEquals(3, result.walletInputs.size)
@@ -184,7 +187,8 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         assertEquals(1, alice3.commitments.all.size)
         assertIs<LocalFundingStatus.ConfirmedFundingTx>(alice3.commitments.latest.localFundingStatus)
         val wallet = run {
-            val utxos = inputs.map { i -> WalletState.Utxo(i.outPoint.txid, i.outPoint.index.toInt(), 100, i.previousTx) }
+            val parentTxs = inputs.associate { it.outPoint.txid to Transaction(version = 2, txIn = listOf(), txOut = listOf(it.txOut), lockTime = 0) }
+            val utxos = inputs.map { i -> WalletState.Utxo(i.outPoint.txid, i.outPoint.index.toInt(), 100, parentTxs[i.outPoint.txid]!!) }
             WalletState(mapOf(dummyAddress to utxos))
         }
         val mgr = SwapInManager(listOf(alice3.state), logger)

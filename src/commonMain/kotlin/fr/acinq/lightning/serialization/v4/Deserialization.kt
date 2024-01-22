@@ -246,8 +246,6 @@ object Deserialization {
         )
         0x03 -> InteractiveTxInput.LocalSwapIn(
             serialId = readNumber(),
-            previousTx = readTransaction(),
-            previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
             swapInParams = TxAddInputTlv.SwapInParams.read(this)
         )
@@ -272,8 +270,6 @@ object Deserialization {
        )
         0x03 -> InteractiveTxInput.RemoteSwapIn(
             serialId = readNumber(),
-            outPoint = readOutPoint(),
-            txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
             swapInParams = TxAddInputTlv.SwapInParams.read(this)
         )
