@@ -795,7 +795,17 @@ class Peer(
             is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
         }
         when (result) {
-            is IncomingPaymentHandler.ProcessAddResult.Accepted -> _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
+            is IncomingPaymentHandler.ProcessAddResult.Accepted -> {
+                if ((result.incomingPayment.received?.receivedWith?.size ?: 0) > 1) {
+                    // this was a multi-part payment, we signal that the task is finished
+                    nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.IncomingMultiPartPayment(result.incomingPayment.paymentHash)))
+                }
+                _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
+            }
+            is IncomingPaymentHandler.ProcessAddResult.Pending -> if (result.pendingPayment.parts.size == 1) {
+                // this is the first part of a multi-part payment, we request to keep the app alive to receive subsequent parts
+                nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskStarted(SensitiveTaskEvents.TaskIdentifier.IncomingMultiPartPayment(result.incomingPayment.paymentHash)))
+            }
             else -> Unit
         }
         result.actions.forEach { input.send(it) }

@@ -49,6 +49,7 @@ sealed interface SensitiveTaskEvents : NodeEvents {
         data class InteractiveTx(val channelId: ByteVector32, val fundingTxIndex: Long) : TaskIdentifier() {
             constructor(fundingParams: InteractiveTxParams) : this(fundingParams.channelId, (fundingParams.sharedInput as? SharedFundingInput.Multisig2of2)?.fundingTxIndex?.let { it + 1 } ?: 0)
         }
+        data class IncomingMultiPartPayment(val paymentHash: ByteVector32) : TaskIdentifier()
     }
     data class TaskStarted(val id: TaskIdentifier) : SensitiveTaskEvents
     data class TaskEnded(val id: TaskIdentifier) : SensitiveTaskEvents
