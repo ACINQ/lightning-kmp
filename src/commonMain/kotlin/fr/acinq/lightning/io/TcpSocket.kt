@@ -21,7 +21,7 @@ interface TcpSocket {
 
     sealed class TLS {
         /** Used for Lightning connections */
-        object DISABLED : TLS()
+        data object DISABLED : TLS()
 
         /** Used for Electrum servers when expecting a valid certificate */
         data class TRUSTED_CERTIFICATES(
@@ -33,7 +33,7 @@ interface TcpSocket {
         ) : TLS()
 
         /** Only used in unit tests */
-        object UNSAFE_CERTIFICATES : TLS()
+        data object UNSAFE_CERTIFICATES : TLS()
 
         /**
          * Used for Electrum servers when expecting a specific public key

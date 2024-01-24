@@ -86,7 +86,7 @@ val List<WalletState.Utxo>.balance get() = this.map { it.amount }.sum()
 
 private sealed interface WalletCommand {
     companion object {
-        object ElectrumConnected : WalletCommand
+        data object ElectrumConnected : WalletCommand
         data class ElectrumNotification(val msg: ElectrumResponse) : WalletCommand
         data class AddAddress(val bitcoinAddress: String) : WalletCommand
     }

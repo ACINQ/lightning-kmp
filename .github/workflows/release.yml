@@ -43,7 +43,7 @@ jobs:
       - name: Publish Linux
         if: matrix.os == 'ubuntu-latest'
         shell: bash
-        run: ./gradlew publishLinuxPublicationToMavenLocal
+        run: ./gradlew publishLinuxX64PublicationToMavenLocal
       - name: Publish MacOS
         if: matrix.os == 'macOS-latest'
         shell: bash

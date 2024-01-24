@@ -5,7 +5,6 @@ import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.kodein.log.LoggerFactory
 import platform.Foundation.NSData
-import platform.Network.*
 import platform.posix.ECONNREFUSED
 import platform.posix.ECONNRESET
 import kotlin.coroutines.resume
@@ -14,8 +13,9 @@ import swift.phoenix_crypto.NativeSocket
 import swift.phoenix_crypto.NativeSocketError
 import swift.phoenix_crypto.NativeSocketTLS
 
-class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
+class IosTcpSocket @OptIn(ExperimentalForeignApi::class) constructor(private val socket: NativeSocket) : TcpSocket {
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun send(
         bytes: ByteArray?,
         offset: Int,
@@ -42,6 +42,7 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         )
     }
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun receiveAvailable(
         buffer: ByteArray,
         offset: Int,
@@ -67,6 +68,7 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         )
     }
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun receiveFully(
         buffer: ByteArray,
         offset: Int,
@@ -92,6 +94,7 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         )
     }
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun startTls(
         tls: TcpSocket.TLS
     ): TcpSocket = suspendCancellableCoroutine { continuation ->
@@ -114,6 +117,7 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
         )
     }
 
+    @OptIn(ExperimentalForeignApi::class)
     override fun close() {
 
         // @kotlinx.cinterop.ObjCMethod
@@ -125,7 +129,7 @@ class IosTcpSocket(private val socket: NativeSocket) : TcpSocket {
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 
-    @OptIn(ExperimentalUnsignedTypes::class)
+    @OptIn(ExperimentalUnsignedTypes::class, ExperimentalForeignApi::class)
     override suspend fun connect(
         host: String,
         port: Int,
@@ -156,6 +160,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     }
 }
 
+@OptIn(ExperimentalForeignApi::class)
 fun TcpSocket.TLS.toNativeSocketTLS(): NativeSocketTLS {
     return when (this) {
         TcpSocket.TLS.DISABLED ->
@@ -175,6 +180,7 @@ sealed class NativeSocketException : Exception() {
     data class TLS(val status: Int) : NativeSocketException()
 }
 
+@OptIn(ExperimentalForeignApi::class)
 private fun NativeSocketError.toIOException(): TcpSocket.IOException {
     return when {
         isPosixErrorCode() -> {

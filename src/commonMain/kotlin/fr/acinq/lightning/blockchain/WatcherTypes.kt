@@ -5,12 +5,12 @@ import fr.acinq.lightning.utils.Try
 import fr.acinq.lightning.utils.runTrying
 
 sealed class BitcoinEvent
-object BITCOIN_FUNDING_DEPTHOK : BitcoinEvent()
-object BITCOIN_FUNDING_SPENT : BitcoinEvent()
-object BITCOIN_OUTPUT_SPENT : BitcoinEvent()
+data object BITCOIN_FUNDING_DEPTHOK : BitcoinEvent()
+data object BITCOIN_FUNDING_SPENT : BitcoinEvent()
+data object BITCOIN_OUTPUT_SPENT : BitcoinEvent()
 data class BITCOIN_TX_CONFIRMED(val tx: Transaction) : BitcoinEvent()
 data class BITCOIN_PARENT_TX_CONFIRMED(val childTx: Transaction) : BitcoinEvent()
-object BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED : BitcoinEvent()
+data object BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED : BitcoinEvent()
 
 /**
  * generic "Watch" request

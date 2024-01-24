@@ -140,8 +140,8 @@ sealed class LocalFundingStatus {
 }
 
 sealed class RemoteFundingStatus {
-    object NotLocked : RemoteFundingStatus()
-    object Locked : RemoteFundingStatus()
+    data object NotLocked : RemoteFundingStatus()
+    data object Locked : RemoteFundingStatus()
 }
 
 /** A minimal commitment for a given funding tx. */

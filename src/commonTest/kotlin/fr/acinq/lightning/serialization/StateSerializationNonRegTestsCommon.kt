@@ -6,8 +6,8 @@ import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.encodeToString
 import org.kodein.memory.file.*
 import org.kodein.memory.system.Environment
-import org.kodein.memory.text.putString
 import org.kodein.memory.text.readString
+import org.kodein.memory.text.writeString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -29,7 +29,7 @@ class StateSerializationNonRegTestsCommon {
                 val tmpFile = path.resolve("actual.json")
                 if (debug) {
                     tmpFile.openWriteableFile().run {
-                        putString(json)
+                        writeString(json)
                         close()
                     }
                 }

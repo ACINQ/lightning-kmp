@@ -42,7 +42,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
         data class ProcessNotification(val notification: ElectrumResponse) : WatcherCommand
         data class ProcessConnectionStatus(val status: ElectrumConnectionStatus) : WatcherCommand
         data class Publish(val tx: Transaction) : WatcherCommand
-        object NotifyIfReady : WatcherCommand
+        data object NotifyIfReady : WatcherCommand
     }
 
     private data class State(
