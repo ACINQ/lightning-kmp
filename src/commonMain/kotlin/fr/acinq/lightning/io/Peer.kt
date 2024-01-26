@@ -454,7 +454,6 @@ class Peer(
         waitForPeerReady()
         swapInJob = launch {
             swapInWallet.walletStateFlow
-                .filter { it.consistent }
                 .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip.first) }
                 .combine(swapInFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerate -> Triple(walletState, currentTip, feerate) }
                 .combine(nodeParams.liquidityPolicy) { (walletState, currentTip, feerate), policy -> TrySwapInFlow(currentTip, walletState, feerate, policy) }
