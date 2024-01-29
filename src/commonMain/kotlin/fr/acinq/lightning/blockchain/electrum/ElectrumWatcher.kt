@@ -123,7 +123,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
 
         suspend fun processScripHashSubscriptionResponse(response: ScriptHashSubscriptionResponse) = runCatching {
             val existingStatus = state.scriptHashStatus[response.scriptHash]
-            if (response.status.isNotEmpty() && response.status != existingStatus) {
+            if (response.status != null && response.status != existingStatus) {
                 state = state.copy(scriptHashStatus = state.scriptHashStatus + (response.scriptHash to response.status))
                 val history = client.getScriptHashHistory(response.scriptHash)
                 processScripHashHistory(history)

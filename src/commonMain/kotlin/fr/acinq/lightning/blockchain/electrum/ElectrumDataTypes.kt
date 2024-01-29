@@ -162,7 +162,10 @@ data class ScriptHashSubscription(val scriptHash: ByteVector32) : ElectrumReques
     override val method: String = "blockchain.scripthash.subscribe"
 }
 
-data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String = "") : ElectrumSubscriptionResponse
+// a null status means that this script hash has never been used (i.e. no transactions were ever sent to the corresponding script)
+// a script which has no UTXOs but has already been used will have a non-null status (which is basically a hash of all received transactions and their number
+// of confirmations)
+data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String?) : ElectrumSubscriptionResponse
 
 data object HeaderSubscription : ElectrumRequest() {
     override val method: String = "blockchain.headers.subscribe"
@@ -209,7 +212,7 @@ object ElectrumResponseDeserializer : DeserializationStrategy<Either<ElectrumSub
                     "blockchain.scripthash.subscribe" -> {
                         val scriptHash = params[0].jsonPrimitive.content
                         val status = params[1].jsonPrimitive.contentOrNull
-                        Either.Left(ScriptHashSubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status ?: ""))
+                        Either.Left(ScriptHashSubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status))
                     }
 
                     else -> throw SerializationException("JSON-RPC Method ${method.content} is not supported")
@@ -303,8 +306,8 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
 
         is ScriptHashSubscription -> {
             val status = when (rpcResponse.result) {
-                is JsonPrimitive -> rpcResponse.result.jsonPrimitive.content
-                else -> ""
+                is JsonPrimitive -> rpcResponse.result.jsonPrimitive.contentOrNull
+                else -> null
             }
             ScriptHashSubscriptionResponse(request.scriptHash, status)
         }
