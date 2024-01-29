@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.crypto.musig2.AggregatedNonce
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.DefaultSwapInParams
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -158,7 +159,7 @@ interface KeyManager {
             return legacySwapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()] , userPrivateKey)
         }
 
-        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: SecretNonce, commonNonce: AggregatedNonce): ByteVector32 {
+        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: SecretNonce, commonNonce: AggregatedNonce): Either<Throwable, ByteVector32> {
             return swapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts, userPrivateKey, userNonce, commonNonce)
         }
 
