@@ -10,6 +10,7 @@ import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.crypto.musig2.KeyAggCache
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
+import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -581,15 +582,30 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             // this is the beginning of an interactive musig2 signing session. if user and server are disconnected before they have exchanged partial
             // signatures they will have to start again with fresh nonces
-            val (_, cache) = KeyAggCache.add(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()), null)
-            val userNonce = SecretNonce.generate(randomBytes32(), userPrivateKey, userPrivateKey.publicKey(), null, cache, null)
-            val serverNonce = SecretNonce.generate(randomBytes32(), serverPrivateKey, serverPrivateKey.publicKey(), null, cache, null)
-            val commonNonce = IndividualNonce.aggregate(listOf(userNonce.second, serverNonce.second))
-            val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce)
-            val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first)
-            val ctx = swapInProtocol.session(tx, 0, swapInTx.txOut, commonNonce)
-            val commonSig = ctx.add(listOf(userSig, serverSig))
-            val signedTx = tx.updateWitness(0, swapInProtocol.witness(commonSig))
+
+            val commonSig = KeyAggCache.add(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
+                .flatMap { (_, cache) ->
+                    SecretNonce.generate(randomBytes32(), userPrivateKey, userPrivateKey.publicKey(), null, cache, null)
+                        .flatMap { userNonce ->
+                            SecretNonce.generate(randomBytes32(), serverPrivateKey, serverPrivateKey.publicKey(), null, cache, null)
+                                .flatMap { serverNonce ->
+                                    IndividualNonce.aggregate(listOf(userNonce.second, serverNonce.second))
+                                        .flatMap { commonNonce ->
+                                            swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce)
+                                                .flatMap { userSig ->
+                                                    swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first)
+                                                        .flatMap { serverSig ->
+                                                            swapInProtocol.session(tx, 0, swapInTx.txOut, commonNonce)
+                                                                .flatMap { session -> session.add(listOf(userSig, serverSig)) }
+                                                        }
+                                                }
+                                        }
+                                }
+                        }
+                }
+            assertTrue(commonSig.isRight)
+
+            val signedTx = tx.updateWitness(0, swapInProtocol.witness(commonSig.right!!))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
 
