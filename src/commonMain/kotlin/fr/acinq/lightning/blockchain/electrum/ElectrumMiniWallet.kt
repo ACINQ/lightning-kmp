@@ -145,7 +145,12 @@ class ElectrumMiniWallet(
         suspend fun WalletState.processSubscriptionResponse(msg: ScriptHashSubscriptionResponse): WalletState {
             val bitcoinAddress = scriptHashes[msg.scriptHash]
             return when {
-                bitcoinAddress == null || msg.status.isEmpty() -> this
+                bitcoinAddress == null -> {
+                    // this should never happen
+                    logger.error { "received subscription response for script hash ${msg.scriptHash} that does not match any address" }
+                    this
+                }
+                msg.status == null -> this.copy(addresses = this.addresses + (bitcoinAddress to listOf()))
                 else -> {
                     val unspents = client.getScriptHashUnspents(msg.scriptHash)
                     val newUtxos = unspents.minus((_walletStateFlow.value.addresses[bitcoinAddress] ?: emptyList()).toSet())
@@ -178,6 +183,7 @@ class ElectrumMiniWallet(
                     logger.error { "cannot subscribe to $bitcoinAddress ($result)" }
                     null
                 }
+
                 is AddressToPublicKeyScriptResult.Success -> {
                     val pubkeyScript = ByteVector(Script.write(result.script))
                     return ElectrumClient.computeScriptHash(pubkeyScript)
@@ -201,11 +207,13 @@ class ElectrumMiniWallet(
                             logger.mdcinfo { "electrum connected" }
                             scriptHashes.forEach { (scriptHash, address) -> subscribe(scriptHash, address) }
                         }
+
                         is WalletCommand.Companion.ElectrumNotification -> {
                             if (it.msg is ScriptHashSubscriptionResponse) {
                                 _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
                             }
                         }
+
                         is WalletCommand.Companion.AddAddress -> {
                             computeScriptHash(it.bitcoinAddress)?.let { scriptHash ->
                                 if (!scriptHashes.containsKey(scriptHash)) {
