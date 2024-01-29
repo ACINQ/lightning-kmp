@@ -203,11 +203,11 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
             localOutputs: List<TxOut>,
             changePubKey: PublicKey? = null
         ): Either<FundingContributionFailure, FundingContributions> {
-            walletInputs.forEach { (tx, txOutput) ->
-                if (tx.txOut.size <= txOutput) return Either.Left(FundingContributionFailure.InputOutOfBounds(tx.txid, txOutput))
-                val dustLimit = Transactions.dustLimit(tx.txOut[txOutput].publicKeyScript)
-                if (tx.txOut[txOutput].amount < dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(tx.txid, txOutput, tx.txOut[txOutput].amount, dustLimit))
-                if (Transaction.write(tx.stripInputWitnesses()).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(tx))
+            walletInputs.forEach { utxo ->
+                if (utxo.previousTx.txOut.size <= utxo.outputIndex) return Either.Left(FundingContributionFailure.InputOutOfBounds(utxo.txId, utxo.outputIndex))
+                val dustLimit = Transactions.dustLimit(utxo.previousTx.txOut[utxo.outputIndex].publicKeyScript)
+                if (utxo.amount < dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(utxo.txId, utxo.outputIndex, utxo.amount, dustLimit))
+                if (Transaction.write(utxo.previousTx.stripInputWitnesses()).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(utxo.previousTx))
             }
             val previousFundingAmount = sharedUtxo?.second?.fundingAmount ?: 0.sat
             val totalAmountIn = previousFundingAmount + walletInputs.map { it.amount }.sum()

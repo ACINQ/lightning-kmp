@@ -1263,7 +1263,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 val txIn = listOf(TxIn(OutPoint(TxId(Lightning.randomBytes32()), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
-                WalletState.Utxo(parentTx, 0, 42)
+                WalletState.Utxo(parentTx.txid, 0, 42, parentTx)
             }
         }
 

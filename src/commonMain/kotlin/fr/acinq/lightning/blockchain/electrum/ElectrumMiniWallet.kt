@@ -15,13 +15,8 @@ import org.kodein.log.Logger
 import org.kodein.log.LoggerFactory
 import org.kodein.log.newLogger
 
-data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parentTxs: Map<TxId, Transaction>) {
-    /** Electrum sends parent txs separately from utxo outpoints, this boolean indicates when the wallet is consistent */
-    val consistent: Boolean = addresses.flatMap { it.value }.all { parentTxs.containsKey(it.txid) }
-    val utxos: List<Utxo> = addresses
-        .flatMap { it.value }
-        .filter { parentTxs.containsKey(it.txid) }
-        .map { Utxo(parentTxs[it.txid]!!, it.outputIndex, it.blockHeight) }
+data class WalletState(val addresses: Map<String, List<Utxo>>) {
+    val utxos: List<Utxo> = addresses.flatMap { it.value }
     val totalBalance = utxos.map { it.amount }.sum()
 
     fun withoutReservedUtxos(reserved: Set<OutPoint>): WalletState {
@@ -34,7 +29,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
         swapInParams = swapInParams, currentBlockHeight = currentBlockHeight, all = utxos,
     )
 
-    data class Utxo(val previousTx: Transaction, val outputIndex: Int, val blockHeight: Long) {
+    data class Utxo(val txId: TxId, val outputIndex: Int, val blockHeight: Long, val previousTx: Transaction) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
         val amount = previousTx.txOut[outputIndex].amount
     }
@@ -78,7 +73,7 @@ data class WalletState(val addresses: Map<String, List<UnspentItem>>, val parent
     }
 
     companion object {
-        val empty: WalletState = WalletState(emptyMap(), emptyMap())
+        val empty: WalletState = WalletState(emptyMap())
     }
 }
 
@@ -117,7 +112,7 @@ class ElectrumMiniWallet(
     }
 
     // state flow with the current balance
-    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap(), emptyMap()))
+    private val _walletStateFlow = MutableStateFlow(WalletState(emptyMap()))
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     // all currently watched script hashes and their corresponding bitcoin address
@@ -148,11 +143,11 @@ class ElectrumMiniWallet(
                 bitcoinAddress == null || msg.status.isEmpty() -> this
                 else -> {
                     val unspents = client.getScriptHashUnspents(msg.scriptHash)
-                    val newUtxos = unspents.minus((_walletStateFlow.value.addresses[bitcoinAddress] ?: emptyList()).toSet())
-                    // request new parent txs
-                    val parentTxs = newUtxos.mapNotNull { utxo -> client.getTx(utxo.txid) }
-                    parentTxs.forEach { tx -> logger.mdcinfo { "received parent transaction with txid=${tx.txid}" } }
-                    val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to unspents), parentTxs = this.parentTxs + parentTxs.associateBy { it.txid })
+                    val previouslysKnownTxs = (_walletStateFlow.value.addresses[bitcoinAddress] ?: emptyList()).map { it.txId to it.previousTx }.toMap()
+                    val utxos = unspents
+                        .mapNotNull { item -> (previouslysKnownTxs[item.txid] ?: client.getTx(item.txid))?.let { item to it } } // only retrieve txs from electrum if necessary and ignore the utxo if the parent tx cannot be retrieved
+                        .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx) }
+                    val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to utxos))
                     logger.mdcinfo { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                     nextWalletState

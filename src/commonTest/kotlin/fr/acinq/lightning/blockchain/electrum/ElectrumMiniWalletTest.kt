@@ -24,9 +24,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
         wallet.addAddress("bc1qyjmhaptq78vh5j7tnzu7ujayd8sftjahphxppz")
 
-        val walletState = wallet.walletStateFlow
-            .filter { it.addresses.size == 1 && it.consistent }
-            .first()
+        val walletState = wallet.walletStateFlow.first { it.addresses.isNotEmpty() }
 
         assertEquals(0, walletState.utxos.size)
         assertEquals(0.sat, walletState.totalBalance)
@@ -41,9 +39,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, LoggerFactory.default)
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
-        val walletState = wallet.walletStateFlow
-            .filter { it.addresses.size == 1 && it.consistent }
-            .first()
+        val walletState = wallet.walletStateFlow.first { it.addresses.isNotEmpty() }
 
         // This address has 3 transactions confirmed at block 100 002 and 3 transactions confirmed at block 100 003.
         assertEquals(6, walletState.utxos.size)
@@ -111,22 +107,20 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         wallet.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
         wallet.addAddress("1NHFyu1uJ1UoDjtPjqZ4Et3wNCyMGCJ1qV")
 
-        val walletState = wallet.walletStateFlow
-            .filter { it.parentTxs.size == 11 }
-            .first()
+        val walletState = wallet.walletStateFlow.first { it.utxos.size == 11 }
 
         // this has been checked on the blockchain
         assertEquals(4 + 6 + 1, walletState.utxos.size)
         assertEquals(72_000_000.sat + 30_000_000.sat + 2_000_000.sat, walletState.totalBalance)
         assertEquals(11, walletState.utxos.size)
         // make sure txid is correct has electrum api is confusing
-        walletState.parentTxs.forEach { assertEquals(it.key, it.value.txid) }
         assertContains(
             walletState.utxos,
             WalletState.Utxo(
                 previousTx = Transaction.read("0100000001758713310361270b5ec4cae9b0196cb84fdb2f174d29f9367ad341963fa83e56010000008b483045022100d7b8759aeffe9d829a5df062420eb25017d7341244e49cfede16136a0c0b8dd2022031b42048e66b1f82f7fa99a22954e2709269838ef587c20118e493ced0d63e21014104b9251638d1475b9c62e1cf03129c835bcd5ab843aa0016412e8b39e3f8f7188d3b59023bce2002a2e409ea070c7070392b65d9ae8c8631ae2672a8fbb4f62bbdffffffff02404b4c00000000001976a9143675767783fdf1922f57ab4bb783f3a88dfa609488ac404b4c00000000001976a9142b6ba7c9d796b75eef7942fc9288edd37c32f5c388ac00000000"),
                 outputIndex = 1,
-                blockHeight = 100_003
+                blockHeight = 100_003,
+                txId = TxId("971af80218684017722429be08548d1f30a2f1f220abc064380cbca5cabf7623")
             )
         )
 
@@ -163,14 +157,14 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         wallet1.addAddress("16MmJT8VqW465GEyckWae547jKVfMB14P8")
         wallet2.addAddress("14xb2HATmkBzrHf4CR2hZczEtjYpTh92d2")
 
-        val walletState1 = wallet1.walletStateFlow.filter { it.parentTxs.size == 4 }.first()
-        val walletState2 = wallet2.walletStateFlow.filter { it.parentTxs.size == 6 }.first()
+        val walletState1 = wallet1.walletStateFlow.first { it.utxos.size == 4 }
+        val walletState2 = wallet2.walletStateFlow.first { it.utxos.size == 6 }
 
         assertEquals(7_200_0000.sat, walletState1.totalBalance)
         assertEquals(3_000_0000.sat, walletState2.totalBalance)
 
-        assertEquals(4, walletState1.parentTxs.size)
-        assertEquals(6, walletState2.parentTxs.size)
+        assertEquals(4, walletState1.utxos.size)
+        assertEquals(6, walletState2.utxos.size)
 
         wallet1.stop()
         wallet2.stop()
