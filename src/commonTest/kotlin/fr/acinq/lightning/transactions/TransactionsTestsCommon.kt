@@ -581,14 +581,14 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             // this is the beginning of an interactive musig2 signing session. if user and server are disconnected before they have exchanged partial
             // signatures they will have to start again with fresh nonces
-            val (_, cache) = KeyAggCache.add(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()), null)
-            val userNonce = SecretNonce.generate(randomBytes32(), userPrivateKey, userPrivateKey.publicKey(), null, cache, null)
-            val serverNonce = SecretNonce.generate(randomBytes32(), serverPrivateKey, serverPrivateKey.publicKey(), null, cache, null)
-            val commonNonce = IndividualNonce.aggregate(listOf(userNonce.second, serverNonce.second))
-            val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce)
-            val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first)
-            val ctx = swapInProtocol.session(tx, 0, swapInTx.txOut, commonNonce)
-            val commonSig = ctx.add(listOf(userSig, serverSig))
+            val (_, cache) = KeyAggCache.add(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey())).right!!
+            val userNonce = SecretNonce.generate(randomBytes32(), userPrivateKey, userPrivateKey.publicKey(), null, cache, null).right!!
+            val serverNonce = SecretNonce.generate(randomBytes32(), serverPrivateKey, serverPrivateKey.publicKey(), null, cache, null).right!!
+            val commonNonce = IndividualNonce.aggregate(listOf(userNonce.second, serverNonce.second)).right!!
+            val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce).right!!
+            val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first).right!!
+            val ctx = swapInProtocol.session(tx, 0, swapInTx.txOut, commonNonce).right!!
+            val commonSig = ctx.add(listOf(userSig, serverSig)).right!!
             val signedTx = tx.updateWitness(0, swapInProtocol.witness(commonSig))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }

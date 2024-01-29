@@ -5,6 +5,8 @@ import fr.acinq.bitcoin.crypto.musig2.AggregatedNonce
 import fr.acinq.bitcoin.crypto.musig2.KeyAggCache
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.crypto.musig2.Session
+import fr.acinq.bitcoin.utils.Either
+import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.wire.TxAddInputTlv
 
@@ -25,9 +27,13 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
     private val merkleRoot = scriptTree.hash()
 
     // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
-    private val internalPubKeyAndCache = KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey), null)
+    private val internalPubKeyAndCache = run {
+        val c = KeyAggCache.add(listOf(userPublicKey, serverPublicKey), null)
+        if (c.isLeft) error("key aggregation failed") else c.right!!
+    }
     private val internalPubKey = internalPubKeyAndCache.first
     private val cache = internalPubKeyAndCache.second
+
 
     // it is tweaked with the script's merkle root to get the pubkey that will be exposed
     private val commonPubKeyAndParity = internalPubKey.outputKey(Crypto.TaprootTweak.ScriptTweak(merkleRoot))
@@ -45,12 +51,13 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
 
     fun witnessRefund(userSig: ByteVector64): ScriptWitness = ScriptWitness.empty.push(userSig).push(redeemScript).push(controlBlock)
 
-    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, commonNonce: AggregatedNonce): ByteVector32 {
+    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, commonNonce: AggregatedNonce): Either<Throwable, ByteVector32> {
         require(userPrivateKey.publicKey() == userPublicKey)
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        val cache1 = cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true).first
-        val session = Session.build(commonNonce, txHash, cache1)
-        return session.sign(userNonce, userPrivateKey, cache1)
+
+        return cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)
+            .flatMap { (c, _) -> Session.build(commonNonce, txHash, c).map { s -> Pair(s, c) } }
+            .flatMap { (s, c) -> s.sign(userNonce, userPrivateKey, c) }
     }
 
     fun signSwapInputRefund(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey): ByteVector64 {
@@ -58,17 +65,17 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
         return Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
     }
 
-    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): ByteVector32 {
+    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): Either<Throwable, ByteVector32> {
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        val cache1 = cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true).first
-        val session = Session.build(commonNonce, txHash, cache1)
-        return session.sign(serverNonce, serverPrivateKey, cache1)
+        return cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)
+            .flatMap { (c, _) -> Session.build(commonNonce, txHash, c).map { s -> Pair(s, c) } }
+            .flatMap { (s, c) -> s.sign(serverNonce, serverPrivateKey, c) }
     }
 
-    fun session(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce): Session {
+    fun session(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce): Either<Throwable, Session> {
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        val cache1 = cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true).first
-        return Session.build(commonNonce, txHash, cache1)
+        return cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)
+            .flatMap { (c, _) -> Session.build(commonNonce, txHash, c) }
     }
 
     companion object {
@@ -81,17 +88,18 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
          * @param masterRefundKey master private key for the refund keys. we assume that there is a single level of derivation to compute the refund keys
          * @return a taproot descriptor that can be imported in bitcoin core (from version 26 on) to recover user funds once the funding delay has passed
          */
-        fun descriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey,  refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): String {
+        fun descriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): Either<Throwable, String> {
             // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
-            val (internalPubKey, _) = KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey), null)
-            val prefix = when (chain) {
-                NodeParams.Chain.Mainnet -> DeterministicWallet.xprv
-                else -> DeterministicWallet.tprv
+            return KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey)).map { (internalPubKey, _) ->
+                val prefix = when (chain) {
+                    NodeParams.Chain.Mainnet -> DeterministicWallet.xprv
+                    else -> DeterministicWallet.tprv
+                }
+                val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
+                val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
+                val checksum = Descriptor.checksum(desc)
+                "$desc#$checksum"
             }
-            val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
-            val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
-            val checksum = Descriptor.checksum(desc)
-            return "$desc#$checksum"
         }
 
         /**
@@ -103,20 +111,20 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
          * @param masterRefundKey master public key for the refund keys. we assume that there is a single level of derivation to compute the refund keys
          * @return a taproot descriptor that can be imported in bitcoin core (from version 26 on) to create a watch-only wallet for your swap-in transactions
          */
-        fun descriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey,  refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPublicKey): String {
+        fun descriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPublicKey): Any {
             // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
-            val (internalPubKey, _) = KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey), null)
-            val prefix = when (chain) {
-                NodeParams.Chain.Mainnet -> DeterministicWallet.xpub
-                else -> DeterministicWallet.tpub
+            return KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey)).map { (internalPubKey, _) ->
+                val prefix = when (chain) {
+                    NodeParams.Chain.Mainnet -> DeterministicWallet.xpub
+                    else -> DeterministicWallet.tpub
+                }
+                val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
+                val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
+                val desc = "tr(${internalPubKey.value},and_v(v:pk($xpub$path/*),older($refundDelay)))"
+                val checksum = Descriptor.checksum(desc)
+                return "$desc#$checksum"
             }
-            val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
-            val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
-            val desc = "tr(${internalPubKey.value},and_v(v:pk($xpub$path/*),older($refundDelay)))"
-            val checksum = Descriptor.checksum(desc)
-            return "$desc#$checksum"
         }
-
     }
 }
 
