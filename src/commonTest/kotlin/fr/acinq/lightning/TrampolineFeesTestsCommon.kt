@@ -48,7 +48,6 @@ class TrampolineFeesTestsCommon {
 
         testCases.forEach { (availableAmount, expectedTrampolineAmount) ->
             val trampolineAmount = trampolineFees.calculateReverseAmount(availableAmount)
-            println("$availableAmount: expected=$expectedTrampolineAmount actual=$trampolineAmount")
             assertEquals(expectedTrampolineAmount, trampolineAmount)
             if (trampolineAmount != null) {
                 assertEquals(availableAmount, trampolineFees.calculateFees(trampolineAmount) + trampolineAmount)
