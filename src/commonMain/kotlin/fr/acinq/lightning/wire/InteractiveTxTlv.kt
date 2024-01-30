@@ -44,19 +44,13 @@ sealed class TxAddInputTlv : Tlv {
     }
 
     /** When adding a swap-in input to an interactive-tx, the user needs to provide the corresponding script parameters. */
-    data class SwapInParams(val userKey: PublicKey, val serverKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int, val outPoint: OutPoint, val txOut: TxOut) : TxAddInputTlv() {
+    data class SwapInParams(val userKey: PublicKey, val serverKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) : TxAddInputTlv() {
         override val tag: Long get() = SwapInParams.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(userKey.value, out)
             LightningCodecs.writeBytes(serverKey.value, out)
             LightningCodecs.writeBytes(userRefundKey.value, out)
             LightningCodecs.writeU32(refundDelay, out)
-            val blob1 = OutPoint.write(outPoint)
-            LightningCodecs.writeU16(blob1.size, out)
-            LightningCodecs.writeBytes(blob1, out)
-            val blob2 = TxOut.write(txOut)
-            LightningCodecs.writeU16(blob2.size, out)
-            LightningCodecs.writeBytes(blob2, out)
         }
 
         companion object : TlvValueReader<SwapInParams> {
@@ -65,9 +59,7 @@ sealed class TxAddInputTlv : Tlv {
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
-                LightningCodecs.u32(input),
-                OutPoint.read(LightningCodecs.bytes(input, LightningCodecs.u16(input))),
-                TxOut.read(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
+                LightningCodecs.u32(input)
             )
         }
     }

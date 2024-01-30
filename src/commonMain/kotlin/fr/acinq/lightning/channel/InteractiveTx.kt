@@ -113,15 +113,15 @@ sealed class InteractiveTxInput {
     sealed interface Incoming
 
     sealed class Local : InteractiveTxInput(), Outgoing {
-        abstract val previousTx: Transaction?
+        abstract val previousTx: Transaction
         abstract val previousTxOutput: Long
+        override val txOut: TxOut
+            get() = previousTx.txOut[previousTxOutput.toInt()]
     }
 
     /** A local-only input that funds the interactive transaction. */
     data class LocalOnly(override val serialId: Long, override val previousTx: Transaction, override val previousTxOutput: Long, override val sequence: UInt) : Local() {
         override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput)
-        override val txOut: TxOut
-            get() = previousTx.txOut[previousTxOutput.toInt()]
     }
 
     /** A local input that funds the interactive transaction, coming from a 2-of-2 swap-in transaction. */
@@ -132,18 +132,12 @@ sealed class InteractiveTxInput {
 
     data class LocalSwapIn(
         override val serialId: Long,
+        override val previousTx: Transaction,
+        override val previousTxOutput: Long,
         override val sequence: UInt,
         val swapInParams: TxAddInputTlv.SwapInParams
     ) : Local() {
-        override val outPoint: OutPoint
-            get() = swapInParams.outPoint
-        override val previousTx: Transaction?
-            get() = null
-        override val txOut: TxOut
-            get() = swapInParams.txOut
-
-        override val previousTxOutput: Long
-            get() = outPoint.index
+        override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput)
     }
 
     /**
@@ -160,15 +154,11 @@ sealed class InteractiveTxInput {
 
     data class RemoteSwapIn(
         override val serialId: Long,
+        override val outPoint: OutPoint,
+        override val txOut: TxOut,
         override val sequence: UInt,
         val swapInParams: TxAddInputTlv.SwapInParams
-    ) : Remote() {
-        override val txOut: TxOut
-            get() = swapInParams.txOut
-
-        override val outPoint: OutPoint
-            get() = swapInParams.outPoint
-    }
+    ) : Remote()
 
     /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
     data class Shared(
@@ -307,8 +297,10 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
 
                     else -> InteractiveTxInput.LocalSwapIn(
                         0,
+                        i.previousTx.stripInputWitnesses(),
+                        i.outputIndex.toLong(),
                         0xfffffffdU,
-                        TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.userRefundPublicKey, swapInKeys.refundDelay, i.outPoint, i.txOut),
+                        TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.userRefundPublicKey, swapInKeys.refundDelay),
                     )
                 }
             }
@@ -691,7 +683,7 @@ data class InteractiveTxSession(
                     }
 
                     is InteractiveTxInput.LocalSwapIn -> {
-                        val swapInParams = TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.userRefundPublicKey, swapInKeys.refundDelay, msg.value.outPoint, msg.value.txOut)
+                        val swapInParams = TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.userRefundPublicKey, swapInKeys.refundDelay)
                         TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence, TlvStream(swapInParams))
                     }
 
@@ -731,16 +723,14 @@ data class InteractiveTxSession(
             return Either.Left(InteractiveTxSessionAction.DuplicateSerialId(message.channelId, message.serialId))
         }
         // We check whether this is the shared input or a remote input.
-        val input = when  {
-            message.previousTx == null && message.swapInParams != null -> {
-                InteractiveTxInput.RemoteSwapIn(message.serialId, message.sequence, message.swapInParams)
-            }
-            message.previousTx == null  -> {
+        val input = when (message.previousTx) {
+            null -> {
                 val expectedSharedOutpoint = fundingParams.sharedInput?.info?.outPoint ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 val receivedSharedOutpoint = message.sharedInput ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 if (expectedSharedOutpoint != receivedSharedOutpoint) return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, fundingParams.sharedInput.info.txOut.publicKeyScript, message.sequence, previousFunding.toLocal, previousFunding.toRemote)
             }
+
             else -> {
                 if (message.previousTx.txOut.size <= message.previousTxOutput) {
                     return Either.Left(InteractiveTxSessionAction.InputOutOfBounds(message.channelId, message.serialId, message.previousTx.txid, message.previousTxOutput))
@@ -757,7 +747,7 @@ data class InteractiveTxSession(
                 val txOut = message.previousTx.txOut[message.previousTxOutput.toInt()]
                 when {
                     message.swapInParams != null -> {
-                        InteractiveTxInput.RemoteSwapIn(message.serialId, message.sequence, message.swapInParams)
+                        InteractiveTxInput.RemoteSwapIn(message.serialId, outpoint, txOut, message.sequence, message.swapInParams)
                     }
 
                     message.swapInParamsLegacy != null -> InteractiveTxInput.RemoteLegacySwapIn(message.serialId, outpoint, txOut, message.sequence, message.swapInParamsLegacy.userKey, message.swapInParamsLegacy.serverKey, message.swapInParamsLegacy.refundDelay)
