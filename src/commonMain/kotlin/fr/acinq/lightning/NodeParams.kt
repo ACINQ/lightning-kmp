@@ -7,6 +7,7 @@ import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -25,7 +26,36 @@ data class NodeUri(val id: PublicKey, val host: String, val port: Int)
  * This class encapsulates the fees and expiry to use at a particular attempt.
  */
 data class TrampolineFees(val feeBase: Satoshi, val feeProportional: Long, val cltvExpiryDelta: CltvExpiryDelta) {
+    /**
+     * Calculates the trampoline fee for [recipientAmount].
+     *
+     * @param recipientAmount the amount that will be received by the recipient.
+     */
     fun calculateFees(recipientAmount: MilliSatoshi): MilliSatoshi = nodeFee(feeBase.toMilliSatoshi(), feeProportional, recipientAmount)
+
+    /**
+     * Calculates the amount that must be provided to the trampoline payload to pay the trampoline
+     * fee and consume all the [finalAmount], leaving no dust.
+     *
+     * E.g.: balance is 1_000 sat, trampoline fees is 4 sat + 0.4%. To use up all balance, [SendPayment]
+     * should use an amount of 992_032 msat (fee=7_968 msat, around 4 sat + 0.4%).
+     *
+     * @param finalAmount what leaves the node, including fees.
+     * @return the amount to provide to the trampoline handler, null if there is no valid amount.
+     */
+    fun calculateReverseAmount(finalAmount: MilliSatoshi): MilliSatoshi? {
+        val amountBeforeBaseFee = finalAmount - this.feeBase.toMilliSatoshi()
+        val proportionalFee = this.feeProportional.toDouble() / 1_000_000
+
+        // first, we approximate the amount that must be used in the trampoline payload
+        val amountBeforeFee = amountBeforeBaseFee.msat / (1 + proportionalFee)
+
+        // we cannot return the amount above directly: `OutgoingPaymentHandler` uses `calculateFees` to
+        // create the trampoline payload, which involves rounding, so the amount leaving the wallet may
+        // be off by 1 msat. So we reverse what the handler does to find the exact amount.
+        val fee = calculateFees(amountBeforeFee.toLong().msat)
+        return (finalAmount - fee).takeUnless { it < 0.msat }
+    }
 }
 
 /**
