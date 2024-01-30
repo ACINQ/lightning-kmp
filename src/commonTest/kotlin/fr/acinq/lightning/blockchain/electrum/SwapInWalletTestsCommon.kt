@@ -17,13 +17,13 @@ import kotlin.time.Duration.Companion.seconds
 class SwapInWalletTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `swap-in wallet test`() = runSuspendTest(timeout = 15000.seconds) {
+    fun `swap-in wallet test`() = runSuspendTest(timeout = 15.seconds) {
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), NodeParams.Chain.Testnet, TestConstants.aliceSwapInServerXpub)
         val client = connectToTestnetServer()
-        val wallet = SwapInWallet(NodeParams.Chain.Testnet, keyManager.swapInOnChainWallet, client, addressGenerationWindow = 3, this, LoggerFactory.default)
+        val wallet = SwapInWallet(NodeParams.Chain.Testnet, keyManager.swapInOnChainWallet, client, this, LoggerFactory.default)
 
-        // addresses 0 to 5 have funds on them, the current address is the 6th
-        assertEquals(6, wallet.swapInAddressFlow.filterNotNull().first().second)
+        // addresses 0 to 3 have funds on them, the current address is the 4th
+        assertEquals(4, wallet.swapInAddressFlow.filterNotNull().first().second)
     }
 }

@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.blockchain.electrum.WalletState.Companion.indexOrNull
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -17,6 +18,9 @@ import kotlinx.coroutines.launch
 data class WalletState(val addresses: Map<String, AddressState>) {
     val utxos: List<Utxo> = addresses.flatMap { it.value.utxos }
     val totalBalance = utxos.map { it.amount }.sum()
+    val lastDerivedAddress: Pair<String, AddressMeta.Derived>? = addresses
+        .mapNotNull { entry -> (entry.value.meta as? AddressMeta.Derived)?.let { entry.key to it } }
+        .maxByOrNull { it.second.index }
 
     fun withoutReservedUtxos(reserved: Set<OutPoint>): WalletState {
         return copy(addresses = addresses.mapValues {
@@ -74,7 +78,7 @@ data class WalletState(val addresses: Map<String, AddressState>) {
     companion object {
         val empty: WalletState = WalletState(emptyMap())
 
-        data class AddressState(val meta: AddressMeta, val utxos: List<Utxo>)
+        data class AddressState(val meta: AddressMeta, val alreadyUsed: Boolean, val utxos: List<Utxo>)
 
         sealed class AddressMeta {
             data object Single : AddressMeta()
@@ -95,11 +99,10 @@ private sealed interface WalletCommand {
     companion object {
         data object ElectrumConnected : WalletCommand
         data class ElectrumNotification(val msg: ElectrumResponse) : WalletCommand
-        data class AddAddress(val bitcoinAddress: String, val meta: WalletState.Companion.AddressMeta) : WalletCommand
+        data class AddAddress(val bitcoinAddress: String) : WalletCommand
         data class AddAddressGenerator(val generator: AddressGenerator) : WalletCommand
-        data class GenerateAddress(val index: Int) : WalletCommand
 
-        class AddressGenerator(val generateAddress: (Int) -> String, val window: Int)
+        class AddressGenerator(val generateAddress: (Int) -> String)
     }
 }
 
@@ -118,7 +121,7 @@ class ElectrumMiniWallet(
     val walletStateFlow get() = _walletStateFlow.asStateFlow()
 
     // generator, if used
-    private var addressGenerator: Pair<WalletCommand.Companion.AddressGenerator, Int>? = null
+    private var addressGenerator: WalletCommand.Companion.AddressGenerator? = null
 
     // all current meta associated to each address
     private var addressMetas: Map<String, WalletState.Companion.AddressMeta> = emptyMap()
@@ -131,13 +134,13 @@ class ElectrumMiniWallet(
 
     fun addAddress(bitcoinAddress: String) {
         launch {
-            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress, WalletState.Companion.AddressMeta.Single))
+            mailbox.send(WalletCommand.Companion.AddAddress(bitcoinAddress))
         }
     }
 
-    fun addAddressGenerator(generator: (Int) -> String, window: Int) {
+    fun addAddressGenerator(generator: (Int) -> String) {
         launch {
-            mailbox.send(WalletCommand.Companion.AddAddressGenerator(WalletCommand.Companion.AddressGenerator(generator, window)))
+            mailbox.send(WalletCommand.Companion.AddAddressGenerator(WalletCommand.Companion.AddressGenerator(generator)))
         }
     }
 
@@ -161,27 +164,21 @@ class ElectrumMiniWallet(
                     logger.error { "received subscription response for script hash ${msg.scriptHash} that does not match any address" }
                     this
                 }
-                msg.status == null -> this.copy(addresses = this.addresses + (bitcoinAddress to WalletState.Companion.AddressState(addressMeta, listOf())))
+                msg.status == null -> {
+                    logger.info { "address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} utxos=(unused)" }
+                    this.copy(addresses = this.addresses + (bitcoinAddress to WalletState.Companion.AddressState(addressMeta, alreadyUsed = false, utxos = listOf())))
+                }
                 else -> {
                     val unspents = client.getScriptHashUnspents(msg.scriptHash)
-                    val previouslysKnownTxs = (_walletStateFlow.value.addresses[bitcoinAddress]?.utxos ?: emptyList()).map { it.txId to it.previousTx }.toMap()
+                    val previouslysKnownTxs = (this.addresses[bitcoinAddress]?.utxos ?: emptyList()).associate { it.txId to it.previousTx }
                     val utxos = unspents
                         .mapNotNull { item -> (previouslysKnownTxs[item.txid] ?: client.getTx(item.txid))?.let { item to it } } // only retrieve txs from electrum if necessary and ignore the utxo if the parent tx cannot be retrieved
                         .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx, addressMeta) }
-                    val nextAddressState = WalletState.Companion.AddressState(addressMeta, utxos)
+                    val nextAddressState = WalletState.Companion.AddressState(addressMeta, alreadyUsed = true, utxos)
                     val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to nextAddressState))
-                    logger.info { "${unspents.size} utxo(s) for address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} balance=${nextWalletState.totalBalance}" }
+                    logger.info { "address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} utxos=${unspents.size} amount=${unspents.sumOf { it.value }.sat}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
-                    when (val generator = addressGenerator) {
-                        null -> {}
-                        else -> if (addressMeta.indexOrNull == generator.second - 1 && nextAddressState.utxos.isNotEmpty()) {
-                            logger.info { "requesting generation of next sequence of addresses" }
-                            // if the window = 10 then the first series of address is 0 to 9 and addressGenerator.second = 10
-                            // then when address 9 has utxos, we request generation up until (and excluding) index 10 + 10 = 20, this will generate addresses 10 to 19
-                            mailbox.send(WalletCommand.Companion.GenerateAddress(addressMeta.indexOrNull!! + 1 + generator.first.window))
-                        }
-                    }
-                    nextWalletState
+                    return nextWalletState
                 }
             }
         }
@@ -191,17 +188,40 @@ class ElectrumMiniWallet(
          * Depending on the status of the electrum connection, the subscription may or may not be sent to a server.
          * It is the responsibility of the caller to resubscribe on reconnection.
          */
-        suspend fun subscribe(scriptHash: ByteVector32, bitcoinAddress: String) {
-            kotlin.runCatching { client.startScriptHashSubscription(scriptHash) }.map { response ->
-                logger.info { "subscribed to address=$bitcoinAddress scriptHash=$scriptHash" }
-                _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(response)
-            }
+        suspend fun WalletState.subscribe(scriptHash: ByteVector32, bitcoinAddress: String): WalletState {
+            val response = client.startScriptHashSubscription(scriptHash)
+            logger.info { "subscribed to address=$bitcoinAddress scriptHash=$scriptHash" }
+            return processSubscriptionResponse(response)
         }
 
         fun computeScriptHash(bitcoinAddress: String): ByteVector32? {
             return Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)
                 .map { ElectrumClient.computeScriptHash(Script.write(it).byteVector()) }
                 .right
+        }
+
+        suspend fun WalletState.addAddress(bitcoinAddress: String, meta: WalletState.Companion.AddressMeta): WalletState {
+            return computeScriptHash(bitcoinAddress)?.let { scriptHash ->
+                if (!scriptHashes.containsKey(scriptHash)) {
+                    logger.info { "adding new address=${bitcoinAddress} index=${meta.indexOrNull ?: "n/a"}" }
+                    scriptHashes = scriptHashes + (scriptHash to bitcoinAddress)
+                    addressMetas = addressMetas + (bitcoinAddress to meta)
+                    subscribe(scriptHash, bitcoinAddress)
+                } else this
+            } ?: this
+        }
+
+        suspend fun WalletState.addAddress(generator: WalletCommand.Companion.AddressGenerator, addressIndex: Int): WalletState {
+            return this.addAddress(generator.generateAddress(addressIndex), WalletState.Companion.AddressMeta.Derived(addressIndex))
+        }
+
+        suspend fun WalletState.maybeGenerateNext(generator: WalletCommand.Companion.AddressGenerator): WalletState {
+            val lastDerivedAddressState = this.addresses[this.lastDerivedAddress?.first]
+            return when {
+                lastDerivedAddressState == null -> this.addAddress(generator, 0).maybeGenerateNext(generator) // there is no existing derived address: initialization
+                lastDerivedAddressState.alreadyUsed -> this.addAddress(generator, lastDerivedAddressState.meta.indexOrNull!! + 1).maybeGenerateNext(generator) // most recent derived address is used, need to generate a new one
+                else -> this // nothing to do
+            }
         }
 
         job = launch {
@@ -218,42 +238,34 @@ class ElectrumMiniWallet(
                     when (it) {
                         is WalletCommand.Companion.ElectrumConnected -> {
                             logger.info { "electrum connected" }
-                            scriptHashes.forEach { (scriptHash, address) -> subscribe(scriptHash, address) }
+                            val walletState1 = scriptHashes
+                                .toList()
+                                .fold(_walletStateFlow.value) { walletState, (scriptHash, address) ->
+                                    walletState.subscribe(scriptHash, address)
+                                }
+                            val walletState2 = addressGenerator?.let { gen -> walletState1.maybeGenerateNext(gen) } ?: walletState1
+                            _walletStateFlow.value = walletState2
+
                         }
 
                         is WalletCommand.Companion.ElectrumNotification -> {
                             if (it.msg is ScriptHashSubscriptionResponse) {
-                                _walletStateFlow.value = _walletStateFlow.value.processSubscriptionResponse(it.msg)
+                                val walletState1 = _walletStateFlow.value.processSubscriptionResponse(it.msg)
+                                val walletState2 = addressGenerator?.let { gen -> walletState1.maybeGenerateNext(gen) } ?: walletState1
+                                _walletStateFlow.value = walletState2
                             }
                         }
 
                         is WalletCommand.Companion.AddAddress -> {
-                            computeScriptHash(it.bitcoinAddress)?.let { scriptHash ->
-                                if (!scriptHashes.containsKey(scriptHash)) {
-                                    logger.info { "adding new address=${it.bitcoinAddress} index=${it.meta.indexOrNull ?: "n/a"}" }
-                                    scriptHashes = scriptHashes + (scriptHash to it.bitcoinAddress)
-                                    addressMetas = addressMetas + (it.bitcoinAddress to it.meta)
-                                    subscribe(scriptHash, it.bitcoinAddress)
-                                }
-                            }
+                            _walletStateFlow.value = _walletStateFlow.value.addAddress(it.bitcoinAddress, WalletState.Companion.AddressMeta.Single)
                         }
                         is WalletCommand.Companion.AddAddressGenerator -> {
                             if (addressGenerator == null) {
                                 logger.info { "adding new address generator" }
-                                addressGenerator = it.generator to 0
-                                mailbox.send(WalletCommand.Companion.GenerateAddress(it.generator.window))
+                                addressGenerator = it.generator
+                                _walletStateFlow.value = _walletStateFlow.value.maybeGenerateNext(it.generator)
                             }
                         }
-                        is WalletCommand.Companion.GenerateAddress -> {
-                            addressGenerator = addressGenerator?.let { (generator, currentIndex) ->
-                                logger.info { "generating addresses with index $currentIndex to ${it.index - 1}" }
-                                (currentIndex until it.index).forEach { addressIndex ->
-                                    mailbox.send(WalletCommand.Companion.AddAddress(generator.generateAddress(addressIndex), WalletState.Companion.AddressMeta.Derived(addressIndex)))
-                                }
-                                generator to maxOf(currentIndex, it.index)
-                            }
-                        }
-
                     }
                 }
             }
