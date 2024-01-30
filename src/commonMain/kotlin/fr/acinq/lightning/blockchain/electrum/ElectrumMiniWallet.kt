@@ -32,7 +32,6 @@ data class WalletState(val addresses: Map<String, List<Utxo>>) {
     data class Utxo(val txId: TxId, val outputIndex: Int, val blockHeight: Long, val previousTx: Transaction) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
         val amount = previousTx.txOut[outputIndex].amount
-        val txOut = previousTx.txOut[outputIndex]
     }
 
     /**

@@ -285,6 +285,8 @@ object Serialization {
         is InteractiveTxInput.LocalSwapIn -> i.run {
             write(0x03)
             writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
             writeNumber(sequence.toLong())
             swapInParams.write(this@writeLocalInteractiveTxInput)
         }
@@ -311,6 +313,8 @@ object Serialization {
         is InteractiveTxInput.RemoteSwapIn -> i.run {
             write(0x03)
             writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
             writeNumber(sequence.toLong())
             swapInParams.write(this@writeRemoteInteractiveTxInput)
         }
