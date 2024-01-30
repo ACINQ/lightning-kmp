@@ -70,7 +70,7 @@ data object Disconnected : PeerCommand()
 sealed class PaymentCommand : PeerCommand()
 private data object CheckPaymentsTimeout : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
-data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: Bolt11Invoice, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
+data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash
 }
 

@@ -7,11 +7,9 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.*
 import fr.acinq.lightning.payment.Bolt11Invoice
+import fr.acinq.lightning.payment.Bolt12Invoice
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
@@ -152,13 +150,60 @@ sealed class OnionPaymentPayloadTlv : Tlv {
     /** An encrypted trampoline onion packet. */
     data class TrampolineOnion(val packet: OnionRoutingPacket) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = TrampolineOnion.tag
-        override fun write(out: Output) = OnionRoutingPacketSerializer(OnionRoutingPacket.TrampolinePacketLength).write(packet, out)
+        override fun write(out: Output) = OnionRoutingPacketSerializer(packet.payload.size()).write(packet, out)
 
         companion object : TlvValueReader<TrampolineOnion> {
             const val tag: Long = 66100
-            override fun read(input: Input): TrampolineOnion = TrampolineOnion(OnionRoutingPacketSerializer(OnionRoutingPacket.TrampolinePacketLength).read(input))
+            override fun read(input: Input): TrampolineOnion {
+                val payloadLength = input.availableBytes - 66 // 1 byte version + 33 bytes public key + 32 bytes HMAC
+                return TrampolineOnion(OnionRoutingPacketSerializer(payloadLength).read(input))
+            }
         }
     }
+
+    /** Blinded paths to relay the payment to */
+    data class OutgoingBlindedPaths(val paths: List<Bolt12Invoice.Companion.PaymentBlindedContactInfo>) : OnionPaymentPayloadTlv() {
+        override val tag: Long get() = OutgoingBlindedPaths.tag
+        override fun write(out: Output) {
+            for (path in paths) {
+                OfferTypes.writePath(path.route, out)
+                LightningCodecs.writeU32(path.paymentInfo.feeBase.msat.toInt(), out)
+                LightningCodecs.writeU32(path.paymentInfo.feeProportionalMillionths, out)
+                LightningCodecs.writeU16(path.paymentInfo.cltvExpiryDelta.toInt(), out)
+                LightningCodecs.writeU64(path.paymentInfo.minHtlc.msat, out)
+                LightningCodecs.writeU64(path.paymentInfo.maxHtlc.msat, out)
+                val featuresArray = path.paymentInfo.allowedFeatures.toByteArray()
+                LightningCodecs.writeU16(featuresArray.size, out)
+                LightningCodecs.writeBytes(featuresArray, out)
+            }
+        }
+
+        companion object : TlvValueReader<OutgoingBlindedPaths> {
+            const val tag: Long = 66102
+            override fun read(input: Input): OutgoingBlindedPaths {
+                val paths = ArrayList<Bolt12Invoice.Companion.PaymentBlindedContactInfo>()
+                while (input.availableBytes > 0) {
+                    val route = OfferTypes.readPath(input)
+                    val feeBase = MilliSatoshi(LightningCodecs.u32(input).toLong())
+                    val feeProportionalMillionths = LightningCodecs.u32(input)
+                    val cltvExpiryDelta = CltvExpiryDelta(LightningCodecs.u16(input))
+                    val minHtlc = MilliSatoshi(LightningCodecs.u64(input))
+                    val maxHtlc = MilliSatoshi(LightningCodecs.u64(input))
+                    val allowedFeatures = Features(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
+                    paths.add(Bolt12Invoice.Companion.PaymentBlindedContactInfo(route, OfferTypes.PaymentInfo(
+                        feeBase,
+                        feeProportionalMillionths,
+                        cltvExpiryDelta,
+                        minHtlc,
+                        maxHtlc,
+                        allowedFeatures
+                    )))
+                }
+                return OutgoingBlindedPaths(paths)
+            }
+        }
+    }
+
 }
 
 object PaymentOnion {
@@ -185,6 +230,7 @@ object PaymentOnion {
                     OnionPaymentPayloadTlv.OutgoingNodeId.tag to OnionPaymentPayloadTlv.OutgoingNodeId.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.InvoiceRoutingInfo.tag to OnionPaymentPayloadTlv.InvoiceRoutingInfo.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.TrampolineOnion.tag to OnionPaymentPayloadTlv.TrampolineOnion.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
+                    OnionPaymentPayloadTlv.OutgoingBlindedPaths.tag to OnionPaymentPayloadTlv.OutgoingBlindedPaths.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                 )
             )
         }
@@ -295,33 +341,55 @@ object PaymentOnion {
 
             fun create(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey) =
                 NodeRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amount), OnionPaymentPayloadTlv.OutgoingCltv(expiry), OnionPaymentPayloadTlv.OutgoingNodeId(nextNodeId)))
-
-            /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
-            fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): NodeRelayPayload {
-                // NB: we limit the number of routing hints to ensure we don't overflow the onion.
-                // A better solution is to provide the routing hints outside the onion (in the `update_add_htlc` tlv stream).
-                val prunedRoutingHints = invoice.routingInfo.shuffled().fold(listOf<Bolt11Invoice.TaggedField.RoutingInfo>()) { previous, current ->
-                    if (previous.flatMap { it.hints }.size + current.hints.size <= 4) {
-                        previous + current
-                    } else {
-                        previous
-                    }
-                }.map { it.hints }
-                return NodeRelayPayload(
-                    TlvStream(
-                        buildSet {
-                            add(OnionPaymentPayloadTlv.AmountToForward(amount))
-                            add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
-                            add(OnionPaymentPayloadTlv.OutgoingNodeId(targetNodeId))
-                            add(OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, totalAmount))
-                            invoice.paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
-                            add(OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features.toByteArray().toByteVector()))
-                            add(OnionPaymentPayloadTlv.InvoiceRoutingInfo(prunedRoutingHints))
-                        }
-                    )
-                )
-            }
         }
     }
 
+    data class RelayToBlindedPayload(val records: TlvStream<OnionPaymentPayloadTlv>) : PerHopPayload() {
+        val amountToForward = records.get<OnionPaymentPayloadTlv.AmountToForward>()!!.amount
+        val outgoingCltv = records.get<OnionPaymentPayloadTlv.OutgoingCltv>()!!.cltv
+        val outgoingBlindedPaths = records.get<OnionPaymentPayloadTlv.OutgoingBlindedPaths>()!!.paths
+        val invoiceFeatures = records.get<OnionPaymentPayloadTlv.InvoiceFeatures>()!!.features
+
+        override fun write(out: Output) = tlvSerializer.write(records, out)
+
+        companion object : PerHopPayloadReader<RelayToBlindedPayload> {
+            override fun read(input: Input): RelayToBlindedPayload = RelayToBlindedPayload(tlvSerializer.read(input))
+        }
+    }
+
+    /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
+    fun createRelayToNonTrampolinePayload(
+        amount: MilliSatoshi,
+        totalAmount: MilliSatoshi,
+        expiry: CltvExpiry,
+        targetNodeId: PublicKey,
+        invoice: PaymentRequest
+    ): PerHopPayload =
+        when (invoice) {
+            is Bolt11Invoice -> NodeRelayPayload(
+                TlvStream(
+                    buildSet {
+                        add(OnionPaymentPayloadTlv.AmountToForward(amount))
+                        add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
+                        add(OnionPaymentPayloadTlv.OutgoingNodeId(targetNodeId))
+                        add(OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, totalAmount))
+                        invoice.paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
+                        add(OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features.toByteArray().toByteVector()))
+                        add(OnionPaymentPayloadTlv.InvoiceRoutingInfo(invoice.routingInfo.map { it.hints }))
+                    }
+                )
+            )
+
+            is Bolt12Invoice ->
+                RelayToBlindedPayload(
+                    TlvStream(
+                        setOf(
+                            OnionPaymentPayloadTlv.AmountToForward(amount),
+                            OnionPaymentPayloadTlv.OutgoingCltv(expiry),
+                            OnionPaymentPayloadTlv.OutgoingBlindedPaths(invoice.blindedPaths),
+                            OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features.toByteArray().toByteVector())
+                        )
+                    )
+                )
+        }
 }

@@ -37,8 +37,7 @@ class Postman(
         when (val decrypted = Sphinx.peel(
             blindedPrivateKey,
             ByteVector.empty,
-            msg.onionRoutingPacket,
-            msg.onionRoutingPacket.payload.size()
+            msg.onionRoutingPacket
         )) {
             is Right -> try {
                 val message = MessageOnion.read(decrypted.value.payload.toByteArray())
