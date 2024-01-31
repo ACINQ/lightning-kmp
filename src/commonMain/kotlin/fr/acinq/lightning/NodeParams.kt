@@ -13,10 +13,7 @@ import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.*
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -155,6 +152,9 @@ data class NodeParams(
     internal val _nodeEvents = MutableSharedFlow<NodeEvents>()
     val nodeEvents: SharedFlow<NodeEvents> get() = _nodeEvents.asSharedFlow()
 
+    internal val _feeCredit = MutableStateFlow<Satoshi>(0.sat)
+    val feeCredit: StateFlow<Satoshi> get() = _feeCredit.asStateFlow()
+
     init {
         require(features.hasFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory)) { "${Feature.VariableLengthOnion.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)) { "${Feature.PaymentSecret.rfcName} should be mandatory" }
@@ -219,6 +219,13 @@ data class NodeParams(
         maxPaymentAttempts = 5,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
-        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false))
+        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(
+            LiquidityPolicy.Auto(
+                maxAbsoluteFee = 2_000.sat,
+                maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */,
+                skipAbsoluteFeeCheck = false,
+                maxAllowedCredit = 0.sat
+            )
+        )
     )
 }
