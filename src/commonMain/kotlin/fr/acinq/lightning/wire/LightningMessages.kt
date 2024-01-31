@@ -87,6 +87,8 @@ interface LightningMessage {
                 DNSAddressResponse.type -> DNSAddressResponse.read(stream)
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
+                CurrentFeeCredit.type -> CurrentFeeCredit.read(stream)
+                AutoLiquidityParams.type -> AutoLiquidityParams.read(stream)
                 Stfu.type -> Stfu.read(stream)
                 SpliceInit.type -> SpliceInit.read(stream)
                 SpliceAck.type -> SpliceAck.read(stream)
@@ -1671,7 +1673,7 @@ data class PayToOpenResponse(override val chainHash: BlockHash, val paymentHash:
 
     sealed class Result {
         // @formatter:off
-        data class Success(val paymentPreimage: ByteVector32) : Result()
+        data class Success(val paymentPreimage: ByteVector32, val addToFeeCredit: Boolean = false) : Result()
         /** reason is an onion-encrypted failure message, like those in UpdateFailHtlc */
         data class Failure(val reason: ByteVector?) : Result()
         // @formatter:on
@@ -1681,7 +1683,10 @@ data class PayToOpenResponse(override val chainHash: BlockHash, val paymentHash:
         LightningCodecs.writeBytes(chainHash.value, out)
         LightningCodecs.writeBytes(paymentHash, out)
         when (result) {
-            is Result.Success -> LightningCodecs.writeBytes(result.paymentPreimage, out)
+            is Result.Success -> {
+                LightningCodecs.writeBytes(result.paymentPreimage, out)
+                LightningCodecs.writeByte(if (result.addToFeeCredit) 0xff else 0, out)
+            }
             is Result.Failure -> {
                 LightningCodecs.writeBytes(ByteVector32.Zeroes, out) // this is for backward compatibility
                 result.reason?.let {
@@ -1704,7 +1709,10 @@ data class PayToOpenResponse(override val chainHash: BlockHash, val paymentHash:
                     PayToOpenResponse(chainHash, paymentHash, Result.Failure(failure))
                 }
 
-                else -> PayToOpenResponse(chainHash, paymentHash, Result.Success(preimage))
+                else -> {
+                    val addToFeeCredit = LightningCodecs.byte(input) != 0
+                    PayToOpenResponse(chainHash, paymentHash, Result.Success(preimage, addToFeeCredit))
+                }
             }
         }
     }
@@ -1850,6 +1858,40 @@ data class PleaseOpenChannel(
             LightningCodecs.u32(input),
             TlvStreamSerializer(false, readers).read(input)
         )
+    }
+}
+
+data class CurrentFeeCredit(val amount: Satoshi) : LightningMessage {
+
+    override val type: Long get() = FCMToken.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeU64(amount.toLong(), out)
+    }
+
+    companion object : LightningMessageReader<CurrentFeeCredit> {
+        const val type: Long = 36003
+
+        override fun read(input: Input): CurrentFeeCredit {
+            return CurrentFeeCredit(LightningCodecs.u64(input).sat)
+        }
+    }
+}
+
+data class AutoLiquidityParams(val amount: Satoshi) : LightningMessage {
+
+    override val type: Long get() = AutoLiquidityParams.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeU64(amount.toLong(), out)
+    }
+
+    companion object : LightningMessageReader<AutoLiquidityParams> {
+        const val type: Long = 36005
+
+        override fun read(input: Input): AutoLiquidityParams {
+            return AutoLiquidityParams(LightningCodecs.u64(input).sat)
+        }
     }
 }
 
