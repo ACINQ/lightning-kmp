@@ -256,6 +256,13 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
+    @Serializable
+    object FeeCredit : Feature() {
+        override val rfcName get() = "fee_credit"
+        override val mandatory get() = 156
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
 }
 
 @Serializable

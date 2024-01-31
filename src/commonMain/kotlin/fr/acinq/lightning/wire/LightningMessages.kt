@@ -83,6 +83,8 @@ interface LightningMessage {
                 UnsetFCMToken.type -> UnsetFCMToken
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
+                CurrentFeeCredit.type -> CurrentFeeCredit.read(stream)
+                AutoLiquidityParams.type -> AutoLiquidityParams.read(stream)
                 Stfu.type -> Stfu.read(stream)
                 SpliceInit.type -> SpliceInit.read(stream)
                 SpliceAck.type -> SpliceAck.read(stream)
@@ -1587,9 +1589,7 @@ data class OnionMessage(
  */
 data class PayToOpenRequest(
     override val chainHash: BlockHash,
-    val fundingSatoshis: Satoshi,
     val amountMsat: MilliSatoshi,
-    val payToOpenMinAmountMsat: MilliSatoshi,
     val payToOpenFeeSatoshis: Satoshi,
     val paymentHash: ByteVector32,
     val expireAt: Long,
@@ -1599,9 +1599,9 @@ data class PayToOpenRequest(
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(chainHash.value, out)
-        LightningCodecs.writeU64(fundingSatoshis.toLong(), out)
+        LightningCodecs.writeU64(0, out) // backward compat for removed field fundingSatoshis
         LightningCodecs.writeU64(amountMsat.toLong(), out)
-        LightningCodecs.writeU64(payToOpenMinAmountMsat.toLong(), out)
+        LightningCodecs.writeU64(0, out) // backward compat for removed field payToOpenMinAmountMsat
         LightningCodecs.writeU64(payToOpenFeeSatoshis.toLong(), out)
         LightningCodecs.writeBytes(paymentHash, out)
         LightningCodecs.writeU32(expireAt.toInt(), out)
@@ -1614,10 +1614,10 @@ data class PayToOpenRequest(
 
         override fun read(input: Input): PayToOpenRequest {
             return PayToOpenRequest(
-                chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
-                fundingSatoshis = Satoshi(LightningCodecs.u64(input)),
-                amountMsat = MilliSatoshi(LightningCodecs.u64(input)),
-                payToOpenMinAmountMsat = MilliSatoshi(LightningCodecs.u64(input)),
+                chainHash = BlockHash(LightningCodecs.bytes(input, 32))
+                    .also { LightningCodecs.u64(input) }, // ignoring removed field fundingSatoshis
+                amountMsat = MilliSatoshi(LightningCodecs.u64(input))
+                    .also { LightningCodecs.u64(input) }, // ignoring removed field payToOpenMinAmountMsat
                 payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
                 paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
                 expireAt = LightningCodecs.u32(input).toLong(),
@@ -1632,7 +1632,7 @@ data class PayToOpenResponse(override val chainHash: BlockHash, val paymentHash:
 
     sealed class Result {
         // @formatter:off
-        data class Success(val paymentPreimage: ByteVector32) : Result()
+        data class Success(val paymentPreimage: ByteVector32, val addToFeeCredit: Boolean = false) : Result()
         /** reason is an onion-encrypted failure message, like those in UpdateFailHtlc */
         data class Failure(val reason: ByteVector?) : Result()
         // @formatter:on
@@ -1642,7 +1642,10 @@ data class PayToOpenResponse(override val chainHash: BlockHash, val paymentHash:
         LightningCodecs.writeBytes(chainHash.value, out)
         LightningCodecs.writeBytes(paymentHash, out)
         when (result) {
-            is Result.Success -> LightningCodecs.writeBytes(result.paymentPreimage, out)
+            is Result.Success -> {
+                LightningCodecs.writeBytes(result.paymentPreimage, out)
+                LightningCodecs.writeByte(if (result.addToFeeCredit) 0xff else 0, out)
+            }
             is Result.Failure -> {
                 LightningCodecs.writeBytes(ByteVector32.Zeroes, out) // this is for backward compatibility
                 result.reason?.let {
@@ -1665,7 +1668,10 @@ data class PayToOpenResponse(override val chainHash: BlockHash, val paymentHash:
                     PayToOpenResponse(chainHash, paymentHash, Result.Failure(failure))
                 }
 
-                else -> PayToOpenResponse(chainHash, paymentHash, Result.Success(preimage))
+                else -> {
+                    val addToFeeCredit = LightningCodecs.byte(input) != 0
+                    PayToOpenResponse(chainHash, paymentHash, Result.Success(preimage, addToFeeCredit))
+                }
             }
         }
     }
@@ -1758,6 +1764,40 @@ data class PleaseOpenChannel(
             LightningCodecs.u32(input),
             TlvStreamSerializer(false, readers).read(input)
         )
+    }
+}
+
+data class CurrentFeeCredit(val amount: Satoshi) : LightningMessage {
+
+    override val type: Long get() = FCMToken.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeU64(amount.toLong(), out)
+    }
+
+    companion object : LightningMessageReader<CurrentFeeCredit> {
+        const val type: Long = 36003
+
+        override fun read(input: Input): CurrentFeeCredit {
+            return CurrentFeeCredit(LightningCodecs.u64(input).sat)
+        }
+    }
+}
+
+data class AutoLiquidityParams(val amount: Satoshi) : LightningMessage {
+
+    override val type: Long get() = AutoLiquidityParams.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeU64(amount.toLong(), out)
+    }
+
+    companion object : LightningMessageReader<AutoLiquidityParams> {
+        const val type: Long = 36005
+
+        override fun read(input: Input): AutoLiquidityParams {
+            return AutoLiquidityParams(LightningCodecs.u64(input).sat)
+        }
     }
 }
 
