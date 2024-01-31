@@ -1,10 +1,9 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.bitcoin.crypto.musig2.AggregatedNonce
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector64
@@ -44,19 +43,13 @@ sealed class TxAddInputTlv : Tlv {
     }
 
     /** When adding a swap-in input to an interactive-tx, the user needs to provide the corresponding script parameters. */
-    data class SwapInParams(val userKey: PublicKey, val serverKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int, val outPoint: OutPoint, val txOut: TxOut) : TxAddInputTlv() {
+    data class SwapInParams(val userKey: PublicKey, val serverKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) : TxAddInputTlv() {
         override val tag: Long get() = SwapInParams.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(userKey.value, out)
             LightningCodecs.writeBytes(serverKey.value, out)
             LightningCodecs.writeBytes(userRefundKey.value, out)
             LightningCodecs.writeU32(refundDelay, out)
-            val blob1 = OutPoint.write(outPoint)
-            LightningCodecs.writeU16(blob1.size, out)
-            LightningCodecs.writeBytes(blob1, out)
-            val blob2 = TxOut.write(txOut)
-            LightningCodecs.writeU16(blob2.size, out)
-            LightningCodecs.writeBytes(blob2, out)
         }
 
         companion object : TlvValueReader<SwapInParams> {
@@ -66,8 +59,6 @@ sealed class TxAddInputTlv : Tlv {
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 PublicKey(LightningCodecs.bytes(input, 33)),
                 LightningCodecs.u32(input),
-                OutPoint.read(LightningCodecs.bytes(input, LightningCodecs.u16(input))),
-                TxOut.read(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
             )
         }
     }
@@ -80,8 +71,8 @@ sealed class TxRemoveInputTlv : Tlv
 sealed class TxRemoveOutputTlv : Tlv
 
 sealed class TxCompleteTlv : Tlv {
-    /** nonces for all Musig2 swap-in inputs, ordered by serial id */
-    data class Nonces(val nonces: List<IndividualNonce>): TxCompleteTlv() {
+    /** Public nonces for all Musig2 swap-in inputs (local and remote), ordered by serial id. */
+    data class Nonces(val nonces: List<IndividualNonce>) : TxCompleteTlv() {
         override val tag: Long get() = Nonces.tag
 
         override fun write(out: Output) {
@@ -141,42 +132,51 @@ sealed class TxSignaturesTlv : Tlv {
         }
     }
 
-    data class SwapInUserPartialSigs(val psigs: List<TxSignatures.Companion.PartialSignature>) : TxSignaturesTlv() {
+    /** A partial musig2 signature, with the corresponding local and remote public nonces. */
+    data class PartialSignature(val sig: ByteVector32, val localNonce: IndividualNonce, val remoteNonce: IndividualNonce)
+
+    /** Partial musig2 signatures from the swap user for inputs that belong to them. */
+    data class SwapInUserPartialSigs(val psigs: List<PartialSignature>) : TxSignaturesTlv() {
         override val tag: Long get() = SwapInUserPartialSigs.tag
         override fun write(out: Output) = psigs.forEach { psig ->
             LightningCodecs.writeBytes(psig.sig, out)
-            LightningCodecs.writeBytes(psig.aggregatedPublicNonce.toByteArray(), out)
+            LightningCodecs.writeBytes(psig.localNonce.toByteArray(), out)
+            LightningCodecs.writeBytes(psig.remoteNonce.toByteArray(), out)
         }
 
         companion object : TlvValueReader<SwapInUserPartialSigs> {
             const val tag: Long = 607
             override fun read(input: Input): SwapInUserPartialSigs {
-                val count = input.availableBytes / (32 + 66)
+                val count = input.availableBytes / (32 + 2 * 66)
                 val psigs = (0 until count).map {
                     val sig = LightningCodecs.bytes(input, 32).byteVector32()
-                    val nonce = AggregatedNonce(LightningCodecs.bytes(input, 66))
-                    TxSignatures.Companion.PartialSignature(sig, nonce)
+                    val localNonce = IndividualNonce(LightningCodecs.bytes(input, 66))
+                    val remoteNonce = IndividualNonce(LightningCodecs.bytes(input, 66))
+                    PartialSignature(sig, localNonce, remoteNonce)
                 }
                 return SwapInUserPartialSigs(psigs)
             }
         }
     }
 
-    data class SwapInServerPartialSigs(val psigs: List<TxSignatures.Companion.PartialSignature>) : TxSignaturesTlv() {
+    /** Partial musig2 signatures from the swap server for inputs that belong to the user. */
+    data class SwapInServerPartialSigs(val psigs: List<PartialSignature>) : TxSignaturesTlv() {
         override val tag: Long get() = SwapInServerPartialSigs.tag
         override fun write(out: Output) = psigs.forEach { psig ->
             LightningCodecs.writeBytes(psig.sig, out)
-            LightningCodecs.writeBytes(psig.aggregatedPublicNonce.toByteArray(), out)
+            LightningCodecs.writeBytes(psig.localNonce.toByteArray(), out)
+            LightningCodecs.writeBytes(psig.remoteNonce.toByteArray(), out)
         }
 
         companion object : TlvValueReader<SwapInServerPartialSigs> {
             const val tag: Long = 609
             override fun read(input: Input): SwapInServerPartialSigs {
-                val count = input.availableBytes / (32 + 66)
+                val count = input.availableBytes / (32 + 2 * 66)
                 val psigs = (0 until count).map {
                     val sig = LightningCodecs.bytes(input, 32).byteVector32()
-                    val nonce = AggregatedNonce(LightningCodecs.bytes(input, 66))
-                    TxSignatures.Companion.PartialSignature(sig, nonce)
+                    val localNonce = IndividualNonce(LightningCodecs.bytes(input, 66))
+                    val remoteNonce = IndividualNonce(LightningCodecs.bytes(input, 66))
+                    PartialSignature(sig, localNonce, remoteNonce)
                 }
                 return SwapInServerPartialSigs(psigs)
             }

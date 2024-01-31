@@ -7,9 +7,7 @@ import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
-import fr.acinq.bitcoin.crypto.musig2.KeyAggCache
-import fr.acinq.bitcoin.crypto.musig2.SecretNonce
+import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -52,10 +50,11 @@ import fr.acinq.lightning.transactions.Transactions.makeHtlcPenaltyTx
 import fr.acinq.lightning.transactions.Transactions.makeHtlcTxs
 import fr.acinq.lightning.transactions.Transactions.makeMainPenaltyTx
 import fr.acinq.lightning.transactions.Transactions.sign
-import fr.acinq.lightning.transactions.Transactions.swapInputWeightLegacy
 import fr.acinq.lightning.transactions.Transactions.swapInputWeight
+import fr.acinq.lightning.transactions.Transactions.swapInputWeightLegacy
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.wire.TxSignaturesTlv
 import fr.acinq.lightning.wire.UpdateAddHtlc
 import kotlin.random.Random
 import kotlin.test.*
@@ -484,75 +483,6 @@ class TransactionsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `spend 2-of-2 swap-in taproot without musig2 version`() {
-        val userPrivateKey = PrivateKey(ByteArray(32) { 1 })
-        val serverPrivateKey = PrivateKey(ByteArray(32) { 2 })
-
-        // mutual agreement script is generated from this policy: and_v(v:pk(A),pk(B))
-        val mutualScript = listOf(OP_PUSHDATA(userPrivateKey.xOnlyPublicKey()), OP_CHECKSIGVERIFY, OP_PUSHDATA(serverPrivateKey.xOnlyPublicKey()), OP_CHECKSIG)
-
-        // the refund script is generated from this policy: and_v(v:pk(user),older(refundDelay))
-        val refundDelay = 144
-        val refundScript = listOf(OP_PUSHDATA(userPrivateKey.xOnlyPublicKey()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
-
-        // we have a simple script tree with 2 leaves
-        val scriptTree = ScriptTree.Branch(
-            ScriptTree.Leaf(0, mutualScript),
-            ScriptTree.Leaf(1, refundScript)
-        )
-        val merkleRoot = scriptTree.hash()
-
-        // we choose a pubkey that does not have a corresponding private key: our swap-in tx can only be spent through the script path, not the key path
-        val internalPubkey = XonlyPublicKey(PublicKey.fromHex("0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"))
-        val (tweakedKey, parity) = internalPubkey.outputKey(Crypto.TaprootTweak.ScriptTweak(merkleRoot))
-
-        val swapInTx = Transaction(
-            version = 2,
-            txIn = listOf(),
-            txOut = listOf(TxOut(Satoshi(10000), listOf(OP_1, OP_PUSHDATA(tweakedKey)))),
-            lockTime = 0
-        )
-
-        // The transaction can be spent if the user and the server produce a signature.
-        run {
-            val tx = Transaction(
-                version = 2,
-                txIn = listOf(TxIn(OutPoint(swapInTx, 0), sequence = TxIn.SEQUENCE_FINAL)),
-                txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
-                lockTime = 0
-            )
-            // we want to spend the left leave of the tree, so we provide the hash of the right leave (to be able to recompute the merkle root of the tree)
-            val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) +
-                    internalPubkey.value.toByteArray() +
-                    scriptTree.right.hash().toByteArray()
-
-            val txHash = Transaction.hashForSigningSchnorr(tx, 0, swapInTx.txOut, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, scriptTree.left.hash())
-            val userSig = Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
-            val serverSig = Crypto.signSchnorr(txHash, serverPrivateKey, Crypto.SchnorrTweak.NoTweak)
-
-            val signedTx = tx.updateWitness(0, ScriptWitness.empty.push(serverSig).push(userSig).push(mutualScript).push(controlBlock))
-            Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        }
-
-        // Or it can be spent with only the user's signature, after a delay.
-        run {
-            val tx = Transaction(
-                version = 2,
-                txIn = listOf(TxIn(OutPoint(swapInTx, 0), sequence = refundDelay.toLong())),
-                txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
-                lockTime = 0
-            )
-            val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) +
-                    internalPubkey.value.toByteArray() +
-                    scriptTree.left.hash().toByteArray()
-            val txHash = Transaction.hashForSigningSchnorr(tx, 0, swapInTx.txOut, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, scriptTree.right.hash())
-            val userSig = Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
-            val signedTx = tx.updateWitness(0, ScriptWitness.empty.push(userSig).push(refundScript).push(controlBlock))
-            Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        }
-    }
-
-    @Test
     fun `spend 2-of-2 swap-in taproot-musig2 version`() {
         val userPrivateKey = PrivateKey(ByteArray(32) { 1 })
         val serverPrivateKey = PrivateKey(ByteArray(32) { 2 })
@@ -579,17 +509,21 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
                 lockTime = 0
             )
-            // this is the beginning of an interactive musig2 signing session. if user and server are disconnected before they have exchanged partial
-            // signatures they will have to start again with fresh nonces
-            val (_, cache) = KeyAggCache.add(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey())).right!!
-            val userNonce = SecretNonce.generate(randomBytes32(), userPrivateKey, userPrivateKey.publicKey(), null, cache, null).right!!
-            val serverNonce = SecretNonce.generate(randomBytes32(), serverPrivateKey, serverPrivateKey.publicKey(), null, cache, null).right!!
-            val commonNonce = IndividualNonce.aggregate(listOf(userNonce.second, serverNonce.second)).right!!
-            val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce).right!!
-            val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first).right!!
-            val ctx = swapInProtocol.session(tx, 0, swapInTx.txOut, commonNonce).right!!
-            val commonSig = ctx.add(listOf(userSig, serverSig)).right!!
-            val signedTx = tx.updateWitness(0, swapInProtocol.witness(commonSig))
+            // The first step of a musig2 signing session is to exchange nonces.
+            // If participants are disconnected before the end of the signing session, they must start again with fresh nonces.
+            val userNonce = Musig2.generateNonce(randomBytes32(), userPrivateKey, listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
+            val serverNonce = Musig2.generateNonce(randomBytes32(), serverPrivateKey, listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()))
+
+            // Once they have each other's public nonce, they can produce partial signatures.
+            val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, userNonce.second, serverNonce.second).right!!
+            val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, serverPrivateKey, serverNonce.first, userNonce.second, serverNonce.second).right!!
+
+            // Once they have each other's partial signature, they can aggregate them into a valid signature.
+            val userPartialSig = TxSignaturesTlv.PartialSignature(userSig, userNonce.second, serverNonce.second)
+            val serverPartialSig = TxSignaturesTlv.PartialSignature(serverSig, serverNonce.second, userNonce.second)
+            val witness = swapInProtocol.witness(tx, 0, swapInTx.txOut, userPartialSig, serverPartialSig).right
+            assertNotNull(witness)
+            val signedTx = tx.updateWitness(0, witness)
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
 
@@ -624,11 +558,9 @@ class TransactionsTestsCommon : LightningTestSuite() {
     @Test
     fun `swap-in input weight -- musig2 version`() {
         val pubkey = randomKey().publicKey()
-        // DER-encoded ECDSA signatures usually take up to 72 bytes.
         val sig = ByteVector64.fromValidHex("90b658d172a51f1b3f1a2becd30942397f5df97da8cd2c026854607e955ad815ccfd87d366e348acc32aaf15ff45263aebbb7ecc913a0e5999133f447aee828c")
         val tx = Transaction(2, listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
-        val swapInProtocol = SwapInProtocol(pubkey, pubkey, pubkey, 144)
-        val witness = swapInProtocol.witness(sig)
+        val witness = Script.witnessKeyPathPay2tr(sig)
         val swapInput = TxIn(OutPoint(TxId(ByteVector32.Zeroes), 3), ByteVector.empty, 0, witness)
         val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))
         val inputWeight = txWithAdditionalInput.weight() - tx.weight()

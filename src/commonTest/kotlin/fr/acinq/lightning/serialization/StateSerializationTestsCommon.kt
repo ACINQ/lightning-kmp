@@ -18,7 +18,6 @@ import fr.acinq.lightning.wire.CommitSig
 import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.LightningMessage
 import fr.acinq.lightning.wire.LiquidityAds
-import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.secp256k1.Hex
 import kotlin.math.max
 import kotlin.test.*
@@ -117,7 +116,6 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             assertIs<SpliceStatus.WaitingForSigs>(splice)
             assertNull(splice.session.liquidityLease)
             assertTrue(splice.session.localCommit.isLeft)
-            //assertContentEquals(bin, Serialization.serialize(state).dropLast(2).toByteArray()) // we add a discriminator byte and the liquidity lease count (0x0100)
             assertTrue(state.liquidityLeases.isEmpty())
             val state1 = state.copy(
                 liquidityLeases = listOf(
@@ -136,7 +134,6 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             assertIs<SpliceStatus.WaitingForSigs>(splice)
             assertNull(splice.session.liquidityLease)
             assertTrue(splice.session.localCommit.isRight)
-            //assertContentEquals(bin, Serialization.serialize(state).dropLast(2).toByteArray()) // we add a discriminator byte and the liquidity lease count (0x0100)
             assertTrue(state.liquidityLeases.isEmpty())
             val state1 = state.copy(
                 liquidityLeases = listOf(

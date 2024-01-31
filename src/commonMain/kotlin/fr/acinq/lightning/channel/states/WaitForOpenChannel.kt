@@ -86,7 +86,7 @@ data class WaitForOpenChannel(
                                     Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                 }
                                 is Either.Right -> {
-                                    val interactiveTxSession = InteractiveTxSession(channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, fundingContributions.value)
+                                    val interactiveTxSession = InteractiveTxSession(staticParams.remoteNodeId, channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, fundingContributions.value)
                                     val nextState = WaitForFundingCreated(
                                         localParams,
                                         remoteParams,

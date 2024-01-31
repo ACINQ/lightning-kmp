@@ -228,7 +228,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         actions1.hasOutgoingMessage<TxAckRbf>()
         val input = alice.state.latestFundingTx.sharedTx.tx.localInputs.first()
         val tlvs = when (input) {
-            is InteractiveTxInput.LocalSwapIn -> TlvStream<TxAddInputTlv>(input.swapInParams)
+            is InteractiveTxInput.LocalSwapIn -> TlvStream<TxAddInputTlv>(TxAddInputTlv.SwapInParams(input.userKey, input.serverKey, input.userRefundKey, input.refundDelay))
             is InteractiveTxInput.LocalLegacySwapIn -> TlvStream<TxAddInputTlv>(TxAddInputTlv.SwapInParamsLegacy(input.userKey, input.serverKey, input.refundDelay))
             is InteractiveTxInput.LocalOnly -> TlvStream.empty()
         }

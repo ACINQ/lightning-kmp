@@ -1,9 +1,9 @@
 package fr.acinq.lightning.serialization.v4
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
@@ -285,8 +285,13 @@ object Serialization {
         is InteractiveTxInput.LocalSwapIn -> i.run {
             write(0x03)
             writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
             writeNumber(sequence.toLong())
-            swapInParams.write(this@writeLocalInteractiveTxInput)
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writePublicKey(userRefundKey)
+            writeNumber(refundDelay)
         }
     }
 
@@ -311,8 +316,13 @@ object Serialization {
         is InteractiveTxInput.RemoteSwapIn -> i.run {
             write(0x03)
             writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
             writeNumber(sequence.toLong())
-            swapInParams.write(this@writeRemoteInteractiveTxInput)
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writePublicKey(userRefundKey)
+            writeNumber(refundDelay)
         }
     }
 
