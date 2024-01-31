@@ -32,15 +32,22 @@ sealed interface LiquidityEvents : NodeEvents {
     val source: Source
 
     enum class Source { OnChainWallet, OffChainPayment }
-    data class Rejected(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val reason: Reason) : LiquidityEvents {
-        sealed class Reason {
-            data object PolicySetToDisabled : Reason()
-            sealed class TooExpensive : Reason() {
-                data class OverAbsoluteFee(val maxAbsoluteFee: Satoshi) : TooExpensive()
-                data class OverRelativeFee(val maxRelativeFeeBasisPoints: Int) : TooExpensive()
+
+    sealed interface Decision : LiquidityEvents {
+        data class Rejected(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val reason: Reason) : Decision {
+            sealed class Reason {
+                data object PolicySetToDisabled : Reason()
+                sealed class TooExpensive : Reason() {
+                    data class OverAbsoluteFee(val maxAbsoluteFee: Satoshi) : TooExpensive()
+                    data class OverRelativeFee(val maxRelativeFeeBasisPoints: Int) : TooExpensive()
+                }
+                data class OverMaxCredit(val maxAllowedCredit: Satoshi) : TooExpensive()
+
+                data object ChannelInitializing : Reason()
             }
-            data object ChannelInitializing : Reason()
         }
+        data class AddedToFeeCredit(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source) : Decision
+        data class Accepted(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source) : Decision
     }
 
     data class ApprovalRequested(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val replyTo: CompletableDeferred<Boolean>) : LiquidityEvents

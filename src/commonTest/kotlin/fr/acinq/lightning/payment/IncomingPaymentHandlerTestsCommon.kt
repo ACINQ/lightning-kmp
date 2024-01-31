@@ -240,9 +240,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (paymentHandler, _, _) = createFixture(defaultAmount)
         val payToOpenRequest = PayToOpenRequest(
             chainHash = BlockHash(ByteVector32.Zeroes),
-            fundingSatoshis = 100_000.sat,
             amountMsat = defaultAmount,
-            payToOpenMinAmountMsat = 1_000_000.msat,
             payToOpenFeeSatoshis = 100.sat,
             paymentHash = ByteVector32.One, // <-- not associated to a pending invoice
             expireAt = Long.MAX_VALUE,
@@ -332,9 +330,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val payToOpenRequest = PayToOpenRequest(
             chainHash = BlockHash(ByteVector32.Zeroes),
-            fundingSatoshis = 100_000.sat,
             amountMsat = defaultAmount,
-            payToOpenMinAmountMsat = 1_000_000.msat,
             payToOpenFeeSatoshis = 100.sat,
             paymentHash = incomingPayment.paymentHash,
             expireAt = Long.MAX_VALUE,
@@ -1208,9 +1204,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         private fun makePayToOpenRequest(incomingPayment: IncomingPayment, finalPayload: PaymentOnion.FinalPayload): PayToOpenRequest {
             return PayToOpenRequest(
                 chainHash = Block.RegtestGenesisBlock.hash,
-                fundingSatoshis = 100_000.sat,
                 amountMsat = finalPayload.amount,
-                payToOpenMinAmountMsat = 10_000.msat,
                 payToOpenFeeSatoshis = finalPayload.amount.truncateToSatoshi() * payToOpenFeerate, // 10%
                 paymentHash = incomingPayment.paymentHash,
                 expireAt = Long.MAX_VALUE,
