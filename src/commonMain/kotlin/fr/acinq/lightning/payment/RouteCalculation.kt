@@ -2,11 +2,11 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.states.ChannelState
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.logging.*
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 

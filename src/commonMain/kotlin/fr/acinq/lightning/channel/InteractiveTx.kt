@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.getOrDefault
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -656,7 +657,7 @@ data class InteractiveTxSession(
         swapInKeys,
         fundingParams,
         SharedFundingInputBalances(previousLocalBalance, previousRemoteBalance, localHtlcs.map { it.add.amountMsat }.sum()),
-        fundingContributions.inputs.map { i -> Either.Left<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>(i) } + fundingContributions.outputs.map { o -> Either.Right<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>(o) },
+        fundingContributions.inputs.map { i -> Either.Left<InteractiveTxInput.Outgoing>(i) } + fundingContributions.outputs.map { o -> Either.Right<InteractiveTxOutput.Outgoing>(o) },
         previousTxs,
         localHtlcs
     )
@@ -664,7 +665,8 @@ data class InteractiveTxSession(
     val isComplete: Boolean = txCompleteSent != null && txCompleteReceived != null
 
     fun send(): Pair<InteractiveTxSession, InteractiveTxSessionAction> {
-        return when (val msg = toSend.firstOrNull()) {
+        val msg = toSend.firstOrNull()
+        return when (msg) {
             null -> {
                 val localSwapIns = localInputs.filterIsInstance<InteractiveTxInput.LocalSwapIn>()
                 val remoteSwapIns = remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapIn>()

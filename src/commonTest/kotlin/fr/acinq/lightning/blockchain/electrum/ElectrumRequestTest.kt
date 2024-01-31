@@ -3,6 +3,7 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.BlockHash
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.*
 import kotlinx.serialization.json.Json

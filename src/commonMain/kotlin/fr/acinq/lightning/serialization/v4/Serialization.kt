@@ -4,13 +4,13 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.LightningCodecs
 import fr.acinq.lightning.wire.LightningMessage
 import fr.acinq.lightning.wire.LiquidityAds

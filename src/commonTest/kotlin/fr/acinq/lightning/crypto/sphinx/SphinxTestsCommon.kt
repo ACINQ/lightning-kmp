@@ -5,12 +5,12 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.EncodedNodeId
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx.computeEphemeralPublicKeysAndSharedSecrets
 import fr.acinq.lightning.crypto.sphinx.Sphinx.decodePayloadLength
 import fr.acinq.lightning.crypto.sphinx.Sphinx.generateFiller
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
 import fr.acinq.secp256k1.Hex

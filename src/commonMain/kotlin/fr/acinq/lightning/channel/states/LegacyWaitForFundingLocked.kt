@@ -1,11 +1,11 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.router.Announcements
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.Error

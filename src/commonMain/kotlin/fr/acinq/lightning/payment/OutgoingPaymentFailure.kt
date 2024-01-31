@@ -1,8 +1,8 @@
 package fr.acinq.lightning.payment
 
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.db.LightningOutgoingPayment
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.wire.*
 

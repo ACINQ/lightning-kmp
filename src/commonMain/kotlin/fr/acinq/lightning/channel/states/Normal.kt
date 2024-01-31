@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.SigHash
 import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.ShortChannelId
@@ -521,12 +522,12 @@ data class Normal(
                                 spliceStatus.spliceInit.feerate,
                                 cmd.message.willFund,
                             )) {
-                                is Either.Left -> {
+                                is Either.Left<ChannelException> -> {
                                     logger.error { "rejecting liquidity proposal: ${liquidityLease.value.message}" }
                                     spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidLiquidityAds(liquidityLease.value))
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, liquidityLease.value.message))))
                                 }
-                                is Either.Right -> {
+                                is Either.Right<LiquidityAds.Lease?> -> {
                                     val parentCommitment = commitments.active.first()
                                     val sharedInput = SharedFundingInput.Multisig2of2(parentCommitment)
                                     val fundingParams = InteractiveTxParams(

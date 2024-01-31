@@ -1,6 +1,7 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.io.send
@@ -129,7 +130,7 @@ class ElectrumClient(
         withTimeout(timeout) {
             val handshakeFlow = linesFlow(socket)
                 .map { json.decodeFromString(ElectrumResponseDeserializer, it) }
-                .filterIsInstance<Either.Right<Nothing, JsonRPCResponse>>()
+                .filterIsInstance<Either.Right<JsonRPCResponse>>()
                 .map { it.value }
             // Note that since we synchronously wait for the response, we can safely reuse requestId = 0.
             val ourVersion = ServerVersion()

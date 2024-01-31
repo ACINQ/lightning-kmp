@@ -1,10 +1,10 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 

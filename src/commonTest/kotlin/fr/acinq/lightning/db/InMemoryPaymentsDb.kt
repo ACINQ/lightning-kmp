@@ -3,10 +3,10 @@ package fr.acinq.lightning.db
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.OutgoingPaymentFailure
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.FailureMessage

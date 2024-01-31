@@ -100,6 +100,7 @@
 package fr.acinq.lightning.json
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
@@ -112,7 +113,6 @@ import fr.acinq.lightning.json.JsonSerializers.SurrogateSerializer
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.IncomingHtlc
 import fr.acinq.lightning.transactions.OutgoingHtlc
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.*

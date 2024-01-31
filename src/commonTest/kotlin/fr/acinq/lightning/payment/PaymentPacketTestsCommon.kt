@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.Lightning.randomBytes
