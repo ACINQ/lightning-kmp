@@ -249,7 +249,10 @@ object Deserialization {
             previousTx = readTransaction(),
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParams.read(this)
+            userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            userRefundKey = readPublicKey(),
+            refundDelay = readNumber().toInt(),
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Local::class}")
     }
@@ -269,13 +272,16 @@ object Deserialization {
             userKey = readPublicKey(),
             serverKey = readPublicKey(),
             refundDelay = readNumber().toInt()
-       )
+        )
         0x03 -> InteractiveTxInput.RemoteSwapIn(
             serialId = readNumber(),
             outPoint = readOutPoint(),
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
-            swapInParams = TxAddInputTlv.SwapInParams.read(this)
+            userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            userRefundKey = readPublicKey(),
+            refundDelay = readNumber().toInt()
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Remote::class}")
     }

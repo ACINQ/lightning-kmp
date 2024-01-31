@@ -378,6 +378,7 @@ data class Normal(
                                     targetFeerate = cmd.message.feerate
                                 )
                                 val session = InteractiveTxSession(
+                                    staticParams.remoteNodeId,
                                     channelKeys(),
                                     keyManager.swapInOnChainWallet,
                                     fundingParams,
@@ -459,6 +460,7 @@ data class Normal(
                                         is Either.Right -> {
                                             // The splice initiator always sends the first interactive-tx message.
                                             val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
+                                                staticParams.remoteNodeId,
                                                 channelKeys(),
                                                 keyManager.swapInOnChainWallet,
                                                 fundingParams,
