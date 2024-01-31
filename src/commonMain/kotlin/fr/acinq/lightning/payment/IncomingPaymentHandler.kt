@@ -192,7 +192,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
         when (paymentPart) {
             is HtlcPart -> logger.info { "processing htlc part expiry=${paymentPart.htlc.cltvExpiry}" }
-            is PayToOpenPart -> logger.info { "processing pay-to-open part amount=${paymentPart.payToOpenRequest.amountMsat} funding=${paymentPart.payToOpenRequest.fundingSatoshis} fees=${paymentPart.payToOpenRequest.payToOpenFeeSatoshis}" }
+            is PayToOpenPart -> logger.info { "processing pay-to-open part amount=${paymentPart.payToOpenRequest.amountMsat} fees=${paymentPart.payToOpenRequest.payToOpenFeeSatoshis}" }
         }
         return when (val validationResult = validatePaymentPart(paymentPart, currentBlockHeight)) {
             is Either.Left -> validationResult.value
@@ -250,23 +250,35 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             return ProcessAddResult.Pending(incomingPayment, payment)
                         }
                         else -> {
-                            if (payment.parts.filterIsInstance<PayToOpenPart>().isNotEmpty()) {
+                            val liquidityDecision = if (payment.parts.filterIsInstance<PayToOpenPart>().isNotEmpty()) {
                                 // We consider the total amount received (not only the pay-to-open parts) to evaluate whether or not to accept the payment
                                 val payToOpenFee = payment.parts.filterIsInstance<PayToOpenPart>().map { it.payToOpenRequest.payToOpenFeeSatoshis }.sum()
-                                nodeParams.liquidityPolicy.value.maybeReject(payment.amountReceived, payToOpenFee.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, logger)?.let { rejected ->
-                                    logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
-                                    nodeParams._nodeEvents.emit(rejected)
-                                    val actions = payment.parts.map { part ->
-                                        val failureMsg = TemporaryNodeFailure
-                                        when (part) {
-                                            is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
-                                            is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
+                                val decision = nodeParams.liquidityPolicy.value.maybeReject(payment.amountReceived, payToOpenFee.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, logger, nodeParams.feeCredit.value)
+                                logger.info { "pay-to-open decision: $decision" }
+                                nodeParams._nodeEvents.emit(decision)
+                                when (decision) {
+                                    is LiquidityEvents.Decision.Rejected -> {
+                                        logger.info { "rejecting pay-to-open: reason=${decision.reason}" }
+                                        val actions = payment.parts.map { part ->
+                                            val failureMsg = TemporaryNodeFailure
+                                            when (part) {
+                                                is HtlcPart -> actionForFailureMessage(failureMsg, part.htlc)
+                                                is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, part.payToOpenRequest) // NB: this will fail all parts, we could only return one
+                                            }
                                         }
+                                        pending.remove(paymentPart.paymentHash)
+                                        return ProcessAddResult.Rejected(actions, incomingPayment)
                                     }
-                                    pending.remove(paymentPart.paymentHash)
-                                    return ProcessAddResult.Rejected(actions, incomingPayment)
+                                    is LiquidityEvents.Decision.AddedToFeeCredit -> {
+                                        logger.info { "added pay-to-open to fee credit" }
+                                        decision
+                                    }
+                                    is LiquidityEvents.Decision.Accepted -> {
+                                        logger.info { "accepted pay-to-open" }
+                                        decision
+                                    }
                                 }
-                            }
+                            } else null
 
                             when (val paymentMetadata = paymentPart.finalPayload.paymentMetadata) {
                                 null -> logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
@@ -277,12 +289,21 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             // We only fill the DB with htlc parts, because we cannot be sure yet that our peer will honor the pay-to-open part(s).
                             // When the payment contains pay-to-open parts, it will be considered received, but the sum of all parts will be smaller
                             // than the expected amount. The pay-to-open part(s) will be added once we received the corresponding new channel or a splice-in.
-                            val receivedWith = htlcParts.map { part ->
-                                IncomingPayment.ReceivedWith.LightningPayment(
-                                    amount = part.amount,
-                                    htlcId = part.htlc.id,
-                                    channelId = part.htlc.channelId
-                                )
+                            val receivedWith = buildList {
+                                addAll(htlcParts.map { part ->
+                                    IncomingPayment.ReceivedWith.LightningPayment(
+                                        amount = part.amount,
+                                        htlcId = part.htlc.id,
+                                        channelId = part.htlc.channelId
+                                    )
+                                })
+                                if (liquidityDecision is LiquidityEvents.Decision.AddedToFeeCredit) {
+                                    addAll(payToOpenParts.map { part ->
+                                        IncomingPayment.ReceivedWith.FeeCreditPayment(
+                                            amount = part.amount
+                                        )
+                                    })
+                                }
                             }
                             val actions = buildList {
                                 htlcParts.forEach { part ->
@@ -291,7 +312,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                                 }
                                 // We avoid sending duplicate pay-to-open responses, since the preimage is the same for every part.
                                 if (payToOpenParts.isNotEmpty()) {
-                                    val response = PayToOpenResponse(nodeParams.chainHash, incomingPayment.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage))
+                                    val response = PayToOpenResponse(nodeParams.chainHash, incomingPayment.paymentHash, PayToOpenResponse.Result.Success(incomingPayment.preimage, addToFeeCredit = liquidityDecision is LiquidityEvents.Decision.AddedToFeeCredit))
                                     add(PayToOpenResponseCommand(response))
                                 }
                             }
