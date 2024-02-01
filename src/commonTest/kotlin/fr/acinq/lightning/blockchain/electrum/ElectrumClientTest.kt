@@ -72,7 +72,7 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `status should be empty for unused addresses`() = runTest { client ->
         val address = "bc1qzp2r7k62chyyq7g8ppw2dxp2lcrt629ym0swqy"
-        val scriptHash = ElectrumClient.computeScriptHash(Script.write(Bitcoin.addressToPublicKeyScript(Block.LivenetGenesisBlock.hash, address).result!!).byteVector())
+        val scriptHash = ElectrumClient.computeScriptHash(Script.write(Bitcoin.addressToPublicKeyScript(Block.LivenetGenesisBlock.hash, address).right!!).byteVector())
         val status = client.startScriptHashSubscription(scriptHash)
         assertNull(status.status)
     }

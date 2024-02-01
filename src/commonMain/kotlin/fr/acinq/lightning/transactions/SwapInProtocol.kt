@@ -1,14 +1,12 @@
 package fr.acinq.lightning.transactions
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.crypto.musig2.AggregatedNonce
-import fr.acinq.bitcoin.crypto.musig2.KeyAggCache
-import fr.acinq.bitcoin.crypto.musig2.SecretNonce
-import fr.acinq.bitcoin.crypto.musig2.Session
+import fr.acinq.bitcoin.crypto.musig2.*
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.wire.TxAddInputTlv
+import fr.acinq.lightning.wire.TxSignaturesTlv
 
 /**
  * new swap-in protocol based on musig2 and taproot: (user key + server key) OR (user refund key + delay)
@@ -20,62 +18,44 @@ import fr.acinq.lightning.wire.TxAddInputTlv
 class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) {
     constructor(swapInParams: TxAddInputTlv.SwapInParams) : this(swapInParams.userKey, swapInParams.serverKey, swapInParams.userRefundKey, swapInParams.refundDelay)
 
-    // the redeem script is just the refund script. it is generated from this policy: and_v(v:pk(user),older(refundDelay))
+    // the refund script is generated from this policy: and_v(v:pk(user),older(refundDelay))
     // it does not depend upon the user's or server's key, just the user's refund key and the refund delay
-    val redeemScript = listOf(OP_PUSHDATA(userRefundKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
-    private val scriptTree = ScriptTree.Leaf(0, redeemScript)
-    private val merkleRoot = scriptTree.hash()
+    private val refundScript = listOf(OP_PUSHDATA(userRefundKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
+    private val scriptTree = ScriptTree.Leaf(0, refundScript)
 
     // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
-    private val internalPubKeyAndCache = run {
-        val c = KeyAggCache.add(listOf(userPublicKey, serverPublicKey), null)
-        if (c.isLeft) error("key aggregation failed") else c.right!!
+    private val internalPubKey = KeyAggCache.create(listOf(userPublicKey, serverPublicKey)).first
+
+    // it is tweaked with the script's merkle root to get the pubkey that will be exposed in a regular p2tr script
+    val pubkeyScript: List<ScriptElt> = Script.pay2tr(internalPubKey, scriptTree)
+
+    fun address(chain: NodeParams.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
+
+    fun witness(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPartialSig: TxSignaturesTlv.PartialSignature, serverPartialSig: TxSignaturesTlv.PartialSignature): Either<Throwable, ScriptWitness> {
+        val publicKeys = listOf(userPublicKey, serverPublicKey)
+        val publicNonces = listOf(userPartialSig.localNonce, userPartialSig.remoteNonce)
+        val sigs = listOf(userPartialSig.sig, serverPartialSig.sig)
+        return Musig2.aggregateTaprootSignatures(sigs, fundingTx, index, parentTxOuts, publicKeys, publicNonces, scriptTree).map { aggregateSig ->
+            Script.witnessKeyPathPay2tr(aggregateSig)
+        }
     }
-    private val internalPubKey = internalPubKeyAndCache.first
-    private val cache = internalPubKeyAndCache.second
 
+    fun witnessRefund(userSig: ByteVector64): ScriptWitness = Script.witnessScriptPathPay2tr(internalPubKey, scriptTree, ScriptWitness(listOf(userSig)), scriptTree)
 
-    // it is tweaked with the script's merkle root to get the pubkey that will be exposed
-    private val commonPubKeyAndParity = internalPubKey.outputKey(Crypto.TaprootTweak.ScriptTweak(merkleRoot))
-    val commonPubKey = commonPubKeyAndParity.first
-    private val parity = commonPubKeyAndParity.second
-    val pubkeyScript: List<ScriptElt> = Script.pay2tr(commonPubKey)
-
-    private val controlBlock = byteArrayOf((Script.TAPROOT_LEAF_TAPSCRIPT + (if (parity) 1 else 0)).toByte()) + internalPubKey.value.toByteArray()
-
-    fun isMine(txOut: TxOut): Boolean = txOut.publicKeyScript.contentEquals(Script.write(pubkeyScript))
-
-    fun address(chain: NodeParams.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).result!!
-
-    fun witness(commonSig: ByteVector64): ScriptWitness = ScriptWitness(listOf(commonSig))
-
-    fun witnessRefund(userSig: ByteVector64): ScriptWitness = ScriptWitness.empty.push(userSig).push(redeemScript).push(controlBlock)
-
-    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: SecretNonce, commonNonce: AggregatedNonce): Either<Throwable, ByteVector32> {
+    fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, userNonce: Pair<SecretNonce, IndividualNonce>, serverNonce: IndividualNonce): Either<Throwable, ByteVector32> {
         require(userPrivateKey.publicKey() == userPublicKey)
-        val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-
-        return cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)
-            .flatMap { (c, _) -> Session.build(commonNonce, txHash, c).map { s -> Pair(s, c) } }
-            .flatMap { (s, c) -> s.sign(userNonce, userPrivateKey, c) }
+        return Musig2.signTaprootInput(userPrivateKey, fundingTx, index, parentTxOuts, listOf(userPublicKey, serverPublicKey), userNonce.first, listOf(userNonce.second, serverNonce), scriptTree)
     }
 
     fun signSwapInputRefund(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey): ByteVector64 {
+        require(userPrivateKey.publicKey() == userRefundKey)
+        val merkleRoot = scriptTree.hash()
         val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPSCRIPT, merkleRoot)
         return Crypto.signSchnorr(txHash, userPrivateKey, Crypto.SchnorrTweak.NoTweak)
     }
 
-    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce, serverPrivateKey: PrivateKey, serverNonce: SecretNonce): Either<Throwable, ByteVector32> {
-        val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        return cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)
-            .flatMap { (c, _) -> Session.build(commonNonce, txHash, c).map { s -> Pair(s, c) } }
-            .flatMap { (s, c) -> s.sign(serverNonce, serverPrivateKey, c) }
-    }
-
-    fun session(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, commonNonce: AggregatedNonce): Either<Throwable, Session> {
-        val txHash = Transaction.hashForSigningSchnorr(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, SigVersion.SIGVERSION_TAPROOT)
-        return cache.tweak(internalPubKey.tweak(Crypto.TaprootTweak.ScriptTweak(merkleRoot)), true)
-            .flatMap { (c, _) -> Session.build(commonNonce, txHash, c) }
+    fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: IndividualNonce, serverPrivateKey: PrivateKey, serverNonce: Pair<SecretNonce, IndividualNonce>): Either<Throwable, ByteVector32> {
+        return Musig2.signTaprootInput(serverPrivateKey, fundingTx, index, parentTxOuts, listOf(userPublicKey, serverPublicKey), serverNonce.first, listOf(userNonce, serverNonce.second), scriptTree)
     }
 
     companion object {
@@ -88,18 +68,17 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
          * @param masterRefundKey master private key for the refund keys. we assume that there is a single level of derivation to compute the refund keys
          * @return a taproot descriptor that can be imported in bitcoin core (from version 26 on) to recover user funds once the funding delay has passed
          */
-        fun descriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): Either<Throwable, String> {
+        fun descriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): String {
             // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
-            return KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey)).map { (internalPubKey, _) ->
-                val prefix = when (chain) {
-                    NodeParams.Chain.Mainnet -> DeterministicWallet.xprv
-                    else -> DeterministicWallet.tprv
-                }
-                val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
-                val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
-                val checksum = Descriptor.checksum(desc)
-                "$desc#$checksum"
+            val internalPubKey = KeyAggCache.Companion.create(listOf(userPublicKey, serverPublicKey)).first
+            val prefix = when (chain) {
+                NodeParams.Chain.Mainnet -> DeterministicWallet.xprv
+                else -> DeterministicWallet.tprv
             }
+            val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
+            val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
+            val checksum = Descriptor.checksum(desc)
+            return "$desc#$checksum"
         }
 
         /**
@@ -111,19 +90,18 @@ class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKe
          * @param masterRefundKey master public key for the refund keys. we assume that there is a single level of derivation to compute the refund keys
          * @return a taproot descriptor that can be imported in bitcoin core (from version 26 on) to create a watch-only wallet for your swap-in transactions
          */
-        fun descriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPublicKey): Any {
+        fun descriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPublicKey): String {
             // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
-            return KeyAggCache.Companion.add(listOf(userPublicKey, serverPublicKey)).map { (internalPubKey, _) ->
-                val prefix = when (chain) {
-                    NodeParams.Chain.Mainnet -> DeterministicWallet.xpub
-                    else -> DeterministicWallet.tpub
-                }
-                val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
-                val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
-                val desc = "tr(${internalPubKey.value},and_v(v:pk($xpub$path/*),older($refundDelay)))"
-                val checksum = Descriptor.checksum(desc)
-                return "$desc#$checksum"
+            val internalPubKey = KeyAggCache.Companion.create(listOf(userPublicKey, serverPublicKey)).first
+            val prefix = when (chain) {
+                NodeParams.Chain.Mainnet -> DeterministicWallet.xpub
+                else -> DeterministicWallet.tpub
             }
+            val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
+            val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
+            val desc = "tr(${internalPubKey.value},and_v(v:pk($xpub$path/*),older($refundDelay)))"
+            val checksum = Descriptor.checksum(desc)
+            return "$desc#$checksum"
         }
     }
 }
@@ -150,7 +128,7 @@ class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKey: Pu
 
     fun isMine(txOut: TxOut): Boolean = txOut.publicKeyScript.contentEquals(Script.write(pubkeyScript))
 
-    fun address(chain: NodeParams.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).result!!
+    fun address(chain: NodeParams.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
 
     fun witness(userSig: ByteVector64, serverSig: ByteVector64): ScriptWitness {
         return ScriptWitness(listOf(Scripts.der(serverSig, SigHash.SIGHASH_ALL), Scripts.der(userSig, SigHash.SIGHASH_ALL), Script.write(redeemScript).byteVector()))
@@ -161,11 +139,30 @@ class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKey: Pu
     }
 
     fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PrivateKey): ByteVector64 {
-        require(userKey.publicKey() == userPublicKey)
+        require(userKey.publicKey() == userPublicKey) { "user private key does not match expected public key: are you using the refund key instead of the user key?" }
         return Transactions.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, userKey)
     }
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, serverKey: PrivateKey): ByteVector64 {
         return Transactions.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, serverKey)
+    }
+
+    /**
+     * The output script descriptor matching our legacy swap-in addresses.
+     * That descriptor can be imported in bitcoind to recover funds after the refund delay.
+     *
+     * @param chain chain we're on.
+     * @param masterRefundKey master private key for the swap-in wallet.
+     * @param userPrivateKey user refund private key, derived from the master private key.
+     * @return a p2wsh descriptor that can be imported in bitcoin core (from version 24 on) to recover user funds once the funding delay has passed.
+     */
+    fun descriptor(chain: NodeParams.Chain, masterRefundKey: DeterministicWallet.ExtendedPrivateKey, userPrivateKey: DeterministicWallet.ExtendedPrivateKey): String {
+        // Since child public keys cannot be derived from a master xpub when hardened derivation is used,
+        // we need to provide the fingerprint of the master xpub and the hardened derivation path.
+        // This lets wallets that have access to the master xpriv derive the corresponding private and public keys.
+        val masterFingerprint = ByteVector(Crypto.hash160(DeterministicWallet.publicKey(masterRefundKey).publickeybytes).take(4).toByteArray())
+        val encodedChildKey = DeterministicWallet.encode(DeterministicWallet.publicKey(userPrivateKey), testnet = chain != NodeParams.Chain.Mainnet)
+        val userKey = "[${masterFingerprint.toHex()}/${KeyManager.SwapInOnChainKeys.encodedSwapInUserKeyPath(chain)}]$encodedChildKey"
+        return "wsh(and_v(v:pk($userKey),or_d(pk(${serverPublicKey.toHex()}),older($refundDelay))))"
     }
 }

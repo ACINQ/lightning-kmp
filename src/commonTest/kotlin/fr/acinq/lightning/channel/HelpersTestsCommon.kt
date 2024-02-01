@@ -21,7 +21,7 @@ class HelpersTestsCommon : LightningTestSuite() {
     fun `compute address from pubkey script`() {
         val pub = PrivateKey(Hex.decode("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
 
-        fun address(script: List<ScriptElt>, chainHash: BlockHash) = Bitcoin.addressFromPublicKeyScript(chainHash, Script.write(script)).result
+        fun address(script: List<ScriptElt>, chainHash: BlockHash) = Bitcoin.addressFromPublicKeyScript(chainHash, Script.write(script)).right
 
         listOf(Block.LivenetGenesisBlock.hash, Block.TestnetGenesisBlock.hash, Block.RegtestGenesisBlock.hash).forEach {
             assertEquals(address(Script.pay2pkh(pub), it), computeP2PkhAddress(pub, it))
@@ -44,7 +44,7 @@ class HelpersTestsCommon : LightningTestSuite() {
             Triple("a91481b9ac6a59b53927da7277b5ad5460d781b365d987", Block.LivenetGenesisBlock.hash, "3DWwX7NYjnav66qygrm4mBCpiByjammaWy"),
         ).forEach {
             assertEquals(
-                Bitcoin.addressFromPublicKeyScript(it.second, Hex.decode(it.first)).result,
+                Bitcoin.addressFromPublicKeyScript(it.second, Hex.decode(it.first)).right,
                 it.third
             )
         }

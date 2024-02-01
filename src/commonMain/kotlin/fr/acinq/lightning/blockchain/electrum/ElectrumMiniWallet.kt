@@ -167,17 +167,9 @@ class ElectrumMiniWallet(
         }
 
         fun computeScriptHash(bitcoinAddress: String): ByteVector32? {
-            return when (val result = Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)) {
-                is AddressToPublicKeyScriptResult.Failure -> {
-                    logger.error { "cannot subscribe to $bitcoinAddress ($result)" }
-                    null
-                }
-
-                is AddressToPublicKeyScriptResult.Success -> {
-                    val pubkeyScript = ByteVector(Script.write(result.script))
-                    return ElectrumClient.computeScriptHash(pubkeyScript)
-                }
-            }
+            return Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress)
+                .map { ElectrumClient.computeScriptHash(Script.write(it).byteVector()) }
+                .right
         }
 
         job = launch {

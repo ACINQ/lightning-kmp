@@ -448,10 +448,9 @@ data class SharedTransaction(
                 ?.let { input ->
                     val userNonce = session.secretNonces[input.serialId]!!
                     val serverNonce = receivedNonces[input.serialId]!!
-                    IndividualNonce.aggregate(listOf(userNonce.second, serverNonce))
-                        .flatMap { commonNonce -> keyManager.swapInOnChainWallet.signSwapInputUser(unsignedTx, i, previousOutputs, userNonce.first, commonNonce)
-                            .map { psig -> TxSignatures.Companion.PartialSignature(psig, commonNonce) }
-                        }.getOrDefault(null)
+                    keyManager.swapInOnChainWallet.signSwapInputUser(unsignedTx, i, previousOutputs, userNonce, serverNonce)
+                        .map { psig -> TxSignaturesTlv.PartialSignature(psig, userNonce.second, serverNonce) }
+                        .getOrDefault(null)
                 }
         }.filterNotNull()
 
@@ -476,10 +475,9 @@ data class SharedTransaction(
                     val userNonce = session.secretNonces[input.serialId]!!
                     val serverNonce = receivedNonces[input.serialId]!!
                     val swapInProtocol = SwapInProtocol(input.swapInParams.userKey, serverKey.publicKey(), input.swapInParams.userRefundKey, input.swapInParams.refundDelay)
-                    IndividualNonce.aggregate(listOf(userNonce.second, serverNonce))
-                        .flatMap { commonNonce ->  swapInProtocol.signSwapInputServer(unsignedTx, i, previousOutputs, commonNonce, serverKey, userNonce.first)
-                            .map { psig -> TxSignatures.Companion.PartialSignature(psig, commonNonce) }
-                        }.getOrDefault(null)
+                    swapInProtocol.signSwapInputServer(unsignedTx, i, previousOutputs, serverNonce, serverKey, userNonce)
+                        .map { psig -> TxSignaturesTlv.PartialSignature(psig, userNonce.second, serverNonce) }
+                        .getOrDefault(null)
                 }
         }.filterNotNull()
 
@@ -539,10 +537,8 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
         val localSwapTxInMusig2 = tx.localInputs.filterIsInstance<InteractiveTxInput.LocalSwapIn>().sortedBy { i -> i.serialId }.zip(localSigs.swapInUserPartialSigs.zip(remoteSigs.swapInServerPartialSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
             val swapInProtocol = SwapInProtocol(i.swapInParams)
-            val commonNonce = userSig.aggregatedPublicNonce
             val unsignedTx = tx.buildUnsignedTx()
-            val witness = swapInProtocol.session(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, unsignedTx.txIn.map { tx.spentOutputs[it.outPoint]!! }, commonNonce)
-                .flatMap { s -> s.add(listOf(userSig.sig, serverSig.sig)).map { commonSig -> swapInProtocol.witness(commonSig) } }
+            val witness = swapInProtocol.witness(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, unsignedTx.txIn.map { tx.spentOutputs[it.outPoint]!! }, userSig, serverSig)
             require(witness.isRight) { "cannot compute aggregated signature" }
             Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), witness.right!!))
         }
@@ -557,10 +553,8 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
         val remoteSwapTxInMusig2 = tx.remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapIn>().sortedBy { i -> i.serialId }.zip(remoteSigs.swapInUserPartialSigs.zip(localSigs.swapInServerPartialSigs)).map { (i, sigs) ->
             val (userSig, serverSig) = sigs
             val swapInProtocol = SwapInProtocol(i.swapInParams)
-            val commonNonce = userSig.aggregatedPublicNonce
             val unsignedTx = tx.buildUnsignedTx()
-            val witness = swapInProtocol.session(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, unsignedTx.txIn.map { tx.spentOutputs[it.outPoint]!! }, commonNonce)
-                .flatMap { s -> s.add(listOf(userSig.sig, serverSig.sig)).map { commonSig -> swapInProtocol.witness(commonSig) } }
+            val witness = swapInProtocol.witness(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, unsignedTx.txIn.map { tx.spentOutputs[it.outPoint]!! }, userSig, serverSig)
             require(witness.isRight) { "cannot compute aggregated signature" }
             Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), witness.right!!))
         }
@@ -694,8 +688,7 @@ data class InteractiveTxSession(
                     is InteractiveTxInput.LocalSwapIn -> {
                         // generate a secret nonce for this input if we don't already have one
                         val secretNonce = next.secretNonces[msg.value.serialId] ?: run {
-                            val s = SecretNonce.generate(randomBytes32(), swapInKeys.userPrivateKey, swapInKeys.userPublicKey, null, null, null)
-                            s.getOrElse { error("cannot generate secret nonce") }
+                            SecretNonce.generate(randomBytes32(), swapInKeys.userPrivateKey, swapInKeys.userPublicKey, null, null, null)
                         }
                         next.copy(secretNonces = next.secretNonces + (msg.value.serialId to secretNonce))
                     }
@@ -765,7 +758,6 @@ data class InteractiveTxSession(
         val session2 = when (input) {
             is InteractiveTxInput.RemoteSwapIn -> {
                 val secretNonce = secretNonces[input.serialId] ?: SecretNonce.generate(randomBytes32(), null, input.swapInParams.serverKey, null, null, null)
-                    .getOrElse {  error("cannot generate secret nonce") }
                 session1.copy(secretNonces = secretNonces + (input.serialId to secretNonce))
             }
 
