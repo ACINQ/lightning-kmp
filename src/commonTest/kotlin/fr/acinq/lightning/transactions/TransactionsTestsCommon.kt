@@ -7,10 +7,7 @@ import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
-import fr.acinq.bitcoin.crypto.musig2.KeyAggCache
-import fr.acinq.bitcoin.crypto.musig2.SecretNonce
-import fr.acinq.bitcoin.utils.flatMap
+import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -53,10 +50,11 @@ import fr.acinq.lightning.transactions.Transactions.makeHtlcPenaltyTx
 import fr.acinq.lightning.transactions.Transactions.makeHtlcTxs
 import fr.acinq.lightning.transactions.Transactions.makeMainPenaltyTx
 import fr.acinq.lightning.transactions.Transactions.sign
-import fr.acinq.lightning.transactions.Transactions.swapInputWeightLegacy
 import fr.acinq.lightning.transactions.Transactions.swapInputWeight
+import fr.acinq.lightning.transactions.Transactions.swapInputWeightLegacy
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.wire.TxSignaturesTlv
 import fr.acinq.lightning.wire.UpdateAddHtlc
 import kotlin.random.Random
 import kotlin.test.*
@@ -580,32 +578,21 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
                 lockTime = 0
             )
-            // this is the beginning of an interactive musig2 signing session. if user and server are disconnected before they have exchanged partial
-            // signatures they will have to start again with fresh nonces
+            // The first step of a musig2 signing session is to exchange nonces.
+            // If participants are disconnected before the end of the signing session, they must start again with fresh nonces.
+            val userNonce = Musig2.generateNonce(randomBytes32(), userPrivateKey, listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
+            val serverNonce = Musig2.generateNonce(randomBytes32(), serverPrivateKey, listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()))
 
-            val commonSig = KeyAggCache.add(listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
-                .flatMap { (_, cache) ->
-                    SecretNonce.generate(randomBytes32(), userPrivateKey, userPrivateKey.publicKey(), null, cache, null)
-                        .flatMap { userNonce ->
-                            SecretNonce.generate(randomBytes32(), serverPrivateKey, serverPrivateKey.publicKey(), null, cache, null)
-                                .flatMap { serverNonce ->
-                                    IndividualNonce.aggregate(listOf(userNonce.second, serverNonce.second))
-                                        .flatMap { commonNonce ->
-                                            swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, commonNonce)
-                                                .flatMap { userSig ->
-                                                    swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, commonNonce, serverPrivateKey, serverNonce.first)
-                                                        .flatMap { serverSig ->
-                                                            swapInProtocol.session(tx, 0, swapInTx.txOut, commonNonce)
-                                                                .flatMap { session -> session.add(listOf(userSig, serverSig)) }
-                                                        }
-                                                }
-                                        }
-                                }
-                        }
-                }
-            assertTrue(commonSig.isRight)
+            // Once they have each other's public nonce, they can produce partial signatures.
+            val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce, serverNonce.second).right!!
+            val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, userNonce.second,serverPrivateKey, serverNonce).right!!
 
-            val signedTx = tx.updateWitness(0, swapInProtocol.witness(commonSig.right!!))
+            // Once they have each other's partial signature, they can aggregate them into a valid signature.
+            val userPartialSig = TxSignaturesTlv.PartialSignature(userSig, userNonce.second, serverNonce.second)
+            val serverPartialSig = TxSignaturesTlv.PartialSignature(serverSig, serverNonce.second, userNonce.second)
+            val witness = swapInProtocol.witness(tx, 0, swapInTx.txOut, userPartialSig, serverPartialSig).right
+            assertNotNull(witness)
+            val signedTx = tx.updateWitness(0, witness)
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
 
@@ -643,8 +630,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         // DER-encoded ECDSA signatures usually take up to 72 bytes.
         val sig = ByteVector64.fromValidHex("90b658d172a51f1b3f1a2becd30942397f5df97da8cd2c026854607e955ad815ccfd87d366e348acc32aaf15ff45263aebbb7ecc913a0e5999133f447aee828c")
         val tx = Transaction(2, listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
-        val swapInProtocol = SwapInProtocol(pubkey, pubkey, pubkey, 144)
-        val witness = swapInProtocol.witness(sig)
+        val witness = ScriptWitness(listOf(sig))
         val swapInput = TxIn(OutPoint(TxId(ByteVector32.Zeroes), 3), ByteVector.empty, 0, witness)
         val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))
         val inputWeight = txWithAdditionalInput.weight() - tx.weight()

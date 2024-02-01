@@ -762,7 +762,7 @@ data class Normal(
                 ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut(
                     amount = txOut.amount,
                     miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
-                    address = Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, txOut.publicKeyScript.toByteArray()).result ?: "unknown",
+                    address = Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, txOut.publicKeyScript.toByteArray()).right ?: "unknown",
                     txId = action.fundingTx.txId
                 )
             })

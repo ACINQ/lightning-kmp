@@ -18,7 +18,6 @@ import fr.acinq.lightning.wire.CommitSig
 import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.LightningMessage
 import fr.acinq.lightning.wire.LiquidityAds
-import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.secp256k1.Hex
 import kotlin.math.max
 import kotlin.test.*

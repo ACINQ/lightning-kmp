@@ -3,6 +3,7 @@ package fr.acinq.lightning.crypto
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.crypto.musig2.AggregatedNonce
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.utils.Either
@@ -159,8 +160,8 @@ interface KeyManager {
             return legacySwapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()] , userPrivateKey)
         }
 
-        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: SecretNonce, commonNonce: AggregatedNonce): Either<Throwable, ByteVector32> {
-            return swapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts, userPrivateKey, userNonce, commonNonce)
+        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: Pair<SecretNonce, IndividualNonce>, serverNonce: IndividualNonce): Either<Throwable, ByteVector32> {
+            return swapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts, userPrivateKey, userNonce, serverNonce)
         }
 
         /**
@@ -175,7 +176,7 @@ interface KeyManager {
             return if (utxos.isEmpty()) {
                 null
             } else {
-                val pubKeyScript = Bitcoin.addressToPublicKeyScript(chain.chainHash, address).result
+                val pubKeyScript = Bitcoin.addressToPublicKeyScript(chain.chainHash, address).right
                 pubKeyScript?.let { script ->
                     val ourOutput = TxOut(utxos.map { it.amount }.sum(), script)
                     val unsignedTx = Transaction(
