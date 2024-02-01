@@ -2,6 +2,7 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
+import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.bitcoind.BitcoindService
@@ -10,7 +11,6 @@ import fr.acinq.lightning.tests.utils.runSuspendBlocking
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.currentTimestampMillis
-import fr.acinq.lightning.utils.runTrying
 import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first

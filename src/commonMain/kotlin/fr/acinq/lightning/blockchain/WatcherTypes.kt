@@ -1,8 +1,8 @@
 package fr.acinq.lightning.blockchain
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.utils.Try
-import fr.acinq.lightning.utils.runTrying
+import fr.acinq.bitcoin.utils.Try
+import fr.acinq.bitcoin.utils.runTrying
 
 sealed class BitcoinEvent
 data object BITCOIN_FUNDING_DEPTHOK : BitcoinEvent()

@@ -8,6 +8,8 @@ import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.getOrDefault
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.bitcoin.utils.Either
+import fr.acinq.bitcoin.utils.Try
+import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
