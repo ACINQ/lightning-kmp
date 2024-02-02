@@ -129,7 +129,7 @@ class Peer(
 
     private val swapInCommands = Channel<SwapInCommand>(UNLIMITED)
 
-    private val logger = MDCLogger(nodeParams.loggerFactory.appendingTag("Peer"), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
+    private val logger = MDCLogger(logger = nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
 
     // The channels map, as initially loaded from the database at "boot" (on Peer.init).
     // As the channelsFlow is unavailable until the electrum connection is up-and-running,
@@ -169,7 +169,7 @@ class Peer(
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
 
-    private val _channelLogger = nodeParams.loggerFactory.appendingTag("ChannelState")
+    private val _channelLogger = nodeParams.loggerFactory.newLogger(this::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         val state = this
         val ctx = ChannelContext(
@@ -298,7 +298,7 @@ class Peer(
             _connectionState.value = Connection.ESTABLISHING
 
             val connectionId = currentTimestampMillis()
-            val logger = MDCLogger(nodeParams.loggerFactory.appendingTag("Peer"), staticMdc = mapOf("remoteNodeId" to remoteNodeId, "connectionId" to connectionId))
+            val logger = MDCLogger(logger = nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId, "connectionId" to connectionId))
             logger.info { "connecting to ${walletParams.trampolineNode.host}" }
             val socket = openSocket(connectTimeout) ?: return false
 

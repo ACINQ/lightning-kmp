@@ -8,6 +8,7 @@ import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -86,6 +87,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
 }
 
 /**
+ * @param loggerFactory factory to create [Logger] objects with the same configuration
  * @param keyManager derive private keys and secrets from your seed.
  * @param alias name of the lightning node.
  * @param features features supported by the lightning node.
@@ -123,7 +125,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
  */
 data class NodeParams(
-    val loggerFactory: Logger,
+    val loggerFactory: LoggerFactory,
     val keyManager: KeyManager,
     val alias: String,
     val features: Features,
@@ -181,7 +183,7 @@ data class NodeParams(
     /**
      * Library integrators should use this constructor and override values.
      */
-    constructor(chain: Chain, loggerFactory: Logger, keyManager: KeyManager) : this(
+    constructor(chain: Chain, loggerFactory: LoggerFactory, keyManager: KeyManager) : this(
         loggerFactory = loggerFactory,
         keyManager = keyManager,
         alias = "lightning-kmp",

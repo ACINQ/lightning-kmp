@@ -1,7 +1,7 @@
 package fr.acinq.lightning.tests.bitcoind
 
-import co.touchlab.kermit.Logger
 import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.JsonRPCResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -34,7 +34,7 @@ object BitcoinJsonRPCClient {
         }
     }
 
-    private val logger = Logger.testLogger.appendingTag("BitcoinJsonRPCClient")
+    private val logger = testLoggerFactory.newLogger(this::class)
 
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
         val rpcResponse: JsonRPCResponse = httpClient.post(Url(serviceUri)) {

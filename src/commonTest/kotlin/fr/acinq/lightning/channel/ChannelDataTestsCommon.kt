@@ -1,6 +1,5 @@
 package fr.acinq.lightning.channel
 
-import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -29,7 +28,7 @@ import kotlin.test.*
 
 class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
 
-    override val logger: MDCLogger = MDCLogger(Logger.testLogger.appendingTag("ChannelDataTestsCommon"))
+    override val logger = MDCLogger(loggerFactory.newLogger(this::class))
 
     @Test
     fun `local commit published`() {

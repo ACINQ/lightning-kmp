@@ -1,6 +1,6 @@
 package fr.acinq.lightning.io
 
-import co.touchlab.kermit.Logger
+import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.utils.*
 import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -134,7 +134,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
         host: String,
         port: Int,
         tls: TcpSocket.TLS,
-        loggerFactory: Logger
+        loggerFactory: LoggerFactory
     ): TcpSocket = suspendCancellableCoroutine { continuation ->
 
         // @kotlinx.cinterop.ObjCMethod

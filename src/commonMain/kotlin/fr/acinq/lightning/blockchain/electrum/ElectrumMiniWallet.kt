@@ -1,6 +1,5 @@
 package fr.acinq.lightning.blockchain.electrum
 
-import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.logging.*
@@ -93,11 +92,11 @@ class ElectrumMiniWallet(
     val chainHash: BlockHash,
     private val client: IElectrumClient,
     private val scope: CoroutineScope,
-    loggerFactory: Logger,
+    loggerFactory: LoggerFactory,
     private val name: String = ""
 ) : CoroutineScope by scope {
 
-    private val logger = MDCLogger(loggerFactory.appendingTag("ElectrumMiniWallet"))
+    private val logger = MDCLogger(loggerFactory.newLogger(this::class))
     private fun mdc(): Map<String, Any> {
         return mapOf(
             "wallet" to name,

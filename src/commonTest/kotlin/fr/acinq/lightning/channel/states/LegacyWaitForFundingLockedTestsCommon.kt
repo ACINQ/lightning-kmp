@@ -1,6 +1,5 @@
 package fr.acinq.lightning.channel.states
 
-import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
@@ -10,6 +9,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.value
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
@@ -35,7 +35,7 @@ class LegacyWaitForFundingLockedTestsCommon {
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.nodeParams.nodeId),
             TestConstants.defaultBlockHeight,
             OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
-            MDCLogger(Logger.testLogger.appendingTag("ChannelState"))
+            MDCLogger(testLoggerFactory.newLogger("ChannelState"))
         )
         val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Init.Restore(state))
         assertIs<LNChannel<Offline>>(state1)

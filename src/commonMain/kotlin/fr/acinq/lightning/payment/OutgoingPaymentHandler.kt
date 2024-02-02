@@ -37,7 +37,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     /** The payment was successfully made. */
     data class Success(val request: SendPayment, val payment: LightningOutgoingPayment, val preimage: ByteVector32) : ProcessFailureResult, ProcessFulfillResult
 
-    private val logger = nodeParams.loggerFactory.appendingTag("OutgoingPaymentHandler")
+    private val logger = nodeParams.loggerFactory.newLogger(this::class)
     private val childToParentId = mutableMapOf<UUID, UUID>()
     private val pending = mutableMapOf<UUID, PaymentAttempt>()
     private val routeCalculation = RouteCalculation(nodeParams.loggerFactory)

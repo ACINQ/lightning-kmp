@@ -1,6 +1,5 @@
 package fr.acinq.lightning.tests.io.peer
 
-import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
@@ -20,6 +19,7 @@ import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.ChannelReady
@@ -61,8 +61,9 @@ suspend fun connect(
     expectChannelReady: Boolean = true,
     automateMessaging: Boolean = true
 ): PeerTuple {
-    val aliceConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), MDCLogger(Logger.testLogger.appendingTag("PeerConnection")))
-    val bobConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), MDCLogger(Logger.testLogger.appendingTag("PeerConnection")))
+    val logger = MDCLogger(testLoggerFactory.newLogger("PeerConnection"))
+    val aliceConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), logger)
+    val bobConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), logger)
     alice.send(Connected(aliceConnection))
     bob.send(Connected(bobConnection))
 
@@ -138,7 +139,8 @@ suspend fun CoroutineScope.newPeer(
 
     val peer = buildPeer(this, nodeParams, walletParams, db)
 
-    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(Logger.testLogger.appendingTag("PeerConnection")))
+    val logger = MDCLogger(nodeParams.loggerFactory.newLogger("PeerConnection"))
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), logger)
     peer.send(Connected(connection))
 
     remotedNodeChannelState?.let { state ->
@@ -182,8 +184,8 @@ suspend fun buildPeer(
     databases: InMemoryDatabases = InMemoryDatabases(),
     currentTip: Pair<Int, BlockHeader> = 0 to Block.RegtestGenesisBlock.header
 ): Peer {
-    val electrum = ElectrumClient(scope, Logger.testLogger)
-    val watcher = ElectrumWatcher(electrum, scope, Logger.testLogger)
+    val electrum = ElectrumClient(scope, nodeParams.loggerFactory)
+    val watcher = ElectrumWatcher(electrum, scope, nodeParams.loggerFactory)
     val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = currentTip
     peer.onChainFeeratesFlow.value = OnChainFeerates(
@@ -192,7 +194,8 @@ suspend fun buildPeer(
         claimMainFeerate = FeeratePerKw(FeeratePerByte(20.sat)),
         fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
     )
-    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(Logger.testLogger.appendingTag("PeerConnection")))
+    val logger = MDCLogger(nodeParams.loggerFactory.newLogger("PeerConnection"))
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), logger)
     peer.send(Connected(connection))
 
     return peer

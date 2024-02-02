@@ -71,7 +71,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         fun add(part: PaymentPart): PendingPayment = copy(parts = parts + part)
     }
 
-    private val logger = MDCLogger(nodeParams.loggerFactory.appendingTag("IncomingPaymentHandler"))
+    private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class))
     private val pending = mutableMapOf<ByteVector32, PendingPayment>()
     private val privateKey = nodeParams.nodePrivateKey
 

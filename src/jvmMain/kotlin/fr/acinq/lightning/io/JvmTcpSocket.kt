@@ -19,9 +19,9 @@ import java.util.*
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
-class JvmTcpSocket(val socket: Socket, val loggerFactory: Logger) : TcpSocket {
+class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
 
-    private val logger = loggerFactory.appendingTag("JvmTcpSocket")
+    private val logger = loggerFactory.newLogger(this::class)
 
     private val connection = socket.connection()
 
@@ -159,8 +159,8 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: Logger) : TcpSocket {
 }
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: Logger): TcpSocket {
-        val logger = loggerFactory.appendingTag("PlatformSocketBuilder")
+    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
+        val logger = loggerFactory.newLogger(this::class)
         return withContext(Dispatchers.IO) {
             try {
                 val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->

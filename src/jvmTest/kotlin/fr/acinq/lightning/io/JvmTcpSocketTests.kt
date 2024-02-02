@@ -1,7 +1,5 @@
 package fr.acinq.lightning.io
 
-import co.touchlab.kermit.Logger
-import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import org.junit.Test
 import java.util.*
@@ -10,7 +8,7 @@ import kotlin.test.assertEquals
 
 class JvmTcpSocketTests : LightningTestSuite() {
 
-    val logger = Logger.testLogger.appendingTag("JvmTcpSocketTests")
+    val logger = loggerFactory.newLogger(this::class)
 
     @Test
     fun `build public key from base64`() {

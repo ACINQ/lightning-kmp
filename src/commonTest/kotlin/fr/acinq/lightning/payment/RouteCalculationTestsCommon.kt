@@ -1,6 +1,5 @@
 package fr.acinq.lightning.payment
 
-import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
@@ -11,7 +10,6 @@ import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.Offline
 import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
-import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.utils.*
@@ -24,7 +22,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
 
     private val defaultChannel = reachNormal().first
     private val paymentId = UUID.randomUUID()
-    private val routeCalculation = RouteCalculation(Logger.testLogger)
+    private val routeCalculation = RouteCalculation(loggerFactory)
 
     private fun makeChannel(channelId: ByteVector32, balance: MilliSatoshi, htlcMin: MilliSatoshi): Normal {
         val shortChannelId = ShortChannelId(Random.nextLong())

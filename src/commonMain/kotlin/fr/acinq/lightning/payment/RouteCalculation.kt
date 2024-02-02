@@ -1,6 +1,5 @@
 package fr.acinq.lightning.payment
 
-import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.MilliSatoshi
@@ -11,9 +10,9 @@ import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 
-class RouteCalculation(loggerFactory: Logger) {
+class RouteCalculation(loggerFactory: LoggerFactory) {
 
-    private val logger = loggerFactory.appendingTag("RouteCalculation")
+    private val logger = loggerFactory.newLogger(this::class)
 
     data class Route(val amount: MilliSatoshi, val channel: Normal)
 

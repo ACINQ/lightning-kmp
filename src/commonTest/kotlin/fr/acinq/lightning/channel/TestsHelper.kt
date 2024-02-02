@@ -1,6 +1,5 @@
 package fr.acinq.lightning.channel
 
-import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -17,6 +16,7 @@ import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -159,7 +159,7 @@ object TestsHelper {
                 StaticParams(aliceNodeParams, TestConstants.Bob.nodeParams.nodeId),
                 currentBlockHeight = currentHeight,
                 currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
-                logger = MDCLogger(Logger.testLogger.appendingTag("ChannelState"))
+                logger = MDCLogger(testLoggerFactory.newLogger("ChannelState"))
             ),
             WaitForInit
         )
@@ -168,7 +168,7 @@ object TestsHelper {
                 StaticParams(bobNodeParams, TestConstants.Alice.nodeParams.nodeId),
                 currentBlockHeight = currentHeight,
                 currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
-                logger = MDCLogger(Logger.testLogger.appendingTag("ChannelState"))
+                logger = MDCLogger(testLoggerFactory.newLogger("ChannelState"))
             ),
             WaitForInit
         )

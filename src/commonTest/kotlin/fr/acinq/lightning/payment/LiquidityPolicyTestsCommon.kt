@@ -1,6 +1,5 @@
 package fr.acinq.lightning.payment
 
-import co.touchlab.kermit.Logger
 import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -12,7 +11,7 @@ import kotlin.test.assertNull
 
 class LiquidityPolicyTestsCommon : LightningTestSuite() {
 
-    private val logger = MDCLogger(Logger.testLogger.appendingTag("LiquidityPolicyTestsCommon"))
+    private val logger = MDCLogger(loggerFactory.newLogger(this::class))
 
     @Test
     fun `policy rejection`() {

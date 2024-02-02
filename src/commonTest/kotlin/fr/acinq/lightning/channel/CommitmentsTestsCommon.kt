@@ -1,6 +1,5 @@
 package fr.acinq.lightning.channel
 
-import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
@@ -22,6 +21,7 @@ import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
@@ -33,7 +33,7 @@ import kotlin.test.*
 
 class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
-    override val logger: MDCLogger = MDCLogger(Logger.testLogger.appendingTag("CommitmentsTestsCommon"))
+    override val logger: MDCLogger = MDCLogger(testLoggerFactory.newLogger(this::class))
 
     @Test
     fun `reach normal state`() {
