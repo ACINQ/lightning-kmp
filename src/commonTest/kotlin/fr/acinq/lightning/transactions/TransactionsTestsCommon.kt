@@ -54,7 +54,6 @@ import fr.acinq.lightning.transactions.Transactions.swapInputWeight
 import fr.acinq.lightning.transactions.Transactions.swapInputWeightLegacy
 import fr.acinq.lightning.transactions.Transactions.weight2fee
 import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.wire.TxSignaturesTlv
 import fr.acinq.lightning.wire.UpdateAddHtlc
 import kotlin.random.Random
 import kotlin.test.*
@@ -519,9 +518,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val serverSig = swapInProtocol.signSwapInputServer(tx, 0, swapInTx.txOut, serverPrivateKey, serverNonce.first, userNonce.second, serverNonce.second).right!!
 
             // Once they have each other's partial signature, they can aggregate them into a valid signature.
-            val userPartialSig = TxSignaturesTlv.PartialSignature(userSig, userNonce.second, serverNonce.second)
-            val serverPartialSig = TxSignaturesTlv.PartialSignature(serverSig, serverNonce.second, userNonce.second)
-            val witness = swapInProtocol.witness(tx, 0, swapInTx.txOut, userPartialSig, serverPartialSig).right
+            val witness = swapInProtocol.witness(tx, 0, swapInTx.txOut, userNonce.second, serverNonce.second, userSig, serverSig).right
             assertNotNull(witness)
             val signedTx = tx.updateWitness(0, witness)
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

@@ -541,7 +541,7 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
             val (userSig, serverSig) = sigs
             val swapInProtocol = SwapInProtocol(i.userKey, i.serverKey, i.userRefundKey, i.refundDelay)
             // The remote partial signature may be invalid: when receiving their tx_signatures, we verify that the resulting transaction is valid.
-            val witness = swapInProtocol.witness(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, previousOutputs, userSig, serverSig).getOrDefault(ScriptWitness.empty)
+            val witness = swapInProtocol.witness(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, previousOutputs, userSig.localNonce, userSig.remoteNonce, userSig.sig, serverSig.sig).getOrDefault(ScriptWitness.empty)
             Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), witness))
         }
         val remoteOnlyTxIn = tx.remoteOnlyInputs().sortedBy { i -> i.serialId }.zip(remoteSigs.witnesses).map { (i, w) -> Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), w)) }
@@ -555,7 +555,7 @@ data class FullySignedSharedTransaction(override val tx: SharedTransaction, over
             val (userSig, serverSig) = sigs
             val swapInProtocol = SwapInProtocol(i.userKey, i.serverKey, i.userRefundKey, i.refundDelay)
             // The remote partial signature may be invalid: when receiving their tx_signatures, we verify that the resulting transaction is valid.
-            val witness = swapInProtocol.witness(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, previousOutputs, userSig, serverSig).getOrDefault(ScriptWitness.empty)
+            val witness = swapInProtocol.witness(unsignedTx, unsignedTx.txIn.indexOfFirst { it.outPoint == i.outPoint }, previousOutputs, userSig.localNonce, userSig.remoteNonce, userSig.sig, serverSig.sig).getOrDefault(ScriptWitness.empty)
             Pair(i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence.toLong(), witness))
         }
         val inputs = (sharedTxIn + localOnlyTxIn + localLegacySwapTxIn + localSwapTxIn + remoteOnlyTxIn + remoteLegacySwapTxIn + remoteSwapTxIn).sortedBy { (serialId, _) -> serialId }.map { (_, i) -> i }

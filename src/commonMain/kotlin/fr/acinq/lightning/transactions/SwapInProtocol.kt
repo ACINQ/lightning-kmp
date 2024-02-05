@@ -7,7 +7,6 @@ import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.wire.TxSignaturesTlv
 
 /**
  * new swap-in protocol based on musig2 and taproot: (user key + server key) OR (user refund key + delay)
@@ -27,10 +26,10 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
 
     fun address(chain: NodeParams.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
 
-    fun witness(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPartialSig: TxSignaturesTlv.PartialSignature, serverPartialSig: TxSignaturesTlv.PartialSignature): Either<Throwable, ScriptWitness> {
+    fun witness(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: IndividualNonce, serverNonce: IndividualNonce, userPartialSig: ByteVector32, serverPartialSig: ByteVector32): Either<Throwable, ScriptWitness> {
         val publicKeys = listOf(userPublicKey, serverPublicKey)
-        val publicNonces = listOf(userPartialSig.localNonce, userPartialSig.remoteNonce)
-        val sigs = listOf(userPartialSig.sig, serverPartialSig.sig)
+        val publicNonces = listOf(userNonce, serverNonce)
+        val sigs = listOf(userPartialSig, serverPartialSig)
         return Musig2.aggregateTaprootSignatures(sigs, fundingTx, index, parentTxOuts, publicKeys, publicNonces, scriptTree).map { aggregateSig ->
             Script.witnessKeyPathPay2tr(aggregateSig)
         }
