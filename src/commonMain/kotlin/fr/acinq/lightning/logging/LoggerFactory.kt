@@ -17,6 +17,7 @@
 package fr.acinq.lightning.logging
 
 import co.touchlab.kermit.Logger
+import co.touchlab.kermit.LoggerConfig
 import kotlin.reflect.KClass
 
 /**
@@ -25,7 +26,7 @@ import kotlin.reflect.KClass
  * For example, we typically want loggers using the same severity, and writing logs to the same place. A common
  * factory, instantiated in one place, and shared throughout the project, lets us do that.
  */
-interface LoggerFactory {
+class LoggerFactory(private val config: LoggerConfig) {
 
     /**
      * Returns a new [Logger] object that will use the qualified class name as a tag when available. If the qualified name
@@ -33,7 +34,9 @@ interface LoggerFactory {
      */
     fun newLogger(cls: KClass<*>): Logger = newLogger(tag = cls.qualifiedName ?: cls.simpleName ?: "Anonymous")
 
-    /** Returns a new [Logger] object. */
-    fun newLogger(tag: String): Logger
-
+    /** Returns a new [Logger] object using the config provided to the factory. */
+    fun newLogger(tag: String): Logger = Logger(
+        config = config,
+        tag = tag
+    )
 }
