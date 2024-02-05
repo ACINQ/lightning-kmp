@@ -35,6 +35,7 @@ kotlin {
     val datetimeVersion = "0.4.0"
     val ktorVersion = "2.3.7"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
+    val kermitLoggerVersion = "2.0.2"
 
     jvm {
         compilations.all {
@@ -82,7 +83,7 @@ kotlin {
                 api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
-                implementation("co.touchlab:kermit:2.0.2")
+                api("co.touchlab:kermit:$kermitLoggerVersion")
             }
         }
 

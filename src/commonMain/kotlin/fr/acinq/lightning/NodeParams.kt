@@ -87,7 +87,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
 }
 
 /**
- * @param loggerFactory factory to create [Logger] objects with the same configuration
+ * @param loggerFactory factory for creating [Logger] objects sharing the same configuration.
  * @param keyManager derive private keys and secrets from your seed.
  * @param alias name of the lightning node.
  * @param features features supported by the lightning node.
