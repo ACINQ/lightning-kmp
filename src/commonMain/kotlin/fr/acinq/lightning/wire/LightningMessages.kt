@@ -481,18 +481,27 @@ data class TxSignatures(
     val witnesses: List<ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
 ) : InteractiveTxMessage(), HasChannelId, HasEncryptedChannelData {
-    constructor(channelId: ByteVector32, tx: Transaction, witnesses: List<ScriptWitness>, previousFundingSig: ByteVector64?, swapInUserSigs: List<ByteVector64>, swapInServerSigs: List<ByteVector64>, swapInUserPartialSigs: List<TxSignaturesTlv.PartialSignature>, swapInServerPartialSigs: List<TxSignaturesTlv.PartialSignature>) : this(
+    constructor(
+        channelId: ByteVector32,
+        tx: Transaction,
+        witnesses: List<ScriptWitness>,
+        previousFundingSig: ByteVector64?,
+        swapInUserSigs: List<ByteVector64>,
+        swapInServerSigs: List<ByteVector64>,
+        swapInUserPartialSigs: List<TxSignaturesTlv.PartialSignature>,
+        swapInServerPartialSigs: List<TxSignaturesTlv.PartialSignature>
+    ) : this(
         channelId,
         tx.txid,
         witnesses,
         TlvStream(
-            listOfNotNull(
+            setOfNotNull(
                 previousFundingSig?.let { TxSignaturesTlv.PreviousFundingTxSig(it) },
                 if (swapInUserSigs.isNotEmpty()) TxSignaturesTlv.SwapInUserSigs(swapInUserSigs) else null,
                 if (swapInServerSigs.isNotEmpty()) TxSignaturesTlv.SwapInServerSigs(swapInServerSigs) else null,
                 if (swapInUserPartialSigs.isNotEmpty()) TxSignaturesTlv.SwapInUserPartialSigs(swapInUserPartialSigs) else null,
                 if (swapInServerPartialSigs.isNotEmpty()) TxSignaturesTlv.SwapInServerPartialSigs(swapInServerPartialSigs) else null,
-            ).toSet()
+            )
         ),
     )
 
