@@ -18,12 +18,12 @@ import fr.acinq.lightning.wire.TxSignaturesTlv
  */
 data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) {
     // The key path uses musig2 with the user and server keys.
-    private val internalKey = Musig2.aggregateKeys(listOf(userPublicKey, serverPublicKey))
+    private val internalPublicKey = Musig2.aggregateKeys(listOf(userPublicKey, serverPublicKey))
     // The script path contains a refund script, generated from this policy: and_v(v:pk(user),older(refundDelay)).
     // It does not depend upon the user's or server's key, just the user's refund key and the refund delay.
     private val refundScript = listOf(OP_PUSHDATA(userRefundKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
     private val scriptTree = ScriptTree.Leaf(0, refundScript)
-    val pubkeyScript: List<ScriptElt> = Script.pay2tr(internalKey, scriptTree)
+    val pubkeyScript: List<ScriptElt> = Script.pay2tr(internalPublicKey, scriptTree)
 
     fun address(chain: NodeParams.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
 
@@ -36,7 +36,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
         }
     }
 
-    fun witnessRefund(userSig: ByteVector64): ScriptWitness = Script.witnessScriptPathPay2tr(internalKey, scriptTree, ScriptWitness(listOf(userSig)), scriptTree)
+    fun witnessRefund(userSig: ByteVector64): ScriptWitness = Script.witnessScriptPathPay2tr(internalPublicKey, scriptTree, ScriptWitness(listOf(userSig)), scriptTree)
 
     fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey, privateNonce: SecretNonce, userNonce: IndividualNonce, serverNonce: IndividualNonce): Either<Throwable, ByteVector32> {
         require(userPrivateKey.publicKey() == userPublicKey) { "user private key does not match expected public key: are you using the refund key instead of the user key?" }
@@ -67,7 +67,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
             else -> DeterministicWallet.tprv
         }
         val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
-        val desc = "tr(${internalKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
+        val desc = "tr(${internalPublicKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
         val checksum = Descriptor.checksum(desc)
         return "$desc#$checksum"
     }
@@ -85,7 +85,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
         }
         val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
         val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
-        val desc = "tr(${internalKey.value},and_v(v:pk($xpub$path/*),older($refundDelay)))"
+        val desc = "tr(${internalPublicKey.value},and_v(v:pk($xpub$path/*),older($refundDelay)))"
         val checksum = Descriptor.checksum(desc)
         return "$desc#$checksum"
     }
