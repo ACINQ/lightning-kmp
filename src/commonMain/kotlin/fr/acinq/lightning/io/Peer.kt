@@ -169,7 +169,7 @@ class Peer(
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
 
-    private val _channelLogger = nodeParams.loggerFactory.newLogger(this::class)
+    private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         val state = this
         val ctx = ChannelContext(
