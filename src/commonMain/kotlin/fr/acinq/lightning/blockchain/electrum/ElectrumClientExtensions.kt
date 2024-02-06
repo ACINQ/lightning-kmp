@@ -6,8 +6,8 @@ import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalFundingStatus
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.transactions.Transactions
-import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.sat
 
 suspend fun IElectrumClient.getConfirmations(txId: TxId): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }

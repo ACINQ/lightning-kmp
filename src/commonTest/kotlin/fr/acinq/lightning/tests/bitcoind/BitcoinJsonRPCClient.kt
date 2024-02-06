@@ -1,5 +1,7 @@
 package fr.acinq.lightning.tests.bitcoind
 
+import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.JsonRPCResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -9,8 +11,6 @@ import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 
 
 object BitcoinJsonRPCClient {
@@ -34,7 +34,7 @@ object BitcoinJsonRPCClient {
         }
     }
 
-    private val logger = LoggerFactory.default.newLogger(this::class)
+    private val logger = testLoggerFactory.newLogger(this::class)
 
     suspend fun <T : BitcoindResponse> sendRequest(request: BitcoindRequest): T {
         val rpcResponse: JsonRPCResponse = httpClient.post(Url(serviceUri)) {

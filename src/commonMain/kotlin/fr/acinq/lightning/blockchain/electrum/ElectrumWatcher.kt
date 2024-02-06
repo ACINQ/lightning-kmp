@@ -3,6 +3,7 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.currentTimestampMillis
 import kotlinx.coroutines.*
@@ -12,8 +13,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.consumeAsFlow
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.math.max
 
 class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : CoroutineScope by scope {

@@ -1,6 +1,6 @@
 package fr.acinq.lightning.io
 
-import org.kodein.log.LoggerFactory
+import fr.acinq.lightning.logging.LoggerFactory
 
 interface TcpSocket {
 

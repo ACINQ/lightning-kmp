@@ -13,11 +13,11 @@ import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.SendPayment
 import fr.acinq.lightning.io.WrappedChannelCommand
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import org.kodein.log.newLogger
 
 class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
 

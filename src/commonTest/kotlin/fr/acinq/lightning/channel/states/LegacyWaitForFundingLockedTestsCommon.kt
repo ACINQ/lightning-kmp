@@ -6,16 +6,15 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
-import fr.acinq.lightning.utils.MDCLogger
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.value
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.Init
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -36,7 +35,7 @@ class LegacyWaitForFundingLockedTestsCommon {
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.nodeParams.nodeId),
             TestConstants.defaultBlockHeight,
             OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
-            MDCLogger(LoggerFactory.default.newLogger(ChannelState::class))
+            MDCLogger(testLoggerFactory.newLogger("ChannelState"))
         )
         val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Init.Restore(state))
         assertIs<LNChannel<Offline>>(state1)

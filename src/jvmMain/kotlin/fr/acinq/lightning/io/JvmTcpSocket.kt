@@ -1,14 +1,13 @@
 package fr.acinq.lightning.io
 
+import co.touchlab.kermit.Logger
+import fr.acinq.lightning.logging.*
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.network.tls.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import java.net.ConnectException
 import java.net.SocketException
 import java.security.KeyFactory

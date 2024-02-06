@@ -35,6 +35,7 @@ kotlin {
     val datetimeVersion = "0.4.0"
     val ktorVersion = "2.3.7"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
+    val kermitLoggerVersion = "2.0.2"
 
     jvm {
         compilations.all {
@@ -77,12 +78,12 @@ kotlin {
         commonMain {
             dependencies {
                 api("fr.acinq.bitcoin:bitcoin-kmp:$bitcoinKmpVersion")
-                api("org.kodein.log:canard:0.18.0")
                 api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
+                api("co.touchlab:kermit:$kermitLoggerVersion")
             }
         }
 

@@ -12,7 +12,7 @@ import fr.acinq.lightning.channel.SignedSharedTransaction
 import fr.acinq.lightning.channel.SpliceStatus
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.io.RequestChannelOpen
-import fr.acinq.lightning.utils.MDCLogger
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.utils.sat
 
 internal sealed class SwapInCommand {

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.io.send
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
@@ -11,8 +12,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.RENDEZVOUS
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.Json
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 

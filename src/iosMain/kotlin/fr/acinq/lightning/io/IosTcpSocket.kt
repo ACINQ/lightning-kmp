@@ -1,9 +1,9 @@
 package fr.acinq.lightning.io
 
+import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.utils.*
 import kotlinx.cinterop.*
 import kotlinx.coroutines.suspendCancellableCoroutine
-import org.kodein.log.LoggerFactory
 import platform.Foundation.NSData
 import platform.posix.ECONNREFUSED
 import platform.posix.ECONNRESET

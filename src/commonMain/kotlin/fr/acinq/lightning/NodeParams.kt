@@ -1,5 +1,6 @@
 package fr.acinq.lightning
 
+import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
@@ -7,6 +8,7 @@ import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -15,7 +17,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import org.kodein.log.LoggerFactory
 
 data class NodeUri(val id: PublicKey, val host: String, val port: Int)
 
@@ -86,6 +87,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
 }
 
 /**
+ * @param loggerFactory factory for creating [Logger] objects sharing the same configuration.
  * @param keyManager derive private keys and secrets from your seed.
  * @param alias name of the lightning node.
  * @param features features supported by the lightning node.

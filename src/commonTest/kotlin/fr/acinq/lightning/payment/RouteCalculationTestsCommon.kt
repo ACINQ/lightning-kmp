@@ -13,7 +13,6 @@ import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.utils.*
-import org.kodein.log.LoggerFactory
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,7 +22,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
 
     private val defaultChannel = reachNormal().first
     private val paymentId = UUID.randomUUID()
-    private val routeCalculation = RouteCalculation(LoggerFactory.default)
+    private val routeCalculation = RouteCalculation(loggerFactory)
 
     private fun makeChannel(channelId: ByteVector32, balance: MilliSatoshi, htlcMin: MilliSatoshi): Normal {
         val shortChannelId = ShortChannelId(Random.nextLong())

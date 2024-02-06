@@ -1,5 +1,6 @@
-package fr.acinq.lightning.utils
+package fr.acinq.lightning.logging
 
+import co.touchlab.kermit.Logger
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.io.SendPayment
@@ -7,8 +8,6 @@ import fr.acinq.lightning.payment.PaymentPart
 import fr.acinq.lightning.wire.HasChannelId
 import fr.acinq.lightning.wire.HasTemporaryChannelId
 import fr.acinq.lightning.wire.LightningMessage
-import org.kodein.log.Logger
-import org.kodein.log.Logger.Level.*
 
 /**
  * This should be used more largely once https://kotlinlang.org/docs/whatsnew1620.html#prototype-of-context-receivers-for-kotlin-jvm is stable
@@ -21,20 +20,29 @@ interface LoggingContext {
  * A simpler wrapper on top of [Logger] with better MDC support.
  */
 data class MDCLogger(val logger: Logger, val staticMdc: Map<String, Any> = emptyMap()) {
-    inline fun debug(mdc: Map<String, Any> = emptyMap(), msgCreator: () -> String) {
-        logger.log(level = DEBUG, msgCreator = msgCreator, meta = staticMdc + mdc)
+
+    inline fun debug(mdc: Map<String, Any> = emptyMap(), message: () -> String) {
+        logger.debug { message() + mdcToString(staticMdc + mdc) }
     }
 
-    inline fun info(mdc: Map<String, Any> = emptyMap(), msgCreator: () -> String) {
-        logger.log(level = INFO, msgCreator = msgCreator, meta = staticMdc + mdc)
+    inline fun info(mdc: Map<String, Any> = emptyMap(), message: () -> String) {
+        logger.info { message() + mdcToString(staticMdc + mdc) }
     }
 
-    inline fun warning(ex: Throwable? = null, mdc: Map<String, Any> = emptyMap(), msgCreator: () -> String) {
-        logger.log(level = WARNING, error = ex, msgCreator = msgCreator, meta = staticMdc + mdc)
+    inline fun warning(ex: Throwable? = null, mdc: Map<String, Any> = emptyMap(), message: () -> String) {
+        logger.warning(ex) { message() + mdcToString(staticMdc + mdc) }
     }
 
-    inline fun error(ex: Throwable? = null, mdc: Map<String, Any> = emptyMap(), msgCreator: () -> String) {
-        logger.log(level = ERROR, error = ex, msgCreator = msgCreator, meta = staticMdc + mdc)
+    inline fun error(ex: Throwable? = null, mdc: Map<String, Any> = emptyMap(), message: () -> String) {
+        logger.error(ex) { message() + mdcToString(staticMdc + mdc) }
+    }
+
+    fun mdcToString(mdc: Map<String, Any>): String {
+        return if (mdc.isEmpty()) {
+            ""
+        } else {
+            "\n" + mdc.map { (key, value) -> "    $key: $value" }.joinToString("\n")
+        }
     }
 }
 

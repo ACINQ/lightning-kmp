@@ -1,19 +1,17 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.lightning.LiquidityEvents
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.utils.MDCLogger
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class LiquidityPolicyTestsCommon : LightningTestSuite() {
 
-    private val logger = MDCLogger(LoggerFactory.default.newLogger(this::class))
+    private val logger = MDCLogger(loggerFactory.newLogger(this::class))
 
     @Test
     fun `policy rejection`() {

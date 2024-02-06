@@ -15,12 +15,13 @@ import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
-
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.states.Closing
 import fr.acinq.lightning.crypto.ShaChain
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
@@ -28,13 +29,11 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.lightning.wire.UpdateAddHtlc
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.test.*
 
 class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
-    override val logger: MDCLogger = MDCLogger(LoggerFactory.default.newLogger(this::class))
+    override val logger: MDCLogger = MDCLogger(testLoggerFactory.newLogger(this::class))
 
     @Test
     fun `reach normal state`() {

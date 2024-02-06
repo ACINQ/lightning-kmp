@@ -17,9 +17,9 @@ import fr.acinq.lightning.db.IncomingPaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import org.kodein.log.newLogger
 
 sealed class PaymentPart {
     abstract val amount: MilliSatoshi

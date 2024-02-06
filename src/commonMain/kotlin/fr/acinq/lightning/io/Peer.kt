@@ -11,6 +11,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.*
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
@@ -24,7 +25,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.*
-import org.kodein.log.newLogger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -129,7 +129,7 @@ class Peer(
 
     private val swapInCommands = Channel<SwapInCommand>(UNLIMITED)
 
-    private val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
+    private val logger = MDCLogger(logger = nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId))
 
     // The channels map, as initially loaded from the database at "boot" (on Peer.init).
     // As the channelsFlow is unavailable until the electrum connection is up-and-running,
@@ -298,7 +298,7 @@ class Peer(
             _connectionState.value = Connection.ESTABLISHING
 
             val connectionId = currentTimestampMillis()
-            val logger = MDCLogger(nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId, "connectionId" to connectionId))
+            val logger = MDCLogger(logger = nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId, "connectionId" to connectionId))
             logger.info { "connecting to ${walletParams.trampolineNode.host}" }
             val socket = openSocket(connectTimeout) ?: return false
 

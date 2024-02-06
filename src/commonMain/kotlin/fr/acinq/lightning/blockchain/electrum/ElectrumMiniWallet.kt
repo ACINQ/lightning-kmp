@@ -2,6 +2,7 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -11,9 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
-import org.kodein.log.Logger
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 
 data class WalletState(val addresses: Map<String, List<Utxo>>) {
     val utxos: List<Utxo> = addresses.flatMap { it.value }
@@ -98,16 +96,12 @@ class ElectrumMiniWallet(
     private val name: String = ""
 ) : CoroutineScope by scope {
 
-    private val logger = loggerFactory.newLogger(this::class)
-    private fun Logger.mdcinfo(msgCreator: () -> String) {
-        log(
-            level = Logger.Level.INFO,
-            meta = mapOf(
-                "wallet" to name,
-                "utxos" to walletStateFlow.value.utxos.size,
-                "balance" to walletStateFlow.value.totalBalance
-            ),
-            msgCreator = msgCreator
+    private val logger = MDCLogger(loggerFactory.newLogger(this::class))
+    private fun mdc(): Map<String, Any> {
+        return mapOf(
+            "wallet" to name,
+            "utxos" to walletStateFlow.value.utxos.size,
+            "balance" to walletStateFlow.value.totalBalance
         )
     }
 
@@ -153,7 +147,7 @@ class ElectrumMiniWallet(
                         .mapNotNull { item -> (previouslysKnownTxs[item.txid] ?: client.getTx(item.txid))?.let { item to it } } // only retrieve txs from electrum if necessary and ignore the utxo if the parent tx cannot be retrieved
                         .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx) }
                     val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to utxos))
-                    logger.mdcinfo { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
+                    logger.info(mdc()) { "${unspents.size} utxo(s) for address=$bitcoinAddress balance=${nextWalletState.totalBalance}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
                     nextWalletState
                 }
@@ -199,7 +193,7 @@ class ElectrumMiniWallet(
                 mailbox.consumeAsFlow().collect {
                     when (it) {
                         is WalletCommand.Companion.ElectrumConnected -> {
-                            logger.mdcinfo { "electrum connected" }
+                            logger.info(mdc()) { "electrum connected" }
                             scriptHashes.forEach { (scriptHash, address) -> subscribe(scriptHash, address) }
                         }
 
@@ -212,7 +206,7 @@ class ElectrumMiniWallet(
                         is WalletCommand.Companion.AddAddress -> {
                             computeScriptHash(it.bitcoinAddress)?.let { scriptHash ->
                                 if (!scriptHashes.containsKey(scriptHash)) {
-                                    logger.mdcinfo { "adding new address=${it.bitcoinAddress}" }
+                                    logger.info(mdc()) { "adding new address=${it.bitcoinAddress}" }
                                     scriptHashes = scriptHashes + (scriptHash to it.bitcoinAddress)
                                     subscribe(scriptHash, it.bitcoinAddress)
                                 }
