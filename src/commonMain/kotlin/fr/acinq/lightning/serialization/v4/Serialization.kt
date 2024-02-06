@@ -303,11 +303,12 @@ object Serialization {
     }
 
     private fun Output.writeSharedInteractiveTxOutput(o: InteractiveTxOutput.Shared) = o.run {
-        write(0x01)
+        write(0x02)
         writeNumber(serialId)
         writeDelimited(pubkeyScript.toByteArray())
         writeNumber(localAmount.toLong())
         writeNumber(remoteAmount.toLong())
+        writeNumber(htlcAmount.toLong())
     }
 
     private fun Output.writeLocalInteractiveTxOutput(o: InteractiveTxOutput.Local) = when (o) {

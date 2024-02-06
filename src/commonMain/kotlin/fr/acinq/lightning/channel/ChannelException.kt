@@ -45,7 +45,7 @@ data class InvalidRbfNonInitiator                  (override val channelId: Byte
 data class InvalidRbfAttempt                       (override val channelId: ByteVector32) : ChannelException(channelId, "invalid rbf attempt")
 data class InvalidSpliceAlreadyInProgress          (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: the current splice attempt must be completed or aborted first")
 data class InvalidSpliceAbortNotAcked              (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: our previous tx_abort has not been acked")
-data class InvalidSpliceChannelNotIdle             (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: channel is not idle")
+data class InvalidSpliceNotQuiescent               (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice attempt: the channel is not quiescent")
 data class NoMoreHtlcsClosingInProgress            (override val channelId: ByteVector32) : ChannelException(channelId, "cannot send new htlcs, closing in progress")
 data class ClosingAlreadyInProgress                (override val channelId: ByteVector32) : ChannelException(channelId, "closing already in progress")
 data class CannotCloseWithUnsignedOutgoingHtlcs    (override val channelId: ByteVector32) : ChannelException(channelId, "cannot close when there are unsigned outgoing htlc")
@@ -89,4 +89,5 @@ data class InvalidFailureCode                      (override val channelId: Byte
 data class PleasePublishYourCommitment             (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")
 data class CommandUnavailableInThisState           (override val channelId: ByteVector32, val state: String) : ChannelException(channelId, "cannot execute command in state=$state")
 data class ForbiddenDuringSplice                   (override val channelId: ByteVector32, val command: String?) : ChannelException(channelId, "cannot process $command while splicing")
+data class InvalidSpliceRequest                    (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice request")
 // @formatter:on

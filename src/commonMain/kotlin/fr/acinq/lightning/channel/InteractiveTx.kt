@@ -5,8 +5,10 @@ import fr.acinq.bitcoin.Script.tail
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.CommitmentSpec
+import fr.acinq.lightning.transactions.DirectedHtlc
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
@@ -46,8 +48,8 @@ sealed class SharedFundingInput {
 }
 
 /** The current balances of a [[SharedFundingInput]]. */
-data class SharedFundingInputBalances(val toLocal: MilliSatoshi, val toRemote: MilliSatoshi) {
-    val fundingAmount: Satoshi = (toLocal + toRemote).truncateToSatoshi()
+data class SharedFundingInputBalances(val toLocal: MilliSatoshi, val toRemote: MilliSatoshi, val toHtlcs: MilliSatoshi) {
+    val fundingAmount: Satoshi = (toLocal + toRemote + toHtlcs).truncateToSatoshi()
 }
 
 /**
@@ -155,9 +157,9 @@ sealed class InteractiveTxOutput {
     data class Remote(override val serialId: Long, override val amount: Satoshi, override val pubkeyScript: ByteVector) : InteractiveTxOutput(), Incoming
 
     /** The shared output can be added by us or by our peer, depending on who initiated the protocol. */
-    data class Shared(override val serialId: Long, override val pubkeyScript: ByteVector, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : InteractiveTxOutput(), Incoming, Outgoing {
+    data class Shared(override val serialId: Long, override val pubkeyScript: ByteVector, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi, val htlcAmount: MilliSatoshi) : InteractiveTxOutput(), Incoming, Outgoing {
         // Note that the truncation is a no-op: the sum of balances in a channel must be a satoshi amount.
-        override val amount: Satoshi = (localAmount + remoteAmount).truncateToSatoshi()
+        override val amount: Satoshi = (localAmount + remoteAmount + htlcAmount).truncateToSatoshi()
     }
 }
 
@@ -232,7 +234,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 return Either.Left(FundingContributionFailure.InvalidFundingBalances(params.fundingAmount, nextLocalBalance, nextRemoteBalance))
             }
 
-            val sharedOutput = listOf(InteractiveTxOutput.Shared(0, fundingPubkeyScript, nextLocalBalance, nextRemoteBalance))
+            val sharedOutput = listOf(InteractiveTxOutput.Shared(0, fundingPubkeyScript, nextLocalBalance, nextRemoteBalance, sharedUtxo?.second?.toHtlcs ?: 0.msat))
             val nonChangeOutputs = localOutputs.map { o -> InteractiveTxOutput.Local.NonChange(0, o.amount, o.publicKeyScript) }
             val changeOutput = when (changePubKey) {
                 null -> listOf()
@@ -462,6 +464,7 @@ data class InteractiveTxSession(
     val previousFunding: SharedFundingInputBalances,
     val toSend: List<Either<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>>,
     val previousTxs: List<SignedSharedTransaction> = listOf(),
+    val localHtlcs: Set<DirectedHtlc>,
     val localInputs: List<InteractiveTxInput.Outgoing> = listOf(),
     val remoteInputs: List<InteractiveTxInput.Incoming> = listOf(),
     val localOutputs: List<InteractiveTxOutput.Outgoing> = listOf(),
@@ -492,15 +495,17 @@ data class InteractiveTxSession(
         fundingParams: InteractiveTxParams,
         previousLocalBalance: MilliSatoshi,
         previousRemoteBalance: MilliSatoshi,
+        localHtlcs: Set<DirectedHtlc>,
         fundingContributions: FundingContributions,
         previousTxs: List<SignedSharedTransaction> = listOf()
     ) : this(
         channelKeys,
         swapInKeys,
         fundingParams,
-        SharedFundingInputBalances(previousLocalBalance, previousRemoteBalance),
+        SharedFundingInputBalances(previousLocalBalance, previousRemoteBalance, localHtlcs.map { it.add.amountMsat }.sum()),
         fundingContributions.inputs.map { i -> Either.Left<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>(i) } + fundingContributions.outputs.map { o -> Either.Right<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>(o) },
-        previousTxs
+        previousTxs,
+        localHtlcs
     )
 
     val isComplete: Boolean = txCompleteSent && txCompleteReceived
@@ -593,7 +598,7 @@ data class InteractiveTxSession(
         } else if (message.pubkeyScript == fundingParams.fundingPubkeyScript(channelKeys)) {
             val localAmount = previousFunding.toLocal + fundingParams.localContribution.toMilliSatoshi()
             val remoteAmount = previousFunding.toRemote + fundingParams.remoteContribution.toMilliSatoshi()
-            Either.Right(InteractiveTxOutput.Shared(message.serialId, message.pubkeyScript, localAmount, remoteAmount))
+            Either.Right(InteractiveTxOutput.Shared(message.serialId, message.pubkeyScript, localAmount, remoteAmount, previousFunding.toHtlcs))
         } else {
             Either.Right(InteractiveTxOutput.Remote(message.serialId, message.amount, message.pubkeyScript))
         }
@@ -772,27 +777,28 @@ data class InteractiveTxSigningSession(
     fun receiveCommitSig(channelKeys: KeyManager.ChannelKeys, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long, logger: MDCLogger): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
         return when (localCommit) {
             is Either.Left -> {
-                val fundingKey = channelKeys.fundingKey(fundingTxIndex)
-                val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, fundingKey)
-                val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingKey.publicKey(), fundingParams.remoteFundingPubkey, localSigOfLocalTx, remoteCommitSig.signature)
-                when (Transactions.checkSpendable(signedLocalCommitTx)) {
-                    is Try.Failure -> {
+                val localCommitIndex = localCommit.value.index
+                val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommitIndex)
+                when (val signedLocalCommit = LocalCommit.fromCommitSig(channelKeys, channelParams, fundingTxIndex, fundingParams.remoteFundingPubkey, commitInput, remoteCommitSig, localCommitIndex, localCommit.value.spec, localPerCommitmentPoint, logger)) {
+                    is Either.Left -> {
+                        val fundingKey = channelKeys.fundingKey(fundingTxIndex)
+                        val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, fundingKey)
+                        val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingKey.publicKey(), fundingParams.remoteFundingPubkey, localSigOfLocalTx, remoteCommitSig.signature)
                         logger.info { "interactiveTxSession=$this" }
                         logger.info { "channelParams=$channelParams" }
                         logger.info { "fundingKey=${fundingKey.publicKey()}" }
                         logger.info { "localSigOfLocalTx=$localSigOfLocalTx" }
                         logger.info { "signedLocalCommitTx=$signedLocalCommitTx" }
-                        Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid)))
+                        Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(signedLocalCommit.value))
                     }
-                    is Try.Success -> {
-                        val signedLocalCommit = LocalCommit(localCommit.value.index, localCommit.value.spec, PublishableTxs(signedLocalCommitTx, listOf()))
+                    is Either.Right -> {
                         if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
                             val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
-                            val commitment = Commitment(fundingTxIndex, fundingParams.remoteFundingPubkey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, nextRemoteCommit = null)
+                            val commitment = Commitment(fundingTxIndex, fundingParams.remoteFundingPubkey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit.value, remoteCommit, nextRemoteCommit = null)
                             val action = InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
-                            Pair(this.copy(localCommit = Either.Right(signedLocalCommit)), action)
+                            Pair(this.copy(localCommit = Either.Right(signedLocalCommit.value)), action)
                         } else {
-                            Pair(this.copy(localCommit = Either.Right(signedLocalCommit)), InteractiveTxSigningSessionAction.WaitForTxSigs)
+                            Pair(this.copy(localCommit = Either.Right(signedLocalCommit.value)), InteractiveTxSigningSessionAction.WaitForTxSigs)
                         }
                     }
                 }
@@ -831,19 +837,21 @@ data class InteractiveTxSigningSession(
             localCommitmentIndex: Long,
             remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
-            remotePerCommitmentPoint: PublicKey
+            remotePerCommitmentPoint: PublicKey,
+            localHtlcs: Set<DirectedHtlc>
         ): Either<ChannelException, Pair<InteractiveTxSigningSession, CommitSig>> {
             val channelKeys = channelParams.localParams.channelKeys(keyManager)
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript(channelKeys) }
             val liquidityFees = liquidityLease?.fees?.total?.toMilliSatoshi() ?: 0.msat
-            return Helpers.Funding.makeCommitTxsWithoutHtlcs(
+            return Helpers.Funding.makeCommitTxs(
                 channelKeys,
                 channelParams.channelId,
                 channelParams.localParams, channelParams.remoteParams,
                 fundingAmount = sharedTx.sharedOutput.amount,
                 toLocal = sharedTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFees,
                 toRemote = sharedTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount + liquidityFees,
+                localHtlcs = localHtlcs,
                 localCommitmentIndex = localCommitmentIndex,
                 remoteCommitmentIndex = remoteCommitmentIndex,
                 commitTxFeerate,
@@ -851,24 +859,32 @@ data class InteractiveTxSigningSession(
                 remoteFundingPubkey = fundingParams.remoteFundingPubkey,
                 remotePerCommitmentPoint = remotePerCommitmentPoint
             ).map { firstCommitTx ->
-                val localSigOfRemoteTx = Transactions.sign(firstCommitTx.remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
-                val alternativeSigs = Commitments.alternativeFeerates.map { feerate ->
-                    val alternativeSpec = firstCommitTx.remoteSpec.copy(feerate = feerate)
-                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(
-                        channelKeys,
-                        remoteCommitmentIndex,
-                        channelParams.localParams,
-                        channelParams.remoteParams,
-                        fundingTxIndex,
-                        fundingParams.remoteFundingPubkey,
-                        firstCommitTx.remoteCommitTx.input,
-                        remotePerCommitmentPoint,
-                        alternativeSpec
-                    )
-                    val alternativeSig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
-                    CommitSigTlv.AlternativeFeerateSig(feerate, alternativeSig)
+                val localSigOfRemoteCommitTx = Transactions.sign(firstCommitTx.remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+                val localSigsOfRemoteHtlcTxs = firstCommitTx.remoteHtlcTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+
+                val alternativeSigs = if (firstCommitTx.remoteHtlcTxs.isEmpty()) {
+                    val commitSigTlvs = Commitments.alternativeFeerates.map { feerate ->
+                        val alternativeSpec = firstCommitTx.remoteSpec.copy(feerate = feerate)
+                        val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(
+                            channelKeys,
+                            remoteCommitmentIndex,
+                            channelParams.localParams,
+                            channelParams.remoteParams,
+                            fundingTxIndex,
+                            fundingParams.remoteFundingPubkey,
+                            firstCommitTx.remoteCommitTx.input,
+                            remotePerCommitmentPoint,
+                            alternativeSpec
+                        )
+                        val sig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+                        CommitSigTlv.AlternativeFeerateSig(feerate, sig)
+                    }
+                    TlvStream(CommitSigTlv.AlternativeFeerateSigs(commitSigTlvs) as CommitSigTlv)
+                } else {
+                    TlvStream.empty()
                 }
-                val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteTx, listOf(), TlvStream(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs)))
+                val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteCommitTx, localSigsOfRemoteHtlcTxs, alternativeSigs)
+                // We haven't received the remote commit_sig: we don't have local htlc txs yet.
                 val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
                 val remoteCommit = RemoteCommit(remoteCommitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
                 val signedFundingTx = sharedTx.sign(keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
@@ -900,9 +916,30 @@ sealed class RbfStatus {
     data object RbfAborted : RbfStatus()
 }
 
+/** We're waiting for the channel to be quiescent. */
+sealed class QuiescenceNegotiation : SpliceStatus() {
+    abstract class Initiator : QuiescenceNegotiation() {
+        abstract val command: ChannelCommand.Commitment.Splice.Request
+    }
+    abstract class NonInitiator : QuiescenceNegotiation()
+}
+
+/** The channel is quiescent and a splice attempt was initiated. */
+sealed class QuiescentSpliceStatus : SpliceStatus()
+
 sealed class SpliceStatus {
     data object None : SpliceStatus()
-    data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : SpliceStatus()
+    /** We stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+    data class QuiescenceRequested(override val command: ChannelCommand.Commitment.Splice.Request) : QuiescenceNegotiation.Initiator()
+    /** Our updates have been added to the local and remote commitments, we wait for our peer to do the same. */
+    data class InitiatorQuiescent(override val command: ChannelCommand.Commitment.Splice.Request) : QuiescenceNegotiation.Initiator()
+    /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+    data class ReceivedStfu(val stfu: Stfu) : QuiescenceNegotiation.NonInitiator()
+    /** Our updates have been added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
+    object NonInitiatorQuiescent : QuiescentSpliceStatus()
+    /** We told our peer we want to splice funds in the channel. */
+    data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : QuiescentSpliceStatus()
+    /** We both agreed to splice and are building the splice transaction. */
     data class InProgress(
         val replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>?,
         val spliceSession: InteractiveTxSession,
@@ -910,7 +947,9 @@ sealed class SpliceStatus {
         val remotePushAmount: MilliSatoshi,
         val liquidityLease: LiquidityAds.Lease?,
         val origins: List<Origin.PayToOpenOrigin>
-    ) : SpliceStatus()
-    data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : SpliceStatus()
-    data object Aborted : SpliceStatus()
+    ) : QuiescentSpliceStatus()
+    /** The splice transaction has been negotiated, we're exchanging signatures. */
+    data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : QuiescentSpliceStatus()
+    /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
+    data object Aborted : QuiescentSpliceStatus()
 }

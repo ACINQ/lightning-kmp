@@ -54,6 +54,7 @@ import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
 import kotlinx.serialization.*
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -396,7 +397,7 @@ internal data class Commitments(
                 // We will put a WatchConfirmed when starting, which will return the confirmed transaction.
                 fr.acinq.lightning.channel.LocalFundingStatus.UnconfirmedFundingTx(
                     fr.acinq.lightning.channel.PartiallySignedSharedTransaction(
-                        fr.acinq.lightning.channel.SharedTransaction(null, InteractiveTxOutput.Shared(0, commitInput.txOut.publicKeyScript, localCommit.spec.toLocal, localCommit.spec.toRemote), listOf(), listOf(), listOf(), listOf(), 0),
+                        fr.acinq.lightning.channel.SharedTransaction(null, InteractiveTxOutput.Shared(0, commitInput.txOut.publicKeyScript, localCommit.spec.toLocal, localCommit.spec.toRemote, 0.msat), listOf(), listOf(), listOf(), listOf(), 0),
                         // We must correctly set the txId here.
                         TxSignatures(channelId, commitInput.outPoint.txid, listOf()),
                     ),

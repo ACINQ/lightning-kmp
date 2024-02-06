@@ -567,7 +567,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         // htlc3 and htlc4 are completely identical, their relative order can't be enforced.
         assertEquals(5, htlcTxs.size)
         htlcTxs.forEach { tx -> assertTrue(tx is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx) }
-        val htlcIds = htlcTxs.sortedBy { it.input.outPoint.index }.map { it.htlcId }
+        val htlcIds = htlcTxs.map { it.htlcId }
         assertTrue(htlcIds == listOf(1L, 3L, 4L, 5L, 2L) || htlcIds == listOf(1L, 4L, 3L, 5L, 2L))
 
         assertTrue(htlcOut4.publicKeyScript.toHex() < htlcOut5.publicKeyScript.toHex())

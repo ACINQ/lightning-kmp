@@ -189,7 +189,7 @@ object Deserialization {
         0x01 -> SharedFundingInput.Multisig2of2(
             info = readInputInfo(),
             fundingTxIndex = readNumber(),
-            remoteFundingPubkey = readPublicKey(),
+            remoteFundingPubkey = readPublicKey()
         )
         else -> error("unknown discriminator $discriminator for class ${SharedFundingInput::class}")
     }
@@ -213,7 +213,7 @@ object Deserialization {
             outPoint = readOutPoint(),
             sequence = readNumber().toUInt(),
             localAmount = readNumber().msat,
-            remoteAmount = readNumber().msat,
+            remoteAmount = readNumber().msat
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Shared::class}")
     }
@@ -262,6 +262,14 @@ object Deserialization {
             pubkeyScript = readDelimitedByteArray().toByteVector(),
             localAmount = readNumber().msat,
             remoteAmount = readNumber().msat,
+            htlcAmount = 0.msat
+        )
+        0x02 -> InteractiveTxOutput.Shared(
+            serialId = readNumber(),
+            pubkeyScript = readDelimitedByteArray().toByteVector(),
+            localAmount = readNumber().msat,
+            remoteAmount = readNumber().msat,
+            htlcAmount = readNumber().msat
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxOutput.Shared::class}")
     }

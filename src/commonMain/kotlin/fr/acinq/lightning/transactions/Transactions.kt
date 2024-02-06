@@ -480,7 +480,7 @@ object Transactions {
             }
             .mapNotNull { (it as? TxResult.Success)?.result }
 
-        return htlcTimeoutTxs + htlcSuccessTxs
+        return (htlcTimeoutTxs + htlcSuccessTxs).sortedBy { it.input.outPoint.index }
     }
 
     fun makeClaimHtlcSuccessTx(

@@ -59,7 +59,7 @@ data class WaitForAcceptChannel(
                                 }
                                 is Either.Right -> {
                                     // The channel initiator always sends the first interactive-tx message.
-                                    val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, fundingContributions.value).send()
+                                    val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, emptySet(), fundingContributions.value).send()
                                     when (interactiveTxAction) {
                                         is InteractiveTxSessionAction.SendMessage -> {
                                             val nextState = WaitForFundingCreated(

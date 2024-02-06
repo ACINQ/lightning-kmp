@@ -242,6 +242,13 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
+    @Serializable
+    object Quiescence : Feature() {
+        override val rfcName get() = "option_quiescence"
+        override val mandatory get() = 34
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
 }
 
 @Serializable
@@ -320,6 +327,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ChannelBackupClient,
             Feature.ChannelBackupProvider,
             Feature.ExperimentalSplice,
+            Feature.Quiescence
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())
