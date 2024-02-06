@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.blockchain.electrum.WalletState.Companion.indexOrNull
+import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
@@ -160,8 +161,8 @@ class ElectrumMiniWallet(
             val addressMeta = bitcoinAddress?.let { addressMetas[it] }
             return when {
                 bitcoinAddress == null || addressMeta == null -> {
-                    // this should never happen
-                    logger.error { "received subscription response for script hash ${msg.scriptHash} that does not match any address" }
+                    // this will happen because multiple wallets may be sharing the same Electrum connection (e.g. swap-in and final wallet)
+                    logger.debug { "received subscription response for script hash ${msg.scriptHash} that does not match any address" }
                     this
                 }
                 msg.status == null -> {
@@ -190,7 +191,7 @@ class ElectrumMiniWallet(
          */
         suspend fun WalletState.subscribe(scriptHash: ByteVector32, bitcoinAddress: String): WalletState {
             val response = client.startScriptHashSubscription(scriptHash)
-            logger.info { "subscribed to address=$bitcoinAddress scriptHash=$scriptHash" }
+            logger.debug { "subscribed to address=$bitcoinAddress scriptHash=$scriptHash" }
             return processSubscriptionResponse(response)
         }
 
@@ -203,7 +204,7 @@ class ElectrumMiniWallet(
         suspend fun WalletState.addAddress(bitcoinAddress: String, meta: WalletState.Companion.AddressMeta): WalletState {
             return computeScriptHash(bitcoinAddress)?.let { scriptHash ->
                 if (!scriptHashes.containsKey(scriptHash)) {
-                    logger.info { "adding new address=${bitcoinAddress} index=${meta.indexOrNull ?: "n/a"}" }
+                    logger.debug { "adding new address=${bitcoinAddress} index=${meta.indexOrNull ?: "n/a"}" }
                     scriptHashes = scriptHashes + (scriptHash to bitcoinAddress)
                     addressMetas = addressMetas + (bitcoinAddress to meta)
                     subscribe(scriptHash, bitcoinAddress)

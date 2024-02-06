@@ -10,8 +10,6 @@ import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
-import org.kodein.log.LoggerFactory
-import org.kodein.log.newLogger
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -20,7 +18,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class ElectrumMiniWalletTest : LightningTestSuite() {
 
-    private val logger = LoggerFactory.default.newLogger(this::class)
+    private val logger = loggerFactory.newLogger(this::class)
 
     @Test
     fun `single address with no utxos`() = runSuspendTest(timeout = 15.seconds) {

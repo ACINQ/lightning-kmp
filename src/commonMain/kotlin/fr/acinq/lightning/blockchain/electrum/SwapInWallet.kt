@@ -2,7 +2,7 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.logging.LoggerFactory
+import fr.acinq.lightning.logging.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
