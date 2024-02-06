@@ -1,5 +1,7 @@
 # Funds recovery
 
+:warning: to recover swap-in funds sent to older versions of Phoenix (up to and including version 2.1.2) pleaser refer to [this guide](https://github.com/ACINQ/lightning-kmp/blob/v1.5.15/RECOVERY.md)
+
 The following steps lets you recover on-chain funds managed by `lightning-kmp`.
 
 ## Closed channels
