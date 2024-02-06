@@ -945,8 +945,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     @Test
     fun `swap-in input missing user nonce`() {
         val f = createFixture(100_000.sat, listOf(150_000.sat), listOf(), 0.sat, listOf(), listOf(), FeeratePerKw(2500.sat), 330.sat, 0)
-        val alice0 = InteractiveTxSession(f.nodeIdB, f.channelKeysA, f.keyManagerA.swapInOnChainWallet, f.fundingParamsA, 0.msat, 0.msat, f.fundingContributionsA)
-        val bob0 = InteractiveTxSession(f.nodeIdA, f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, 0.msat, 0.msat, f.fundingContributionsB)
+        val alice0 = InteractiveTxSession(f.nodeIdB, f.channelKeysA, f.keyManagerA.swapInOnChainWallet, f.fundingParamsA, 0.msat, 0.msat, emptySet(), f.fundingContributionsA)
+        val bob0 = InteractiveTxSession(f.nodeIdA, f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, 0.msat, 0.msat, emptySet(), f.fundingContributionsB)
         // Alice --- tx_add_input --> Bob
         val (alice1, inputA) = sendMessage<TxAddInput>(alice0)
         // Alice <-- tx_complete --- Bob
@@ -1070,7 +1070,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     @Test
     fun `previous attempts not double-spent`() {
         val f = createFixture(100_000.sat, listOf(120_000.sat), listOf(), 0.sat, listOf(), listOf(), FeeratePerKw(5000.sat), 330.sat, 0)
-        val sharedOutput = InteractiveTxOutput.Shared(0, f.fundingParamsA.fundingPubkeyScript(f.channelKeysA), 100_000_000.msat, 0.msat)
+        val sharedOutput = InteractiveTxOutput.Shared(0, f.fundingParamsA.fundingPubkeyScript(f.channelKeysA), 100_000_000.msat, 0.msat, 0.msat)
         val previousTx1 = Transaction(2, listOf(), listOf(TxOut(150_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0)
         val previousTx2 = Transaction(2, listOf(), listOf(TxOut(160_000.sat, Script.pay2wpkh(randomKey().publicKey())), TxOut(200_000.sat, Script.pay2wpkh(randomKey().publicKey()))), 0)
         val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()

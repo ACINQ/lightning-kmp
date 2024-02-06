@@ -255,13 +255,14 @@ object Serialization {
     }
 
     private fun Output.writeSharedInteractiveTxInput(i: InteractiveTxInput.Shared) = i.run {
-        write(0x02)
+        write(0x03)
         writeNumber(serialId)
         writeBtcObject(outPoint)
         writeDelimited(publicKeyScript.toByteArray())
         writeNumber(sequence.toLong())
         writeNumber(localAmount.toLong())
         writeNumber(remoteAmount.toLong())
+        writeNumber(htlcAmount.toLong())
     }
 
     private fun Output.writeLocalInteractiveTxInput(i: InteractiveTxInput.Local) = when (i) {

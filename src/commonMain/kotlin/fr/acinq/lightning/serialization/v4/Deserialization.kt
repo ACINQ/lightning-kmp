@@ -216,6 +216,7 @@ object Deserialization {
             sequence = readNumber().toUInt(),
             localAmount = readNumber().msat,
             remoteAmount = readNumber().msat,
+            htlcAmount = 0.msat
         )
         0x02 -> InteractiveTxInput.Shared(
             serialId = readNumber(),
@@ -223,7 +224,17 @@ object Deserialization {
             publicKeyScript = readDelimitedByteArray().byteVector(),
             sequence = readNumber().toUInt(),
             localAmount = readNumber().msat,
-            remoteAmount = readNumber().msat
+            remoteAmount = readNumber().msat,
+            htlcAmount = 0.msat
+        )
+        0x03 -> InteractiveTxInput.Shared(
+            serialId = readNumber(),
+            outPoint = readOutPoint(),
+            publicKeyScript = readDelimitedByteArray().byteVector(),
+            sequence = readNumber().toUInt(),
+            localAmount = readNumber().msat,
+            remoteAmount = readNumber().msat,
+            htlcAmount = readNumber().msat
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Shared::class}")
     }

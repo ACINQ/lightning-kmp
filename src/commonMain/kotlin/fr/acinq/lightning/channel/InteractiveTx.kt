@@ -181,9 +181,10 @@ sealed class InteractiveTxInput {
         val publicKeyScript: ByteVector,
         override val sequence: UInt,
         val localAmount: MilliSatoshi,
-        val remoteAmount: MilliSatoshi
+        val remoteAmount: MilliSatoshi,
+        val htlcAmount: MilliSatoshi
     ) : InteractiveTxInput(), Incoming, Outgoing {
-        override val txOut: TxOut get() = TxOut((localAmount + remoteAmount).truncateToSatoshi(), publicKeyScript)
+        override val txOut: TxOut get() = TxOut((localAmount + remoteAmount + htlcAmount).truncateToSatoshi(), publicKeyScript)
     }
 }
 
@@ -298,7 +299,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                     }
                 }
             }
-            val sharedInput = sharedUtxo?.let { (i, balances) -> listOf(InteractiveTxInput.Shared(0, i.info.outPoint, i.info.txOut.publicKeyScript, 0xfffffffdU, balances.toLocal, balances.toRemote)) } ?: listOf()
+            val sharedInput = sharedUtxo?.let { (i, balances) -> listOf(InteractiveTxInput.Shared(0, i.info.outPoint, i.info.txOut.publicKeyScript, 0xfffffffdU, balances.toLocal, balances.toRemote, balances.toHtlcs)) } ?: listOf()
             val localInputs = walletInputs.map { i ->
                 when {
                     Script.isPay2wsh(i.previousTx.txOut[i.outputIndex].publicKeyScript.toByteArray()) ->
@@ -731,7 +732,7 @@ data class InteractiveTxSession(
                 val expectedSharedOutpoint = fundingParams.sharedInput?.info?.outPoint ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 val receivedSharedOutpoint = message.sharedInput ?: return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
                 if (expectedSharedOutpoint != receivedSharedOutpoint) return Either.Left(InteractiveTxSessionAction.PreviousTxMissing(message.channelId, message.serialId))
-                InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, fundingParams.sharedInput.info.txOut.publicKeyScript, message.sequence, previousFunding.toLocal, previousFunding.toRemote)
+                InteractiveTxInput.Shared(message.serialId, receivedSharedOutpoint, fundingParams.sharedInput.info.txOut.publicKeyScript, message.sequence, previousFunding.toLocal, previousFunding.toRemote, previousFunding.toHtlcs)
             }
 
             else -> {
