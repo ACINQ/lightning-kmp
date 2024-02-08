@@ -82,6 +82,7 @@ interface LightningMessage {
                 UnsetFCMToken.type -> UnsetFCMToken
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
+                Stfu.type -> Stfu.read(stream)
                 SpliceInit.type -> SpliceInit.read(stream)
                 SpliceAck.type -> SpliceAck.read(stream)
                 SpliceLocked.type -> SpliceLocked.read(stream)
