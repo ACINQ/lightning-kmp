@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.crypto.KeyManager
 
 /**
  * new swap-in protocol based on musig2 and taproot: (user key + server key) OR (user refund key + delay)
@@ -18,6 +17,7 @@ import fr.acinq.lightning.crypto.KeyManager
 data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: PublicKey, val userRefundKey: PublicKey, val refundDelay: Int) {
     // The key path uses musig2 with the user and server keys.
     private val internalPublicKey = Musig2.aggregateKeys(listOf(userPublicKey, serverPublicKey))
+
     // The script path contains a refund script, generated from this policy: and_v(v:pk(user),older(refundDelay)).
     // It does not depend upon the user's or server's key, just the user's refund key and the refund delay.
     private val refundScript = listOf(OP_PUSHDATA(userRefundKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
@@ -55,38 +55,30 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
         return Musig2.signTaprootInput(serverPrivateKey, fundingTx, index, parentTxOuts, publicKeys, privateNonce, publicNonces, scriptTree)
     }
 
-    /**
-     * @param chain chain we're on.
-     * @param masterRefundKey master private key for the refund keys: we assume that there is a single level of derivation to compute the refund keys.
-     * @return a taproot descriptor that can be imported in bitcoin core (from version 26 on) to recover user funds once the funding delay has passed.
-     */
-    fun descriptor(chain: NodeParams.Chain, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): String {
-        val prefix = when (chain) {
-            NodeParams.Chain.Mainnet -> DeterministicWallet.xprv
-            else -> DeterministicWallet.tprv
+    companion object {
+        fun privateDescriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): String {
+            val internalPubKey = Musig2.aggregateKeys(listOf(userPublicKey, serverPublicKey))
+            val prefix = when (chain) {
+                NodeParams.Chain.Mainnet -> DeterministicWallet.xprv
+                else -> DeterministicWallet.tprv
+            }
+            val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
+            val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
+            val checksum = Descriptor.checksum(desc)
+            return "$desc#$checksum"
         }
-        val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
-        val desc = "tr(${internalPublicKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
-        val checksum = Descriptor.checksum(desc)
-        return "$desc#$checksum"
-    }
 
-    /**
-     * @param chain chain we're on.
-     * @param masterRefundKey master public key for the refund keys: we assume that there is a single level of derivation to compute the refund keys.
-     * @return a taproot descriptor that can be imported in bitcoin core (from version 26 on) to create a watch-only wallet for your swap-in transactions.
-     */
-    fun descriptor(chain: NodeParams.Chain, masterRefundKey: DeterministicWallet.ExtendedPublicKey): String {
-        // the internal pubkey is the musig2 aggregation of the user's and server's public keys: it does not depend upon the user's refund's key
-        val prefix = when (chain) {
-            NodeParams.Chain.Mainnet -> DeterministicWallet.xpub
-            else -> DeterministicWallet.tpub
+        fun publicDescriptor(chain: NodeParams.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPublicKey): String {
+            val internalPubKey = Musig2.aggregateKeys(listOf(userPublicKey, serverPublicKey))
+            val prefix = when (chain) {
+                NodeParams.Chain.Mainnet -> DeterministicWallet.xpub
+                else -> DeterministicWallet.tpub
+            }
+            val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
+            val desc = "tr(${internalPubKey.value},and_v(v:pk($xpub/*),older($refundDelay)))"
+            val checksum = Descriptor.checksum(desc)
+            return "$desc#$checksum"
         }
-        val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
-        val path = masterRefundKey.path.toString().replace('\'', 'h').removePrefix("m")
-        val desc = "tr(${internalPublicKey.value},and_v(v:pk($xpub$path/*),older($refundDelay)))"
-        val checksum = Descriptor.checksum(desc)
-        return "$desc#$checksum"
     }
 }
 
@@ -126,22 +118,26 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
         return Transactions.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, serverKey)
     }
 
-    /**
-     * The output script descriptor matching our legacy swap-in addresses.
-     * That descriptor can be imported in bitcoind to recover funds after the refund delay.
-     *
-     * @param chain chain we're on.
-     * @param masterRefundKey master private key for the swap-in wallet.
-     * @param userPrivateKey user refund private key, derived from the master private key.
-     * @return a p2wsh descriptor that can be imported in bitcoin core (from version 24 on) to recover user funds once the funding delay has passed.
-     */
-    fun descriptor(chain: NodeParams.Chain, masterRefundKey: DeterministicWallet.ExtendedPrivateKey, userPrivateKey: DeterministicWallet.ExtendedPrivateKey): String {
-        // Since child public keys cannot be derived from a master xpub when hardened derivation is used,
-        // we need to provide the fingerprint of the master xpub and the hardened derivation path.
-        // This lets wallets that have access to the master xpriv derive the corresponding private and public keys.
-        val masterFingerprint = ByteVector(Crypto.hash160(DeterministicWallet.publicKey(masterRefundKey).publickeybytes).take(4).toByteArray())
-        val encodedChildKey = DeterministicWallet.encode(DeterministicWallet.publicKey(userPrivateKey), testnet = chain != NodeParams.Chain.Mainnet)
-        val userKey = "[${masterFingerprint.toHex()}/${KeyManager.SwapInOnChainKeys.encodedSwapInUserKeyPath(chain)}]$encodedChildKey"
-        return "wsh(and_v(v:pk($userKey),or_d(pk(${serverPublicKey.toHex()}),older($refundDelay))))"
+    companion object {
+        /**
+         * The output script descriptor matching our legacy swap-in addresses.
+         * That descriptor can be imported in bitcoind to recover funds after the refund delay.
+         *
+         * @param chain chain we're on.
+         * @param masterPublicKey master public key for the swap-in wallet.
+         * @param userExtendedPublicKey user public key, derived from the master private key.
+         * @param remoteServerPublicKey server public key
+         * @param refundDelay refund delay
+         * @return a p2wsh descriptor that can be imported in bitcoin core (from version 24 on) to recover user funds once the funding delay has passed.
+         */
+        fun descriptor(chain: NodeParams.Chain, masterPublicKey: DeterministicWallet.ExtendedPublicKey, userExtendedPublicKey: DeterministicWallet.ExtendedPublicKey, remoteServerPublicKey: PublicKey, refundDelay: Int): String {
+            // Since child public keys cannot be derived from a master xpub when hardened derivation is used,
+            // we need to provide the fingerprint of the master xpub and the hardened derivation path.
+            // This lets wallets that have access to the master xpriv derive the corresponding private and public keys.
+            val masterFingerprint = ByteVector(Crypto.hash160(masterPublicKey.publickeybytes).take(4).toByteArray())
+            val encodedChildKey = DeterministicWallet.encode(userExtendedPublicKey, testnet = chain != NodeParams.Chain.Mainnet)
+            val userKey = "[${masterFingerprint.toHex()}/${userExtendedPublicKey.path.asString('h').removePrefix("m/")}]$encodedChildKey"
+            return "wsh(and_v(v:pk($userKey),or_d(pk(${remoteServerPublicKey.toHex()}),older($refundDelay))))"
+        }
     }
 }

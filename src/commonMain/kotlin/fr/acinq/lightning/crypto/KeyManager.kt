@@ -134,11 +134,19 @@ interface KeyManager {
         fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
 
         val swapInProtocol = SwapInProtocol(userPublicKey, remoteServerPublicKey, userRefundPublicKey, refundDelay)
-        val descriptor = swapInProtocol.descriptor(chain, userRefundExtendedPrivateKey)
+
+        // this is a private descriptor that can be used as-is to recover swap-in funds once the refund delay has passed
+        // it is compatible with address rotation as long as refund keys are derived directly from userRefundExtendedPrivateKey
+        // README: it includes the user's master refund private key and is not safe to share !!
+        val privateDescriptor = SwapInProtocol.privateDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey)
+
+        // this is the public version of the above descriptor. It can be used to monitor a user's swap-in transaction
+        // README: it cannot be used to derive private keys, but it can be used to derive swap-in addresses
+        val publicDescriptor = SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, DeterministicWallet.publicKey(userRefundExtendedPrivateKey))
 
         // legacy p2wsh-based swap-in protocol, with a fixed on-chain address
         val legacySwapInProtocol = SwapInProtocolLegacy(userPublicKey, remoteServerPublicKey, refundDelay)
-        val legacyDescriptor = legacySwapInProtocol.descriptor(chain, master, userExtendedPrivateKey)
+        val legacyDescriptor = SwapInProtocolLegacy.descriptor(chain, DeterministicWallet.publicKey(master), DeterministicWallet.publicKey(userExtendedPrivateKey), remoteServerPublicKey, refundDelay)
 
         fun signSwapInputUserLegacy(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>): ByteVector64 {
             return legacySwapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()], userPrivateKey)
