@@ -655,16 +655,22 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `receive multipart payment with amount greater than total amount`() = runSuspendTest {
         val channelId = randomBytes32()
-        val (amount1, amount2, amount3) = listOf(100_000.msat, 60_000.msat, 40_000.msat)
         val requestedAmount = 180_000.msat
-        val totalAmount = amount1 + amount2 + amount3
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(requestedAmount)
+        // The sender overpays at many different layers:
+        //  - the invoice requests a payment of 180 000 msat
+        //  - the sender announces a total amount of 190 000 msat
+        //  - the sum of individual HTLC's onion amounts is 200 000 msat
+        //  - the sum of individual HTLC's amounts is 205 000 msat
+        val totalAmount = 190_000.msat
+        val add1 = makeUpdateAddHtlc(3, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(100_000.msat, totalAmount, paymentSecret))
+        val add2 = makeUpdateAddHtlc(5, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(60_000.msat, totalAmount, paymentSecret)).copy(amountMsat = 65_000.msat)
+        val add3 = makeUpdateAddHtlc(6, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(40_000.msat, totalAmount, paymentSecret))
 
         // Step 1 of 2:
         // - Alice sends first 2 multipart htlcs to Bob.
         // - Bob doesn't accept the MPP set yet
-        listOf(Pair(3L, amount1), Pair(5L, amount2)).forEach { (id, amount) ->
-            val add = makeUpdateAddHtlc(id, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, totalAmount, paymentSecret))
+        listOf(add1, add2).forEach { add ->
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
             assertTrue(result.actions.isEmpty())
@@ -674,8 +680,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // - Alice sends third multipart htlc to Bob
         // - Bob now accepts the MPP set
         run {
-            val add = makeUpdateAddHtlc(6L, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount3, totalAmount, paymentSecret))
-            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            val result = paymentHandler.process(add3, TestConstants.defaultBlockHeight)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
             val expected = setOf(
                 WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(3, incomingPayment.preimage, commit = true)),
@@ -684,6 +689,27 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             )
             assertEquals(expected, result.actions.toSet())
         }
+    }
+
+    @Test
+    fun `receive normal single HTLC over-payment`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(150_000.msat)
+        val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeSinglePartPayload(170_000.msat, paymentSecret)).copy(amountMsat = 175_000.msat)
+        val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+        val expected = WrappedChannelCommand(add.channelId, ChannelCommand.Htlc.Settlement.Fulfill(add.id, incomingPayment.preimage, commit = true))
+        assertEquals(setOf(expected), result.actions.toSet())
+    }
+
+    @Test
+    fun `receive normal single HTLC with greater expiry`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
+        val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeSinglePartPayload(defaultAmount, paymentSecret))
+        val addGreaterExpiry = add.copy(cltvExpiry = add.cltvExpiry + CltvExpiryDelta(6))
+        val result = paymentHandler.process(addGreaterExpiry, TestConstants.defaultBlockHeight)
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+        val expected = WrappedChannelCommand(add.channelId, ChannelCommand.Htlc.Settlement.Fulfill(add.id, incomingPayment.preimage, commit = true))
+        assertEquals(setOf(expected), result.actions.toSet())
     }
 
     @Test
@@ -1102,8 +1128,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         paymentHandler.db.receivePayment(
             paidInvoice.paymentHash,
             receivedWith = listOf(IncomingPayment.ReceivedWith.NewChannel(amount = 15_000_000.msat, serviceFee = 1_000_000.msat, miningFee = 0.sat, channelId = randomBytes32(), txId = TxId(randomBytes32()), confirmedAt = null, lockedAt = null)),
-            receivedAt = 101
-        ) // simulate incoming payment being paid before it expired
+            receivedAt = 101 // simulate incoming payment being paid before it expired
+        )
 
         // create unexpired payment
         delay(100.milliseconds)
@@ -1153,6 +1179,16 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         private fun makeUpdateAddHtlc(id: Long, channelId: ByteVector32, destination: IncomingPaymentHandler, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): UpdateAddHtlc {
             val (_, _, packetAndSecrets) = OutgoingPaymentPacket.buildPacket(paymentHash, channelHops(destination.nodeParams.nodeId), finalPayload, OnionRoutingPacket.PaymentPacketLength)
             return UpdateAddHtlc(channelId, id, finalPayload.amount, paymentHash, finalPayload.expiry, packetAndSecrets.packet)
+        }
+
+        private fun makeSinglePartPayload(
+            amount: MilliSatoshi,
+            paymentSecret: ByteVector32,
+            cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
+            currentBlockHeight: Int = TestConstants.defaultBlockHeight
+        ): PaymentOnion.FinalPayload {
+            val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+            return PaymentOnion.FinalPayload.createSinglePartPayload(amount, expiry, paymentSecret, null)
         }
 
         private fun makeMppPayload(
