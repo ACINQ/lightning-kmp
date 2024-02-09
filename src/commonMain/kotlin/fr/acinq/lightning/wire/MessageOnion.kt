@@ -8,17 +8,17 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.crypto.RouteBlinding
 
-
-sealed class OnionMessagePayloadTlv : Tlv {
+sealed interface OnionMessagePayloadTlv : Tlv {
     /**
      * Onion messages may provide a reply path, allowing the recipient to send a message back to the original sender.
      * The reply path uses route blinding, which ensures that the sender doesn't leak its identity to the recipient.
      */
-    data class ReplyPath(val blindedRoute: RouteBlinding.BlindedRoute) : OnionMessagePayloadTlv() {
+    data class ReplyPath(val blindedRoute: RouteBlinding.BlindedRoute) : OnionMessagePayloadTlv {
         override val tag: Long get() = ReplyPath.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(blindedRoute.introductionNodeId.value, out)
             LightningCodecs.writeBytes(blindedRoute.blindingKey.value, out)
+            LightningCodecs.writeByte(blindedRoute.blindedNodes.size, out)
             for (hop in blindedRoute.blindedNodes) {
                 LightningCodecs.writeBytes(hop.blindedPublicKey.value, out)
                 LightningCodecs.writeU16(hop.encryptedPayload.size(), out)
@@ -31,13 +31,12 @@ sealed class OnionMessagePayloadTlv : Tlv {
             override fun read(input: Input): ReplyPath {
                 val firstNodeId = PublicKey(LightningCodecs.bytes(input, 33))
                 val blinding = PublicKey(LightningCodecs.bytes(input, 33))
-                val path = sequence {
-                    while (input.availableBytes > 0) {
-                        val blindedPublicKey = PublicKey(LightningCodecs.bytes(input, 33))
-                        val encryptedPayload = ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
-                        yield(RouteBlinding.BlindedNode(blindedPublicKey, encryptedPayload))
-                    }
-                }.toList()
+                val numHops = LightningCodecs.byte(input)
+                val path = (0 until numHops).map {
+                    val blindedPublicKey = PublicKey(LightningCodecs.bytes(input, 33))
+                    val encryptedPayload = ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
+                    RouteBlinding.BlindedNode(blindedPublicKey, encryptedPayload)
+                }
                 return ReplyPath(RouteBlinding.BlindedRoute(firstNodeId, blinding, path))
             }
         }
@@ -48,7 +47,7 @@ sealed class OnionMessagePayloadTlv : Tlv {
      * This ensures that intermediate nodes can't know whether they're forwarding a message or its reply.
      * The sender must provide some encrypted data for each intermediate node which lets them locate the next node.
      */
-    data class EncryptedData(val data: ByteVector) : OnionMessagePayloadTlv() {
+    data class EncryptedData(val data: ByteVector) : OnionMessagePayloadTlv {
         override val tag: Long get() = EncryptedData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(data, out)
 

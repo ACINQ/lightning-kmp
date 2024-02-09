@@ -201,7 +201,7 @@ object Sphinx {
      */
     private fun wrap(
         payload: ByteArray,
-        associatedData: ByteVector32,
+        associatedData: ByteVector32?,
         ephemeralPublicKey: PublicKey,
         sharedSecret: ByteVector32,
         packet: Either<ByteVector, OnionRoutingPacket>,
@@ -226,7 +226,7 @@ object Sphinx {
             onionPayload2.dropLast(onionPayloadFiller.size()).toByteArray() + onionPayloadFiller.toByteArray()
         }
 
-        val nextHmac = mac(generateKey("mu", sharedSecret), nextOnionPayload.toByteVector() + associatedData)
+        val nextHmac = mac(generateKey("mu", sharedSecret), nextOnionPayload.toByteVector() + (associatedData ?: ByteVector.empty))
         return OnionRoutingPacket(0, ephemeralPublicKey.value, nextOnionPayload.toByteVector(), nextHmac)
     }
 
@@ -241,7 +241,7 @@ object Sphinx {
      * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
      *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
      */
-    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteArray>, associatedData: ByteVector32, packetLength: Int): PacketAndSecrets {
+    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteArray>, associatedData: ByteVector32?, packetLength: Int): PacketAndSecrets {
         val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
         val filler = generateFiller("rho", sharedsecrets.dropLast(1), payloads.dropLast(1), packetLength)
 
