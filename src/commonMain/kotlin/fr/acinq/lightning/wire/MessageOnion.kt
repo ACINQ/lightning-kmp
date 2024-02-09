@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.lightning.NodeId
 import fr.acinq.lightning.crypto.RouteBlinding
 
 sealed interface OnionMessagePayloadTlv : Tlv {
@@ -16,7 +17,7 @@ sealed interface OnionMessagePayloadTlv : Tlv {
     data class ReplyPath(val blindedRoute: RouteBlinding.BlindedRoute) : OnionMessagePayloadTlv {
         override val tag: Long get() = ReplyPath.tag
         override fun write(out: Output) {
-            LightningCodecs.writeBytes(blindedRoute.introductionNodeId.value, out)
+            blindedRoute.introductionNodeId.write(out)
             LightningCodecs.writeBytes(blindedRoute.blindingKey.value, out)
             LightningCodecs.writeByte(blindedRoute.blindedNodes.size, out)
             for (hop in blindedRoute.blindedNodes) {
@@ -29,7 +30,7 @@ sealed interface OnionMessagePayloadTlv : Tlv {
         companion object : TlvValueReader<ReplyPath> {
             const val tag: Long = 2
             override fun read(input: Input): ReplyPath {
-                val firstNodeId = PublicKey(LightningCodecs.bytes(input, 33))
+                val firstNodeId = NodeId.read(input)
                 val blinding = PublicKey(LightningCodecs.bytes(input, 33))
                 val numHops = LightningCodecs.byte(input)
                 val path = (0 until numHops).map {

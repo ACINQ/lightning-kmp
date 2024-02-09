@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.NodeId
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.utils.Either
@@ -50,7 +51,7 @@ class Postman(
                 if (decrypted.value.isLastPacket && subscribed.containsKey(relayInfo.pathId)) {
                     subscribed[relayInfo.pathId]?.send(MessageWithRecipientData(message, relayInfo))
                     subscribed.remove(relayInfo.pathId)
-                } else if (!decrypted.value.isLastPacket && relayInfo.nextNodeId == privateKey.publicKey()) {
+                } else if (!decrypted.value.isLastPacket && relayInfo.nextNodeId == NodeId(privateKey.publicKey())) {
                     // We may add ourselves to the route several times at the end to hide the real length of the route.
                     processOnionMessage(
                         OnionMessage(
@@ -74,7 +75,7 @@ class Postman(
         destination: OnionMessages.Destination,
         messageContent: TlvStream<OnionMessagePayloadTlv>,
     ): SendMessageError? {
-        val intermediateNodes = if (destination.introductionNodeId == remoteNodeId) listOf() else listOf(remoteNodeId)
+        val intermediateNodes = if (destination.introductionNodeId == NodeId(remoteNodeId)) listOf() else listOf(remoteNodeId)
         when (val message = OnionMessages.buildMessage(
             privateKey,
             randomKey(),
@@ -99,7 +100,7 @@ class Postman(
         minReplyPathHops: Int,
         timeout: Duration
     ): Either<SendMessageError, MessageWithRecipientData?> {
-        val intermediateNodes = if (destination.introductionNodeId == remoteNodeId) listOf() else listOf(remoteNodeId)
+        val intermediateNodes = if (destination.introductionNodeId == NodeId(remoteNodeId)) listOf() else listOf(remoteNodeId)
         val messageId = randomBytes32()
         val numHopsToAdd = max(0, minReplyPathHops - 1)
         val replyPathHops =

@@ -3,6 +3,7 @@ package fr.acinq.lightning.message
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.lightning.NodeId
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.utils.Either
@@ -13,14 +14,14 @@ object OnionMessages {
     data class IntermediateNode(val nodeId: PublicKey, val padding: ByteVector? = null, val customTlvs: Set<GenericTlv> = setOf())
 
     sealed interface Destination {
-        val introductionNodeId: PublicKey
+        val introductionNodeId: NodeId
 
         data class BlindedPath(val route: RouteBlinding.BlindedRoute) : Destination {
-            override val introductionNodeId: PublicKey = route.introductionNodeId
+            override val introductionNodeId: NodeId = route.introductionNodeId
         }
 
         data class Recipient(val nodeId: PublicKey, val pathId: ByteVector?, val padding: ByteVector? = null, val customTlvs: Set<GenericTlv> = setOf()) : Destination {
-            override val introductionNodeId: PublicKey = nodeId
+            override val introductionNodeId: NodeId = NodeId(nodeId)
         }
     }
 
@@ -31,7 +32,7 @@ object OnionMessages {
         return if (intermediateNodes.isEmpty()) {
             listOf()
         } else {
-            intermediateNodes.drop(1).map { node -> setOf(RouteBlindingEncryptedDataTlv.OutgoingNodeId(node.nodeId)) }
+            intermediateNodes.drop(1).map { node -> setOf(RouteBlindingEncryptedDataTlv.OutgoingNodeId(NodeId(node.nodeId))) }
                 .plusElement(nextTlvs)
                 .zip(intermediateNodes).map { (tlvs, hop) ->
                     TlvStream(
@@ -50,7 +51,7 @@ object OnionMessages {
     ): RouteBlinding.BlindedRoute {
         val intermediatePayloads = buildIntermediatePayloads(
             intermediateNodes,
-            setOf(RouteBlindingEncryptedDataTlv.OutgoingNodeId(recipient.nodeId))
+            setOf(RouteBlindingEncryptedDataTlv.OutgoingNodeId(NodeId(recipient.nodeId)))
         )
         val tlvs: Set<RouteBlindingEncryptedDataTlv> =
             setOfNotNull(recipient.padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) },
@@ -72,7 +73,7 @@ object OnionMessages {
             is Destination.Recipient -> return buildRoute(blindingSecret, intermediateNodes, destination)
             is Destination.BlindedPath ->
                 when {
-                    destination.route.introductionNodeId == originKey.publicKey() ->
+                    destination.route.introductionNodeId == NodeId(originKey.publicKey()) ->
                         return try {
                             val (payload, nextBlinding) = RouteBlinding.decryptPayload(
                                 originKey,
@@ -126,7 +127,7 @@ object OnionMessages {
         intermediateNodes: List<IntermediateNode>,
         destination: Destination,
         content: TlvStream<OnionMessagePayloadTlv>
-    ): Either<BuildMessageError, Pair<PublicKey, OnionMessage>> {
+    ): Either<BuildMessageError, Pair<NodeId, OnionMessage>> {
         val route = buildRouteFrom(nodeKey, blindingSecret, intermediateNodes, destination)
         if (route == null) {
             return Either.Left(InvalidDestination(destination))
