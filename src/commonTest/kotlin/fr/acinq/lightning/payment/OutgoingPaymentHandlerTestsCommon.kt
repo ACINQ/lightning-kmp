@@ -285,7 +285,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNull(innerB.paymentSecret)
 
         // The recipient should receive the right amount and expiry.
-        val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
+        val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
         val payloadC = PaymentOnion.FinalPayload.read(payloadBytesC.payload.toByteArray())
         assertEquals(200_000.msat, payloadC.amount)
         assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
@@ -340,7 +340,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertNull(innerB.paymentSecret)
 
             // The recipient should receive the right amount and expiry.
-            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
+            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
             val payloadC = PaymentOnion.FinalPayload.read(payloadBytesC.payload.toByteArray())
             assertEquals(300_000.msat, payloadC.amount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
@@ -446,50 +446,12 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertTrue(minFinalExpiry <= innerB.outgoingCltv)
 
             // The recipient should receive the right amount and expiry.
-            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
+            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
             val payloadC = PaymentOnion.FinalPayload.read(payloadBytesC.payload.toByteArray())
             assertEquals(300_000.msat, payloadC.amount)
             assertTrue(minFinalExpiry <= payloadC.expiry)
             assertEquals(innerB.outgoingCltv, payloadC.expiry)
         }
-    }
-
-    @Test
-    fun `prune routing hints when sending to legacy recipient`() = runSuspendTest {
-        val channels = makeChannels()
-        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, walletParams, InMemoryPaymentsDb())
-        val recipientKey = randomKey()
-        val extraHops = listOf(
-            listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(10), 10.msat, 100, CltvExpiryDelta(48))),
-            listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(12), 10.msat, 110, CltvExpiryDelta(48))),
-            listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(13), 10.msat, 120, CltvExpiryDelta(48))),
-            listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(14), 10.msat, 130, CltvExpiryDelta(48))),
-            listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(15), 10.msat, 140, CltvExpiryDelta(48))),
-            listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(16), 10.msat, 150, CltvExpiryDelta(48))),
-            listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(17), 10.msat, 160, CltvExpiryDelta(48))),
-            listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(18), 10.msat, 170, CltvExpiryDelta(48))),
-        )
-        val invoice = makeInvoice(amount = 200_000.msat, supportsTrampoline = false, privKey = recipientKey, extraHops = extraHops)
-        val payment = SendPayment(UUID.randomUUID(), 200_000.msat, invoice.nodeId, invoice)
-
-        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val (channelId, htlc) = run {
-            val adds = filterAddHtlcCommands(result)
-            assertEquals(1, adds.size)
-            adds.first()
-        }
-
-        val (outerB, innerB, _) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, htlc), TestConstants.Bob.nodeParams.nodePrivateKey)
-        assertEquals(htlc.amount, outerB.amount)
-        assertEquals(210_000.msat, outerB.totalAmount)
-        assertEquals(200_000.msat, innerB.amountToForward)
-        assertEquals(payment.recipient, innerB.outgoingNodeId)
-        assertEquals(invoice.paymentSecret, innerB.paymentSecret)
-        assertEquals(invoice.features.toByteArray().toByteVector(), innerB.invoiceFeatures)
-        // The trampoline node should receive a subset of the routing hints that fits inside the onion.
-        assertEquals(4, innerB.invoiceRoutingInfo?.flatten()?.toSet()?.size)
-        innerB.invoiceRoutingInfo?.flatten()?.forEach { assertTrue(extraHops.flatten().contains(it)) }
     }
 
     @Test
@@ -583,7 +545,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertNull(innerB.paymentSecret)
 
             // The recipient should receive the right amount and expiry.
-            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC, OnionRoutingPacket.TrampolinePacketLength).right!!
+            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
             val payloadC = PaymentOnion.FinalPayload.read(payloadBytesC.payload.toByteArray())
             assertEquals(300_000.msat, payloadC.amount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
