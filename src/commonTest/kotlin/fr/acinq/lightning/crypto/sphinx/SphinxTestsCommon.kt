@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
-import fr.acinq.lightning.NodeId
+import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx.computeEphemeralPublicKeysAndSharedSecrets
 import fr.acinq.lightning.crypto.sphinx.Sphinx.decodePayloadLength
@@ -563,8 +563,8 @@ class SphinxTestsCommon : LightningTestSuite() {
     fun `create blinded route -- reference test vector`() {
         val sessionKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"))
         val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
-        assertEquals(blindedRoute.introductionNode.nodeId, NodeId(publicKeys[0]))
-        assertEquals(blindedRoute.introductionNodeId, NodeId(publicKeys[0]))
+        assertEquals(blindedRoute.introductionNode.nodeId, EncodedNodeId(publicKeys[0]))
+        assertEquals(blindedRoute.introductionNodeId, EncodedNodeId(publicKeys[0]))
         assertEquals(blindedRoute.introductionNode.blindedPublicKey, PublicKey.fromHex("02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"))
         assertEquals(blindedRoute.introductionNode.blindingEphemeralKey, PublicKey.fromHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
         assertEquals(blindedRoute.introductionNode.encryptedPayload, ByteVector("af4fbf67bd52520bdfab6a88cd4e7f22ffad08d8b153b17ff303f93fdb4712"))
@@ -642,7 +642,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             )
             Pair(RouteBlinding.create(sessionKey, publicKeys.take(2), payloads), payloads)
         }
-        val blindedRoute = RouteBlinding.BlindedRoute(NodeId(publicKeys[0]), blindedRouteStart.blindingKey, blindedRouteStart.blindedNodes + blindedRouteEnd.blindedNodes)
+        val blindedRoute = RouteBlinding.BlindedRoute(EncodedNodeId(publicKeys[0]), blindedRouteStart.blindingKey, blindedRouteStart.blindedNodes + blindedRouteEnd.blindedNodes)
         assertEquals(blindedRoute.blindingKey, PublicKey.fromHex("024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"))
         assertEquals(blindedRoute.blindedNodeIds, listOf(
             PublicKey.fromHex("0303176d13958a8a59d59517a6223e12cf291ba5f65c8011efcdca0a52c3850abc"),

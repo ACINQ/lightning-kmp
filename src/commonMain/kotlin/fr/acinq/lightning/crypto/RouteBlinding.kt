@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
-import fr.acinq.lightning.NodeId
+import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 
 object RouteBlinding {
@@ -18,7 +18,7 @@ object RouteBlinding {
      *                             blinding ephemeral key.
      */
     data class IntroductionNode(
-        val nodeId: NodeId,
+        val nodeId: EncodedNodeId,
         val blindedPublicKey: PublicKey,
         val blindingEphemeralKey: PublicKey,
         val encryptedPayload: ByteVector
@@ -38,7 +38,7 @@ object RouteBlinding {
      * @param blindedNodes       blinded nodes (including the introduction node).
      */
     data class BlindedRoute(
-        val introductionNodeId: NodeId,
+        val introductionNodeId: EncodedNodeId,
         val blindingKey: PublicKey,
         val blindedNodes: List<BlindedNode>
     ) {
@@ -79,7 +79,7 @@ object RouteBlinding {
             e *= PrivateKey(Crypto.sha256(blindingKey.value.toByteArray() + sharedSecret.toByteArray()))
             Pair(BlindedNode(blindedPublicKey, ByteVector(encryptedPayload + mac)), blindingKey)
         }.unzip()
-        return BlindedRoute(NodeId(publicKeys.first()), blindingKeys.first(), blindedHops)
+        return BlindedRoute(EncodedNodeId(publicKeys.first()), blindingKeys.first(), blindedHops)
     }
 
     /**
