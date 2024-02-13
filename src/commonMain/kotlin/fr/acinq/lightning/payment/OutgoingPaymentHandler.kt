@@ -54,7 +54,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             logger.warning { "payment amount must be positive (${request.amount})" }
             return Failure(request, FinalFailure.InvalidPaymentAmount.toPaymentFailure())
         }
-        if (!nodeParams.features.areSupported(Features(request.paymentRequest.features).invoiceFeatures())) {
+        if (!nodeParams.features.areSupported(request.paymentRequest.features.invoiceFeatures())) {
             logger.warning { "invoice contains mandatory features that we don't support" }
             return Failure(request, FinalFailure.FeaturesNotSupported.toPaymentFailure())
         }
@@ -346,7 +346,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         val finalExpiry = nodeParams.paymentRecipientExpiryParams.computeFinalExpiry(currentBlockHeight, minFinalExpiryDelta)
         val finalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(request.amount, finalExpiry, request.paymentRequest.paymentSecret, request.paymentRequest.paymentMetadata)
 
-        val invoiceFeatures = Features(request.paymentRequest.features)
+        val invoiceFeatures = request.paymentRequest.features
         val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment) || invoiceFeatures.hasFeature(Feature.ExperimentalTrampolinePayment)) {
             OutgoingPaymentPacket.buildPacket(request.paymentHash, trampolineRoute, finalPayload, OnionRoutingPacket.TrampolinePacketLength)
         } else {

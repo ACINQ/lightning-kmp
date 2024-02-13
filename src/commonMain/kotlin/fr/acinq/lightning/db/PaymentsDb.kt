@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelException
+import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.*
@@ -146,7 +147,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
     sealed class Origin {
         /** A normal, invoice-based lightning payment. */
-        data class Invoice(val paymentRequest: PaymentRequest) : Origin()
+        data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
 
         /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
         data object KeySend : Origin()
@@ -248,7 +249,7 @@ data class LightningOutgoingPayment(
 ) : OutgoingPayment() {
 
     /** Create an outgoing payment in a pending status, without any parts yet. */
-    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, invoice: PaymentRequest) : this(id, amount, recipient, Details.Normal(invoice), listOf(), Status.Pending)
+    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, invoice: Bolt11Invoice) : this(id, amount, recipient, Details.Normal(invoice), listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
 
@@ -283,7 +284,7 @@ data class LightningOutgoingPayment(
         abstract val paymentHash: ByteVector32
 
         /** A normal lightning payment. */
-        data class Normal(val paymentRequest: PaymentRequest) : Details() {
+        data class Normal(val paymentRequest: Bolt11Invoice) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
 
