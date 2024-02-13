@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.lightning.NodeId
 
 
 sealed class RouteBlindingEncryptedDataTlv : Tlv {
@@ -22,14 +23,14 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
     }
 
     /** Id of the next node. */
-    data class OutgoingNodeId(val nodeId: PublicKey) : RouteBlindingEncryptedDataTlv() {
+    data class OutgoingNodeId(val nodeId: NodeId) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = OutgoingNodeId.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(nodeId.value, out)
+        override fun write(out: Output) = nodeId.write(out)
 
         companion object : TlvValueReader<OutgoingNodeId> {
             const val tag: Long = 4
             override fun read(input: Input): OutgoingNodeId =
-                OutgoingNodeId(PublicKey(LightningCodecs.bytes(input, 33)))
+                OutgoingNodeId(NodeId.read(input))
         }
     }
 
