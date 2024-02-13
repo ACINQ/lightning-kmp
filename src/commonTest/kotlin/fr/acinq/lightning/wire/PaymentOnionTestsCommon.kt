@@ -8,6 +8,7 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.crypto.assertArrayEquals
+import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
@@ -82,8 +83,8 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         val node2 = PublicKey(Hex.decode("025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))
         val node3 = PublicKey(Hex.decode("02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
         val routingHints = listOf(
-            listOf(PaymentRequest.TaggedField.ExtraHop(node1, ShortChannelId(1), 10.msat, 100, CltvExpiryDelta(144))),
-            listOf(PaymentRequest.TaggedField.ExtraHop(node2, ShortChannelId(2), 20.msat, 150, CltvExpiryDelta(12)), PaymentRequest.TaggedField.ExtraHop(node3, ShortChannelId(3), 30.msat, 200, CltvExpiryDelta(24)))
+            listOf(Bolt11Invoice.TaggedField.ExtraHop(node1, ShortChannelId(1), 10.msat, 100, CltvExpiryDelta(144))),
+            listOf(Bolt11Invoice.TaggedField.ExtraHop(node2, ShortChannelId(2), 20.msat, 150, CltvExpiryDelta(12)), Bolt11Invoice.TaggedField.ExtraHop(node3, ShortChannelId(3), 30.msat, 200, CltvExpiryDelta(24)))
         )
         val expected = PaymentOnion.NodeRelayPayload(
             TlvStream(

@@ -70,7 +70,7 @@ data object Disconnected : PeerCommand()
 sealed class PaymentCommand : PeerCommand()
 private data object CheckPaymentsTimeout : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
-data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
+data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: Bolt11Invoice, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash
 }
 
@@ -614,7 +614,7 @@ class Peer(
             }
     }
 
-    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expirySeconds: Long? = null): PaymentRequest {
+    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expirySeconds: Long? = null): Bolt11Invoice {
         // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all
         // channels to maximize the likelihood of success on the first payment attempt
         val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
@@ -627,7 +627,7 @@ class Peer(
         }
         val extraHops = listOf(
             listOf(
-                PaymentRequest.TaggedField.ExtraHop(
+                Bolt11Invoice.TaggedField.ExtraHop(
                     nodeId = walletParams.trampolineNode.id,
                     shortChannelId = ShortChannelId.peerId(nodeParams.nodeId),
                     feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,

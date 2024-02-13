@@ -11,8 +11,10 @@ import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.toByteVector
 
 sealed class OnionPaymentPayloadTlv : Tlv {
     /** Amount to forward to the next node. */
@@ -110,7 +112,7 @@ sealed class OnionPaymentPayloadTlv : Tlv {
      * Invoice routing hints. Only included for intermediate trampoline nodes when they should convert to a legacy payment
      * because the final recipient doesn't support trampoline.
      */
-    data class InvoiceRoutingInfo(val extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>>) : OnionPaymentPayloadTlv() {
+    data class InvoiceRoutingInfo(val extraHops: List<List<Bolt11Invoice.TaggedField.ExtraHop>>) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = InvoiceRoutingInfo.tag
         override fun write(out: Output) {
             for (routeHint in extraHops) {
@@ -128,11 +130,11 @@ sealed class OnionPaymentPayloadTlv : Tlv {
         companion object : TlvValueReader<InvoiceRoutingInfo> {
             const val tag: Long = 66099
             override fun read(input: Input): InvoiceRoutingInfo {
-                val extraHops = mutableListOf<List<PaymentRequest.TaggedField.ExtraHop>>()
+                val extraHops = mutableListOf<List<Bolt11Invoice.TaggedField.ExtraHop>>()
                 while (input.availableBytes > 0) {
                     val hopCount = LightningCodecs.byte(input)
                     val extraHop = (0 until hopCount).map {
-                        PaymentRequest.TaggedField.ExtraHop(
+                        Bolt11Invoice.TaggedField.ExtraHop(
                             PublicKey(LightningCodecs.bytes(input, 33)),
                             ShortChannelId(LightningCodecs.u64(input)),
                             MilliSatoshi(LightningCodecs.u32(input).toLong()),
@@ -295,10 +297,10 @@ object PaymentOnion {
                 NodeRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amount), OnionPaymentPayloadTlv.OutgoingCltv(expiry), OnionPaymentPayloadTlv.OutgoingNodeId(nextNodeId)))
 
             /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
-            fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload {
+            fun createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): NodeRelayPayload {
                 // NB: we limit the number of routing hints to ensure we don't overflow the onion.
                 // A better solution is to provide the routing hints outside the onion (in the `update_add_htlc` tlv stream).
-                val prunedRoutingHints = invoice.routingInfo.shuffled().fold(listOf<PaymentRequest.TaggedField.RoutingInfo>()) { previous, current ->
+                val prunedRoutingHints = invoice.routingInfo.shuffled().fold(listOf<Bolt11Invoice.TaggedField.RoutingInfo>()) { previous, current ->
                     if (previous.flatMap { it.hints }.size + current.hints.size <= 4) {
                         previous + current
                     } else {
@@ -313,7 +315,7 @@ object PaymentOnion {
                             add(OnionPaymentPayloadTlv.OutgoingNodeId(targetNodeId))
                             add(OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, totalAmount))
                             invoice.paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
-                            add(OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features))
+                            add(OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features.toByteArray().toByteVector()))
                             add(OnionPaymentPayloadTlv.InvoiceRoutingInfo(prunedRoutingHints))
                         }
                     )

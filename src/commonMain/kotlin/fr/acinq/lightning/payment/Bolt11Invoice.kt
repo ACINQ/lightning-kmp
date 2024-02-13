@@ -13,15 +13,15 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.LightningCodecs
 import kotlin.experimental.and
 
-data class PaymentRequest(
+data class Bolt11Invoice(
     val prefix: String,
-    val amount: MilliSatoshi?,
+    override val amount: MilliSatoshi?,
     val timestampSeconds: Long,
     val nodeId: PublicKey,
     val tags: List<TaggedField>,
     val signature: ByteVector
-) {
-    val paymentHash: ByteVector32 = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
+) : PaymentRequest {
+    override val paymentHash: ByteVector32 = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
 
     val paymentSecret: ByteVector32 = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
 
@@ -37,12 +37,12 @@ data class PaymentRequest(
 
     val fallbackAddress: String? = tags.find { it is TaggedField.FallbackAddress }?.run { (this as TaggedField.FallbackAddress).toAddress(prefix) }
 
-    val features: ByteVector = tags.find { it is TaggedField.Features }.run { (this as TaggedField.Features).bits }
+    override val features: Features = tags.find { it is TaggedField.Features }.run { Features((this as TaggedField.Features).bits) }
 
     val routingInfo: List<TaggedField.RoutingInfo> = tags.filterIsInstance<TaggedField.RoutingInfo>()
 
     init {
-        val f = Features(features).invoiceFeatures()
+        val f = features.invoiceFeatures()
         require(f.hasFeature(Feature.VariableLengthOnion)) { "${Feature.VariableLengthOnion.rfcName} must be supported" }
         require(f.hasFeature(Feature.PaymentSecret)) { "${Feature.PaymentSecret.rfcName} must be supported" }
         require(Features.validateFeatureGraph(f) == null)
@@ -53,7 +53,7 @@ data class PaymentRequest(
         require(description != null || descriptionHash != null) { "there must be exactly one description tag or one description hash tag" }
     }
 
-    fun isExpired(currentTimestampSeconds: Long = currentTimestampSeconds()): Boolean = when (expirySeconds) {
+    override fun isExpired(currentTimestampSeconds: Long): Boolean = when (expirySeconds) {
         null -> timestampSeconds + DEFAULT_EXPIRY_SECONDS <= currentTimestampSeconds
         else -> timestampSeconds + expirySeconds <= currentTimestampSeconds
     }
@@ -91,7 +91,7 @@ data class PaymentRequest(
      * @param privateKey private key, which must match the payment request's node id
      * @return a signature (64 bytes) plus a recovery id (1 byte)
      */
-    fun sign(privateKey: PrivateKey): PaymentRequest {
+    fun sign(privateKey: PrivateKey): Bolt11Invoice {
         require(privateKey.publicKey() == nodeId) { "private key does not match node id" }
         val msg = signedHash()
         val sig = Crypto.sign(msg, privateKey)
@@ -143,7 +143,7 @@ data class PaymentRequest(
             expirySeconds: Long? = null,
             extraHops: List<List<TaggedField.ExtraHop>> = listOf(),
             timestampSeconds: Long = currentTimestampSeconds()
-        ): PaymentRequest {
+        ): Bolt11Invoice {
             val prefix = prefixes[chainHash] ?: error("unknown chain hash")
             val tags = mutableListOf(
                 TaggedField.PaymentHash(paymentHash),
@@ -160,7 +160,7 @@ data class PaymentRequest(
                 extraHops.forEach { tags.add(TaggedField.RoutingInfo(it)) }
             }
 
-            return PaymentRequest(
+            return Bolt11Invoice(
                 prefix = prefix,
                 amount = amount,
                 timestampSeconds = timestampSeconds,
@@ -177,7 +177,7 @@ data class PaymentRequest(
             return loop(input, listOf())
         }
 
-        fun read(input: String): Try<PaymentRequest> = runTrying {
+        fun read(input: String): Try<Bolt11Invoice> = runTrying {
             val (hrp, data) = Bech32.decode(input)
             val prefix = prefixes.values.find { hrp.startsWith(it) } ?: throw IllegalArgumentException("unknown prefix $hrp")
             val amount = decodeAmount(hrp.drop(prefix.length))
@@ -219,7 +219,7 @@ data class PaymentRequest(
             }
 
             loop(data.drop(7).dropLast(104))
-            val pr = PaymentRequest(prefix, amount, timestamp, nodeId, tags, sigandrecid.toByteVector())
+            val pr = Bolt11Invoice(prefix, amount, timestamp, nodeId, tags, sigandrecid.toByteVector())
             require(pr.signedPreimage().contentEquals(tohash)) { "invoice isn't canonically encoded" }
             pr
         }

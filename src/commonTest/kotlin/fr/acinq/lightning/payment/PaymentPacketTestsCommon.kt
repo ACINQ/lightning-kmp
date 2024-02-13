@@ -277,16 +277,16 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         //            /    \
         // a -> b -> c      d -> e
 
-        val routingHints = listOf(PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(42), 10.msat, 100, CltvExpiryDelta(144)))
+        val routingHints = listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(42), 10.msat, 100, CltvExpiryDelta(144)))
         val invoiceFeatures = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
-        val invoice = PaymentRequest(
+        val invoice = Bolt11Invoice(
             "lnbcrt", finalAmount, currentTimestampSeconds(), e, listOf(
-                PaymentRequest.TaggedField.PaymentHash(paymentHash),
-                PaymentRequest.TaggedField.PaymentSecret(paymentSecret),
-                PaymentRequest.TaggedField.PaymentMetadata(paymentMetadata),
-                PaymentRequest.TaggedField.DescriptionHash(randomBytes32()),
-                PaymentRequest.TaggedField.Features(invoiceFeatures.toByteArray().toByteVector()),
-                PaymentRequest.TaggedField.RoutingInfo(routingHints)
+                Bolt11Invoice.TaggedField.PaymentHash(paymentHash),
+                Bolt11Invoice.TaggedField.PaymentSecret(paymentSecret),
+                Bolt11Invoice.TaggedField.PaymentMetadata(paymentMetadata),
+                Bolt11Invoice.TaggedField.DescriptionHash(randomBytes32()),
+                Bolt11Invoice.TaggedField.Features(invoiceFeatures.toByteArray().toByteVector()),
+                Bolt11Invoice.TaggedField.RoutingInfo(routingHints)
             ), ByteVector.empty
         )
         val (amountAC, expiryAC, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToLegacyPacket(invoice, trampolineHops, PaymentOnion.FinalPayload.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32(), null))
@@ -345,16 +345,16 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
     @Test
     fun `fail to build a trampoline payment when too much invoice data is provided`() {
-        val extraHop = PaymentRequest.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(1), 10.msat, 100, CltvExpiryDelta(12))
+        val extraHop = Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(1), 10.msat, 100, CltvExpiryDelta(12))
         val routingHintOverflow = listOf(extraHop, extraHop, extraHop, extraHop, extraHop, extraHop, extraHop)
         val featuresOverflow = ByteVector("010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101024100")
-        val invoice = PaymentRequest(
+        val invoice = Bolt11Invoice(
             "lnbcrt", finalAmount, currentTimestampSeconds(), e, listOf(
-                PaymentRequest.TaggedField.PaymentHash(paymentHash),
-                PaymentRequest.TaggedField.PaymentSecret(paymentSecret),
-                PaymentRequest.TaggedField.Features(featuresOverflow),
-                PaymentRequest.TaggedField.DescriptionHash(randomBytes32()),
-                PaymentRequest.TaggedField.RoutingInfo(routingHintOverflow)
+                Bolt11Invoice.TaggedField.PaymentHash(paymentHash),
+                Bolt11Invoice.TaggedField.PaymentSecret(paymentSecret),
+                Bolt11Invoice.TaggedField.Features(featuresOverflow),
+                Bolt11Invoice.TaggedField.DescriptionHash(randomBytes32()),
+                Bolt11Invoice.TaggedField.RoutingInfo(routingHintOverflow)
             ), ByteVector.empty
         )
         assertFails { OutgoingPaymentPacket.buildTrampolineToLegacyPacket(invoice, trampolineHops, PaymentOnion.FinalPayload.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32(), null)) }

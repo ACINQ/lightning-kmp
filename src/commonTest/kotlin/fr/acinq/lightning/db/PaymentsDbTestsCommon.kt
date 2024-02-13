@@ -6,6 +6,7 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.TooManyAcceptedHtlcs
+import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -385,20 +386,20 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
             Feature.BasicMultiPartPayment to FeatureSupport.Optional
         )
 
-        private fun createFixture(): Triple<PaymentsDb, ByteVector32, PaymentRequest> {
+        private fun createFixture(): Triple<PaymentsDb, ByteVector32, Bolt11Invoice> {
             val db = InMemoryPaymentsDb()
             val preimage = randomBytes32()
             val pr = createInvoice(preimage)
             return Triple(db, preimage, pr)
         }
 
-        private fun createInvoice(preimage: ByteVector32): PaymentRequest {
-            return PaymentRequest.create(Block.LivenetGenesisBlock.hash, 150_000.msat, Crypto.sha256(preimage).toByteVector32(), randomKey(), Either.Left("invoice"), CltvExpiryDelta(16), defaultFeatures)
+        private fun createInvoice(preimage: ByteVector32): Bolt11Invoice {
+            return Bolt11Invoice.create(Block.LivenetGenesisBlock.hash, 150_000.msat, Crypto.sha256(preimage).toByteVector32(), randomKey(), Either.Left("invoice"), CltvExpiryDelta(16), defaultFeatures)
         }
 
-        private fun createExpiredInvoice(preimage: ByteVector32 = randomBytes32()): PaymentRequest {
+        private fun createExpiredInvoice(preimage: ByteVector32 = randomBytes32()): Bolt11Invoice {
             val now = currentTimestampSeconds()
-            return PaymentRequest.create(
+            return Bolt11Invoice.create(
                 Block.LivenetGenesisBlock.hash,
                 150_000.msat,
                 Crypto.sha256(preimage).toByteVector32(),

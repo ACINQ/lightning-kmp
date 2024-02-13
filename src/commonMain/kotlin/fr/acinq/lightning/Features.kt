@@ -7,7 +7,7 @@ import fr.acinq.lightning.utils.or
 import kotlinx.serialization.Serializable
 
 /** Feature scope as defined in Bolt 9. */
-enum class FeatureScope { Init, Node, Invoice }
+enum class FeatureScope { Init, Node, Invoice, Bolt12 }
 
 enum class FeatureSupport {
     Mandatory {
@@ -88,7 +88,7 @@ sealed class Feature {
     object BasicMultiPartPayment : Feature() {
         override val rfcName get() = "basic_mpp"
         override val mandatory get() = 16
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice, FeatureScope.Bolt12)
     }
 
     @Serializable
@@ -103,6 +103,13 @@ sealed class Feature {
         override val rfcName get() = "option_anchor_outputs"
         override val mandatory get() = 20
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
+    @Serializable
+    object RouteBlinding : Feature() {
+        override val rfcName get() = "option_route_blinding"
+        override val mandatory get() = 24
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
     }
 
     @Serializable
@@ -267,6 +274,8 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
     fun nodeAnnouncementFeatures(): Features = Features(activated.filter { it.key.scopes.contains(FeatureScope.Node) }, unknown)
 
     fun invoiceFeatures(): Features = Features(activated.filter { it.key.scopes.contains(FeatureScope.Invoice) }, unknown)
+
+    fun bolt12Features(): Features = Features(activated.filter { it.key.scopes.contains(FeatureScope.Bolt12) }, unknown)
 
     /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
     fun areSupported(remoteFeatures: Features): Boolean {

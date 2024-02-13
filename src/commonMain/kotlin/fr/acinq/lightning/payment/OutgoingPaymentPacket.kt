@@ -74,7 +74,7 @@ object OutgoingPaymentPacket {
      *  - firstExpiry is the cltv expiry for the first trampoline node in the route
      *  - the trampoline onion to include in final payload of a normal onion
      */
-    fun buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: List<NodeHop>, finalPayload: PaymentOnion.FinalPayload): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
+    fun buildTrampolineToLegacyPacket(invoice: Bolt11Invoice, hops: List<NodeHop>, finalPayload: PaymentOnion.FinalPayload): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
         // NB: the final payload will never reach the recipient, since the next-to-last trampoline hop will convert that to a legacy payment
         // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
         val dummyFinalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(finalPayload.amount, finalPayload.expiry, finalPayload.paymentSecret, null)
