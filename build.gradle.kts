@@ -27,8 +27,8 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
 
-    val bitcoinKmpVersion = "0.17.0-MUSIG2-SNAPSHOT" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
-    val secpJniJvmVersion = "0.14.0-MUSIG2-SNAPSHOT"
+    val bitcoinKmpVersion = "0.17.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
+    val secpJniJvmVersion = "0.14.0"
 
     val serializationVersion = "1.6.2"
     val coroutineVersion = "1.7.3"
