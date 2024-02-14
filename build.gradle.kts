@@ -42,7 +42,14 @@ kotlin {
         }
     }
 
-    linuxX64()
+    linuxX64 {
+        binaries {
+            executable {
+                entryPoint = "fr.acinq.lightning.bin.main"
+                optimized = false // without this, release mode throws 'Index 0 out of bounds for length 0' in StaticInitializersOptimization.kt
+            }
+        }
+    }
 
     if (currentOs.isMacOsX) {
         iosX64 { // ios simulator on intel devices
