@@ -1,6 +1,12 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
+buildscript {
+    dependencies {
+        classpath("app.cash.sqldelight:gradle-plugin:2.0.1")
+    }
+}
+
 plugins {
     kotlin("multiplatform") version "1.9.23"
     kotlin("plugin.serialization") version "1.9.23"
@@ -10,12 +16,12 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.6.2-SNAPSHOT"
+    version = "1.6.2-BIN-SNAPSHOT"
 
     repositories {
         // using the local maven repository with Kotlin Multi Platform can lead to build errors that are hard to diagnose.
         // uncomment this only if you need to experiment with snapshot dependencies that have not yet be published.
-        // mavenLocal()
+        mavenLocal()
         maven("https://oss.sonatype.org/content/repositories/snapshots")
         mavenCentral()
         google()
