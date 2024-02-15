@@ -103,7 +103,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param maxAcceptedHtlcs cap on the number of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
  * @param expiryDeltaBlocks cltv-expiry-delta used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
  * @param fulfillSafetyBeforeTimeoutBlocks number of blocks necessary to react to a malicious peer that doesn't acknowledge and sign our HTLC preimages.
- * @param checkHtlcTimeoutAfterStartupDelay delay in seconds before we check for timed out HTLCs in our channels after a wallet restart.
+ * @param checkHtlcTimeoutAfterStartupDelay delay before we check for timed out HTLCs in our channels after a wallet restart.
  * @param htlcMinimum minimum accepted htlc value.
  * @param toRemoteDelayBlocks number of blocks our peer will have to wait before they get their main output back in case they force-close a channel.
  * @param maxToLocalDelayBlocks maximum number of blocks we will have to wait before we get our main output back in case we force-close a channel.
@@ -113,8 +113,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param pingInterval delay between ping messages.
  * @param initialRandomReconnectDelay delay before which we reconnect to our peers (will be randomized based on this value).
  * @param maxReconnectInterval maximum delay between reconnection attempts.
- * @param paymentRequestExpirySeconds our Bolt 11 invoices will only be valid for this duration.
- * @param multiPartPaymentExpiry number of seconds we will wait to receive all parts of a multi-part payment.
+ * @param mppAggregationWindow amount of time we will wait to receive all parts of a multi-part payment.
  * @param maxPaymentAttempts maximum number of retries when attempting an outgoing payment.
  * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
@@ -143,8 +142,7 @@ data class NodeParams(
     val pingInterval: Duration,
     val initialRandomReconnectDelay: Duration,
     val maxReconnectInterval: Duration,
-    val paymentRequestExpirySeconds: Int,
-    val multiPartPaymentExpiry: Duration,
+    val mppAggregationWindow: Duration,
     val maxPaymentAttempts: Int,
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
@@ -217,8 +215,7 @@ data class NodeParams(
         pingInterval = 30.seconds,
         initialRandomReconnectDelay = 5.seconds,
         maxReconnectInterval = 60.minutes,
-        paymentRequestExpirySeconds = 3600,
-        multiPartPaymentExpiry = 60.seconds,
+        mppAggregationWindow = 60.seconds,
         maxPaymentAttempts = 5,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),

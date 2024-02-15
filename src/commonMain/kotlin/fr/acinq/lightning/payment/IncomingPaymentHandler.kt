@@ -375,7 +375,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         //   - SHOULD wait for at least 60 seconds after the initial HTLC.
         //   - SHOULD use mpp_timeout for the failure message.
         pending.forEach { (paymentHash, payment) ->
-            val isExpired = currentTimestampSeconds > (payment.startedAtSeconds + nodeParams.multiPartPaymentExpiry.inWholeSeconds)
+            val isExpired = currentTimestampSeconds > (payment.startedAtSeconds + nodeParams.mppAggregationWindow.inWholeSeconds)
             if (isExpired) {
                 keysToRemove += paymentHash
                 payment.parts.forEach { part ->

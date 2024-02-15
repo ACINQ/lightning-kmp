@@ -757,7 +757,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertTrue(result1.actions.isEmpty())
 
         // It expires after a while.
-        val actions1 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.multiPartPaymentExpiry.inWholeSeconds + 2)
+        val actions1 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.mppAggregationWindow.inWholeSeconds + 2)
         val addTimeout = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(PaymentTimeout), commit = true)
         assertEquals(listOf(WrappedChannelCommand(add.channelId, addTimeout)), actions1)
 
@@ -767,7 +767,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertTrue(result2.actions.isEmpty())
 
         // It expires again.
-        val actions2 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.multiPartPaymentExpiry.inWholeSeconds + 2)
+        val actions2 = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds() + paymentHandler.nodeParams.mppAggregationWindow.inWholeSeconds + 2)
         assertEquals(listOf(WrappedChannelCommand(add.channelId, addTimeout)), actions2)
 
         // The channel was offline again, didn't process the failure and retransmits the htlc, but it is now close to its expiry.
@@ -943,7 +943,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // Step 2 of 3:
         // - don't expire the multipart htlcs too soon.
         run {
-            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpiry.inWholeSeconds - 2
+            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.mppAggregationWindow.inWholeSeconds - 2
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
             assertTrue(actions.isEmpty())
         }
@@ -951,7 +951,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // Step 3 of 3:
         // - expire the htlc-set after configured expiration.
         run {
-            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpiry.inWholeSeconds + 2
+            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.mppAggregationWindow.inWholeSeconds + 2
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
             val expected = setOf(
                 WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fail(1, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(PaymentTimeout), commit = true)),
@@ -981,7 +981,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // Step 2 of 4:
         // - the MPP set times out
         run {
-            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.multiPartPaymentExpiry.inWholeSeconds + 2
+            val currentTimestampSeconds = startTime + paymentHandler.nodeParams.mppAggregationWindow.inWholeSeconds + 2
             val actions = paymentHandler.checkPaymentsTimeout(currentTimestampSeconds)
             val expected = WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fail(1, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(PaymentTimeout), commit = true))
             assertEquals(setOf(expected), actions.toSet())
