@@ -386,7 +386,7 @@ class Peer(
 
             suspend fun checkPaymentsTimeout() {
                 while (isActive) {
-                    delay(nodeParams.checkHtlcTimeoutInterval) // we schedule a check every 10 seconds
+                    delay(nodeParams.checkHtlcTimeoutInterval)
                     input.send(CheckPaymentsTimeout)
                 }
             }
