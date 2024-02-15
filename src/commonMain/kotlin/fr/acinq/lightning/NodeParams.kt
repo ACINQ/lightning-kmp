@@ -206,7 +206,7 @@ data class NodeParams(
         maxAcceptedHtlcs = 6,
         expiryDeltaBlocks = CltvExpiryDelta(144),
         fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
-        checkHtlcTimeoutAfterStartupDelay = 15.seconds,
+        checkHtlcTimeoutAfterStartupDelay = 30.seconds,
         checkHtlcTimeoutInterval = 10.seconds,
         htlcMinimum = 1000.msat,
         minDepthBlocks = 3,
