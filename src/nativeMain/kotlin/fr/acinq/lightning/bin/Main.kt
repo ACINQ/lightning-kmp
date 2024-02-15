@@ -1,8 +1,10 @@
 package fr.acinq.lightning.bin
 
+import co.touchlab.kermit.Severity
 import co.touchlab.kermit.StaticConfig
 import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
@@ -11,22 +13,28 @@ import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.logging.LoggerFactory
+import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 @OptIn(DelicateCoroutinesApi::class)
 fun main() {
-    val loggerFactory = LoggerFactory(StaticConfig())
+    val loggerFactory = LoggerFactory(StaticConfig(Severity.Info))
     val chain = Bitcoin.Chain.Testnet
     val seed = randomBytes32()
+    println("seed=${seed.toHex()}")
     val enduranceSwapInPubkey = "tpubDAmCFB21J9ExKBRPDcVxSvGs9jtcf8U1wWWbS1xTYmnUsuUHPCoFdCnEGxLE3THSWcQE48GHJnyz8XPbYUivBMbLSMBifFd3G9KmafkM9og"
     val keyManager = LocalKeyManager(seed, chain, enduranceSwapInPubkey)
+    println("nodeId=${keyManager.nodeKeys.nodeKey.publicKey}")
     val scope = GlobalScope
     val electrum = ElectrumClient(scope, loggerFactory)
     scope.launch {
-        electrum.connect(ServerAddress("testnet1.electrum.acinq.co", 51002, TcpSocket.TLS.UNSAFE_CERTIFICATES), TcpSocket.Builder())
+        electrum.connect(ServerAddress("testnet1.electrum.acinq.co", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder())
     }
     val trampolineNodeId = PublicKey.fromHex("03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134")
     val trampolineNodeUri = NodeUri(id = trampolineNodeId, "13.248.222.197", 9735)
@@ -50,13 +58,25 @@ fun main() {
             refundDelay = DefaultSwapInParams.RefundDelay,
         ),
     )
+    val nodeParams = NodeParams(chain, loggerFactory, keyManager)
+        .copy(
+            zeroConfPeers = setOf(trampolineNodeId),
+            liquidityPolicy = MutableStateFlow(LiquidityPolicy.Auto(maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 50_00 /* 50% */, skipAbsoluteFeeCheck = false))
+        )
     val peer = Peer(
-        nodeParams = NodeParams(chain, loggerFactory, keyManager),
+        nodeParams = nodeParams,
         walletParams = walletParams,
         watcher = ElectrumWatcher(electrum, scope, loggerFactory),
-        db = SqliteDatabases(SqliteChannelsDb(), SqlitePaymentsDb()),
+        db = SqliteDatabases(SqliteChannelsDb(), InMemoryPaymentsDb()),
         socketBuilder = TcpSocket.Builder(),
         scope
     )
+    runBlocking {
+        peer.connect(connectTimeout = 10.seconds, handshakeTimeout = 10.seconds)
+        delay(5.seconds)
+        peer.registerFcmToken("super-${randomBytes32().toHex()}")
+        peer.createInvoice(randomBytes32(), null, Either.Left("super demo")).write()
+        delay(10.minutes)
+    }
     println("started peer $peer")
 }
