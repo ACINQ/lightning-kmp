@@ -156,18 +156,12 @@ kotlin {
     }
 }
 
-val dokkaOutputDir = buildDir.resolve("dokka")
+val dokkaOutputDir = layout.buildDirectory.dir("dokka")
 tasks.dokkaHtml {
     outputDirectory.set(file(dokkaOutputDir))
     dokkaSourceSets {
         configureEach {
-            val platformName = when (platform.get()) {
-                Platform.jvm -> "jvm"
-                Platform.js -> "js"
-                Platform.native -> "native"
-                Platform.common -> "common"
-                Platform.wasm -> "wasm"
-            }
+            val platformName = platform.get().name
             displayName.set(platformName)
 
             perPackageOption {
@@ -231,7 +225,7 @@ afterEvaluate {
     configure(targets) {
         compilations.all {
             cinterops.all { tasks[interopProcessingTaskName].enabled = false }
-            compileKotlinTask.enabled = false
+            compileTaskProvider.get().enabled = false
             tasks[processResourcesTaskName].enabled = false
         }
         binaries.all { linkTask.enabled = false }
