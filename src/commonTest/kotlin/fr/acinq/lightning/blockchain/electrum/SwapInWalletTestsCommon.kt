@@ -1,7 +1,7 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.MnemonicCode
-import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -18,9 +18,9 @@ class SwapInWalletTestsCommon : LightningTestSuite() {
     @Test
     fun `swap-in wallet test`() = runSuspendTest(timeout = 15.seconds) {
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
-        val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), NodeParams.Chain.Testnet, TestConstants.aliceSwapInServerXpub)
+        val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), Bitcoin.Chain.Testnet, TestConstants.aliceSwapInServerXpub)
         val client = connectToTestnetServer()
-        val wallet = SwapInWallet(NodeParams.Chain.Testnet, keyManager.swapInOnChainWallet, client, this, loggerFactory)
+        val wallet = SwapInWallet(Bitcoin.Chain.Testnet, keyManager.swapInOnChainWallet, client, this, loggerFactory)
 
         // addresses 0 to 3 have funds on them, the current address is the 4th
         assertEquals(4, wallet.swapInAddressFlow.filterNotNull().first().second)

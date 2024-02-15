@@ -1,8 +1,9 @@
 package fr.acinq.lightning.blockchain.electrum
 
-import fr.acinq.lightning.NodeParams
+import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggerFactory
+import fr.acinq.lightning.logging.info
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -11,7 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class SwapInWallet(
-    chain: NodeParams.Chain,
+    chain: Bitcoin.Chain,
     swapInKeys: KeyManager.SwapInOnChainKeys,
     electrum: IElectrumClient,
     scope: CoroutineScope,
