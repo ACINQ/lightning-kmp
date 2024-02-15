@@ -2,11 +2,13 @@ package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.transactions.SwapInProtocol
 import fr.acinq.lightning.utils.toByteVector
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -182,26 +184,51 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         assertEquals(TestConstants.Bob.keyManager.swapInOnChainWallet.remoteServerPublicKey, PublicKey.fromHex("02d8c2f4fe8a017ff3a30eb2a4477f3ebe64ae930f67f907270712a70b18cb8951"))
         assertEquals(
             "wsh(and_v(v:pk([14620948/51h/0h/0h]tpubDCvYeHUZisCMV3h1zPevPWQmNPfA3g3vnu7gDqskXVCbJB1VKk2F7LApV6TTdm1sCyGout8ma27CCHvYTuMZxpwrcHnLwL4kaXW8z2KfFcW),or_d(pk(0256e948180f33f067246710a41656084fc245b97eda081efe1e488b21577d60fd),older(25920))))",
-            TestConstants.Alice.keyManager.swapInOnChainWallet.descriptor
+            TestConstants.Alice.keyManager.swapInOnChainWallet.legacyDescriptor
         )
         assertEquals(
             "wsh(and_v(v:pk([85185511/51h/0h/0h]tpubDDt5vQap1awkteTeYioVGLQvj75xrFvjuW6WjNumsedvckEHAMUACubuKtmjmXViDPYMvtnEQt6EGj3eeMVSGRKxRZqCme37j5jAUMhkX5L),or_d(pk(02d8c2f4fe8a017ff3a30eb2a4477f3ebe64ae930f67f907270712a70b18cb8951),older(25920))))",
-            TestConstants.Bob.keyManager.swapInOnChainWallet.descriptor
+            TestConstants.Bob.keyManager.swapInOnChainWallet.legacyDescriptor
         )
     }
 
     @Test
     fun `spend swap-in transactions`() {
-        val swapInTx = Transaction(version = 2,
+        val swapInTx = Transaction(
+            version = 2,
             txIn = listOf(),
             txOut = listOf(
-                TxOut(Satoshi(100000), Bitcoin.addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, TestConstants.Alice.keyManager.swapInOnChainWallet.address).result!!),
-                TxOut(Satoshi(150000), Bitcoin.addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, TestConstants.Alice.keyManager.swapInOnChainWallet.address).result!!)
+                TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript),
+                TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript),
+                TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey())),
+                TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript),
+                TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript),
+                TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey()))
             ),
-            lockTime = 0)
+            lockTime = 0
+        )
         val recoveryTx = TestConstants.Alice.keyManager.swapInOnChainWallet.createRecoveryTransaction(swapInTx, TestConstants.Alice.keyManager.finalOnChainWallet.address(0), FeeratePerKw(FeeratePerByte(Satoshi(5))))!!
-        assertEquals(swapInTx.txOut.size, recoveryTx.txIn.size)
+        assertEquals(4, recoveryTx.txIn.size)
         Transaction.correctlySpends(recoveryTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+
+    @Test
+    fun `compute descriptors to recover swap-in funds`() {
+        val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "")
+        val master = DeterministicWallet.generate(seed)
+        val chain = NodeParams.Chain.Regtest
+        val userPublicKey = PrivateKey.fromHex("0101010101010101010101010101010101010101010101010101010101010101").publicKey()
+        val remoteServerPublicKey = PrivateKey.fromHex("0202020202020202020202020202020202020202020202020202020202020202").publicKey()
+        val userRefundExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, KeyManager.SwapInOnChainKeys.swapInUserRefundKeyPath(chain))
+        val refundDelay = 2590
+        assertEquals(
+            "tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tprv8hWm2EfcAbMerYoXeHA9w6faUqXdiQeWfSxxWpzh3Yc1FAjB2vv1sbBNY1dX3HraotvBAEeY2hzz1X4vc3SC516K1ebBvLYrkA6LstQdbNX/*),older(2590)))#90ftphf9",
+            SwapInProtocol.privateDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey)
+        )
+        assertEquals(
+            "tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tpubDECoAehrJy3Kk1qKXvpkLWKh3s3ZsjqREkZjoM2zTpQQ5eywfKjc45oEi8GMq1mpWxM2kg79Lp5DzznQKGRE15btY327vgLcLbfZLrgAWrv/*),older(2590)))#xmhrglc6",
+            SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, DeterministicWallet.publicKey(userRefundExtendedPrivateKey))
+        )
     }
 
     companion object {

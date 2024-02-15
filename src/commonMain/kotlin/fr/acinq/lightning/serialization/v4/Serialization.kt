@@ -1,6 +1,7 @@
 package fr.acinq.lightning.serialization.v4
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.FeatureSupport
@@ -254,12 +255,14 @@ object Serialization {
     }
 
     private fun Output.writeSharedInteractiveTxInput(i: InteractiveTxInput.Shared) = i.run {
-        write(0x01)
+        write(0x03)
         writeNumber(serialId)
         writeBtcObject(outPoint)
+        writeDelimited(publicKeyScript.toByteArray())
         writeNumber(sequence.toLong())
         writeNumber(localAmount.toLong())
         writeNumber(remoteAmount.toLong())
+        writeNumber(htlcAmount.toLong())
     }
 
     private fun Output.writeLocalInteractiveTxInput(i: InteractiveTxInput.Local) = when (i) {
@@ -270,7 +273,7 @@ object Serialization {
             writeNumber(previousTxOutput)
             writeNumber(sequence.toLong())
         }
-        is InteractiveTxInput.LocalSwapIn -> i.run {
+        is InteractiveTxInput.LocalLegacySwapIn -> i.run {
             write(0x02)
             writeNumber(serialId)
             writeBtcObject(previousTx)
@@ -278,6 +281,17 @@ object Serialization {
             writeNumber(sequence.toLong())
             writePublicKey(userKey)
             writePublicKey(serverKey)
+            writeNumber(refundDelay)
+        }
+        is InteractiveTxInput.LocalSwapIn -> i.run {
+            write(0x03)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writePublicKey(userRefundKey)
             writeNumber(refundDelay)
         }
     }
@@ -290,7 +304,7 @@ object Serialization {
             writeBtcObject(txOut)
             writeNumber(sequence.toLong())
         }
-        is InteractiveTxInput.RemoteSwapIn -> i.run {
+        is InteractiveTxInput.RemoteLegacySwapIn -> i.run {
             write(0x02)
             writeNumber(serialId)
             writeBtcObject(outPoint)
@@ -298,6 +312,17 @@ object Serialization {
             writeNumber(sequence.toLong())
             writePublicKey(userKey)
             writePublicKey(serverKey)
+            writeNumber(refundDelay)
+        }
+        is InteractiveTxInput.RemoteSwapIn -> i.run {
+            write(0x03)
+            writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writePublicKey(userRefundKey)
             writeNumber(refundDelay)
         }
     }
@@ -686,6 +711,8 @@ object Serialization {
     private fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
 
     private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
+
+    private fun Output.writePublicNonce(o: IndividualNonce) = write(o.toByteArray())
 
     private fun Output.writeDelimited(o: ByteArray) {
         writeNumber(o.size)

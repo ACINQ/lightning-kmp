@@ -1507,7 +1507,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         }
 
         private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): List<WalletState.Utxo> {
-            val script = keyManager.swapInOnChainWallet.pubkeyScript
+            val script = keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript
             return amounts.map { amount ->
                 val txIn = listOf(TxIn(OutPoint(TxId(Lightning.randomBytes32()), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))

@@ -27,8 +27,8 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
 
-    val bitcoinKmpVersion = "0.16.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
-    val secpJniJvmVersion = "0.13.0"
+    val bitcoinKmpVersion = "0.17.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
+    val secpJniJvmVersion = "0.14.0"
 
     val serializationVersion = "1.6.2"
     val coroutineVersion = "1.7.3"
@@ -137,6 +137,11 @@ kotlin {
             languageSettings.optIn("kotlin.RequiresOptIn")
             languageSettings.optIn("kotlin.ExperimentalStdlibApi")
         }
+    }
+    
+    configurations.all {
+        // do not cache changing (i.e. SNAPSHOT) dependencies
+        resolutionStrategy.cacheChangingModulesFor(0, TimeUnit.SECONDS)
     }
 
     targets.all {

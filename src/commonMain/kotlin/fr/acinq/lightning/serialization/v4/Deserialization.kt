@@ -1,6 +1,7 @@
 package fr.acinq.lightning.serialization.v4
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.readNBytes
@@ -211,9 +212,29 @@ object Deserialization {
         0x01 -> InteractiveTxInput.Shared(
             serialId = readNumber(),
             outPoint = readOutPoint(),
+            publicKeyScript = ByteVector.empty,
             sequence = readNumber().toUInt(),
             localAmount = readNumber().msat,
-            remoteAmount = readNumber().msat
+            remoteAmount = readNumber().msat,
+            htlcAmount = 0.msat
+        )
+        0x02 -> InteractiveTxInput.Shared(
+            serialId = readNumber(),
+            outPoint = readOutPoint(),
+            publicKeyScript = readDelimitedByteArray().byteVector(),
+            sequence = readNumber().toUInt(),
+            localAmount = readNumber().msat,
+            remoteAmount = readNumber().msat,
+            htlcAmount = 0.msat
+        )
+        0x03 -> InteractiveTxInput.Shared(
+            serialId = readNumber(),
+            outPoint = readOutPoint(),
+            publicKeyScript = readDelimitedByteArray().byteVector(),
+            sequence = readNumber().toUInt(),
+            localAmount = readNumber().msat,
+            remoteAmount = readNumber().msat,
+            htlcAmount = readNumber().msat
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Shared::class}")
     }
@@ -225,13 +246,23 @@ object Deserialization {
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
         )
-        0x02 -> InteractiveTxInput.LocalSwapIn(
+        0x02 -> InteractiveTxInput.LocalLegacySwapIn(
             serialId = readNumber(),
             previousTx = readTransaction(),
             previousTxOutput = readNumber(),
             sequence = readNumber().toUInt(),
             userKey = readPublicKey(),
             serverKey = readPublicKey(),
+            refundDelay = readNumber().toInt(),
+        )
+        0x03 -> InteractiveTxInput.LocalSwapIn(
+            serialId = readNumber(),
+            previousTx = readTransaction(),
+            previousTxOutput = readNumber(),
+            sequence = readNumber().toUInt(),
+            userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            userRefundKey = readPublicKey(),
             refundDelay = readNumber().toInt(),
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Local::class}")
@@ -244,13 +275,23 @@ object Deserialization {
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
         )
-        0x02 -> InteractiveTxInput.RemoteSwapIn(
+        0x02 -> InteractiveTxInput.RemoteLegacySwapIn(
             serialId = readNumber(),
             outPoint = readOutPoint(),
             txOut = TxOut.read(readDelimitedByteArray()),
             sequence = readNumber().toUInt(),
             userKey = readPublicKey(),
             serverKey = readPublicKey(),
+            refundDelay = readNumber().toInt()
+        )
+        0x03 -> InteractiveTxInput.RemoteSwapIn(
+            serialId = readNumber(),
+            outPoint = readOutPoint(),
+            txOut = TxOut.read(readDelimitedByteArray()),
+            sequence = readNumber().toUInt(),
+            userKey = readPublicKey(),
+            serverKey = readPublicKey(),
+            userRefundKey = readPublicKey(),
             refundDelay = readNumber().toInt()
         )
         else -> error("unknown discriminator $discriminator for class ${InteractiveTxInput.Remote::class}")
@@ -570,6 +611,8 @@ object Deserialization {
 
     private fun Input.readOutPoint(): OutPoint = OutPoint.read(readDelimitedByteArray())
 
+    private fun Input.readTxOut(): TxOut = TxOut.read(readDelimitedByteArray())
+
     private fun Input.readTransaction(): Transaction = Transaction.read(readDelimitedByteArray())
 
     private fun Input.readTransactionWithInputInfo(): Transactions.TransactionWithInputInfo = when (val discriminator = read()) {
@@ -610,6 +653,8 @@ object Deserialization {
     private fun Input.readPublicKey() = PublicKey(ByteArray(33).also { read(it, 0, it.size) })
 
     private fun Input.readTxId(): TxId = TxId(readByteVector32())
+
+    private fun Input.readPublicNonce() = IndividualNonce(ByteArray(66).also { read(it, 0, it.size) })
 
     private fun Input.readDelimitedByteArray(): ByteArray {
         val size = readNumber().toInt()

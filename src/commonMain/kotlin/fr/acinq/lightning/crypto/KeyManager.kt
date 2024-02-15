@@ -2,11 +2,15 @@ package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.DeterministicWallet.hardened
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.DefaultSwapInParams
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.transactions.Scripts
+import fr.acinq.lightning.transactions.SwapInProtocol
+import fr.acinq.lightning.transactions.SwapInProtocolLegacy
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toByteVector
@@ -118,28 +122,38 @@ interface KeyManager {
         val refundDelay: Int = DefaultSwapInParams.RefundDelay
     ) {
         private val userExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserKeyPath(chain))
+        private val userRefundExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserRefundKeyPath(chain))
+
         val userPrivateKey: PrivateKey = userExtendedPrivateKey.privateKey
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
+
+        val userRefundPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(userRefundExtendedPrivateKey, 0).privateKey
+        val userRefundPublicKey: PublicKey = userRefundPrivateKey.publicKey()
 
         private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInLocalServerKeyPath(chain))
         fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
 
-        val redeemScript: List<ScriptElt> = Scripts.swapIn2of2(userPublicKey, remoteServerPublicKey, refundDelay)
-        val pubkeyScript: List<ScriptElt> = Script.pay2wsh(redeemScript)
-        val address: String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).result!!
+        val swapInProtocol = SwapInProtocol(userPublicKey, remoteServerPublicKey, userRefundPublicKey, refundDelay)
 
-        /**
-         * The output script descriptor matching our swap-in addresses.
-         * That descriptor can be imported in bitcoind to recover funds after the refund delay.
-         */
-        val descriptor = run {
-            // Since child public keys cannot be derived from a master xpub when hardened derivation is used,
-            // we need to provide the fingerprint of the master xpub and the hardened derivation path.
-            // This lets wallets that have access to the master xpriv derive the corresponding private and public keys.
-            val masterFingerprint = ByteVector(Crypto.hash160(DeterministicWallet.publicKey(master).publickeybytes).take(4).toByteArray())
-            val encodedChildKey = DeterministicWallet.encode(DeterministicWallet.publicKey(userExtendedPrivateKey), testnet = chain != NodeParams.Chain.Mainnet)
-            val userKey = "[${masterFingerprint.toHex()}/${encodedSwapInUserKeyPath(chain)}]$encodedChildKey"
-            "wsh(and_v(v:pk($userKey),or_d(pk(${remoteServerPublicKey.toHex()}),older($refundDelay))))"
+        // this is a private descriptor that can be used as-is to recover swap-in funds once the refund delay has passed
+        // it is compatible with address rotation as long as refund keys are derived directly from userRefundExtendedPrivateKey
+        // README: it includes the user's master refund private key and is not safe to share !!
+        val privateDescriptor = SwapInProtocol.privateDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey)
+
+        // this is the public version of the above descriptor. It can be used to monitor a user's swap-in transaction
+        // README: it cannot be used to derive private keys, but it can be used to derive swap-in addresses
+        val publicDescriptor = SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, DeterministicWallet.publicKey(userRefundExtendedPrivateKey))
+
+        // legacy p2wsh-based swap-in protocol, with a fixed on-chain address
+        val legacySwapInProtocol = SwapInProtocolLegacy(userPublicKey, remoteServerPublicKey, refundDelay)
+        val legacyDescriptor = SwapInProtocolLegacy.descriptor(chain, DeterministicWallet.publicKey(master), DeterministicWallet.publicKey(userExtendedPrivateKey), remoteServerPublicKey, refundDelay)
+
+        fun signSwapInputUserLegacy(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>): ByteVector64 {
+            return legacySwapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()], userPrivateKey)
+        }
+
+        fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, privateNonce: SecretNonce, userNonce: IndividualNonce, serverNonce: IndividualNonce): Either<Throwable, ByteVector32> {
+            return swapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts, userPrivateKey, privateNonce, userNonce, serverNonce)
         }
 
         /**
@@ -150,12 +164,11 @@ interface KeyManager {
          * @return a signed transaction that spends our swap-in transaction. It cannot be published until `swapInTx` has enough confirmations
          */
         fun createRecoveryTransaction(swapInTx: Transaction, address: String, feeRate: FeeratePerKw): Transaction? {
-            val utxos = swapInTx.txOut.filter { it.publicKeyScript.contentEquals(Script.write(pubkeyScript)) }
+            val utxos = swapInTx.txOut.filter { it.publicKeyScript.contentEquals(Script.write(legacySwapInProtocol.pubkeyScript)) || it.publicKeyScript.contentEquals(Script.write(swapInProtocol.pubkeyScript)) }
             return if (utxos.isEmpty()) {
                 null
             } else {
-                val pubKeyScript = Bitcoin.addressToPublicKeyScript(chain.chainHash, address).result
-                pubKeyScript?.let { script ->
+                Bitcoin.addressToPublicKeyScript(chain.chainHash, address).right?.let { script ->
                     val ourOutput = TxOut(utxos.map { it.amount }.sum(), script)
                     val unsignedTx = Transaction(
                         version = 2,
@@ -163,18 +176,23 @@ interface KeyManager {
                         txOut = listOf(ourOutput),
                         lockTime = 0
                     )
-                    val fees = run {
-                        val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo ->
-                            val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
-                            tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey, remoteServerPublicKey, refundDelay))
+
+                    fun sign(tx: Transaction, index: Int, utxo: TxOut): Transaction {
+                        return if (Script.isPay2wsh(utxo.publicKeyScript.toByteArray())) {
+                            val sig = legacySwapInProtocol.signSwapInputUser(tx, index, utxo, userPrivateKey)
+                            tx.updateWitness(index, legacySwapInProtocol.witnessRefund(sig))
+                        } else {
+                            val sig = swapInProtocol.signSwapInputRefund(tx, index, utxos, userRefundPrivateKey)
+                            tx.updateWitness(index, swapInProtocol.witnessRefund(sig))
                         }
+                    }
+
+                    val fees = run {
+                        val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo -> sign(tx, index, utxo) }
                         Transactions.weight2fee(feeRate, recoveryTx.weight())
                     }
                     val unsignedTx1 = unsignedTx.copy(txOut = listOf(ourOutput.copy(amount = ourOutput.amount - fees)))
-                    val recoveryTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo ->
-                        val sig = Transactions.signSwapInputUser(tx, index, utxo, userPrivateKey, remoteServerPublicKey, refundDelay)
-                        tx.updateWitness(index, Scripts.witnessSwapIn2of2Refund(sig, userPublicKey, remoteServerPublicKey, refundDelay))
-                    }
+                    val recoveryTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo -> sign(tx, index, utxo) }
                     // this tx is signed but cannot be published until swapInTx has `refundDelay` confirmations
                     recoveryTx
                 }
@@ -190,6 +208,8 @@ interface KeyManager {
             fun swapInUserKeyPath(chain: NodeParams.Chain) = swapInKeyBasePath(chain) / hardened(0)
 
             fun swapInLocalServerKeyPath(chain: NodeParams.Chain) = swapInKeyBasePath(chain) / hardened(1)
+
+            fun swapInUserRefundKeyPath(chain: NodeParams.Chain) = swapInKeyBasePath(chain) / hardened(2) / 0L
 
             fun encodedSwapInUserKeyPath(chain: NodeParams.Chain) = when (chain) {
                 NodeParams.Chain.Regtest, NodeParams.Chain.Testnet -> "51h/0h/0h"

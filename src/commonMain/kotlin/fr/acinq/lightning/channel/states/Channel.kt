@@ -113,7 +113,7 @@ sealed class ChannelState {
                     // this code is only executed for the first transition to Closing, so there can only be one transaction here
                     val closingTx = newState.mutualClosePublished.first()
                     val finalAmount = closingTx.toLocalOutput?.amount ?: 0.sat
-                    val address = closingTx.toLocalOutput?.publicKeyScript?.let { Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, it.toByteArray()).result } ?: "unknown"
+                    val address = closingTx.toLocalOutput?.publicKeyScript?.let { Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, it.toByteArray()).right } ?: "unknown"
                     listOf(
                         ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
                             amount = finalAmount,
@@ -142,7 +142,7 @@ sealed class ChannelState {
                     val address = Bitcoin.addressFromPublicKeyScript(
                         chainHash = staticParams.nodeParams.chainHash,
                         pubkeyScript = oldState.commitments.params.localParams.defaultFinalScriptPubKey.toByteArray() // force close always send to the default script
-                    ).result ?: "unknown"
+                    ).right ?: "unknown"
                     listOf(
                         ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
                             amount = channelBalance.truncateToSatoshi(),
