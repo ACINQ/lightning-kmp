@@ -68,7 +68,7 @@ data class WaitForChannelReady(
                         staticParams.nodeParams.expiryDeltaBlocks,
                         commitments.params.remoteParams.htlcMinimum,
                         staticParams.nodeParams.feeBase,
-                        staticParams.nodeParams.feeProportionalMillionth.toLong(),
+                        staticParams.nodeParams.feeProportionalMillionths.toLong(),
                         commitments.latest.fundingAmount.toMilliSatoshi(),
                         enable = Helpers.aboveReserve(commitments)
                     )

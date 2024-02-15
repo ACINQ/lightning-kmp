@@ -91,7 +91,7 @@ data class LNChannel<out S : ChannelState>(
 
     fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> =
         state
-            .run { ctx.copy(logger = ctx.logger.copy(staticMdc = mapOf("alias" to ctx.staticParams.nodeParams.alias) + state.mdc())).process(cmd) }
+            .run { ctx.copy(logger = ctx.logger.copy(staticMdc = state.mdc())).process(cmd) }
             .let { (newState, actions) ->
                 checkSerialization(actions)
                 JsonSerializers.json.encodeToString(newState)

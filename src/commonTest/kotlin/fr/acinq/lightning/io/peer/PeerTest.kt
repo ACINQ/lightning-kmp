@@ -31,6 +31,7 @@ import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.test.*
+import kotlin.time.Duration.Companion.seconds
 
 class PeerTest : LightningTestSuite() {
 
@@ -331,7 +332,7 @@ class PeerTest : LightningTestSuite() {
 
         val peer = buildPeer(
             this,
-            alice0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
+            alice0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Alice.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice1.state) },
             currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
@@ -401,7 +402,7 @@ class PeerTest : LightningTestSuite() {
 
         val peer = buildPeer(
             this,
-            bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
+            bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Bob.walletParams,
             databases = InMemoryDatabases(), // NB: empty database (Bob has lost its channel state)
             currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
@@ -431,7 +432,7 @@ class PeerTest : LightningTestSuite() {
 
         val peer = buildPeer(
             this,
-            bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelaySeconds = 5),
+            bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Bob.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(bob0.state) }, // NB: outdated channel data
             currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header

@@ -250,7 +250,7 @@ class Peer(
                 // If we have some htlcs that have timed out, we may need to close channels to ensure we don't lose funds.
                 // But maybe we were offline for too long and it is why our peer couldn't settle these htlcs in time.
                 // We give them a bit of time after we reconnect to send us their latest htlc updates.
-                delay(timeMillis = nodeParams.checkHtlcTimeoutAfterStartupDelaySeconds.toLong() * 1000)
+                delay(nodeParams.checkHtlcTimeoutAfterStartupDelay)
                 logger.info { "checking for timed out htlcs for channels: ${channelIds.joinToString(", ")}" }
                 channelIds.forEach { input.send(WrappedChannelCommand(it, ChannelCommand.Commitment.CheckHtlcTimeout)) }
             }
@@ -379,14 +379,14 @@ class Peer(
             suspend fun doPing() {
                 val ping = Ping(10, ByteVector("deadbeef"))
                 while (isActive) {
-                    delay(30.seconds)
+                    delay(nodeParams.pingInterval)
                     peerConnection.send(ping)
                 }
             }
 
             suspend fun checkPaymentsTimeout() {
                 while (isActive) {
-                    delay(10.seconds) // we schedule a check every 10 seconds
+                    delay(nodeParams.checkHtlcTimeoutInterval) // we schedule a check every 10 seconds
                     input.send(CheckPaymentsTimeout)
                 }
             }

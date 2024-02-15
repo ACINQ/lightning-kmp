@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 data class NodeUri(val id: PublicKey, val host: String, val port: Int)
 
@@ -48,11 +51,13 @@ data class SwapInParams(val minConfirmations: Int, val maxConfirmations: Int, va
 object DefaultSwapInParams {
     /** When doing a swap-in, the funds must be confirmed before we can use them in a 0-conf splice. */
     const val MinConfirmations = 3
+
     /**
      * When doing a swap-in, the corresponding splice must be triggered before we get too close to the refund delay.
      * Users would otherwise be able to steal funds if the splice transaction doesn't confirm before the refund delay.
      */
     const val MaxConfirmations = 144 * 30 * 4 // ~4 months
+
     /** When doing a swap-in, the user's funds are locked in a 2-of-2: they can claim them unilaterally after that delay. */
     const val RefundDelay = 144 * 30 * 6 // ~6 months
 }
@@ -88,8 +93,8 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
 
 /**
  * @param loggerFactory factory for creating [Logger] objects sharing the same configuration.
+ * @param chain bitcoin chain we're interested in.
  * @param keyManager derive private keys and secrets from your seed.
- * @param alias name of the lightning node.
  * @param features features supported by the lightning node.
  * @param dustLimit threshold below which outputs will not be generated in commitment or HTLC transactions (i.e. HTLCs below this amount plus HTLC transaction fees are not enforceable on-chain).
  * @param maxRemoteDustLimit maximum dust limit we let our peer use for his commitment (in theory it should always be 546 sats).
@@ -98,36 +103,27 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param maxAcceptedHtlcs cap on the number of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
  * @param expiryDeltaBlocks cltv-expiry-delta used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
  * @param fulfillSafetyBeforeTimeoutBlocks number of blocks necessary to react to a malicious peer that doesn't acknowledge and sign our HTLC preimages.
- * @param checkHtlcTimeoutAfterStartupDelaySeconds delay in seconds before we check for timed out HTLCs in our channels after a wallet restart.
+ * @param checkHtlcTimeoutAfterStartupDelay delay in seconds before we check for timed out HTLCs in our channels after a wallet restart.
  * @param htlcMinimum minimum accepted htlc value.
  * @param toRemoteDelayBlocks number of blocks our peer will have to wait before they get their main output back in case they force-close a channel.
  * @param maxToLocalDelayBlocks maximum number of blocks we will have to wait before we get our main output back in case we force-close a channel.
  * @param minDepthBlocks minimum depth of a transaction before we consider it safely confirmed.
  * @param feeBase base fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
- * @param feeProportionalMillionth proportional fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
- * @param revocationTimeoutSeconds delay after which we disconnect from our peer if they don't send us a revocation after a new commitment is signed.
- * @param authTimeoutSeconds timeout for the connection authentication phase.
- * @param initTimeoutSeconds timeout for the connection initialization phase.
- * @param pingIntervalSeconds delay between ping messages.
- * @param pingTimeoutSeconds timeout when waiting for a response to our ping.
- * @param pingDisconnect disconnect when a peer doesn't respond to our ping.
- * @param autoReconnect automatically reconnect to our peers.
- * @param initialRandomReconnectDelaySeconds delay before which we reconnect to our peers (will be randomized based on this value).
- * @param maxReconnectIntervalSeconds maximum delay between reconnection attempts.
- * @param chain bitcoin chain we're interested in.
- * @param channelFlags channel flags used to temporarily enable or disable channels.
+ * @param feeProportionalMillionths proportional fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
+ * @param pingInterval delay between ping messages.
+ * @param initialRandomReconnectDelay delay before which we reconnect to our peers (will be randomized based on this value).
+ * @param maxReconnectInterval maximum delay between reconnection attempts.
  * @param paymentRequestExpirySeconds our Bolt 11 invoices will only be valid for this duration.
- * @param multiPartPaymentExpirySeconds number of seconds we will wait to receive all parts of a multi-part payment.
+ * @param multiPartPaymentExpiry number of seconds we will wait to receive all parts of a multi-part payment.
  * @param maxPaymentAttempts maximum number of retries when attempting an outgoing payment.
  * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
- * @param enableTrampolinePayment enable trampoline payments.
  * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
  */
 data class NodeParams(
     val loggerFactory: LoggerFactory,
+    val chain: Bitcoin.Chain,
     val keyManager: KeyManager,
-    val alias: String,
     val features: Features,
     val dustLimit: Satoshi,
     val maxRemoteDustLimit: Satoshi,
@@ -136,30 +132,22 @@ data class NodeParams(
     val maxAcceptedHtlcs: Int,
     val expiryDeltaBlocks: CltvExpiryDelta,
     val fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
-    val checkHtlcTimeoutAfterStartupDelaySeconds: Int,
+    val checkHtlcTimeoutAfterStartupDelay: Duration,
+    val checkHtlcTimeoutInterval: Duration,
     val htlcMinimum: MilliSatoshi,
     val toRemoteDelayBlocks: CltvExpiryDelta,
     val maxToLocalDelayBlocks: CltvExpiryDelta,
     val minDepthBlocks: Int,
     val feeBase: MilliSatoshi,
-    val feeProportionalMillionth: Int,
-    val revocationTimeoutSeconds: Long,
-    val authTimeoutSeconds: Long,
-    val initTimeoutSeconds: Long,
-    val pingIntervalSeconds: Long,
-    val pingTimeoutSeconds: Long,
-    val pingDisconnect: Boolean,
-    val autoReconnect: Boolean,
-    val initialRandomReconnectDelaySeconds: Long,
-    val maxReconnectIntervalSeconds: Long,
-    val chain: Bitcoin.Chain,
-    val channelFlags: Byte,
-    val paymentRequestExpirySeconds: Long,
-    val multiPartPaymentExpirySeconds: Long,
+    val feeProportionalMillionths: Int,
+    val pingInterval: Duration,
+    val initialRandomReconnectDelay: Duration,
+    val maxReconnectInterval: Duration,
+    val paymentRequestExpirySeconds: Int,
+    val multiPartPaymentExpiry: Duration,
     val maxPaymentAttempts: Int,
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
-    val enableTrampolinePayment: Boolean,
     val liquidityPolicy: MutableStateFlow<LiquidityPolicy>
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
@@ -185,8 +173,8 @@ data class NodeParams(
      */
     constructor(chain: Bitcoin.Chain, loggerFactory: LoggerFactory, keyManager: KeyManager) : this(
         loggerFactory = loggerFactory,
+        chain = chain,
         keyManager = keyManager,
-        alias = "lightning-kmp",
         features = Features(
             Feature.OptionDataLossProtect to FeatureSupport.Optional,
             Feature.VariableLengthOnion to FeatureSupport.Mandatory,
@@ -218,28 +206,20 @@ data class NodeParams(
         maxAcceptedHtlcs = 6,
         expiryDeltaBlocks = CltvExpiryDelta(144),
         fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
-        checkHtlcTimeoutAfterStartupDelaySeconds = 15,
+        checkHtlcTimeoutAfterStartupDelay = 15.seconds,
+        checkHtlcTimeoutInterval = 10.seconds,
         htlcMinimum = 1000.msat,
         minDepthBlocks = 3,
         toRemoteDelayBlocks = CltvExpiryDelta(2016),
         maxToLocalDelayBlocks = CltvExpiryDelta(1008),
         feeBase = 1000.msat,
-        feeProportionalMillionth = 100,
-        revocationTimeoutSeconds = 20,
-        authTimeoutSeconds = 10,
-        initTimeoutSeconds = 10,
-        pingIntervalSeconds = 30,
-        pingTimeoutSeconds = 10,
-        pingDisconnect = true,
-        autoReconnect = false,
-        initialRandomReconnectDelaySeconds = 5,
-        maxReconnectIntervalSeconds = 3600,
-        chain = chain,
-        channelFlags = 1,
+        feeProportionalMillionths = 100,
+        pingInterval = 30.seconds,
+        initialRandomReconnectDelay = 5.seconds,
+        maxReconnectInterval = 60.minutes,
         paymentRequestExpirySeconds = 3600,
-        multiPartPaymentExpirySeconds = 60,
+        multiPartPaymentExpiry = 60.seconds,
         maxPaymentAttempts = 5,
-        enableTrampolinePayment = true,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
         liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false))
