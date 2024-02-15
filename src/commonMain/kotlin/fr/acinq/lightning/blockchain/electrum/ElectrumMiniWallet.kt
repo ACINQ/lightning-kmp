@@ -3,8 +3,8 @@ package fr.acinq.lightning.blockchain.electrum
 import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
-import fr.acinq.lightning.blockchain.electrum.WalletState.Companion.indexOrNull
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.debug
+import fr.acinq.lightning.logging.info
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.sum
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +37,19 @@ data class WalletState(val addresses: Map<String, AddressState>) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
         val amount = previousTx.txOut[outputIndex].amount
     }
+
+    data class AddressState(val meta: AddressMeta, val alreadyUsed: Boolean, val utxos: List<Utxo>)
+
+    sealed class AddressMeta {
+        data object Single : AddressMeta()
+        data class Derived(val index: Int) : AddressMeta()
+    }
+
+    val AddressMeta.indexOrNull: Int?
+        get() = when (this) {
+            is AddressMeta.Single -> null
+            is AddressMeta.Derived -> this.index
+        }
 
     /**
      * The utxos of a wallet may be discriminated against their number of confirmations. Typically, this is used in the
@@ -78,19 +91,6 @@ data class WalletState(val addresses: Map<String, AddressState>) {
 
     companion object {
         val empty: WalletState = WalletState(emptyMap())
-
-        data class AddressState(val meta: AddressMeta, val alreadyUsed: Boolean, val utxos: List<Utxo>)
-
-        sealed class AddressMeta {
-            data object Single : AddressMeta()
-            data class Derived(val index: Int) : AddressMeta()
-        }
-
-        val AddressMeta.indexOrNull: Int?
-            get() = when (this) {
-                is AddressMeta.Single -> null
-                is AddressMeta.Derived -> this.index
-            }
     }
 }
 
@@ -125,7 +125,7 @@ class ElectrumMiniWallet(
     private var addressGenerator: WalletCommand.Companion.AddressGenerator? = null
 
     // all current meta associated to each address
-    private var addressMetas: Map<String, WalletState.Companion.AddressMeta> = emptyMap()
+    private var addressMetas: Map<String, WalletState.AddressMeta> = emptyMap()
 
     // all currently watched script hashes and their corresponding bitcoin address
     private var scriptHashes: Map<ByteVector32, String> = emptyMap()
@@ -167,7 +167,7 @@ class ElectrumMiniWallet(
                 }
                 msg.status == null -> {
                     logger.info { "address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} utxos=(unused)" }
-                    this.copy(addresses = this.addresses + (bitcoinAddress to WalletState.Companion.AddressState(addressMeta, alreadyUsed = false, utxos = listOf())))
+                    this.copy(addresses = this.addresses + (bitcoinAddress to WalletState.AddressState(addressMeta, alreadyUsed = false, utxos = listOf())))
                 }
                 else -> {
                     val unspents = client.getScriptHashUnspents(msg.scriptHash)
@@ -175,7 +175,7 @@ class ElectrumMiniWallet(
                     val utxos = unspents
                         .mapNotNull { item -> (previouslysKnownTxs[item.txid] ?: client.getTx(item.txid))?.let { item to it } } // only retrieve txs from electrum if necessary and ignore the utxo if the parent tx cannot be retrieved
                         .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx, addressMeta) }
-                    val nextAddressState = WalletState.Companion.AddressState(addressMeta, alreadyUsed = true, utxos)
+                    val nextAddressState = WalletState.AddressState(addressMeta, alreadyUsed = true, utxos)
                     val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to nextAddressState))
                     logger.info { "address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} utxos=${unspents.size} amount=${unspents.sumOf { it.value }.sat}" }
                     unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
@@ -201,7 +201,7 @@ class ElectrumMiniWallet(
                 .right
         }
 
-        suspend fun WalletState.addAddress(bitcoinAddress: String, meta: WalletState.Companion.AddressMeta): WalletState {
+        suspend fun WalletState.addAddress(bitcoinAddress: String, meta: WalletState.AddressMeta): WalletState {
             return computeScriptHash(bitcoinAddress)?.let { scriptHash ->
                 if (!scriptHashes.containsKey(scriptHash)) {
                     logger.debug { "adding new address=${bitcoinAddress} index=${meta.indexOrNull ?: "n/a"}" }
@@ -213,7 +213,7 @@ class ElectrumMiniWallet(
         }
 
         suspend fun WalletState.addAddress(generator: WalletCommand.Companion.AddressGenerator, addressIndex: Int): WalletState {
-            return this.addAddress(generator.generateAddress(addressIndex), WalletState.Companion.AddressMeta.Derived(addressIndex))
+            return this.addAddress(generator.generateAddress(addressIndex), WalletState.AddressMeta.Derived(addressIndex))
         }
 
         suspend fun WalletState.maybeGenerateNext(generator: WalletCommand.Companion.AddressGenerator): WalletState {
@@ -258,7 +258,7 @@ class ElectrumMiniWallet(
                         }
 
                         is WalletCommand.Companion.AddAddress -> {
-                            _walletStateFlow.value = _walletStateFlow.value.addAddress(it.bitcoinAddress, WalletState.Companion.AddressMeta.Single)
+                            _walletStateFlow.value = _walletStateFlow.value.addAddress(it.bitcoinAddress, WalletState.AddressMeta.Single)
                         }
                         is WalletCommand.Companion.AddAddressGenerator -> {
                             if (addressGenerator == null) {

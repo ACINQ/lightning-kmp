@@ -308,7 +308,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
             val sharedInput = sharedUtxo?.let { (i, balances) -> listOf(InteractiveTxInput.Shared(0, i.info.outPoint, i.info.txOut.publicKeyScript, 0xfffffffdU, balances.toLocal, balances.toRemote, balances.toHtlcs)) } ?: listOf()
             val localInputs = walletInputs.map { i ->
                 when (val meta = i.addressMeta) {
-                    is WalletState.Companion.AddressMeta.Derived -> {
+                    is WalletState.AddressMeta.Derived -> {
                         val swapInProtocol = swapInKeys.getSwapInProtocol(meta.index)
                         InteractiveTxInput.LocalSwapIn(
                             0,

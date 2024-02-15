@@ -30,7 +30,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val walletState = wallet.walletStateFlow.drop(1).first() // first emitted wallet is empty
 
         assertEquals(
-            expected = WalletState(mapOf(address to WalletState.Companion.AddressState(WalletState.Companion.AddressMeta.Single, alreadyUsed = false, utxos = emptyList()))),
+            expected = WalletState(mapOf(address to WalletState.AddressState(WalletState.AddressMeta.Single, alreadyUsed = false, utxos = emptyList()))),
             actual = walletState
         )
 
@@ -48,7 +48,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         val walletState = wallet.walletStateFlow.drop(1).first() // first emitted wallet is empty
 
         assertEquals(
-            expected = WalletState(mapOf(address to WalletState.Companion.AddressState(WalletState.Companion.AddressMeta.Single, alreadyUsed = true, utxos = emptyList()))),
+            expected = WalletState(mapOf(address to WalletState.AddressState(WalletState.AddressMeta.Single, alreadyUsed = true, utxos = emptyList()))),
             actual = walletState
         )
 
@@ -143,7 +143,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
                 outputIndex = 1,
                 blockHeight = 100_003,
                 txId = TxId("971af80218684017722429be08548d1f30a2f1f220abc064380cbca5cabf7623"),
-                addressMeta = WalletState.Companion.AddressMeta.Single
+                addressMeta = WalletState.AddressMeta.Single
             )
         )
 
@@ -203,21 +203,21 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
                 previousTx = Transaction.read("0100000001758713310361270b5ec4cae9b0196cb84fdb2f174d29f9367ad341963fa83e56010000008b483045022100d7b8759aeffe9d829a5df062420eb25017d7341244e49cfede16136a0c0b8dd2022031b42048e66b1f82f7fa99a22954e2709269838ef587c20118e493ced0d63e21014104b9251638d1475b9c62e1cf03129c835bcd5ab843aa0016412e8b39e3f8f7188d3b59023bce2002a2e409ea070c7070392b65d9ae8c8631ae2672a8fbb4f62bbdffffffff02404b4c00000000001976a9143675767783fdf1922f57ab4bb783f3a88dfa609488ac404b4c00000000001976a9142b6ba7c9d796b75eef7942fc9288edd37c32f5c388ac00000000"),
                 outputIndex = 1,
                 blockHeight = 100_003,
-                addressMeta = WalletState.Companion.AddressMeta.Derived(3)
+                addressMeta = WalletState.AddressMeta.Derived(3)
             )
         )
         assertContains(
             walletState.addresses.toList(),
-            "12yyz3bCKjUoQQPaYbrmzYVM4h7bYa9QYj" to WalletState.Companion.AddressState(
-                meta = WalletState.Companion.AddressMeta.Derived(5),
+            "12yyz3bCKjUoQQPaYbrmzYVM4h7bYa9QYj" to WalletState.AddressState(
+                meta = WalletState.AddressMeta.Derived(5),
                 alreadyUsed = true,
                 utxos = emptyList()
             )
         )
         assertContains(
             walletState.addresses.toList(),
-            "1NtgeYfAGMwt1vqdJrNTRuPu4Hnqpd4sKX" to WalletState.Companion.AddressState(
-                meta = WalletState.Companion.AddressMeta.Derived(6),
+            "1NtgeYfAGMwt1vqdJrNTRuPu4Hnqpd4sKX" to WalletState.AddressState(
+                meta = WalletState.AddressMeta.Derived(6),
                 alreadyUsed = false,
                 utxos = emptyList()
             )

@@ -445,7 +445,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             // Alice adds a new input that increases her contribution and covers the additional fees.
             val script = alice.staticParams.nodeParams.keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript
             val parentTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 1), 0)), listOf(TxOut(30_000.sat, script)), 0)
-            val wallet1 = wallet + listOf(WalletState.Utxo(parentTx.txid, 0, 42, parentTx, WalletState.Companion.AddressMeta.Single))
+            val wallet1 = wallet + listOf(WalletState.Utxo(parentTx.txid, 0, 42, parentTx, WalletState.AddressMeta.Single))
             return ChannelCommand.Funding.BumpFundingFee(previousFundingTx.feerate * 1.1, previousFundingParams.localContribution + 20_000.sat, wallet1, previousFundingTx.tx.lockTime + 1)
         }
 
