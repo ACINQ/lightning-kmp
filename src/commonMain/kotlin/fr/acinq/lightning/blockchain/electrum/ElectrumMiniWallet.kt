@@ -217,7 +217,7 @@ class ElectrumMiniWallet(
         }
 
         suspend fun WalletState.maybeGenerateNext(generator: WalletCommand.Companion.AddressGenerator): WalletState {
-            val lastDerivedAddressState = this.addresses[this.lastDerivedAddress?.first]
+            val lastDerivedAddressState = this.lastDerivedAddress?.let { this.addresses[it.first] }
             return when {
                 lastDerivedAddressState == null -> this.addAddress(generator, 0).maybeGenerateNext(generator) // there is no existing derived address: initialization
                 lastDerivedAddressState.alreadyUsed -> this.addAddress(generator, lastDerivedAddressState.meta.indexOrNull!! + 1).maybeGenerateNext(generator) // most recent derived address is used, need to generate a new one
