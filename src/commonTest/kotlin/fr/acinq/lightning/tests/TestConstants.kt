@@ -55,7 +55,6 @@ object TestConstants {
             loggerFactory = testLoggerFactory,
             keyManager = keyManager,
         ).copy(
-            alias = "alice",
             features = Features(
                 Feature.OptionDataLossProtect to FeatureSupport.Optional,
                 Feature.VariableLengthOnion to FeatureSupport.Mandatory,
@@ -85,7 +84,7 @@ object TestConstants {
             toRemoteDelayBlocks = CltvExpiryDelta(144),
             maxToLocalDelayBlocks = CltvExpiryDelta(2048),
             feeBase = 100.msat,
-            feeProportionalMillionth = 10,
+            feeProportionalMillionths = 10,
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
@@ -104,7 +103,6 @@ object TestConstants {
             loggerFactory = testLoggerFactory,
             keyManager = keyManager,
         ).copy(
-            alias = "bob",
             dustLimit = 1_000.sat,
             maxRemoteDustLimit = 1_500.sat,
             onChainFeeConf = OnChainFeeConf(
@@ -117,7 +115,7 @@ object TestConstants {
             toRemoteDelayBlocks = CltvExpiryDelta(144),
             maxToLocalDelayBlocks = CltvExpiryDelta(1024),
             feeBase = 10.msat,
-            feeProportionalMillionth = 10,
+            feeProportionalMillionths = 10,
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
