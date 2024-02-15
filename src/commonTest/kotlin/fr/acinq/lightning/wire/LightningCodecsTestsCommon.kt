@@ -818,4 +818,26 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         }
 
     }
+
+    @Test
+    fun `encoded node id`() {
+        val testCases = mapOf(
+            ByteVector.fromHex("00 0d950b0001c80000") to
+                    EncodedNodeId.ShortChannelIdDir(isNode1 = true, ShortChannelId(890123, 456, 0)),
+            ByteVector.fromHex("01 0c0a14000d800005") to
+                    EncodedNodeId.ShortChannelIdDir(isNode1 = false, ShortChannelId(789012, 3456, 5)),
+            ByteVector.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73") to
+                    EncodedNodeId.Plain(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+            ByteVector.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922") to
+                    EncodedNodeId.Plain(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+        )
+
+        for (testCase in testCases) {
+            val (encoded, decoded) = testCase
+            val out = ByteArrayOutput()
+            LightningCodecs.writeEncodedNodeId(decoded, out)
+            assertEquals(encoded, out.toByteArray().toByteVector())
+            assertEquals(decoded, LightningCodecs.encodedNodeId(ByteArrayInput(encoded.toByteArray())))
+        }
+    }
 }

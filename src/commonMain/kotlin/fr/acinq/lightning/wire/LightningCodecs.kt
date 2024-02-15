@@ -1,13 +1,12 @@
 package fr.acinq.lightning.wire
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.TxHash
-import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.lightning.EncodedNodeId
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.utils.leftPaddedCopyOf
 import kotlin.jvm.JvmStatic
 
@@ -223,6 +222,28 @@ object LightningCodecs {
     fun script(input: Input): ByteArray {
         val length = bigSize(input)
         return bytes(input, length)
+    }
+
+    fun encodedNodeId(input: Input): EncodedNodeId {
+        val firstByte = byte(input)
+        if (firstByte == 0 || firstByte == 1) {
+            val isNode1 = firstByte == 0
+            val scid = ShortChannelId(int64(input))
+            return EncodedNodeId.ShortChannelIdDir(isNode1, scid)
+        } else if (firstByte == 2 || firstByte == 3) {
+            val publicKey = PublicKey(ByteArray(1) { firstByte.toByte() } + bytes(input, 32))
+            return EncodedNodeId.Plain(publicKey)
+        } else {
+            throw IllegalArgumentException("unexpected first byte: $firstByte")
+        }
+    }
+
+    fun writeEncodedNodeId(input: EncodedNodeId, out: Output): Unit = when (input) {
+        is EncodedNodeId.Plain -> writeBytes(input.publicKey.value, out)
+        is EncodedNodeId.ShortChannelIdDir -> {
+            writeByte(if (input.isNode1) 0 else 1, out)
+            writeInt64(input.scid.toLong(), out)
+        }
     }
 
 }
