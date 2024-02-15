@@ -125,6 +125,15 @@ kotlin {
             }
         }
 
+        nativeMain {
+            dependencies {
+                api(ktor("network"))
+                api(ktor("network-tls"))
+                api(ktor("client-core"))
+                api(ktor("client-auth"))
+            }
+        }
+
         if (currentOs.isMacOsX) {
             iosTest {
                 dependencies {
