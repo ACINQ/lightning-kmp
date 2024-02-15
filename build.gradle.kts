@@ -48,28 +48,28 @@ kotlin {
     if (currentOs.isMacOsX) {
         iosX64 { // ios simulator on intel devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "iphonesimulator"
+                val platform = "Iphonesimulator"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
 
         iosArm64 { // actual ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "iphoneos"
+                val platform = "Iphoneos"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
 
         iosSimulatorArm64 { // actual ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "iphonesimulator"
+                val platform = "Iphonesimulator"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
     }
