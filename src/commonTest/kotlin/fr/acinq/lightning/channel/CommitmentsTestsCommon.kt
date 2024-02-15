@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Features

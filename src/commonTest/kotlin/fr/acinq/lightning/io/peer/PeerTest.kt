@@ -3,6 +3,7 @@ package fr.acinq.lightning.io.peer
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.InvoiceDefaultRoutingFees
 import fr.acinq.lightning.Lightning.randomBytes32

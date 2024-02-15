@@ -1,13 +1,13 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*

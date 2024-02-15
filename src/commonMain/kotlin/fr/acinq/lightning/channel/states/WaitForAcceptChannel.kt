@@ -1,10 +1,10 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.Error

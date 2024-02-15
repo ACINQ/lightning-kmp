@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
@@ -16,7 +17,6 @@ import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.getValue
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error

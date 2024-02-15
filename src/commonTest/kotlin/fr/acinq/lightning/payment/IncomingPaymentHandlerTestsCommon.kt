@@ -1,6 +1,7 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.Lightning.randomBytes32

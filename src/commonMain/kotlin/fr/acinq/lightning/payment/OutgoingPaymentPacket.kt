@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.MilliSatoshi
@@ -15,7 +16,6 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.Hop
 import fr.acinq.lightning.router.NodeHop
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.OnionRoutingPacket

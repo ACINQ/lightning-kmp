@@ -1,9 +1,9 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.channel.TooManyAcceptedHtlcs
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.lightning.wire.PaymentTimeout

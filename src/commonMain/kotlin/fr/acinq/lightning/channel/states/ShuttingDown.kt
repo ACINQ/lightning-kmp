@@ -1,10 +1,10 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
 data class ShuttingDown(

@@ -1,6 +1,7 @@
 package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.electrum.*

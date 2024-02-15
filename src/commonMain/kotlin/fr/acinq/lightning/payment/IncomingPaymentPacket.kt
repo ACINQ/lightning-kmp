@@ -2,8 +2,8 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.crypto.sphinx.Sphinx
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.wire.*
 
 object IncomingPaymentPacket {

@@ -1,5 +1,6 @@
 package fr.acinq.lightning.tests
 
+import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.MnemonicCode
@@ -47,10 +48,10 @@ object TestConstants {
         private val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, bobSwapInServerXpub)
+        val keyManager = LocalKeyManager(seed, Bitcoin.Chain.Regtest, bobSwapInServerXpub)
         val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
         val nodeParams = NodeParams(
-            chain = NodeParams.Chain.Regtest,
+            chain = Bitcoin.Chain.Regtest,
             loggerFactory = testLoggerFactory,
             keyManager = keyManager,
         ).copy(
@@ -96,10 +97,10 @@ object TestConstants {
         val mnemonics = MnemonicCode.toMnemonics(entropy)
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
-        val keyManager = LocalKeyManager(seed, NodeParams.Chain.Regtest, aliceSwapInServerXpub)
+        val keyManager = LocalKeyManager(seed, Bitcoin.Chain.Regtest, aliceSwapInServerXpub)
         val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
         val nodeParams = NodeParams(
-            chain = NodeParams.Chain.Regtest,
+            chain = Bitcoin.Chain.Regtest,
             loggerFactory = testLoggerFactory,
             keyManager = keyManager,
         ).copy(

@@ -1,7 +1,7 @@
 package fr.acinq.lightning
 
 import co.touchlab.kermit.Logger
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.Lightning.nodeFee
@@ -152,7 +152,7 @@ data class NodeParams(
     val autoReconnect: Boolean,
     val initialRandomReconnectDelaySeconds: Long,
     val maxReconnectIntervalSeconds: Long,
-    val chain: Chain,
+    val chain: Bitcoin.Chain,
     val channelFlags: Byte,
     val paymentRequestExpirySeconds: Long,
     val multiPartPaymentExpirySeconds: Long,
@@ -183,7 +183,7 @@ data class NodeParams(
     /**
      * Library integrators should use this constructor and override values.
      */
-    constructor(chain: Chain, loggerFactory: LoggerFactory, keyManager: KeyManager) : this(
+    constructor(chain: Bitcoin.Chain, loggerFactory: LoggerFactory, keyManager: KeyManager) : this(
         loggerFactory = loggerFactory,
         keyManager = keyManager,
         alias = "lightning-kmp",
@@ -244,17 +244,4 @@ data class NodeParams(
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
         liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false))
     )
-
-    sealed class Chain(val name: String, private val genesis: Block) {
-        object Regtest : Chain("Regtest", Block.RegtestGenesisBlock)
-        object Testnet : Chain("Testnet", Block.TestnetGenesisBlock)
-        object Mainnet : Chain("Mainnet", Block.LivenetGenesisBlock)
-
-        fun isMainnet(): Boolean = this is Mainnet
-        fun isTestnet(): Boolean = this is Testnet
-
-        val chainHash by lazy { genesis.hash }
-
-        override fun toString(): String = name
-    }
 }

@@ -3,6 +3,9 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.readNBytes
+import fr.acinq.bitcoin.utils.Either
+import fr.acinq.bitcoin.utils.Try
+import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.blockchain.fee.FeeratePerKB
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.utils.*

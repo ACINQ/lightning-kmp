@@ -1,6 +1,8 @@
 package fr.acinq.lightning.transactions
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.Try
+import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32

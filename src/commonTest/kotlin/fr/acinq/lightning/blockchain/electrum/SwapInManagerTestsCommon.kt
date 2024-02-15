@@ -2,7 +2,6 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
@@ -25,7 +24,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
 
     private val dummyPubkey = PublicKey.fromHex("02eae982c8563a1c256ee9b4655af7d4c0dc545d1e5c350a68c5f8902cd4cf3021")
     private val dummyScript = Script.pay2wpkh(dummyPubkey)
-    private val dummyAddress = Bitcoin.computeP2WpkhAddress(dummyPubkey, NodeParams.Chain.Regtest.chainHash)
+    private val dummyAddress = Bitcoin.computeP2WpkhAddress(dummyPubkey, Bitcoin.Chain.Regtest.chainHash)
 
     @Test
     fun `swap funds`() {

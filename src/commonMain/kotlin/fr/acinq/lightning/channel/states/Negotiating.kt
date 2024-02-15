@@ -2,11 +2,11 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ClosingSigned
 import fr.acinq.lightning.wire.ClosingSignedTlv

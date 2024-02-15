@@ -7,6 +7,9 @@ import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.getOrDefault
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.bitcoin.utils.Either
+import fr.acinq.bitcoin.utils.Try
+import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -656,7 +659,7 @@ data class InteractiveTxSession(
         swapInKeys,
         fundingParams,
         SharedFundingInputBalances(previousLocalBalance, previousRemoteBalance, localHtlcs.map { it.add.amountMsat }.sum()),
-        fundingContributions.inputs.map { i -> Either.Left<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>(i) } + fundingContributions.outputs.map { o -> Either.Right<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>(o) },
+        fundingContributions.inputs.map { i -> Either.Left<InteractiveTxInput.Outgoing>(i) } + fundingContributions.outputs.map { o -> Either.Right<InteractiveTxOutput.Outgoing>(o) },
         previousTxs,
         localHtlcs
     )
@@ -664,7 +667,8 @@ data class InteractiveTxSession(
     val isComplete: Boolean = txCompleteSent != null && txCompleteReceived != null
 
     fun send(): Pair<InteractiveTxSession, InteractiveTxSessionAction> {
-        return when (val msg = toSend.firstOrNull()) {
+        val msg = toSend.firstOrNull()
+        return when (msg) {
             null -> {
                 val localSwapIns = localInputs.filterIsInstance<InteractiveTxInput.LocalSwapIn>()
                 val remoteSwapIns = remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapIn>()
@@ -682,24 +686,25 @@ data class InteractiveTxSession(
                 }
             }
             is Either.Left -> {
-                val txAddInput = when (msg.value) {
-                    is InteractiveTxInput.LocalOnly -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence)
+                val inputOutgoing = msg.value
+                val txAddInput = when (inputOutgoing) {
+                    is InteractiveTxInput.LocalOnly -> TxAddInput(fundingParams.channelId, inputOutgoing.serialId, inputOutgoing.previousTx, inputOutgoing.previousTxOutput, inputOutgoing.sequence)
                     is InteractiveTxInput.LocalLegacySwapIn -> {
                         val swapInParams = TxAddInputTlv.SwapInParamsLegacy(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay)
-                        TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence, TlvStream(swapInParams))
+                        TxAddInput(fundingParams.channelId, inputOutgoing.serialId, inputOutgoing.previousTx, inputOutgoing.previousTxOutput, inputOutgoing.sequence, TlvStream(swapInParams))
                     }
                     is InteractiveTxInput.LocalSwapIn -> {
                         val swapInParams = TxAddInputTlv.SwapInParams(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.userRefundPublicKey, swapInKeys.refundDelay)
-                        TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.previousTx, msg.value.previousTxOutput, msg.value.sequence, TlvStream(swapInParams))
+                        TxAddInput(fundingParams.channelId, inputOutgoing.serialId, inputOutgoing.previousTx, inputOutgoing.previousTxOutput, inputOutgoing.sequence, TlvStream(swapInParams))
                     }
-                    is InteractiveTxInput.Shared -> TxAddInput(fundingParams.channelId, msg.value.serialId, msg.value.outPoint, msg.value.sequence)
+                    is InteractiveTxInput.Shared -> TxAddInput(fundingParams.channelId, inputOutgoing.serialId, inputOutgoing.outPoint, inputOutgoing.sequence)
                 }
-                val nextSecretNonces = when (msg.value) {
+                val nextSecretNonces = when (inputOutgoing) {
                     // Generate a secret nonce for this input if we don't already have one.
-                    is InteractiveTxInput.LocalSwapIn -> when (secretNonces[msg.value.serialId]) {
+                    is InteractiveTxInput.LocalSwapIn -> when (secretNonces[inputOutgoing.serialId]) {
                         null -> {
                             val secretNonce = Musig2.generateNonce(randomBytes32(), swapInKeys.userPrivateKey, listOf(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey))
-                            secretNonces + (msg.value.serialId to secretNonce)
+                            secretNonces + (inputOutgoing.serialId to secretNonce)
                         }
                         else -> secretNonces
                     }
@@ -709,10 +714,11 @@ data class InteractiveTxSession(
                 Pair(next, InteractiveTxSessionAction.SendMessage(txAddInput))
             }
             is Either.Right -> {
-                val next = copy(toSend = toSend.tail(), localOutputs = localOutputs + msg.value, txCompleteSent = null)
-                val txAddOutput = when (msg.value) {
-                    is InteractiveTxOutput.Local -> TxAddOutput(fundingParams.channelId, msg.value.serialId, msg.value.amount, msg.value.pubkeyScript)
-                    is InteractiveTxOutput.Shared -> TxAddOutput(fundingParams.channelId, msg.value.serialId, msg.value.amount, msg.value.pubkeyScript)
+                val outputOutgoing = msg.value
+                val next = copy(toSend = toSend.tail(), localOutputs = localOutputs + outputOutgoing, txCompleteSent = null)
+                val txAddOutput = when (outputOutgoing) {
+                    is InteractiveTxOutput.Local -> TxAddOutput(fundingParams.channelId, outputOutgoing.serialId, outputOutgoing.amount, outputOutgoing.pubkeyScript)
+                    is InteractiveTxOutput.Shared -> TxAddOutput(fundingParams.channelId, outputOutgoing.serialId, outputOutgoing.amount, outputOutgoing.pubkeyScript)
                 }
                 Pair(next, InteractiveTxSessionAction.SendMessage(txAddOutput))
             }

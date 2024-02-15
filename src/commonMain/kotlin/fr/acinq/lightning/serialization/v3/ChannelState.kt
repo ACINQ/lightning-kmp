@@ -40,6 +40,7 @@
 package fr.acinq.lightning.serialization.v3
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.InteractiveTxOutput
@@ -52,7 +53,6 @@ import fr.acinq.lightning.channel.states.ShuttingDown
 import fr.acinq.lightning.channel.states.WaitForRemotePublishFutureCommitment
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.Transactions
-import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
