@@ -7,6 +7,5 @@ pluginManagement {
     }
 }
 
-include(
-    ":PhoenixCrypto"
-)
+include(":PhoenixCrypto")
+include(":phoenixd")

@@ -10,12 +10,12 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.6.2-SNAPSHOT"
+    version = "1.6.2-BIN-SNAPSHOT"
 
     repositories {
         // using the local maven repository with Kotlin Multi Platform can lead to build errors that are hard to diagnose.
         // uncomment this only if you need to experiment with snapshot dependencies that have not yet be published.
-        // mavenLocal()
+        mavenLocal()
         maven("https://oss.sonatype.org/content/repositories/snapshots")
         mavenCentral()
         google()
@@ -42,14 +42,7 @@ kotlin {
         }
     }
 
-    linuxX64 {
-        binaries {
-            executable {
-                entryPoint = "fr.acinq.lightning.bin.main"
-                optimized = false // without this, release mode throws 'Index 0 out of bounds for length 0' in StaticInitializersOptimization.kt
-            }
-        }
-    }
+    linuxX64()
 
     if (currentOs.isMacOsX) {
         iosX64 { // ios simulator on intel devices
@@ -131,10 +124,6 @@ kotlin {
                 implementation(ktor("network-tls"))
                 implementation(ktor("client-core"))
                 implementation(ktor("client-auth"))
-                implementation(ktor("server-core"))
-                implementation(ktor("server-cio"))
-                implementation(ktor("server-content-negotiation"))
-                implementation(ktor("serialization-kotlinx-json"))
             }
         }
 
