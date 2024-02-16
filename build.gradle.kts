@@ -1,6 +1,12 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
+buildscript {
+    dependencies {
+        classpath("app.cash.sqldelight:gradle-plugin:2.0.1")
+    }
+}
+
 plugins {
     kotlin("multiplatform") version "1.9.22"
     kotlin("plugin.serialization") version "1.9.22"
