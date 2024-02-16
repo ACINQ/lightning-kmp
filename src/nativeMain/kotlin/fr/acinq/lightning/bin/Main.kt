@@ -19,14 +19,11 @@ import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import io.ktor.server.engine.*
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.staticCFunction
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import platform.posix.SIGINT
-import platform.posix.signal
-import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(DelicateCoroutinesApi::class)
@@ -85,24 +82,17 @@ fun main() {
         peer.registerFcmToken("super-${randomBytes32().toHex()}")
     }
 
-    signal(
-        SIGINT,
-        staticCFunction<Int, Unit> {
-            println("caught CTRL+C")
-        }
-    )
-
-    scope.launch {
-        val api = Api(nodeParams, peer)
-        api.start()
+    val api = Api(nodeParams, peer)
+    api.server.addShutdownHook {
+        println("stopping")
+        electrum.stop()
+        peer.watcher.stop()
+        println("cancelling scope")
+        scope.cancel()
+        println("done")
     }
-
-    runBlocking { delay(1.hours) }
-    
+    api.server.start()
+    while (readln() != "quit") { }
     println("stopping")
-    electrum.stop()
-    peer.watcher.stop()
-    println("cancelling scope")
-    scope.cancel()
-    println("done")
+    api.server.stop()
 }
