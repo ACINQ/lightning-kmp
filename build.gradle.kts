@@ -127,10 +127,14 @@ kotlin {
 
         nativeMain {
             dependencies {
-                api(ktor("network"))
-                api(ktor("network-tls"))
-                api(ktor("client-core"))
-                api(ktor("client-auth"))
+                implementation(ktor("network"))
+                implementation(ktor("network-tls"))
+                implementation(ktor("client-core"))
+                implementation(ktor("client-auth"))
+                implementation(ktor("server-core"))
+                implementation(ktor("server-cio"))
+                implementation(ktor("server-content-negotiation"))
+                implementation(ktor("serialization-kotlinx-json"))
             }
         }
 

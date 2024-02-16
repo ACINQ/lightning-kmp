@@ -1,10 +1,11 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 package fr.acinq.lightning.bin
 
 import co.touchlab.kermit.Severity
 import co.touchlab.kermit.StaticConfig
 import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.PublicKey
-import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
@@ -14,12 +15,15 @@ import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.payment.LiquidityPolicy
+import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import io.ktor.server.engine.*
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.flow.first
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(DelicateCoroutinesApi::class)
@@ -71,12 +75,24 @@ fun main() {
         socketBuilder = TcpSocket.Builder(),
         scope
     )
+
     runBlocking {
         peer.connect(connectTimeout = 10.seconds, handshakeTimeout = 10.seconds)
-        delay(5.seconds)
+        peer.connectionState.first() { it == Connection.ESTABLISHED }
         peer.registerFcmToken("super-${randomBytes32().toHex()}")
-        peer.createInvoice(randomBytes32(), null, Either.Left("super demo")).write()
-        delay(10.minutes)
     }
-    println("started peer $peer")
+
+    val api = Api(nodeParams, peer)
+    api.server.addShutdownHook {
+        println("stopping")
+        electrum.stop()
+        peer.watcher.stop()
+        println("cancelling scope")
+        scope.cancel()
+        println("done")
+    }
+    api.server.start()
+    while (readln() != "quit") { }
+    println("stopping")
+    api.server.stop()
 }
