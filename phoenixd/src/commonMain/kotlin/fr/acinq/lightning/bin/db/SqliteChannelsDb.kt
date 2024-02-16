@@ -1,6 +1,6 @@
 package fr.acinq.lightning.bin.db
 
-import com.squareup.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlDriver
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.channel.states.PersistedChannelState

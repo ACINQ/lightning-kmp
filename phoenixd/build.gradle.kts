@@ -8,19 +8,16 @@ buildscript {
 plugins {
     kotlin("multiplatform") version "1.9.22"
     kotlin("plugin.serialization") version "1.9.22"
-    id("com.squareup.sqldelight")
+    id("app.cash.sqldelight")
 }
 
 kotlin {
     jvm()
 
-    val currentOs = org.gradle.internal.os.OperatingSystem.current()
-    if (currentOs.isLinux) {
-        linuxX64 {
-            binaries {
-                executable {
-                    entryPoint = "fr.acinq.lightning.bin.main"
-                }
+    linuxX64 {
+        binaries {
+            executable {
+                entryPoint = "fr.acinq.lightning.bin.main"
             }
         }
     }
@@ -42,21 +39,37 @@ kotlin {
                 implementation(ktor("server-cio"))
             }
         }
+        jvmMain {
+            dependencies {
+                implementation("app.cash.sqldelight:sqlite-driver:2.0.1")
+            }
+        }
         nativeMain {
             dependencies {
-                implementation("com.squareup.sqldelight:native-driver:1.5.5")
+                implementation("app.cash.sqldelight:native-driver:2.0.1")
             }
         }
     }
 }
 
+// forward std input when app is run via gradle (otherwise keyboard input will return EOF)
+tasks.withType<JavaExec> {
+    standardInput = System.`in`
+}
+
 sqldelight {
-    database("ChannelsDatabase") {
-        packageName = "fr.acinq.phoenix.db"
-        sourceFolders = listOf("sqldelight/channelsdb")
-    }
+    databases {
+        create("ChannelsDatabase") {
+            packageName.set("fr.acinq.phoenix.db")
+            srcDirs.from("src/commonMain/sqldelight/channelsdb")
+        }
+//        create("ChannelsDatabase") {
+//            packageName.set("fr.acinq.phoenix.db")
+//            //sourceFolders = listOf("sqldelight/channelsdb")
+//        }
 //    database("PaymentsDatabase") {
 //        packageName = "fr.acinq.phoenix.db"
 //        sourceFolders = listOf("sqldelight/paymentsdb")
 //    }
+    }
 }

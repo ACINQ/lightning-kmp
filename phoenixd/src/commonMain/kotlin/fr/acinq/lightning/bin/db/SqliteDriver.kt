@@ -1,5 +1,5 @@
 package fr.acinq.lightning.bin.db
 
-import com.squareup.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlDriver
 
 expect val createAppDbDriver: SqlDriver
