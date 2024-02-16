@@ -1,10 +1,11 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 package fr.acinq.lightning.bin
 
 import co.touchlab.kermit.Severity
 import co.touchlab.kermit.StaticConfig
 import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.PublicKey
-import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
@@ -14,12 +15,18 @@ import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.payment.LiquidityPolicy
+import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.staticCFunction
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.flow.first
+import platform.posix.SIGINT
+import platform.posix.signal
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(DelicateCoroutinesApi::class)
@@ -71,12 +78,31 @@ fun main() {
         socketBuilder = TcpSocket.Builder(),
         scope
     )
+
     runBlocking {
         peer.connect(connectTimeout = 10.seconds, handshakeTimeout = 10.seconds)
-        delay(5.seconds)
+        peer.connectionState.first() { it == Connection.ESTABLISHED }
         peer.registerFcmToken("super-${randomBytes32().toHex()}")
-        peer.createInvoice(randomBytes32(), null, Either.Left("super demo")).write()
-        delay(10.minutes)
     }
-    println("started peer $peer")
+
+    signal(
+        SIGINT,
+        staticCFunction<Int, Unit> {
+            println("caught CTRL+C")
+        }
+    )
+
+    scope.launch {
+        val api = Api(nodeParams, peer)
+        api.start()
+    }
+
+    runBlocking { delay(1.hours) }
+    
+    println("stopping")
+    electrum.stop()
+    peer.watcher.stop()
+    println("cancelling scope")
+    scope.cancel()
+    println("done")
 }
