@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalForeignApi::class)
-
 package fr.acinq.lightning.bin
 
 import co.touchlab.kermit.Severity
@@ -8,9 +6,14 @@ import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.bin.db.SqliteChannelsDb
+import fr.acinq.lightning.bin.db.createAppDbDriver
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
 import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.db.ChannelsDb
+import fr.acinq.lightning.db.Databases
+import fr.acinq.lightning.db.PaymentsDb
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.logging.LoggerFactory
@@ -20,7 +23,6 @@ import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import io.ktor.server.engine.*
-import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -71,7 +73,12 @@ fun main() {
         nodeParams = nodeParams,
         walletParams = walletParams,
         watcher = ElectrumWatcher(electrum, scope, loggerFactory),
-        db = SqliteDatabases(SqliteChannelsDb(), InMemoryPaymentsDb()),
+        db = object : Databases {
+            override val channels: ChannelsDb
+                get() = SqliteChannelsDb(createAppDbDriver)
+            override val payments: PaymentsDb
+                get() = InMemoryPaymentsDb()
+        },
         socketBuilder = TcpSocket.Builder(),
         scope
     )
