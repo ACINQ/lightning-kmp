@@ -81,48 +81,13 @@ sealed class OnionMessagePayloadTlv : Tlv {
      */
     data class Invoice(val tlvs: TlvStream<OfferTypes.InvoiceTlv>) : OnionMessagePayloadTlv() {
         override val tag: Long get() = Invoice.tag
-        override fun write(out: Output) = tlvSerializer.write(tlvs, out)
+        override fun write(out: Output) = OfferTypes.Invoice.tlvSerializer.write(tlvs, out)
 
         companion object : TlvValueReader<Invoice> {
             const val tag: Long = 66
 
-            val tlvSerializer = TlvStreamSerializer(
-                true, @Suppress("UNCHECKED_CAST") mapOf(
-                    // Invoice request part that must be copy-pasted from above
-                    OfferTypes.InvoiceRequestMetadata.tag to OfferTypes.InvoiceRequestMetadata.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferChains.tag to OfferTypes.OfferChains.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferMetadata.tag to OfferTypes.OfferMetadata.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferCurrency.tag to OfferTypes.OfferCurrency.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferAmount.tag to OfferTypes.OfferAmount.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferDescription.tag to OfferTypes.OfferDescription.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferFeatures.tag to OfferTypes.OfferFeatures.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferAbsoluteExpiry.tag to OfferTypes.OfferAbsoluteExpiry.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferPaths.tag to OfferTypes.OfferPaths.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferIssuer.tag to OfferTypes.OfferIssuer.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferQuantityMax.tag to OfferTypes.OfferQuantityMax.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.OfferNodeId.tag to OfferTypes.OfferNodeId.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceRequestChain.tag to OfferTypes.InvoiceRequestChain.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceRequestAmount.tag to OfferTypes.InvoiceRequestAmount.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceRequestFeatures.tag to OfferTypes.InvoiceRequestFeatures.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceRequestQuantity.tag to OfferTypes.InvoiceRequestQuantity.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceRequestPayerId.tag to OfferTypes.InvoiceRequestPayerId.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceRequestPayerNote.tag to OfferTypes.InvoiceRequestPayerNote.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    // Invoice part
-                    OfferTypes.InvoicePaths.tag to OfferTypes.InvoicePaths.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceBlindedPay.tag to OfferTypes.InvoiceBlindedPay.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceCreatedAt.tag to OfferTypes.InvoiceCreatedAt.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceRelativeExpiry.tag to OfferTypes.InvoiceRelativeExpiry.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoicePaymentHash.tag to OfferTypes.InvoicePaymentHash.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceAmount.tag to OfferTypes.InvoiceAmount.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceFallbacks.tag to OfferTypes.InvoiceFallbacks.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceFeatures.tag to OfferTypes.InvoiceFeatures.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.InvoiceNodeId.tag to OfferTypes.InvoiceNodeId.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                    OfferTypes.Signature.tag to OfferTypes.Signature.Companion as TlvValueReader<OfferTypes.InvoiceTlv>,
-                )
-            )
-
             override fun read(input: Input): Invoice =
-                Invoice(tlvSerializer.read(input))
+                Invoice(OfferTypes.Invoice.tlvSerializer.read(input))
         }
     }
 

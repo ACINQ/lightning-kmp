@@ -10,6 +10,8 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.utils.Either
 import fr.acinq.lightning.utils.Either.*
+import fr.acinq.lightning.utils.Try
+import fr.acinq.lightning.utils.runTrying
 
 /**
  * Lightning Bolt 12 offers
@@ -17,12 +19,12 @@ import fr.acinq.lightning.utils.Either.*
  */
 object OfferTypes {
     /** Data provided to reach the issuer of an offer or invoice. */
-    sealed interface ContactInfo {
+    sealed class ContactInfo {
         /** If the offer or invoice issuer doesn't want to hide their identity, they can directly share their public nodeId. */
-        data class RecipientNodeId(val nodeId: PublicKey) : ContactInfo
+        data class RecipientNodeId(val nodeId: PublicKey) : ContactInfo()
 
         /** If the offer or invoice issuer wants to hide their identity, they instead provide blinded paths. */
-        data class BlindedPath(val route: RouteBlinding.BlindedRoute) : ContactInfo
+        data class BlindedPath(val route: RouteBlinding.BlindedRoute) : ContactInfo()
     }
 
     fun writePath(path: ContactInfo.BlindedPath, out: Output) {
@@ -49,20 +51,20 @@ object OfferTypes {
         return ContactInfo.BlindedPath(RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes))
     }
 
-    sealed interface Bolt12Tlv : Tlv
+    sealed class Bolt12Tlv : Tlv
 
-    sealed interface InvoiceTlv : Bolt12Tlv
+    sealed class InvoiceTlv : Bolt12Tlv()
 
-    sealed interface InvoiceRequestTlv : InvoiceTlv
+    sealed class InvoiceRequestTlv : InvoiceTlv()
 
-    sealed interface OfferTlv : InvoiceRequestTlv
+    sealed class OfferTlv : InvoiceRequestTlv()
 
-    sealed interface InvoiceErrorTlv : Bolt12Tlv
+    sealed class InvoiceErrorTlv : Bolt12Tlv()
 
     /**
      * Chains for which the offer is valid. If empty, bitcoin mainnet is implied.
      */
-    data class OfferChains(val chains: List<BlockHash>) : OfferTlv {
+    data class OfferChains(val chains: List<BlockHash>) : OfferTlv() {
         override val tag: Long get() = OfferChains.tag
 
         override fun write(out: Output) {
@@ -86,7 +88,7 @@ object OfferTypes {
     /**
      * Data from the offer creator to themselves, for instance a signature that authenticates the offer so that they don't need to store the offer.
      */
-    data class OfferMetadata(val data: ByteVector) : OfferTlv {
+    data class OfferMetadata(val data: ByteVector) : OfferTlv() {
         override val tag: Long get() = OfferMetadata.tag
 
         override fun write(out: Output) {
@@ -104,7 +106,7 @@ object OfferTypes {
     /**
      * Three-letter code of the currency the offer is denominated in. If empty, bitcoin is implied.
      */
-    data class OfferCurrency(val iso4217: String) : OfferTlv {
+    data class OfferCurrency(val iso4217: String) : OfferTlv() {
         override val tag: Long get() = OfferCurrency.tag
 
         override fun write(out: Output) {
@@ -122,7 +124,7 @@ object OfferTypes {
     /**
      * Amount to pay per item. As we only support bitcoin, the amount is in msat.
      */
-    data class OfferAmount(val amount: MilliSatoshi) : OfferTlv {
+    data class OfferAmount(val amount: MilliSatoshi) : OfferTlv() {
         override val tag: Long get() = OfferAmount.tag
 
         override fun write(out: Output) {
@@ -140,7 +142,7 @@ object OfferTypes {
     /**
      * Description of the purpose of the payment.
      */
-    data class OfferDescription(val description: String) : OfferTlv {
+    data class OfferDescription(val description: String) : OfferTlv() {
         override val tag: Long get() = OfferDescription.tag
 
         override fun write(out: Output) {
@@ -158,7 +160,7 @@ object OfferTypes {
     /**
      * Features supported to pay the offer.
      */
-    data class OfferFeatures(val features: Features) : OfferTlv {
+    data class OfferFeatures(val features: Features) : OfferTlv() {
         override val tag: Long get() = OfferFeatures.tag
 
         override fun write(out: Output) {
@@ -176,7 +178,7 @@ object OfferTypes {
     /**
      * Time after which the offer is no longer valid.
      */
-    data class OfferAbsoluteExpiry(val absoluteExpirySeconds: Long) : OfferTlv {
+    data class OfferAbsoluteExpiry(val absoluteExpirySeconds: Long) : OfferTlv() {
         override val tag: Long get() = OfferAbsoluteExpiry.tag
 
         override fun write(out: Output) {
@@ -194,7 +196,7 @@ object OfferTypes {
     /**
      * Paths that can be used to retrieve an invoice.
      */
-    data class OfferPaths(val paths: List<ContactInfo.BlindedPath>) : OfferTlv {
+    data class OfferPaths(val paths: List<ContactInfo.BlindedPath>) : OfferTlv() {
         override val tag: Long get() = OfferPaths.tag
 
         override fun write(out: Output) {
@@ -219,7 +221,7 @@ object OfferTypes {
     /**
      * Name of the offer creator.
      */
-    data class OfferIssuer(val issuer: String) : OfferTlv {
+    data class OfferIssuer(val issuer: String) : OfferTlv() {
         override val tag: Long get() = OfferIssuer.tag
 
         override fun write(out: Output) {
@@ -239,7 +241,7 @@ object OfferTypes {
      * If max = 0, there is no limit on the quantity that can be purchased in a single payment.
      * If max > 1, it corresponds to the maximum number of items that be purchased in a single payment.
      */
-    data class OfferQuantityMax(val max: Long) : OfferTlv {
+    data class OfferQuantityMax(val max: Long) : OfferTlv() {
         override val tag: Long get() = OfferQuantityMax.tag
 
         override fun write(out: Output) {
@@ -259,7 +261,7 @@ object OfferTypes {
      * If `OfferPaths` is present, they must be used to retrieve an invoice even if this public key corresponds to a node id in the public network.
      * If `OfferPaths` is not present, this public key must correspond to a node id in the public network that needs to be contacted to retrieve an invoice.
      */
-    data class OfferNodeId(val publicKey: PublicKey) : OfferTlv {
+    data class OfferNodeId(val publicKey: PublicKey) : OfferTlv() {
         override val tag: Long get() = OfferNodeId.tag
 
         override fun write(out: Output) {
@@ -277,7 +279,7 @@ object OfferTypes {
     /**
      * Random data to provide enough entropy so that some fields of the invoice request / invoice can be revealed without revealing the others.
      */
-    data class InvoiceRequestMetadata(val data: ByteVector) : InvoiceRequestTlv {
+    data class InvoiceRequestMetadata(val data: ByteVector) : InvoiceRequestTlv() {
         override val tag: Long get() = InvoiceRequestMetadata.tag
 
         override fun write(out: Output) {
@@ -295,7 +297,7 @@ object OfferTypes {
     /**
      * If `OfferChains` is present, this specifies which chain is going to be used to pay.
      */
-    data class InvoiceRequestChain(val hash: BlockHash) : InvoiceRequestTlv {
+    data class InvoiceRequestChain(val hash: BlockHash) : InvoiceRequestTlv() {
         override val tag: Long get() = InvoiceRequestChain.tag
 
         override fun write(out: Output) {
@@ -313,7 +315,7 @@ object OfferTypes {
     /**
      * Amount that the sender is going to send.
      */
-    data class InvoiceRequestAmount(val amount: MilliSatoshi) : InvoiceRequestTlv {
+    data class InvoiceRequestAmount(val amount: MilliSatoshi) : InvoiceRequestTlv() {
         override val tag: Long get() = InvoiceRequestAmount.tag
 
         override fun write(out: Output) {
@@ -331,7 +333,7 @@ object OfferTypes {
     /**
      * Features supported by the sender to pay the offer.
      */
-    data class InvoiceRequestFeatures(val features: Features) : InvoiceRequestTlv {
+    data class InvoiceRequestFeatures(val features: Features) : InvoiceRequestTlv() {
         override val tag: Long get() = InvoiceRequestFeatures.tag
 
         override fun write(out: Output) {
@@ -349,7 +351,7 @@ object OfferTypes {
     /**
      * Number of items to purchase. Only use if the offer supports purchasing multiple items at once.
      */
-    data class InvoiceRequestQuantity(val quantity: Long) : InvoiceRequestTlv {
+    data class InvoiceRequestQuantity(val quantity: Long) : InvoiceRequestTlv() {
         override val tag: Long get() = InvoiceRequestQuantity.tag
 
         override fun write(out: Output) {
@@ -365,10 +367,10 @@ object OfferTypes {
     }
 
     /**
-     * A public key for which the sender know the corresponding private key.
+     * A public key for which the sender knows the corresponding private key.
      * This can be used to prove that you are the sender.
      */
-    data class InvoiceRequestPayerId(val publicKey: PublicKey) : InvoiceRequestTlv {
+    data class InvoiceRequestPayerId(val publicKey: PublicKey) : InvoiceRequestTlv() {
         override val tag: Long get() = InvoiceRequestPayerId.tag
 
         override fun write(out: Output) {
@@ -386,7 +388,7 @@ object OfferTypes {
     /**
      * A message from the sender.
      */
-    data class InvoiceRequestPayerNote(val note: String) : InvoiceRequestTlv {
+    data class InvoiceRequestPayerNote(val note: String) : InvoiceRequestTlv() {
         override val tag: Long get() = InvoiceRequestPayerNote.tag
 
         override fun write(out: Output) {
@@ -404,7 +406,7 @@ object OfferTypes {
     /**
      * Payment paths to send the payment to.
      */
-    data class InvoicePaths(val paths: List<ContactInfo.BlindedPath>) : InvoiceTlv {
+    data class InvoicePaths(val paths: List<ContactInfo.BlindedPath>) : InvoiceTlv() {
         override val tag: Long get() = InvoicePaths.tag
 
         override fun write(out: Output) {
@@ -440,7 +442,7 @@ object OfferTypes {
     /**
      * Costs and parameters of the paths in `InvoicePaths`.
      */
-    data class InvoiceBlindedPay(val paymentInfos: List<PaymentInfo>) : InvoiceTlv {
+    data class InvoiceBlindedPay(val paymentInfos: List<PaymentInfo>) : InvoiceTlv() {
         override val tag: Long get() = InvoiceBlindedPay.tag
 
         override fun write(out: Output) {
@@ -477,7 +479,7 @@ object OfferTypes {
     /**
      * Time at which the invoice was created.
      */
-    data class InvoiceCreatedAt(val timestampSeconds: Long) : InvoiceTlv {
+    data class InvoiceCreatedAt(val timestampSeconds: Long) : InvoiceTlv() {
         override val tag: Long get() = InvoiceCreatedAt.tag
 
         override fun write(out: Output) {
@@ -495,7 +497,7 @@ object OfferTypes {
     /**
      * Duration after which the invoice can no longer be paid.
      */
-    data class InvoiceRelativeExpiry(val seconds: Long) : InvoiceTlv {
+    data class InvoiceRelativeExpiry(val seconds: Long) : InvoiceTlv() {
         override val tag: Long get() = InvoiceRelativeExpiry.tag
 
         override fun write(out: Output) {
@@ -513,7 +515,7 @@ object OfferTypes {
     /**
      * Hash whose preimage will be released in exchange for the payment.
      */
-    data class InvoicePaymentHash(val hash: ByteVector32) : InvoiceTlv {
+    data class InvoicePaymentHash(val hash: ByteVector32) : InvoiceTlv() {
         override val tag: Long get() = InvoicePaymentHash.tag
 
         override fun write(out: Output) {
@@ -531,7 +533,7 @@ object OfferTypes {
     /**
      * Amount to pay. Must be the same as `InvoiceRequestAmount` if it was present.
      */
-    data class InvoiceAmount(val amount: MilliSatoshi) : InvoiceTlv {
+    data class InvoiceAmount(val amount: MilliSatoshi) : InvoiceTlv() {
         override val tag: Long get() = InvoiceAmount.tag
 
         override fun write(out: Output) {
@@ -551,7 +553,7 @@ object OfferTypes {
     /**
      * Onchain addresses to use to pay the invoice in case the lightning payment fails.
      */
-    data class InvoiceFallbacks(val addresses: List<FallbackAddress>) : InvoiceTlv {
+    data class InvoiceFallbacks(val addresses: List<FallbackAddress>) : InvoiceTlv() {
         override val tag: Long get() = InvoiceFallbacks.tag
 
         override fun write(out: Output) {
@@ -579,7 +581,7 @@ object OfferTypes {
     /**
      * Features supported to pay the invoice.
      */
-    data class InvoiceFeatures(val features: Features) : InvoiceTlv {
+    data class InvoiceFeatures(val features: Features) : InvoiceTlv() {
         override val tag: Long get() = InvoiceFeatures.tag
 
         override fun write(out: Output) {
@@ -597,7 +599,7 @@ object OfferTypes {
     /**
      * Public key of the invoice recipient.
      */
-    data class InvoiceNodeId(val nodeId: PublicKey) : InvoiceTlv {
+    data class InvoiceNodeId(val nodeId: PublicKey) : InvoiceTlv() {
         override val tag: Long get() = InvoiceNodeId.tag
 
         override fun write(out: Output) {
@@ -616,7 +618,7 @@ object OfferTypes {
      * Signature from the sender when used in an invoice request.
      * Signature from the recipient when used in an invoice.
      */
-    data class Signature(val signature: ByteVector64) : InvoiceRequestTlv, InvoiceTlv {
+    data class Signature(val signature: ByteVector64) : InvoiceRequestTlv() {
         override val tag: Long get() = Signature.tag
 
         override fun write(out: Output) {
@@ -633,22 +635,21 @@ object OfferTypes {
 
     fun filterOfferFields(tlvs: TlvStream<InvoiceRequestTlv>): TlvStream<OfferTlv> {
         // Offer TLVs are in the range (0, 80).
-        return TlvStream<OfferTlv>(
+        return TlvStream(
             tlvs.records.filterIsInstance<OfferTlv>().toSet(),
             tlvs.unknown.filter{it.tag < 80}.toSet()
         )
     }
 
-    fun filterInvoiceRequestFields(tlvs: TlvStream<InvoiceTlv>): TlvStream<InvoiceRequestTlv>
-    {
+    fun filterInvoiceRequestFields(tlvs: TlvStream<InvoiceTlv>): TlvStream<InvoiceRequestTlv> {
         // Invoice request TLVs are in the range [0, 160): invoice request metadata (tag 0), offer TLVs, and additional invoice request TLVs in the range [80, 160).
-        return TlvStream<InvoiceRequestTlv>(
+        return TlvStream(
             tlvs.records.filterIsInstance<InvoiceRequestTlv>().toSet(),
             tlvs.unknown.filter{it.tag < 160}.toSet()
         )
     }
 
-    data class ErroneousField(val fieldTag: Long) : InvoiceErrorTlv {
+    data class ErroneousField(val fieldTag: Long) : InvoiceErrorTlv() {
         override val tag: Long get() = ErroneousField.tag
 
         override fun write(out: Output) {
@@ -663,7 +664,7 @@ object OfferTypes {
         }
     }
 
-    data class SuggestedValue(val value: ByteVector) : InvoiceErrorTlv {
+    data class SuggestedValue(val value: ByteVector) : InvoiceErrorTlv() {
         override val tag: Long get() = SuggestedValue.tag
 
         override fun write(out: Output) {
@@ -678,7 +679,7 @@ object OfferTypes {
         }
     }
 
-    data class Error(val message: String) : InvoiceErrorTlv {
+    data class Error(val message: String) : InvoiceErrorTlv() {
         override val tag: Long get() = Error.tag
 
         override fun write(out: Output) {
@@ -693,11 +694,11 @@ object OfferTypes {
         }
     }
 
-    sealed interface InvalidTlvPayload {
-      val tag: Long
+    sealed class InvalidTlvPayload {
+      abstract val tag: Long
     }
-    data class MissingRequiredTlv(override val tag: Long) : InvalidTlvPayload
-    data class ForbiddenTlv(override val tag: Long) : InvalidTlvPayload
+    data class MissingRequiredTlv(override val tag: Long) : InvalidTlvPayload()
+    data class ForbiddenTlv(override val tag: Long) : InvalidTlvPayload()
 
     data class Offer(val records: TlvStream<OfferTlv>) {
         val chains: List<BlockHash> = records.get<OfferChains>()?.chains ?: listOf(Block.LivenetGenesisBlock.hash)
@@ -725,7 +726,7 @@ object OfferTypes {
 
         override fun toString(): String = encode()
 
-        val offerId: ByteVector32 = rootHash(records, tlvSerializer)
+        val offerId: ByteVector32 = rootHash(records)
 
         companion object {
             val hrp = "lno"
@@ -780,14 +781,14 @@ object OfferTypes {
                 )
             )
 
-            fun decode(s: String): Offer {
+            fun decode(s: String): Try<Offer> = runTrying {
                 val (prefix, encoded, encoding) = Bech32.decodeBytes(s.lowercase(), true)
                 require(prefix == hrp)
                 require(encoding == Bech32.Encoding.Beck32WithoutChecksum)
                 val tlvs = tlvSerializer.read(encoded)
                 when (val offer = validate(tlvs)) {
                     is Left -> throw IllegalArgumentException(offer.value.toString())
-                    is Right -> return offer.value
+                    is Right -> offer.value
                 }
             }
         }
@@ -817,7 +818,7 @@ object OfferTypes {
         fun checkSignature(): Boolean =
             verifySchnorr(
                 signatureTag,
-                rootHash(removeSignature(records), tlvSerializer),
+                rootHash(removeSignature(records)),
                 signature,
                 payerId
             )
@@ -868,7 +869,7 @@ object OfferTypes {
                 ) + additionalTlvs
                 val signature = signSchnorr(
                     signatureTag,
-                    rootHash(TlvStream(tlvs, offer.records.unknown + customTlvs), tlvSerializer),
+                    rootHash(TlvStream(tlvs, offer.records.unknown + customTlvs)),
                     payerKey
                 )
                 return InvoiceRequest(TlvStream(tlvs + Signature(signature), offer.records.unknown + customTlvs))
@@ -913,17 +914,54 @@ object OfferTypes {
                 )
             )
 
-            fun decode(s: String): InvoiceRequest {
+            fun decode(s: String): Try<InvoiceRequest> = runTrying {
                 val (prefix, encoded, encoding) = Bech32.decodeBytes(s.lowercase(), true)
                 require(prefix == hrp)
                 require(encoding == Bech32.Encoding.Beck32WithoutChecksum)
                 val tlvs = tlvSerializer.read(encoded)
                 when (val invoiceRequest = validate(tlvs)) {
                     is Left -> throw IllegalArgumentException(invoiceRequest.value.toString())
-                    is Right -> return invoiceRequest.value
+                    is Right -> invoiceRequest.value
                 }
             }
         }
+    }
+    
+    object Invoice {
+        val tlvSerializer = TlvStreamSerializer(
+            false, @Suppress("UNCHECKED_CAST") mapOf(
+                // Invoice request part that must be copy-pasted from above
+                InvoiceRequestMetadata.tag to InvoiceRequestMetadata as TlvValueReader<InvoiceTlv>,
+                OfferChains.tag to OfferChains as TlvValueReader<InvoiceTlv>,
+                OfferMetadata.tag to OfferMetadata as TlvValueReader<InvoiceTlv>,
+                OfferCurrency.tag to OfferCurrency as TlvValueReader<InvoiceTlv>,
+                OfferAmount.tag to OfferAmount as TlvValueReader<InvoiceTlv>,
+                OfferDescription.tag to OfferDescription as TlvValueReader<InvoiceTlv>,
+                OfferFeatures.tag to OfferFeatures as TlvValueReader<InvoiceTlv>,
+                OfferAbsoluteExpiry.tag to OfferAbsoluteExpiry as TlvValueReader<InvoiceTlv>,
+                OfferPaths.tag to OfferPaths as TlvValueReader<InvoiceTlv>,
+                OfferIssuer.tag to OfferIssuer as TlvValueReader<InvoiceTlv>,
+                OfferQuantityMax.tag to OfferQuantityMax as TlvValueReader<InvoiceTlv>,
+                OfferNodeId.tag to OfferNodeId as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestChain.tag to InvoiceRequestChain as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestAmount.tag to InvoiceRequestAmount as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestFeatures.tag to InvoiceRequestFeatures as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestQuantity.tag to InvoiceRequestQuantity as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestPayerId.tag to InvoiceRequestPayerId as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestPayerNote.tag to InvoiceRequestPayerNote as TlvValueReader<InvoiceTlv>,
+                // Invoice part
+                InvoicePaths.tag to InvoicePaths as TlvValueReader<InvoiceTlv>,
+                InvoiceBlindedPay.tag to InvoiceBlindedPay as TlvValueReader<InvoiceTlv>,
+                InvoiceCreatedAt.tag to InvoiceCreatedAt as TlvValueReader<InvoiceTlv>,
+                InvoiceRelativeExpiry.tag to InvoiceRelativeExpiry as TlvValueReader<InvoiceTlv>,
+                InvoicePaymentHash.tag to InvoicePaymentHash as TlvValueReader<InvoiceTlv>,
+                InvoiceAmount.tag to InvoiceAmount as TlvValueReader<InvoiceTlv>,
+                InvoiceFallbacks.tag to InvoiceFallbacks as TlvValueReader<InvoiceTlv>,
+                InvoiceFeatures.tag to InvoiceFeatures as TlvValueReader<InvoiceTlv>,
+                InvoiceNodeId.tag to InvoiceNodeId as TlvValueReader<InvoiceTlv>,
+                Signature.tag to Signature as TlvValueReader<InvoiceTlv>,
+            )
+        )
     }
 
     data class InvoiceError(val records: TlvStream<InvoiceErrorTlv>) {
@@ -937,22 +975,17 @@ object OfferTypes {
         }
     }
 
-    fun <T : Tlv> rootHash(tlvStream: TlvStream<T>, serializer: TlvStreamSerializer<T>): ByteVector32 {
-        // This encoding/decoding step ensures that the resulting tlvs are ordered.
-        val encoded = serializer.write(tlvStream)
-        val tlvs = ArrayList<Pair<ByteArray, ByteArray>>()
-        val input = ByteArrayInput(encoded)
-        while (input.availableBytes > 0) {
-            val tagOutput = ByteArrayOutput()
-            LightningCodecs.writeBigSize(LightningCodecs.bigSize(input), tagOutput)
-            val tag = tagOutput.toByteArray()
-            val length= LightningCodecs.bigSize(input)
-            val lengthOutput = ByteArrayOutput()
-            LightningCodecs.writeBigSize(length, lengthOutput)
-            val data = LightningCodecs.bytes(input, length)
-            tlvs.add(Pair(tag, tag + lengthOutput.toByteArray() + data))
+    fun <T : Tlv> rootHash(tlvStream: TlvStream<T>): ByteVector32 {
+        val encodedTlvs = (tlvStream.records + tlvStream.unknown).sortedBy { it.tag }.map { tlv ->
+            val out = ByteArrayOutput()
+            LightningCodecs.writeBigSize(tlv.tag, out)
+            val tag = out.toByteArray()
+            val data = tlv.write()
+            LightningCodecs.writeBigSize(data.size.toLong(), out)
+            LightningCodecs.writeBytes(data, out)
+            Pair(tag, out.toByteArray())
         }
-        val nonceKey = "LnNonce".encodeToByteArray() + tlvs[0].second
+        val nonceKey = "LnNonce".encodeToByteArray() + encodedTlvs[0].second
 
         fun previousPowerOfTwo(n: Int): Int {
             var p = 1
@@ -964,7 +997,7 @@ object OfferTypes {
 
         fun merkleTree(i: Int, j: Int): ByteArray {
             val (a, b) = if (j - i == 1) {
-                val (tag, fullTlv) = tlvs[i]
+                val (tag, fullTlv) = encodedTlvs[i]
                 Pair(hash("LnLeaf".encodeToByteArray(), fullTlv), hash(nonceKey, tag))
             } else {
                 val k = i + previousPowerOfTwo(j - i)
@@ -977,7 +1010,7 @@ object OfferTypes {
             }
         }
 
-        return ByteVector32(merkleTree(0, tlvs.size))
+        return ByteVector32(merkleTree(0, encodedTlvs.size))
     }
 
     private fun hash(tag: ByteArray, msg: ByteArray): ByteArray {

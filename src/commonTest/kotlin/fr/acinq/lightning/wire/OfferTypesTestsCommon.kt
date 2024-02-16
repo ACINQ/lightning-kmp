@@ -55,7 +55,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             OfferNodeId(nodeId))
         val offer = Offer(TlvStream(tlvs))
         val encoded = "lno1pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrj"
-        assertEquals(offer, Offer.decode(encoded))
+        assertEquals(offer, Offer.decode(encoded).get())
         assertNull(offer.amount)
         assertEquals("basic offer", offer.description)
         assertEquals(nodeId, offer.nodeId)
@@ -64,7 +64,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             val incomplete = TlvStream(tlvs.filterNot{it == tlv}.toSet())
             assertTrue(Offer.validate(incomplete).isLeft)
             val incompleteEncoded = Bech32.encodeBytes(Offer.hrp, Offer.tlvSerializer.write(incomplete), Bech32.Encoding.Beck32WithoutChecksum)
-            assertFails{Offer.decode(incompleteEncoded)}
+            assertTrue(Offer.decode(incompleteEncoded).isFailure)
         }
     }
 
@@ -78,7 +78,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             OfferQuantityMax(0),
             OfferNodeId(nodeId)))
         val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968jys3v9kxjcm9gp3xjemndphhqtnrdak3gqqkyypsmuhrtwfzm85mht4a3vcp0yrlgua3u3m5uqpc6kf7nqjz6v70qwg"
-        assertEquals(offer, Offer.decode(encoded))
+        assertEquals(offer, Offer.decode(encoded).get())
         assertEquals(50.msat, offer.amount)
         assertEquals("offer with quantity", offer.description)
         assertEquals( nodeId, offer.nodeId)
@@ -88,7 +88,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     fun signInvoiceRequest(request: InvoiceRequest, key: PrivateKey): InvoiceRequest {
         val tlvs = removeSignature(request.records)
-        val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(tlvs, InvoiceRequest.tlvSerializer), key)
+        val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(tlvs), key)
         val signedRequest = InvoiceRequest(tlvs.copy(records = tlvs.records + Signature(signature)))
         assertTrue(signedRequest.checkSignature())
         return signedRequest
@@ -145,7 +145,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             InvoiceRequestAmount(100.msat),
             InvoiceRequestPayerId(payerKey.publicKey()),
         )
-        val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), InvoiceRequest.tlvSerializer), payerKey)
+        val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs)), payerKey)
         val request = InvoiceRequest(TlvStream(tlvs + Signature(signature)))
         assertTrue(request.isValid())
         assertEquals(offer, request.offer)
@@ -202,11 +202,11 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             OfferNodeId(nodeId),
             InvoiceRequestPayerId(payerKey.publicKey()),
         )
-        val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream<InvoiceRequestTlv>(tlvsWithoutSignature), InvoiceRequest.tlvSerializer), payerKey)
+        val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream<InvoiceRequestTlv>(tlvsWithoutSignature)), payerKey)
         val tlvs = tlvsWithoutSignature + Signature(signature)
         val invoiceRequest = InvoiceRequest(TlvStream(tlvs))
         val encoded = "lnr1qqp6hn00pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrjkppqfxajawru7sa7rt300hfzs2lyk2jrxduxrkx9lmzy6lxcvfhk0j7ruzqc4mtjj5fwukrqp7faqrxn664nmwykad76pu997terewcklsx47apag59wf8exly4tky7y63prr7450n28stqssmzuf48w7e6rjad2eq"
-        assertEquals(invoiceRequest, InvoiceRequest.decode(encoded))
+        assertEquals(invoiceRequest, InvoiceRequest.decode(encoded).get())
         assertNull(invoiceRequest.offer.amount)
         assertEquals("basic offer", invoiceRequest.offer.description)
         assertEquals(nodeId, invoiceRequest.offer.nodeId)
@@ -217,7 +217,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             val incomplete = TlvStream(tlvs.filterNot{it == tlv}.toSet())
             assertTrue(InvoiceRequest.validate(incomplete).isLeft)
             val incompleteEncoded = Bech32.encodeBytes(InvoiceRequest.hrp, InvoiceRequest.tlvSerializer.write(incomplete), Bech32.Encoding.Beck32WithoutChecksum)
-            assertFails{InvoiceRequest.decode(incompleteEncoded)}
+            assertTrue(InvoiceRequest.decode(incompleteEncoded).isFailure)
         }
     }
 
@@ -285,7 +285,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             (tlvStream, tlvCount, expectedRoot) ->
             val tlvs = genericTlvSerializer.read(ByteVector.fromHex(tlvStream).toByteArray())
             assertEquals(tlvCount, tlvs.records.size)
-            val root = rootHash(tlvs, genericTlvSerializer)
+            val root = rootHash(tlvs)
             assertEquals(expectedRoot, root)
         }
     }
