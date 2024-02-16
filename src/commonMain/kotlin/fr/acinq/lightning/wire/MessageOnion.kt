@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.lightning.crypto.RouteBlinding
 
 sealed class OnionMessagePayloadTlv : Tlv {

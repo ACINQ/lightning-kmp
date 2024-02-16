@@ -12,7 +12,7 @@ import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.lightning.wire.OfferTypes.ContactInfo.*
+import fr.acinq.lightning.wire.OfferTypes.ContactInfo.BlindedPath
 import fr.acinq.lightning.wire.OfferTypes.InvoiceRequest
 import fr.acinq.lightning.wire.OfferTypes.InvoiceRequestAmount
 import fr.acinq.lightning.wire.OfferTypes.InvoiceRequestChain
