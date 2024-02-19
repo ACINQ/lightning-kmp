@@ -289,6 +289,7 @@ object Serialization {
             writeBtcObject(previousTx)
             writeNumber(previousTxOutput)
             writeNumber(sequence.toLong())
+            writeNumber(addressIndex)
             writePublicKey(userKey)
             writePublicKey(serverKey)
             writePublicKey(userRefundKey)

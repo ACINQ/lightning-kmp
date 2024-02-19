@@ -306,6 +306,7 @@ if (currentOs.isLinux) {
         filter.excludeTestsMatching("*IntegrationTest")
         filter.excludeTestsMatching("*ElectrumClientTest")
         filter.excludeTestsMatching("*ElectrumMiniWalletTest")
+        filter.excludeTestsMatching("*SwapInWalletTestsCommon")
     }
 }
 

@@ -22,6 +22,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
     private val refundScript = listOf(OP_PUSHDATA(userRefundKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
     private val scriptTree = ScriptTree.Leaf(0, refundScript)
     val pubkeyScript: List<ScriptElt> = Script.pay2tr(internalPublicKey, scriptTree)
+    val serializedPubkeyScript = Script.write(pubkeyScript).byteVector()
 
     fun address(chain: Bitcoin.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
 

@@ -200,8 +200,8 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
                 TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript),
                 TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript),
                 TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey())),
-                TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript),
-                TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.swapInProtocol.pubkeyScript),
+                TxOut(Satoshi(100000), TestConstants.Alice.keyManager.swapInOnChainWallet.getSwapInProtocol(0).pubkeyScript),
+                TxOut(Satoshi(150000), TestConstants.Alice.keyManager.swapInOnChainWallet.getSwapInProtocol(1).pubkeyScript),
                 TxOut(Satoshi(150000), Script.pay2wpkh(randomKey().publicKey()))
             ),
             lockTime = 0
