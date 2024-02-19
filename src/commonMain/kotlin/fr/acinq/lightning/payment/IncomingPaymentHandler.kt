@@ -80,19 +80,19 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         paymentPreimage: ByteVector32,
         amount: MilliSatoshi?,
         description: Either<String, ByteVector32>,
-        extraHops: List<List<PaymentRequest.TaggedField.ExtraHop>>,
+        extraHops: List<List<Bolt11Invoice.TaggedField.ExtraHop>>,
         expirySeconds: Long? = null,
         timestampSeconds: Long = currentTimestampSeconds()
-    ): PaymentRequest {
+    ): Bolt11Invoice {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
         logger.debug(mapOf("paymentHash" to paymentHash)) { "using routing hints $extraHops" }
-        val pr = PaymentRequest.create(
+        val pr = Bolt11Invoice.create(
             nodeParams.chainHash,
             amount,
             paymentHash,
             nodeParams.nodePrivateKey,
             description,
-            PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
+            Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             nodeParams.features.invoiceFeatures(),
             randomBytes32(),
             // We always include a payment metadata in our invoices, which lets us test whether senders support it
@@ -470,8 +470,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             return PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Failure(encryptedReason)))
         }
 
-        private fun minFinalCltvExpiry(paymentRequest: PaymentRequest, currentBlockHeight: Int): CltvExpiry {
-            val minFinalCltvExpiryDelta = paymentRequest.minFinalExpiryDelta ?: PaymentRequest.DEFAULT_MIN_FINAL_EXPIRY_DELTA
+        private fun minFinalCltvExpiry(paymentRequest: Bolt11Invoice, currentBlockHeight: Int): CltvExpiry {
+            val minFinalCltvExpiryDelta = paymentRequest.minFinalExpiryDelta ?: Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA
             return minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
         }
     }
