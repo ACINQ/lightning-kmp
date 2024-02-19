@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.lightning.crypto.RouteBlinding
 
 sealed class OnionMessagePayloadTlv : Tlv {
@@ -56,6 +55,62 @@ sealed class OnionMessagePayloadTlv : Tlv {
             const val tag: Long = 4
             override fun read(input: Input): EncryptedData =
                 EncryptedData(ByteVector(LightningCodecs.bytes(input, input.availableBytes)))
+        }
+    }
+
+    /**
+     * In order to pay a Bolt 12 offer, we must send an onion message to request an invoice corresponding to that offer.
+     * The creator of the offer will send us an invoice back through our blinded reply path.
+     */
+    data class InvoiceRequest(val tlvs: TlvStream<OfferTypes.InvoiceRequestTlv>) : OnionMessagePayloadTlv() {
+        override val tag: Long get() = InvoiceRequest.tag
+        override fun write(out: Output) = OfferTypes.InvoiceRequest.tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<InvoiceRequest> {
+            const val tag: Long = 64
+
+            override fun read(input: Input): InvoiceRequest =
+                InvoiceRequest(OfferTypes.InvoiceRequest.tlvSerializer.read(input))
+        }
+    }
+
+    /**
+     * When receiving an invoice request, we must send an onion message back containing an invoice corresponding to the
+     * requested offer (if it was an offer we published).
+     */
+    data class Invoice(val tlvs: TlvStream<OfferTypes.InvoiceTlv>) : OnionMessagePayloadTlv() {
+        override val tag: Long get() = Invoice.tag
+        override fun write(out: Output) = OfferTypes.Invoice.tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<Invoice> {
+            const val tag: Long = 66
+
+            override fun read(input: Input): Invoice =
+                Invoice(OfferTypes.Invoice.tlvSerializer.read(input))
+        }
+    }
+
+    /**
+     * This message may be used when we receive an invalid invoice or invoice request.
+     * It contains information helping senders figure out why their message was invalid.
+     */
+    data class InvoiceError(val tlvs: TlvStream<OfferTypes.InvoiceErrorTlv>) : OnionMessagePayloadTlv() {
+        override val tag: Long get() = InvoiceError.tag
+        override fun write(out: Output) = tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<InvoiceError> {
+            const val tag: Long = 68
+
+            val tlvSerializer = TlvStreamSerializer(
+                true, @Suppress("UNCHECKED_CAST") mapOf(
+                    OfferTypes.ErroneousField.tag to OfferTypes.ErroneousField.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
+                    OfferTypes.SuggestedValue.tag to OfferTypes.SuggestedValue.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
+                    OfferTypes.Error.tag to OfferTypes.Error.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
+                )
+            )
+
+            override fun read(input: Input): InvoiceError =
+                InvoiceError(tlvSerializer.read(input))
         }
     }
 }
