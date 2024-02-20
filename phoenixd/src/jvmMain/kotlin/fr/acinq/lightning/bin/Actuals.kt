@@ -14,3 +14,5 @@ actual fun createAppDbDriver(dir: Path): SqlDriver {
     ChannelsDatabase.Schema.create(driver)
     return driver
 }
+
+actual fun registerSignal() {}

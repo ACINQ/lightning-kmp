@@ -28,6 +28,8 @@ import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.sat
+import io.ktor.server.application.*
+import io.ktor.server.cio.*
 import io.ktor.server.engine.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,7 +70,10 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
         "mainnet" to Bitcoin.Chain.Mainnet,
         "testnet" to Bitcoin.Chain.Testnet
     ).default(Bitcoin.Chain.Mainnet, defaultForHelp = "mainnet")
-    private val liquidityTranche by option("--liquidity-tranche", help = "Amount requested when inbound liquidity is needed").int().convert { it.sat }.prompt()
+    private val liquidityTranche by option("--liquidity-tranche", help = "Amount requested when inbound liquidity is needed").int().convert { it.sat }
+        .default(1000000.sat)
+
+    //.prompt()
     private val silent: Boolean by option("--silent", "-s", help = "Silent mode").flag(default = false)
 
     init {
@@ -123,24 +128,16 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
 
         runBlocking {
             peer.connect(connectTimeout = 10.seconds, handshakeTimeout = 10.seconds)
-            peer.connectionState.first() { it == Connection.ESTABLISHED }
+            peer.connectionState.first { it == Connection.ESTABLISHED }
             peer.registerFcmToken("super-${randomBytes32().toHex()}")
         }
 
         val api = Api(nodeParams, peer)
-        api.server.addShutdownHook {
-            println("stopping")
-            electrum.stop()
-            peer.watcher.stop()
-            println("cancelling scope")
-            scope.cancel()
-            println("done")
+        val serverJob = scope.launch {
+            api.server.start(wait = true)
         }
-        api.server.start()
-        while (readln() != "quit") {
-        }
-        println("stopping")
-        api.server.stop()
+        api.server.environment.monitor.subscribe(ServerReady) { registerSignal() }
+        runBlocking { serverJob.join() }
     }
 
 }
