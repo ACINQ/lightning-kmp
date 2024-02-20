@@ -352,7 +352,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
                 val invoiceFeatures = request.paymentRequest.features
                 val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment) || invoiceFeatures.hasFeature(Feature.ExperimentalTrampolinePayment)) {
-                    OutgoingPaymentPacket.buildPacket(request.paymentHash, trampolineRoute, finalPayload, null)
+                    OutgoingPaymentPacket.buildPacket(request.paymentHash, trampolineRoute, finalPayload, 400)
                 } else {
                     OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(request.paymentRequest, trampolineRoute, finalPayload)
                 }
@@ -363,7 +363,6 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 val dummyFinalPayload = PaymentOnion.FinalPayload.createSinglePartPayload(request.amount, finalExpiry, ByteVector32.Zeroes, null)
                 val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(request.paymentRequest, trampolineRoute, dummyFinalPayload)
                 return Triple(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
-
             }
         }
     }

@@ -29,8 +29,7 @@ object OutgoingPaymentPacket {
     private fun buildOnion(nodes: List<PublicKey>, payloads: List<PaymentOnion.PerHopPayload>, associatedData: ByteVector32, payloadLength: Int?): PacketAndSecrets {
         require(nodes.size == payloads.size)
         val sessionKey = Lightning.randomKey()
-        val payloadsBin = payloads
-            .map { it.write() }
+        val payloadsBin = payloads.map { it.write() }
         val totalPayloadLength = payloadLength ?: payloadsBin.sumOf { it.size + Sphinx.MacLength }
         return Sphinx.create(sessionKey, nodes, payloadsBin, associatedData, totalPayloadLength)
     }
