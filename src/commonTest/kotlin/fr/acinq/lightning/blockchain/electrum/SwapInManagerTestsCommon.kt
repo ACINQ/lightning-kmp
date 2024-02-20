@@ -24,7 +24,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
 
     private val dummyPubkey = PublicKey.fromHex("02eae982c8563a1c256ee9b4655af7d4c0dc545d1e5c350a68c5f8902cd4cf3021")
     private val dummyScript = Script.pay2wpkh(dummyPubkey)
-    private val dummyAddress = Bitcoin.computeP2WpkhAddress(dummyPubkey, Bitcoin.Chain.Regtest.chainHash)
+    private val dummyAddress = Bitcoin.computeP2WpkhAddress(dummyPubkey, Chain.Regtest.chainHash)
 
     @Test
     fun `swap funds`() {

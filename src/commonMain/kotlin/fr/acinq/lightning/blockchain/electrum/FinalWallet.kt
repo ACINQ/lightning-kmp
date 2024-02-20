@@ -1,6 +1,6 @@
 package fr.acinq.lightning.blockchain.electrum
 
-import fr.acinq.bitcoin.Bitcoin
+import fr.acinq.bitcoin.Chain
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.logging.info
@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
 
 class FinalWallet(
-    chain: Bitcoin.Chain,
+    chain: Chain,
     finalWalletKeys: KeyManager.Bip84OnChainKeys,
     electrum: IElectrumClient,
     scope: CoroutineScope,

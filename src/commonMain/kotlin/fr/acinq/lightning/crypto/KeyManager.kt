@@ -70,7 +70,7 @@ interface KeyManager {
     }
 
     data class Bip84OnChainKeys(
-        private val chain: Bitcoin.Chain,
+        private val chain: Chain,
         private val master: DeterministicWallet.ExtendedPrivateKey,
         val account: Long
     ) {
@@ -79,8 +79,8 @@ interface KeyManager {
         val xpub: String = DeterministicWallet.encode(
             input = DeterministicWallet.publicKey(xpriv),
             prefix = when (chain) {
-                Bitcoin.Chain.Testnet, Bitcoin.Chain.Regtest, Bitcoin.Chain.Signet -> DeterministicWallet.vpub
-                Bitcoin.Chain.Mainnet -> DeterministicWallet.zpub
+                Chain.Testnet, Chain.Regtest, Chain.Signet -> DeterministicWallet.vpub
+                Chain.Mainnet -> DeterministicWallet.zpub
             }
         )
 
@@ -100,9 +100,9 @@ interface KeyManager {
         }
 
         companion object {
-            fun bip84BasePath(chain: Bitcoin.Chain) = when (chain) {
-                Bitcoin.Chain.Regtest, Bitcoin.Chain.Testnet, Bitcoin.Chain.Signet -> KeyPath.empty / hardened(84) / hardened(1)
-                Bitcoin.Chain.Mainnet -> KeyPath.empty / hardened(84) / hardened(0)
+            fun bip84BasePath(chain: Chain) = when (chain) {
+                Chain.Regtest, Chain.Testnet, Chain.Signet -> KeyPath.empty / hardened(84) / hardened(1)
+                Chain.Mainnet -> KeyPath.empty / hardened(84) / hardened(0)
             }
         }
     }
@@ -115,7 +115,7 @@ interface KeyManager {
      * The keys used are static across swaps to make recovery easier.
      */
     data class SwapInOnChainKeys(
-        private val chain: Bitcoin.Chain,
+        private val chain: Chain,
         private val master: DeterministicWallet.ExtendedPrivateKey,
         val remoteServerPublicKey: PublicKey,
         val refundDelay: Int = DefaultSwapInParams.RefundDelay
@@ -209,20 +209,20 @@ interface KeyManager {
         }
 
         companion object {
-            private fun swapInKeyBasePath(chain: Bitcoin.Chain) = when (chain) {
-                Bitcoin.Chain.Regtest, Bitcoin.Chain.Testnet, Bitcoin.Chain.Signet -> KeyPath.empty / hardened(51) / hardened(0)
-                Bitcoin.Chain.Mainnet -> KeyPath.empty / hardened(52) / hardened(0)
+            private fun swapInKeyBasePath(chain: Chain) = when (chain) {
+                Chain.Regtest, Chain.Testnet, Chain.Signet -> KeyPath.empty / hardened(51) / hardened(0)
+                Chain.Mainnet -> KeyPath.empty / hardened(52) / hardened(0)
             }
 
-            fun swapInUserKeyPath(chain: Bitcoin.Chain) = swapInKeyBasePath(chain) / hardened(0)
+            fun swapInUserKeyPath(chain: Chain) = swapInKeyBasePath(chain) / hardened(0)
 
-            fun swapInLocalServerKeyPath(chain: Bitcoin.Chain) = swapInKeyBasePath(chain) / hardened(1)
+            fun swapInLocalServerKeyPath(chain: Chain) = swapInKeyBasePath(chain) / hardened(1)
 
-            fun swapInUserRefundKeyPath(chain: Bitcoin.Chain) = swapInKeyBasePath(chain) / hardened(2) / 0L
+            fun swapInUserRefundKeyPath(chain: Chain) = swapInKeyBasePath(chain) / hardened(2) / 0L
 
-            fun encodedSwapInUserKeyPath(chain: Bitcoin.Chain) = when (chain) {
-                Bitcoin.Chain.Regtest, Bitcoin.Chain.Testnet, Bitcoin.Chain.Signet -> "51h/0h/0h"
-                Bitcoin.Chain.Mainnet -> "52h/0h/0h"
+            fun encodedSwapInUserKeyPath(chain: Chain) = when (chain) {
+                Chain.Regtest, Chain.Testnet, Chain.Signet -> "51h/0h/0h"
+                Chain.Mainnet -> "52h/0h/0h"
             }
 
             /** Swap-in servers use a different swap-in key for different users. */
