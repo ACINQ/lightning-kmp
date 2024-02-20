@@ -26,7 +26,7 @@ kotlin {
         }
     }
 
-    val ktorVersion = "2.3.7"
+    val ktorVersion = "2.3.8"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
 
     sourceSets {

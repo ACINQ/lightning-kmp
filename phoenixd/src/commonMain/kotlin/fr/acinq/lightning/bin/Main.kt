@@ -30,10 +30,13 @@ import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.sat
-import io.ktor.server.engine.*
-import kotlinx.coroutines.*
+import io.ktor.server.application.*
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import kotlin.time.Duration.Companion.seconds
@@ -132,25 +135,17 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
 
         runBlocking {
             peer.connect(connectTimeout = 10.seconds, handshakeTimeout = 10.seconds)
-            peer.connectionState.first() { it == Connection.ESTABLISHED }
+            peer.connectionState.first { it == Connection.ESTABLISHED }
             peer.registerFcmToken("super-${randomBytes32().toHex()}")
             peer.setAutoLiquidityParams(autoLiquidity)
         }
 
         val api = Api(nodeParams, peer)
-        api.server.addShutdownHook {
-            println("stopping")
-            electrum.stop()
-            peer.watcher.stop()
-            println("cancelling scope")
-            scope.cancel()
-            println("done")
+        val serverJob = scope.launch {
+            api.server.start(wait = true)
         }
-        api.server.start()
-        while (readln() != "quit") {
-        }
-        println("stopping")
-        api.server.stop()
+        api.server.environment.monitor.subscribe(ServerReady) { registerSignal() }
+        runBlocking { serverJob.join() }
     }
 
 }
