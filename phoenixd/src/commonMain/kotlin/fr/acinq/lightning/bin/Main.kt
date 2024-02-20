@@ -5,10 +5,7 @@ import co.touchlab.kermit.loggerConfigInit
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.output.MordantHelpFormatter
-import com.github.ajalt.clikt.parameters.options.convert
-import com.github.ajalt.clikt.parameters.options.default
-import com.github.ajalt.clikt.parameters.options.flag
-import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.options.*
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.sources.MapValueSource
@@ -71,7 +68,7 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
         "mainnet" to Bitcoin.Chain.Mainnet,
         "testnet" to Bitcoin.Chain.Testnet
     ).default(Bitcoin.Chain.Mainnet, defaultForHelp = "mainnet")
-    private val liquidityTranche by option("--liquidity-tranche", help = "Amount requested when inbound liquidity is needed").int().convert { it.sat }.default(1_000_000.sat, defaultForHelp = "1 000 000 sat")
+    private val liquidityTranche by option("--liquidity-tranche", help = "Amount requested when inbound liquidity is needed").int().convert { it.sat }.prompt()
     private val silent: Boolean by option("--silent", "-s", help = "Silent mode").flag(default = false)
 
     init {
