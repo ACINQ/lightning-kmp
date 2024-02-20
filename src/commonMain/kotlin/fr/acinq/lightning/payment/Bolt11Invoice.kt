@@ -20,7 +20,7 @@ data class Bolt11Invoice(
     val nodeId: PublicKey,
     val tags: List<TaggedField>,
     val signature: ByteVector
-) : PaymentRequest {
+) : PaymentRequest() {
     override val paymentHash: ByteVector32 = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
 
     val paymentSecret: ByteVector32 = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
@@ -100,7 +100,7 @@ data class Bolt11Invoice(
         return this.copy(signature = sig.concat(recid))
     }
 
-    fun write(): String {
+    override fun write(): String {
         val stream = BitStream()
         rawData().forEach {
             val bits = toBits(it)
