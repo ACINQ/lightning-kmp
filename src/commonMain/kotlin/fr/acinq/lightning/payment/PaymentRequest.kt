@@ -2,7 +2,6 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.utils.Try
-import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.utils.currentTimestampSeconds
@@ -17,12 +16,17 @@ sealed class PaymentRequest {
     abstract fun write(): String
 
     companion object {
-        fun read(input: String): Try<PaymentRequest> = runTrying {
+        fun read(input: String): Try<PaymentRequest> =
             if (input.startsWith(Bolt12Invoice.hrp, ignoreCase = true)) {
-                Bolt12Invoice.fromString(input).get()
+                when (val invoice = Bolt12Invoice.fromString(input)) {
+                    is Try.Failure -> Try.Failure(invoice.error)
+                    is Try.Success -> Try.Success(invoice.result)
+                }
             } else {
-                Bolt11Invoice.read(input).get()
+                when (val invoice = Bolt11Invoice.read(input)) {
+                    is Try.Failure -> Try.Failure(invoice.error)
+                    is Try.Success -> Try.Success(invoice.result)
+                }
             }
         }
-    }
 }
