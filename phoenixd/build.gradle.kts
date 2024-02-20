@@ -37,6 +37,7 @@ kotlin {
                 implementation(ktor("server-content-negotiation"))
                 implementation(ktor("serialization-kotlinx-json"))
                 implementation(ktor("server-cio"))
+                implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.3.1")
             }
         }
         jvmMain {
