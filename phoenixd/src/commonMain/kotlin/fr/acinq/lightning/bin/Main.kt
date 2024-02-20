@@ -3,11 +3,9 @@ package fr.acinq.lightning.bin
 import co.touchlab.kermit.Severity
 import co.touchlab.kermit.StaticConfig
 import fr.acinq.bitcoin.Bitcoin
-import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.bin.db.SqliteChannelsDb
-import fr.acinq.lightning.bin.db.createAppDbDriver
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
 import fr.acinq.lightning.crypto.LocalKeyManager
@@ -26,26 +24,34 @@ import io.ktor.server.engine.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(DelicateCoroutinesApi::class)
 fun main() {
+    val datadir = Path(homeDirectory, ".phoenix")
+        .also { SystemFileSystem.createDirectories(it) }
+    println("datadir:$datadir")
+
     val loggerFactory = LoggerFactory(StaticConfig(Severity.Info))
     val chain = Bitcoin.Chain.Testnet
     val seed = randomBytes32()
-    println("seed=${seed.toHex()}")
-    val enduranceSwapInPubkey = "tpubDAmCFB21J9ExKBRPDcVxSvGs9jtcf8U1wWWbS1xTYmnUsuUHPCoFdCnEGxLE3THSWcQE48GHJnyz8XPbYUivBMbLSMBifFd3G9KmafkM9og"
-    val keyManager = LocalKeyManager(seed, chain, enduranceSwapInPubkey)
-    println("nodeId=${keyManager.nodeKeys.nodeKey.publicKey}")
+    val config = Config(
+        chain = chain,
+        electrumServer = ServerAddress("testnet1.electrum.acinq.co", 51001, TcpSocket.TLS.DISABLED),
+        lsp = Config.LSP_testnet
+    )
+
+
+    val keyManager = LocalKeyManager(seed, chain, config.lsp.swapInXpub)
     val scope = GlobalScope
     val electrum = ElectrumClient(scope, loggerFactory)
     scope.launch {
-        electrum.connect(ServerAddress("testnet1.electrum.acinq.co", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder())
+        electrum.connect(config.electrumServer, TcpSocket.Builder())
     }
-    val trampolineNodeId = PublicKey.fromHex("03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134")
-    val trampolineNodeUri = NodeUri(id = trampolineNodeId, "13.248.222.197", 9735)
     val walletParams = WalletParams(
-        trampolineNode = trampolineNodeUri,
+        trampolineNode = Config.LSP_testnet.uri,
         trampolineFees = listOf(
             TrampolineFees(
                 feeBase = 4.sat,
@@ -66,7 +72,7 @@ fun main() {
     )
     val nodeParams = NodeParams(chain, loggerFactory, keyManager)
         .copy(
-            zeroConfPeers = setOf(trampolineNodeId),
+            zeroConfPeers = setOf(Config.LSP_testnet.uri.id),
             liquidityPolicy = MutableStateFlow(LiquidityPolicy.Auto(maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 50_00 /* 50% */, skipAbsoluteFeeCheck = false))
         )
     val peer = Peer(
@@ -75,7 +81,7 @@ fun main() {
         watcher = ElectrumWatcher(electrum, scope, loggerFactory),
         db = object : Databases {
             override val channels: ChannelsDb
-                get() = SqliteChannelsDb(createAppDbDriver)
+                get() = SqliteChannelsDb(createAppDbDriver(datadir))
             override val payments: PaymentsDb
                 get() = InMemoryPaymentsDb()
         },
