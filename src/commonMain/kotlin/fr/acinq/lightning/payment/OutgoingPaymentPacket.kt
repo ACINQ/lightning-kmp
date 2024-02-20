@@ -60,7 +60,7 @@ object OutgoingPaymentPacket {
      * Build an encrypted trampoline onion packet when the final recipient doesn't support trampoline.
      * The next-to-last trampoline node payload will contain instructions to convert to a legacy payment.
      *
-     * @param invoice Bolt 11 invoice (features and routing hints will be provided to the next-to-last node).
+     * @param invoice an invoice (features and routing hints will be provided to the next-to-last node).
      * @param hops the trampoline hops (including ourselves in the first hop, and the non-trampoline final recipient in the last hop).
      * @param finalPayload payload data for the final node (amount, expiry, etc)
      * @return a (firstAmount, firstExpiry, onion) triple where:
@@ -76,7 +76,10 @@ object OutgoingPaymentPacket {
             val (amount, expiry, payloads) = triple
             val payload = when (payloads.size) {
                 // The next-to-last trampoline hop must include invoice data to indicate the conversion to a legacy payment.
-                1 -> PaymentOnion.createRelayToNonTrampolinePayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
+                1 -> when (invoice) {
+                    is Bolt11Invoice -> PaymentOnion.RelayToNonTrampolinePayload.create(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
+                    is Bolt12Invoice -> PaymentOnion.RelayToBlindedPayload.create(finalPayload.amount, finalPayload.expiry, invoice)
+                }
                 else -> PaymentOnion.NodeRelayPayload.create(amount, expiry, hop.nextNodeId)
             }
             Triple(amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, listOf(payload) + payloads)

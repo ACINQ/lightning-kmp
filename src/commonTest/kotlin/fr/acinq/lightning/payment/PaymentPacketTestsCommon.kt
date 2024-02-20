@@ -143,6 +143,22 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             assertNotNull(trampolineOnion)
             val decryptedInner = Sphinx.peel(privateKey, add.paymentHash, trampolineOnion.packet).right!!
             val innerPayload = PaymentOnion.NodeRelayPayload.read(ByteArrayInput(decryptedInner.payload.toByteArray()))
+            assertNull(innerPayload.records.get<OnionPaymentPayloadTlv.PaymentData>())
+            assertNull(innerPayload.records.get<OnionPaymentPayloadTlv.PaymentMetadata>())
+            assertNull(innerPayload.records.get<OnionPaymentPayloadTlv.InvoiceFeatures>())
+            assertNull(innerPayload.records.get<OnionPaymentPayloadTlv.InvoiceRoutingInfo>())
+            return Triple(outerPayload, innerPayload, decryptedInner.nextPacket)
+        }
+
+        // Wallets don't need to decrypt onions for intermediate nodes, but it's useful to test that encryption works correctly.
+        fun decryptRelayToNonTrampolinePayload(add: UpdateAddHtlc, privateKey: PrivateKey): Triple<PaymentOnion.FinalPayload, PaymentOnion.RelayToNonTrampolinePayload, OnionRoutingPacket> {
+            val decrypted = Sphinx.peel(privateKey, add.paymentHash, add.onionRoutingPacket).right!!
+            assertTrue(decrypted.isLastPacket)
+            val outerPayload = PaymentOnion.FinalPayload.read(ByteArrayInput(decrypted.payload.toByteArray()))
+            val trampolineOnion = outerPayload.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()
+            assertNotNull(trampolineOnion)
+            val decryptedInner = Sphinx.peel(privateKey, add.paymentHash, trampolineOnion.packet).right!!
+            val innerPayload = PaymentOnion.RelayToNonTrampolinePayload.read(ByteArrayInput(decryptedInner.payload.toByteArray()))
             return Triple(outerPayload, innerPayload, decryptedInner.nextPacket)
         }
 
@@ -232,9 +248,6 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountCD, innerC.amountToForward)
         assertEquals(expiryCD, innerC.outgoingCltv)
         assertEquals(d, innerC.outgoingNodeId)
-        assertNull(innerC.invoiceRoutingInfo)
-        assertNull(innerC.invoiceFeatures)
-        assertNull(innerC.paymentSecret)
 
         // c forwards the trampoline payment to d.
         val (amountD, expiryD, onionD) = OutgoingPaymentPacket.buildPacket(
@@ -253,9 +266,6 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountDE, innerD.amountToForward)
         assertEquals(expiryDE, innerD.outgoingCltv)
         assertEquals(e, innerD.outgoingNodeId)
-        assertNull(innerD.invoiceRoutingInfo)
-        assertNull(innerD.invoiceFeatures)
-        assertNull(innerD.paymentSecret)
 
         // d forwards the trampoline payment to e.
         val (amountE, expiryE, onionE) = OutgoingPaymentPacket.buildPacket(
@@ -323,9 +333,6 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountCD, innerC.amountToForward)
         assertEquals(expiryCD, innerC.outgoingCltv)
         assertEquals(d, innerC.outgoingNodeId)
-        assertNull(innerC.invoiceRoutingInfo)
-        assertNull(innerC.invoiceFeatures)
-        assertNull(innerC.paymentSecret)
 
         // c forwards the trampoline payment to d.
         val (amountD, expiryD, onionD) = OutgoingPaymentPacket.buildPacket(
@@ -337,7 +344,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountCD, amountD)
         assertEquals(expiryCD, expiryD)
         val addD = UpdateAddHtlc(randomBytes32(), 3, amountD, paymentHash, expiryD, onionD.packet)
-        val (outerD, innerD, _) = decryptNodeRelay(addD, privD)
+        val (outerD, innerD, _) = decryptRelayToNonTrampolinePayload(addD, privD)
         assertEquals(amountCD, outerD.amount)
         assertEquals(amountCD, outerD.totalAmount)
         assertEquals(expiryCD, outerD.expiry)
@@ -393,9 +400,6 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountCD, innerC.amountToForward)
         assertEquals(expiryCD, innerC.outgoingCltv)
         assertEquals(d, innerC.outgoingNodeId)
-        assertNull(innerC.invoiceRoutingInfo)
-        assertNull(innerC.invoiceFeatures)
-        assertNull(innerC.paymentSecret)
 
         // c forwards the trampoline payment to d.
         val (amountD, expiryD, onionD) = OutgoingPaymentPacket.buildPacket(

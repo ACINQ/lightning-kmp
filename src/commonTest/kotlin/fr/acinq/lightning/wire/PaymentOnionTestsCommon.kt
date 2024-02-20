@@ -66,9 +66,6 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         assertEquals(decoded.totalAmount, 561.msat)
         assertEquals(decoded.outgoingCltv, CltvExpiry(42))
         assertEquals(decoded.outgoingNodeId, nodeId)
-        assertNull(decoded.paymentSecret)
-        assertNull(decoded.invoiceFeatures)
-        assertNull(decoded.invoiceRoutingInfo)
 
         val encoded = expected.write()
         assertArrayEquals(bin, encoded)
@@ -85,7 +82,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
             listOf(Bolt11Invoice.TaggedField.ExtraHop(node1, ShortChannelId(1), 10.msat, 100, CltvExpiryDelta(144))),
             listOf(Bolt11Invoice.TaggedField.ExtraHop(node2, ShortChannelId(2), 20.msat, 150, CltvExpiryDelta(12)), Bolt11Invoice.TaggedField.ExtraHop(node3, ShortChannelId(3), 30.msat, 200, CltvExpiryDelta(24)))
         )
-        val expected = PaymentOnion.NodeRelayPayload(
+        val expected = PaymentOnion.RelayToNonTrampolinePayload(
             TlvStream(
                 OnionPaymentPayloadTlv.AmountToForward(561.msat),
                 OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(42)),
@@ -98,7 +95,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         val bin =
             Hex.decode("fa 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 fe00010231010a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619 fe000102339b01036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e200000000000000010000000a00000064009002025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce148600000000000000020000001400000096000c02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee00000000000000030000001e000000c80018")
 
-        val decoded = PaymentOnion.NodeRelayPayload.read(bin)
+        val decoded = PaymentOnion.RelayToNonTrampolinePayload.read(bin)
         assertEquals(decoded, expected)
         assertEquals(decoded.amountToForward, 561.msat)
         assertEquals(decoded.totalAmount, 1105.msat)

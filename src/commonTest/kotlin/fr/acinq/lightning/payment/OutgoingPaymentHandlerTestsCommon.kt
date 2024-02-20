@@ -280,9 +280,6 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(200_000.msat, innerB.amountToForward)
         assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
         assertEquals(payment.recipient, innerB.outgoingNodeId)
-        assertNull(innerB.invoiceRoutingInfo)
-        assertNull(innerB.invoiceFeatures)
-        assertNull(innerB.paymentSecret)
 
         // The recipient should receive the right amount and expiry.
         val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
@@ -335,9 +332,6 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(300_000.msat, innerB.amountToForward)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
             assertEquals(payment.recipient, innerB.outgoingNodeId)
-            assertNull(innerB.invoiceRoutingInfo)
-            assertNull(innerB.invoiceFeatures)
-            assertNull(innerB.paymentSecret)
 
             // The recipient should receive the right amount and expiry.
             val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
@@ -389,7 +383,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         adds.forEach { (channelId, add) ->
             // The trampoline node should receive the right forwarding information.
-            val (outerB, innerB, _) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
+            val (outerB, innerB, _) = PaymentPacketTestsCommon.decryptRelayToNonTrampolinePayload(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
             assertEquals(add.amount, outerB.amount)
             assertEquals(310_000.msat, outerB.totalAmount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(144) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
@@ -398,7 +392,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(payment.recipient, innerB.outgoingNodeId)
             assertEquals(invoice.paymentSecret, innerB.paymentSecret)
             assertEquals(invoice.features.toByteArray().toByteVector(), innerB.invoiceFeatures)
-            assertFalse(innerB.invoiceRoutingInfo.isNullOrEmpty())
+            assertFalse(innerB.invoiceRoutingInfo.isEmpty())
             assertEquals(invoice.routingInfo.map { it.hints }, innerB.invoiceRoutingInfo)
         }
 
@@ -540,9 +534,6 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(300_000.msat, innerB.amountToForward)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
             assertEquals(payment.recipient, innerB.outgoingNodeId)
-            assertNull(innerB.invoiceRoutingInfo)
-            assertNull(innerB.invoiceFeatures)
-            assertNull(innerB.paymentSecret)
 
             // The recipient should receive the right amount and expiry.
             val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
