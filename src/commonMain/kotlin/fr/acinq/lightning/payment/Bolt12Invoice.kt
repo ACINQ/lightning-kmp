@@ -35,7 +35,7 @@ import fr.acinq.lightning.wire.OfferTypes.signSchnorr
 import fr.acinq.lightning.wire.OfferTypes.verifySchnorr
 import fr.acinq.lightning.wire.TlvStream
 
-data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest {
+data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() {
     val invoiceRequest: InvoiceRequest = InvoiceRequest.validate(filterInvoiceRequestFields(records)).right!!
 
     override val amount: MilliSatoshi? = records.get<InvoiceAmount>()?.amount
@@ -84,6 +84,8 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest {
         val data = OfferTypes.Invoice.tlvSerializer.write(records)
         return Bech32.encodeBytes(hrp, data, Bech32.Encoding.Beck32WithoutChecksum)
     }
+
+    override fun write(): String = toString()
 
     companion object {
         val hrp = "lni"
