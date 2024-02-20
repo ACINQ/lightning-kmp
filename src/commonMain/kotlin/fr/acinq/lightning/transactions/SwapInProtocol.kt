@@ -24,7 +24,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
     val pubkeyScript: List<ScriptElt> = Script.pay2tr(internalPublicKey, scriptTree)
     val serializedPubkeyScript = Script.write(pubkeyScript).byteVector()
 
-    fun address(chain: Bitcoin.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
+    fun address(chain: Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
 
     fun witness(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userNonce: IndividualNonce, serverNonce: IndividualNonce, userPartialSig: ByteVector32, serverPartialSig: ByteVector32): Either<Throwable, ScriptWitness> {
         val publicKeys = listOf(userPublicKey, serverPublicKey)
@@ -56,10 +56,10 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
     }
 
     companion object {
-        fun privateDescriptor(chain: Bitcoin.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): String {
+        fun privateDescriptor(chain: Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPrivateKey): String {
             val internalPubKey = Musig2.aggregateKeys(listOf(userPublicKey, serverPublicKey))
             val prefix = when (chain) {
-                Bitcoin.Chain.Mainnet -> DeterministicWallet.xprv
+                Chain.Mainnet -> DeterministicWallet.xprv
                 else -> DeterministicWallet.tprv
             }
             val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
@@ -68,10 +68,10 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
             return "$desc#$checksum"
         }
 
-        fun publicDescriptor(chain: Bitcoin.Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPublicKey): String {
+        fun publicDescriptor(chain: Chain, userPublicKey: PublicKey, serverPublicKey: PublicKey, refundDelay: Int, masterRefundKey: DeterministicWallet.ExtendedPublicKey): String {
             val internalPubKey = Musig2.aggregateKeys(listOf(userPublicKey, serverPublicKey))
             val prefix = when (chain) {
-                Bitcoin.Chain.Mainnet -> DeterministicWallet.xpub
+                Chain.Mainnet -> DeterministicWallet.xpub
                 else -> DeterministicWallet.tpub
             }
             val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
@@ -99,7 +99,7 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
 
     val pubkeyScript: List<ScriptElt> = Script.pay2wsh(redeemScript)
 
-    fun address(chain: Bitcoin.Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
+    fun address(chain: Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
 
     fun witness(userSig: ByteVector64, serverSig: ByteVector64): ScriptWitness {
         return ScriptWitness(listOf(Scripts.der(serverSig, SigHash.SIGHASH_ALL), Scripts.der(userSig, SigHash.SIGHASH_ALL), Script.write(redeemScript).byteVector()))
@@ -130,12 +130,12 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
          * @param refundDelay refund delay
          * @return a p2wsh descriptor that can be imported in bitcoin core (from version 24 on) to recover user funds once the funding delay has passed.
          */
-        fun descriptor(chain: Bitcoin.Chain, masterPublicKey: DeterministicWallet.ExtendedPublicKey, userExtendedPublicKey: DeterministicWallet.ExtendedPublicKey, remoteServerPublicKey: PublicKey, refundDelay: Int): String {
+        fun descriptor(chain: Chain, masterPublicKey: DeterministicWallet.ExtendedPublicKey, userExtendedPublicKey: DeterministicWallet.ExtendedPublicKey, remoteServerPublicKey: PublicKey, refundDelay: Int): String {
             // Since child public keys cannot be derived from a master xpub when hardened derivation is used,
             // we need to provide the fingerprint of the master xpub and the hardened derivation path.
             // This lets wallets that have access to the master xpriv derive the corresponding private and public keys.
             val masterFingerprint = ByteVector(Crypto.hash160(masterPublicKey.publickeybytes).take(4).toByteArray())
-            val encodedChildKey = DeterministicWallet.encode(userExtendedPublicKey, testnet = chain != Bitcoin.Chain.Mainnet)
+            val encodedChildKey = DeterministicWallet.encode(userExtendedPublicKey, testnet = chain != Chain.Mainnet)
             val userKey = "[${masterFingerprint.toHex()}/${userExtendedPublicKey.path.asString('h').removePrefix("m/")}]$encodedChildKey"
             return "wsh(and_v(v:pk($userKey),or_d(pk(${remoteServerPublicKey.toHex()}),older($refundDelay))))"
         }

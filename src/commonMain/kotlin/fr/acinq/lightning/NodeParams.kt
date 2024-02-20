@@ -1,7 +1,7 @@
 package fr.acinq.lightning
 
 import co.touchlab.kermit.Logger
-import fr.acinq.bitcoin.Bitcoin
+import fr.acinq.bitcoin.Chain
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.Lightning.nodeFee
@@ -121,7 +121,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  */
 data class NodeParams(
     val loggerFactory: LoggerFactory,
-    val chain: Bitcoin.Chain,
+    val chain: Chain,
     val keyManager: KeyManager,
     val features: Features,
     val dustLimit: Satoshi,
@@ -169,7 +169,7 @@ data class NodeParams(
     /**
      * Library integrators should use this constructor and override values.
      */
-    constructor(chain: Bitcoin.Chain, loggerFactory: LoggerFactory, keyManager: KeyManager) : this(
+    constructor(chain: Chain, loggerFactory: LoggerFactory, keyManager: KeyManager) : this(
         loggerFactory = loggerFactory,
         chain = chain,
         keyManager = keyManager,
