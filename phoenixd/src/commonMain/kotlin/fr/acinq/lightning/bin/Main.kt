@@ -3,14 +3,17 @@ package fr.acinq.lightning.bin
 import co.touchlab.kermit.Severity
 import co.touchlab.kermit.loggerConfigInit
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.context
+import com.github.ajalt.clikt.output.MordantHelpFormatter
 import com.github.ajalt.clikt.parameters.options.convert
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.choice
+import com.github.ajalt.clikt.sources.MapValueSource
 import fr.acinq.bitcoin.Chain
-import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.bin.conf.Conf
 import fr.acinq.lightning.bin.conf.getOrGenerateSeed
 import fr.acinq.lightning.bin.db.SqliteChannelsDb
@@ -24,10 +27,8 @@ import fr.acinq.lightning.db.PaymentsDb
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.logging.LoggerFactory
-import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
-import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import io.ktor.server.engine.*
 import kotlinx.coroutines.*
@@ -38,9 +39,32 @@ import okio.Path.Companion.toPath
 import kotlin.time.Duration.Companion.seconds
 
 
-fun main(args: Array<String>) = Phoenixd().main(args)
+fun main(args: Array<String>) {
+    val additionalValues = try {
+        val datadirParser = DatadirParser()
+        datadirParser.parse(args)
+        buildMap {
+            val confFile = datadirParser.datadir / "phoenix.conf"
+            if (FileSystem.SYSTEM.exists(confFile))
+                FileSystem.SYSTEM.read(confFile) {
+                    while (true) {
+                        val line = readUtf8Line() ?: break
+                        line.split("=").run { put(first(), last()) }
+                    }
+                }
+        }
+    } catch (t: Throwable) {
+        emptyMap()
+    }
+    Phoenixd(additionalValues).main(args)
+}
 
-class Phoenixd() : CliktCommand() {
+class DatadirParser : CliktCommand() {
+    val datadir by option("--datadir", "-d", help = "Data directory", valueSourceKey = "path").convert { it.toPath() }.default(homeDirectory / ".phoenix")
+    override fun run() {}
+}
+
+class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) : CliktCommand() {
     private val datadir by option("--datadir", help = "Data directory").convert { it.toPath() }.default(homeDirectory / ".phoenix", defaultForHelp = "~/.phoenix")
     private val chain by option("--chain", help = "Bitcoin chain to use").choice(
         "mainnet" to Chain.Mainnet,
@@ -54,8 +78,14 @@ class Phoenixd() : CliktCommand() {
         "5m" to 5_000_000.sat,
         "10m" to 10_000_000.sat,
     ).default(1_000_000.sat)
-    private val verbose: Boolean by option("--verbose", help = "Verbose mode").flag(default = false)
     private val silent: Boolean by option("--silent", "-s", help = "Silent mode").flag(default = false)
+
+    init {
+        context {
+            valueSource = MapValueSource(additionalValues)
+            helpFormatter = { MordantHelpFormatter(it, showDefaultValues = true) }
+        }
+    }
 
     @OptIn(DelicateCoroutinesApi::class)
     override fun run() {
@@ -63,6 +93,8 @@ class Phoenixd() : CliktCommand() {
 
         FileSystem.SYSTEM.createDirectories(datadir)
         echo("datadir:${FileSystem.SYSTEM.canonicalize(datadir)}")
+        echo("chain=$chain")
+        echo("autoLiquidity=$autoLiquidity")
 
         val scope = GlobalScope
         val loggerFactory = LoggerFactory(loggerConfigInit(FileLogWriter(datadir / "phoenix.log", scope), minSeverity = Severity.Info))
@@ -70,42 +102,23 @@ class Phoenixd() : CliktCommand() {
         val config = Conf(
             chain = chain,
             electrumServer = ServerAddress("testnet1.electrum.acinq.co", 51001, TcpSocket.TLS.DISABLED),
-            lsp = Conf.LSP_testnet
+            autoLiquidity = autoLiquidity
         )
         val keyManager = LocalKeyManager(seed, chain, config.lsp.swapInXpub)
         val electrum = ElectrumClient(scope, loggerFactory)
+
         scope.launch {
             electrum.connect(config.electrumServer, TcpSocket.Builder())
         }
-        val walletParams = WalletParams(
-            trampolineNode = Conf.LSP_testnet.uri,
-            trampolineFees = listOf(
-                TrampolineFees(
-                    feeBase = 4.sat,
-                    feeProportional = 4_000,
-                    cltvExpiryDelta = CltvExpiryDelta(576)
-                )
-            ),
-            invoiceDefaultRoutingFees = InvoiceDefaultRoutingFees(
-                feeBase = 1_000.msat,
-                feeProportional = 100,
-                cltvExpiryDelta = CltvExpiryDelta(144)
-            ),
-            swapInParams = SwapInParams(
-                minConfirmations = DefaultSwapInParams.MinConfirmations,
-                maxConfirmations = DefaultSwapInParams.MaxConfirmations,
-                refundDelay = DefaultSwapInParams.RefundDelay,
-            ),
-        )
         val nodeParams = NodeParams(chain, loggerFactory, keyManager)
             .copy(
-                zeroConfPeers = setOf(Conf.LSP_testnet.uri.id),
-                liquidityPolicy = MutableStateFlow(LiquidityPolicy.Auto(maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 50_00 /* 50% */, skipAbsoluteFeeCheck = false, maxAllowedCredit = 100_000.sat))
+                zeroConfPeers = setOf(config.lsp.walletParams.trampolineNode.id),
+                liquidityPolicy = MutableStateFlow(config.liquidityPolicy)
             )
         println(nodeParams.nodeId)
         val peer = Peer(
             nodeParams = nodeParams,
-            walletParams = walletParams,
+            walletParams = config.lsp.walletParams,
             watcher = ElectrumWatcher(electrum, scope, loggerFactory),
             db = object : Databases {
                 override val channels: ChannelsDb
@@ -139,4 +152,5 @@ class Phoenixd() : CliktCommand() {
         println("stopping")
         api.server.stop()
     }
+
 }
