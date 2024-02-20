@@ -18,15 +18,9 @@ sealed class PaymentRequest {
     companion object {
         fun read(input: String): Try<PaymentRequest> =
             if (input.startsWith(Bolt12Invoice.hrp, ignoreCase = true)) {
-                when (val invoice = Bolt12Invoice.fromString(input)) {
-                    is Try.Failure -> Try.Failure(invoice.error)
-                    is Try.Success -> Try.Success(invoice.result)
-                }
+                Bolt12Invoice.fromString(input).map { it }
             } else {
-                when (val invoice = Bolt11Invoice.read(input)) {
-                    is Try.Failure -> Try.Failure(invoice.error)
-                    is Try.Success -> Try.Success(invoice.result)
-                }
+                Bolt11Invoice.read(input).map { it }
             }
         }
 }
