@@ -12,6 +12,7 @@ import platform.posix.getenv
 actual val homeDirectory: Path = Path(getenv("HOME")?.toKString()!!)
 
 actual fun createAppDbDriver(dir: Path): SqlDriver {
-    val path = Path(dir, "phoenix.db")
-    return NativeSqliteDriver(ChannelsDatabase.Schema, path.toString())
+    return NativeSqliteDriver(ChannelsDatabase.Schema, "phoenix.db",
+        onConfiguration = { it.copy(extendedConfig = it.extendedConfig.copy(basePath = dir.toString())) }
+    )
 }
