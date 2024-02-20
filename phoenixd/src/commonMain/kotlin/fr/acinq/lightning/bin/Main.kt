@@ -1,6 +1,8 @@
 package fr.acinq.lightning.bin
 
+import co.touchlab.kermit.CommonWriter
 import co.touchlab.kermit.Severity
+import co.touchlab.kermit.StaticConfig
 import co.touchlab.kermit.loggerConfigInit
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.context
@@ -74,6 +76,7 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
         .default(1000000.sat)
 
     //.prompt()
+    private val verbose: Boolean by option("--verbose", help = "Verbose mode").flag(default = false)
     private val silent: Boolean by option("--silent", "-s", help = "Silent mode").flag(default = false)
 
     init {
@@ -93,7 +96,14 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
         echo("liquidityTranche=$liquidityTranche")
 
         val scope = GlobalScope
-        val loggerFactory = LoggerFactory(loggerConfigInit(FileLogWriter(datadir / "phoenix.log", scope), minSeverity = Severity.Info))
+        val loggerFactory = LoggerFactory(StaticConfig(
+            minSeverity = Severity.Info,
+            logWriterList = buildList {
+                // always log to file
+                add(FileLogWriter(datadir / "phoenix.log", scope))
+                // only log to console if verbose mode is enabled
+                if (verbose) add(CommonWriter())
+            }))
         val seed = getOrGenerateSeed(datadir)
         val config = Conf(
             chain = chain,
