@@ -41,6 +41,7 @@ kotlin {
                 implementation(ktor("serialization-kotlinx-json"))
                 implementation(ktor("server-cio"))
                 implementation("com.squareup.okio:okio:3.8.0")
+                implementation("com.github.ajalt.clikt:clikt:4.2.2")
             }
         }
         jvmMain {
