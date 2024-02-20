@@ -1,13 +1,14 @@
 package fr.acinq.lightning.bin
 
 import co.touchlab.kermit.Severity
-import co.touchlab.kermit.StaticConfig
+import co.touchlab.kermit.loggerConfigInit
 import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.bin.conf.Conf
 import fr.acinq.lightning.bin.conf.getOrGenerateSeed
 import fr.acinq.lightning.bin.db.SqliteChannelsDb
+import fr.acinq.lightning.bin.logs.FileLogWriter
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
 import fr.acinq.lightning.crypto.LocalKeyManager
@@ -36,7 +37,8 @@ fun main() {
 
     println("datadir:$datadir")
 
-    val loggerFactory = LoggerFactory(config = StaticConfig(Severity.Info))
+    val scope = GlobalScope
+    val loggerFactory = LoggerFactory(loggerConfigInit(FileLogWriter(datadir / "phoenix.log", scope), minSeverity = Severity.Info))
     val chain = Bitcoin.Chain.Testnet
     val seed = getOrGenerateSeed(datadir)
     val config = Conf(
@@ -45,7 +47,6 @@ fun main() {
         lsp = Conf.LSP_testnet
     )
     val keyManager = LocalKeyManager(seed, chain, config.lsp.swapInXpub)
-    val scope = GlobalScope
     val electrum = ElectrumClient(scope, loggerFactory)
     scope.launch {
         electrum.connect(config.electrumServer, TcpSocket.Builder())
@@ -106,7 +107,8 @@ fun main() {
         println("done")
     }
     api.server.start()
-    while (readln() != "quit") { }
+    while (readln() != "quit") {
+    }
     println("stopping")
     api.server.stop()
 }
