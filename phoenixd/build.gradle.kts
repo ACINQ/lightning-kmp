@@ -14,11 +14,14 @@ plugins {
 kotlin {
     jvm()
 
-    linuxX64 {
-        binaries {
-            executable {
-                entryPoint = "fr.acinq.lightning.bin.main"
-                optimized = false // without this, release mode throws 'Index 0 out of bounds for length 0' in StaticInitializersOptimization.kt
+    val currentOs = org.gradle.internal.os.OperatingSystem.current()
+    if (currentOs.isLinux) {
+        linuxX64 {
+            binaries {
+                executable {
+                    entryPoint = "fr.acinq.lightning.bin.main"
+                    optimized = false // without this, release mode throws 'Index 0 out of bounds for length 0' in StaticInitializersOptimization.kt
+                }
             }
         }
     }
@@ -38,7 +41,7 @@ kotlin {
                 implementation(ktor("server-content-negotiation"))
                 implementation(ktor("serialization-kotlinx-json"))
                 implementation(ktor("server-cio"))
-                implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.3.1")
+                implementation("com.squareup.okio:okio:3.8.0")
             }
         }
         jvmMain {

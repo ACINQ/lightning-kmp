@@ -1,4 +1,4 @@
-package fr.acinq.lightning.bin
+package fr.acinq.lightning.bin.conf
 
 import fr.acinq.bitcoin.Chain
 import fr.acinq.bitcoin.PublicKey
@@ -10,7 +10,7 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.LiquidityAds
 
-data class Config(
+data class Conf(
     val chain: Chain,
     val electrumServer: ServerAddress,
     val lsp: LSP,
