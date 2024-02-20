@@ -5,11 +5,12 @@ import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import fr.acinq.phoenix.db.ChannelsDatabase
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
-import kotlinx.io.files.Path
+import okio.Path
+import okio.Path.Companion.toPath
 import platform.posix.getenv
 
 @OptIn(ExperimentalForeignApi::class)
-actual val homeDirectory: Path = Path(getenv("HOME")?.toKString()!!)
+actual val homeDirectory: Path = getenv("HOME")?.toKString()!!.toPath()
 
 actual fun createAppDbDriver(dir: Path): SqlDriver {
     return NativeSqliteDriver(ChannelsDatabase.Schema, "phoenix.db",

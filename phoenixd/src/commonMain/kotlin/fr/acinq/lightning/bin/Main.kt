@@ -5,6 +5,8 @@ import co.touchlab.kermit.StaticConfig
 import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.bin.conf.Conf
+import fr.acinq.lightning.bin.conf.getOrGenerateSeed
 import fr.acinq.lightning.bin.db.SqliteChannelsDb
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
@@ -24,26 +26,24 @@ import io.ktor.server.engine.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
+import okio.FileSystem
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(DelicateCoroutinesApi::class)
 fun main() {
-    val datadir = Path(homeDirectory, ".phoenix")
-        .also { SystemFileSystem.createDirectories(it) }
+    val datadir = homeDirectory / ".phoenix"
+    FileSystem.SYSTEM.createDirectories(datadir)
+
     println("datadir:$datadir")
 
-    val loggerFactory = LoggerFactory(StaticConfig(Severity.Info))
+    val loggerFactory = LoggerFactory(config = StaticConfig(Severity.Info))
     val chain = Bitcoin.Chain.Testnet
-    val seed = randomBytes32()
-    val config = Config(
+    val seed = getOrGenerateSeed(datadir)
+    val config = Conf(
         chain = chain,
         electrumServer = ServerAddress("testnet1.electrum.acinq.co", 51001, TcpSocket.TLS.DISABLED),
-        lsp = Config.LSP_testnet
+        lsp = Conf.LSP_testnet
     )
-
-
     val keyManager = LocalKeyManager(seed, chain, config.lsp.swapInXpub)
     val scope = GlobalScope
     val electrum = ElectrumClient(scope, loggerFactory)
@@ -51,7 +51,7 @@ fun main() {
         electrum.connect(config.electrumServer, TcpSocket.Builder())
     }
     val walletParams = WalletParams(
-        trampolineNode = Config.LSP_testnet.uri,
+        trampolineNode = Conf.LSP_testnet.uri,
         trampolineFees = listOf(
             TrampolineFees(
                 feeBase = 4.sat,
@@ -72,9 +72,10 @@ fun main() {
     )
     val nodeParams = NodeParams(chain, loggerFactory, keyManager)
         .copy(
-            zeroConfPeers = setOf(Config.LSP_testnet.uri.id),
+            zeroConfPeers = setOf(Conf.LSP_testnet.uri.id),
             liquidityPolicy = MutableStateFlow(LiquidityPolicy.Auto(maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 50_00 /* 50% */, skipAbsoluteFeeCheck = false))
         )
+    println(nodeParams.nodeId)
     val peer = Peer(
         nodeParams = nodeParams,
         walletParams = walletParams,
