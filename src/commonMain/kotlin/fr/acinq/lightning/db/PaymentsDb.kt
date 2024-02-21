@@ -250,7 +250,7 @@ data class LightningOutgoingPayment(
 ) : OutgoingPayment() {
 
     /** Create an outgoing payment in a pending status, without any parts yet. */
-    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, invoice: Bolt11Invoice) : this(id, amount, recipient, Details.Normal(invoice), listOf(), Status.Pending)
+    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, invoice: PaymentRequest) : this(id, amount, recipient, Details.Normal(invoice), listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
 
@@ -285,7 +285,7 @@ data class LightningOutgoingPayment(
         abstract val paymentHash: ByteVector32
 
         /** A normal lightning payment. */
-        data class Normal(val paymentRequest: Bolt11Invoice) : Details() {
+        data class Normal(val paymentRequest: PaymentRequest) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
 

@@ -441,6 +441,27 @@ object OfferTypes {
         }
     }
 
+    fun writePaymentInfo(paymentInfo: PaymentInfo, out: Output) {
+        LightningCodecs.writeU32(paymentInfo.feeBase.msat.toInt(), out)
+        LightningCodecs.writeU32(paymentInfo.feeProportionalMillionths, out)
+        LightningCodecs.writeU16(paymentInfo.cltvExpiryDelta.toInt(), out)
+        LightningCodecs.writeU64(paymentInfo.minHtlc.msat, out)
+        LightningCodecs.writeU64(paymentInfo.maxHtlc.msat, out)
+        val featuresArray = paymentInfo.allowedFeatures.toByteArray()
+        LightningCodecs.writeU16(featuresArray.size, out)
+        LightningCodecs.writeBytes(featuresArray, out)
+    }
+
+    fun readPaymentInfo(input: Input): PaymentInfo {
+        val feeBase = MilliSatoshi(LightningCodecs.u32(input).toLong())
+        val feeProportionalMillionths = LightningCodecs.u32(input)
+        val cltvExpiryDelta = CltvExpiryDelta(LightningCodecs.u16(input))
+        val minHtlc = MilliSatoshi(LightningCodecs.u64(input))
+        val maxHtlc = MilliSatoshi(LightningCodecs.u64(input))
+        val allowedFeatures = Features(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
+        return PaymentInfo(feeBase, feeProportionalMillionths, cltvExpiryDelta, minHtlc, maxHtlc, allowedFeatures)
+    }
+
     /**
      * Costs and parameters of the paths in `InvoicePaths`.
      */
@@ -449,14 +470,7 @@ object OfferTypes {
 
         override fun write(out: Output) {
             for (paymentInfo in paymentInfos) {
-                LightningCodecs.writeU32(paymentInfo.feeBase.msat.toInt(), out)
-                LightningCodecs.writeU32(paymentInfo.feeProportionalMillionths, out)
-                LightningCodecs.writeU16(paymentInfo.cltvExpiryDelta.toInt(), out)
-                LightningCodecs.writeU64(paymentInfo.minHtlc.msat, out)
-                LightningCodecs.writeU64(paymentInfo.maxHtlc.msat, out)
-                val featuresArray = paymentInfo.allowedFeatures.toByteArray()
-                LightningCodecs.writeU16(featuresArray.size, out)
-                LightningCodecs.writeBytes(featuresArray, out)
+                writePaymentInfo(paymentInfo, out)
             }
         }
 
@@ -465,13 +479,7 @@ object OfferTypes {
             override fun read(input: Input): InvoiceBlindedPay {
                 val paymentInfos = ArrayList<PaymentInfo>()
                 while (input.availableBytes > 0) {
-                    val feeBase = MilliSatoshi(LightningCodecs.u32(input).toLong())
-                    val feeProportionalMillionths = LightningCodecs.u32(input)
-                    val cltvExpiryDelta = CltvExpiryDelta(LightningCodecs.u16(input))
-                    val minHtlc = MilliSatoshi(LightningCodecs.u64(input))
-                    val maxHtlc = MilliSatoshi(LightningCodecs.u64(input))
-                    val allowedFeatures = Features(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
-                    paymentInfos.add(PaymentInfo(feeBase, feeProportionalMillionths, cltvExpiryDelta, minHtlc, maxHtlc, allowedFeatures))
+                    paymentInfos.add(readPaymentInfo(input))
                 }
                 return InvoiceBlindedPay(paymentInfos)
             }

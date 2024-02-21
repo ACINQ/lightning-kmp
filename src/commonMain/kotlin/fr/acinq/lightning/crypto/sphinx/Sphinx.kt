@@ -115,7 +115,7 @@ object Sphinx {
      * @param keyType       type of key used (depends on the onion we're building).
      * @param sharedSecrets shared secrets for all the hops.
      * @param payloads      payloads for all the hops.
-     * @param packetLength  length of the onion-encrypted payload (1300 for payment onions, 400 for trampoline onions).
+     * @param packetLength  length of the onion-encrypted payload (1300 for payment onions, variable for trampoline onions).
      * @return filler bytes.
      */
     fun generateFiller(keyType: String, sharedSecrets: List<ByteVector32>, payloads: List<ByteArray>, packetLength: Int): ByteArray {
@@ -138,7 +138,6 @@ object Sphinx {
      * @param privateKey     this node's private key.
      * @param associatedData associated data.
      * @param packet         packet received by this node.
-     * @param packetLength   length of the onion-encrypted payload (1300 for payment onions, 400 for trampoline onions).
      * @return a DecryptedPacket(payload, packet, shared secret) object where:
      *         - payload is the per-hop payload for this node.
      *         - packet is the next packet, to be forwarded using the info that is given in the payload.
@@ -146,7 +145,7 @@ object Sphinx {
      *         failure messages upstream.
      *         or a BadOnion error containing the hash of the invalid onion.
      */
-    fun peel(privateKey: PrivateKey, associatedData: ByteVector, packet: OnionRoutingPacket, packetLength: Int): Either<FailureMessage, DecryptedPacket> = when (packet.version) {
+    fun peel(privateKey: PrivateKey, associatedData: ByteVector, packet: OnionRoutingPacket): Either<FailureMessage, DecryptedPacket> = when (packet.version) {
         0 -> {
             when (val result = runTrying {
                 val pub = PublicKey(packet.publicKey)
@@ -159,6 +158,7 @@ object Sphinx {
                     val mu = generateKey("mu", sharedSecret)
                     val check = mac(mu, packet.payload + associatedData)
                     if (check == packet.hmac) {
+                        val packetLength = packet.payload.size()
                         val rho = generateKey("rho", sharedSecret)
                         // Since we don't know the length of the per-hop payload (we will learn it once we decode the first bytes),
                         // we have to pessimistically generate a long cipher stream.
@@ -198,19 +198,22 @@ object Sphinx {
      * @param ephemeralPublicKey ephemeral key shared with the target node.
      * @param sharedSecret       shared secret with this hop.
      * @param packet             current packet or random bytes if the packet hasn't been initialized.
-     * @param packetLength       length of the onion-encrypted payload (1300 for payment onions, 400 for trampoline onions).
      * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
      * @return the next packet.
      */
     private fun wrap(
         payload: ByteArray,
-        associatedData: ByteVector32,
+        associatedData: ByteVector32?,
         ephemeralPublicKey: PublicKey,
         sharedSecret: ByteVector32,
         packet: Either<ByteVector, OnionRoutingPacket>,
-        packetLength: Int,
         onionPayloadFiller: ByteVector = ByteVector.empty
     ): OnionRoutingPacket {
+        val packetLength = when (packet) {
+            is Either.Left -> packet.value.size()
+            is Either.Right -> packet.value.payload.size()
+        }
+
         require(payload.size <= packetLength - MacLength) { "packet payload cannot exceed ${packetLength - MacLength} bytes" }
 
         val (currentMac, currentPayload) = when (packet) {
@@ -229,7 +232,7 @@ object Sphinx {
             onionPayload2.dropLast(onionPayloadFiller.size()).toByteArray() + onionPayloadFiller.toByteArray()
         }
 
-        val nextHmac = mac(generateKey("mu", sharedSecret), nextOnionPayload.toByteVector() + associatedData)
+        val nextHmac = mac(generateKey("mu", sharedSecret), nextOnionPayload.toByteVector() + (associatedData ?: ByteVector.empty))
         return OnionRoutingPacket(0, ephemeralPublicKey.value, nextOnionPayload.toByteVector(), nextHmac)
     }
 
@@ -240,21 +243,21 @@ object Sphinx {
      * @param publicKeys     node public keys (one per node).
      * @param payloads       payloads (one per node).
      * @param associatedData associated data.
-     * @param packetLength   length of the onion-encrypted payload (1300 for payment onions, 400 for trampoline onions).
+     * @param packetLength   length of the onion-encrypted payload (1300 for payment onions, variable for trampoline onions).
      * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
      *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
      */
-    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteArray>, associatedData: ByteVector32, packetLength: Int): PacketAndSecrets {
+    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteArray>, associatedData: ByteVector32?, packetLength: Int): PacketAndSecrets {
         val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
         val filler = generateFiller("rho", sharedsecrets.dropLast(1), payloads.dropLast(1), packetLength)
 
         // We deterministically-derive the initial payload bytes: see https://github.com/lightningnetwork/lightning-rfc/pull/697
         val startingBytes = generateStream(generateKey("pad", sessionKey.value), packetLength)
-        val lastPacket = wrap(payloads.last(), associatedData, ephemeralPublicKeys.last(), sharedsecrets.last(), Either.Left(startingBytes.toByteVector()), packetLength, filler.toByteVector())
+        val lastPacket = wrap(payloads.last(), associatedData, ephemeralPublicKeys.last(), sharedsecrets.last(), Either.Left(startingBytes.toByteVector()), filler.toByteVector())
 
         tailrec fun loop(hopPayloads: List<ByteArray>, ephKeys: List<PublicKey>, sharedSecrets: List<ByteVector32>, packet: OnionRoutingPacket): OnionRoutingPacket {
             return if (hopPayloads.isEmpty()) packet else {
-                val nextPacket = wrap(hopPayloads.last(), associatedData, ephKeys.last(), sharedSecrets.last(), Either.Right(packet), packetLength)
+                val nextPacket = wrap(hopPayloads.last(), associatedData, ephKeys.last(), sharedSecrets.last(), Either.Right(packet))
                 loop(hopPayloads.dropLast(1), ephKeys.dropLast(1), sharedSecrets.dropLast(1), nextPacket)
             }
         }

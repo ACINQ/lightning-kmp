@@ -1,9 +1,6 @@
 package fr.acinq.lightning.payment
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
@@ -13,6 +10,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.states.Channel
+import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop
@@ -130,7 +128,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
         // Wallets don't need to decrypt onions for intermediate nodes, but it's useful to test that encryption works correctly.
         fun decryptChannelRelay(add: UpdateAddHtlc, privateKey: PrivateKey): Pair<PaymentOnion.ChannelRelayPayload, OnionRoutingPacket> {
-            val decrypted = Sphinx.peel(privateKey, add.paymentHash, add.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength).right!!
+            val decrypted = Sphinx.peel(privateKey, add.paymentHash, add.onionRoutingPacket).right!!
             assertFalse(decrypted.isLastPacket)
             val decoded = PaymentOnion.ChannelRelayPayload.read(ByteArrayInput(decrypted.payload.toByteArray()))
             return Pair(decoded, decrypted.nextPacket)
@@ -138,16 +136,43 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
         // Wallets don't need to decrypt onions for intermediate nodes, but it's useful to test that encryption works correctly.
         fun decryptNodeRelay(add: UpdateAddHtlc, privateKey: PrivateKey): Triple<PaymentOnion.FinalPayload, PaymentOnion.NodeRelayPayload, OnionRoutingPacket> {
-            val decrypted = Sphinx.peel(privateKey, add.paymentHash, add.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength).right!!
+            val decrypted = Sphinx.peel(privateKey, add.paymentHash, add.onionRoutingPacket).right!!
             assertTrue(decrypted.isLastPacket)
             val outerPayload = PaymentOnion.FinalPayload.read(ByteArrayInput(decrypted.payload.toByteArray()))
             val trampolineOnion = outerPayload.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()
             assertNotNull(trampolineOnion)
-            val decryptedInner = Sphinx.peel(privateKey, add.paymentHash, trampolineOnion.packet, OnionRoutingPacket.TrampolinePacketLength).right!!
+            val decryptedInner = Sphinx.peel(privateKey, add.paymentHash, trampolineOnion.packet).right!!
             val innerPayload = PaymentOnion.NodeRelayPayload.read(ByteArrayInput(decryptedInner.payload.toByteArray()))
+            assertNull(innerPayload.records.get<OnionPaymentPayloadTlv.PaymentData>())
+            assertNull(innerPayload.records.get<OnionPaymentPayloadTlv.PaymentMetadata>())
+            assertNull(innerPayload.records.get<OnionPaymentPayloadTlv.InvoiceFeatures>())
+            assertNull(innerPayload.records.get<OnionPaymentPayloadTlv.InvoiceRoutingInfo>())
             return Triple(outerPayload, innerPayload, decryptedInner.nextPacket)
         }
 
+        // Wallets don't need to decrypt onions for intermediate nodes, but it's useful to test that encryption works correctly.
+        fun decryptRelayToNonTrampolinePayload(add: UpdateAddHtlc, privateKey: PrivateKey): Triple<PaymentOnion.FinalPayload, PaymentOnion.RelayToNonTrampolinePayload, OnionRoutingPacket> {
+            val decrypted = Sphinx.peel(privateKey, add.paymentHash, add.onionRoutingPacket).right!!
+            assertTrue(decrypted.isLastPacket)
+            val outerPayload = PaymentOnion.FinalPayload.read(ByteArrayInput(decrypted.payload.toByteArray()))
+            val trampolineOnion = outerPayload.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()
+            assertNotNull(trampolineOnion)
+            val decryptedInner = Sphinx.peel(privateKey, add.paymentHash, trampolineOnion.packet).right!!
+            val innerPayload = PaymentOnion.RelayToNonTrampolinePayload.read(ByteArrayInput(decryptedInner.payload.toByteArray()))
+            return Triple(outerPayload, innerPayload, decryptedInner.nextPacket)
+        }
+
+        // Wallets don't need to decrypt onions for intermediate nodes, but it's useful to test that encryption works correctly.
+        fun decryptRelayToBlinded(add: UpdateAddHtlc, privateKey: PrivateKey): Triple<PaymentOnion.FinalPayload, PaymentOnion.RelayToBlindedPayload, OnionRoutingPacket> {
+            val decrypted = Sphinx.peel(privateKey, add.paymentHash, add.onionRoutingPacket).right!!
+            assertTrue(decrypted.isLastPacket)
+            val outerPayload = PaymentOnion.FinalPayload.read(ByteArrayInput(decrypted.payload.toByteArray()))
+            val trampolineOnion = outerPayload.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()
+            assertNotNull(trampolineOnion)
+            val decryptedInner = Sphinx.peel(privateKey, add.paymentHash, trampolineOnion.packet).right!!
+            val innerPayload = PaymentOnion.RelayToBlindedPayload.read(ByteArrayInput(decryptedInner.payload.toByteArray()))
+            return Triple(outerPayload, innerPayload, decryptedInner.nextPacket)
+        }
     }
 
     @Test
@@ -197,7 +222,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             paymentHash,
             trampolineHops,
             PaymentOnion.FinalPayload.createMultiPartPayload(finalAmount, finalAmount * 3, finalExpiry, paymentSecret, paymentMetadata),
-            OnionRoutingPacket.TrampolinePacketLength
+            null
         )
         assertEquals(amountBC, amountAC)
         assertEquals(expiryBC, expiryAC)
@@ -223,9 +248,6 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountCD, innerC.amountToForward)
         assertEquals(expiryCD, innerC.outgoingCltv)
         assertEquals(d, innerC.outgoingNodeId)
-        assertNull(innerC.invoiceRoutingInfo)
-        assertNull(innerC.invoiceFeatures)
-        assertNull(innerC.paymentSecret)
 
         // c forwards the trampoline payment to d.
         val (amountD, expiryD, onionD) = OutgoingPaymentPacket.buildPacket(
@@ -244,9 +266,6 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountDE, innerD.amountToForward)
         assertEquals(expiryDE, innerD.outgoingCltv)
         assertEquals(e, innerD.outgoingNodeId)
-        assertNull(innerD.invoiceRoutingInfo)
-        assertNull(innerD.invoiceFeatures)
-        assertNull(innerD.paymentSecret)
 
         // d forwards the trampoline payment to e.
         val (amountE, expiryE, onionE) = OutgoingPaymentPacket.buildPacket(
@@ -289,7 +308,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
                 Bolt11Invoice.TaggedField.RoutingInfo(routingHints)
             ), ByteVector.empty
         )
-        val (amountAC, expiryAC, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToLegacyPacket(invoice, trampolineHops, PaymentOnion.FinalPayload.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32(), null))
+        val (amountAC, expiryAC, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(invoice, trampolineHops, PaymentOnion.FinalPayload.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32(), null))
         assertEquals(amountBC, amountAC)
         assertEquals(expiryBC, expiryAC)
 
@@ -314,9 +333,6 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountCD, innerC.amountToForward)
         assertEquals(expiryCD, innerC.outgoingCltv)
         assertEquals(d, innerC.outgoingNodeId)
-        assertNull(innerC.invoiceRoutingInfo)
-        assertNull(innerC.invoiceFeatures)
-        assertNull(innerC.paymentSecret)
 
         // c forwards the trampoline payment to d.
         val (amountD, expiryD, onionD) = OutgoingPaymentPacket.buildPacket(
@@ -328,7 +344,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(amountCD, amountD)
         assertEquals(expiryCD, expiryD)
         val addD = UpdateAddHtlc(randomBytes32(), 3, amountD, paymentHash, expiryD, onionD.packet)
-        val (outerD, innerD, _) = decryptNodeRelay(addD, privD)
+        val (outerD, innerD, _) = decryptRelayToNonTrampolinePayload(addD, privD)
         assertEquals(amountCD, outerD.amount)
         assertEquals(amountCD, outerD.totalAmount)
         assertEquals(expiryCD, outerD.expiry)
@@ -344,20 +360,65 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `fail to build a trampoline payment when too much invoice data is provided`() {
-        val extraHop = Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(1), 10.msat, 100, CltvExpiryDelta(12))
-        val routingHintOverflow = listOf(extraHop, extraHop, extraHop, extraHop, extraHop, extraHop, extraHop)
-        val featuresOverflow = ByteVector("010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101024100")
-        val invoice = Bolt11Invoice(
-            "lnbcrt", finalAmount, currentTimestampSeconds(), e, listOf(
-                Bolt11Invoice.TaggedField.PaymentHash(paymentHash),
-                Bolt11Invoice.TaggedField.PaymentSecret(paymentSecret),
-                Bolt11Invoice.TaggedField.Features(featuresOverflow),
-                Bolt11Invoice.TaggedField.DescriptionHash(randomBytes32()),
-                Bolt11Invoice.TaggedField.RoutingInfo(routingHintOverflow)
-            ), ByteVector.empty
+    fun `build a trampoline payment to blinded paths`() {
+        // simple trampoline route to e where e doesn't support trampoline:
+        //             .--.
+        //            /    \
+        // a -> b -> c      d -> e
+
+
+        val features = Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional)
+        val offer = OfferTypes.Offer(finalAmount, "test offer", e, features, Block.LivenetGenesisBlock.hash)
+        val payerKey = randomKey()
+        val request = OfferTypes.InvoiceRequest(offer, finalAmount, 1, features, payerKey, Block.LivenetGenesisBlock.hash)
+        val blindedRoute = RouteBlinding.create(randomKey(), listOf(randomKey().publicKey()), listOf(randomBytes(40).toByteVector()))
+        val paymentInfo = OfferTypes.PaymentInfo(channelUpdateDE.feeBaseMsat, channelUpdateDE.feeProportionalMillionths.toInt(), channelUpdateDE.cltvExpiryDelta, channelUpdateDE.htlcMinimumMsat, channelUpdateDE.htlcMaximumMsat!!, Features.empty)
+        val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
+        val invoice = Bolt12Invoice(request, paymentPreimage, privE, 600, features, listOf(path))
+
+        val (amountAC, expiryAC, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(invoice, trampolineHops, PaymentOnion.FinalPayload.createSinglePartPayload(finalAmount, finalExpiry, ByteVector32.Zeroes, null))
+        assertEquals(amountBC, amountAC)
+        assertEquals(expiryBC, expiryAC)
+
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacket(
+            paymentHash,
+            trampolineChannelHops,
+            PaymentOnion.FinalPayload.createTrampolinePayload(amountAC, amountAC, expiryAC, randomBytes32(), trampolineOnion.packet),
+            OnionRoutingPacket.PaymentPacketLength
         )
-        assertFails { OutgoingPaymentPacket.buildTrampolineToLegacyPacket(invoice, trampolineHops, PaymentOnion.FinalPayload.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32(), null)) }
+        assertEquals(amountAB, firstAmount)
+        assertEquals(expiryAB, firstExpiry)
+
+        val addB = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
+        val (_, packetC) = decryptChannelRelay(addB, privB)
+
+        val addC = UpdateAddHtlc(randomBytes32(), 2, amountBC, paymentHash, expiryBC, packetC)
+        val (outerC, innerC, packetD) = decryptNodeRelay(addC, privC)
+        assertEquals(amountBC, outerC.amount)
+        assertEquals(amountBC, outerC.totalAmount)
+        assertEquals(expiryBC, outerC.expiry)
+        assertEquals(amountCD, innerC.amountToForward)
+        assertEquals(expiryCD, innerC.outgoingCltv)
+        assertEquals(d, innerC.outgoingNodeId)
+
+        // c forwards the trampoline payment to d.
+        val (amountD, expiryD, onionD) = OutgoingPaymentPacket.buildPacket(
+            paymentHash,
+            listOf(ChannelHop(c, d, channelUpdateCD)),
+            PaymentOnion.FinalPayload.createTrampolinePayload(amountCD, amountCD, expiryCD, randomBytes32(), packetD),
+            OnionRoutingPacket.PaymentPacketLength
+        )
+        assertEquals(amountCD, amountD)
+        assertEquals(expiryCD, expiryD)
+        val addD = UpdateAddHtlc(randomBytes32(), 3, amountD, paymentHash, expiryD, onionD.packet)
+        val (outerD, innerD, _) = decryptRelayToBlinded(addD, privD)
+        assertEquals(amountCD, outerD.amount)
+        assertEquals(amountCD, outerD.totalAmount)
+        assertEquals(expiryCD, outerD.expiry)
+        assertEquals(finalAmount, innerD.amountToForward)
+        assertEquals(expiryDE, innerD.outgoingCltv)
+        assertEquals(listOf(path), innerD.outgoingBlindedPaths)
+        assertEquals(invoice.features.toByteArray().toByteVector(), innerD.invoiceFeatures)
     }
 
     @Test
@@ -375,7 +436,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             paymentHash,
             trampolineHops,
             PaymentOnion.FinalPayload.createMultiPartPayload(finalAmount, finalAmount * 2, finalExpiry, paymentSecret, null),
-            OnionRoutingPacket.TrampolinePacketLength
+            null
         )
         val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacket(
             paymentHash,
@@ -437,7 +498,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             paymentHash,
             trampolineHops,
             PaymentOnion.FinalPayload.createMultiPartPayload(finalAmount, finalAmount, finalExpiry, paymentSecret, null),
-            OnionRoutingPacket.TrampolinePacketLength
+            null
         )
         val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacket(
             paymentHash,
@@ -473,7 +534,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             paymentHash,
             trampolineHops,
             PaymentOnion.FinalPayload.createMultiPartPayload(finalAmount, finalAmount, finalExpiry, paymentSecret, null),
-            OnionRoutingPacket.TrampolinePacketLength
+            null
         )
         val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacket(
             paymentHash,
