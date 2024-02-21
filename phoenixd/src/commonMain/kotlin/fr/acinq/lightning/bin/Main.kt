@@ -3,14 +3,18 @@ package fr.acinq.lightning.bin
 import co.touchlab.kermit.CommonWriter
 import co.touchlab.kermit.Severity
 import co.touchlab.kermit.StaticConfig
-import co.touchlab.kermit.loggerConfigInit
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.context
+import com.github.ajalt.clikt.core.terminal
 import com.github.ajalt.clikt.output.MordantHelpFormatter
-import com.github.ajalt.clikt.parameters.options.*
+import com.github.ajalt.clikt.parameters.options.convert
+import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.flag
+import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.sources.MapValueSource
+import com.github.ajalt.mordant.rendering.TextColors.*
 import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.NodeParams
@@ -31,13 +35,12 @@ import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.sat
 import io.ktor.server.application.*
-import io.ktor.server.cio.*
-import io.ktor.server.engine.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import okio.FileSystem
 import okio.Path.Companion.toPath
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 
@@ -71,7 +74,7 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
     private val chain by option("--chain", help = "Bitcoin chain to use").choice(
         "mainnet" to Bitcoin.Chain.Mainnet,
         "testnet" to Bitcoin.Chain.Testnet
-    ).default(Bitcoin.Chain.Mainnet, defaultForHelp = "mainnet")
+    ).default(Bitcoin.Chain.Testnet, defaultForHelp = "testnet")
     private val liquidityTranche by option("--liquidity-tranche", help = "Amount requested when inbound liquidity is needed").int().convert { it.sat }
         .default(1000000.sat)
 
@@ -88,23 +91,34 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
 
     @OptIn(DelicateCoroutinesApi::class)
     override fun run() {
-        echo("hello")
 
         FileSystem.SYSTEM.createDirectories(datadir)
-        echo("datadir:${FileSystem.SYSTEM.canonicalize(datadir)}")
-        echo("chain=$chain")
-        echo("liquidityTranche=$liquidityTranche")
+        echo(cyan("datadir: ${FileSystem.SYSTEM.canonicalize(datadir)}"))
+        echo(cyan("chain: $chain"))
+        echo(cyan("liquidityTranche: $liquidityTranche"))
+
+        val (seed, new) = getOrGenerateSeed(datadir)
+        if (new) {
+            runBlocking {
+                terminal.print(yellow("Generating new seed..."))
+                delay(500.milliseconds)
+                terminal.println(white("done"))
+                terminal.println(red("Your 12-words seed is located in ${FileSystem.SYSTEM.canonicalize(datadir)}, make sure to do a backup or you risk losing your funds."))
+                terminal.prompt("Please confirm by typing", choices = listOf("I have made a backup"), invalidChoiceMessage = "Please type those exact words:")
+            }
+        }
 
         val scope = GlobalScope
-        val loggerFactory = LoggerFactory(StaticConfig(
-            minSeverity = Severity.Info,
-            logWriterList = buildList {
-                // always log to file
-                add(FileLogWriter(datadir / "phoenix.log", scope))
-                // only log to console if verbose mode is enabled
-                if (verbose) add(CommonWriter())
-            }))
-        val seed = getOrGenerateSeed(datadir)
+        val loggerFactory = LoggerFactory(
+            StaticConfig(
+                minSeverity = Severity.Info,
+                logWriterList = buildList {
+                    // always log to file
+                    add(FileLogWriter(datadir / "phoenix.log", scope))
+                    // only log to console if verbose mode is enabled
+                    if (verbose) add(CommonWriter())
+                })
+        )
         val config = Conf(
             chain = chain,
             electrumServer = ServerAddress("testnet1.electrum.acinq.co", 51001, TcpSocket.TLS.DISABLED),
@@ -121,7 +135,7 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
                 zeroConfPeers = setOf(config.lsp.walletParams.trampolineNode.id),
                 liquidityPolicy = MutableStateFlow(config.liquidityPolicy)
             )
-        println(nodeParams.nodeId)
+        echo(cyan("nodeid: ${nodeParams.nodeId}"))
         val peer = Peer(
             nodeParams = nodeParams,
             walletParams = config.lsp.walletParams,
