@@ -1,4 +1,3 @@
-import org.jetbrains.dokka.Platform
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
@@ -138,7 +137,7 @@ kotlin {
             languageSettings.optIn("kotlin.ExperimentalStdlibApi")
         }
     }
-    
+
     configurations.all {
         // do not cache changing (i.e. SNAPSHOT) dependencies
         resolutionStrategy.cacheChangingModulesFor(0, TimeUnit.SECONDS)
@@ -274,21 +273,19 @@ afterEvaluate {
 val dockerTestEnv by tasks.creating(Exec::class) {
     workingDir = projectDir.resolve("docker-local-test")
     commandLine("bash", "env.sh", "remove", "net-create", "btc-create", "elx-create", "btc-start", "elx-start")
-    doLast {
-        gradle.buildFinished {
-            exec {
-                println("Cleaning up dockers...")
-                workingDir = projectDir.resolve("docker-local-test")
-                commandLine("bash", "env.sh", "elx-stop", "btc-stop", "remove")
-            }
-        }
-    }
+}
+
+val dockerCleanup by tasks.creating(Exec::class) {
+    println("Cleaning up dockers...")
+    workingDir = projectDir.resolve("docker-local-test")
+    commandLine("bash", "env.sh", "elx-stop", "btc-stop", "remove")
 }
 
 val includeIntegrationTests = project.findProperty("integrationTests") == "include"
 tasks.withType<AbstractTestTask> {
     if (includeIntegrationTests) {
         dependsOn(dockerTestEnv)
+        finalizedBy(dockerCleanup)
     } else {
         filter.excludeTestsMatching("*IntegrationTest")
     }
