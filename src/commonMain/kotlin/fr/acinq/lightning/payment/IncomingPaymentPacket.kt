@@ -19,14 +19,14 @@ object IncomingPaymentPacket {
      *  - or a Bolt4 failure message that can be returned to the sender if the HTLC is invalid
      */
     fun decrypt(add: UpdateAddHtlc, privateKey: PrivateKey): Either<FailureMessage, PaymentOnion.FinalPayload> {
-        return when (val decrypted = decryptOnion(add.paymentHash, add.onionRoutingPacket, privateKey)) {
+        return when (val decrypted = decryptOnion(add.paymentHash, add.onionRoutingPacket, OnionRoutingPacket.PaymentPacketLength, privateKey)) {
             is Either.Left -> Either.Left(decrypted.value)
             is Either.Right -> {
                 val outer = decrypted.value
                 when (val trampolineOnion = outer.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()) {
                     null -> validate(add, outer)
                     else -> {
-                        when (val inner = decryptOnion(add.paymentHash, trampolineOnion.packet, privateKey)) {
+                        when (val inner = decryptOnion(add.paymentHash, trampolineOnion.packet, OnionRoutingPacket.TrampolinePacketLength, privateKey)) {
                             is Either.Left -> Either.Left(inner.value)
                             is Either.Right -> validate(add, outer, inner.value)
                         }
@@ -36,8 +36,8 @@ object IncomingPaymentPacket {
         }
     }
 
-    fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, privateKey: PrivateKey): Either<FailureMessage, PaymentOnion.FinalPayload> {
-        return when (val decrypted = Sphinx.peel(privateKey, paymentHash, packet)) {
+    fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, packetLength: Int, privateKey: PrivateKey): Either<FailureMessage, PaymentOnion.FinalPayload> {
+        return when (val decrypted = Sphinx.peel(privateKey, paymentHash, packet, packetLength)) {
             is Either.Left -> Either.Left(decrypted.value)
             is Either.Right -> run {
                 if (!decrypted.value.isLastPacket) {

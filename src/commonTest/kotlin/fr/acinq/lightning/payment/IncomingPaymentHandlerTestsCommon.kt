@@ -342,7 +342,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 paymentHash = incomingPayment.paymentHash,
                 hops = trampolineHops,
                 finalPayload = makeMppPayload(defaultAmount, defaultAmount, paymentSecret.reversed()), // <-- wrong secret
-                payloadLength = 400
+                payloadLength = OnionRoutingPacket.TrampolinePacketLength
             ).third.packet
         )
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)

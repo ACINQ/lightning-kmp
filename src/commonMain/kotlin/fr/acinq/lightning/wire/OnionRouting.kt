@@ -18,6 +18,7 @@ data class OnionRoutingPacket(
 ) {
     companion object {
         const val PaymentPacketLength = 1300
+        const val TrampolinePacketLength = 400
     }
 }
 

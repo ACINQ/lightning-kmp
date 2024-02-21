@@ -434,7 +434,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
          * This is very similar to the processing of a htlc, except that we only have a packet, to decrypt into a final payload.
          */
         private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult.Rejected, PayToOpenPart> {
-            return when (val decrypted = IncomingPaymentPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, privateKey)) {
+            return when (val decrypted = IncomingPaymentPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, payToOpenRequest.finalPacket.payload.size(), privateKey)) {
                 is Either.Left -> {
                     val failureMsg = decrypted.value
                     val action = actionForPayToOpenFailure(privateKey, failureMsg, payToOpenRequest)

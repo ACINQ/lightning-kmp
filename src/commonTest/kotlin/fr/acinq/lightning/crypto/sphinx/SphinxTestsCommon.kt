@@ -173,7 +173,8 @@ class SphinxTestsCommon : LightningTestSuite() {
         )
 
         testCases.forEach {
-            val onionErr = (Sphinx.peel(privKeys.first(), associatedData, it.second) as Either.Left).value
+            val payloadLength = it.second.payload.size()
+            val onionErr = (Sphinx.peel(privKeys.first(), associatedData, it.second, payloadLength) as Either.Left).value
             assertEquals(it.first, onionErr)
         }
     }
@@ -187,16 +188,11 @@ class SphinxTestsCommon : LightningTestSuite() {
             "0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619f7f3416a5aa36dc7eeb3ec6d421e9615471ab870a33ac07fa5d5a51df0a8823aabe3fea3f90d387529d4f72837f9e687230371ccd8d263072206dbed0234f6505e21e282abd8c0e4f5b9ff8042800bbab065036eadd0149b37f27dde664725a49866e052e809d2b0198ab9610faa656bbf4ec516763a59f8f42c171b179166ba38958d4f51b39b3e98706e2d14a2dafd6a5df808093abfca5aeaaca16eded5db7d21fb0294dd1a163edf0fb445d5c8d7d688d6dd9c541762bf5a5123bf9939d957fe648416e88f1b0928bfa034982b22548e1a4d922690eecf546275afb233acf4323974680779f1a964cfe687456035cc0fba8a5428430b390f0057b6d1fe9a8875bfa89693eeb838ce59f09d207a503ee6f6299c92d6361bc335fcbf9b5cd44747aadce2ce6069cfdc3d671daef9f8ae590cf93d957c9e873e9a1bc62d9640dc8fc39c14902d49a1c80239b6c5b7fd91d05878cbf5ffc7db2569f47c43d6c0d27c438abff276e87364deb8858a37e5a62c446af95d8b786eaf0b5fcf78d98b41496794f8dcaac4eef34b2acfb94c7e8c32a9e9866a8fa0b6f2a06f00a1ccde569f97eec05c803ba7500acc96691d8898d73d8e6a47b8f43c3d5de74458d20eda61474c426359677001fbd75a74d7d5db6cb4feb83122f133206203e4e2d293f838bf8c8b3a29acb321315100b87e80e0edb272ee80fda944e3fb6084ed4d7f7c7d21c69d9da43d31a90b70693f9b0cc3eac74c11ab8ff655905688916cfa4ef0bd04135f2e50b7c689a21d04e8e981e74c6058188b9b1f9dfc3eec6838e9ffbcf22ce738d8a177c19318dffef090cee67e12de1a3e2a39f61247547ba5257489cbc11d7d91ed34617fcc42f7a9da2e3cf31a94a210a1018143173913c38f60e62b24bf0d7518f38b5bab3e6a1f8aeb35e31d6442c8abb5178efc892d2e787d79c6ad9e2fc271792983fa9955ac4d1d84a36c024071bc6e431b625519d556af38185601f70e29035ea6a09c8b676c9d88cf7e05e0f17098b584c4168735940263f940033a220f40be4c85344128b14beb9e75696db37014107801a59b13e89cd9d2258c169d523be6d31552c44c82ff4bb18ec9f099f3bf0e5b1bb2ba9a87d7e26f98d294927b600b5529c47e04d98956677cbcee8fa2b60f49776d8b8c367465b7c626da53700684fb6c918ead0eab8360e4f60edd25b4f43816a75ecf70f909301825b512469f8389d79402311d8aecb7b3ef8599e79485a4388d87744d899f7c47ee644361e17040a7958c8911be6f463ab6a9b2afacd688ec55ef517b38f1339efc54487232798bb25522ff4572ff68567fe830f92f7b8113efce3e98c3fffbaedce4fd8b50e41da97c0c08e423a72689cc68e68f752a5e3a9003e64e35c957ca2e1c48bb6f64b05f56b70b575ad2f278d57850a7ad568c24a4d32a3d74b29f03dc125488bc7c637da582357f40b0a52d16b3b40bb2c2315d03360bc24209e20972c200566bcf3bbe5c5b0aedd83132a8a4d5b4242ba370b6d67d9b67eb01052d132c7866b9cb502e44796d9d356e4e3cb47cc527322cd24976fe7c9257a2864151a38e568ef7a79f10d6ef27cc04ce382347a2488b1f404fdbf407fe1ca1c9d0d5649e34800e25e18951c98cae9f43555eef65fee1ea8f15828807366c3b612cd5753bf9fb8fced08855f742cddd6f765f74254f03186683d646e6f09ac2805586c7cf11998357cafc5df3f285329366f475130c928b2dceba4aa383758e7a9d20705c4bb9db619e2992f608a1ba65db254bb389468741d0502e2588aeb54390ac600c19af5c8e61383fc1bebe0029e4474051e4ef908828db9cca13277ef65db3fd47ccc2179126aaefb627719f421e20"
         )
 
-        assertEquals(onion.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted0 = (Sphinx.peel(privKeys[0], associatedData, onion) as Either.Right).value
-        assertEquals(decrypted0.nextPacket.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted1 = (Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket) as Either.Right).value
-        assertEquals(decrypted1.nextPacket.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted2 = (Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket) as Either.Right).value
-        assertEquals(decrypted2.nextPacket.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket) as Either.Right).value
-        assertEquals(decrypted3.nextPacket.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket) as Either.Right).value
+        val decrypted0 = (Sphinx.peel(privKeys[0], associatedData, onion, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
+        val decrypted1 = (Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
+        val decrypted2 = (Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
+        val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
+        val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), referencePaymentPayloads)
         assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.perHopSecrets.map { it.first })
 
@@ -217,16 +213,11 @@ class SphinxTestsCommon : LightningTestSuite() {
             "0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866196ef84350c2a76fc232b5d46d421e9615471ab9e0bc887beff8c95fdb878f7b3a7141453e5f8d22b6101810ae541ce499a09b4a9d9f80d1845c8960c85fc6d1a87bf74b2ce49922898e9353fa268086c00ae8b7f718405b72ad3829dbb38c85e02a00427eb4bdbda8fcd42b44708a9efde49cf776b75ebb389bf84d0bfbf58590e510e034572a01e409c309396778760423a8d8754c52e9a01a8f0e271cba5068bab5ee5bd0b5cd98276b0e04d60ba6a0f6bafd75ff41903ab352a1f47586eae3c6c8e437d4308766f71052b46ba2efbd87c0a781e8b3f456300fc7efbefc78ab515338666aed2070e674143c30b520b9cc1782ba8b46454db0d4ce72589cfc2eafb2db452ec98573ad08496483741de5376bfc7357fc6ea629e31236ba6ba7703014959129141a1719788ec83884f2e9151a680e2a96d2bcc67a8a2935aa11acee1f9d04812045b4ae5491220313756b5b9a0a6f867f2a95be1fab14870f04eeab694d9594620632b14ec4b424b495914f3dc587f75cd4582c113bb61e34a0fa7f79f97463be4e3c6fb99516889ed020acee419bb173d38e5ba18a00065e11fd733cf9ae46505dbb4ef70ef2f502601f4f6ee1fdb9d17435e15080e962f24760843f35bac1ac079b694ff7c347c1ed6a87f02b0758fbf00917764716c68ed7d6e6c0e75ccdb6dc7fa59554784b3ad906127ea77a6cdd814662ee7d57a939e28d77b3da47efc072436a3fd7f9c40515af8c4903764301e62b57153a5ca03ff5bb49c7dc8d3b2858100fb4aa5df7a94a271b73a76129445a3ea180d84d19029c003c164db926ed6983e5219028721a294f145e3fcc20915b8a2147efc8b5d508339f64970feee3e2da9b9c9348c1a0a4df7527d0ae3f8ae507a5beb5c73c2016ecf387a3cd8b79df80a8e9412e707cb9c761a0809a84c606a779567f9f0edf685b38c98877e90d02aedd096ed841e50abf2114ce01efbff04788fb280f870eca20c7ec353d5c381903e7d08fc57695fd79c27d43e7bd603a876068d3f1c7f45af99003e5eec7e8d8c91e395320f1fc421ef3552ea033129429383304b760c8f93de342417c3223c2112a623c3514480cdfae8ec15a99abfca71b03a8396f19edc3d5000bcfb77b5544813476b1b521345f4da396db09e783870b97bc2034bd11611db30ed2514438b046f1eb7093eceddfb1e73880786cd7b540a3896eaadd0a0692e4b19439815b5f2ec855ec8ececce889442a64037e956452a3f7b86cb3780b3e316c8dde464bc74a60a85b613f849eb0b29daf81892877bd4be9ba5997fc35544d3c2a00e5e1f45dc925607d952c6a89721bd0b6f6aec03314d667166a5b8b18471403be7018b2479aaef6c7c6c554a50a98b717dff06d50be39fb36dc03e678e0a52fc615be46b223e3bee83fa0c7c47a1f29fb94f1e9eebf6c9ecf8fc79ae847df2effb60d07aba301fc536546ec4899eedb4fec9a9bed79e3a83c4b32757745778e977e485c67c0f12bbc82c0b3bb0f4df0bd13d046fed4446f54cd85bfce55ef781a80e5f63d289d08de001237928c2a4e0c8694d0c1e68cc23f2409f30009019085e831a928e7bc5b00a1f29d25482f7fd0b6dad30e6ef8edc68ddf7db404ea7d11540fc2cee74863d64af4c945457e04b7bea0a5fb8636edadb1e1d6f2630d61062b781c1821f46eddadf269ea1fada829547590081b16bc116e074cae0224a375f2d9ce16e836687c89cd285e3b40f1e59ce2caa3d1d8cf37ee4d5e3abe7ef0afd6ffeb4fd6905677b950894863c828ab8d93519566f69fa3c2129da763bf58d9c4d2837d4d9e13821258f7e7098b34f695a589bd9eb568ba51ee3014b2d3ba1d4cf9ebaed0231ed57ecea7bd918216"
         )
 
-        assertEquals(onion.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted0 = (Sphinx.peel(privKeys[0], associatedData, onion) as Either.Right).value
-        assertEquals(decrypted0.nextPacket.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted1 = (Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket) as Either.Right).value
-        assertEquals(decrypted1.nextPacket.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted2 = (Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket) as Either.Right).value
-        assertEquals(decrypted2.nextPacket.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket) as Either.Right).value
-        assertEquals(decrypted3.nextPacket.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket) as Either.Right).value
+        val decrypted0 = (Sphinx.peel(privKeys[0], associatedData, onion, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
+        val decrypted1 = (Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
+        val decrypted2 = (Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
+        val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
+        val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), paymentPayloadsFull)
         assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.perHopSecrets.map { it.first })
 
@@ -247,8 +238,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             Hex.encode(OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).write(onion)),
             "0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661918f5b235c2a76fc232b5e46d421e9615471ab9e0bc887beff8c95fdb878f7b3a7141453e5f8d22b6351810ae541ce499a09b4a9d9f80d1845c8960c85fc6d1a87bd24b2cc49922898e9353fa268086c00ae8b7f718405b72ad380cdbb38c85e02a00427eb4bdbda8fcd42b44708a9efde49cf753b75ebb389bf84d0bfbf58590e510e034572a01e409c30939e2e4a090ecc89c371820af54e06e4ad5495d4e58718385cca5414552e078fedf284fdc2cc5c070cba21a6a8d4b77525ddbc9a9fca9b2f29aac5783ee8badd709f81c73ff60556cf2ee623af073b5a84799acc1ca46b764f74b97068c7826cc0579794a540d7a55e49eac26a6930340132e946a983240b0cd1b732e305c1042f580c4b26f140fc1cab3ee6f620958e0979f85eddf586c410ce42e93a4d7c803ead45fc47cf4396d284632314d789e73cf3f534126c63fe244069d9e8a7c4f98e7e530fc588e648ef4e641364981b5377542d5e7a4aaab6d35f6df7d3a9d7ca715213599ee02c4dbea4dc78860febe1d29259c64b59b3333ffdaebbaff4e7b31c27a3791f6bf848a58df7c69bb2b1852d2ad357b9919ffdae570b27dc709fba087273d3a4de9e6a6be66db647fb6a8d1a503b3f481befb96745abf5cc4a6bba0f780d5c7759b9e303a2a6b17eb05b6e660f4c474959db183e1cae060e1639227ee0bca03978a238dc4352ed764da7d4f3ed5337f6d0376dff72615beeeeaaeef79ab93e4bcbf18cd8424eb2b6ad7f33d2b4ffd5ea08372e6ed1d984152df17e04c6f73540988d7dd979e020424a163c271151a255966be7edef42167b8facca633649739bab97572b485658cde409e5d4a0f653f1a5911141634e3d2b6079b19347df66f9820755fd517092dae62fb278b0bafcc7ad682f7921b3a455e0c6369988779e26f0458b31bffd7e4e5bfb31944e80f100b2553c3b616e75be18328dc430f6618d55cd7d0962bb916d26ed4b117c46fa29e0a112c02c36020b34a96762db628fa3490828ec2079962ad816ef20ea0bca78fb2b7f7aedd4c47e375e64294d151ff03083730336dea64934003a27730cc1c7dec5049ddba8188123dd191aa71390d43a49fb792a3da7082efa6cced73f00eccea18145fbc84925349f7b552314ab8ed4c491e392aed3b1f03eb79474c294b42e2eba1528da26450aa592cba7ea22e965c54dff0fd6fdfd6b52b9a0f5f762e27fb0e6c3cd326a1ca1c5973de9be881439f702830affeb0c034c18ac8d5c2f135c964bf69de50d6e99bde88e90321ba843d9753c8f83666105d25fafb1a11ea22d62ef6f1fc34ca4e60c35d69773a104d9a44728c08c20b6314327301a2c400a71e1424c12628cf9f4a67990ade8a2203b0edb96c6082d4673b7309cd52c4b32b02951db2f66c6c72bd6c7eac2b50b83830c75cdfc3d6e9c2b592c45ed5fa5f6ec0da85710b7e1562aea363e28665835791dc574d9a70b2e5e2b9973ab590d45b94d244fc4256926c5a55b01cd0aca21fe5f9c907691fb026d0c56788b03ca3f08db0abb9f901098dde2ec4003568bc3ca27475ff86a7cb0aabd9e5136c5de064d16774584b252024109bb02004dba1fabf9e8277de097a0ab0dc8f6e26fcd4a28fb9d27cd4a2f6b13e276ed259a39e1c7e60f3c32c5cc4c4f96bd981edcb5e2c76a517cdc285aa2ca571d1e3d463ecd7614ae227df17af7445305bd7c661cf7dba658b0adcf36b0084b74a5fa408e272f703770ac5351334709112c5d4e4fe987e0c27b670412696f52b33245c229775da550729938268ee4e7a282e4a60b25dbb28ea8877a5069f819e5d1d31d9140bbc627ff3df267d22e5f0e151db066577845d71b7cd4484089f3f59194963c8f02bd7a637"
         )
-        assertEquals(onion.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted = (Sphinx.peel(privKeys[0], associatedData, onion) as Either.Right).value
+        val decrypted = (Sphinx.peel(privKeys[0], associatedData, onion, OnionRoutingPacket.PaymentPacketLength) as Either.Right).value
         assertEquals(decrypted.payload, oneHopPaymentPayload.first())
         assertEquals(decrypted.nextPacket.hmac, ByteVector32("0000000000000000000000000000000000000000000000000000000000000000"))
     }
@@ -259,25 +249,23 @@ class SphinxTestsCommon : LightningTestSuite() {
         val payload = ByteVector("e5f14350c2a76fc232b5e46d421e9615471ab9e0bc887beff8c95fdb878f7b3a71e87f9aab8f6378c6ff744c1f34b393ad28d065b535c1a8668d85d3b34a1b3befd10f7d61ab590531cf08000178a333a347f8b4072e216400406bdf3bf038659793a1f9e7abc789266cc861cabd95818c0fc8efbdfdc14e3f7c2bc7eb8d6a79ef75ce721caad69320c3a469a202f3e468c67eaf7a7cda226d0fd32f7b48084dca885d014698cf05d742557763d9cb743faeae65dcc79dddaecf27fe5942be5380d15e9a1ec866abe044a9ad635778ba61fc0776dc832b39451bd5d35072d2269cf9b040a2a2fba158a0d8085926dc2e44f0c88bf487da56e13ef2d5e676a8589881b4869ed4c7f0218ff8c6c7dd7221d189c65b3b9aaa71a01484b122846c7c7b57e02e679ea8469b70e14fe4f70fee4d87b910cf144be6fe48eef24da475c0b0bcc6565a9f99728426ce2380a9580e2a9442481ceae7679906c30b1a0e21a10f26150e0645ab6edfdab1ce8f8bea7b1dee511c5fd38ac0e702c1c15bb86b52bca1b71e15b96982d262a442024c33ceb7dd8f949063c2e5e613e873250e2f8708bd4e1924abd45f65c2fa5617bfb10ee9e4a42d6b5811acc8029c16274f937dac9e8817c7e579fdb767ffe277f26d413ced06b620ede8362081da21cf67c2ca9d6f15fe5bc05f82f5bb93f8916bad3d63338ca824f3bbc11b57ce94a5fa1bc239533679903d6fec92a8c792fd86e2960188c14f21e399cfd72a50c620e10aefc6249360b463df9a89bf6836f4f26359207b765578e5ed76ae9f31b1cc48324be576e3d8e44d217445dba466f9b6293fdf05448584eb64f61e02903f834518622b7d4732471c6e0e22e22d1f45e31f0509eab39cdea5980a492a1da2aaac55a98a01216cd4bfe7abaa682af0fbff2dfed030ba28f1285df750e4d3477190dd193f8643b61d8ac1c427d590badb1f61a05d480908fbdc7c6f0502dd0c4abb51d725e92f95da2a8facb79881a844e2026911adcc659d1fb20a2fce63787c8bb0d9f6789c4b231c76da81c3f0718eb7156565a081d2be6b4170c0e0bcebddd459f53db2590c974bca0d705c055dee8c629bf854a5d58edc85228499ec6dde80cce4c8910b81b1e9e8b0f43bd39c8d69c3a80672729b7dc952dd9448688b6bd06afc2d2819cda80b66c57b52ccf7ac1a86601410d18d0c732f69de792e0894a9541684ef174de766fd4ce55efea8f53812867be6a391ac865802dbc26d93959df327ec2667c7256aa5a1d3c45a69a6158f285d6c97c3b8eedb09527848500517995a9eae4cd911df531544c77f5a9a2f22313e3eb72ca7a07dba243476bc926992e0d1e58b4a2fc8c7b01e0cad726237933ea319bad7537d39f3ed635d1e6c1d29e97b3d2160a09e30ee2b65ac5bce00996a73c008bcf351cecb97b6833b6d121dcf4644260b2946ea204732ac9954b228f0beaa15071930fd9583dfc466d12b5f0eeeba6dcf23d5ce8ae62ee5796359d97a4a15955c778d868d0ef9991d9f2833b5bb66119c5f8b396fd108baed7906cbb3cc376d13551caed97fece6f42a4c908ee279f1127fda1dd3ee77d8de0a6f3c135fa3f1cffe38591b6738dc97b55f0acc52be9753ce53e64d7e497bb00ca6123758df3b68fad99e35c04389f7514a8e36039f541598a417275e77869989782325a15b5342ac5011ff07af698584b476b35d941a4981eac590a07a092bb50342da5d3341f901aa07964a8d02b623c7b106dd0ae50bfa007a22d46c8772fa55558176602946cb1d11ea5460db7586fb89c6d3bcd3ab6dd20df4a4db63d2e7d52380800ad812")
         val hmac = ByteVector32("b8640887e027e946df96488b47fbc4a4fadaa8beda4abe446fafea5403fae2ef")
         val onion = OnionRoutingPacket(0, pubkey, payload, hmac)
-        assertEquals(onion.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        assertTrue(Sphinx.peel(privKeys[0], associatedData, onion).isLeft)
+        assertTrue(Sphinx.peel(privKeys[0], associatedData, onion, OnionRoutingPacket.PaymentPacketLength).isLeft)
     }
 
     @Test
     fun `create trampoline packet`() {
-        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, trampolinePayloads.map { it.toByteArray() }, associatedData, 400)
+        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, trampolinePayloads.map { it.toByteArray() }, associatedData, OnionRoutingPacket.TrampolinePacketLength)
         val onion = packetAndSecrets.packet
         assertEquals(
-            Hex.encode(OnionRoutingPacketSerializer(400).write(onion)),
+            Hex.encode(OnionRoutingPacketSerializer(OnionRoutingPacket.TrampolinePacketLength).write(onion)),
             "0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619cff34152f3a36e52ca94e74927203a560392b9cc7ce3c45809c6be52166c24a595716880f95f178bf5b30c8ca262744d656e4012980ec037cc7b35c9f43eb265ecc97974a598ff045cee0ecc99e303f3706509aa43ba7c8a88cba175fccf9a8f5016ef06d3b935dbb15196d7ce16dc1a7157845566901d7b2197e52cab4ce48701a2aa5a5249b5aed3b5b40bfefa9c40ab669d55e8a6b1058f02941bf119a7a69129db7c5f7eafaa166578c720619561dd14b3277db557ec7dcdb793771aef0f2f667cfdbe7e5b6eb3bd48bb0fbb30acc853fcdd7218ed9b6189816a7f41c5e0695f0471425951787e2ea8c5391cda7b0fe30c80913ef585234ce442808f7ef9425bcd815c3ba9114a3d48735c6283a24743b94ce93cdc9a27670398d1ee83e68dbdd71c9f39f1d635804a45faa69cfbbcb20a6d82b677ddd5b6cede1f2518dbc20f044f591fb6ea042838e7ff8514af58fc7c201ddbc6ca7c01c480f511870823384ca70e54da6006a8cb254cd68f5ab289b89c6ba512c064515c356ede847c376176339f2c9921ecc29325e613593aa2ba4ad37970adee4b3ef8427cad4cf32a37ab1dbe0e539aef146ad675cdfd96"
         )
 
-        assertEquals(onion.payload.size(), 400)
-        val decrypted0 = (Sphinx.peel(privKeys[0], associatedData, onion) as Either.Right).value
-        val decrypted1 = (Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket) as Either.Right).value
-        val decrypted2 = (Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket) as Either.Right).value
-        val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket) as Either.Right).value
-        val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket) as Either.Right).value
+        val decrypted0 = (Sphinx.peel(privKeys[0], associatedData, onion, OnionRoutingPacket.TrampolinePacketLength) as Either.Right).value
+        val decrypted1 = (Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, OnionRoutingPacket.TrampolinePacketLength) as Either.Right).value
+        val decrypted2 = (Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, OnionRoutingPacket.TrampolinePacketLength) as Either.Right).value
+        val decrypted3 = (Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, OnionRoutingPacket.TrampolinePacketLength) as Either.Right).value
+        val decrypted4 = (Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.TrampolinePacketLength) as Either.Right).value
         assertEquals(listOf(decrypted0.payload, decrypted1.payload, decrypted2.payload, decrypted3.payload, decrypted4.payload), trampolinePayloads)
         assertEquals(listOf(decrypted0.sharedSecret, decrypted1.sharedSecret, decrypted2.sharedSecret, decrypted3.sharedSecret, decrypted4.sharedSecret), packetAndSecrets.sharedSecrets.perHopSecrets.map { it.first })
     }
@@ -414,7 +402,7 @@ class SphinxTestsCommon : LightningTestSuite() {
         val testCases = listOf(
             Pair(OnionRoutingPacket.PaymentPacketLength, referencePaymentPayloads),
             Pair(OnionRoutingPacket.PaymentPacketLength, paymentPayloadsFull),
-            Pair(400, trampolinePayloads),
+            Pair(OnionRoutingPacket.TrampolinePacketLength, trampolinePayloads),
         )
         testCases.forEach {
             // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
@@ -424,20 +412,15 @@ class SphinxTestsCommon : LightningTestSuite() {
 
             // each node parses and forwards the packet
             // node #0
-            assertEquals(packetAndSecrets.packet.payload.size(), packetLength)
-            val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet, ).right!!
+            val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet, packetLength).right!!
             // node #1
-            assertEquals(decrypted0.nextPacket.payload.size(), packetLength)
-            val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket).right!!
+            val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, packetLength).right!!
             // node #2
-            assertEquals(decrypted1.nextPacket.payload.size(), packetLength)
-            val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket).right!!
+            val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, packetLength).right!!
             // node #3
-            assertEquals(decrypted2.nextPacket.payload.size(), packetLength)
-            val decrypted3 = Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket).right!!
+            val decrypted3 = Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, packetLength).right!!
             // node #4
-            assertEquals(decrypted3.nextPacket.payload.size(), packetLength)
-            val decrypted4 = Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket).right!!
+            val decrypted4 = Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, packetLength).right!!
             assertTrue(decrypted4.isLastPacket)
 
             // node #4 want to reply with an error message
@@ -476,12 +459,11 @@ class SphinxTestsCommon : LightningTestSuite() {
     @Test
     fun `last node replies with a failure message -- arbitrary length`() {
         val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referencePaymentPayloads.map { p -> p.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
-        assertEquals(packetAndSecrets.packet.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet).right!!
-        val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket).right!!
-        val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket).right!!
-        val decrypted3 = Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket).right!!
-        val decrypted4 = Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket).right!!
+        val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet, OnionRoutingPacket.PaymentPacketLength).right!!
+        val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, OnionRoutingPacket.PaymentPacketLength).right!!
+        val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, OnionRoutingPacket.PaymentPacketLength).right!!
+        val decrypted3 = Sphinx.peel(privKeys[3], associatedData, decrypted2.nextPacket, OnionRoutingPacket.PaymentPacketLength).right!!
+        val decrypted4 = Sphinx.peel(privKeys[4], associatedData, decrypted3.nextPacket, OnionRoutingPacket.PaymentPacketLength).right!!
         assertTrue(decrypted4.isLastPacket)
 
         // node #4 want to reply with an error message using a custom length
@@ -520,7 +502,7 @@ class SphinxTestsCommon : LightningTestSuite() {
         val testCases = listOf(
             Pair(OnionRoutingPacket.PaymentPacketLength, referencePaymentPayloads),
             Pair(OnionRoutingPacket.PaymentPacketLength, paymentPayloadsFull),
-            Pair(400, trampolinePayloads),
+            Pair(OnionRoutingPacket.TrampolinePacketLength, trampolinePayloads),
         )
         testCases.forEach {
             // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
@@ -530,14 +512,11 @@ class SphinxTestsCommon : LightningTestSuite() {
 
             // each node parses and forwards the packet
             // node #0
-            assertEquals(packetAndSecrets.packet.payload.size(), packetLength)
-            val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet).right!!
+            val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet, packetLength).right!!
             // node #1
-            assertEquals(decrypted0.nextPacket.payload.size(), packetLength)
-            val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket).right!!
+            val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, packetLength).right!!
             // node #2
-            assertEquals(decrypted1.nextPacket.payload.size(), packetLength)
-            val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket).right!!
+            val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, packetLength).right!!
 
             // node #2 want to reply with an error message
             val error2 = FailurePacket.create(decrypted2.sharedSecret, InvalidRealm)
@@ -554,10 +533,9 @@ class SphinxTestsCommon : LightningTestSuite() {
     @Test
     fun `intermediate node replies with a failure message -- arbitrary length`() {
         val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referencePaymentPayloads.map { p -> p.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
-        assertEquals(packetAndSecrets.packet.payload.size(), OnionRoutingPacket.PaymentPacketLength)
-        val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet).right!!
-        val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket).right!!
-        val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket).right!!
+        val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet, OnionRoutingPacket.PaymentPacketLength).right!!
+        val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket, OnionRoutingPacket.PaymentPacketLength).right!!
+        val decrypted2 = Sphinx.peel(privKeys[2], associatedData, decrypted1.nextPacket, OnionRoutingPacket.PaymentPacketLength).right!!
 
         // node #2 want to reply with an error message using a custom length
         val error2 = createCustomLengthFailurePacket(InvalidRealm, decrypted2.sharedSecret, 1024)
