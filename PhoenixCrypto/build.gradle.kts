@@ -1,5 +1,5 @@
-listOf("iphoneos", "iphonesimulator").forEach { sdk ->
-    tasks.create<Exec>("buildCrypto${sdk.capitalize()}") {
+listOf("Iphoneos", "Iphonesimulator").forEach { sdk ->
+    tasks.create<Exec>("buildCrypto$sdk") {
         group = "build"
 
         commandLine(
@@ -7,7 +7,7 @@ listOf("iphoneos", "iphonesimulator").forEach { sdk ->
             "-quiet",
             "-project", "PhoenixCrypto.xcodeproj",
             "-target", "PhoenixCrypto",
-            "-sdk", sdk
+            "-sdk", sdk.lowercase()
         )
         workingDir(projectDir)
 
@@ -16,7 +16,7 @@ listOf("iphoneos", "iphonesimulator").forEach { sdk ->
             fileTree("$projectDir/PhoenixCrypto")
         )
         outputs.files(
-            fileTree("$projectDir/build/Release-${sdk}")
+            fileTree("$projectDir/build/Release-${sdk.lowercase()}")
         )
     }
 }

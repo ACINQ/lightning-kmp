@@ -1,4 +1,3 @@
-import org.jetbrains.dokka.Platform
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
@@ -48,28 +47,28 @@ kotlin {
     if (currentOs.isMacOsX) {
         iosX64 { // ios simulator on intel devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "iphonesimulator"
+                val platform = "Iphonesimulator"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
 
         iosArm64 { // actual ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "iphoneos"
+                val platform = "Iphoneos"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
 
         iosSimulatorArm64 { // actual ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "iphonesimulator"
+                val platform = "Iphonesimulator"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto${platform.capitalize()}")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-$platform/include")
+                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
     }
@@ -138,7 +137,7 @@ kotlin {
             languageSettings.optIn("kotlin.ExperimentalStdlibApi")
         }
     }
-    
+
     configurations.all {
         // do not cache changing (i.e. SNAPSHOT) dependencies
         resolutionStrategy.cacheChangingModulesFor(0, TimeUnit.SECONDS)
@@ -156,18 +155,12 @@ kotlin {
     }
 }
 
-val dokkaOutputDir = buildDir.resolve("dokka")
+val dokkaOutputDir = layout.buildDirectory.dir("dokka")
 tasks.dokkaHtml {
     outputDirectory.set(file(dokkaOutputDir))
     dokkaSourceSets {
         configureEach {
-            val platformName = when (platform.get()) {
-                Platform.jvm -> "jvm"
-                Platform.js -> "js"
-                Platform.native -> "native"
-                Platform.common -> "common"
-                Platform.wasm -> "wasm"
-            }
+            val platformName = platform.get().name
             displayName.set(platformName)
 
             perPackageOption {
@@ -231,7 +224,7 @@ afterEvaluate {
     configure(targets) {
         compilations.all {
             cinterops.all { tasks[interopProcessingTaskName].enabled = false }
-            compileKotlinTask.enabled = false
+            compileTaskProvider.get().enabled = false
             tasks[processResourcesTaskName].enabled = false
         }
         binaries.all { linkTask.enabled = false }
@@ -280,21 +273,19 @@ afterEvaluate {
 val dockerTestEnv by tasks.creating(Exec::class) {
     workingDir = projectDir.resolve("docker-local-test")
     commandLine("bash", "env.sh", "remove", "net-create", "btc-create", "elx-create", "btc-start", "elx-start")
-    doLast {
-        gradle.buildFinished {
-            exec {
-                println("Cleaning up dockers...")
-                workingDir = projectDir.resolve("docker-local-test")
-                commandLine("bash", "env.sh", "elx-stop", "btc-stop", "remove")
-            }
-        }
-    }
+}
+
+val dockerCleanup by tasks.creating(Exec::class) {
+    println("Cleaning up dockers...")
+    workingDir = projectDir.resolve("docker-local-test")
+    commandLine("bash", "env.sh", "elx-stop", "btc-stop", "remove")
 }
 
 val includeIntegrationTests = project.findProperty("integrationTests") == "include"
 tasks.withType<AbstractTestTask> {
     if (includeIntegrationTests) {
         dependsOn(dockerTestEnv)
+        finalizedBy(dockerCleanup)
     } else {
         filter.excludeTestsMatching("*IntegrationTest")
     }
