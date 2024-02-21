@@ -41,6 +41,7 @@ kotlin {
                 implementation(ktor("server-content-negotiation"))
                 implementation(ktor("serialization-kotlinx-json"))
                 implementation(ktor("server-cio"))
+                implementation(ktor("server-websockets"))
                 implementation("com.squareup.okio:okio:3.8.0")
                 implementation("com.github.ajalt.clikt:clikt:4.2.2")
             }
