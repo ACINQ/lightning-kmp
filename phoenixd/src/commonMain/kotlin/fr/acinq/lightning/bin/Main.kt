@@ -49,13 +49,14 @@ fun main(args: Array<String>) {
         datadirParser.parse(args)
         buildMap {
             val confFile = datadirParser.datadir / "phoenix.conf"
-            if (FileSystem.SYSTEM.exists(confFile))
+            if (FileSystem.SYSTEM.exists(confFile)) {
                 FileSystem.SYSTEM.read(confFile) {
                     while (true) {
                         val line = readUtf8Line() ?: break
                         line.split("=").run { put(first(), last()) }
                     }
                 }
+            }
         }
     } catch (t: Throwable) {
         emptyMap()
@@ -71,8 +72,7 @@ class DatadirParser : CliktCommand() {
 class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) : CliktCommand() {
     private val datadir by option("--datadir", help = "Data directory").convert { it.toPath() }.default(homeDirectory / ".phoenix", defaultForHelp = "~/.phoenix")
     private val chain by option("--chain", help = "Bitcoin chain to use").choice(
-        "mainnet" to Chain.Mainnet,
-        "testnet" to Chain.Testnet
+        "mainnet" to Chain.Mainnet, "testnet" to Chain.Testnet
     ).default(Chain.Testnet, defaultForHelp = "testnet")
     private val autoLiquidity by option("--auto-liquidity", help = "Amount automatically requested when inbound liquidity is needed").choice(
         "off" to 0.sat,
@@ -113,19 +113,15 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
 
         val scope = GlobalScope
         val loggerFactory = LoggerFactory(
-            StaticConfig(
-                minSeverity = Severity.Info,
-                logWriterList = buildList {
-                    // always log to file
-                    add(FileLogWriter(datadir / "phoenix.log", scope))
-                    // only log to console if verbose mode is enabled
-                    if (verbose) add(CommonWriter())
-                })
+            StaticConfig(minSeverity = Severity.Info, logWriterList = buildList {
+                // always log to file
+                add(FileLogWriter(datadir / "phoenix.log", scope))
+                // only log to console if verbose mode is enabled
+                if (verbose) add(CommonWriter())
+            })
         )
         val config = Conf(
-            chain = chain,
-            electrumServer = ServerAddress("testnet1.electrum.acinq.co", 51001, TcpSocket.TLS.DISABLED),
-            autoLiquidity = autoLiquidity
+            chain = chain, electrumServer = ServerAddress("testnet1.electrum.acinq.co", 51001, TcpSocket.TLS.DISABLED), autoLiquidity = autoLiquidity
         )
         val keyManager = LocalKeyManager(seed, chain, config.lsp.swapInXpub)
         val electrum = ElectrumClient(scope, loggerFactory)
@@ -133,24 +129,17 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
         scope.launch {
             electrum.connect(config.electrumServer, TcpSocket.Builder())
         }
-        val nodeParams = NodeParams(chain, loggerFactory, keyManager)
-            .copy(
-                zeroConfPeers = setOf(config.lsp.walletParams.trampolineNode.id),
-                liquidityPolicy = MutableStateFlow(config.liquidityPolicy)
+        val nodeParams = NodeParams(chain, loggerFactory, keyManager).copy(
+                zeroConfPeers = setOf(config.lsp.walletParams.trampolineNode.id), liquidityPolicy = MutableStateFlow(config.liquidityPolicy)
             )
         echo(cyan("nodeid: ${nodeParams.nodeId}"))
         val peer = Peer(
-            nodeParams = nodeParams,
-            walletParams = config.lsp.walletParams,
-            watcher = ElectrumWatcher(electrum, scope, loggerFactory),
-            db = object : Databases {
+            nodeParams = nodeParams, walletParams = config.lsp.walletParams, watcher = ElectrumWatcher(electrum, scope, loggerFactory), db = object : Databases {
                 override val channels: ChannelsDb
                     get() = SqliteChannelsDb(createAppDbDriver(datadir))
                 override val payments: PaymentsDb
                     get() = InMemoryPaymentsDb()
-            },
-            socketBuilder = TcpSocket.Builder(),
-            scope
+            }, socketBuilder = TcpSocket.Builder(), scope
         )
 
         runBlocking {
