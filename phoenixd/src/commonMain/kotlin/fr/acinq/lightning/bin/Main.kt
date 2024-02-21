@@ -158,6 +158,7 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
 
         val api = Api(nodeParams, peer)
         val serverJob = scope.launch {
+            echo(yellow("Starting web server..."))
             api.server.start(wait = true)
         }
         api.server.environment.monitor.subscribe(ServerReady) { registerSignal() }

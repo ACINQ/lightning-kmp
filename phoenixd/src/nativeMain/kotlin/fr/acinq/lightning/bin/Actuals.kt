@@ -11,7 +11,7 @@ import okio.Path.Companion.toPath
 import platform.posix.*
 
 @OptIn(ExperimentalForeignApi::class)
-actual val homeDirectory: Path = setenv("KTOR_LOG_LEVEL", "WARN", 1).let { getenv("HOME")?.toKString()!!.toPath() }
+actual val homeDirectory: Path = setenv("KTOR_LOG_LEVEL", "INFO", 1).let { getenv("HOME")?.toKString()!!.toPath() }
 
 actual fun createAppDbDriver(dir: Path): SqlDriver {
     return NativeSqliteDriver(ChannelsDatabase.Schema, "phoenix.db",
