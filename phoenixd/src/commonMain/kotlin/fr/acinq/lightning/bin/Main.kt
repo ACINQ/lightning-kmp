@@ -22,11 +22,13 @@ import fr.acinq.lightning.bin.conf.getOrGenerateSeed
 import fr.acinq.lightning.bin.db.SqliteChannelsDb
 import fr.acinq.lightning.bin.logs.FileLogWriter
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
+import fr.acinq.lightning.blockchain.electrum.ElectrumConnectionStatus
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.db.ChannelsDb
 import fr.acinq.lightning.db.Databases
 import fr.acinq.lightning.db.PaymentsDb
+import fr.acinq.lightning.io.PaymentReceived
 import fr.acinq.lightning.io.Peer
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.logging.LoggerFactory
@@ -36,6 +38,7 @@ import fr.acinq.lightning.utils.sat
 import io.ktor.server.application.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 import okio.FileSystem
 import okio.Path.Companion.toPath
@@ -126,11 +129,10 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
         val keyManager = LocalKeyManager(seed, chain, config.lsp.swapInXpub)
         val electrum = ElectrumClient(scope, loggerFactory)
 
-        scope.launch {
-            electrum.connect(config.electrumServer, TcpSocket.Builder())
-        }
-        val nodeParams = NodeParams(chain, loggerFactory, keyManager).copy(
-                zeroConfPeers = setOf(config.lsp.walletParams.trampolineNode.id), liquidityPolicy = MutableStateFlow(config.liquidityPolicy)
+        val nodeParams = NodeParams(chain, loggerFactory, keyManager)
+            .copy(
+                zeroConfPeers = setOf(config.lsp.walletParams.trampolineNode.id),
+                liquidityPolicy = MutableStateFlow(config.liquidityPolicy)
             )
         echo(cyan("nodeid: ${nodeParams.nodeId}"))
         val peer = Peer(
@@ -142,7 +144,37 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
             }, socketBuilder = TcpSocket.Builder(), scope
         )
 
+        scope.launch {
+            // drop initial CLOSED event
+            electrum.connectionStatus.dropWhile { it is ElectrumConnectionStatus.Closed }.collect {
+                when (it) {
+                    is ElectrumConnectionStatus.Connecting -> echo(yellow("connecting to electrum server..."))
+                    is ElectrumConnectionStatus.Connected -> echo(yellow("connected to electrum server"))
+                    is ElectrumConnectionStatus.Closed -> echo(yellow("disconnected from electrum server"))
+                }
+            }
+        }
+        scope.launch {
+            // drop initial CLOSED event
+            peer.connectionState.dropWhile { it is Connection.CLOSED }.collect {
+                when (it) {
+                    Connection.ESTABLISHING -> echo(yellow("connecting to lightning peer..."))
+                    Connection.ESTABLISHED -> echo(yellow("connected to lightning peer"))
+                    is Connection.CLOSED -> echo(yellow("disconnected from lightning peer"))
+                }
+            }
+        }
+        scope.launch {
+            peer.eventsFlow.collect {
+                when (it) {
+                    is PaymentReceived -> echo("received lightning payment (${it.received.amount})")
+                    else -> {}
+                }
+            }
+        }
+
         runBlocking {
+            electrum.connect(config.electrumServer, TcpSocket.Builder())
             peer.connect(connectTimeout = 10.seconds, handshakeTimeout = 10.seconds)
             peer.connectionState.first { it == Connection.ESTABLISHED }
             peer.registerFcmToken("super-${randomBytes32().toHex()}")
@@ -151,10 +183,12 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
 
         val api = Api(nodeParams, peer)
         val serverJob = scope.launch {
-            echo(yellow("Starting web server..."))
             api.server.start(wait = true)
         }
-        api.server.environment.monitor.subscribe(ServerReady) { registerSignal() }
+        api.server.environment.monitor.subscribe(ServerReady) { event ->
+            echo("listening on http://${event.config.host}:${event.config.port}")
+            registerSignal()
+        }
         runBlocking { serverJob.join() }
     }
 
