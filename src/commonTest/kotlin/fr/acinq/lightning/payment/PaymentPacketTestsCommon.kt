@@ -365,8 +365,6 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         //             .--.
         //            /    \
         // a -> b -> c      d -> e
-
-
         val features = Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional)
         val offer = OfferTypes.Offer(finalAmount, "test offer", e, features, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()

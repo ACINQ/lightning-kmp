@@ -85,7 +85,7 @@ object OutgoingPaymentPacket {
             Triple(amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, listOf(payload) + payloads)
         }
         val nodes = hops.map { it.nextNodeId }
-        val onion = buildOnion(nodes, payloads, invoice.paymentHash, null)
+        val onion = buildOnion(nodes, payloads, invoice.paymentHash, 400) // TODO: remove the fixed payload length once eclair supports it
         return Triple(firstAmount, firstExpiry, onion)
     }
 
