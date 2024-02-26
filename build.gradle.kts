@@ -106,7 +106,7 @@ kotlin {
                 api(ktor("network-tls"))
                 implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:$secpJniJvmVersion")
                 implementation("org.slf4j:slf4j-api:1.7.36")
-                api("org.xerial:sqlite-jdbc:3.32.3.2")
+                api("org.xerial:sqlite-jdbc:3.32.3.3")
             }
         }
 
