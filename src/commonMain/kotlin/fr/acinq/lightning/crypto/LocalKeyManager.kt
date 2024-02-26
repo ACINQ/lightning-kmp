@@ -72,7 +72,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
 
     override fun channelKeys(fundingKeyPath: KeyPath): KeyManager.ChannelKeys {
         // We use a different funding key for each splice, with a derivation based on the fundingTxIndex.
-        val fundingKey: (Long) -> PrivateKey = { index -> derivePrivateKey(master, channelKeyBasePath / fundingKeyPath / hardened(index)).privateKey }
+        val fundingKey: (Long) -> PrivateKeyDescriptor = { index -> LocalPrivateKeyDescriptor(this,  channelKeyBasePath / fundingKeyPath / hardened(index)) }
         // We use the initial funding pubkey to compute the channel key path, and we use the recovery process even
         // in the normal case, which guarantees it works all the time.
         val initialFundingPubkey = fundingKey(0).publicKey()
@@ -97,7 +97,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         val channelKeyPrefix = channelKeyBasePath / channelKeyPath(fundingPubKey)
         return RecoveredChannelKeys(
             fundingPubKey,
-            paymentKey = privateKey(channelKeyPrefix / hardened(2)),
+            paymentKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(2)),
             delayedPaymentKey = privateKey(channelKeyPrefix / hardened(3)),
             htlcKey = privateKey(channelKeyPrefix / hardened(4)),
             revocationKey = privateKey(channelKeyPrefix / hardened(1)),
@@ -112,7 +112,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
      */
     data class RecoveredChannelKeys(
         val fundingPubKey: PublicKey,
-        val paymentKey: PrivateKey,
+        val paymentKey: PrivateKeyDescriptor,
         val delayedPaymentKey: PrivateKey,
         val htlcKey: PrivateKey,
         val revocationKey: PrivateKey,
@@ -164,6 +164,16 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         fun nodeKeyBasePath(chain: Chain) = when (chain) {
             Chain.Regtest, Chain.Testnet, Chain.Signet -> KeyPath.empty / hardened(48) / hardened(0)
             Chain.Mainnet -> KeyPath.empty / hardened(50) / hardened(0)
+        }
+    }
+    private class LocalPrivateKeyDescriptor(val keyManager: LocalKeyManager, val keyPath: KeyPath) :
+        PrivateKeyDescriptor {
+        override fun instantiate(): PrivateKey {
+            return keyManager.derivePrivateKey(keyPath).privateKey
+        }
+
+        override fun publicKey(): PublicKey {
+            return instantiate().publicKey()
         }
     }
 }

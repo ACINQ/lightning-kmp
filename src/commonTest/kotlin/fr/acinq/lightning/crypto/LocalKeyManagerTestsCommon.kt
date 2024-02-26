@@ -46,8 +46,8 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // some kind of migration process
         val errorMsg = "channel key generation is broken !!!"
         assertEquals(fundingKeyPath, channelKeys.fundingKeyPath, errorMsg)
-        assertEquals(PrivateKey.fromHex("cd85f39fad742e5c742eeab16f5f1acaa9d9c48977767c7daa4708a47b7222ec"), channelKeys.fundingKey(0), errorMsg)
-        assertEquals(PrivateKey.fromHex("ad635d9d4919e5657a9f306963a5976b533e9d70c8defa454f1bd958fae316c8"), channelKeys.paymentKey, errorMsg)
+        assertEquals(PrivateKey.fromHex("cd85f39fad742e5c742eeab16f5f1acaa9d9c48977767c7daa4708a47b7222ec"), channelKeys.fundingKey(0).instantiate(), errorMsg)
+        assertEquals(PrivateKey.fromHex("ad635d9d4919e5657a9f306963a5976b533e9d70c8defa454f1bd958fae316c8"), channelKeys.paymentKey.instantiate(), errorMsg)
         assertEquals(PrivateKey.fromHex("0f3c23df3feec614117de23d0b3f014174271826a16e59a17d9ebb655cc55e3f"), channelKeys.delayedPaymentKey, errorMsg)
         assertEquals(PrivateKey.fromHex("ee211f583f3b1b1fb10dca7c82708d985fde641e83e28080f669eb496de85113"), channelKeys.revocationKey, errorMsg)
         assertEquals(ByteVector32.fromValidHex("6255a59ea8155d41e62cddef2c8c63a077f75e23fd3eec1fd4881f6851412518"), channelKeys.shaSeed, errorMsg)

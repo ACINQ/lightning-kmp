@@ -12,13 +12,13 @@ import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.channel.RemoteParams
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
+import fr.acinq.lightning.crypto.HardCodedPrivateKey
 import fr.acinq.lightning.crypto.KeyManager.ChannelKeys
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.kodein.memory.file.FileSystem
 import org.kodein.memory.file.Path
@@ -31,7 +31,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AnchorOutputsTestsCommon {
-    val local_funding_privkey = PrivateKey.fromHex("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
+    val local_funding_privkey = HardCodedPrivateKey("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
     val local_funding_pubkey = PublicKey.fromHex(" 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb")
     val remote_funding_pubkey = PublicKey.fromHex("030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c1")
     val local_privkey = PrivateKey.fromHex("bb13b121cdc357cd2e608b0aea294afca36e2b34cf958e2e6451a2f27469449101")
@@ -40,7 +40,7 @@ class AnchorOutputsTestsCommon {
     val local_delayedpubkey = PublicKey.fromHex("03fd5960528dc152014952efdb702a88f71e3c1653b2314431701ec77e57fde83c")
     val local_revocation_pubkey = PublicKey.fromHex("0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val remote_funding_privkey = PrivateKey.fromHex("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
-    val local_payment_basepoint_secret = PrivateKey.fromHex("111111111111111111111111111111111111111111111111111111111111111101")
+    val local_payment_basepoint_secret = HardCodedPrivateKey("111111111111111111111111111111111111111111111111111111111111111101")
     val remote_revocation_basepoint_secret = PrivateKey.fromHex("222222222222222222222222222222222222222222222222222222222222222201")
     val local_delayed_payment_basepoint_secret = PrivateKey.fromHex("333333333333333333333333333333333333333333333333333333333333333301")
     val remote_payment_basepoint_secret = PrivateKey.fromHex("444444444444444444444444444444444444444444444444444444444444444401")
@@ -57,7 +57,7 @@ class AnchorOutputsTestsCommon {
     // From local_delayed_payment_basepoint_secret, local_per_commitment_point and local_delayed_payment_basepoint
     val local_delayed_privkey = PrivateKey.fromHex("adf3464ce9c2f230fd2582fda4c6965e4993ca5524e8c9580e3df0cf226981ad01")
 
-    val local_htlc_privkey = local_payment_basepoint_secret.deriveForCommitment(local_per_commitment_point)
+    val local_htlc_privkey = local_payment_basepoint_secret.instantiate().deriveForCommitment(local_per_commitment_point)
     val local_payment_privkey = local_payment_basepoint_secret
     val local_delayed_payment_privkey = local_delayed_payment_basepoint_secret.deriveForCommitment(local_per_commitment_point)
 
@@ -88,7 +88,7 @@ class AnchorOutputsTestsCommon {
 
     // high level tests which calls Commitments methods to generate transactions
     private fun runHighLevelTest(testCase: TestCase) {
-        val channelKeys = ChannelKeys(KeyPath.empty, { local_funding_privkey }, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32())
+        val channelKeys = ChannelKeys(KeyPath.empty, { local_funding_privkey }, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret.instantiate(), local_payment_basepoint_secret.instantiate(), randomBytes32())
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
             KeyPath.empty,
@@ -146,7 +146,7 @@ class AnchorOutputsTestsCommon {
             spec
         )
 
-        val localSig = Transactions.sign(commitTx, local_funding_privkey)
+        val localSig = Transactions.sign2(commitTx, local_funding_privkey)
         val remoteSig = Transactions.sign(commitTx, remote_funding_privkey)
         val signedTx = Transactions.addSigs(commitTx, local_funding_pubkey, remote_funding_pubkey, localSig, remoteSig)
         assertEquals(Transaction.read(testCase.ExpectedCommitmentTxHex), signedTx.tx)
@@ -194,7 +194,7 @@ class AnchorOutputsTestsCommon {
             true,
             outputs
         )
-        val localSig = Transactions.sign(commitTx, local_funding_privkey)
+        val localSig = Transactions.sign2(commitTx, local_funding_privkey)
         val remoteSig = Transactions.sign(commitTx, remote_funding_privkey)
         val signedTx = Transactions.addSigs(commitTx, local_funding_pubkey, remote_funding_pubkey, localSig, remoteSig)
         assertEquals(testCase.ExpectedCommitmentTx, signedTx.tx)

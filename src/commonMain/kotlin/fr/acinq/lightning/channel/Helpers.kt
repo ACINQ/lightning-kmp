@@ -408,7 +408,7 @@ object Helpers {
             require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitment.params.localParams.dustLimit.max(commitment.params.remoteParams.dustLimit)
             val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, dustLimit, closingFees.preferred, commitment.localCommit.spec)
-            val localClosingSig = Transactions.sign(closingTx, channelKeys.fundingKey(commitment.fundingTxIndex))
+            val localClosingSig = Transactions.sign2(closingTx, channelKeys.fundingKey(commitment.fundingTxIndex))
             val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
             return Pair(closingTx, closingSigned)
         }
@@ -651,7 +651,7 @@ object Helpers {
                     claimMainFeerate
                 )
             }?.let {
-                val sig = Transactions.sign(it, channelKeys.paymentKey)
+                val sig = Transactions.sign2(it, channelKeys.paymentKey)
                 Transactions.addSigs(it, sig)
             }
 
@@ -709,7 +709,7 @@ object Helpers {
                     feerateMain
                 )
             }?.let {
-                val sig = Transactions.sign(it, channelKeys.paymentKey)
+                val sig = Transactions.sign2(it, channelKeys.paymentKey)
                 Transactions.addSigs(it, sig)
             }
 

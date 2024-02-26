@@ -52,8 +52,8 @@ interface KeyManager {
      */
     data class ChannelKeys(
         val fundingKeyPath: KeyPath,
-        val fundingKey: (Long) -> PrivateKey,
-        val paymentKey: PrivateKey,
+        val fundingKey: (Long) -> PrivateKeyDescriptor,
+        val paymentKey: PrivateKeyDescriptor,
         val delayedPaymentKey: PrivateKey,
         val htlcKey: PrivateKey,
         val revocationKey: PrivateKey,

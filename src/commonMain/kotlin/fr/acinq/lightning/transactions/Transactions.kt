@@ -24,6 +24,7 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
+import fr.acinq.lightning.crypto.PrivateKeyDescriptor
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.transactions.CommitmentOutput.InHtlc
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
@@ -809,6 +810,18 @@ object Transactions {
         val inputIndex = txInfo.tx.txIn.indexOfFirst { it.outPoint == txInfo.input.outPoint }
         require(inputIndex >= 0) { "transaction doesn't spend the input to sign" }
         return sign(txInfo.tx, inputIndex, txInfo.input.redeemScript.toByteArray(), txInfo.input.txOut.amount, key, sigHash)
+    }
+
+    fun sign2(tx: Transaction, inputIndex: Int, redeemScript: ByteArray, amount: Satoshi, keyDescriptor: PrivateKeyDescriptor, sigHash: Int = SigHash.SIGHASH_ALL): ByteVector64 {
+        val key = keyDescriptor.instantiate()
+        val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, sigHash, amount, SigVersion.SIGVERSION_WITNESS_V0, key)
+        return Crypto.der2compact(sigDER)
+    }
+
+    fun sign2(txInfo: TransactionWithInputInfo, keyDescriptor: PrivateKeyDescriptor, sigHash: Int = SigHash.SIGHASH_ALL): ByteVector64 {
+        val inputIndex = txInfo.tx.txIn.indexOfFirst { it.outPoint == txInfo.input.outPoint }
+        require(inputIndex >= 0) { "transaction doesn't spend the input to sign" }
+        return sign2(txInfo.tx, inputIndex, txInfo.input.redeemScript.toByteArray(), txInfo.input.txOut.amount, keyDescriptor, sigHash)
     }
 
     fun addSigs(

@@ -112,7 +112,7 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishabl
                 localPerCommitmentPoint = localPerCommitmentPoint,
                 spec
             )
-            val sig = Transactions.sign(localCommitTx, keyManager.fundingKey(fundingTxIndex))
+            val sig = Transactions.sign2(localCommitTx, keyManager.fundingKey(fundingTxIndex))
 
             // no need to compute htlc sigs if commit sig doesn't check out
             val signedCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPubKey(fundingTxIndex), remoteFundingPubKey, sig, commit.signature)
@@ -166,7 +166,7 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
             remotePerCommitmentPoint = remotePerCommitmentPoint,
             spec
         )
-        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+        val sig = Transactions.sign2(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
         return CommitSig(params.channelId, sig, htlcSigs.toList())
@@ -476,7 +476,7 @@ data class Commitment(
             remotePerCommitmentPoint = remoteNextPerCommitmentPoint,
             spec
         )
-        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+        val sig = Transactions.sign2(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
 
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
         val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remoteNextPerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
@@ -493,7 +493,7 @@ data class Commitment(
                 val alternativeSigs = Commitments.alternativeFeerates.map { feerate ->
                     val alternativeSpec = spec.copy(feerate = feerate)
                     val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitInput, remotePerCommitmentPoint = remoteNextPerCommitmentPoint, alternativeSpec)
-                    val alternativeSig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+                    val alternativeSig = Transactions.sign2(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
                     CommitSigTlv.AlternativeFeerateSig(feerate, alternativeSig)
                 }
                 add(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs))
