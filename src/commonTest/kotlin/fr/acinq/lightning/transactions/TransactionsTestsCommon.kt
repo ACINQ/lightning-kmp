@@ -15,6 +15,8 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
+import fr.acinq.lightning.crypto.HardCodedPrivateKey
+import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
@@ -483,14 +485,16 @@ class TransactionsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `spend 2-of-2 swap-in taproot-musig2 version`() {
-        val userPrivateKey = PrivateKey(ByteArray(32) { 1 })
-        val serverPrivateKey = PrivateKey(ByteArray(32) { 2 })
+        val userPrivateKey = HardCodedPrivateKey(ByteArray(32) { 1 })
+        val serverPrivateKey = HardCodedPrivateKey(ByteArray(32) { 2 })
         val refundDelay = 25920
 
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "")
         val masterPrivateKey = DeterministicWallet.derivePrivateKey(DeterministicWallet.generate(seed), "/51'/0'/0'").copy(path = KeyPath.empty)
+        val masterPrivateKeyDescriptor = LocalKeyManager.RootExtendedPrivateKeyDescriptor(masterPrivateKey)
         val userRefundPrivateKey = DeterministicWallet.derivePrivateKey(masterPrivateKey, "0").privateKey
+        val userRefundPrivateKeyDescriptor = masterPrivateKeyDescriptor.derivePrivateKey(0)
         val swapInProtocol = SwapInProtocol(userPrivateKey.publicKey(), serverPrivateKey.publicKey(), userRefundPrivateKey.publicKey(), refundDelay)
 
         val swapInTx = Transaction(
@@ -510,8 +514,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             // The first step of a musig2 signing session is to exchange nonces.
             // If participants are disconnected before the end of the signing session, they must start again with fresh nonces.
-            val userNonce = Musig2.generateNonce(randomBytes32(), userPrivateKey, listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
-            val serverNonce = Musig2.generateNonce(randomBytes32(), serverPrivateKey, listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()))
+            val userNonce = Musig2.generateNonce(randomBytes32(), userPrivateKey.instantiate(), listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
+            val serverNonce = Musig2.generateNonce(randomBytes32(), serverPrivateKey.instantiate(), listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()))
 
             // Once they have each other's public nonce, they can produce partial signatures.
             val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, userNonce.second, serverNonce.second).right!!
@@ -532,7 +536,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
                 lockTime = 0
             )
-            val sig = swapInProtocol.signSwapInputRefund(tx, 0, swapInTx.txOut, userRefundPrivateKey)
+            val sig = swapInProtocol.signSwapInputRefund(tx, 0, swapInTx.txOut, userRefundPrivateKeyDescriptor)
             val signedTx = tx.updateWitness(0, swapInProtocol.witnessRefund(sig))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }

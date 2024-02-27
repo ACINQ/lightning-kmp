@@ -36,6 +36,7 @@ import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
 data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwapInExtendedPublicKey: String) : KeyManager {
 
     private val master = DeterministicWallet.generate(seed)
+    private val masterDescriptor = RootExtendedPrivateKeyDescriptor(master)
 
     override val nodeKeys: KeyManager.NodeKeys = KeyManager.NodeKeys(
         legacyNodeKey = @Suppress("DEPRECATION") derivePrivateKey(master, eclairNodeKeyBasePath(chain)),
@@ -51,7 +52,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         }
         require(prefix == expectedPrefix) { "unexpected swap-in xpub prefix $prefix (expected $expectedPrefix)" }
         val remoteSwapInPublicKey = DeterministicWallet.derivePublicKey(xpub, KeyManager.SwapInOnChainKeys.perUserPath(nodeKeys.nodeKey.publicKey)).publicKey
-        KeyManager.SwapInOnChainKeys(chain, master, remoteSwapInPublicKey)
+        KeyManager.SwapInOnChainKeys(chain, masterDescriptor,  remoteSwapInPublicKey)
     }
 
     private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
@@ -72,7 +73,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
 
     override fun channelKeys(fundingKeyPath: KeyPath): KeyManager.ChannelKeys {
         // We use a different funding key for each splice, with a derivation based on the fundingTxIndex.
-        val fundingKey: (Long) -> PrivateKeyDescriptor = { index -> LocalPrivateKeyDescriptor(this,  channelKeyBasePath / fundingKeyPath / hardened(index)) }
+        val fundingKey: (Long) -> PrivateKeyDescriptor = { index -> FromExtendedPrivateKeyDescriptor(masterDescriptor,  channelKeyBasePath / fundingKeyPath / hardened(index)) }
         // We use the initial funding pubkey to compute the channel key path, and we use the recovery process even
         // in the normal case, which guarantees it works all the time.
         val initialFundingPubkey = fundingKey(0).publicKey()
@@ -97,10 +98,10 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         val channelKeyPrefix = channelKeyBasePath / channelKeyPath(fundingPubKey)
         return RecoveredChannelKeys(
             fundingPubKey,
-            paymentKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(2)),
-            delayedPaymentKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(3)),
-            htlcKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(4)),
-            revocationKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(1)),
+            paymentKey = FromExtendedPrivateKeyDescriptor(masterDescriptor, channelKeyPrefix / hardened(2)),
+            delayedPaymentKey = FromExtendedPrivateKeyDescriptor(masterDescriptor, channelKeyPrefix / hardened(3)),
+            htlcKey = FromExtendedPrivateKeyDescriptor(masterDescriptor, channelKeyPrefix / hardened(4)),
+            revocationKey = FromExtendedPrivateKeyDescriptor(masterDescriptor, channelKeyPrefix / hardened(1)),
             shaSeed = privateKey(channelKeyPrefix / hardened(5)).value.concat(1).sha256()
         )
     }
@@ -166,14 +167,50 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
             Chain.Mainnet -> KeyPath.empty / hardened(50) / hardened(0)
         }
     }
-    private class LocalPrivateKeyDescriptor(val keyManager: LocalKeyManager, val keyPath: KeyPath) :
+
+    class FromExtendedPrivateKeyDescriptor(private val parent: ExtendedPrivateKeyDescriptor, private val path: KeyPath) :
         PrivateKeyDescriptor {
+
+        constructor(parent: ExtendedPrivateKeyDescriptor, index: Long): this(parent, KeyPath(listOf(index)))
+
+        constructor(parent: ExtendedPrivateKeyDescriptor): this(parent, KeyPath(listOf()))
+
         override fun instantiate(): PrivateKey {
-            return keyManager.derivePrivateKey(keyPath).privateKey
+            return DeterministicWallet.derivePrivateKey(parent.instantiate(), path).privateKey
         }
 
         override fun publicKey(): PublicKey {
             return instantiate().publicKey()
+        }
+    }
+
+    class RootExtendedPrivateKeyDescriptor(val master: DeterministicWallet.ExtendedPrivateKey) : ExtendedPrivateKeyDescriptor{
+        override fun instantiate(): DeterministicWallet.ExtendedPrivateKey {
+            return master
+        }
+        override fun publicKey(): DeterministicWallet.ExtendedPublicKey {
+            return DeterministicWallet.publicKey(instantiate())
+        }
+
+        override fun derivePrivateKey(index: Long): PrivateKeyDescriptor {
+            return FromExtendedPrivateKeyDescriptor(this, index)
+        }
+    }
+
+    class DerivedExtendedPrivateKeyDescriptor(
+        private val parent: ExtendedPrivateKeyDescriptor,
+        private val keyPath: KeyPath
+    ) : ExtendedPrivateKeyDescriptor {
+        override fun instantiate(): DeterministicWallet.ExtendedPrivateKey {
+            return DeterministicWallet.derivePrivateKey(parent.instantiate(), keyPath)
+        }
+
+        override fun publicKey(): DeterministicWallet.ExtendedPublicKey {
+            return DeterministicWallet.publicKey(instantiate())
+        }
+
+        override fun derivePrivateKey(index: Long): PrivateKeyDescriptor {
+            return FromExtendedPrivateKeyDescriptor(this, index)
         }
     }
 }

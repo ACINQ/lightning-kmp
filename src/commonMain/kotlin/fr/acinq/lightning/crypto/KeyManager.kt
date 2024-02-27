@@ -116,22 +116,24 @@ interface KeyManager {
      */
     data class SwapInOnChainKeys(
         private val chain: Chain,
-        private val master: DeterministicWallet.ExtendedPrivateKey,
+        private val master: ExtendedPrivateKeyDescriptor,
         val remoteServerPublicKey: PublicKey,
         val refundDelay: Int = DefaultSwapInParams.RefundDelay
     ) {
-        private val userExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserKeyPath(chain))
-        private val userRefundExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserRefundKeyPath(chain))
+        private val userExtendedPrivateKey: ExtendedPrivateKeyDescriptor =
+            LocalKeyManager.DerivedExtendedPrivateKeyDescriptor(master, swapInUserKeyPath(chain))
+        private val userRefundExtendedPrivateKey: ExtendedPrivateKeyDescriptor = LocalKeyManager.DerivedExtendedPrivateKeyDescriptor(master, swapInUserRefundKeyPath(chain))
 
-        val userPrivateKey: PrivateKey = userExtendedPrivateKey.privateKey
+        val userPrivateKey: PrivateKeyDescriptor = LocalKeyManager.FromExtendedPrivateKeyDescriptor(userExtendedPrivateKey)
+
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
 
-        private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInLocalServerKeyPath(chain))
-        fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
+        private val localServerExtendedPrivateKey: ExtendedPrivateKeyDescriptor = LocalKeyManager.DerivedExtendedPrivateKeyDescriptor(master, swapInLocalServerKeyPath(chain))
+        fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKeyDescriptor = LocalKeyManager.FromExtendedPrivateKeyDescriptor(localServerExtendedPrivateKey, perUserPath(remoteNodeId))
 
         // legacy p2wsh-based swap-in protocol, with a fixed on-chain address
         val legacySwapInProtocol = SwapInProtocolLegacy(userPublicKey, remoteServerPublicKey, refundDelay)
-        val legacyDescriptor = SwapInProtocolLegacy.descriptor(chain, DeterministicWallet.publicKey(master), DeterministicWallet.publicKey(userExtendedPrivateKey), remoteServerPublicKey, refundDelay)
+        val legacyDescriptor = SwapInProtocolLegacy.descriptor(chain, master.publicKey(), userExtendedPrivateKey.publicKey(), remoteServerPublicKey, refundDelay)
 
         fun signSwapInputUserLegacy(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>): ByteVector64 {
             return legacySwapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()], userPrivateKey)
@@ -140,19 +142,18 @@ interface KeyManager {
         // this is a private descriptor that can be used as-is to recover swap-in funds once the refund delay has passed
         // it is compatible with address rotation as long as refund keys are derived directly from userRefundExtendedPrivateKey
         // README: it includes the user's master refund private key and is not safe to share !!
-        val privateDescriptor = SwapInProtocol.privateDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey)
+        val privateDescriptor = SwapInProtocol.privateDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey.instantiate())
 
         // this is the public version of the above descriptor. It can be used to monitor a user's swap-in transaction
         // README: it cannot be used to derive private keys, but it can be used to derive swap-in addresses
-        val publicDescriptor = SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, DeterministicWallet.publicKey(userRefundExtendedPrivateKey))
+        val publicDescriptor = SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, DeterministicWallet.publicKey(userRefundExtendedPrivateKey.instantiate()))
 
         /**
          * @param addressIndex address index
          * @return the swap-in protocol that matches the input public key script
          */
         fun getSwapInProtocol(addressIndex: Int): SwapInProtocol {
-            val userRefundPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(userRefundExtendedPrivateKey, addressIndex.toLong()).privateKey
-            val userRefundPublicKey: PublicKey = userRefundPrivateKey.publicKey()
+            val userRefundPublicKey: PublicKey = userRefundExtendedPrivateKey.derivePrivateKey(addressIndex.toLong()).publicKey()
             return SwapInProtocol(userPublicKey, remoteServerPublicKey, userRefundPublicKey, refundDelay)
         }
 
@@ -189,7 +190,7 @@ interface KeyManager {
                             tx.updateWitness(index, legacySwapInProtocol.witnessRefund(sig))
                         } else {
                             val i = swapInProtocols.indexOfFirst { it.serializedPubkeyScript == utxo.publicKeyScript }
-                            val userRefundPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(userRefundExtendedPrivateKey, i.toLong()).privateKey
+                            val userRefundPrivateKey: PrivateKeyDescriptor = userRefundExtendedPrivateKey.derivePrivateKey(i.toLong())
                             val swapInProtocol = swapInProtocols[i]
                             val sig = swapInProtocol.signSwapInputRefund(tx, index, utxos, userRefundPrivateKey)
                             tx.updateWitness(index, swapInProtocol.witnessRefund(sig))

@@ -411,7 +411,7 @@ object TestsHelper {
 
     fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, List<WalletState.Utxo>> {
         val swapInAddressIndex = 0
-        val (privateKey, script) = keyManager.swapInOnChainWallet.run { Pair(userPrivateKey, getSwapInProtocol(swapInAddressIndex).pubkeyScript) }
+        val (privateKey, script) = keyManager.swapInOnChainWallet.run { Pair(userPrivateKey.instantiate(), getSwapInProtocol(swapInAddressIndex).pubkeyScript) }
         val parentTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 3), 0)), listOf(TxOut(amount, script)), 0)
         return privateKey to listOf(WalletState.Utxo(parentTx.txid, 0, 42, parentTx, WalletState.AddressMeta.Derived(swapInAddressIndex)))
     }
