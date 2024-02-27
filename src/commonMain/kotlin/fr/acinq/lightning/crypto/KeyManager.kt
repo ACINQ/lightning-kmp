@@ -54,9 +54,9 @@ interface KeyManager {
         val fundingKeyPath: KeyPath,
         val fundingKey: (Long) -> PrivateKeyDescriptor,
         val paymentKey: PrivateKeyDescriptor,
-        val delayedPaymentKey: PrivateKey,
-        val htlcKey: PrivateKey,
-        val revocationKey: PrivateKey,
+        val delayedPaymentKey: PrivateKeyDescriptor,
+        val htlcKey: PrivateKeyDescriptor,
+        val revocationKey: PrivateKeyDescriptor,
         val shaSeed: ByteVector32,
     ) {
         fun fundingPubKey(index: Long): PublicKey = fundingKey(index).publicKey()

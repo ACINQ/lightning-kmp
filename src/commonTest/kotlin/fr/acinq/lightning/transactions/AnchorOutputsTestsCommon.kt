@@ -42,8 +42,8 @@ class AnchorOutputsTestsCommon {
     val remote_funding_privkey = PrivateKey.fromHex("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val local_payment_basepoint_secret = HardCodedPrivateKey("111111111111111111111111111111111111111111111111111111111111111101")
     val remote_revocation_basepoint_secret = PrivateKey.fromHex("222222222222222222222222222222222222222222222222222222222222222201")
-    val local_delayed_payment_basepoint_secret = PrivateKey.fromHex("333333333333333333333333333333333333333333333333333333333333333301")
-    val remote_payment_basepoint_secret = PrivateKey.fromHex("444444444444444444444444444444444444444444444444444444444444444401")
+    val local_delayed_payment_basepoint_secret = HardCodedPrivateKey("333333333333333333333333333333333333333333333333333333333333333301")
+    val remote_payment_basepoint_secret = HardCodedPrivateKey("444444444444444444444444444444444444444444444444444444444444444401")
     val local_per_commitment_secret = PrivateKey.fromHex("1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010001")
 
     // From remote_revocation_basepoint_secret
@@ -57,7 +57,7 @@ class AnchorOutputsTestsCommon {
     // From local_delayed_payment_basepoint_secret, local_per_commitment_point and local_delayed_payment_basepoint
     val local_delayed_privkey = PrivateKey.fromHex("adf3464ce9c2f230fd2582fda4c6965e4993ca5524e8c9580e3df0cf226981ad01")
 
-    val local_htlc_privkey = local_payment_basepoint_secret.instantiate().deriveForCommitment(local_per_commitment_point)
+    val local_htlc_privkey = local_payment_basepoint_secret.deriveForCommitment(local_per_commitment_point)
     val local_payment_privkey = local_payment_basepoint_secret
     val local_delayed_payment_privkey = local_delayed_payment_basepoint_secret.deriveForCommitment(local_per_commitment_point)
 
@@ -88,7 +88,7 @@ class AnchorOutputsTestsCommon {
 
     // high level tests which calls Commitments methods to generate transactions
     private fun runHighLevelTest(testCase: TestCase) {
-        val channelKeys = ChannelKeys(KeyPath.empty, { local_funding_privkey }, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret.instantiate(), local_payment_basepoint_secret.instantiate(), randomBytes32())
+        val channelKeys = ChannelKeys(KeyPath.empty, { local_funding_privkey }, local_payment_basepoint_secret, local_delayed_payment_basepoint_secret, local_payment_basepoint_secret, local_payment_basepoint_secret, randomBytes32())
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
             KeyPath.empty,
@@ -154,7 +154,7 @@ class AnchorOutputsTestsCommon {
         val remoteHtlcSigs = testCase.HtlcDescs.map { Transaction.read(it.ResolutionTxHex).txid to ByteVector(it.RemoteSigHex) }.toMap()
         assertTrue { remoteHtlcSigs.keys.containsAll(htlcTxs.map { it.tx.txid }) }
         htlcTxs.forEach { htlcTx ->
-            val localHtlcSig = Transactions.sign(htlcTx, local_htlc_privkey, SigHash.SIGHASH_ALL)
+            val localHtlcSig = Transactions.sign2(htlcTx, local_htlc_privkey, SigHash.SIGHASH_ALL)
             val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[htlcTx.tx.txid]!!.toByteArray())
             val expectedTx = txs[htlcTx.tx.txid]
             val signed = when (htlcTx) {
@@ -204,7 +204,7 @@ class AnchorOutputsTestsCommon {
         val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, 546.sat, local_revocation_pubkey, CltvExpiryDelta(144), local_delayedpubkey, spec.feerate, outputs)
         assertTrue { remoteHtlcSigs.keys.containsAll(htlcTxs.map { it.tx.txid }) }
         htlcTxs.forEach { htlcTx ->
-            val localHtlcSig = Transactions.sign(htlcTx, local_htlc_privkey, SigHash.SIGHASH_ALL)
+            val localHtlcSig = Transactions.sign2(htlcTx, local_htlc_privkey, SigHash.SIGHASH_ALL)
             val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[htlcTx.tx.txid]!!.toByteArray())
             val expectedTx = txs[htlcTx.tx.txid]
             val signed = when (htlcTx) {

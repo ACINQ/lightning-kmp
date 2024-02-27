@@ -1092,7 +1092,7 @@ data class InteractiveTxSigningSession(
                 remotePerCommitmentPoint = remotePerCommitmentPoint
             ).map { firstCommitTx ->
                 val localSigOfRemoteCommitTx = Transactions.sign2(firstCommitTx.remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
-                val localSigsOfRemoteHtlcTxs = firstCommitTx.remoteHtlcTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+                val localSigsOfRemoteHtlcTxs = firstCommitTx.remoteHtlcTxs.map { Transactions.sign2(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
                 val alternativeSigs = if (firstCommitTx.remoteHtlcTxs.isEmpty()) {
                     val commitSigTlvs = Commitments.alternativeFeerates.map { feerate ->

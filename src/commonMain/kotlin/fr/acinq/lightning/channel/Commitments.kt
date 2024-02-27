@@ -126,7 +126,7 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishabl
             if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
                 return Either.Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
             }
-            val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, keyManager.htlcKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL) }
+            val htlcSigs = sortedHtlcTxs.map { Transactions.sign2(it, keyManager.htlcKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL) }
             val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.deriveForCommitment(localPerCommitmentPoint)
             // combine the sigs to make signed txs
             val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->
@@ -168,7 +168,7 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         )
         val sig = Transactions.sign2(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-        val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+        val htlcSigs = sortedHtlcsTxs.map { Transactions.sign2(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
         return CommitSig(params.channelId, sig, htlcSigs.toList())
     }
 
@@ -479,7 +479,7 @@ data class Commitment(
         val sig = Transactions.sign2(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
 
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-        val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remoteNextPerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+        val htlcSigs = sortedHtlcTxs.map { Transactions.sign2(it, channelKeys.htlcKey.deriveForCommitment(remoteNextPerCommitmentPoint),  SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         log.info {

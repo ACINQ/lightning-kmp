@@ -98,9 +98,9 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         return RecoveredChannelKeys(
             fundingPubKey,
             paymentKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(2)),
-            delayedPaymentKey = privateKey(channelKeyPrefix / hardened(3)),
-            htlcKey = privateKey(channelKeyPrefix / hardened(4)),
-            revocationKey = privateKey(channelKeyPrefix / hardened(1)),
+            delayedPaymentKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(3)),
+            htlcKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(4)),
+            revocationKey = LocalPrivateKeyDescriptor(this, channelKeyPrefix / hardened(1)),
             shaSeed = privateKey(channelKeyPrefix / hardened(5)).value.concat(1).sha256()
         )
     }
@@ -113,9 +113,9 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
     data class RecoveredChannelKeys(
         val fundingPubKey: PublicKey,
         val paymentKey: PrivateKeyDescriptor,
-        val delayedPaymentKey: PrivateKey,
-        val htlcKey: PrivateKey,
-        val revocationKey: PrivateKey,
+        val delayedPaymentKey: PrivateKeyDescriptor,
+        val htlcKey: PrivateKeyDescriptor,
+        val revocationKey: PrivateKeyDescriptor,
         val shaSeed: ByteVector32
     ) {
         val htlcBasepoint: PublicKey = htlcKey.publicKey()
