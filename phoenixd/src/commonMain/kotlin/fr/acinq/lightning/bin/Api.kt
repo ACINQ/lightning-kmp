@@ -1,6 +1,7 @@
 package fr.acinq.lightning.bin
 
 import fr.acinq.bitcoin.Bitcoin
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Script
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.toEither
@@ -12,7 +13,9 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
+import fr.acinq.lightning.channel.states.ClosingFeerates
 import fr.acinq.lightning.io.Peer
+import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.sum
@@ -63,6 +66,15 @@ class Api(private val nodeParams: NodeParams, private val peer: Peer) {
             }
             get("/channels") {
                 call.respond(peer.channels.values.toList())
+            }
+            post("/close") {
+                val formParameters = call.receiveParameters()
+                val channelId = ByteVector32(formParameters["channelId"] ?: error("missing channelId"))
+                val address = formParameters["address"] ?: error("missing address")
+                val scriptPubKey = Script.write(Bitcoin.addressToPublicKeyScript(nodeParams.chainHash, address).right ?: error("invalid address")).toByteVector()
+                val feerate = FeeratePerKw(FeeratePerByte((formParameters["feerateSatByte"] ?: error("missing feerateSatByte")).toLong().sat))
+                peer.send(WrappedChannelCommand(channelId, ChannelCommand.Close.MutualClose(scriptPubKey, ClosingFeerates(feerate))))
+                call.respondText("ok")
             }
             post("/invoice") {
                 val formParameters = call.receiveParameters()
