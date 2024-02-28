@@ -1,5 +1,8 @@
 package fr.acinq.starblocks
 
+import io.ktor.client.*
+import io.ktor.client.request.forms.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.*
 import io.ktor.serialization.kotlinx.json.*
@@ -15,11 +18,16 @@ import io.ktor.server.websocket.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-class Api() {
+class Api {
 
     private var customers = emptyMap<Int, Customer>()
 
-    public val server = embeddedServer(CIO, port = 8081, host = "0.0.0.0") {
+    val client = HttpClient(io.ktor.client.engine.cio.CIO)
+//    val response: HttpResponse = client.get("https://ktor.io/")
+//    println(response.status)
+//    client.close()
+
+    val server = embeddedServer(CIO, port = 8081, host = "0.0.0.0") {
 
         val json = Json {
             prettyPrint = true
@@ -55,6 +63,17 @@ class Api() {
             }
             webSocket("/websocket") {
                 customers.values.forEach { sendSerialized(it) }
+            }
+            get("/invoice") {
+                // forward create invoice to phoenixd
+                val invoice = client.submitForm(
+                    url = "http://127.0.0.1:8080/invoice",
+                    formParameters = parameters {
+                        append("amountSat", 42000.toString())
+                        append("description", "my description")
+                    }
+                ).bodyAsText()
+                call.respondText(invoice)
             }
         }
     }

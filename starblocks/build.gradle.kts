@@ -34,6 +34,7 @@ kotlin {
                 implementation(ktor("network"))
                 implementation(ktor("client-core"))
                 implementation(ktor("client-auth"))
+                implementation(ktor("client-cio"))
                 implementation(ktor("server-core"))
                 implementation(ktor("server-content-negotiation"))
                 implementation(ktor("serialization-kotlinx-json"))
