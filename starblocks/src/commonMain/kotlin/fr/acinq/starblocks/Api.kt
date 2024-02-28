@@ -14,18 +14,16 @@ import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.util.*
 import io.ktor.server.websocket.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-class Api {
+class Api(phoenixdUrl: Url) {
 
     private var customers = emptyMap<Int, Customer>()
 
     val client = HttpClient(io.ktor.client.engine.cio.CIO)
-//    val response: HttpResponse = client.get("https://ktor.io/")
-//    println(response.status)
-//    client.close()
 
     val server = embeddedServer(CIO, port = 8081, host = "0.0.0.0") {
 
@@ -67,7 +65,10 @@ class Api {
             get("/invoice") {
                 // forward create invoice to phoenixd
                 val invoice = client.submitForm(
-                    url = "http://127.0.0.1:8080/invoice",
+                    url = url {
+                        takeFrom(phoenixdUrl)
+                        path("invoice")
+                    },
                     formParameters = parameters {
                         append("amountSat", 42000.toString())
                         append("description", "my description")
