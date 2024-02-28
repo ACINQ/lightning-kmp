@@ -34,11 +34,7 @@ class Api() {
         }
         install(StatusPages) {
             exception<Throwable> { call, cause ->
-                if (cause is IllegalArgumentException) {
-                    call.respondText(text = "400: ${cause.message}", status = HttpStatusCode.BadRequest)
-                } else {
-                    call.respondText(text = "500: $cause", status = HttpStatusCode.InternalServerError)
-                }
+                call.respondText(text = cause.message ?: "", status = defaultExceptionStatusCode(cause) ?: HttpStatusCode.InternalServerError)
             }
         }
 
