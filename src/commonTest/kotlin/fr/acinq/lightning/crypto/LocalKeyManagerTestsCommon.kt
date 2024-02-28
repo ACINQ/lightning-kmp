@@ -157,8 +157,8 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val keyManager = LocalKeyManager(seed, Chain.Mainnet, DeterministicWallet.encode(dummyExtendedPubkey, testnet = false))
         assertEquals(keyManager.finalOnChainWallet.address(addressIndex = 0L), "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
         assertEquals(keyManager.finalOnChainWallet.address(addressIndex = 1L), "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g")
-        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).toBase58(Base58.Prefix.SecretKey), "Kxpf5b8p3qX56DKEe5NqWbNUP9MnqoRFzZwHRtsFqhzuvUJsYZCy")
-        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 0L).toBase58(Base58.Prefix.SecretKey), "KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d")
+        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).instantiate().toBase58(Base58.Prefix.SecretKey), "Kxpf5b8p3qX56DKEe5NqWbNUP9MnqoRFzZwHRtsFqhzuvUJsYZCy")
+        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 0L).instantiate().toBase58(Base58.Prefix.SecretKey), "KyZpNDKnfs94vbrwhJneDi77V6jF64PWPF8x5cdJb8ifgg2DUc9d")
         assertEquals(keyManager.finalOnChainWallet.xpub, "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs")
     }
 
@@ -168,8 +168,8 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
         val keyManager = LocalKeyManager(seed, Chain.Testnet, TestConstants.aliceSwapInServerXpub)
-        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTGhosGriPpuGA586jemcuH9pE9spwUmneMBmYYzrQEbY92DJrbo")
-        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cQFUndrpAyMaE3HAsjMCXiT94MzfsABCREat1x7Qe3Mtq9KihD4V")
+        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 0L).instantiate().toBase58(Base58.Prefix.SecretKeyTestnet), "cTGhosGriPpuGA586jemcuH9pE9spwUmneMBmYYzrQEbY92DJrbo")
+        assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).instantiate().toBase58(Base58.Prefix.SecretKeyTestnet), "cQFUndrpAyMaE3HAsjMCXiT94MzfsABCREat1x7Qe3Mtq9KihD4V")
         assertEquals(keyManager.finalOnChainWallet.xpub, "vpub5Y6cjg78GGuNLsaPhmYsiw4gYX3HoQiRBiSwDaBXKUafCt9bNwWQiitDk5VZ5BVxYnQdwoTyXSs2JHRPAgjAvtbBrf8ZhDYe2jWAqvZVnsc")
     }
 

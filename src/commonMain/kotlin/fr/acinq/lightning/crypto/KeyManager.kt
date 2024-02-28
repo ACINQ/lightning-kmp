@@ -71,21 +71,21 @@ interface KeyManager {
 
     data class Bip84OnChainKeys(
         private val chain: Chain,
-        private val master: DeterministicWallet.ExtendedPrivateKey,
+        private val master: ExtendedPrivateKeyDescriptor,
         val account: Long
     ) {
-        private val xpriv = DeterministicWallet.derivePrivateKey(master, bip84BasePath(chain) / hardened(account))
+        private val xpriv = LocalKeyManager.DerivedExtendedPrivateKeyDescriptor(master, bip84BasePath(chain) / hardened(account))
 
         val xpub: String = DeterministicWallet.encode(
-            input = DeterministicWallet.publicKey(xpriv),
+            input = xpriv.publicKey(),
             prefix = when (chain) {
                 Chain.Testnet, Chain.Regtest, Chain.Signet -> DeterministicWallet.vpub
                 Chain.Mainnet -> DeterministicWallet.zpub
             }
         )
 
-        fun privateKey(addressIndex: Long): PrivateKey {
-            return DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty / 0 / addressIndex).privateKey
+        fun privateKey(addressIndex: Long): PrivateKeyDescriptor {
+            return LocalKeyManager.FromExtendedPrivateKeyDescriptor(xpriv, KeyPath.empty / 0 / addressIndex)
         }
 
         fun pubkeyScript(addressIndex: Long): ByteVector {
