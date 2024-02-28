@@ -27,6 +27,7 @@ import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.cio.*
 import io.ktor.server.engine.*
+import io.ktor.server.plugins.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
@@ -37,7 +38,7 @@ import kotlinx.serialization.json.Json
 
 class Api(private val nodeParams: NodeParams, private val peer: Peer) {
 
-    public val server = embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
+    val server = embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
 
         val json = Json {
             prettyPrint = true
@@ -53,11 +54,7 @@ class Api(private val nodeParams: NodeParams, private val peer: Peer) {
         }
         install(StatusPages) {
             exception<Throwable> { call, cause ->
-                if (cause is IllegalArgumentException) {
-                    call.respondText(text = "400: ${cause.message}", status = HttpStatusCode.BadRequest)
-                } else {
-                    call.respondText(text = "500: $cause", status = HttpStatusCode.InternalServerError)
-                }
+                call.respondText(text = cause.message ?: "", status = defaultExceptionStatusCode(cause) ?: HttpStatusCode.InternalServerError)
             }
         }
 
@@ -125,17 +122,17 @@ class Api(private val nodeParams: NodeParams, private val peer: Peer) {
         }
     }
 
-    fun Parameters.getString(argName: String): String = (this[argName] ?: missing(argName))
+    private fun missing(argName: String): Nothing = throw MissingRequestParameterException(argName)
 
-    fun Parameters.getByteVector32(argName: String): ByteVector32 = getString(argName).let { hex -> kotlin.runCatching { ByteVector32.fromValidHex(hex) }.getOrNull()  ?: invalidType(argName, "hex32") }
+    private fun invalidType(argName: String, typeName: String): Nothing = throw ParameterConversionException(argName, typeName)
 
-    fun Parameters.getAddressAndConvertToScript(argName: String): ByteVector = Script.write(Bitcoin.addressToPublicKeyScript(nodeParams.chainHash, getString(argName)).right ?: error("invalid address")).toByteVector()
+    private fun Parameters.getString(argName: String): String = (this[argName] ?: missing(argName))
 
-    fun Parameters.getLong(argName: String): Long = ((this[argName] ?: missing(argName)).toLongOrNull()) ?: invalidType(argName, "integer")
+    private fun Parameters.getByteVector32(argName: String): ByteVector32 = getString(argName).let { hex -> kotlin.runCatching { ByteVector32.fromValidHex(hex) }.getOrNull()  ?: invalidType(argName, "hex32") }
+
+    private fun Parameters.getAddressAndConvertToScript(argName: String): ByteVector = Script.write(Bitcoin.addressToPublicKeyScript(nodeParams.chainHash, getString(argName)).right ?: error("invalid address")).toByteVector()
+
+    private fun Parameters.getLong(argName: String): Long = ((this[argName] ?: missing(argName)).toLongOrNull()) ?: invalidType(argName, "integer")
 }
-
-fun missing(argName: String): Nothing = throw IllegalArgumentException("missing $argName")
-
-fun invalidType(argName: String, typeName: String): Nothing = throw IllegalArgumentException("invalid type for $argName, expected $typeName")
 
 
