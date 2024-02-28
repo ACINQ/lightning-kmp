@@ -9,3 +9,4 @@ pluginManagement {
 
 include(":PhoenixCrypto")
 include(":phoenixd")
+include(":starblocks")
