@@ -380,7 +380,7 @@ object TestsHelper {
             localPerCommitmentPoint,
             alternativeSpec
         )
-        val localSig = Transactions.sign2(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
+        val localSig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
         val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubKey, localSig, alternative.sig)
         assertTrue(Transactions.checkSpendable(signedCommitTx).isSuccess)
         return signedCommitTx.tx
