@@ -9,6 +9,7 @@ import fr.acinq.bitcoin.utils.toEither
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.bin.json.Balance
+import fr.acinq.lightning.bin.json.GeneratedInvoice
 import fr.acinq.lightning.bin.json.PaymentReceived
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -88,7 +89,7 @@ class Api(private val nodeParams: NodeParams, private val peer: Peer) {
                 val amount = formParameters.getLong("amountSat").sat.toMilliSatoshi()
                 val description = formParameters.getString("description")
                 val invoice = peer.createInvoice(randomBytes32(), amount, Either.Left(description))
-                call.respondText(invoice.write())
+                call.respond(GeneratedInvoice(invoice.amount, invoice.paymentHash, serialized = invoice.write()))
             }
             post("/bitcoin/send") {
                 val res = kotlin.runCatching {

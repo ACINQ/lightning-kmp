@@ -15,6 +15,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.json.JsonSerializers
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 
@@ -22,6 +23,9 @@ import kotlinx.serialization.UseSerializers
 data class Balance(val amount: Satoshi)
 
 @Serializable
-data class PaymentReceived(val amount: MilliSatoshi, val paymentHash: ByteVector32) {
+data class PaymentReceived(@SerialName("amountMsat") val amount: MilliSatoshi, val paymentHash: ByteVector32) {
     constructor(event: fr.acinq.lightning.io.PaymentReceived) : this(event.received.amount, event.incomingPayment.paymentHash)
 }
+
+@Serializable
+data class GeneratedInvoice(@SerialName("amountMsat") val amount: MilliSatoshi?, val paymentHash: ByteVector32, val serialized: String)
