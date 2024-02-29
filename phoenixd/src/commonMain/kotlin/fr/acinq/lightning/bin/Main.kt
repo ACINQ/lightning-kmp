@@ -40,6 +40,7 @@ import io.ktor.server.cio.*
 import io.ktor.server.engine.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 import okio.FileSystem
@@ -174,6 +175,9 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
                         else -> {}
                     }
                 }
+            }
+            launch {
+                nodeParams.feeCredit.collect { feeCredit -> echo("fee credit: $feeCredit")}
             }
         }
 
