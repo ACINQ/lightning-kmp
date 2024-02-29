@@ -45,6 +45,10 @@ kotlin {
     linuxX64()
 
     if (currentOs.isMacOsX) {
+        macosX64()
+
+        macosArm64()
+
         iosX64 { // ios simulator on intel devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 val platform = "Iphonesimulator"

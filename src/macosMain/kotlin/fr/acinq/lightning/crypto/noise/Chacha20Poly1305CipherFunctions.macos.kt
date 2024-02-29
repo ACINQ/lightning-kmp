@@ -1,0 +1,3 @@
+package fr.acinq.lightning.crypto.noise
+
+actual typealias Chacha20Poly1305CipherFunctions = Chacha20Poly1305CipherFunctionsDefault
