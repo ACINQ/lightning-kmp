@@ -289,12 +289,21 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             // We only fill the DB with htlc parts, because we cannot be sure yet that our peer will honor the pay-to-open part(s).
                             // When the payment contains pay-to-open parts, it will be considered received, but the sum of all parts will be smaller
                             // than the expected amount. The pay-to-open part(s) will be added once we received the corresponding new channel or a splice-in.
-                            val receivedWith = htlcParts.map { part ->
-                                IncomingPayment.ReceivedWith.LightningPayment(
-                                    amount = part.amount,
-                                    htlcId = part.htlc.id,
-                                    channelId = part.htlc.channelId
-                                )
+                            val receivedWith = buildList {
+                                addAll(htlcParts.map { part ->
+                                    IncomingPayment.ReceivedWith.LightningPayment(
+                                        amount = part.amount,
+                                        htlcId = part.htlc.id,
+                                        channelId = part.htlc.channelId
+                                    )
+                                })
+                                if (liquidityDecision is LiquidityEvents.Decision.AddedToFeeCredit) {
+                                    addAll(payToOpenParts.map { part ->
+                                        IncomingPayment.ReceivedWith.FeeCreditPayment(
+                                            amount = part.amount
+                                        )
+                                    })
+                                }
                             }
                             val actions = buildList {
                                 htlcParts.forEach { part ->
