@@ -1589,9 +1589,7 @@ data class OnionMessage(
  */
 data class PayToOpenRequest(
     override val chainHash: BlockHash,
-    val fundingSatoshis: Satoshi,
     val amountMsat: MilliSatoshi,
-    val payToOpenMinAmountMsat: MilliSatoshi,
     val payToOpenFeeSatoshis: Satoshi,
     val paymentHash: ByteVector32,
     val expireAt: Long,
@@ -1601,9 +1599,9 @@ data class PayToOpenRequest(
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(chainHash.value, out)
-        LightningCodecs.writeU64(fundingSatoshis.toLong(), out)
+        LightningCodecs.writeU64(0, out) // backward compat for removed field fundingSatoshis
         LightningCodecs.writeU64(amountMsat.toLong(), out)
-        LightningCodecs.writeU64(payToOpenMinAmountMsat.toLong(), out)
+        LightningCodecs.writeU64(0, out) // backward compat for removed field payToOpenMinAmountMsat
         LightningCodecs.writeU64(payToOpenFeeSatoshis.toLong(), out)
         LightningCodecs.writeBytes(paymentHash, out)
         LightningCodecs.writeU32(expireAt.toInt(), out)
@@ -1616,10 +1614,10 @@ data class PayToOpenRequest(
 
         override fun read(input: Input): PayToOpenRequest {
             return PayToOpenRequest(
-                chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
-                fundingSatoshis = Satoshi(LightningCodecs.u64(input)),
-                amountMsat = MilliSatoshi(LightningCodecs.u64(input)),
-                payToOpenMinAmountMsat = MilliSatoshi(LightningCodecs.u64(input)),
+                chainHash = BlockHash(LightningCodecs.bytes(input, 32))
+                    .also { LightningCodecs.u64(input) }, // ignoring removed field fundingSatoshis
+                amountMsat = MilliSatoshi(LightningCodecs.u64(input))
+                    .also { LightningCodecs.u64(input) }, // ignoring removed field payToOpenMinAmountMsat
                 payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
                 paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
                 expireAt = LightningCodecs.u32(input).toLong(),
