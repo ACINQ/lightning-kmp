@@ -36,12 +36,15 @@ import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.sat
 import io.ktor.server.application.*
+import io.ktor.server.cio.*
+import io.ktor.server.engine.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 import okio.FileSystem
 import okio.Path.Companion.toPath
+import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -97,7 +100,6 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
 
     @OptIn(DelicateCoroutinesApi::class)
     override fun run() {
-
         FileSystem.SYSTEM.createDirectories(datadir)
         echo(cyan("datadir: ${FileSystem.SYSTEM.canonicalize(datadir)}"))
         echo(cyan("chain: $chain"))
@@ -144,31 +146,33 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
             }, socketBuilder = TcpSocket.Builder(), scope
         )
 
-        scope.launch {
-            // drop initial CLOSED event
-            electrum.connectionStatus.dropWhile { it is ElectrumConnectionStatus.Closed }.collect {
-                when (it) {
-                    is ElectrumConnectionStatus.Connecting -> echo(yellow("connecting to electrum server..."))
-                    is ElectrumConnectionStatus.Connected -> echo(yellow("connected to electrum server"))
-                    is ElectrumConnectionStatus.Closed -> echo(yellow("disconnected from electrum server"))
+        val listeners = scope.launch {
+            launch {
+                // drop initial CLOSED event
+                electrum.connectionStatus.dropWhile { it is ElectrumConnectionStatus.Closed }.collect {
+                    when (it) {
+                        is ElectrumConnectionStatus.Connecting -> echo(yellow("connecting to electrum server..."))
+                        is ElectrumConnectionStatus.Connected -> echo(yellow("connected to electrum server"))
+                        is ElectrumConnectionStatus.Closed -> echo(yellow("disconnected from electrum server"))
+                    }
                 }
             }
-        }
-        scope.launch {
-            // drop initial CLOSED event
-            peer.connectionState.dropWhile { it is Connection.CLOSED }.collect {
-                when (it) {
-                    Connection.ESTABLISHING -> echo(yellow("connecting to lightning peer..."))
-                    Connection.ESTABLISHED -> echo(yellow("connected to lightning peer"))
-                    is Connection.CLOSED -> echo(yellow("disconnected from lightning peer"))
+            launch {
+                // drop initial CLOSED event
+                peer.connectionState.dropWhile { it is Connection.CLOSED }.collect {
+                    when (it) {
+                        Connection.ESTABLISHING -> echo(yellow("connecting to lightning peer..."))
+                        Connection.ESTABLISHED -> echo(yellow("connected to lightning peer"))
+                        is Connection.CLOSED -> echo(yellow("disconnected from lightning peer"))
+                    }
                 }
             }
-        }
-        scope.launch {
-            peer.eventsFlow.collect {
-                when (it) {
-                    is PaymentReceived -> echo("received lightning payment (${it.received.amount})")
-                    else -> {}
+            launch {
+                peer.eventsFlow.collect {
+                    when (it) {
+                        is PaymentReceived -> echo("received lightning payment (${it.received.amount})")
+                        else -> {}
+                    }
                 }
             }
         }
@@ -181,14 +185,32 @@ class Phoenixd(private val additionalValues: Map<String, String> = emptyMap()) :
             peer.setAutoLiquidityParams(autoLiquidity)
         }
 
-        val api = Api(nodeParams, peer)
+        val server = embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
+            Api(nodeParams, peer).run { module() }
+        }
         val serverJob = scope.launch {
-            api.server.start(wait = true)
+            try {
+                server.start(wait = true)
+            } catch (t: Throwable) {
+                if (t.cause?.message?.contains("Address already in use") == true) {
+                    echo(t.cause?.message, err = true)
+                } else throw t
+            }
         }
-        api.server.environment.monitor.subscribe(ServerReady) { event ->
+
+        server.environment.monitor.subscribe(ServerReady) { event ->
             echo("listening on http://${event.config.host}:${event.config.port}")
-            registerSignal()
         }
+        server.environment.monitor.subscribe(ApplicationStopPreparing) {
+            echo(brightYellow("shutting down..."))
+            electrum.stop()
+            peer.disconnect()
+            server.stop()
+            listeners.cancel()
+            exitProcess(0)
+        }
+        server.environment.monitor.subscribe(ApplicationStopped) { echo(brightYellow("http server stopped")) }
+
         runBlocking { serverJob.join() }
     }
 

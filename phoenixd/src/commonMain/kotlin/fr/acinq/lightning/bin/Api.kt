@@ -26,7 +26,6 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.cio.*
 import io.ktor.server.engine.*
 import io.ktor.server.plugins.*
 import io.ktor.server.plugins.contentnegotiation.*
@@ -39,7 +38,7 @@ import kotlinx.serialization.json.Json
 
 class Api(private val nodeParams: NodeParams, private val peer: Peer) {
 
-    val server = embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
+    fun Application.module() {
 
         val json = Json {
             prettyPrint = true
@@ -52,6 +51,8 @@ class Api(private val nodeParams: NodeParams, private val peer: Peer) {
         }
         install(WebSockets) {
             contentConverter = KotlinxWebsocketSerializationConverter(json)
+            timeoutMillis = 10_000
+            pingPeriodMillis = 10_000
         }
         install(StatusPages) {
             exception<Throwable> { call, cause ->
