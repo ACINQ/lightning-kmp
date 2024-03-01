@@ -1,0 +1,97 @@
+h1, h2, h3, h4, h5
+  margin-top: 0
+  letter-spacing: .05em
+
+.nmb
+  margin-bottom: 0
+.mb
+  margin-bottom: 1em
+
+// ---------- family
+.text-mono
+  font-family: $family-mono
+
+.text-cursive
+  font-family: $family-cursive
+
+// ---------- size
+.text-xs
+  font-size: $font-xs
+.text-sm
+  font-size: $font-sm
+.text-md
+  font-size: $font-md
+.text-lg
+  font-size: $font-lg
+.text-xl
+  font-size: 26px
+.text-smaller
+  font-size: .875em
+.text-smaller-x
+  font-size: .75em
+.text-bigger
+  font-size: 1.25em
+
+// ---------- position
+.text-center
+  text-align: center
+.text-right
+  text-align: right
+
+// ----------- transforms
+.text-upper
+  text-transform: uppercase
+.text-strong
+  font-weight: bold
+.text-thin
+  font-weight: 300
+.text-normal
+  font-weight: normal
+
+// ----------- colors
+.text-primary
+  color: $primary
+
+.text-danger, .text-red
+  color: $red
+
+.text-success, .text-green
+  color: $green
+
+.text-muted
+  color: rgba($default, .5)
+
+// ----------- geometry
+.text-ellipsis
+  white-space: nowrap
+  overflow: hidden
+  text-overflow: ellipsis
+
+.text-break
+  word-break: break-all
+
+// ----------- text-functional
+
+.text-mini
+  @extend .text-upper
+  font-size: 11px
+  letter-spacing: .05em
+  user-select: none
+  font-family: $family-mono
+  cursor: default
+
+.text-badge
+  @extend .text-mini
+  line-height: 1em
+  font-size: 11px
+  display: inline-block
+  transform: translate3d(0, -2px, 0) scale(1.0, 1.0)
+  padding: 3px 4px
+  border-radius: 2px
+
+.text-money
+  letter-spacing: .1em
+
+// ------------- labels
+.label.success
+  color: white

@@ -1,0 +1,55 @@
+// -- COLORS
+
+$black:	#000;
+$white: #fff;
+
+$default: #2b2f2b;
+$primary: #45a586;
+$green: $primary;
+$red: #df002f;
+$ivory: #eceddf;
+$ocher: #dfc588;
+$ocher-pop: #e5be64;
+
+$shadow: 0 0px 50px 0 rgba(0,0,0,.3);
+
+// -- BUTTON RADIUS
+
+$radius: 4px;
+
+// -- FONTS
+
+$font_xs: 10px;
+$font_sm: 12px;
+$font_md: 14px;
+$font_lg: 16px;
+$font_xl: 18px;
+
+$family: 'Open Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+$family-mono: Consolas, Monaco, monospace;
+$family-cursive: 'Pacifico', $family;
+
+// -- spaces
+
+$space_xs: 5px;
+$space_sm: 10px;
+$space_md: 20px;
+$space_lg: 40px;
+$space_xl: 60px;
+
+
+// -- MEDIA QUERIES
+// https://daviseford.com/blog/2018/01/10/scss-responsive-media-query-mixins.html
+
+// Screen size variables, minimal width values
+
+$screen_sm: 0px;
+$screen_md: 640px;
+$screen_lg: 1024px;
+
+// Mixins
+@mixin sm { @media (min-width: #{$screen_sm}) {@content;} }
+@mixin sm_only { @media (min-width: #{$screen_sm}) and (max-width: #{$screen_md}) {@content;} }
+@mixin md { @media (min-width: #{$screen_md}) {@content;} }
+@mixin md_only { @media (min-width: #{$screen_md}) and (max-width: #{$screen_lg}) {@content;} }
+@mixin lg { @media (min-width: #{$screen_lg}) {@content;} }

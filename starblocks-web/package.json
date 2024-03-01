@@ -1,0 +1,34 @@
+{
+  "name": "starblocks",
+  "version": "3.0.0",
+  "description": "Front end project for Starblocks",
+  "author": "ACINQ",
+  "private": true,
+  "scripts": {
+    "dev": "vue-cli-service serve",
+    "build": "vue-cli-service build"
+  },
+  "dependencies": {
+    "@chenfengyuan/vue-qrcode": "^1.0.1",
+    "core-js": "^3.8.3",
+    "sass-mq": "^6.0.0",
+    "svg-sprite-loader": "^6.0.11",
+    "vue": "^2.6.14",
+    "vue-clipboard2": "^0.3.3",
+    "vue-router": "^3.5.1",
+    "vuex": "^3.6.2",
+    "vuex-router-sync": "^5.0.0",
+    "whatwg-fetch": "^3.6.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.12.16",
+    "@vue/cli-plugin-babel": "~5.0.0",
+    "@vue/cli-plugin-router": "~5.0.0",
+    "@vue/cli-plugin-vuex": "~5.0.0",
+    "@vue/cli-service": "~5.0.0",
+    "sass": "^1.32.7",
+    "sass-loader": "^12.0.0",
+    "vue-svg-loader": "^0.16.0",
+    "vue-template-compiler": "^2.6.14"
+  }
+}
