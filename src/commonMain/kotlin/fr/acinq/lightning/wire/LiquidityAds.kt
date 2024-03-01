@@ -20,7 +20,7 @@ import fr.acinq.lightning.utils.sat
 object LiquidityAds {
 
     /**
-     * @param miningFee fee paid to miners for the underlying on-chain transaction.
+     * @param miningFee we refund the liquidity provider for some of the fee they paid to miners for the underlying on-chain transaction.
      * @param serviceFee fee paid to the liquidity provider for the inbound liquidity.
      */
     data class LeaseFees(val miningFee: Satoshi, val serviceFee: Satoshi) {

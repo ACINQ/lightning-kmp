@@ -309,7 +309,7 @@ object Transactions {
     fun makeCommitTxOutputs(
         localFundingPubkey: PublicKey,
         remoteFundingPubkey: PublicKey,
-        localIsInitiator: Boolean,
+        localPaysCommitTxFees: Boolean,
         localDustLimit: Satoshi,
         localRevocationPubkey: PublicKey,
         toLocalDelay: CltvExpiryDelta,
@@ -321,7 +321,7 @@ object Transactions {
     ): TransactionsCommitmentOutputs {
         val commitFee = commitTxFee(localDustLimit, spec)
 
-        val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsInitiator) {
+        val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localPaysCommitTxFees) {
             Pair(spec.toLocal.truncateToSatoshi() - commitFee, spec.toRemote.truncateToSatoshi())
         } else {
             Pair(spec.toLocal.truncateToSatoshi(), spec.toRemote.truncateToSatoshi() - commitFee)
@@ -383,11 +383,11 @@ object Transactions {
         commitTxNumber: Long,
         localPaymentBasePoint: PublicKey,
         remotePaymentBasePoint: PublicKey,
-        localIsInitiator: Boolean,
+        localIsChannelOpener: Boolean,
         outputs: TransactionsCommitmentOutputs
     ): TransactionWithInputInfo.CommitTx {
-        val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsInitiator, localPaymentBasePoint, remotePaymentBasePoint)
-        val (sequence, locktime) = encodeTxNumber(txnumber)
+        val txNumber = obscuredCommitTxNumber(commitTxNumber, localIsChannelOpener, localPaymentBasePoint, remotePaymentBasePoint)
+        val (sequence, locktime) = encodeTxNumber(txNumber)
 
         val tx = Transaction(
             version = 2,
@@ -739,14 +739,14 @@ object Transactions {
         commitTxInput: InputInfo,
         localScriptPubKey: ByteArray,
         remoteScriptPubKey: ByteArray,
-        localIsInitiator: Boolean,
+        localPaysClosingFees: Boolean,
         dustLimit: Satoshi,
         closingFee: Satoshi,
         spec: CommitmentSpec
     ): TransactionWithInputInfo.ClosingTx {
         require(spec.htlcs.isEmpty()) { "there shouldn't be any pending htlcs" }
 
-        val (toLocalAmount, toRemoteAmount) = if (localIsInitiator) {
+        val (toLocalAmount, toRemoteAmount) = if (localPaysClosingFees) {
             Pair(spec.toLocal.truncateToSatoshi() - closingFee, spec.toRemote.truncateToSatoshi())
         } else {
             Pair(spec.toLocal.truncateToSatoshi(), spec.toRemote.truncateToSatoshi() - closingFee)

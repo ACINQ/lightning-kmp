@@ -9,7 +9,7 @@ import fr.acinq.lightning.channel.Helpers.publishIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.wire.ClosingSigned
@@ -350,22 +350,28 @@ data class LocalParams(
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    val isInitiator: Boolean,
+    val isChannelOpener: Boolean,
+    val payCommitTxFees: Boolean,
     val defaultFinalScriptPubKey: ByteVector,
     val features: Features
 ) {
-    constructor(nodeParams: NodeParams, isInitiator: Boolean): this(
+    constructor(nodeParams: NodeParams, isChannelOpener: Boolean, payCommitTxFees: Boolean) : this(
         nodeId = nodeParams.nodeId,
-        fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key path end differently
+        fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isChannelOpener), // we make sure that initiator and non-initiator key path end differently
         dustLimit = nodeParams.dustLimit,
         maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
         htlcMinimum = nodeParams.htlcMinimum,
         toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
         maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-        isInitiator = isInitiator,
+        isChannelOpener = isChannelOpener,
+        payCommitTxFees = payCommitTxFees,
         defaultFinalScriptPubKey = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0), // the default closing address is the same for all channels
         features = nodeParams.features.initFeatures()
     )
+
+    // The node responsible for the commit tx fees is also the node paying the mutual close fees.
+    // The other node's balance may be empty, which wouldn't allow them to pay the closing fees.
+    val payClosingFees: Boolean = payCommitTxFees
 
     fun channelKeys(keyManager: KeyManager) = keyManager.channelKeys(fundingKeyPath)
 }
@@ -384,20 +390,29 @@ data class RemoteParams(
     val features: Features
 )
 
-object ChannelFlags {
-    const val AnnounceChannel = 0x01.toByte()
-    const val Empty = 0x00.toByte()
-}
+/**
+ * The [nonInitiatorPaysCommitFees] parameter can be set to true when the sender wants the receiver to pay the commitment transaction fees.
+ * This is not part of the BOLTs and won't be needed anymore once commitment transactions don't pay any on-chain fees.
+ */
+data class ChannelFlags(val announceChannel: Boolean, val nonInitiatorPaysCommitFees: Boolean)
 
 data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: ClosingSigned)
 
-/** Reason for creating a new channel or a splice. */
+/**
+ * @param miningFee fee paid to miners for the underlying on-chain transaction.
+ * @param serviceFee fee paid to our peer for any service provided with the on-chain transaction.
+ */
+data class TransactionFees(val miningFee: Satoshi, val serviceFee: Satoshi) {
+    val total: Satoshi = miningFee + serviceFee
+}
+
+/** Reason for creating a new channel or splicing into an existing channel. */
 // @formatter:off
 sealed class Origin {
     abstract val amount: MilliSatoshi
-    abstract val serviceFee: MilliSatoshi
-    abstract val miningFee: Satoshi
-    data class PayToOpenOrigin(val paymentHash: ByteVector32, override val serviceFee: MilliSatoshi, override val miningFee: Satoshi, override val amount: MilliSatoshi) : Origin()
-    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, override val serviceFee: MilliSatoshi, override val miningFee: Satoshi, override val amount: MilliSatoshi) : Origin()
+    abstract val fees: TransactionFees
+
+    data class OffChainPayment(val paymentHash: ByteVector32, override val amount: MilliSatoshi, override val fees: TransactionFees) : Origin()
+    data class OnChainWallet(val inputs: Set<OutPoint>, override val amount: MilliSatoshi, override val fees: TransactionFees) : Origin()
 }
 // @formatter:on

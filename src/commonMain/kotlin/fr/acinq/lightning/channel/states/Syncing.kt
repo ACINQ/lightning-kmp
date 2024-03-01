@@ -238,7 +238,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                         // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
                         // negotiation restarts from the beginning, and is initialized by the initiator
                         // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
-                        state is Negotiating && state.commitments.params.localParams.isInitiator -> {
+                        state is Negotiating && state.payClosingFees -> {
                             // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
                             val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                 channelKeys(),

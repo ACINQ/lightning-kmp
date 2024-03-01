@@ -9,16 +9,9 @@ import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.utils.sum
-import fr.acinq.lightning.wire.Node
-import fr.acinq.lightning.wire.PleaseOpenChannel
 import kotlinx.coroutines.CompletableDeferred
 
 sealed interface NodeEvents
-
-sealed interface SwapInEvents : NodeEvents {
-    data class Requested(val req: PleaseOpenChannel) : SwapInEvents
-    data class Accepted(val requestId: ByteVector32, val serviceFee: MilliSatoshi, val miningFee: Satoshi) : SwapInEvents
-}
 
 sealed interface ChannelEvents : NodeEvents {
     data class Creating(val state: WaitForFundingCreated) : ChannelEvents

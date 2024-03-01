@@ -177,7 +177,6 @@ object TestsHelper {
             WaitForInit
         )
 
-        val channelFlags = 0.toByte()
         val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures.initFeatures())
         val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures.initFeatures())
         val aliceInit = Init(aliceFeatures)
@@ -191,10 +190,11 @@ object TestsHelper {
                 TestConstants.feeratePerKw,
                 aliceChannelParams,
                 bobInit,
-                channelFlags,
+                ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
                 ChannelConfig.standard,
                 channelType,
-                channelOrigin
+                requestRemoteFunding = null,
+                channelOrigin,
             )
         )
         assertIs<LNChannel<WaitForAcceptChannel>>(alice1)

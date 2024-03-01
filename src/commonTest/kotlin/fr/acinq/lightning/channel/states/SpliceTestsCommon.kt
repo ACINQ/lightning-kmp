@@ -191,7 +191,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormal()
         val leaseRate = LiquidityAds.LeaseRate(0, 250, 250 /* 2.5% */, 10.sat, 200, 100.msat)
         val liquidityRequest = LiquidityAds.RequestRemoteFunding(200_000.sat, alice.currentBlockHeight, leaseRate)
-        val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+        val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
         val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
         assertEquals(spliceInit.requestFunds, liquidityRequest.requestFunds)
         // Alice's contribution is negative: she needs to pay on-chain fees for the splice.
@@ -237,7 +237,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         run {
             val liquidityRequest = LiquidityAds.RequestRemoteFunding(1_000_000.sat, bob.currentBlockHeight, leaseRate)
             assertEquals(10_001.sat, liquidityRequest.rate.fees(FeeratePerKw(1000.sat), liquidityRequest.fundingAmount, liquidityRequest.fundingAmount).total)
-            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
             val (bob1, actionsBob1) = bob.process(cmd)
             val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
             val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
@@ -250,7 +250,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         run {
             val liquidityRequest = LiquidityAds.RequestRemoteFunding(1_000_000.sat, bob.currentBlockHeight, leaseRate.copy(leaseFeeBase = 0.sat))
             assertEquals(10_000.sat, liquidityRequest.rate.fees(FeeratePerKw(1000.sat), liquidityRequest.fundingAmount, liquidityRequest.fundingAmount).total)
-            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
             val (bob1, actionsBob1) = bob.process(cmd)
             val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
             val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
@@ -1284,7 +1284,8 @@ class SpliceTestsCommon : LightningTestSuite() {
             spliceIn = null,
             spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
             requestRemoteFunding = null,
-            feerate = spliceFeerate
+            feerate = spliceFeerate,
+            origins = listOf(),
         )
 
         private fun spliceOut(alice: LNChannel<Normal>, bob: LNChannel<Normal>, amount: Satoshi): Pair<LNChannel<Normal>, LNChannel<Normal>> {
@@ -1329,7 +1330,8 @@ class SpliceTestsCommon : LightningTestSuite() {
                 spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(createWalletWithFunds(alice.staticParams.nodeParams.keyManager, amounts)),
                 spliceOut = null,
                 requestRemoteFunding = null,
-                feerate = spliceFeerate
+                feerate = spliceFeerate,
+                origins = listOf(),
             )
             // Negotiate a splice transaction where Alice is the only contributor.
             val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
@@ -1366,7 +1368,8 @@ class SpliceTestsCommon : LightningTestSuite() {
                 spliceIn = null,
                 spliceOut = null,
                 requestRemoteFunding = null,
-                feerate = spliceFeerate
+                feerate = spliceFeerate,
+                origins = listOf(),
             )
             // Negotiate a splice transaction with no contribution.
             val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
@@ -1399,7 +1402,8 @@ class SpliceTestsCommon : LightningTestSuite() {
                 spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(createWalletWithFunds(alice.staticParams.nodeParams.keyManager, inAmounts)),
                 spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(outAmount, Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
                 feerate = spliceFeerate,
-                requestRemoteFunding = null
+                requestRemoteFunding = null,
+                origins = listOf(),
             )
             val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(spliceInit))

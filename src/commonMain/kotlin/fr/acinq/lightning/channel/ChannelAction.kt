@@ -79,7 +79,7 @@ sealed class ChannelAction {
             abstract val txId: TxId
             abstract val localInputs: Set<OutPoint>
             data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
-            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
+            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
         }
         /** Payment sent through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {

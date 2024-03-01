@@ -15,7 +15,8 @@ import fr.acinq.lightning.db.IncomingPaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 
@@ -133,7 +134,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 )
         }
         when (val origin = action.origin) {
-            is Origin.PayToOpenOrigin -> {
+            is Origin.OffChainPayment ->
                 // there already is a corresponding Lightning invoice in the db
                 db.receivePayment(
                     paymentHash = origin.paymentHash,

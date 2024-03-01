@@ -15,7 +15,10 @@ import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 
 object Deserialization {
@@ -97,10 +100,7 @@ object Deserialization {
         closingFeerates = readNullable { readClosingFeerates() },
         spliceStatus = when (val discriminator = read()) {
             0x00 -> SpliceStatus.None
-            0x01 -> SpliceStatus.WaitingForSigs(
-                session = readInteractiveTxSigningSession(),
-                origins = readCollection { readChannelOrigin() as Origin.PayToOpenOrigin }.toList()
-            )
+            0x01 -> SpliceStatus.WaitingForSigs(readInteractiveTxSigningSession(), readCollection { readChannelOrigin() }.toList())
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
         },
         liquidityLeases = when {
@@ -424,51 +424,75 @@ object Deserialization {
     }
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
-        0x01 -> Origin.PayToOpenOrigin(
+        0x01 -> {
+            val paymentHash = readByteVector32()
+            val serviceFee = readNumber().msat
+            val miningFee = readNumber().sat
+            val amount = readNumber().msat
+            Origin.OffChainPayment(paymentHash, amount, TransactionFees(miningFee, serviceFee.truncateToSatoshi()))
+        }
+        0x02 -> {
+            readByteVector32() // unused requestId
+            val serviceFee = readNumber().msat
+            val miningFee = readNumber().sat
+            val amount = readNumber().msat
+            Origin.OnChainWallet(setOf(), amount, TransactionFees(miningFee, serviceFee.truncateToSatoshi()))
+        }
+        0x03 -> Origin.OffChainPayment(
             paymentHash = readByteVector32(),
-            serviceFee = readNumber().msat,
-            miningFee = readNumber().sat,
             amount = readNumber().msat,
+            fees = TransactionFees(miningFee = readNumber().sat, serviceFee = readNumber().sat),
         )
-        0x02 -> Origin.PleaseOpenChannelOrigin(
-            requestId = readByteVector32(),
-            serviceFee = readNumber().msat,
-            miningFee = readNumber().sat,
+        0x04 -> Origin.OnChainWallet(
+            inputs = readCollection { readOutPoint() }.toSet(),
             amount = readNumber().msat,
+            fees = TransactionFees(miningFee = readNumber().sat, serviceFee = readNumber().sat),
         )
         else -> error("unknown discriminator $discriminator for class ${Origin::class}")
+    }
+
+    private fun Input.readLocalParams(): LocalParams {
+        val nodeId = readPublicKey()
+        val fundingKeyPath = KeyPath(readCollection { readNumber() }.toList())
+        val dustLimit = readNumber().sat
+        val maxHtlcValueInFlightMsat = readNumber()
+        val htlcMinimum = readNumber().msat
+        val toSelfDelay = CltvExpiryDelta(readNumber().toInt())
+        val maxAcceptedHtlcs = readNumber().toInt()
+        val flags = readNumber().toInt()
+        val isChannelOpener = flags.and(1) != 0
+        val payCommitTxFees = flags.and(2) != 0
+        val defaultFinalScriptPubKey = readDelimitedByteArray().toByteVector()
+        val features = Features(readDelimitedByteArray().toByteVector())
+        return LocalParams(nodeId, fundingKeyPath, dustLimit, maxHtlcValueInFlightMsat, htlcMinimum, toSelfDelay, maxAcceptedHtlcs, isChannelOpener, payCommitTxFees, defaultFinalScriptPubKey, features)
+    }
+
+    private fun Input.readRemoteParams(): RemoteParams = RemoteParams(
+        nodeId = readPublicKey(),
+        dustLimit = readNumber().sat,
+        maxHtlcValueInFlightMsat = readNumber(),
+        htlcMinimum = readNumber().msat,
+        toSelfDelay = CltvExpiryDelta(readNumber().toInt()),
+        maxAcceptedHtlcs = readNumber().toInt(),
+        revocationBasepoint = readPublicKey(),
+        paymentBasepoint = readPublicKey(),
+        delayedPaymentBasepoint = readPublicKey(),
+        htlcBasepoint = readPublicKey(),
+        features = Features(readDelimitedByteArray().toByteVector())
+    )
+
+    private fun Input.readChannelFlags(): ChannelFlags {
+        val flags = readNumber().toInt()
+        return ChannelFlags(announceChannel = flags.and(1) != 0, nonInitiatorPaysCommitFees = flags.and(2) != 0)
     }
 
     private fun Input.readChannelParams(): ChannelParams = ChannelParams(
         channelId = readByteVector32(),
         channelConfig = ChannelConfig(readDelimitedByteArray()),
         channelFeatures = ChannelFeatures(Features(readDelimitedByteArray()).activated.keys),
-        localParams = LocalParams(
-            nodeId = readPublicKey(),
-            fundingKeyPath = KeyPath(readCollection { readNumber() }.toList()),
-            dustLimit = readNumber().sat,
-            maxHtlcValueInFlightMsat = readNumber(),
-            htlcMinimum = readNumber().msat,
-            toSelfDelay = CltvExpiryDelta(readNumber().toInt()),
-            maxAcceptedHtlcs = readNumber().toInt(),
-            isInitiator = readBoolean(),
-            defaultFinalScriptPubKey = readDelimitedByteArray().toByteVector(),
-            features = Features(readDelimitedByteArray().toByteVector())
-        ),
-        remoteParams = RemoteParams(
-            nodeId = readPublicKey(),
-            dustLimit = readNumber().sat,
-            maxHtlcValueInFlightMsat = readNumber(),
-            htlcMinimum = readNumber().msat,
-            toSelfDelay = CltvExpiryDelta(readNumber().toInt()),
-            maxAcceptedHtlcs = readNumber().toInt(),
-            revocationBasepoint = readPublicKey(),
-            paymentBasepoint = readPublicKey(),
-            delayedPaymentBasepoint = readPublicKey(),
-            htlcBasepoint = readPublicKey(),
-            features = Features(readDelimitedByteArray().toByteVector())
-        ),
-        channelFlags = readNumber().toByte(),
+        localParams = readLocalParams(),
+        remoteParams = readRemoteParams(),
+        channelFlags = readChannelFlags(),
     )
 
     private fun Input.readCommitmentChanges(): CommitmentChanges = CommitmentChanges(

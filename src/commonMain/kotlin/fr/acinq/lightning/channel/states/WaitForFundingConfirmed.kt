@@ -75,7 +75,7 @@ data class WaitForFundingConfirmed(
                     }
                 }
                 is TxInitRbf -> {
-                    if (isInitiator) {
+                    if (isChannelOpener) {
                         logger.info { "rejecting tx_init_rbf, we're the initiator, not them!" }
                         Pair(this@WaitForFundingConfirmed, listOf(ChannelAction.Message.Send(Error(channelId, InvalidRbfNonInitiator(channelId).message))))
                     } else {
@@ -95,7 +95,7 @@ data class WaitForFundingConfirmed(
                                     logger.info { "our peer wants to raise the feerate of the funding transaction (previous=${latestFundingTx.fundingParams.targetFeerate} target=${cmd.message.feerate})" }
                                     val fundingParams = InteractiveTxParams(
                                         channelId,
-                                        isInitiator,
+                                        isChannelOpener,
                                         latestFundingTx.fundingParams.localContribution, // we don't change our funding contribution
                                         cmd.message.fundingContribution,
                                         latestFundingTx.fundingParams.remoteFundingPubkey,
@@ -128,7 +128,7 @@ data class WaitForFundingConfirmed(
                         logger.info { "our peer accepted our rbf attempt and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
                         val fundingParams = InteractiveTxParams(
                             channelId,
-                            isInitiator,
+                            isChannelOpener,
                             rbfStatus.command.fundingAmount,
                             cmd.message.fundingContribution,
                             latestFundingTx.fundingParams.remoteFundingPubkey,

@@ -18,14 +18,12 @@ import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.*
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.wire.ChannelReady
-import fr.acinq.lightning.wire.ChannelReestablish
-import fr.acinq.lightning.wire.Init
-import fr.acinq.lightning.wire.LightningMessage
+import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -83,10 +81,14 @@ suspend fun connect(
         }
     }
 
-    // Initialize Bob with Alice's features
+    // Initialize Bob with Alice's features.
     bob.send(MessageReceived(bobConnection.id, Init(features = alice.nodeParams.features.initFeatures())))
-    // Initialize Alice with Bob's features
+    // Initialize Alice with Bob's features.
     alice.send(MessageReceived(aliceConnection.id, Init(features = bob.nodeParams.features.initFeatures())))
+
+    // Initialize Alice and Bob's current feerates.
+    alice.peerFeeratesFlow.emit(RecommendedFeerates(Block.RegtestGenesisBlock.hash, fundingFeerate = FeeratePerKw(FeeratePerByte(20.sat)), commitmentFeerate = FeeratePerKw(FeeratePerByte(1.sat))))
+    bob.peerFeeratesFlow.emit(RecommendedFeerates(Block.RegtestGenesisBlock.hash, fundingFeerate = FeeratePerKw(FeeratePerByte(20.sat)), commitmentFeerate = FeeratePerKw(FeeratePerByte(1.sat))))
 
     if (channelsCount > 0) {
         // When there are multiple channels, the channel_reestablish and channel_ready messages from different channels
@@ -186,7 +188,7 @@ suspend fun buildPeer(
 ): Peer {
     val electrum = ElectrumClient(scope, nodeParams.loggerFactory)
     val watcher = ElectrumWatcher(electrum, scope, nodeParams.loggerFactory)
-    val peer = Peer(nodeParams, walletParams, watcher, databases, TcpSocket.Builder(), scope)
+    val peer = Peer(nodeParams, walletParams, watcher, databases, TestConstants.leaseRate, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = currentTip
     peer.onChainFeeratesFlow.value = OnChainFeerates(
         fundingFeerate = FeeratePerKw(FeeratePerByte(5.sat)),

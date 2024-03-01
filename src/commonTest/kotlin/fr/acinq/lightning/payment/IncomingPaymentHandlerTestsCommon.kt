@@ -173,7 +173,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             miningFee = 0.sat,
             localInputs = emptySet(),
             txId = TxId(randomBytes32()),
-            origin = Origin.PayToOpenOrigin(amount = payToOpenRequest.amountMsat, paymentHash = payToOpenRequest.paymentHash, serviceFee = 0.msat, miningFee = payToOpenRequest.payToOpenFeeSatoshis)
+            origin = Origin.OffChainPayment(payToOpenRequest.paymentHash, payToOpenRequest.amountMsat, TransactionFees(miningFee = payToOpenRequest.payToOpenFeeSatoshis, serviceFee = 0.sat))
         )
         paymentHandler.process(channelId, amountOrigin)
         paymentHandler.db.getIncomingPayment(payToOpenRequest.paymentHash).also { dbPayment ->
@@ -1227,11 +1227,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val paymentRequest = payee.createInvoice(defaultPreimage, amount, Either.Left("unit test"), listOf(), expirySeconds, timestamp)
             assertNotNull(paymentRequest.paymentMetadata)
             return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret)
-        }
-
-        private fun makeReceivedWithNewChannel(payToOpen: PayToOpenRequest, feeRatio: Double = 0.1): IncomingPayment.ReceivedWith.NewChannel {
-            val fee = payToOpen.amountMsat * feeRatio
-            return IncomingPayment.ReceivedWith.NewChannel(amount = payToOpen.amountMsat - fee, serviceFee = fee, miningFee = 0.sat, channelId = randomBytes32(), txId = TxId(randomBytes32()), confirmedAt = null, lockedAt = null)
         }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {

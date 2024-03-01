@@ -92,7 +92,8 @@ class AnchorOutputsTestsCommon {
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
             KeyPath.empty,
-            546.sat, 1000000000L, 0.msat, CltvExpiryDelta(144), 1000, true,
+            546.sat, 1000000000L, 0.msat, CltvExpiryDelta(144), 1000,
+            isChannelOpener = true, payCommitTxFees = true,
             Script.write(Script.pay2wpkh(randomKey().publicKey())).toByteVector(),
             TestConstants.Alice.nodeParams.features,
         )

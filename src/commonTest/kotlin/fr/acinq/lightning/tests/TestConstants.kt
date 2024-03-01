@@ -11,6 +11,7 @@ import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
+import fr.acinq.lightning.wire.LiquidityAds
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import fr.acinq.secp256k1.Hex
 
@@ -35,6 +36,15 @@ object TestConstants {
         TrampolineFees(5.sat, 500, CltvExpiryDelta(576)),
         TrampolineFees(5.sat, 1000, CltvExpiryDelta(576)),
         TrampolineFees(5.sat, 1200, CltvExpiryDelta(576))
+    )
+
+    val leaseRate = LiquidityAds.LeaseRate(
+        leaseDuration = 0,
+        fundingWeight = 500,
+        leaseFeeProportional = 100, // 1%
+        leaseFeeBase = 0.sat,
+        maxRelayFeeProportional = 50, // 0.5%
+        maxRelayFeeBase = 1_000.msat,
     )
 
     const val aliceSwapInServerXpub = "tpubDCvYeHUZisCMVTSfWDa1yevTf89NeF6TWxXUQwqkcmFrNvNdNvZQh1j4m4uTA4QcmPEwcrKVF8bJih1v16zDZacRr4j9MCAFQoSydKKy66q"
@@ -85,7 +95,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = true)
+        fun channelParams(): LocalParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = true)
     }
 
     object Bob {
@@ -116,7 +126,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = false)
+        fun channelParams(): LocalParams = LocalParams(nodeParams, isChannelOpener = false, payCommitTxFees = false)
     }
 
 }

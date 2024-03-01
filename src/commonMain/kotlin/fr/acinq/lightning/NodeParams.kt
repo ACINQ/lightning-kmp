@@ -219,6 +219,6 @@ data class NodeParams(
         maxPaymentAttempts = 5,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
-        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false))
+        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false))
     )
 }
