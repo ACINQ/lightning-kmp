@@ -49,4 +49,8 @@ interface LocalPrivateKeyDescriptor : PrivateKeyDescriptor {
     override fun signMusig2TaprootInput(tx: Transaction, index: Int, inputs: List<TxOut>, publicKeys: List<PublicKey>, secretNonce: SecretNonce, publicNonces: List<IndividualNonce>, scriptTree: ScriptTree.Leaf): Either<Throwable, ByteVector32> {
         return Musig2.signTaprootInput(instantiate(), tx, index, inputs, publicKeys, secretNonce, publicNonces, scriptTree)
     }
+
+    override fun generateMusig2Nonce(sessionId: ByteVector32, publicKeys: List<PublicKey>): Pair<SecretNonce, IndividualNonce> {
+        return Musig2.generateNonce(sessionId, instantiate(), publicKeys)
+    }
 }

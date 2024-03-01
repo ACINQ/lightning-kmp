@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Script.tail
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
-import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.getOrDefault
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -710,7 +709,7 @@ data class InteractiveTxSession(
                     // Generate a secret nonce for this input if we don't already have one.
                     is InteractiveTxInput.LocalSwapIn -> when (secretNonces[inputOutgoing.serialId]) {
                         null -> {
-                            val secretNonce = Musig2.generateNonce(randomBytes32(), swapInKeys.userPrivateKey.instantiate(), listOf(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey))
+                            val secretNonce = swapInKeys.userPrivateKey.generateMusig2Nonce(randomBytes32(), listOf(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey))
                             secretNonces + (inputOutgoing.serialId to secretNonce)
                         }
                         else -> secretNonces
@@ -796,7 +795,7 @@ data class InteractiveTxSession(
             // Generate a secret nonce for this input if we don't already have one.
             is InteractiveTxInput.RemoteSwapIn -> when (secretNonces[input.serialId]) {
                 null -> {
-                    val secretNonce = Musig2.generateNonce(randomBytes32(), swapInKeys.localServerPrivateKey(remoteNodeId).instantiate(), listOf(input.userKey, input.serverKey))
+                    val secretNonce = swapInKeys.localServerPrivateKey(remoteNodeId).generateMusig2Nonce(randomBytes32(), listOf(input.userKey, input.serverKey))
                     secretNonces + (input.serialId to secretNonce)
                 }
                 else -> secretNonces

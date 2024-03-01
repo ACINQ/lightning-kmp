@@ -7,7 +7,6 @@ import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -513,8 +512,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             // The first step of a musig2 signing session is to exchange nonces.
             // If participants are disconnected before the end of the signing session, they must start again with fresh nonces.
-            val userNonce = Musig2.generateNonce(randomBytes32(), userPrivateKey.instantiate(), listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
-            val serverNonce = Musig2.generateNonce(randomBytes32(), serverPrivateKey.instantiate(), listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()))
+            val userNonce = userPrivateKey.generateMusig2Nonce(randomBytes32(), listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
+            val serverNonce = serverPrivateKey.generateMusig2Nonce(randomBytes32(), listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()))
 
             // Once they have each other's public nonce, they can produce partial signatures.
             val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, userNonce.second, serverNonce.second).right!!

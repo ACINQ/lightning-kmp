@@ -82,4 +82,9 @@ interface PrivateKeyDescriptor {
      */
     fun signMusig2TaprootInput(tx: Transaction, index: Int, inputs: List<TxOut>, publicKeys: List<PublicKey>, secretNonce: SecretNonce, publicNonces: List<IndividualNonce>, scriptTree: ScriptTree.Leaf): Either<Throwable, ByteVector32>
 
+    /**
+     * @param sessionId a random, unique session ID.
+     * @param publicKeys public keys of all participants: callers must verify that all public keys are valid.
+     */
+    fun generateMusig2Nonce(sessionId: ByteVector32, publicKeys: List<PublicKey>): Pair<SecretNonce, IndividualNonce>
 }
