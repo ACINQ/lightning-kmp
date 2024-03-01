@@ -42,7 +42,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
         require(userPrivateKey.publicKey() == userPublicKey) { "user private key does not match expected public key: are you using the refund key instead of the user key?" }
         val publicKeys = listOf(userPublicKey, serverPublicKey)
         val publicNonces = listOf(userNonce, serverNonce)
-        return Musig2.signTaprootInput(userPrivateKey.instantiate(), fundingTx, index, parentTxOuts, publicKeys, privateNonce, publicNonces, scriptTree)
+        return userPrivateKey.signMusig2TaprootInput(fundingTx, index, parentTxOuts, publicKeys, privateNonce, publicNonces, scriptTree)
     }
 
     fun signSwapInputRefund(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKeyDescriptor): ByteVector64 {
@@ -53,7 +53,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, serverPrivateKey: PrivateKeyDescriptor, privateNonce: SecretNonce, userNonce: IndividualNonce, serverNonce: IndividualNonce): Either<Throwable, ByteVector32> {
         val publicKeys = listOf(userPublicKey, serverPublicKey)
         val publicNonces = listOf(userNonce, serverNonce)
-        return Musig2.signTaprootInput(serverPrivateKey.instantiate(), fundingTx, index, parentTxOuts, publicKeys, privateNonce, publicNonces, scriptTree)
+        return serverPrivateKey.signMusig2TaprootInput(fundingTx, index, parentTxOuts, publicKeys, privateNonce, publicNonces, scriptTree)
     }
 
     companion object {

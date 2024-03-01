@@ -5,9 +5,13 @@ import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.ScriptTree
 import fr.acinq.bitcoin.SigHash
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxOut
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.bitcoin.crypto.musig2.SecretNonce
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.transactions.Transactions
 
 interface PrivateKeyDescriptor {
@@ -64,4 +68,18 @@ interface PrivateKeyDescriptor {
      * @return the schnorr signature of this tx for this specific tx input and the given script leaf.
      */
     fun signInputTaprootScriptPath(tx: Transaction, inputIndex: Int, inputs: List<TxOut>, sigHash: Int, tapleaf: ByteVector32): ByteVector64
+
+    /**
+     * Create a partial musig2 signature for the given taproot input key path.
+     *
+     * @param tx transaction spending the target taproot input.
+     * @param index index of the taproot input to spend.
+     * @param inputs all inputs of the spending transaction.
+     * @param publicKeys public keys of all participants of the musig2 session: callers must verify that all public keys are valid.
+     * @param secretNonce secret nonce of the signing participant.
+     * @param publicNonces public nonces of all participants of the musig2 session.
+     * @param scriptTree tapscript tree of the taproot input, if it has script paths.
+     */
+    fun signMusig2TaprootInput(tx: Transaction, index: Int, inputs: List<TxOut>, publicKeys: List<PublicKey>, secretNonce: SecretNonce, publicNonces: List<IndividualNonce>, scriptTree: ScriptTree.Leaf): Either<Throwable, ByteVector32>
+
 }

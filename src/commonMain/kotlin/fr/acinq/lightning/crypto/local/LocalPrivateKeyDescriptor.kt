@@ -6,10 +6,15 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.ScriptTree
 import fr.acinq.bitcoin.SigHash
 import fr.acinq.bitcoin.SigVersion
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxOut
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.bitcoin.crypto.musig2.Musig2
+import fr.acinq.bitcoin.crypto.musig2.SecretNonce
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.crypto.PrivateKeyDescriptor
 import fr.acinq.lightning.transactions.Transactions
 
@@ -39,5 +44,9 @@ interface LocalPrivateKeyDescriptor : PrivateKeyDescriptor {
 
     override fun signInputTaprootScriptPath(tx: Transaction, inputIndex: Int, inputs: List<TxOut>, sigHash: Int, tapleaf: ByteVector32): ByteVector64 {
         return Transaction.signInputTaprootScriptPath(instantiate(), tx, inputIndex, inputs, SigHash.SIGHASH_DEFAULT, tapleaf)
+    }
+
+    override fun signMusig2TaprootInput(tx: Transaction, index: Int, inputs: List<TxOut>, publicKeys: List<PublicKey>, secretNonce: SecretNonce, publicNonces: List<IndividualNonce>, scriptTree: ScriptTree.Leaf): Either<Throwable, ByteVector32> {
+        return Musig2.signTaprootInput(instantiate(), tx, index, inputs, publicKeys, secretNonce, publicNonces, scriptTree)
     }
 }
