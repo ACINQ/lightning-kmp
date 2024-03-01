@@ -4,9 +4,7 @@ import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.SigHash
 import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.Feature
-import fr.acinq.lightning.Features
-import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
@@ -242,7 +240,7 @@ data class Normal(
                                     ShuttingDown(commitments1, localShutdown, remoteShutdown, closingFeerates)
                                 } else {
                                     logger.warning { "we have no htlcs but have not replied with our Shutdown yet, this should never happen" }
-                                    val closingTxProposed = if (isInitiator) {
+                                    val closingTxProposed = if (paysClosingFees) {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                             channelKeys(),
                                             commitments1.latest,
@@ -313,7 +311,7 @@ data class Normal(
                                 if (this@Normal.localShutdown == null) actions.add(ChannelAction.Message.Send(localShutdown))
                                 val commitments1 = commitments.copy(remoteChannelData = cmd.message.channelData)
                                 when {
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.params.localParams.isInitiator -> {
+                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() && paysClosingFees -> {
                                         val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                             channelKeys(),
                                             commitments1.latest,
@@ -378,7 +376,7 @@ data class Normal(
                             }
                             is SpliceStatus.InitiatorQuiescent -> {
                                 // if both sides send stfu at the same time, the quiescence initiator is the channel initiator
-                                if (!cmd.message.initiator || commitments.params.localParams.isInitiator) {
+                                if (!cmd.message.initiator || isChannelOpener) {
                                     if (commitments.isQuiescent()) {
                                         val parentCommitment = commitments.active.first()
                                         val fundingContribution = FundingContributions.computeSpliceContribution(
@@ -389,7 +387,7 @@ data class Normal(
                                             targetFeerate = spliceStatus.command.feerate
                                         )
                                         val commitTxFees = when {
-                                            commitments.params.localParams.isInitiator -> Transactions.commitTxFee(commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec)
+                                            paysCommitTxFees -> Transactions.commitTxFee(commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec)
                                             else -> 0.sat
                                         }
                                         if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < parentCommitment.localChannelReserve(commitments.params).max(commitTxFees)) {
@@ -493,7 +491,7 @@ data class Normal(
                                         localPushAmount = 0.msat,
                                         remotePushAmount = cmd.message.pushAmount,
                                         liquidityLease = null,
-                                        origins = cmd.message.origins
+                                        origins = listOf()
                                     )
                                 )
                                 Pair(nextState, listOf(ChannelAction.Message.Send(spliceAck)))
@@ -566,7 +564,8 @@ data class Normal(
                                                 previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                                 previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
                                                 localHtlcs = parentCommitment.localCommit.spec.htlcs,
-                                                fundingContributions.value, previousTxs = emptyList()
+                                                fundingContributions = fundingContributions.value,
+                                                previousTxs = emptyList()
                                             ).send()
                                             when (interactiveTxAction) {
                                                 is InteractiveTxSessionAction.SendMessage -> {
@@ -577,7 +576,7 @@ data class Normal(
                                                             localPushAmount = spliceStatus.spliceInit.pushAmount,
                                                             remotePushAmount = cmd.message.pushAmount,
                                                             liquidityLease = liquidityLease.value,
-                                                            origins = spliceStatus.spliceInit.origins
+                                                            origins = spliceStatus.command.origins,
                                                         )
                                                     )
                                                     Pair(nextState, listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
@@ -842,7 +841,7 @@ data class Normal(
     }
 
     private fun ChannelContext.sendSpliceTxSigs(
-        origins: List<Origin.PayToOpenOrigin>,
+        origins: List<Origin>,
         action: InteractiveTxSigningSessionAction.SendTxSigs,
         liquidityLease: LiquidityAds.Lease?,
         remoteChannelData: EncryptedChannelData
@@ -862,8 +861,8 @@ data class Normal(
             addAll(origins.map { origin ->
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
                     amount = origin.amount,
-                    serviceFee = origin.serviceFee,
-                    miningFee = origin.miningFee,
+                    serviceFee = origin.fees.serviceFee.toMilliSatoshi(),
+                    miningFee = origin.fees.miningFee,
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
                     txId = action.fundingTx.txId,
                     origin = origin
@@ -898,6 +897,12 @@ data class Normal(
                 val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + lease.fees.miningFee
                 add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, lease = lease))
             }
+            addAll(origins.map { origin ->
+                when (origin) {
+                    is Origin.OffChainPayment -> ChannelAction.EmitEvent(LiquidityEvents.Accepted(origin.amount, origin.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment))
+                    is Origin.OnChainWallet -> ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amount.truncateToSatoshi(), origin.fees))
+                }
+            })
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }
                 val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId)

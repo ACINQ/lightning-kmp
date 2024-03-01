@@ -8,9 +8,10 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.ChannelFlags
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.channel.Origin
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
@@ -86,7 +87,7 @@ interface LightningMessage {
                 DNSAddressRequest.type -> DNSAddressRequest.read(stream)
                 DNSAddressResponse.type -> DNSAddressResponse.read(stream)
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
-                PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
+                RecommendedFeerates.type -> RecommendedFeerates.read(stream)
                 Stfu.type -> Stfu.read(stream)
                 SpliceInit.type -> SpliceInit.read(stream)
                 SpliceAck.type -> SpliceAck.read(stream)
@@ -668,13 +669,12 @@ data class OpenDualFundedChannel(
     val htlcBasepoint: PublicKey,
     val firstPerCommitmentPoint: PublicKey,
     val secondPerCommitmentPoint: PublicKey,
-    val channelFlags: Byte,
+    val channelFlags: ChannelFlags,
     val tlvStream: TlvStream<ChannelTlv> = TlvStream.empty()
 ) : ChannelMessage, HasTemporaryChannelId, HasChainHash {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
     val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
     val requestFunds: ChannelTlv.RequestFunds? get() = tlvStream.get<ChannelTlv.RequestFunds>()
-    val origin: Origin? get() = tlvStream.get<ChannelTlv.OriginTlv>()?.origin
 
     override val type: Long get() = OpenDualFundedChannel.type
 
@@ -697,7 +697,9 @@ data class OpenDualFundedChannel(
         LightningCodecs.writeBytes(htlcBasepoint.value, out)
         LightningCodecs.writeBytes(firstPerCommitmentPoint.value, out)
         LightningCodecs.writeBytes(secondPerCommitmentPoint.value, out)
-        LightningCodecs.writeByte(channelFlags.toInt(), out)
+        val announceChannelFlag = if (channelFlags.announceChannel) 1 else 0
+        val commitFeesFlag = if (channelFlags.nonInitiatorPaysCommitFees) 2 else 0
+        LightningCodecs.writeByte(announceChannelFlag + commitFeesFlag, out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
@@ -710,32 +712,54 @@ data class OpenDualFundedChannel(
             ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.RequestFunds.tag to ChannelTlv.RequestFunds as TlvValueReader<ChannelTlv>,
-            ChannelTlv.OriginTlv.tag to ChannelTlv.OriginTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
 
-        override fun read(input: Input): OpenDualFundedChannel = OpenDualFundedChannel(
-            BlockHash(LightningCodecs.bytes(input, 32)),
-            ByteVector32(LightningCodecs.bytes(input, 32)),
-            FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
-            FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
-            Satoshi(LightningCodecs.u64(input)),
-            Satoshi(LightningCodecs.u64(input)),
-            LightningCodecs.u64(input), // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-            MilliSatoshi(LightningCodecs.u64(input)),
-            CltvExpiryDelta(LightningCodecs.u16(input)),
-            LightningCodecs.u16(input),
-            LightningCodecs.u32(input).toLong(),
-            PublicKey(LightningCodecs.bytes(input, 33)),
-            PublicKey(LightningCodecs.bytes(input, 33)),
-            PublicKey(LightningCodecs.bytes(input, 33)),
-            PublicKey(LightningCodecs.bytes(input, 33)),
-            PublicKey(LightningCodecs.bytes(input, 33)),
-            PublicKey(LightningCodecs.bytes(input, 33)),
-            PublicKey(LightningCodecs.bytes(input, 33)),
-            LightningCodecs.byte(input).toByte(),
-            TlvStreamSerializer(false, readers).read(input)
-        )
+        override fun read(input: Input): OpenDualFundedChannel {
+            val chainHash = BlockHash(LightningCodecs.bytes(input, 32))
+            val temporaryChannelId = ByteVector32(LightningCodecs.bytes(input, 32))
+            val fundingFeerate = FeeratePerKw(LightningCodecs.u32(input).toLong().sat)
+            val commitmentFeerate = FeeratePerKw(LightningCodecs.u32(input).toLong().sat)
+            val fundingAmount = Satoshi(LightningCodecs.u64(input))
+            val dustLimit = Satoshi(LightningCodecs.u64(input))
+            val maxHtlcValueInFlightMsat = LightningCodecs.u64(input) // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+            val htlcMinimum = MilliSatoshi(LightningCodecs.u64(input))
+            val toSelfDelay = CltvExpiryDelta(LightningCodecs.u16(input))
+            val maxAcceptedHtlcs = LightningCodecs.u16(input)
+            val lockTime = LightningCodecs.u32(input).toLong()
+            val fundingPubkey = PublicKey(LightningCodecs.bytes(input, 33))
+            val revocationBasepoint = PublicKey(LightningCodecs.bytes(input, 33))
+            val paymentBasepoint = PublicKey(LightningCodecs.bytes(input, 33))
+            val delayedPaymentBasepoint = PublicKey(LightningCodecs.bytes(input, 33))
+            val htlcBasepoint = PublicKey(LightningCodecs.bytes(input, 33))
+            val firstPerCommitmentPoint = PublicKey(LightningCodecs.bytes(input, 33))
+            val secondPerCommitmentPoint = PublicKey(LightningCodecs.bytes(input, 33))
+            val encodedChannelFlags = LightningCodecs.byte(input).toByte()
+            val channelFlags = ChannelFlags(announceChannel = encodedChannelFlags.toInt().and(1) != 0, nonInitiatorPaysCommitFees = encodedChannelFlags.toInt().and(2) != 0)
+            val tlvs = TlvStreamSerializer(false, readers).read(input)
+            return OpenDualFundedChannel(
+                chainHash = chainHash,
+                temporaryChannelId = temporaryChannelId,
+                fundingFeerate = fundingFeerate,
+                commitmentFeerate = commitmentFeerate,
+                fundingAmount = fundingAmount,
+                dustLimit = dustLimit,
+                maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
+                htlcMinimum = htlcMinimum,
+                toSelfDelay = toSelfDelay,
+                maxAcceptedHtlcs = maxAcceptedHtlcs,
+                lockTime = lockTime,
+                fundingPubkey = fundingPubkey,
+                revocationBasepoint = revocationBasepoint,
+                paymentBasepoint = paymentBasepoint,
+                delayedPaymentBasepoint = delayedPaymentBasepoint,
+                htlcBasepoint = htlcBasepoint,
+                firstPerCommitmentPoint = firstPerCommitmentPoint,
+                secondPerCommitmentPoint = secondPerCommitmentPoint,
+                channelFlags = channelFlags,
+                tlvStream = tlvs
+            )
+        }
     }
 }
 
@@ -930,7 +954,6 @@ data class SpliceInit(
     val requireConfirmedInputs: Boolean = tlvStream.get<ChannelTlv.RequireConfirmedInputsTlv>()?.let { true } ?: false
     val requestFunds: ChannelTlv.RequestFunds? get() = tlvStream.get<ChannelTlv.RequestFunds>()
     val pushAmount: MilliSatoshi = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
-    val origins: List<Origin.PayToOpenOrigin> = tlvStream.get<ChannelTlv.OriginsTlv>()?.origins?.filterIsInstance<Origin.PayToOpenOrigin>() ?: emptyList()
 
     constructor(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi, feerate: FeeratePerKw, lockTime: Long, fundingPubkey: PublicKey, requestFunds: ChannelTlv.RequestFunds?) : this(
         channelId,
@@ -958,7 +981,6 @@ data class SpliceInit(
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.RequestFunds.tag to ChannelTlv.RequestFunds as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
-            ChannelTlv.OriginsTlv.tag to ChannelTlv.OriginsTlv.Companion as TlvValueReader<ChannelTlv>
         )
 
         override fun read(input: Input): SpliceInit = SpliceInit(
@@ -1807,48 +1829,35 @@ data class DNSAddressResponse(override val chainHash: BlockHash, val address: St
     }
 }
 
-/**
- * This message is used to request a channel open from a remote node, with local contributions to the funding transaction.
- * If the remote node won't open a channel, it will respond with [PleaseOpenChannelRejected].
- * Otherwise, it will respond with [OpenDualFundedChannel] and a fee that must be paid by a corresponding push_amount
- * in the [AcceptDualFundedChannel] message.
- */
-data class PleaseOpenChannel(
+data class RecommendedFeerates(
     override val chainHash: BlockHash,
-    val requestId: ByteVector32,
-    val localFundingAmount: Satoshi,
-    val localInputsCount: Int,
-    val localInputsWeight: Int,
-    val tlvs: TlvStream<PleaseOpenChannelTlv> = TlvStream.empty(),
+    val fundingFeerate: FeeratePerKw,
+    val commitmentFeerate: FeeratePerKw,
+    val tlvStream: TlvStream<RecommendedFeeratesTlv> = TlvStream.empty(),
 ) : LightningMessage, HasChainHash {
-    override val type: Long get() = PleaseOpenChannel.type
-
-    val grandParents: List<OutPoint> = tlvs.get<PleaseOpenChannelTlv.GrandParents>()?.outpoints ?: listOf()
+    override val type: Long get() = RecommendedFeerates.type
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(chainHash.value, out)
-        LightningCodecs.writeBytes(requestId.toByteArray(), out)
-        LightningCodecs.writeU64(localFundingAmount.toLong(), out)
-        LightningCodecs.writeU16(localInputsCount, out)
-        LightningCodecs.writeU32(localInputsWeight, out)
-        TlvStreamSerializer(false, readers).write(tlvs, out)
+        LightningCodecs.writeU32(fundingFeerate.toLong().toInt(), out)
+        LightningCodecs.writeU32(commitmentFeerate.toLong().toInt(), out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
-    companion object : LightningMessageReader<PleaseOpenChannel> {
-        const val type: Long = 36001
+    companion object : LightningMessageReader<RecommendedFeerates> {
+        const val type: Long = 39409
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(
-            PleaseOpenChannelTlv.GrandParents.tag to PleaseOpenChannelTlv.GrandParents.Companion as TlvValueReader<PleaseOpenChannelTlv>,
+        private val readers = mapOf(
+            RecommendedFeeratesTlv.FundingFeerateRange.tag to RecommendedFeeratesTlv.FundingFeerateRange as TlvValueReader<RecommendedFeeratesTlv>,
+            RecommendedFeeratesTlv.CommitmentFeerateRange.tag to RecommendedFeeratesTlv.CommitmentFeerateRange as TlvValueReader<RecommendedFeeratesTlv>,
         )
 
-        override fun read(input: Input): PleaseOpenChannel = PleaseOpenChannel(
-            BlockHash(LightningCodecs.bytes(input, 32)),
-            LightningCodecs.bytes(input, 32).toByteVector32(),
-            LightningCodecs.u64(input).sat,
-            LightningCodecs.u16(input),
-            LightningCodecs.u32(input),
-            TlvStreamSerializer(false, readers).read(input)
+        override fun read(input: Input): RecommendedFeerates = RecommendedFeerates(
+            chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
+            fundingFeerate = FeeratePerKw(LightningCodecs.u32(input).sat),
+            commitmentFeerate = FeeratePerKw(LightningCodecs.u32(input).sat),
+            tlvStream = TlvStreamSerializer(false, readers).read(input)
         )
     }
 }

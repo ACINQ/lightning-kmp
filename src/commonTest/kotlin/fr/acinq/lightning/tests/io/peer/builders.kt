@@ -1,5 +1,6 @@
 package fr.acinq.lightning.tests.io.peer
 
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.NodeParams
@@ -20,10 +21,7 @@ import fr.acinq.lightning.io.*
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.wire.ChannelReady
-import fr.acinq.lightning.wire.ChannelReestablish
-import fr.acinq.lightning.wire.Init
-import fr.acinq.lightning.wire.LightningMessage
+import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -87,6 +85,10 @@ suspend fun connect(
     // Initialize Alice with Bob's features.
     val bobInit = Init(bob.nodeParams.features.initFeatures())
     alice.send(MessageReceived(aliceConnection.id, bobInit))
+
+    // Initialize Alice and Bob's current feerates.
+    alice.send(MessageReceived(aliceConnection.id, RecommendedFeerates(Block.RegtestGenesisBlock.hash, fundingFeerate = FeeratePerKw(FeeratePerByte(20.sat)), commitmentFeerate = FeeratePerKw(FeeratePerByte(1.sat)))))
+    bob.send(MessageReceived(bobConnection.id, RecommendedFeerates(Block.RegtestGenesisBlock.hash, fundingFeerate = FeeratePerKw(FeeratePerByte(20.sat)), commitmentFeerate = FeeratePerKw(FeeratePerByte(1.sat)))))
 
     if (channelsCount > 0) {
         // When there are multiple channels, the channel_reestablish and channel_ready messages from different channels

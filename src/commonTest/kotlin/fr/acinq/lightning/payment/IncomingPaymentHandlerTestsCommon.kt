@@ -172,7 +172,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             miningFee = 0.sat,
             localInputs = emptySet(),
             txId = TxId(randomBytes32()),
-            origin = Origin.PayToOpenOrigin(amount = payToOpenRequest.amountMsat, paymentHash = payToOpenRequest.paymentHash, serviceFee = 0.msat, miningFee = payToOpenRequest.payToOpenFeeSatoshis)
+            origin = Origin.OffChainPayment(incomingPayment.preimage, payToOpenRequest.amountMsat, ChannelManagementFees(miningFee = payToOpenRequest.payToOpenFeeSatoshis, serviceFee = 0.sat))
         )
         paymentHandler.process(channelId, amountOrigin)
         paymentHandler.db.getIncomingPayment(payToOpenRequest.paymentHash).also { dbPayment ->
@@ -191,7 +191,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(amountOrigin.amount, dbPayment.received?.amount)
             assertEquals(amountOrigin.serviceFee, dbPayment.received?.fees)
         }
-
     }
 
     @Test

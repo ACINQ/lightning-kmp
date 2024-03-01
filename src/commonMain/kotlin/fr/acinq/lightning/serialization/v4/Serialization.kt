@@ -462,19 +462,19 @@ object Serialization {
     }
 
     private fun Output.writeChannelOrigin(o: Origin) = when (o) {
-        is Origin.PayToOpenOrigin -> {
-            write(0x01)
-            writeByteVector32(o.paymentHash)
-            writeNumber(o.serviceFee.toLong())
-            writeNumber(o.miningFee.toLong())
+        is Origin.OffChainPayment -> {
+            write(0x03)
+            writeByteVector32(o.paymentPreimage)
             writeNumber(o.amount.toLong())
+            writeNumber(o.fees.miningFee.toLong())
+            writeNumber(o.fees.serviceFee.toLong())
         }
-        is Origin.PleaseOpenChannelOrigin -> {
-            write(0x02)
-            writeByteVector32(o.requestId)
-            writeNumber(o.serviceFee.toLong())
-            writeNumber(o.miningFee.toLong())
+        is Origin.OnChainWallet -> {
+            write(0x04)
+            writeCollection(o.inputs) { writeBtcObject(it) }
             writeNumber(o.amount.toLong())
+            writeNumber(o.fees.miningFee.toLong())
+            writeNumber(o.fees.serviceFee.toLong())
         }
     }
 
@@ -490,7 +490,10 @@ object Serialization {
             writeNumber(htlcMinimum.toLong())
             writeNumber(toSelfDelay.toLong())
             writeNumber(maxAcceptedHtlcs)
-            writeBoolean(isInitiator)
+            // We encode those two booleans in the same byte.
+            val isOpenerFlag = if (isChannelOpener) 1 else 0
+            val payCommitTxFeesFlag = if (paysCommitTxFees) 2 else 0
+            writeNumber(isOpenerFlag + payCommitTxFeesFlag)
             writeDelimited(defaultFinalScriptPubKey.toByteArray())
             writeDelimited(features.toByteArray())
         }
@@ -507,7 +510,10 @@ object Serialization {
             writePublicKey(htlcBasepoint)
             writeDelimited(features.toByteArray())
         }
-        writeNumber(channelFlags)
+        // We encode channel flags in the same byte.
+        val announceChannelFlag = if (channelFlags.announceChannel) 1 else 0
+        val nonInitiatorPaysCommitFeesFlag = if (channelFlags.nonInitiatorPaysCommitFees) 2 else 0
+        writeNumber(announceChannelFlag + nonInitiatorPaysCommitFeesFlag)
     }
 
     private fun Output.writeCommitmentChanges(o: CommitmentChanges) = o.run {

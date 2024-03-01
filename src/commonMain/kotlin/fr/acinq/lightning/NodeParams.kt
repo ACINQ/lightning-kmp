@@ -12,6 +12,7 @@ import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
+import fr.acinq.lightning.wire.LiquidityAds
 import fr.acinq.lightning.wire.OfferTypes
 import io.ktor.utils.io.charsets.*
 import io.ktor.utils.io.core.*
@@ -69,12 +70,14 @@ object DefaultSwapInParams {
  * @param trampolineFees ordered list of trampoline fees to try when making an outgoing payment.
  * @param invoiceDefaultRoutingFees default routing fees set in invoices when we don't have any channel.
  * @param swapInParams parameters for swap-in transactions.
+ * @param leaseRate rate at which our peer sells their liquidity.
  */
 data class WalletParams(
     val trampolineNode: NodeUri,
     val trampolineFees: List<TrampolineFees>,
     val invoiceDefaultRoutingFees: InvoiceDefaultRoutingFees,
     val swapInParams: SwapInParams,
+    val leaseRate: LiquidityAds.LeaseRate,
 )
 
 /**
@@ -229,7 +232,7 @@ data class NodeParams(
         maxPaymentAttempts = 5,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
-        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false)),
+        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false)),
         minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
         maxFinalCltvExpiryDelta = CltvExpiryDelta(360),
         bolt12invoiceExpiry = 60.seconds,
