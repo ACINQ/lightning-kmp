@@ -43,6 +43,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.ChannelFlags
 import fr.acinq.lightning.channel.InteractiveTxOutput
 import fr.acinq.lightning.channel.SpliceStatus
 import fr.acinq.lightning.channel.states.*
@@ -295,7 +296,7 @@ internal data class RevokedCommitPublished(
  * This means that they will be recomputed once when we convert serialized data to their "live" counterparts.
  */
 @Serializable
-internal data class LocalParams constructor(
+internal data class LocalParams(
     val nodeId: PublicKey,
     val fundingKeyPath: KeyPath,
     val dustLimit: Satoshi,
@@ -316,6 +317,7 @@ internal data class LocalParams constructor(
         htlcMinimum,
         toSelfDelay,
         maxAcceptedHtlcs,
+        isFunder,
         isFunder,
         defaultFinalScriptPubKey,
         features
@@ -410,7 +412,7 @@ internal data class Commitments(
             ChannelVersion.channelFeatures,
             localParams.export(),
             remoteParams.export(),
-            channelFlags
+            ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
         ),
         fr.acinq.lightning.channel.CommitmentChanges(
             localChanges.export(),

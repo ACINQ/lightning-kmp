@@ -22,6 +22,7 @@ import fr.acinq.lightning.logging.withMDC
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
+import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -38,11 +39,6 @@ import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerCommand
 
-/**
- * Try to open a channel, consuming all the spendable utxos in the wallet state provided.
- */
-data class RequestChannelOpen(val requestId: ByteVector32, val walletInputs: List<WalletState.Utxo>) : PeerCommand()
-
 /** Open a channel, consuming all the spendable utxos in the wallet state provided. */
 data class OpenChannel(
     val fundingAmount: Satoshi,
@@ -50,9 +46,13 @@ data class OpenChannel(
     val walletInputs: List<WalletState.Utxo>,
     val commitTxFeerate: FeeratePerKw,
     val fundingTxFeerate: FeeratePerKw,
-    val channelFlags: Byte,
     val channelType: ChannelType.SupportedChannelType
 ) : PeerCommand()
+
+/** Consume all the spendable utxos in the wallet state provided to open a channel or splice into an existing channel. */
+data class AddWalletInputsToChannel(val walletInputs: List<WalletState.Utxo>) : PeerCommand() {
+    val totalAmount: Satoshi = walletInputs.map { it.amount }.sum()
+}
 
 data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, val logger: MDCLogger) {
     fun send(msg: LightningMessage) {
@@ -129,7 +129,6 @@ data class AddressAssigned(val address: String) : PeerEvent()
  * @param watcher Watches events from the Electrum client and publishes transactions and events.
  * @param db Wraps the various databases persisting the channels and payments data related to the Peer.
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
- * @param trustedSwapInTxs a set of txids that can be used for swap-in even if they are zeroconf (useful when migrating from the legacy phoenix android app).
  * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
 @OptIn(ExperimentalStdlibApi::class)
@@ -141,7 +140,6 @@ class Peer(
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
-    private val trustedSwapInTxs: Set<TxId> = emptySet(),
     private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
 ) : CoroutineScope by scope {
     companion object {
@@ -179,9 +177,6 @@ class Peer(
     private var _channels by _channelsFlow
     val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
 
-    // pending requests asking our peer to open a channel to us
-    private var channelRequests: Map<ByteVector32, RequestChannelOpen> = HashMap()
-
     private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
     val connectionState: StateFlow<Connection> get() = _connectionState
 
@@ -201,7 +196,7 @@ class Peer(
 
     val currentTipFlow = MutableStateFlow<Int?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
-    val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
+    val peerFeeratesFlow = MutableStateFlow<RecommendedFeerates?>(null)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -496,17 +491,9 @@ class Peer(
                 swapInJob = launch {
                     swapInWallet.wallet.walletStateFlow
                         .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip) }
-                        .combine(swapInFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerate -> Triple(walletState, currentTip, feerate) }
+                        .combine(peerFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerates -> Triple(walletState, currentTip, feerates.fundingFeerate) }
                         .combine(nodeParams.liquidityPolicy) { (walletState, currentTip, feerate), policy -> TrySwapInFlow(currentTip, walletState, feerate, policy) }
-                        .collect { w ->
-                            // Local mutual close txs from pre-splice channels can be used as zero-conf inputs for swap-in to facilitate migration
-                            val mutualCloseTxs = channels.values
-                                .filterIsInstance<Closing>()
-                                .filterNot { it.commitments.params.channelFeatures.hasFeature(Feature.DualFunding) }
-                                .flatMap { state -> state.mutualClosePublished.map { closingTx -> closingTx.tx.txid } }
-                            val trustedTxs = trustedSwapInTxs + mutualCloseTxs
-                            swapInCommands.send(SwapInCommand.TrySwapIn(w.currentBlockHeight, w.walletState, walletParams.swapInParams, trustedTxs))
-                        }
+                        .collect { w -> swapInCommands.send(SwapInCommand.TrySwapIn(w.currentBlockHeight, w.walletState, walletParams.swapInParams)) }
                 }
             }
         }
@@ -612,7 +599,8 @@ class Peer(
                     spliceIn = null,
                     spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, scriptPubKey),
                     requestRemoteFunding = null,
-                    feerate = feerate
+                    feerate = feerate,
+                    origins = listOf(),
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
@@ -630,7 +618,8 @@ class Peer(
                     spliceIn = null,
                     spliceOut = null,
                     requestRemoteFunding = null,
-                    feerate = feerate
+                    feerate = feerate,
+                    origins = listOf(),
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
@@ -648,7 +637,8 @@ class Peer(
                     spliceIn = null,
                     spliceOut = null,
                     requestRemoteFunding = LiquidityAds.RequestRemoteFunding(amount, leaseStart, leaseRate),
-                    feerate = feerate
+                    feerate = feerate,
+                    origins = listOf(),
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
@@ -1010,6 +1000,9 @@ class Peer(
                             }
                         }
                     }
+                    is RecommendedFeerates -> {
+                        peerFeeratesFlow.value = msg
+                    }
                     is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
                         peerConnection?.send(pong)
@@ -1028,50 +1021,13 @@ class Peer(
                         } else if (_channels.containsKey(msg.temporaryChannelId)) {
                             logger.warning { "ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
                         } else {
-                            val (walletInputs, fundingAmount, pushAmount) = when (val origin = msg.origin) {
-                                is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
-                                    is RequestChannelOpen -> {
-                                        val totalFee = origin.serviceFee + origin.miningFee.toMilliSatoshi() - msg.pushAmount
-                                        nodeParams.liquidityPolicy.value.maybeReject(request.walletInputs.balance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
-                                            logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
-                                            nodeParams._nodeEvents.emit(rejected)
-                                            swapInCommands.send(SwapInCommand.UnlockWalletInputs(request.walletInputs.map { it.outPoint }.toSet()))
-                                            peerConnection?.send(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
-                                            return
-                                        }
-                                        val fundingFee = Transactions.weight2fee(msg.fundingFeerate, FundingContributions.weight(request.walletInputs))
-                                        // We have to pay the fees for our inputs, so we deduce them from our funding amount.
-                                        val fundingAmount = request.walletInputs.balance - fundingFee
-                                        // We pay the other fees by pushing the corresponding amount
-                                        val pushAmount = origin.serviceFee + origin.miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi()
-                                        nodeParams._nodeEvents.emit(SwapInEvents.Accepted(request.requestId, serviceFee = origin.serviceFee, miningFee = origin.miningFee))
-                                        Triple(request.walletInputs, fundingAmount, pushAmount)
-                                    }
-
-                                    else -> {
-                                        logger.warning { "n:$remoteNodeId c:${msg.temporaryChannelId} rejecting open_channel2: cannot find channel request with requestId=${origin.requestId}" }
-                                        peerConnection?.send(Error(msg.temporaryChannelId, "no corresponding channel request"))
-                                        return
-                                    }
-                                }
-                                else -> Triple(listOf(), 0.sat, 0.msat)
-                            }
-                            if (fundingAmount.toMilliSatoshi() < pushAmount) {
-                                logger.warning { "rejecting open_channel2 with invalid funding and push amounts ($fundingAmount < $pushAmount)" }
-                                peerConnection?.send(Error(msg.temporaryChannelId, InvalidPushAmount(msg.temporaryChannelId, pushAmount, fundingAmount.toMilliSatoshi()).message))
-                            } else {
-                                val localParams = LocalParams(nodeParams, isInitiator = false)
-                                val state = WaitForInit
-                                val channelConfig = ChannelConfig.standard
-                                val (state1, actions1) = state.process(ChannelCommand.Init.NonInitiator(msg.temporaryChannelId, fundingAmount, pushAmount, walletInputs, localParams, channelConfig, theirInit!!))
-                                val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
-                                _channels = _channels + (msg.temporaryChannelId to state2)
-                                when (val origin = msg.origin) {
-                                    is Origin.PleaseOpenChannelOrigin -> channelRequests = channelRequests - origin.requestId
-                                    else -> Unit
-                                }
-                                processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2)
-                            }
+                            val localParams = LocalParams(nodeParams, isChannelOpener = false, payCommitTxFees = msg.channelFlags.nonInitiatorPaysCommitFees)
+                            val state = WaitForInit
+                            val channelConfig = ChannelConfig.standard
+                            val (state1, actions1) = state.process(ChannelCommand.Init.NonInitiator(msg.temporaryChannelId, 0.sat, 0.msat, listOf(), localParams, channelConfig, theirInit!!))
+                            val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
+                            _channels = _channels + (msg.temporaryChannelId to state2)
+                            processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2)
                         }
                     }
                     is ChannelReestablish -> {
@@ -1227,63 +1183,8 @@ class Peer(
                     _channels = _channels + (cmd.watch.channelId to state1)
                 }
             }
-            is RequestChannelOpen -> {
-                when (val available = selectChannelForSplicing()) {
-                    is SelectChannelResult.Available -> {
-                        // We have a channel and we are connected (otherwise state would be Offline/Syncing).
-                        val targetFeerate = swapInFeeratesFlow.filterNotNull().first()
-                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
-                        val (feerate, fee) = client.computeSpliceCpfpFeerate(available.channel.commitments, targetFeerate, spliceWeight = weight, logger)
-
-                        logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
-                        nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
-                            logger.info { "rejecting splice: reason=${rejected.reason}" }
-                            nodeParams._nodeEvents.emit(rejected)
-                            swapInCommands.send(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
-                            return
-                        }
-
-                        val spliceCommand = ChannelCommand.Commitment.Splice.Request(
-                            replyTo = CompletableDeferred(),
-                            spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(cmd.walletInputs),
-                            spliceOut = null,
-                            requestRemoteFunding = null,
-                            feerate = feerate
-                        )
-                        // If the splice fails, we immediately unlock the utxos to reuse them in the next attempt.
-                        spliceCommand.replyTo.invokeOnCompletion { ex ->
-                            if (ex == null && spliceCommand.replyTo.getCompleted() is ChannelCommand.Commitment.Splice.Response.Failure) {
-                                swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
-                            }
-                        }
-                        input.send(WrappedChannelCommand(available.channel.channelId, spliceCommand))
-                    }
-                    SelectChannelResult.NotReady -> {
-                        // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet.
-                        logger.info { "ignoring channel request, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
-                        swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
-                    }
-                    SelectChannelResult.None -> {
-                        // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel.
-                        // Grandparents are supplied as a proof of migration.
-                        val grandParents = cmd.walletInputs.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
-                        val pleaseOpenChannel = PleaseOpenChannel(
-                            nodeParams.chainHash,
-                            cmd.requestId,
-                            cmd.walletInputs.balance,
-                            cmd.walletInputs.size,
-                            FundingContributions.weight(cmd.walletInputs),
-                            TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
-                        )
-                        logger.info { "sending please_open_channel with ${cmd.walletInputs.size} utxos (amount = ${cmd.walletInputs.balance})" }
-                        peerConnection?.send(pleaseOpenChannel)
-                        nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
-                        channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
-                    }
-                }
-            }
             is OpenChannel -> {
-                val localParams = LocalParams(nodeParams, isInitiator = true)
+                val localParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = true)
                 val state = WaitForInit
                 val (state1, actions1) = state.process(
                     ChannelCommand.Init.Initiator(
@@ -1294,14 +1195,119 @@ class Peer(
                         cmd.fundingTxFeerate,
                         localParams,
                         theirInit!!,
-                        cmd.channelFlags,
+                        ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
                         ChannelConfig.standard,
-                        cmd.channelType
+                        cmd.channelType,
+                        requestRemoteFunding = null,
+                        channelOrigin = null,
                     )
                 )
                 val msg = actions1.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                 _channels = _channels + (msg.temporaryChannelId to state1)
                 processActions(msg.temporaryChannelId, peerConnection, actions1)
+            }
+            is AddWalletInputsToChannel -> {
+                when (val available = selectChannelForSplicing()) {
+                    is SelectChannelResult.Available -> {
+                        // We have a channel and we are connected.
+                        val targetFeerate = peerFeeratesFlow.filterNotNull().first().fundingFeerate
+                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
+                        val (feerate, fee) = client.computeSpliceCpfpFeerate(available.channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                        logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
+                        when (val rejected = nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)) {
+                            is LiquidityEvents.Rejected -> {
+                                logger.info { "rejecting splice: reason=${rejected.reason}" }
+                                nodeParams._nodeEvents.emit(rejected)
+                                swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                            }
+                            else -> {
+                                val spliceCommand = ChannelCommand.Commitment.Splice.Request(
+                                    replyTo = CompletableDeferred(),
+                                    spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(cmd.walletInputs),
+                                    spliceOut = null,
+                                    requestRemoteFunding = null,
+                                    feerate = feerate,
+                                    origins = listOf(Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), ChannelManagementFees(fee, 0.sat)))
+                                )
+                                // If the splice fails, we immediately unlock the utxos to reuse them in the next attempt.
+                                spliceCommand.replyTo.invokeOnCompletion { ex ->
+                                    if (ex == null && spliceCommand.replyTo.getCompleted() is ChannelCommand.Commitment.Splice.Response.Failure) {
+                                        swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                                    }
+                                }
+                                input.send(WrappedChannelCommand(available.channel.channelId, spliceCommand))
+                                nodeParams._nodeEvents.emit(SwapInEvents.Requested(cmd.walletInputs))
+                            }
+                        }
+                    }
+                    SelectChannelResult.NotReady -> {
+                        // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet.
+                        logger.info { "ignoring request to add utxos to channel, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
+                        swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                    }
+                    SelectChannelResult.None -> {
+                        // Either there are no channels, or they will never be suitable for a splice-in: we open a new channel.
+                        val currentFeerates = peerFeeratesFlow.filterNotNull().first()
+                        val requestRemoteFunding = run {
+                            // We need our peer to contribute, because they must have enough funds to pay the commitment fees.
+                            val inboundLiquidityTarget = when (val policy = nodeParams.liquidityPolicy.first()) {
+                                is LiquidityPolicy.Disable -> LiquidityPolicy.minInboundLiquidityTarget
+                                is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
+                            }
+                            LiquidityAds.RequestRemoteFunding(inboundLiquidityTarget, currentTipFlow.filterNotNull().first(), walletParams.leaseRate)
+                        }
+                        val (localFundingAmount, fees) = run {
+                            // We need to know the local channel funding amount to be able use channel opening messages.
+                            // We must pay on-chain fees for our inputs/outputs of the transaction: we compute them first
+                            // and proceed backwards to retrieve the funding amount.
+                            val dummyFundingScript = Script.write(Scripts.multiSig2of2(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey)).byteVector()
+                            val localMiningFee = Transactions.weight2fee(currentFeerates.fundingFeerate, FundingContributions.computeWeightPaid(isInitiator = true, null, dummyFundingScript, cmd.walletInputs, emptyList()))
+                            val localFundingAmount = cmd.totalAmount - localMiningFee
+                            val leaseFees = walletParams.leaseRate.fees(currentFeerates.fundingFeerate, requestRemoteFunding.fundingAmount, requestRemoteFunding.fundingAmount)
+                            // We also refund the liquidity provider for some of the on-chain fees they will pay for their inputs/outputs of the transaction.
+                            // This will be taken from our channel balance during the interactive-tx construction, they shouldn't be deducted from our funding amount.
+                            val totalFees = ChannelManagementFees(miningFee = localMiningFee + leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
+                            Pair(localFundingAmount, totalFees)
+                        }
+                        if (cmd.totalAmount - fees.total < nodeParams.dustLimit) {
+                            logger.warning { "cannot create channel, not enough funds to pay fees (fees=${fees.total}, available=${cmd.totalAmount})" }
+                            swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                        } else {
+                            when (val rejected = nodeParams.liquidityPolicy.first().maybeReject(requestRemoteFunding.fundingAmount.toMilliSatoshi(), fees.total.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)) {
+                                is LiquidityEvents.Rejected -> {
+                                    logger.info { "rejecting channel open: reason=${rejected.reason}" }
+                                    nodeParams._nodeEvents.emit(rejected)
+                                    swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                                }
+                                else -> {
+                                    // We ask our peer to pay the commit tx fees.
+                                    val localParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
+                                    val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
+                                    val (state, actions) = WaitForInit.process(
+                                        ChannelCommand.Init.Initiator(
+                                            fundingAmount = localFundingAmount,
+                                            pushAmount = 0.msat,
+                                            walletInputs = cmd.walletInputs,
+                                            commitTxFeerate = currentFeerates.commitmentFeerate,
+                                            fundingTxFeerate = currentFeerates.fundingFeerate,
+                                            localParams = localParams,
+                                            remoteInit = theirInit!!,
+                                            channelFlags = channelFlags,
+                                            channelConfig = ChannelConfig.standard,
+                                            channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+                                            requestRemoteFunding = requestRemoteFunding,
+                                            channelOrigin = Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), fees),
+                                        )
+                                    )
+                                    val msg = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
+                                    _channels = _channels + (msg.temporaryChannelId to state)
+                                    processActions(msg.temporaryChannelId, peerConnection, actions)
+                                    nodeParams._nodeEvents.emit(SwapInEvents.Requested(cmd.walletInputs))
+                                }
+                            }
+                        }
+                    }
+                }
             }
             is PayToOpenResponseCommand -> {
                 logger.info { "sending ${cmd.payToOpenResponse::class.simpleName}" }

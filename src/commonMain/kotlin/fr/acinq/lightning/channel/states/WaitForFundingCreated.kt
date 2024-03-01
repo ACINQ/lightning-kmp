@@ -38,7 +38,7 @@ data class WaitForFundingCreated(
     val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val remoteSecondPerCommitmentPoint: PublicKey,
-    val channelFlags: Byte,
+    val channelFlags: ChannelFlags,
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
     val channelOrigin: Origin?

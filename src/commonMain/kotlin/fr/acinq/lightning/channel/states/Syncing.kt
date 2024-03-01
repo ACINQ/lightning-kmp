@@ -228,7 +228,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                         // negotiation restarts from the beginning, and is initialized by the initiator
                         // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
                         is Negotiating ->
-                            if (state.commitments.params.localParams.isInitiator) {
+                            if (state.paysClosingFees) {
                                 // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
                                 val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
                                     channelKeys(),
