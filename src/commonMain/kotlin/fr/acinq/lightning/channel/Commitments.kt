@@ -40,7 +40,7 @@ data class ChannelParams(
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
     val localParams: LocalParams, val remoteParams: RemoteParams,
-    val channelFlags: Byte
+    val channelFlags: ChannelFlags
 ) {
     init {
         require(channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath)) { "FundingPubKeyBasedChannelKeyPath option must be enabled" }
@@ -252,7 +252,7 @@ data class Commitment(
         val remoteCommit1 = nextRemoteCommit?.commit ?: remoteCommit
         val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
         val balanceNoFees = (reduced.toRemote - localChannelReserve(params).toMilliSatoshi()).coerceAtLeast(0.msat)
-        return if (params.localParams.isInitiator) {
+        return if (params.localParams.paysCommitTxFees) {
             // The initiator always pays the on-chain fees, so we must subtract that from the amount we can send.
             val commitFees = commitTxFeeMsat(params.remoteParams.dustLimit, reduced)
             // the initiator needs to keep a "initiator fee buffer" (see explanation above)
@@ -278,7 +278,7 @@ data class Commitment(
     fun availableBalanceForReceive(params: ChannelParams, changes: CommitmentChanges): MilliSatoshi {
         val reduced = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
         val balanceNoFees = (reduced.toRemote - remoteChannelReserve(params).toMilliSatoshi()).coerceAtLeast(0.msat)
-        return if (params.localParams.isInitiator) {
+        return if (params.localParams.paysCommitTxFees) {
             // The non-initiator doesn't pay on-chain fees so we don't take those into account when receiving.
             balanceNoFees
         } else {
@@ -357,7 +357,7 @@ data class Commitment(
         val initiatorFeeBuffer = commitTxFeeMsat(params.remoteParams.dustLimit, reduced.copy(feerate = reduced.feerate * 2)) + htlcOutputFee(reduced.feerate * 2)
         // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
         // which may result in a lower commit tx fee; this is why we take the max of the two.
-        val missingForSender = reduced.toRemote - localChannelReserve(params).toMilliSatoshi() - (if (params.localParams.isInitiator) fees.toMilliSatoshi().coerceAtLeast(initiatorFeeBuffer) else 0.msat)
+        val missingForSender = reduced.toRemote - localChannelReserve(params).toMilliSatoshi() - (if (params.localParams.paysCommitTxFees) fees.toMilliSatoshi().coerceAtLeast(initiatorFeeBuffer) else 0.msat)
         // According to BOLT 2, we should also subtract the channel reserve from the calculation below.
         // But this creates issues with splicing in the following scenario:
         //  - Alice opened a channel to Bob, and her balance is slightly above the reserve
@@ -366,12 +366,12 @@ data class Commitment(
         //  - The liquidity is mostly on Bob's side, but since he's unable to send HTLCs the channel is stuck
         // We instead only check that the channel initiator is able to pay the fees for the commit tx.
         // We are sending an outgoing HTLC, so once it's fulfilled it will increase their balance which is good for the channel reserve.
-        val missingForReceiver = reduced.toLocal - (if (params.localParams.isInitiator) 0.msat else fees.toMilliSatoshi())
+        val missingForReceiver = reduced.toLocal - (if (params.localParams.paysCommitTxFees) 0.msat else fees.toMilliSatoshi())
         if (missingForSender < 0.msat) {
-            val actualFees = if (params.localParams.isInitiator) fees else 0.sat
+            val actualFees = if (params.localParams.paysCommitTxFees) fees else 0.sat
             return Either.Left(InsufficientFunds(params.channelId, amount, -missingForSender.truncateToSatoshi(), localChannelReserve(params), actualFees))
         } else if (missingForReceiver < 0.msat) {
-            if (params.localParams.isInitiator) {
+            if (params.localParams.paysCommitTxFees) {
                 // receiver is not the initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
             } else {
                 return Either.Left(RemoteCannotAffordFeesForNewHtlc(params.channelId, amount = amount, missing = -missingForReceiver.truncateToSatoshi(), fees = fees))
@@ -406,14 +406,14 @@ data class Commitment(
         val fees = commitTxFee(params.localParams.dustLimit, reduced)
         // NB: we don't enforce the initiatorFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
         // We could enforce it once we're confident a large portion of the network implements it.
-        val missingForSender = reduced.toRemote - remoteChannelReserve(params).toMilliSatoshi() - (if (params.localParams.isInitiator) 0.sat else fees).toMilliSatoshi()
+        val missingForSender = reduced.toRemote - remoteChannelReserve(params).toMilliSatoshi() - (if (params.localParams.paysCommitTxFees) 0.sat else fees).toMilliSatoshi()
         // We diverge from Bolt 2 and don't subtract the channel reserve: see `canSendAdd` for details.
-        val missingForReceiver = reduced.toLocal - (if (params.localParams.isInitiator) fees else 0.sat).toMilliSatoshi()
+        val missingForReceiver = reduced.toLocal - (if (params.localParams.paysCommitTxFees) fees else 0.sat).toMilliSatoshi()
         if (missingForSender < 0.sat) {
-            val actualFees = if (params.localParams.isInitiator) 0.sat else fees
+            val actualFees = if (params.localParams.paysCommitTxFees) 0.sat else fees
             return Either.Left(InsufficientFunds(params.channelId, amount, -missingForSender.truncateToSatoshi(), remoteChannelReserve(params), actualFees))
         } else if (missingForReceiver < 0.sat) {
-            if (params.localParams.isInitiator) {
+            if (params.localParams.paysCommitTxFees) {
                 return Either.Left(CannotAffordFees(params.channelId, missing = -missingForReceiver.truncateToSatoshi(), reserve = localChannelReserve(params), fees = fees))
             } else {
                 // receiver is not the initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
@@ -737,7 +737,7 @@ data class Commitments(
     }
 
     fun sendFee(cmd: ChannelCommand.Commitment.UpdateFee): Either<ChannelException, Pair<Commitments, UpdateFee>> {
-        if (!params.localParams.isInitiator) return Either.Left(NonInitiatorCannotSendUpdateFee(channelId))
+        if (!params.localParams.paysCommitTxFees) return Either.Left(NonInitiatorCannotSendUpdateFee(channelId))
         // let's compute the current commitment *as seen by them* with this change taken into account
         val fee = UpdateFee(channelId, cmd.feerate)
         // update_fee replace each other, so we can remove previous ones
@@ -747,7 +747,7 @@ data class Commitments(
     }
 
     fun receiveFee(fee: UpdateFee, feerateTolerance: FeerateTolerance): Either<ChannelException, Commitments> {
-        if (params.localParams.isInitiator) return Either.Left(NonInitiatorCannotSendUpdateFee(channelId))
+        if (params.localParams.paysCommitTxFees) return Either.Left(NonInitiatorCannotSendUpdateFee(channelId))
         if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) return Either.Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
         if (Helpers.isFeeDiffTooHigh(FeeratePerKw.CommitmentFeerate, fee.feeratePerKw, feerateTolerance)) return Either.Left(FeerateTooDifferent(channelId, FeeratePerKw.CommitmentFeerate, fee.feeratePerKw))
         val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot { it is UpdateFee } + fee))
@@ -1031,7 +1031,7 @@ data class Commitments(
             val outputs = makeCommitTxOutputs(
                 channelKeys.fundingPubKey(fundingTxIndex),
                 remoteFundingPubKey,
-                localParams.isInitiator,
+                localParams.paysCommitTxFees,
                 localParams.dustLimit,
                 localRevocationPubkey,
                 remoteParams.toSelfDelay,
@@ -1041,7 +1041,7 @@ data class Commitments(
                 remoteHtlcPubkey,
                 spec
             )
-            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isInitiator, outputs)
+            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isChannelOpener, outputs)
             val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feerate, outputs)
             return Pair(commitTx, htlcTxs)
         }
@@ -1065,7 +1065,7 @@ data class Commitments(
             val outputs = makeCommitTxOutputs(
                 remoteFundingPubKey,
                 channelKeys.fundingPubKey(fundingTxIndex),
-                !localParams.isInitiator,
+                !localParams.paysCommitTxFees,
                 remoteParams.dustLimit,
                 remoteRevocationPubkey,
                 localParams.toSelfDelay,
@@ -1076,7 +1076,7 @@ data class Commitments(
                 spec
             )
             // NB: we are creating the remote commit tx, so local/remote parameters are inverted.
-            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentPubkey, !localParams.isInitiator, outputs)
+            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentPubkey, !localParams.isChannelOpener, outputs)
             val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feerate, outputs)
             return Pair(commitTx, htlcTxs)
         }

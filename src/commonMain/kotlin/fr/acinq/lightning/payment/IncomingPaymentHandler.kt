@@ -138,7 +138,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 )
         }
         when (val origin = action.origin) {
-            is Origin.PayToOpenOrigin -> {
+            is Origin.OffChainPayment -> {
                 // there already is a corresponding Lightning invoice in the db
                 db.receivePayment(
                     paymentHash = origin.paymentHash,

@@ -32,10 +32,11 @@ sealed class ChannelCommand {
             val fundingTxFeerate: FeeratePerKw,
             val localParams: LocalParams,
             val remoteInit: InitMessage,
-            val channelFlags: Byte,
+            val channelFlags: ChannelFlags,
             val channelConfig: ChannelConfig,
             val channelType: ChannelType.SupportedChannelType,
-            val channelOrigin: Origin? = null
+            val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?,
+            val channelOrigin: Origin?,
         ) : Init() {
             fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = keyManager.channelKeys(localParams.fundingKeyPath).temporaryChannelId
         }
@@ -85,7 +86,7 @@ sealed class ChannelCommand {
         data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
         data object CheckHtlcTimeout : Commitment()
         sealed class Splice : Commitment() {
-            data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Splice() {
+            data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?, val feerate: FeeratePerKw, val origins: List<Origin>) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
                 val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 

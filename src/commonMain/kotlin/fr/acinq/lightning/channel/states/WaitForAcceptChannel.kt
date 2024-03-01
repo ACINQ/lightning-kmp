@@ -21,7 +21,8 @@ import fr.acinq.lightning.wire.OpenDualFundedChannel
  */
 data class WaitForAcceptChannel(
     val init: ChannelCommand.Init.Initiator,
-    val lastSent: OpenDualFundedChannel
+    val lastSent: OpenDualFundedChannel,
+    val channelOrigin: Origin?,
 ) : ChannelState() {
     val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
 
@@ -74,7 +75,7 @@ data class WaitForAcceptChannel(
                                                 lastSent.channelFlags,
                                                 init.channelConfig,
                                                 channelFeatures,
-                                                null
+                                                channelOrigin
                                             )
                                             val actions = listOf(
                                                 ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
