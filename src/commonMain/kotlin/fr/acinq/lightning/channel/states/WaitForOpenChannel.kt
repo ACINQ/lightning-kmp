@@ -99,7 +99,7 @@ data class WaitForOpenChannel(
                                         open.channelFlags,
                                         channelConfig,
                                         channelFeatures,
-                                        open.origin
+                                        channelOrigin = null,
                                     )
                                     val actions = listOf(
                                         ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),

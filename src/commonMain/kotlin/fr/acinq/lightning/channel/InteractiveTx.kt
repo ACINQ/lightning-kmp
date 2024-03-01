@@ -339,7 +339,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         fun Transaction.stripInputWitnesses(): Transaction = copy(txIn = txIn.map { it.updateWitness(ScriptWitness.empty) })
 
         /** Compute the weight we need to pay on-chain fees for. */
-        private fun computeWeightPaid(isInitiator: Boolean, sharedInput: SharedFundingInput?, sharedOutputScript: ByteVector, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>): Int {
+        fun computeWeightPaid(isInitiator: Boolean, sharedInput: SharedFundingInput?, sharedOutputScript: ByteVector, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>): Int {
             val walletInputsWeight = weight(walletInputs)
             val localOutputsWeight = localOutputs.sumOf { it.weight() }
             return if (isInitiator) {
@@ -1178,10 +1178,10 @@ sealed class SpliceStatus {
         val localPushAmount: MilliSatoshi,
         val remotePushAmount: MilliSatoshi,
         val liquidityLease: LiquidityAds.Lease?,
-        val origins: List<Origin.PayToOpenOrigin>
+        val origins: List<Origin>
     ) : QuiescentSpliceStatus()
     /** The splice transaction has been negotiated, we're exchanging signatures. */
-    data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : QuiescentSpliceStatus()
+    data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin>) : QuiescentSpliceStatus()
     /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
     data object Aborted : QuiescentSpliceStatus()
 }

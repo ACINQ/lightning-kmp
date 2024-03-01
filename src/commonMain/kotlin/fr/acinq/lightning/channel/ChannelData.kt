@@ -350,22 +350,28 @@ data class LocalParams(
     val htlcMinimum: MilliSatoshi,
     val toSelfDelay: CltvExpiryDelta,
     val maxAcceptedHtlcs: Int,
-    val isInitiator: Boolean,
+    val isChannelOpener: Boolean,
+    val paysCommitTxFees: Boolean,
     val defaultFinalScriptPubKey: ByteVector,
     val features: Features
 ) {
-    constructor(nodeParams: NodeParams, isInitiator: Boolean) : this(
+    constructor(nodeParams: NodeParams, isChannelOpener: Boolean, payCommitTxFees: Boolean) : this(
         nodeId = nodeParams.nodeId,
-        fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key path end differently
+        fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isChannelOpener), // we make sure that initiator and non-initiator key path end differently
         dustLimit = nodeParams.dustLimit,
         maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
         htlcMinimum = nodeParams.htlcMinimum,
         toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
         maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-        isInitiator = isInitiator,
+        isChannelOpener = isChannelOpener,
+        paysCommitTxFees = payCommitTxFees,
         defaultFinalScriptPubKey = nodeParams.keyManager.finalOnChainWallet.pubkeyScript(addressIndex = 0), // the default closing address is the same for all channels
         features = nodeParams.features.initFeatures()
     )
+
+    // The node responsible for the commit tx fees is also the node paying the mutual close fees.
+    // The other node's balance may be empty, which wouldn't allow them to pay the closing fees.
+    val paysClosingFees: Boolean = paysCommitTxFees
 
     fun channelKeys(keyManager: KeyManager) = keyManager.channelKeys(fundingKeyPath)
 }
@@ -384,10 +390,11 @@ data class RemoteParams(
     val features: Features
 )
 
-object ChannelFlags {
-    const val AnnounceChannel = 0x01.toByte()
-    const val Empty = 0x00.toByte()
-}
+/**
+ * The [nonInitiatorPaysCommitFees] parameter can be set to true when the sender wants the receiver to pay the commitment transaction fees.
+ * This is not part of the BOLTs and won't be needed anymore once commitment transactions don't pay any on-chain fees.
+ */
+data class ChannelFlags(val announceChannel: Boolean, val nonInitiatorPaysCommitFees: Boolean)
 
 data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: ClosingSigned)
 
@@ -399,13 +406,17 @@ data class ChannelManagementFees(val miningFee: Satoshi, val serviceFee: Satoshi
     val total: Satoshi = miningFee + serviceFee
 }
 
-/** Reason for creating a new channel or a splice. */
+/** Reason for creating a new channel or splicing into an existing channel. */
 // @formatter:off
 sealed class Origin {
+    /** Amount of the origin payment, before fees are paid. */
     abstract val amount: MilliSatoshi
-    abstract val serviceFee: MilliSatoshi
-    abstract val miningFee: Satoshi
-    data class PayToOpenOrigin(val paymentHash: ByteVector32, override val serviceFee: MilliSatoshi, override val miningFee: Satoshi, override val amount: MilliSatoshi) : Origin()
-    data class PleaseOpenChannelOrigin(val requestId: ByteVector32, override val serviceFee: MilliSatoshi, override val miningFee: Satoshi, override val amount: MilliSatoshi) : Origin()
+    /** Fees applied for the channel funding transaction. */
+    abstract val fees: ChannelManagementFees
+
+    data class OnChainWallet(val inputs: Set<OutPoint>, override val amount: MilliSatoshi, override val fees: ChannelManagementFees) : Origin()
+    data class OffChainPayment(val paymentPreimage: ByteVector32, override val amount: MilliSatoshi, override val fees: ChannelManagementFees) : Origin() {
+        val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).byteVector32()
+    }
 }
 // @formatter:on
