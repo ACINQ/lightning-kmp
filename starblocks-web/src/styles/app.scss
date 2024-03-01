@@ -1,0 +1,38 @@
+@import "settings";
+@import "normalize";
+@import "text";
+@import "actions";
+@import "transitions";
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: url('../../public/images/cover-cafe.jpg') no-repeat center center fixed;
+  background-size: cover;
+}
+
+html, body {
+  height: 100%;
+  min-height: 100%;
+  width: 100%;
+  letter-spacing: 0.03em;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: $family;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: $default;
+  font-size: $font_sm;
+  line-height: 1.5;
+  letter-spacing: .02em;
+}
+
+ul {
+  margin-bottom: 0;
+  padding: 0;
+}
+

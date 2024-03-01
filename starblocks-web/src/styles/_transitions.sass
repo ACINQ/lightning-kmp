@@ -1,0 +1,82 @@
+// ------- 'Classic' CSS transitions
+.fade-bg
+  transition: background-color .3s ease-in-out
+
+// ------- Vue transitions
+.fade-enter-active, .fade-leave-active
+  transition: opacity .5s ease
+
+.fade-enter, .fade-leave-active
+  opacity: 0
+
+// -- left/right
+
+.slide-left-enter, .slide-right-leave-active
+  opacity: 0
+  transform: translate3d(200px, 0, 0)
+.slide-left-leave-active, .slide-right-enter
+  opacity: 0
+  transform: translate3d(-200px, 0, 0)
+.slide-right_left_sm-enter, .slide-right_left_sm-leave-active
+  opacity: 0
+  transform: translate3d(-30px, 0, 0)
+
+// -- up/down
+
+.slide-up-enter, .slide-down-leave-active
+  opacity: 0
+  transform: translate3d(0, 100px, 0)
+.slide-up-leave-active, .slide-down-enter
+  opacity: 0
+  transform: translate3d(0, -100px, 0)
+.slide-up-sm-enter, .slide-down-sm-leave-active
+  opacity: 0
+  transform: translate3d(0, 30px, 0)
+.slide-up-sm-leave-active, .slide-down-sm-enter
+  opacity: 0
+  transform: translate3d(0, -30px, 0)
+.slide-up-enter-active, .slide-up-leave-active, .slide-down-enter-active, .slide-down-leave-active, .slide-up-sm-enter-active, .slide-up-sm-leave-active, .slide-left-enter-active, .slide-left-leave-active
+  transition: all .3s cubic-bezier(.5,0,0,1)
+
+// -- modals
+
+.modal-enter-active
+  transition: opacity .4s
+.modal-leave-active
+  transition: opacity .1s ease
+.modal-enter, .modal-leave-active
+  opacity: 0
+  .modal-body
+    transform: translate3d(0, 20px, 0)
+
+.view
+  transition: all .5s cubic-bezier(.5,0,0,1), opacity .4s cubic-bezier(.6,0,.6,.6)
+
+// ---- animations
+
+@keyframes flashred
+  0%
+    background-color: $red
+  100%
+    background-color: transparent
+
+@keyframes flashgreen
+  0%
+    background-color: $green
+  100%
+    background-color: transparent
+
+// fade in and slide up, then slide down and fade out
+@keyframes slide-in-out
+  0%
+    opacity: 0
+    transform: translateY(20px)
+  15%
+    opacity: 1
+    transform: translateY(0)
+  85%
+    opacity: 1
+    transform: translateY(0)
+  100%
+    opacity: 0
+    transform: translateY(20px)

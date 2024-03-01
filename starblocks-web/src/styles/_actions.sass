@@ -1,0 +1,49 @@
+a, a:visited
+  color: $primary
+  text-decoration: none
+  outline: 0
+  &:hover, &:focus
+    color: lighten($primary, 20%)
+    text-decoration: underline
+
+.button, button.button, a.button
+  margin-bottom: 0
+  outline: 0
+  border: none
+  border-radius: 2px
+  padding: 6px 8px 7px
+  cursor: pointer
+  background-color: $primary
+  transition: background-color .2s cubic-bezier(.5,0,0,1), .4s opacity ease
+  color: white
+  font-family: $family
+  letter-spacing: 0.04em
+  font-size: $font-sm
+  line-height: 1.2em
+  &:hover, &:focus, &:active
+    background-color: lighten($primary, 7%)
+    text-decoration: none
+  &.sm_padding
+    padding: .2em
+  &:disabled
+    opacity: .3
+    cursor: not-allowed
+  &.transparent
+    background-color: transparent
+    color: $default
+  &.ocher
+    background-color: #e6c577
+    color: $default
+    &:hover, &:focus, &:active
+      background-color: saturate(#e6c577, 7%)
+      color: $default
+  &.red
+    background-color: #845858
+    &:hover, &:focus, &:active
+      background-color: lighten(#845858, 7%)
+  & svg
+    margin-right: .2em
+    opacity: .8
+
+.raised
+  box-shadow: 0 4px 8px 1px rgba(74, 87, 107, 0.3)
