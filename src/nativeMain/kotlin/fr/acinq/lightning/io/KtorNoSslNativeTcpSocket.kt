@@ -10,7 +10,10 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
 
-class LinuxTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
+/**
+ * Uses ktor native socket implementation, which does not support SSL
+ */
+class KtorNoSslNativeTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
 
     private val logger = loggerFactory.newLogger(this::class)
 
@@ -67,7 +70,7 @@ class LinuxTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : Tcp
 
 }
 
-internal actual object PlatformSocketBuilder : TcpSocket.Builder {
+internal object KtorSocketBuilder : TcpSocket.Builder {
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         val logger = loggerFactory.newLogger(this::class)
         return withContext(Dispatchers.IO) {
@@ -78,7 +81,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                         else -> socket
                     }
                 }
-                LinuxTcpSocket(socket, loggerFactory)
+                KtorNoSslNativeTcpSocket(socket, loggerFactory)
             } catch (e: Exception) {
                 throw e
             }
