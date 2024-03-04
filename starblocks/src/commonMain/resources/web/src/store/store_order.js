@@ -12,15 +12,15 @@ export const order_module = {
   },
   mutations: {
     [muts.ORDER_UPDATE] (state, order) {
-      console.log('order is now %s', JSON.stringify(order))
+      log('order is now %s', JSON.stringify(order))
       state.order = order
     },
     [muts.ORDER_PAID] (state) {
       if (!isEmpty(state.order)) {
-        console.log('order was paid with paymentHash=%s', state.order.payment_hash)
+        log('order was paid with paymentHash=%s', state.order.payment_hash)
         state.order.paid = true
       } else {
-        console.log('tried to pay an empty order...')
+        log('tried to pay an empty order...')
       }
     },
   },
@@ -37,18 +37,17 @@ export const order_module = {
       .then((socket) => {
         socket.onmessage = (event) => {
           let data = JSON.parse(event.data)
-          console.log('received %s from websocket', data)
-          console.log('order->%s', state.order.payment_hash)
+          log('received %s from websocket', data)
           if (data.paymentHash === state.order.payment_hash) {
             commit(muts.ORDER_PAID)
             //socket.close()
           }
         }
         socket.onclose = (event) => {
-          console.log('websocket lost connection with server')
+          log('websocket lost connection with server')
         }
         socket.onerror = (event) => {
-          console.log('websocket encountered error')
+          log('websocket encountered error')
         }
       })
     },

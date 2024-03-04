@@ -40,13 +40,16 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
+                // ktor
                 implementation(ktor("network"))
+                // ktor client (to talk with phoenixd)
                 implementation(ktor("client-core"))
                 implementation(ktor("client-auth"))
                 implementation(ktor("client-cio"))
                 implementation(ktor("client-json"))
                 implementation(ktor("client-content-negotiation"))
                 implementation(ktor("client-websockets"))
+                // ktor server
                 implementation(ktor("server-core"))
                 implementation(ktor("server-content-negotiation"))
                 implementation(ktor("serialization-kotlinx-json"))
@@ -54,7 +57,10 @@ kotlin {
                 implementation(ktor("server-websockets"))
                 implementation(ktor("server-status-pages")) // exception handling
                 implementation(ktor("server-cors")) // cors plugin
+                // command line interface
                 implementation("com.github.ajalt.clikt:clikt:4.2.2")
+                // file system
+                implementation("com.squareup.okio:okio:3.8.0")
             }
         }
     }
@@ -65,3 +71,46 @@ tasks.withType<JavaExec> {
     standardInput = System.`in`
 }
 
+// custom tasks to build and package starblocks
+val npmBuild by tasks.creating(Exec::class) {
+    group = "build"
+    description = "build the starblocks website for production with NPM, expects an HTTPS api"
+    workingDir = projectDir.resolve("src/commonMain/resources/web")
+    commandLine("npm", "install")
+    commandLine("npm", "run", "build")
+    dependsOn()
+}
+
+val npmCopy by tasks.register("npmCopy", Copy::class) {
+    group = "package"
+    description = "copy the starblocks website to build/package"
+    from("$projectDir/src/commonMain/resources/web/dist") {
+        include("**/*")
+    }
+    into("$projectDir/build/package/web")
+    dependsOn(npmBuild)
+}
+
+val npmPackageMacosX64 by tasks.register("packageMacosX64", Copy::class) {
+    group = "package"
+    description = "build the website for production and the macosX64 release executable, and copy the output to build/package"
+
+    from("$projectDir/build/bin/macosX64/releaseExecutable") {
+        include("**/*")
+    }
+    into("$projectDir/build/package/")
+    dependsOn(npmCopy)
+    dependsOn(":starblocks:linkReleaseExecutableMacosX64")
+}
+
+val npmPackageLinuxX64 by tasks.register("packageLinuxX64", Copy::class) {
+    group = "package"
+    description = "build the website for production and the linuxX64 release executable, and copy the output to build/package"
+
+    from("$projectDir/build/bin/linuxX64/releaseExecutable") {
+        include("**/*")
+    }
+    into("$projectDir/build/package/")
+    dependsOn(npmCopy)
+    dependsOn(":starblocks:linkReleaseExecutableMacosX64")
+}

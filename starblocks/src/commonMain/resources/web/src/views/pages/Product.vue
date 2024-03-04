@@ -3,7 +3,7 @@
     <div class="product">
       <div class="product-illustration">
         <img class="product-image" :src="'/images/' + product.label + '.jpg'" />
-        <div class="product-price">{{ product.price_satoshi / 100000 }} mBTC</div>
+        <div class="product-price">{{ product.price_satoshi }} sat</div>
       </div>
       <div class="product-content">
         <div class="product-name text-cursive">{{ product.name }}</div>
@@ -22,6 +22,8 @@
 <script>
 import { actions } from 'store/types'
 import { fetching } from 'utils/Constants'
+import debug from 'utils/Debug'
+const log = debug('starblocks:product-view')
 
 import SvgIcon from 'components/SvgIcon'
 
@@ -39,10 +41,9 @@ export default {
   },
   methods: {
     addProductToStore () {
-      console.log("clickd")
       this.$store.dispatch(actions.ADD_TO_CART, this.product)
-      .then(() => console.log('added %s to cart', this.product.name))
-      .catch((e) => console.log('error when adding product %s [%s]', this.product.id, e))
+      .then(() => log('added %s to cart', this.product.name))
+      .catch((e) => log('error when adding product %s [%s]', this.product.id, e))
     }
   },
   components: {

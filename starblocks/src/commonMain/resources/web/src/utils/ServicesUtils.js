@@ -1,13 +1,13 @@
 import { isBlank, isNull } from './StringUtils'
 
 export const API_HOST = process.env.NODE_ENV === 'production' ? window.location.host : 'localhost:8081'
-export const API_URL = process.env.NODE_ENV === 'production' ? 'https://' + API_HOST : 'http://' + API_HOST
+export const API_URL = process.env.NODE_ENV === 'production' ? 'https://' + API_HOST + '/api' : 'http://' + API_HOST + '/api'
 
 export function prepareJsonResponse (response) {
   if (response.status >= 200 && response.status < 300) {
     return Promise.resolve(response.json())
   } else {
-    console.log("error response: $s", response) 
+    log("error response: $s", response)
     const error = new Error(response.status)
     error.response = response
     return Promise.reject(error)

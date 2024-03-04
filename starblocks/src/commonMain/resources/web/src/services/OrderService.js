@@ -21,7 +21,7 @@ export function createOrder (products) {
       product_name: p.name,
     }
   }))
-  console.log("api call to /order with products=%s", reqData)
+  log("api call to /order with products=%s", reqData)
 
   return Promise.resolve().then(() => {
     return fetch(API_URL + '/order', {

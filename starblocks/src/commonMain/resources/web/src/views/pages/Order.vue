@@ -69,7 +69,7 @@ export default {
   data () {
     return {
       status: fetching.READY,
-      unit: btcUnits.get('btc'),
+      unit: btcUnits.get('sat'),
       paymentHeight: 0,
       qr_opts: {
         width: 260,
@@ -80,18 +80,18 @@ export default {
   },
 
   created () {
-    console.log('loading order %s', this.route_order_id)
+    log('loading order %s', this.route_order_id)
     if (!isBlank(this.route_order_id)) {
       this.status = fetching.PENDING
       this.$store.dispatch(actions.GET_ORDER, this.route_order_id)
       .then((o) => {
-        console.log('Successfully fetched order %s', JSON.stringify(o))
+        log('Successfully fetched order %s', JSON.stringify(o))
         this.status = fetching.DONE
         return o
       })
       .then((o) => this.$store.dispatch(actions.OPEN_ORDER_WS, o.payment_hash))
       .catch((e) => {
-        console.log('error when fetching order', e)
+        log('error when fetching order', e)
         this.status = fetching.FAILED
       })
     }
@@ -102,16 +102,16 @@ export default {
       return p ? p.name : 'unknown product name'
     },
     cancelOrder () {
-      console.log('cancel order -> go back to cart')
+      log('cancel order -> go back to cart')
       this.$store.dispatch(actions.CANCEL_ORDER) //todo api delete
       .then(() => {
         this.$store.dispatch(actions.EMPTY_CART)
       })
       .then(() => {
-        console.log('successfully cancelled order')
+        log('successfully cancelled order')
         this.$router.push({ name: 'shop' })
       })
-      .catch((e) => console.log('%cerror when cancelling order', e))
+      .catch((e) => log('%cerror when cancelling order', e))
     },
     switchUnit () {
       this.unit = getNextUnitSimple(this.unit)

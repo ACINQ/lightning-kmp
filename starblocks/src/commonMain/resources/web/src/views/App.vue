@@ -5,7 +5,7 @@
         <router-view class="view"></router-view>
       </transition>
     </div>
-    <div class="poweredby"><a href="https://github.com/ACINQ/eclair" target="_blank"><img src="/images/poweredby.png" height="100" /></a></div>
+    <div class="poweredby"><a href="https://github.com/ACINQ/phoenix" target="_blank"><img src="/images/poweredby.png" height="100" /></a></div>
   </div>
 </template>
 

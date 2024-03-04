@@ -50,16 +50,11 @@ export const cart_module = {
       return commit(muts.CART_STATUS, status)
     },
     [actions.ADD_TO_CART] ({ commit, state }, product) {
-      console.log('product=', product)
       if (!product || isBlank(product.id) || isNaN(product.price_satoshi)) {
         return Promise.reject('invalid product')
       }
       const total = state.cart.products.reduce((a,b) => a + b.unitary_price_satoshi * b.count, 0) + product.price_satoshi
-      console.log('total cart is = ' + total)
-      if (total > 7000000) {
-        commit(muts.CART_MAX_REACHED)
-        return Promise.reject('Max amount reached')
-      }
+      log('total cart is = ' + total)
       return commit(muts.CART_ADD, product)
     },
   },
