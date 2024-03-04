@@ -87,16 +87,18 @@ kotlin {
                 api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
                 api("co.touchlab:kermit:$kermitLoggerVersion")
+                api(ktor("network"))
+                api(ktor("network-tls"))
             }
         }
 
         commonTest {
             dependencies {
-                api(ktor("client-core"))
-                api(ktor("client-auth"))
-                api(ktor("client-json"))
-                api(ktor("client-content-negotiation"))
-                api(ktor("serialization-kotlinx-json"))
+                implementation(ktor("client-core"))
+                implementation(ktor("client-auth"))
+                implementation(ktor("client-json"))
+                implementation(ktor("client-content-negotiation"))
+                implementation(ktor("serialization-kotlinx-json"))
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
                 implementation("org.kodein.memory:klio-files:0.12.0")
@@ -106,8 +108,6 @@ kotlin {
         jvmMain {
             dependencies {
                 api(ktor("client-okhttp"))
-                api(ktor("network"))
-                api(ktor("network-tls"))
                 implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:$secpJniJvmVersion")
                 implementation("org.slf4j:slf4j-api:1.7.36")
             }
