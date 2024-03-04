@@ -4,7 +4,6 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.forms.*
-import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.*
 import io.ktor.serialization.kotlinx.json.*
@@ -25,12 +24,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okio.Path
 import kotlin.random.Random
 import kotlin.random.nextUInt
 
-class Api(phoenixdUrl: Url) {
+class Api(phoenixdUrl: Url, webDir: Path) {
 
     private val orders = mutableMapOf<String, Order>()
     private val paymentEvents = MutableSharedFlow<PaymentReceived>()
@@ -54,7 +53,7 @@ class Api(phoenixdUrl: Url) {
 
         launch {
             runBlocking {
-                client.webSocket(method = HttpMethod.Get, host = "127.0.0.1", port = 8080, path = "/websocket") {
+                client.webSocket(method = HttpMethod.Get, host = phoenixdUrl.host, port = phoenixdUrl.port, path = "/websocket") {
                     while (true) {
                         try {
                             val paymentReceived = receiveDeserialized<PaymentReceived>()
@@ -72,11 +71,24 @@ class Api(phoenixdUrl: Url) {
         }
 
         routing {
-            get("/products") {
+            route("/") {
+                val rootFolder = webDir
+                staticRootFolder = rootFolder
+                fileSystem.listRecursively(rootFolder).filter { path ->
+                    fileSystem.metadata(path).isRegularFile
+                }.forEach { path ->
+                    val relativePath = path.relativeTo(rootFolder).toString()
+                    file(relativePath, relativePath)
+                }
+                default("index.html")
+                route("js") { files("js") }
+                route("css") { files("css") }
+            }
+            get("/api/products") {
                 val products = Database.products
                 call.respond(HttpStatusCode.Accepted, products)
             }
-            post("/order") {
+            post("/api/order") {
                 val userOrder = call.receive<List<OrderProductLine>>()
                 val amount = userOrder.sumOf { it.count * it.unitary_price_satoshi }
                 if (amount <= 0) {
@@ -86,7 +98,10 @@ class Api(phoenixdUrl: Url) {
                     )
                 } else {
                     val invoice = client.submitForm(
-                        url = "http://127.0.0.1:8080/invoice",
+                        url = url {
+                            takeFrom(phoenixdUrl)
+                            path("invoice")
+                        },
                         formParameters = parameters {
                             append("amountSat", amount.toString())
                             append("description", userOrder.joinToString(", ") {
@@ -107,24 +122,10 @@ class Api(phoenixdUrl: Url) {
                     call.respond(status = HttpStatusCode.Created, message = order)
                 }
             }
-            get("/order/{id}") {
+            get("/api/order/{id}") {
                 val id = call.parameters["id"]!!
                 val order: Order = orders[id]!!
                 call.respond(order)
-            }
-            get("/invoice") {
-                // forward create invoice to phoenixd
-                val invoice = client.submitForm(
-                    url = url {
-                        takeFrom(phoenixdUrl)
-                        path("invoice")
-                    },
-                    formParameters = parameters {
-                        append("amountSat", 42000.toString())
-                        append("description", "my description")
-                    }
-                ).bodyAsText()
-                call.respondText(invoice)
             }
         }
     }

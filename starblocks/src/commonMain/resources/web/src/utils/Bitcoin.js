@@ -24,10 +24,10 @@ export const btcUnits = ((new Map())
 )
 
 export function getNextUnitSimple (unit) {
-  if (unit == null || unit.code === '') return btcUnits.get('mbtc');
+  if (unit == null || unit.code === '') return btcUnits.get('sat');
   switch(unit.code) {
-    case 'mbtc': return btcUnits.get('btc')
-    case 'btc': return btcUnits.get('mbtc')
-    default: return btcUnits.get('mbtc')
+    case 'sat': return btcUnits.get('btc')
+    case 'btc': return btcUnits.get('sat')
+    default: return btcUnits.get('sat')
   }
 }

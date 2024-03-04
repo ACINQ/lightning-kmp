@@ -5,11 +5,11 @@
     <div class="cart">
 
       <div class="cart-amount">
-        <div class="cart-amount--value">{{ total_amount / 100000 | formatAmount }}</div>
-        <div class="cart-amount--unit text-xs text-muted">mBTC</div>
+        <div class="cart-amount--value">{{ total_amount | formatAmount }}</div>
+        <div class="cart-amount--unit text-xs text-muted">sat</div>
       </div>
       <div class="cart-max-reached" v-if="cart.max_reached">
-        Max 7 mBTC per order
+        Max 700 000 satoshi per order
       </div>
       <div class="cart-action">
         <button class="button checkout" v-on:click="orderCart" :disabled="cart.products.length <= 0">
@@ -50,21 +50,21 @@ export default {
       if (this.cart.products.length <= 0 || this.status === fetching.PENDING) return
       this.$store.dispatch(actions.CART_UPDATE_STATUS, fetching.PENDING)
       .then(() => this.$store.dispatch(actions.CREATE_ORDER, this.cart.products))
-      .then((o) => console.log('successfully created order %s', JSON.stringify(o)))
+      .then((o) => log('successfully created order %s', JSON.stringify(o)))
       .then(() => {
         this.$store.dispatch(actions.CART_UPDATE_STATUS, fetching.DONE)
         this.$router.push({ name: 'order', params: { id: this.order.id }})
       })
       .catch((e) => {
-        console.log('%cerror when creating order', e)
+        log('%cerror when creating order', e)
         this.$store.dispatch(actions.CART_UPDATE_STATUS, fetching.FAILED)
         setTimeout(() => this.$store.dispatch(actions.CART_UPDATE_STATUS, fetching.READY), 1700)
       })
     },
     emptyCart () {
       this.$store.dispatch(actions.EMPTY_CART)
-      .then(() => console.log('successfully clear cart'))
-      .catch((e) => console.log('%cerror when emptying cart', 'color:red', e))
+      .then(() => log('successfully cleared cart'))
+      .catch((e) => log('error when emptying cart', e))
     },
   },
   computed: {
