@@ -26,6 +26,17 @@ kotlin {
         }
     }
 
+    if (currentOs.isMacOsX) {
+        macosX64 {
+            binaries {
+                executable {
+                    entryPoint = "fr.acinq.lightning.bin.main"
+                    optimized = false // without this, release mode throws 'Index 0 out of bounds for length 0' in StaticInitializersOptimization.kt
+                }
+            }
+        }
+    }
+
     val ktorVersion = "2.3.8"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
 
