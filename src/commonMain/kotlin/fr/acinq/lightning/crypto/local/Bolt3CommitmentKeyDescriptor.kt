@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.lightning.crypto.PrivateKeyDescriptor
 
 class Bolt3CommitmentKeyDescriptor(
-    private val parent: PrivateKeyDescriptor,
+    private val parent: LocalPrivateKeyDescriptor,
     private val perCommitPoint: PublicKey
 ) : LocalPrivateKeyDescriptor {
     override fun instantiate(): PrivateKey {

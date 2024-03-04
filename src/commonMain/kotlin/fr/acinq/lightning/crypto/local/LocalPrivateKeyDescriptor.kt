@@ -20,6 +20,8 @@ import fr.acinq.lightning.transactions.Transactions
 
 interface LocalPrivateKeyDescriptor : PrivateKeyDescriptor {
 
+    fun instantiate(): PrivateKey
+
     override fun publicKey(): PublicKey {
         return instantiate().publicKey()
     }
