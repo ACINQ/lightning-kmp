@@ -5,11 +5,8 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.LiquidityEvents
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.Origin
@@ -136,12 +133,14 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                 )
         }
         when (val origin = action.origin) {
-            is Origin.PayToOpenOrigin ->
+            is Origin.PayToOpenOrigin -> {
                 // there already is a corresponding Lightning invoice in the db
                 db.receivePayment(
                     paymentHash = origin.paymentHash,
                     receivedWith = listOf(receivedWith)
                 )
+                nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(origin.paymentHash, listOf(receivedWith)))
+            }
             else -> {
                 // this is a swap, there was no pre-existing invoice, we need to create a fake one
                 val incomingPayment = db.addIncomingPayment(
@@ -152,6 +151,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                     paymentHash = incomingPayment.paymentHash,
                     receivedWith = listOf(receivedWith)
                 )
+                nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(incomingPayment.paymentHash, listOf(receivedWith)))
             }
         }
     }
@@ -299,7 +299,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             pending.remove(paymentPart.paymentHash)
                             val received = IncomingPayment.Received(receivedWith = receivedWith)
                             db.receivePayment(paymentPart.paymentHash, received.receivedWith)
-
+                            nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(paymentPart.paymentHash, received.receivedWith))
                             return ProcessAddResult.Accepted(actions, incomingPayment.copy(received = received), received)
                         }
                     }

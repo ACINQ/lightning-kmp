@@ -77,6 +77,7 @@ data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipi
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
 sealed class PeerEvent
+@Deprecated("Replaced by NodeEvents", replaceWith = ReplaceWith("PaymentEvents.PaymentReceived", "fr.acinq.lightning.PaymentEvents"))
 data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
 data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerEvent()
@@ -795,6 +796,7 @@ class Peer(
                     // this was a multi-part payment, we signal that the task is finished
                     nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.IncomingMultiPartPayment(result.incomingPayment.paymentHash)))
                 }
+                @Suppress("DEPRECATION")
                 _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
             }
             is IncomingPaymentHandler.ProcessAddResult.Pending -> if (result.pendingPayment.parts.size == 1) {

@@ -7,6 +7,9 @@ import fr.acinq.lightning.channel.SharedFundingInput
 import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
+import fr.acinq.lightning.db.IncomingPayment
+import fr.acinq.lightning.utils.sum
+import fr.acinq.lightning.wire.Node
 import fr.acinq.lightning.wire.PleaseOpenChannel
 import kotlinx.coroutines.CompletableDeferred
 
@@ -58,3 +61,10 @@ sealed interface SensitiveTaskEvents : NodeEvents {
 
 /** This will be emitted in a corner case where the user restores a wallet on an older version of the app, which is unable to read the channel data. */
 data object UpgradeRequired : NodeEvents
+
+sealed interface PaymentEvents : NodeEvents {
+    data class PaymentReceived(val paymentHash: ByteVector32, val receivedWith: List<IncomingPayment.ReceivedWith>) : PaymentEvents {
+        val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
+        val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
+    }
+}
