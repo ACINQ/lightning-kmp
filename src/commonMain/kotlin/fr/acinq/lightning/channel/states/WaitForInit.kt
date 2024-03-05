@@ -24,7 +24,8 @@ data object WaitForInit : ChannelState() {
                     cmd.walletInputs,
                     cmd.localParams,
                     cmd.channelConfig,
-                    cmd.remoteInit
+                    cmd.remoteInit,
+                    cmd.leaseRate,
                 )
                 Pair(nextState, listOf())
             }

@@ -41,6 +41,7 @@ data class WaitForFundingCreated(
     val channelFlags: ChannelFlags,
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
+    val liquidityLease: LiquidityAds.Lease?,
     val channelOrigin: Origin?
 ) : ChannelState() {
     val channelId: ByteVector32 = interactiveTxSession.fundingParams.channelId
@@ -63,7 +64,7 @@ data class WaitForFundingCreated(
                                 interactiveTxAction.sharedTx,
                                 localPushAmount,
                                 remotePushAmount,
-                                liquidityLease = null,
+                                liquidityLease,
                                 localCommitmentIndex = 0,
                                 remoteCommitmentIndex = 0,
                                 commitTxFeerate,

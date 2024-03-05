@@ -48,7 +48,8 @@ sealed class ChannelCommand {
             val walletInputs: List<WalletState.Utxo>,
             val localParams: LocalParams,
             val channelConfig: ChannelConfig,
-            val remoteInit: InitMessage
+            val remoteInit: InitMessage,
+            val leaseRate: LiquidityAds.LeaseRate?,
         ) : Init()
 
         data class Restore(val state: PersistedChannelState) : Init()

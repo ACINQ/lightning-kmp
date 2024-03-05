@@ -202,7 +202,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertNull(defaultSpliceAck.willFund)
         val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey)
         run {
-            val willFund = leaseRate.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
+            val willFund = leaseRate.signLease(bob.staticParams.nodeParams.nodePrivateKey, liquidityRequest.fundingAmount, fundingScript, cmd.feerate, spliceInit.requestFunds!!).willFund
             val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
@@ -212,7 +212,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         run {
             // Bob proposes different fees from what Alice expects.
             val bobLiquidityRates = leaseRate.copy(leaseFeeProportional = 500 /* 5% */)
-            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
+            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, liquidityRequest.fundingAmount, fundingScript, cmd.feerate, spliceInit.requestFunds!!).willFund
             val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)

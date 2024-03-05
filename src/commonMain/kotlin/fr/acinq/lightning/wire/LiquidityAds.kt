@@ -51,10 +51,14 @@ object LiquidityAds {
             return LeaseFees(onChainFees, leaseFeeBase + proportionalFee)
         }
 
-        fun signLease(nodeKey: PrivateKey, fundingScript: ByteVector, requestFunds: ChannelTlv.RequestFunds): ChannelTlv.WillFund {
+        fun signLease(nodeKey: PrivateKey, fundingAmount: Satoshi, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, requestFunds: ChannelTlv.RequestFunds): WillFundLease {
+            require(fundingAmount >= requestFunds.amount) { "funding amount is smaller than requested by our peer ($fundingAmount < ${requestFunds.amount})" }
             val witness = LeaseWitness(fundingScript, requestFunds.leaseDuration, requestFunds.leaseExpiry, maxRelayFeeProportional, maxRelayFeeBase)
             val sig = witness.sign(nodeKey)
-            return ChannelTlv.WillFund(sig, fundingWeight, leaseFeeProportional, leaseFeeBase, maxRelayFeeProportional, maxRelayFeeBase)
+            val leaseFees = fees(fundingFeerate, requestFunds.amount, fundingAmount)
+            val lease = Lease(requestFunds.amount, leaseFees, sig, witness)
+            val willFund = ChannelTlv.WillFund(sig, fundingWeight, leaseFeeProportional, leaseFeeBase, maxRelayFeeProportional, maxRelayFeeBase)
+            return WillFundLease(willFund, lease)
         }
 
         fun write(out: Output) {
@@ -136,6 +140,8 @@ object LiquidityAds {
         val start: Int = witness.leaseEnd - witness.leaseDuration
         val expiry: Int = witness.leaseEnd
     }
+
+    data class WillFundLease(val willFund: ChannelTlv.WillFund, val lease: Lease)
 
     /** The seller signs the lease parameters: if they cheat, the buyer can use that signature to prove they cheated. */
     data class LeaseWitness(val fundingScript: ByteVector, val leaseDuration: Int, val leaseEnd: Int, val maxRelayFeeProportional: Int, val maxRelayFeeBase: MilliSatoshi) {

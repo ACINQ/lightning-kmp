@@ -5,22 +5,17 @@ import fr.acinq.bitcoin.Script.tail
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
-import fr.acinq.bitcoin.utils.getOrDefault
-import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
+import fr.acinq.bitcoin.utils.getOrDefault
 import fr.acinq.bitcoin.utils.runTrying
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.logging.*
-import fr.acinq.lightning.transactions.CommitmentSpec
-import fr.acinq.lightning.transactions.DirectedHtlc
-import fr.acinq.lightning.transactions.Scripts
-import fr.acinq.lightning.transactions.SwapInProtocol
-import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -1075,7 +1070,7 @@ data class InteractiveTxSigningSession(
             val channelKeys = channelParams.localParams.channelKeys(keyManager)
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript(channelKeys) }
-            val liquidityFees = liquidityLease?.fees?.total?.toMilliSatoshi() ?: 0.msat
+            val liquidityFees = liquidityLease?.fees?.total?.toMilliSatoshi()?.let { if (fundingParams.isInitiator) it else -it } ?: 0.msat
             return Helpers.Funding.makeCommitTxs(
                 channelKeys,
                 channelParams.channelId,

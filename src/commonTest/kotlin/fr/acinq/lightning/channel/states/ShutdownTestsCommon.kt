@@ -368,6 +368,25 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv Shutdown with non-initiator paying commit fees`() {
+        val (alice, bob) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
+        assertFalse(alice.commitments.params.localParams.payCommitTxFees)
+        assertTrue(bob.commitments.params.localParams.payCommitTxFees)
+        // Alice can initiate a mutual close, even though she's not paying the commitment fees.
+        // Bob will send closing_signed first since he's paying the commitment fees.
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(null, null))
+        assertIs<LNChannel<ShuttingDown>>(alice1)
+        val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(shutdownAlice))
+        assertIs<LNChannel<ShuttingDown>>(bob1)
+        val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
+        actionsBob1.findOutgoingMessage<ClosingSigned>()
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(shutdownBob))
+        assertIs<LNChannel<ShuttingDown>>(alice2)
+        assertNull(actionsAlice2.findOutgoingMessageOpt<ClosingSigned>())
+    }
+
+    @Test
     fun `recv CheckHtlcTimeout -- no htlc timed out`() {
         val (alice, _) = init()
 
