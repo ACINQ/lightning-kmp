@@ -12,7 +12,7 @@ import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalParams
 import fr.acinq.lightning.channel.RemoteParams
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
-import fr.acinq.lightning.crypto.HardCodedPrivateKey
+import fr.acinq.lightning.crypto.local.HardCodedPrivateKey
 import fr.acinq.lightning.crypto.KeyManager.ChannelKeys
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx

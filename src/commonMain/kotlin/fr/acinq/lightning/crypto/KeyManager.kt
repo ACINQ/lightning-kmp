@@ -8,6 +8,8 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.DefaultSwapInParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.crypto.local.DerivedExtendedPrivateKeyDescriptor
+import fr.acinq.lightning.crypto.local.FromExtendedPrivateKeyDescriptor
 import fr.acinq.lightning.transactions.SwapInProtocol
 import fr.acinq.lightning.transactions.SwapInProtocolLegacy
 import fr.acinq.lightning.transactions.Transactions
@@ -74,7 +76,7 @@ interface KeyManager {
         private val master: ExtendedPrivateKeyDescriptor,
         val account: Long
     ) {
-        private val xpriv = LocalKeyManager.DerivedExtendedPrivateKeyDescriptor(master, bip84BasePath(chain) / hardened(account))
+        private val xpriv = DerivedExtendedPrivateKeyDescriptor(master, bip84BasePath(chain) / hardened(account))
 
         val xpub: String = DeterministicWallet.encode(
             input = xpriv.publicKey(),
@@ -85,7 +87,7 @@ interface KeyManager {
         )
 
         fun privateKey(addressIndex: Long): PrivateKeyDescriptor {
-            return LocalKeyManager.FromExtendedPrivateKeyDescriptor(xpriv, KeyPath.empty / 0 / addressIndex)
+            return FromExtendedPrivateKeyDescriptor(xpriv, KeyPath.empty / 0 / addressIndex)
         }
 
         fun pubkeyScript(addressIndex: Long): ByteVector {
@@ -121,15 +123,15 @@ interface KeyManager {
         val refundDelay: Int = DefaultSwapInParams.RefundDelay
     ) {
         private val userExtendedPrivateKey: ExtendedPrivateKeyDescriptor =
-            LocalKeyManager.DerivedExtendedPrivateKeyDescriptor(master, swapInUserKeyPath(chain))
-        private val userRefundExtendedPrivateKey: ExtendedPrivateKeyDescriptor = LocalKeyManager.DerivedExtendedPrivateKeyDescriptor(master, swapInUserRefundKeyPath(chain))
+            DerivedExtendedPrivateKeyDescriptor(master, swapInUserKeyPath(chain))
+        private val userRefundExtendedPrivateKey: ExtendedPrivateKeyDescriptor = DerivedExtendedPrivateKeyDescriptor(master, swapInUserRefundKeyPath(chain))
 
-        val userPrivateKey: PrivateKeyDescriptor = LocalKeyManager.FromExtendedPrivateKeyDescriptor(userExtendedPrivateKey)
+        val userPrivateKey: PrivateKeyDescriptor = FromExtendedPrivateKeyDescriptor(userExtendedPrivateKey)
 
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
 
-        private val localServerExtendedPrivateKey: ExtendedPrivateKeyDescriptor = LocalKeyManager.DerivedExtendedPrivateKeyDescriptor(master, swapInLocalServerKeyPath(chain))
-        fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKeyDescriptor = LocalKeyManager.FromExtendedPrivateKeyDescriptor(localServerExtendedPrivateKey, perUserPath(remoteNodeId))
+        private val localServerExtendedPrivateKey: ExtendedPrivateKeyDescriptor = DerivedExtendedPrivateKeyDescriptor(master, swapInLocalServerKeyPath(chain))
+        fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKeyDescriptor = FromExtendedPrivateKeyDescriptor(localServerExtendedPrivateKey, perUserPath(remoteNodeId))
 
         // legacy p2wsh-based swap-in protocol, with a fixed on-chain address
         val legacySwapInProtocol = SwapInProtocolLegacy(userPublicKey, remoteServerPublicKey, refundDelay)

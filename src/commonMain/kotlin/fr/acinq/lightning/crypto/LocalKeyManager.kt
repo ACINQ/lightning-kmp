@@ -6,6 +6,8 @@ import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
+import fr.acinq.lightning.crypto.local.FromExtendedPrivateKeyDescriptor
+import fr.acinq.lightning.crypto.local.RootExtendedPrivateKeyDescriptor
 
 /**
  * An implementation of [KeyManager] that supports deterministic derivation for [KeyManager.ChannelKeys] based
@@ -168,51 +170,6 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         }
     }
 
-    class FromExtendedPrivateKeyDescriptor(private val parent: ExtendedPrivateKeyDescriptor, private val path: KeyPath) :
-        PrivateKeyDescriptor {
-
-        constructor(parent: ExtendedPrivateKeyDescriptor, index: Long): this(parent, KeyPath(listOf(index)))
-
-        constructor(parent: ExtendedPrivateKeyDescriptor): this(parent, KeyPath(listOf()))
-
-        override fun instantiate(): PrivateKey {
-            return DeterministicWallet.derivePrivateKey(parent.instantiate(), path).privateKey
-        }
-
-        override fun publicKey(): PublicKey {
-            return instantiate().publicKey()
-        }
-    }
-
-    class RootExtendedPrivateKeyDescriptor(val master: DeterministicWallet.ExtendedPrivateKey) : ExtendedPrivateKeyDescriptor{
-        override fun instantiate(): DeterministicWallet.ExtendedPrivateKey {
-            return master
-        }
-        override fun publicKey(): DeterministicWallet.ExtendedPublicKey {
-            return DeterministicWallet.publicKey(instantiate())
-        }
-
-        override fun derivePrivateKey(index: Long): PrivateKeyDescriptor {
-            return FromExtendedPrivateKeyDescriptor(this, index)
-        }
-    }
-
-    class DerivedExtendedPrivateKeyDescriptor(
-        private val parent: ExtendedPrivateKeyDescriptor,
-        private val keyPath: KeyPath
-    ) : ExtendedPrivateKeyDescriptor {
-        override fun instantiate(): DeterministicWallet.ExtendedPrivateKey {
-            return DeterministicWallet.derivePrivateKey(parent.instantiate(), keyPath)
-        }
-
-        override fun publicKey(): DeterministicWallet.ExtendedPublicKey {
-            return DeterministicWallet.publicKey(instantiate())
-        }
-
-        override fun derivePrivateKey(index: Long): PrivateKeyDescriptor {
-            return FromExtendedPrivateKeyDescriptor(this, index)
-        }
-    }
 }
 
 infix operator fun KeyPath.div(index: Long): KeyPath = this.append(index)

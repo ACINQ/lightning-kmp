@@ -15,8 +15,8 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
-import fr.acinq.lightning.crypto.HardCodedPrivateKey
-import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.crypto.local.HardCodedPrivateKey
+import fr.acinq.lightning.crypto.local.RootExtendedPrivateKeyDescriptor
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
@@ -492,7 +492,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "")
         val masterPrivateKey = DeterministicWallet.derivePrivateKey(DeterministicWallet.generate(seed), "/51'/0'/0'").copy(path = KeyPath.empty)
-        val masterPrivateKeyDescriptor = LocalKeyManager.RootExtendedPrivateKeyDescriptor(masterPrivateKey)
+        val masterPrivateKeyDescriptor = RootExtendedPrivateKeyDescriptor(masterPrivateKey)
         val userRefundPrivateKey = DeterministicWallet.derivePrivateKey(masterPrivateKey, "0").privateKey
         val userRefundPrivateKeyDescriptor = masterPrivateKeyDescriptor.derivePrivateKey(0)
         val swapInProtocol = SwapInProtocol(userPrivateKey.publicKey(), serverPrivateKey.publicKey(), userRefundPrivateKey.publicKey(), refundDelay)
