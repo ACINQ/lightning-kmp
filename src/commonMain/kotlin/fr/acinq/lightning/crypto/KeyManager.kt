@@ -32,6 +32,28 @@ interface KeyManager {
      */
     fun channelKeys(fundingKeyPath: KeyPath): ChannelKeys
 
+
+    /**
+     * This method offers direct access to the master key derivation. It should only be used for some advanced usage
+     * like (LNURL-auth, data encryption).
+     */
+    fun derivePrivateKey(keyPath: KeyPath): PrivateKeyDescriptor
+
+    /**
+     * Deterministically generate key material from a given KeyPath.
+     * It could be used if the client needs to cipher some data and
+     * want to rely on this keyManager to ensure it can recover its
+     * key when needed.
+     * The choice of how to generate the key material is left to the KeyManager
+     * implementer. They must only ensure that it is a deterministic process
+     * and that it will always return the same key material for the same KeyPath.
+     * Diversification parameter is a KeyPath for practical and historical reason
+     * but the caller should not suppose that any standard path derivation will be
+     * applied to any master key of the wallet. And, as a matter of fact this
+     * should be discouraged to prevent key materiel extraction.
+     */
+    fun deterministicKeyMaterial(keyPath: KeyPath): ByteVector32
+
     val finalOnChainWallet: Bip84OnChainKeys
 
     val swapInOnChainWallet: SwapInOnChainKeys

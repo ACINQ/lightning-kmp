@@ -1,5 +1,6 @@
 package fr.acinq.lightning.crypto.local
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.Crypto
@@ -31,6 +32,10 @@ interface LocalPrivateKeyDescriptor : PrivateKeyDescriptor {
 
     override fun deriveForCommitment(perCommitPoint: PublicKey): PrivateKeyDescriptor =
         Bolt3CommitmentKeyDescriptor(this, perCommitPoint)
+
+    override fun sign(data: ByteVector32): ByteVector {
+        return Crypto.compact2der(Crypto.sign(data, instantiate()))
+    }
 
     override fun sign(tx: Transaction, inputIndex: Int, redeemScript: ByteArray, amount: Satoshi, sighash: Int): ByteVector64 {
         val key = instantiate()

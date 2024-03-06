@@ -1,5 +1,6 @@
 package fr.acinq.lightning.crypto
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.PrivateKey
@@ -27,6 +28,14 @@ interface PrivateKeyDescriptor {
     //       so, maybe, we could make it so that only this type of keys can
     //       be derived that way.
     fun deriveForCommitment(perCommitPoint: PublicKey): PrivateKeyDescriptor
+
+    /**
+     * Sign data with this private key, using RCF6979 deterministic signatures
+     *
+     * @param data       data to sign
+     * @return a (r, s) ECDSA signature pair
+     */
+    fun sign(data: ByteVector32): ByteVector
 
     /**
      * sign a tx input

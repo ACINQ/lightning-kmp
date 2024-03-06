@@ -63,7 +63,14 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
      * This method offers direct access to the master key derivation. It should only be used for some advanced usage
      * like (LNURL-auth, data encryption).
      */
-    fun derivePrivateKey(keyPath: KeyPath): DeterministicWallet.ExtendedPrivateKey = (master.derive(keyPath) as LocalExtendedPrivateKeyDescriptor).instantiate()
+    override fun derivePrivateKey(keyPath: KeyPath): PrivateKeyDescriptor = master.derivePrivateKey(keyPath)
+
+    override fun deterministicKeyMaterial(keyPath: KeyPath): ByteVector32 {
+        // This implementation ensures backward compatibility with Phoenix
+        // (see LocalKeyManager.cloudKey())... but it also allows one to extract
+        // any key from this key manager given they know its derivation path.
+        return (master.derivePrivateKey(keyPath) as LocalPrivateKeyDescriptor).instantiate().value
+    }
 
     fun privateKey(keyPath: KeyPath): PrivateKey = (master.derivePrivateKey(keyPath) as LocalPrivateKeyDescriptor).instantiate()
 
