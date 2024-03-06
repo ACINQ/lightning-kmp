@@ -72,8 +72,6 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         return (master.derivePrivateKey(keyPath) as LocalPrivateKeyDescriptor).instantiate().value
     }
 
-    fun privateKey(keyPath: KeyPath): PrivateKey = (master.derivePrivateKey(keyPath) as LocalPrivateKeyDescriptor).instantiate()
-
     override fun newFundingKeyPath(isInitiator: Boolean): KeyPath {
         val last = hardened(if (isInitiator) 1 else 0)
         fun next() = secureRandom.nextInt().toLong() and 0xFFFFFFFF
@@ -111,7 +109,8 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
             delayedPaymentKey = master.derivePrivateKey(channelKeyPrefix / hardened(3)),
             htlcKey = master.derivePrivateKey(channelKeyPrefix / hardened(4)),
             revocationKey = master.derivePrivateKey(channelKeyPrefix / hardened(1)),
-            shaSeed = privateKey(channelKeyPrefix / hardened(5)).value.concat(1).sha256()
+            shaSeed = (master.derivePrivateKey(channelKeyPrefix / hardened(5)) as LocalPrivateKeyDescriptor)
+                .instantiate().value.concat(1).sha256()
         )
     }
 
