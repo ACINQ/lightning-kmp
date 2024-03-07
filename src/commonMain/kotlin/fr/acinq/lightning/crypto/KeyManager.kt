@@ -141,11 +141,6 @@ interface KeyManager {
             return legacySwapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()], userPrivateKey)
         }
 
-        // this is a private descriptor that can be used as-is to recover swap-in funds once the refund delay has passed
-        // it is compatible with address rotation as long as refund keys are derived directly from userRefundExtendedPrivateKey
-        // README: it includes the user's master refund private key and is not safe to share !!
-        val privateDescriptor = SwapInProtocol.privateDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey.instantiate())
-
         // this is the public version of the above descriptor. It can be used to monitor a user's swap-in transaction
         // README: it cannot be used to derive private keys, but it can be used to derive swap-in addresses
         val publicDescriptor = SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, DeterministicWallet.publicKey(userRefundExtendedPrivateKey.instantiate()))
