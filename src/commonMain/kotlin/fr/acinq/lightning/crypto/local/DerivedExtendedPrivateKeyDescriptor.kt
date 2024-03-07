@@ -6,7 +6,7 @@ import fr.acinq.lightning.crypto.ExtendedPrivateKeyDescriptor
 import fr.acinq.lightning.crypto.PrivateKeyDescriptor
 
 class DerivedExtendedPrivateKeyDescriptor(
-    private val parent: ExtendedPrivateKeyDescriptor,
+    private val parent: LocalExtendedPrivateKeyDescriptor,
     private val keyPath: KeyPath
 ) : LocalExtendedPrivateKeyDescriptor {
     override fun instantiate(): DeterministicWallet.ExtendedPrivateKey {

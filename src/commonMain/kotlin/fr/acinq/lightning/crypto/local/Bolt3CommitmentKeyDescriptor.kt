@@ -3,7 +3,6 @@ package fr.acinq.lightning.crypto.local
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
-import fr.acinq.lightning.crypto.PrivateKeyDescriptor
 
 class Bolt3CommitmentKeyDescriptor(
     private val parent: LocalPrivateKeyDescriptor,
