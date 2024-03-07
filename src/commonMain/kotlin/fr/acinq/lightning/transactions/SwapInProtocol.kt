@@ -47,7 +47,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
 
     fun signSwapInputRefund(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKeyDescriptor): ByteVector64 {
         require(userPrivateKey.publicKey() == userRefundKey) { "refund private key does not match expected public key: are you using the user key instead of the refund key?" }
-        return Transaction.signInputTaprootScriptPath(userPrivateKey.instantiate(), fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, scriptTree.hash())
+        return userPrivateKey.signInputTaprootScriptPath(fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, scriptTree.hash())
     }
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, serverPrivateKey: PrivateKeyDescriptor, privateNonce: SecretNonce, userNonce: IndividualNonce, serverNonce: IndividualNonce): Either<Throwable, ByteVector32> {
@@ -112,11 +112,11 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
 
     fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PrivateKeyDescriptor): ByteVector64 {
         require(userKey.publicKey() == userPublicKey) { "user private key does not match expected public key: are you using the refund key instead of the user key?" }
-        return Transactions.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, userKey)
+        return userKey.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount)
     }
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, serverKey: PrivateKeyDescriptor): ByteVector64 {
-        return Transactions.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, serverKey)
+        return serverKey.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount)
     }
 
     companion object {
