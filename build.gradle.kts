@@ -295,15 +295,16 @@ tasks.withType<AbstractTestTask> {
     }
 }
 
-// Linux native does not support integration tests (sockets are not implemented in Linux native)
-if (currentOs.isLinux) {
-    val linuxX64Test by tasks.getting(KotlinNativeTest::class) {
-        filter.excludeTestsMatching("*IntegrationTest")
-        filter.excludeTestsMatching("*ElectrumClientTest")
-        filter.excludeTestsMatching("*ElectrumMiniWalletTest")
-        filter.excludeTestsMatching("*SwapInWalletTestsCommon")
+// Those tests use TLS sockets which are not supported on Linux and MacOS
+tasks
+    .filterIsInstance<KotlinNativeTest>()
+    .filter { it.name == "macosX64Test" || it.name == "linuxX64Test" }
+    .map {
+        it.filter.excludeTestsMatching("*IntegrationTest")
+        it.filter.excludeTestsMatching("*ElectrumClientTest")
+        it.filter.excludeTestsMatching("*ElectrumMiniWalletTest")
+        it.filter.excludeTestsMatching("*SwapInWalletTestsCommon")
     }
-}
 
 // Make NS_FORMAT_ARGUMENT(1) a no-op
 // This fixes an issue when building PhoenixCrypto using XCode 13

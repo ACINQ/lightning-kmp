@@ -70,12 +70,12 @@ class KtorNoTlsTcpSocket(private val socket: Socket) : TcpSocket {
 
 internal object KtorSocketBuilder : TcpSocket.Builder {
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
-        val logger = loggerFactory.newLogger(this::class)
         return withContext(Dispatchers.IO) {
             try {
                 val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->
                     when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(tlsContext(logger))
+                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> TODO()
+                        is TcpSocket.TLS.UNSAFE_CERTIFICATES -> TODO()
                         else -> socket
                     }
                 }
@@ -86,10 +86,3 @@ internal object KtorSocketBuilder : TcpSocket.Builder {
         }
     }
 }
-
-/**
- * The TLS internal coroutines are launched in a background scope that doesn't let us do fine-grained supervision.
- * They may throw exceptions when the socket is remotely closed, which crashes the application on Android.
- * This should be fixed by https://github.com/ktorio/ktor/pull/3690, but for now we need to explicitly handle exceptions.
- */
-fun tlsContext(logger: Logger) = Dispatchers.IO + CoroutineExceptionHandler { _, throwable -> logger.error(throwable) { "TLS socket error: " } }
