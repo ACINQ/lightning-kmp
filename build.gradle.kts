@@ -26,8 +26,8 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
 
-    val bitcoinKmpVersion = "0.18.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
-    val secpJniJvmVersion = "0.14.0"
+    val bitcoinKmpVersion = "0.19.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
+    val secpJniJvmVersion = "0.15.0"
 
     val serializationVersion = "1.6.2"
     val coroutineVersion = "1.7.3"
@@ -45,6 +45,10 @@ kotlin {
     linuxX64()
 
     if (currentOs.isMacOsX) {
+        macosX64()
+
+        macosArm64()
+
         iosX64 { // ios simulator on intel devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 val platform = "Iphonesimulator"
@@ -83,16 +87,18 @@ kotlin {
                 api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
                 api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
                 api("co.touchlab:kermit:$kermitLoggerVersion")
+                api(ktor("network"))
+                api(ktor("network-tls"))
             }
         }
 
         commonTest {
             dependencies {
-                api(ktor("client-core"))
-                api(ktor("client-auth"))
-                api(ktor("client-json"))
-                api(ktor("client-content-negotiation"))
-                api(ktor("serialization-kotlinx-json"))
+                implementation(ktor("client-core"))
+                implementation(ktor("client-auth"))
+                implementation(ktor("client-json"))
+                implementation(ktor("client-content-negotiation"))
+                implementation(ktor("serialization-kotlinx-json"))
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
                 implementation("org.kodein.memory:klio-files:0.12.0")
@@ -102,8 +108,6 @@ kotlin {
         jvmMain {
             dependencies {
                 api(ktor("client-okhttp"))
-                api(ktor("network"))
-                api(ktor("network-tls"))
                 implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:$secpJniJvmVersion")
                 implementation("org.slf4j:slf4j-api:1.7.36")
             }
@@ -291,15 +295,16 @@ tasks.withType<AbstractTestTask> {
     }
 }
 
-// Linux native does not support integration tests (sockets are not implemented in Linux native)
-if (currentOs.isLinux) {
-    val linuxX64Test by tasks.getting(KotlinNativeTest::class) {
-        filter.excludeTestsMatching("*IntegrationTest")
-        filter.excludeTestsMatching("*ElectrumClientTest")
-        filter.excludeTestsMatching("*ElectrumMiniWalletTest")
-        filter.excludeTestsMatching("*SwapInWalletTestsCommon")
+// Those tests use TLS sockets which are not supported on Linux and MacOS
+tasks
+    .filterIsInstance<KotlinNativeTest>()
+    .filter { it.name == "macosX64Test" || it.name == "linuxX64Test" }
+    .map {
+        it.filter.excludeTestsMatching("*IntegrationTest")
+        it.filter.excludeTestsMatching("*ElectrumClientTest")
+        it.filter.excludeTestsMatching("*ElectrumMiniWalletTest")
+        it.filter.excludeTestsMatching("*SwapInWalletTestsCommon")
     }
-}
 
 // Make NS_FORMAT_ARGUMENT(1) a no-op
 // This fixes an issue when building PhoenixCrypto using XCode 13
