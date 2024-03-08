@@ -9,6 +9,7 @@ import io.ktor.network.tls.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Uses ktor native socket implementation, which does not support TLS.
@@ -72,11 +73,15 @@ internal object KtorSocketBuilder : TcpSocket.Builder {
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         return withContext(Dispatchers.IO) {
             try {
-                val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->
+                val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port,
+                    configure = {
+                        keepAlive = true
+                        socketTimeout = 15.seconds.inWholeMilliseconds
+                        noDelay = true
+                    }).let { socket ->
                     when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> TODO()
-                        is TcpSocket.TLS.UNSAFE_CERTIFICATES -> TODO()
-                        else -> socket
+                        is TcpSocket.TLS.DISABLED -> socket
+                        else -> TODO("TLS not supported")
                     }
                 }
                 KtorNoTlsTcpSocket(socket)
