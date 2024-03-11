@@ -18,6 +18,7 @@ import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.UUID.Companion.randomUUID
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
 import kotlinx.coroutines.*
@@ -77,10 +78,14 @@ data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipi
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
 sealed class PeerEvent
+@Deprecated("Replaced by NodeEvents", replaceWith = ReplaceWith("PaymentEvents.PaymentReceived", "fr.acinq.lightning.PaymentEvents"))
 data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
-data class PaymentNotSent(val request: SendPayment, val reason: OutgoingPaymentFailure) : PeerEvent()
-data class PaymentSent(val request: SendPayment, val payment: LightningOutgoingPayment) : PeerEvent()
+sealed class SendPaymentResult : PeerEvent() {
+    abstract val request: SendPayment
+}
+data class PaymentNotSent(override val request: SendPayment, val reason: OutgoingPaymentFailure) : SendPaymentResult()
+data class PaymentSent(override val request: SendPayment, val payment: LightningOutgoingPayment) : SendPaymentResult()
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 /**
@@ -603,6 +608,20 @@ class Peer(
             }
     }
 
+    suspend fun sendLightning(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
+        val res = CompletableDeferred<SendPaymentResult>()
+        val paymentId = randomUUID()
+        this.launch {
+            res.complete(eventsFlow
+                .filterIsInstance<SendPaymentResult>()
+                .filter { it.request.paymentId == paymentId }
+                .first()
+            )
+        }
+        send(SendPayment(paymentId, amount, paymentRequest.nodeId, paymentRequest))
+        return res.await()
+    }
+
     suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expirySeconds: Long? = null): Bolt11Invoice {
         // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all
         // channels to maximize the likelihood of success on the first payment attempt
@@ -795,6 +814,7 @@ class Peer(
                     // this was a multi-part payment, we signal that the task is finished
                     nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.IncomingMultiPartPayment(result.incomingPayment.paymentHash)))
                 }
+                @Suppress("DEPRECATION")
                 _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
             }
             is IncomingPaymentHandler.ProcessAddResult.Pending -> if (result.pendingPayment.parts.size == 1) {
