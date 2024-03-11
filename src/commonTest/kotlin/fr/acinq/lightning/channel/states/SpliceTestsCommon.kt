@@ -1,7 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Lightning
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.WalletState
@@ -191,9 +191,11 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormal()
         val leaseRate = LiquidityAds.LeaseRate(0, 250, 250 /* 2.5% */, 10.sat, 200, 100.msat)
         val liquidityRequest = LiquidityAds.RequestRemoteFunding(200_000.sat, alice.currentBlockHeight, leaseRate)
-        val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
+        val origin = Origin.OffChainPayment(randomBytes32(), 50_000_000.msat, TransactionFees(250.sat, 400.sat))
+        val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf(origin))
         val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
         assertEquals(spliceInit.requestFunds, liquidityRequest.requestFunds)
+        assertEquals(spliceInit.preimage, origin.paymentPreimage)
         // Alice's contribution is negative: she needs to pay on-chain fees for the splice.
         assertTrue(spliceInit.fundingContribution < 0.sat)
         // We haven't implemented the seller side, so we mock it.
@@ -261,6 +263,43 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `splice to purchase inbound liquidity -- not enough funds but on-the-fly funding`() {
+        val (alice, bob) = reachNormal(bobFundingAmount = 0.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val leaseRate = LiquidityAds.LeaseRate(0, 350, 100, 0.sat, 200, 100.msat)
+        val liquidityRequest = LiquidityAds.RequestRemoteFunding(100_000.sat, bob.currentBlockHeight, leaseRate)
+        run {
+            // If this isn't tied to an on-the-fly funding attempt, we won't have enough funds to pay fees.
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
+            val (bob1, actionsBob1) = bob.process(cmd)
+            val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
+            val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
+            val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
+            val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
+            assertEquals(2, actionsBob2.size)
+            actionsBob2.hasOutgoingMessage<Warning>()
+            actionsBob2.has<ChannelAction.Disconnect>()
+            assertTrue(cmd.replyTo.isCompleted)
+            assertEquals(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds, cmd.replyTo.getCompleted())
+        }
+        run {
+            // If this is tied to an on-the-fly funding attempt, we can use the payment amount to pay fees.
+            val origin = Origin.OffChainPayment(randomBytes32(), 25_000_000.msat, TransactionFees(500.sat, 0.sat))
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf(origin))
+            val (bob1, actionsBob1) = bob.process(cmd)
+            val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
+            val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
+            val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
+            val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
+            assertEquals(actionsBob2.size, 1)
+            actionsBob2.findOutgoingMessage<SpliceInit>().also {
+                assertEquals(0.sat, it.fundingContribution)
+                assertEquals(origin.paymentPreimage, it.preimage)
+            }
+        }
+    }
+
+    @Test
     fun `reject splice_init`() {
         val cmd = createSpliceOutRequest(25_000.sat)
         val (alice, bob) = reachNormal()
@@ -272,6 +311,17 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(alice2.state.spliceStatus, SpliceStatus.None)
         assertEquals(actionsAlice2.size, 1)
         actionsAlice2.hasOutgoingMessage<TxAbort>()
+    }
+
+    @Test
+    fun `reject splice_init -- cancel on-the-fly funding`() {
+        val cmd = createSpliceOutRequest(50_000.sat)
+        val (alice, bob) = reachNormal()
+        val (alice1, _, _) = reachQuiescent(cmd, alice, bob)
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(CancelOnTheFlyFunding(alice.channelId, randomBytes32(), "cancelling on-the-fly funding")))
+        assertIs<Normal>(alice2.state)
+        assertEquals(alice2.state.spliceStatus, SpliceStatus.None)
+        assertTrue(actionsAlice2.isEmpty())
     }
 
     @Test
@@ -664,7 +714,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(txSigsBob))
         assertIs<LNChannel<Normal>>(alice5)
         assertEquals(alice5.state.commitments.active.size, 2)
-        assertEquals(actionsAlice5.size, 8)
+        assertEquals(actionsAlice5.size, 7)
         assertEquals(actionsAlice5.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.FundingTx).txid, spliceTxId)
         assertEquals(htlcs.bobToAlice.map { it.second }.toSet(), actionsAlice5.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         actionsAlice5.hasWatchConfirmed(spliceTxId)
@@ -716,7 +766,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(txSigsBob))
         assertIs<LNChannel<Normal>>(alice5)
         assertEquals(alice5.state.commitments.active.size, 2)
-        assertEquals(actionsAlice5.size, 9)
+        assertEquals(actionsAlice5.size, 8)
         assertEquals(actionsAlice5.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.FundingTx).txid, spliceTxId)
         actionsAlice5.hasWatchConfirmed(spliceTxId)
         actionsAlice5.has<ChannelAction.Storage.StoreState>()
@@ -1490,7 +1540,7 @@ class SpliceTestsCommon : LightningTestSuite() {
                 assertNotNull(actionsAlice2.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().find { it.add == htlc })
             }
             when {
-                aliceSpliceStatus.session.fundingParams.localContribution > 0.sat -> actionsAlice2.has<ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn>()
+                aliceSpliceStatus.origins.isNotEmpty() -> actionsAlice2.has<ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn>()
                 aliceSpliceStatus.session.fundingParams.localContribution < 0.sat && aliceSpliceStatus.session.fundingParams.localOutputs.isNotEmpty() -> actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut>()
                 aliceSpliceStatus.session.fundingParams.localContribution < 0.sat && aliceSpliceStatus.session.fundingParams.localOutputs.isEmpty() -> actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp>()
                 else -> {}
@@ -1513,7 +1563,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): List<WalletState.Utxo> {
             val script = keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript
             return amounts.map { amount ->
-                val txIn = listOf(TxIn(OutPoint(TxId(Lightning.randomBytes32()), 2), 0))
+                val txIn = listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 WalletState.Utxo(parentTx.txid, 0, 42, parentTx, WalletState.AddressMeta.Single)

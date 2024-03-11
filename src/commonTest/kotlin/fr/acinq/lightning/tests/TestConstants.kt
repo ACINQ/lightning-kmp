@@ -78,7 +78,6 @@ object TestConstants {
                 Feature.PaymentMetadata to FeatureSupport.Optional,
                 Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
                 Feature.WakeUpNotificationProvider to FeatureSupport.Optional,
-                Feature.PayToOpenProvider to FeatureSupport.Optional,
                 Feature.ChannelBackupProvider to FeatureSupport.Optional,
             ),
             dustLimit = 1_100.sat,

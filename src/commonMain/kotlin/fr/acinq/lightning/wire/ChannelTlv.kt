@@ -127,6 +127,19 @@ sealed class ChannelTlv : Tlv {
             override fun read(input: Input): PushAmountTlv = PushAmountTlv(LightningCodecs.tu64(input).msat)
         }
     }
+
+    /** Preimage of a pending payment that requires on-the-fly funding. The payment amount will be pushed using [PushAmountTlv]. */
+    data class OnTheFlyFundingPreimage(val preimage: ByteVector32) : ChannelTlv() {
+        override val tag: Long get() = OnTheFlyFundingPreimage.tag
+
+        override fun write(out: Output) = LightningCodecs.writeBytes(preimage, out)
+
+        companion object : TlvValueReader<OnTheFlyFundingPreimage> {
+            const val tag: Long = 0x4700000a
+
+            override fun read(input: Input): OnTheFlyFundingPreimage = OnTheFlyFundingPreimage(LightningCodecs.bytes(input, 32).byteVector32())
+        }
+    }
 }
 
 sealed class ChannelReadyTlv : Tlv {

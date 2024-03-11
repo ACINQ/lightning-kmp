@@ -425,6 +425,7 @@ object Deserialization {
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
         0x01 -> {
+            // Note that we've replaced this field by the payment preimage: old entries will be incorrect, but it's not critical.
             val paymentHash = readByteVector32()
             val serviceFee = readNumber().msat
             val miningFee = readNumber().sat
@@ -439,7 +440,7 @@ object Deserialization {
             Origin.OnChainWallet(setOf(), amount, TransactionFees(miningFee, serviceFee.truncateToSatoshi()))
         }
         0x03 -> Origin.OffChainPayment(
-            paymentHash = readByteVector32(),
+            paymentPreimage = readByteVector32(),
             amount = readNumber().msat,
             fees = TransactionFees(miningFee = readNumber().sat, serviceFee = readNumber().sat),
         )

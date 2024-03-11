@@ -36,11 +36,11 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
         val alice0 = InteractiveTxSession(f.nodeIdB, f.channelKeysA, f.keyManagerA.swapInOnChainWallet, f.fundingParamsA, 0.msat, 0.msat, emptySet(), f.fundingContributionsA)
         val bob0 = InteractiveTxSession(f.nodeIdA, f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, 0.msat, 0.msat, emptySet(), f.fundingContributionsB)
-  
+
         // 3 swap-in inputs, 2 legacy swap-in inputs, and 2 outputs from Alice
         // 2 swap-in inputs, 2 legacy swap-in inputs, and 1 output from Bob
 
-       // Alice --- tx_add_input --> Bob
+        // Alice --- tx_add_input --> Bob
         val (alice1, inputA1) = sendMessage<TxAddInput>(alice0)
         assertEquals(0xfffffffdU, inputA1.sequence)
         // Alice <-- tx_add_input --- Bob
@@ -92,7 +92,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(signedTxB.localSigs.swapInUserPartialSigs.size, 2)
         assertEquals(signedTxB.localSigs.swapInServerSigs.size, 2)
         assertEquals(signedTxB.localSigs.swapInServerPartialSigs.size, 3)
-
 
         // Alice detects invalid signatures from Bob.
         val sigsInvalidTxId = signedTxB.localSigs.copy(txId = TxId(randomBytes32()))
@@ -346,6 +345,49 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         Transaction.correctlySpends(signedTx, sharedTxA.sharedTx.localInputs.map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val feerate = Transactions.fee2rate(signedTxA.tx.fees, signedTx.weight())
         assertTrue(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, "unexpected feerate (target=$targetFeerate actual=$feerate)")
+    }
+
+    @Test
+    fun `initiator does not contribute -- on-the-fly funding`() {
+        // When on-the-fly funding is used, the initiator may not contribute to the funding transaction.
+        // It will receive funds using push_amount, and liquidity fees will be deduced from that amount.
+        val targetFeerate = FeeratePerKw(5000.sat)
+        val fundingB = 150_000.sat
+        val utxosB = listOf(200_000.sat)
+        val f = createFixture(0.sat, listOf(), listOf(), fundingB, utxosB, listOf(), targetFeerate, 330.sat, 0, nonInitiatorPaysCommitFees = true)
+        assertEquals(f.fundingParamsA.fundingAmount, fundingB)
+
+        val alice0 = InteractiveTxSession(f.nodeIdB, f.channelKeysA, f.keyManagerA.swapInOnChainWallet, f.fundingParamsA, 0.msat, 0.msat, emptySet(), f.fundingContributionsA)
+        val bob0 = InteractiveTxSession(f.nodeIdA, f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, 0.msat, 0.msat, emptySet(), f.fundingContributionsB)
+        // Alice --- tx_add_output --> Bob
+        val (alice1, sharedOutput) = sendMessage<TxAddOutput>(alice0)
+        // Alice <-- tx_add_input --- Bob
+        val (bob1, inputB) = receiveMessage<TxAddInput>(bob0, sharedOutput)
+        // Alice --- tx_complete --> Bob
+        val (alice2, txCompleteA1) = receiveMessage<TxComplete>(alice1, inputB)
+        // Alice <-- tx_add_output --- Bob
+        val (bob2, outputB) = receiveMessage<TxAddOutput>(bob1, txCompleteA1)
+        // Alice --- tx_complete --> Bob
+        val (alice3, txCompleteA2) = receiveMessage<TxComplete>(alice2, outputB)
+        // Alice <-- tx_complete --- Bob
+        val (bob3, sharedTxB) = receiveFinalMessage(bob2, txCompleteA2)
+        assertNotNull(sharedTxB.txComplete)
+        val (alice4, sharedTxA) = receiveFinalMessage(alice3, sharedTxB.txComplete!!)
+        assertNull(sharedTxA.txComplete)
+
+        // Alice cannot pay on-chain fees because she doesn't have inputs to contribute.
+        // She will pay liquidity fees instead that will be taken from the push_amount.
+        assertEquals(0.msat, sharedTxA.sharedTx.localFees)
+        assertEquals(0.msat, sharedTxB.sharedTx.remoteFees)
+
+        // Alice signs first since she didn't contribute.
+        val signedTxA = sharedTxA.sharedTx.sign(alice4, f.keyManagerA, f.fundingParamsA, f.localParamsA, f.nodeIdB)
+        val signedTxB = sharedTxB.sharedTx.sign(bob3, f.keyManagerB, f.fundingParamsB, f.localParamsB, f.nodeIdA).addRemoteSigs(f.channelKeysB, f.fundingParamsB, signedTxA.localSigs)
+        assertNotNull(signedTxB)
+        Transaction.correctlySpends(signedTxB.signedTx, sharedTxB.sharedTx.localInputs.map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        // The feerate is lower than expected since Alice didn't contribute.
+        val feerate = Transactions.fee2rate(signedTxA.tx.fees, signedTxB.signedTx.weight())
+        assertTrue(targetFeerate * 0.5 <= feerate && feerate <= targetFeerate, "unexpected feerate (target=$targetFeerate actual=$feerate)")
     }
 
     @Test
@@ -656,13 +698,52 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `initiator does not contribute -- on-the-fly splicing`() {
+        // When on-the-fly funding is used, the initiator may not contribute to the funding transaction.
+        // It will receive funds using push_amount, and liquidity fees will be deduced from that amount.
+        val targetFeerate = FeeratePerKw(5000.sat)
+        val balanceA = 0.msat
+        val balanceB = 75_000_000.msat
+        val additionalFundingB = 50_000.sat
+        val utxosB = listOf(90_000.sat)
+        val f = createSpliceFixture(balanceA, 0.sat, listOf(), listOf(), balanceB, additionalFundingB, utxosB, listOf(), targetFeerate, 330.sat, 0, nonInitiatorPaysCommitFees = true)
+        assertEquals(f.fundingParamsA.fundingAmount, 125_000.sat)
+
+        val alice0 = InteractiveTxSession(f.nodeIdB, f.channelKeysA, f.keyManagerA.swapInOnChainWallet, f.fundingParamsA, balanceA, balanceB, emptySet(), f.fundingContributionsA)
+        val bob0 = InteractiveTxSession(f.nodeIdA, f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, balanceB, balanceA, emptySet(), f.fundingContributionsB)
+        // Alice --- tx_add_input --> Bob
+        val (alice1, sharedInput) = sendMessage<TxAddInput>(alice0)
+        // Alice <-- tx_add_input --- Bob
+        val (bob1, inputB) = receiveMessage<TxAddInput>(bob0, sharedInput)
+        // Alice --- tx_add_output --> Bob
+        val (alice2, sharedOutput) = receiveMessage<TxAddOutput>(alice1, inputB)
+        // Alice <-- tx_add_output --- Bob
+        val (bob2, outputB) = receiveMessage<TxAddOutput>(bob1, sharedOutput)
+        // Alice --- tx_complete --> Bob
+        val (alice3, txCompleteA) = receiveMessage<TxComplete>(alice2, outputB)
+        // Alice <-- tx_complete --- Bob
+        val (bob3, sharedTxB) = receiveFinalMessage(bob2, txCompleteA)
+        assertNotNull(sharedTxB.txComplete)
+        val (alice4, sharedTxA) = receiveFinalMessage(alice3, sharedTxB.txComplete!!)
+
+        // Alice signs first since she didn't contribute.
+        val signedTxA = sharedTxA.sharedTx.sign(alice4, f.keyManagerA, f.fundingParamsA, f.localParamsA, f.nodeIdB)
+        val signedTxB = sharedTxB.sharedTx.sign(bob3, f.keyManagerB, f.fundingParamsB, f.localParamsB, f.nodeIdA).addRemoteSigs(f.channelKeysB, f.fundingParamsB, signedTxA.localSigs)
+        assertNotNull(signedTxB)
+        Transaction.correctlySpends(signedTxB.signedTx, previousOutputs(f.fundingParamsA, sharedTxB.sharedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        // The feerate is lower than expected since Alice didn't contribute.
+        val feerate = Transactions.fee2rate(signedTxA.tx.fees, signedTxB.signedTx.weight())
+        assertTrue(targetFeerate * 0.25 <= feerate && feerate <= targetFeerate, "unexpected feerate (target=$targetFeerate actual=$feerate)")
+    }
+
+    @Test
     fun `remove input - output`() {
         val f = createFixture(100_000.sat, listOf(150_000.sat), listOf(), 0.sat, listOf(), listOf(), FeeratePerKw(2500.sat), 330.sat, 0)
         // In this flow we introduce dummy inputs/outputs from Bob to Alice that are then removed.
         val alice0 = InteractiveTxSession(f.nodeIdB, f.channelKeysA, f.keyManagerA.swapInOnChainWallet, f.fundingParamsA, 0.msat, 0.msat, emptySet(), f.fundingContributionsA)
         val bob0 = InteractiveTxSession(f.nodeIdA, f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, 0.msat, 0.msat, emptySet(), FundingContributions(listOf(), listOf()))
 
-       // Alice --- tx_add_input --> Bob
+        // Alice --- tx_add_input --> Bob
         val (alice1, inputA) = sendMessage<TxAddInput>(alice0)
         val (_, txCompleteB) = receiveMessage<TxComplete>(bob0, inputA)
 
@@ -721,12 +802,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx.txid, 0, 0, previousTx, WalletState.AddressMeta.Single), WalletState.Utxo(previousTx.txid, 1, 0, previousTx, WalletState.AddressMeta.Single))).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.NotEnoughFunding>(result)
-        }
-        run {
-            val previousTx = Transaction(2, listOf(), listOf(TxOut(80_000.sat, Script.pay2wpkh(pubKey)), TxOut(70_001.sat, Script.pay2wpkh(pubKey))), 0)
-            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx.txid, 0, 0, previousTx, WalletState.AddressMeta.Single), WalletState.Utxo(previousTx.txid, 1, 0, previousTx, WalletState.AddressMeta.Single))).left
-            assertNotNull(result)
-            assertIs<FundingContributionFailure.NotEnoughFees>(result)
         }
     }
 
@@ -1184,12 +1259,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             legacyUtxosB: List<Satoshi>,
             targetFeerate: FeeratePerKw,
             dustLimit: Satoshi,
-            lockTime: Long
+            lockTime: Long,
+            nonInitiatorPaysCommitFees: Boolean = false,
         ): Fixture {
             val channelId = randomBytes32()
             val fundingTxIndex = 0L
-            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = true)
-            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = false)
+            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = !nonInitiatorPaysCommitFees)
+            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = nonInitiatorPaysCommitFees)
             val channelKeysA = localParamsA.channelKeys(TestConstants.Alice.keyManager)
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet
@@ -1216,11 +1292,12 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             fundingContributionB: Satoshi,
             targetFeerate: FeeratePerKw,
             dustLimit: Satoshi,
-            lockTime: Long
+            lockTime: Long,
+            nonInitiatorPaysCommitFees: Boolean = false,
         ): Either<FundingContributionFailure, FundingContributions> {
             val channelId = randomBytes32()
-            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = true)
-            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = false)
+            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = !nonInitiatorPaysCommitFees)
+            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = nonInitiatorPaysCommitFees)
             val channelKeysA = localParamsA.channelKeys(TestConstants.Alice.keyManager)
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet
@@ -1248,12 +1325,13 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             outputsB: List<TxOut>,
             targetFeerate: FeeratePerKw,
             dustLimit: Satoshi,
-            lockTime: Long
+            lockTime: Long,
+            nonInitiatorPaysCommitFees: Boolean = false,
         ): Fixture {
             val channelId = randomBytes32()
             val fundingTxIndex = 0L
-            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = true)
-            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = false)
+            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = !nonInitiatorPaysCommitFees)
+            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = nonInitiatorPaysCommitFees)
             val channelKeysA = localParamsA.channelKeys(TestConstants.Alice.keyManager)
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet

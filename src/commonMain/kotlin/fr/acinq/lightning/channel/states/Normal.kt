@@ -381,19 +381,23 @@ data class Normal(
                                 if (!cmd.message.initiator || isChannelOpener) {
                                     if (commitments.isQuiescent()) {
                                         val parentCommitment = commitments.active.first()
+                                        val onTheFlyPreimage = spliceStatus.command.origins.filterIsInstance<Origin.OffChainPayment>().map { it.paymentPreimage }.firstOrNull()
                                         val fundingContribution = FundingContributions.computeSpliceContribution(
                                             isInitiator = true,
                                             commitment = parentCommitment,
                                             walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                             localOutputs = spliceStatus.command.spliceOutputs,
+                                            isOnTheFlyFunding = onTheFlyPreimage != null,
                                             targetFeerate = spliceStatus.command.feerate
                                         )
+                                        val liquidityFees = spliceStatus.command.requestRemoteFunding?.let { it.rate.fees(spliceStatus.command.feerate, it.fundingAmount, it.fundingAmount).total } ?: 0.sat
                                         val commitTxFees = when {
                                             payCommitTxFees -> Transactions.commitTxFee(commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec)
                                             else -> 0.sat
                                         }
-                                        if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < parentCommitment.localChannelReserve(commitments.params).max(commitTxFees)) {
-                                            logger.warning { "cannot do splice: insufficient funds" }
+                                        if (onTheFlyPreimage == null && parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < parentCommitment.localChannelReserve(commitments.params).max(commitTxFees)) {
+                                            // Note that we bypass this check when the origin is an off-chain payment: fees will be paid from the HTLC amount.
+                                            logger.warning { "cannot do splice: insufficient funds to pay fees (balance=${parentCommitment.localCommit.spec.toLocal}, fundingContribution=${fundingContribution})" }
                                             spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
                                             val actions = buildList {
                                                 add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
@@ -408,9 +412,10 @@ data class Normal(
                                                 add(ChannelAction.Disconnect)
                                             }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
-                                        } else if (spliceStatus.command.requestRemoteFunding?.let { r -> r.rate.fees(spliceStatus.command.feerate, r.fundingAmount, r.fundingAmount).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() } == false) {
-                                            val missing = spliceStatus.command.requestRemoteFunding.let { r -> r.rate.fees(spliceStatus.command.feerate, r.fundingAmount, r.fundingAmount).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
-                                            logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
+                                        } else if (onTheFlyPreimage == null && parentCommitment.localCommit.spec.toLocal < liquidityFees) {
+                                            // Note that we bypass this check when the origin is an off-chain payment: fees will be paid from the HTLC amount.
+                                            val missing = liquidityFees - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
+                                            logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (balance=${parentCommitment.localCommit.spec.toLocal}, fees=$liquidityFees, missing=$missing)" }
                                             spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
                                             Pair(this@Normal, emptyList())
                                         } else {
@@ -422,6 +427,7 @@ data class Normal(
                                                 fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                                 pushAmount = spliceStatus.command.pushAmount,
                                                 requestFunds = spliceStatus.command.requestRemoteFunding?.requestFunds,
+                                                preimage = onTheFlyPreimage
                                             )
                                             logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(spliceStatus.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
@@ -771,6 +777,23 @@ data class Normal(
                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
                         }
                     }
+                    is CancelOnTheFlyFunding -> when (spliceStatus) {
+                        is SpliceStatus.Requested -> {
+                            // Our peer won't accept our on-the-fly funding attempt: they didn't receive the preimage in time and failed the corresponding HTLCs.
+                            // We should stop retrying and sending splice_init, they will keep rejecting it anyway.
+                            logger.info { "our peer rejected our splice request: paymentHash=${cmd.message.paymentHash} ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
+                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            val actions = buildList {
+                                spliceStatus.command.origins.firstOrNull { it is Origin.OffChainPayment }?.let { add(ChannelAction.Storage.StoreIncomingPayment.Cancelled(it as Origin.OffChainPayment)) }
+                                addAll(endQuiescence())
+                            }
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                        }
+                        else -> {
+                            logger.warning { "we received cancel_on_the_fly_funding but we don't have a matching proposed splice: this should not happen (paymentHash=${cmd.message.paymentHash} ascii='${cmd.message.toAscii()}')" }
+                            Pair(this@Normal, listOf())
+                        }
+                    }
                     is SpliceLocked -> {
                         when (val res = commitments.run { updateRemoteFundingStatus(cmd.message.fundingTxId) }) {
                             is Either.Left -> Pair(this@Normal, emptyList())
@@ -859,10 +882,11 @@ data class Normal(
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
-            // If we received or sent funds as part of the splice, we will add a corresponding entry to our incoming/outgoing payments db
+            // If we received or sent funds as part of the splice, we will add a corresponding entry to our incoming/outgoing payments db.
+            // If there is an origin, we received a payment as part of this splice (swap-in or on-the-fly funding).
             addAll(origins.map { origin ->
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
-                    amount = origin.amount,
+                    amount = origin.amount - origin.fees.total.toMilliSatoshi(),
                     serviceFee = origin.fees.serviceFee.toMilliSatoshi(),
                     miningFee = origin.fees.miningFee,
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
@@ -870,17 +894,7 @@ data class Normal(
                     origin = origin
                 )
             })
-            // If we added some funds ourselves it's a swap-in
-            if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
-                ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
-                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.localFees,
-                    serviceFee = 0.msat,
-                    miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
-                    localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
-                    txId = action.fundingTx.txId,
-                    origin = null
-                )
-            )
+            // We never generate change outputs: if we have local outputs, they are outgoing on-chain payments.
             addAll(action.fundingTx.fundingParams.localOutputs.map { txOut ->
                 ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut(
                     amount = txOut.amount,
@@ -889,15 +903,14 @@ data class Normal(
                     txId = action.fundingTx.txId
                 )
             })
-            // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp
+            // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp.
             if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {
                 add(ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(), txId = action.fundingTx.txId))
             }
-            liquidityLease?.let { lease ->
-                // The actual mining fees contain the inputs and outputs we paid for in the interactive-tx transaction,
-                // and what we refunded the remote peer for some of their inputs and outputs via the lease.
-                val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + lease.fees.miningFee
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, lease = lease))
+            // We may buy liquidity explicitly, outside of the context of an incoming payment where we automatically buy liquidity.
+            if (liquidityLease != null && origins.isEmpty()) {
+                val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + liquidityLease.fees.miningFee
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, lease = liquidityLease))
             }
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }

@@ -5,10 +5,11 @@ import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 
 sealed class LiquidityPolicy {
-    /** Never initiates swap-ins, never accept pay-to-open */
+    /** Never initiates swap-ins, never accept on-the-fly funding requests. */
     data object Disable : LiquidityPolicy()
 
     /**
@@ -36,6 +37,14 @@ sealed class LiquidityPolicy {
                 }
             }
         }?.let { reason -> LiquidityEvents.Rejected(amount, fee, source, reason) }
+    }
+
+    companion object {
+        /**
+         * We usually need our peer to contribute to channel funding, because they must have enough funds to pay the commitment fees.
+         * When we don't have an inbound liquidity target set, we use the following default amount.
+         */
+        val minInboundLiquidityTarget: Satoshi = 100_000.sat
     }
 
 }

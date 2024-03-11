@@ -12,11 +12,12 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.*
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.logging.mdc
+import fr.acinq.lightning.logging.withMDC
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
-import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.utils.UUID.Companion.randomUUID
@@ -48,7 +49,16 @@ data class OpenOrSpliceChannel(val walletInputs: List<WalletState.Utxo>) : PeerC
     val totalAmount: Satoshi = walletInputs.map { it.amount }.sum()
 }
 
-data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, val logger: MDCLogger) {
+/**
+ * Initiate a channel open or a splice to allow receiving an off-chain payment.
+ *
+ * @param paymentAmount total payment amount (including amount that may have been received with HTLCs).
+ */
+data class OpenOrSplicePayment(val paymentAmount: MilliSatoshi, val preimage: ByteVector32) : PeerCommand() {
+    val paymentHash: ByteVector32 = Crypto.sha256(preimage).byteVector32()
+}
+
+data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, val delayedCommands: Channel<PeerCommand>, val logger: MDCLogger) {
     fun send(msg: LightningMessage) {
         // We can safely use trySend because we use unlimited channel buffers.
         // If the connection was closed, the message will automatically be dropped.
@@ -70,7 +80,6 @@ data object Disconnected : PeerCommand()
 
 sealed class PaymentCommand : PeerCommand()
 private data object CheckPaymentsTimeout : PaymentCommand()
-data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
 data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
     val paymentHash: ByteVector32 = paymentRequest.paymentHash
 }
@@ -158,7 +167,7 @@ class Peer(
     val eventsFlow: SharedFlow<PeerEvent> get() = _eventsFlow.asSharedFlow()
 
     // encapsulates logic for validating incoming payments
-    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments)
+    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments, leaseRate)
 
     // encapsulates logic for sending payments
     private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, walletParams, db.payments)
@@ -316,7 +325,7 @@ class Peer(
 
             val session = LightningSession(enc, dec, ck)
             // TODO use atomic counter instead
-            val peerConnection = PeerConnection(connectionId, Channel(UNLIMITED), logger)
+            val peerConnection = PeerConnection(connectionId, Channel(UNLIMITED), Channel(UNLIMITED), logger)
             // Inform the peer about the new connection.
             input.send(Connected(peerConnection))
             connectionJob = connectionLoop(socket, session, peerConnection, logger)
@@ -382,6 +391,16 @@ class Peer(
                 }
             }
 
+            suspend fun processDelayedCommands() {
+                while (isActive) {
+                    for (cmd in peerConnection.delayedCommands) {
+                        delay(3.seconds)
+                        logger.info { "processing delayed command ${cmd::class.simpleName}" }
+                        input.send(cmd)
+                    }
+                }
+            }
+
             suspend fun receiveLoop() {
                 try {
                     while (isActive) {
@@ -427,6 +446,7 @@ class Peer(
 
             launch(CoroutineName("keep-alive")) { doPing() }
             launch(CoroutineName("check-payments-timeout")) { checkPaymentsTimeout() }
+            launch(CoroutineName("process-delayed-commands")) { processDelayedCommands() }
             launch(CoroutineName("send-loop")) { sendLoop() }
             val receiveJob = launch(CoroutineName("receive-loop")) { receiveLoop() }
             // Suspend until the coroutine is cancelled or the socket is closed.
@@ -653,6 +673,12 @@ class Peer(
         peerConnection?.send(message)
     }
 
+    /** Return true if we are currently funding a channel. */
+    private fun channelFundingIsInProgress(): Boolean = when (val channel = _channels.values.firstOrNull { it is Normal }) {
+        is Normal -> channel.spliceStatus != SpliceStatus.None
+        else -> _channels.values.any { it is WaitForAcceptChannel || it is WaitForFundingCreated || it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady }
+    }
+
     private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>) {
         // we peek into the actions to see if the id of the channel is going to change, but we're not processing it yet
         val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
@@ -677,7 +703,6 @@ class Peer(
                             null -> logger.debug { "non-final error, more partial payments are still pending: ${action.error.message}" }
                         }
                     }
-
                     is ChannelAction.ProcessCmdRes.AddSettledFail -> {
                         val currentTip = currentTipFlow.filterNotNull().first()
                         when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
@@ -691,7 +716,6 @@ class Peer(
                             null -> logger.debug { "non-final error, more partial payments are still pending: ${action.result}" }
                         }
                     }
-
                     is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                         when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                             is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
@@ -699,26 +723,21 @@ class Peer(
                             null -> logger.debug { "unknown payment" }
                         }
                     }
-
                     is ChannelAction.Storage.StoreState -> {
                         logger.info { "storing state=${action.data::class.simpleName}" }
                         db.channels.addOrUpdateChannel(action.data)
                     }
-
                     is ChannelAction.Storage.RemoveChannel -> {
                         logger.info { "removing channelId=${action.data.channelId} state=${action.data::class.simpleName}" }
                         db.channels.removeChannel(action.data.channelId)
                     }
-
                     is ChannelAction.Storage.StoreHtlcInfos -> {
                         action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                     }
-
                     is ChannelAction.Storage.StoreIncomingPayment -> {
                         logger.info { "storing incoming payment $action" }
                         incomingPaymentHandler.process(actualChannelId, action)
                     }
-
                     is ChannelAction.Storage.StoreOutgoingPayment -> {
                         logger.info { "storing $action" }
                         db.payments.addOutgoingPayment(
@@ -774,24 +793,19 @@ class Peer(
                         )
                         _eventsFlow.emit(ChannelClosing(channelId))
                     }
-
                     is ChannelAction.Storage.SetLocked -> {
                         logger.info { "setting status locked for txid=${action.txId}" }
                         db.payments.setLocked(action.txId)
                     }
-
                     is ChannelAction.Storage.GetHtlcInfos -> {
                         val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
                         input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.Closing.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
                     }
-
                     is ChannelAction.ChannelId.IdAssigned -> {
                         logger.info { "switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
                         _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
                     }
-
                     is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
-
                     is ChannelAction.Disconnect -> {
                         logger.warning { "channel disconnected due to a protocol error" }
                         disconnect()
@@ -801,11 +815,12 @@ class Peer(
         }
     }
 
-    private suspend fun processIncomingPayment(item: Either<PayToOpenRequest, UpdateAddHtlc>) {
+    private suspend fun processIncomingPayment(item: Either<MaybeAddHtlc, UpdateAddHtlc>) {
         val currentBlockHeight = currentTipFlow.filterNotNull().first().first
+        val currentFeerate = peerFeeratesFlow.filterNotNull().first().fundingFeerate
         val result = when (item) {
-            is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight)
-            is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
+            is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight, currentFeerate)
+            is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight, currentFeerate)
         }
         when (result) {
             is IncomingPaymentHandler.ProcessAddResult.Accepted -> {
@@ -880,7 +895,11 @@ class Peer(
             is Connected -> {
                 logger.info { "new connection with id=${cmd.peerConnection.id}, sending init $ourInit" }
                 peerConnection = cmd.peerConnection
-                peerConnection?.send(ourInit)
+                cmd.peerConnection.send(ourInit)
+                // Check pending on-the-fly funding requests: we must re-send open_channel or splice_init.
+                db.payments.listPendingOnTheFlyPayments().forEach { (payment, pending) ->
+                    cmd.peerConnection.delayedCommands.send(OpenOrSplicePayment(pending.amount, payment.preimage))
+                }
             }
             is MessageReceived -> {
                 if (cmd.connectionId != peerConnection?.id) {
@@ -1027,24 +1046,22 @@ class Peer(
                             _channels = _channels + (state.channelId to state1)
                         }
                     }
-                    is PayToOpenRequest -> {
-                        logger.info { "received ${msg::class.simpleName}" }
-                        // If a channel is currently being created, it can't process splices yet. We could accept this payment, but
-                        // it wouldn't be reflected in the user balance until the channel is ready, because we only insert
-                        // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
-                        // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
-                        // payment rather that having the user wonder where their money went.
-                        val channelInitializing = _channels.isNotEmpty()
-                                && !_channels.values.any { it is Normal } // we don't have a channel that can be spliced
-                                && _channels.values.any { it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } // but we will have one soon
-                        if (channelInitializing) {
-                            val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
-                            logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
-                            nodeParams._nodeEvents.emit(rejected)
-                            val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)
-                            input.send(action)
+                    is MaybeAddHtlc -> {
+                        // If we don't support on-the-fly funding, we simply ignore that proposal.
+                        // Our peer will fail the corresponding HTLCs after a small delay.
+                        if (nodeParams.features.hasFeature(Feature.OnTheFlyFundingClient) && nodeParams.liquidityPolicy.value is LiquidityPolicy.Auto) {
+                            // If a channel funding attempt is already in progress, we won't be able to immediately accept the payment.
+                            // Once the channel funding is complete, we may have enough inbound liquidity to receive the payment without
+                            // an on-chain operation, which is more efficient. We thus reject the payment and wait for the sender to retry.
+                            if (channelFundingIsInProgress()) {
+                                val rejected = LiquidityEvents.Rejected(msg.amount, 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelFundingInProgress)
+                                logger.info { "ignoring maybe_add_htlc: reason=${rejected.reason}" }
+                                nodeParams._nodeEvents.emit(rejected)
+                            } else {
+                                processIncomingPayment(Either.Left(msg))
+                            }
                         } else {
-                            processIncomingPayment(Either.Left(msg))
+                            logger.info { "ignoring on-the-fly funding (amount=${msg.amount}): disabled by policy" }
                         }
                     }
                     is PhoenixAndroidLegacyInfo -> {
@@ -1129,16 +1146,15 @@ class Peer(
                             // Either there are no channels, or they will never be suitable for a splice-in: we open a new channel.
                             val currentFeerates = peerFeeratesFlow.filterNotNull().first()
                             val requestRemoteFunding = run {
-                                val inboundLiquidityTarget = when (val policy = nodeParams.liquidityPolicy.first()) {
-                                    is LiquidityPolicy.Disable -> null
-                                    is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget
-                                }
                                 // We need our peer to contribute, because they must have enough funds to pay the commitment fees.
-                                // If we don't have an inbound liquidity target set, we use a default amount of 100 000 sat.
-                                LiquidityAds.RequestRemoteFunding(inboundLiquidityTarget ?: 100_000.sat, currentTipFlow.filterNotNull().first().first, leaseRate)
+                                val inboundLiquidityTarget = when (val policy = nodeParams.liquidityPolicy.value) {
+                                    is LiquidityPolicy.Disable -> LiquidityPolicy.minInboundLiquidityTarget // we don't disable creating a channel using our own wallet inputs
+                                    is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
+                                }
+                                LiquidityAds.RequestRemoteFunding(inboundLiquidityTarget, currentTipFlow.filterNotNull().first().first, leaseRate)
                             }
                             val (localFundingAmount, fees) = run {
-                                val dummyFundingScript = Script.write(Scripts.multiSig2of2(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey)).byteVector()
+                                val dummyFundingScript = Helpers.Funding.makeFundingPubKeyScript(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey)
                                 val localMiningFee = Transactions.weight2fee(currentFeerates.fundingFeerate, FundingContributions.computeWeightPaid(isInitiator = true, null, dummyFundingScript, cmd.walletInputs, emptyList()))
                                 // We directly pay the on-chain fees for our inputs/outputs of the transaction.
                                 val localFundingAmount = cmd.totalAmount - localMiningFee
@@ -1151,7 +1167,7 @@ class Peer(
                                 logger.warning { "cannot create channel, not enough funds to pay fees (fees=${fees.total}, available=${cmd.totalAmount})" }
                                 swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                             } else {
-                                when (val rejected = nodeParams.liquidityPolicy.first().maybeReject(requestRemoteFunding.fundingAmount.toMilliSatoshi(), fees.total.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)) {
+                                when (val rejected = nodeParams.liquidityPolicy.value.maybeReject(requestRemoteFunding.fundingAmount.toMilliSatoshi(), fees.total.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)) {
                                     is LiquidityEvents.Rejected -> {
                                         logger.info { "rejecting channel open: reason=${rejected.reason}" }
                                         nodeParams._nodeEvents.emit(rejected)
@@ -1185,15 +1201,100 @@ class Peer(
                             }
                         } else {
                             // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet.
-                            logger.info { "ignoring request to add utxos to channel, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
+                            logger.warning { "ignoring request to add utxos to channel, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
                             swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                         }
                     }
                 }
             }
-            is PayToOpenResponseCommand -> {
-                logger.info { "sending ${cmd.payToOpenResponse::class.simpleName}" }
-                peerConnection?.send(cmd.payToOpenResponse)
+            is OpenOrSplicePayment -> {
+                val channel = channels.values.firstOrNull { it is Normal }
+                val currentFeerates = peerFeeratesFlow.filterNotNull().first()
+                // We need our peer to contribute, because they must have enough funds to pay the commitment fees.
+                // They will fund more than what we request to also cover the maybe_add_htlc parts that they will push to us.
+                // We only pay fees for the additional liquidity we request, not for the maybe_add_htlc amounts.
+                val remoteFundingAmount = when (val policy = nodeParams.liquidityPolicy.value) {
+                    // We already checked our liquidity policy in the IncomingPaymentHandler before accepting the payment.
+                    // If it is now disabled, it means the user concurrently updated their policy, but we're already committed
+                    // to accepting this payment, which passed the previous policy.
+                    is LiquidityPolicy.Disable -> LiquidityPolicy.minInboundLiquidityTarget
+                    is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
+                }
+                val requestRemoteFunding = LiquidityAds.RequestRemoteFunding(remoteFundingAmount, currentTipFlow.filterNotNull().first().first, leaseRate)
+                when {
+                    channelFundingIsInProgress() -> {
+                        logger.warning { "delaying on-the-fly funding, funding is already in progress" }
+                        peerConnection?.delayedCommands?.send(cmd)
+                    }
+                    channel is Normal -> {
+                        // We don't contribute any input or output, but we must pay on-chain fees for the shared input and output.
+                        // We pay those on-chain fees using our current channel balance.
+                        val localBalance = channel.commitments.active.first().localCommit.spec.toLocal
+                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = listOf(), localOutputs = emptyList())
+                        val (targetFeerate, localMiningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, currentFeerates.fundingFeerate, spliceWeight = weight, logger)
+                        val fundingFeerate = when {
+                            localBalance <= localMiningFee * 0.75 -> {
+                                // Our current balance is too low to pay the on-chain fees.
+                                // We consume all of it in on-chain fees, and also target a higher feerate.
+                                // This ensures that the resulting feerate won't be too low compared to our target.
+                                // We must cover the shared input and the shared output, which is a lot of weight, so we add 50%.
+                                targetFeerate * 1.5
+                            }
+                            else -> targetFeerate
+                        }
+                        val leaseFees = leaseRate.fees(fundingFeerate, remoteFundingAmount, remoteFundingAmount)
+                        val totalFees = TransactionFees(miningFee = localMiningFee.min(localBalance.truncateToSatoshi()) + leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
+                        logger.info { "requesting on-the-fly splice for paymentHash=${cmd.paymentHash} feerate=$fundingFeerate fee=${totalFees.total}" }
+                        val spliceCommand = ChannelCommand.Commitment.Splice.Request(
+                            replyTo = CompletableDeferred(),
+                            spliceIn = null,
+                            spliceOut = null,
+                            requestRemoteFunding = requestRemoteFunding,
+                            feerate = fundingFeerate,
+                            origins = listOf(Origin.OffChainPayment(cmd.preimage, cmd.paymentAmount, totalFees))
+                        )
+                        val (state, actions) = channel.process(spliceCommand)
+                        _channels = _channels + (channel.channelId to state)
+                        processActions(channel.channelId, peerConnection, actions)
+                    }
+                    channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted } -> {
+                        // We ask our peer to pay the commit tx fees.
+                        val localParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
+                        val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
+                        // Since we don't have inputs to contribute, we're unable to pay on-chain fees for the shared output.
+                        // We target a higher feerate so that the effective feerate isn't too low compared to our target.
+                        // We must cover the shared output, which doesn't add too much weight, so we add 25%.
+                        val fundingFeerate = currentFeerates.fundingFeerate * 1.25
+                        val leaseFees = leaseRate.fees(fundingFeerate, remoteFundingAmount, remoteFundingAmount)
+                        // We don't pay any local on-chain fees, our fee is only for the liquidity lease.
+                        val totalFees = TransactionFees(miningFee = leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
+                        logger.info { "requesting on-the-fly channel for paymentHash=${cmd.paymentHash} feerate=$fundingFeerate fee=${leaseFees.total}" }
+                        val (state, actions) = WaitForInit.process(
+                            ChannelCommand.Init.Initiator(
+                                fundingAmount = 0.sat, // we don't have funds to contribute
+                                pushAmount = 0.msat,
+                                walletInputs = listOf(),
+                                commitTxFeerate = currentFeerates.commitmentFeerate,
+                                fundingTxFeerate = fundingFeerate,
+                                localParams = localParams,
+                                remoteInit = theirInit!!,
+                                channelFlags = channelFlags,
+                                channelConfig = ChannelConfig.standard,
+                                channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+                                requestRemoteFunding = requestRemoteFunding,
+                                channelOrigin = Origin.OffChainPayment(cmd.preimage, cmd.paymentAmount, totalFees),
+                            )
+                        )
+                        val msg = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
+                        _channels = _channels + (msg.temporaryChannelId to state)
+                        processActions(msg.temporaryChannelId, peerConnection, actions)
+                    }
+                    else -> {
+                        // There is an existing channel but not immediately usable (e.g. disconnected), we don't do anything yet.
+                        logger.warning { "delaying on-the-fly funding, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
+                        peerConnection?.delayedCommands?.send(cmd)
+                    }
+                }
             }
             is SendPayment -> {
                 val currentTip = currentTipFlow.filterNotNull().first()

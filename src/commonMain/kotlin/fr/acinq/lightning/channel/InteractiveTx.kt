@@ -222,7 +222,6 @@ sealed class FundingContributionFailure {
     data class InputBelowDust(val txId: TxId, val outputIndex: Int, val amount: Satoshi, val dustLimit: Satoshi) : FundingContributionFailure() { override fun toString(): String = "invalid input $txId:$outputIndex (below dust: amount=$amount, dust=$dustLimit)" }
     data class InputTxTooLarge(val tx: Transaction) : FundingContributionFailure() { override fun toString(): String = "invalid input tx ${tx.txid} (too large)" }
     data class NotEnoughFunding(val fundingAmount: Satoshi, val nonFundingAmount: Satoshi, val providedAmount: Satoshi) : FundingContributionFailure() { override fun toString(): String = "not enough funds provided (expected at least $fundingAmount + $nonFundingAmount, got $providedAmount)" }
-    data class NotEnoughFees(val currentFees: Satoshi, val expectedFees: Satoshi) : FundingContributionFailure() { override fun toString(): String = "not enough funds to pay fees (expected at least $expectedFees, got $currentFees)" }
     data class InvalidFundingBalances(val fundingAmount: Satoshi, val localBalance: MilliSatoshi, val remoteBalance: MilliSatoshi) : FundingContributionFailure() { override fun toString(): String = "invalid balances funding_amount=$fundingAmount local=$localBalance remote=$remoteBalance" }
     // @formatter:on
 }
@@ -231,10 +230,15 @@ sealed class FundingContributionFailure {
 data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, val outputs: List<InteractiveTxOutput.Outgoing>) {
     companion object {
         /** Compute our local splice contribution using all the funds available in our wallet. */
-        fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
+        fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, isOnTheFlyFunding: Boolean, targetFeerate: FeeratePerKw): Satoshi {
             val weight = computeWeightPaid(isInitiator, commitment, walletInputs, localOutputs)
             val fees = Transactions.weight2fee(targetFeerate, weight)
-            return walletInputs.map { it.amount }.sum() - localOutputs.map { it.amount }.sum() - fees
+            return when {
+                // When using on-the-fly funding, we may not have enough funds in our current balance to pay fees.
+                // It is fine because liquidity fees will be taken from the incoming push amount.
+                isOnTheFlyFunding && walletInputs.isEmpty() && localOutputs.isEmpty() -> -(fees.min(commitment.localCommit.spec.toLocal.truncateToSatoshi()))
+                else -> walletInputs.map { it.amount }.sum() - localOutputs.map { it.amount }.sum() - fees
+            }
         }
 
         /**
@@ -271,27 +275,19 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 return Either.Left(FundingContributionFailure.NotEnoughFunding(params.localContribution, localOutputs.map { it.amount }.sum(), totalAmountIn))
             }
 
-            // We compute the fees that we should pay in the shared transaction.
-            val fundingPubkeyScript = params.fundingPubkeyScript(channelKeys)
-            val weightWithoutChange = computeWeightPaid(params.isInitiator, sharedUtxo?.first, fundingPubkeyScript, walletInputs, localOutputs)
-            val weightWithChange = computeWeightPaid(params.isInitiator, sharedUtxo?.first, fundingPubkeyScript, walletInputs, localOutputs + listOf(TxOut(0.sat, Script.pay2wpkh(Transactions.PlaceHolderPubKey))))
-            val feesWithoutChange = totalAmountIn - totalAmountOut
-            // If we're not the initiator, we don't return an error when we're unable to meet the desired feerate.
-            if (params.isInitiator && feesWithoutChange < Transactions.weight2fee(params.targetFeerate, weightWithoutChange)) {
-                return Either.Left(FundingContributionFailure.NotEnoughFees(feesWithoutChange, Transactions.weight2fee(params.targetFeerate, weightWithoutChange)))
-            }
-
             val nextLocalBalance = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi()
             val nextRemoteBalance = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi()
             if (nextLocalBalance < 0.msat || nextRemoteBalance < 0.msat) {
                 return Either.Left(FundingContributionFailure.InvalidFundingBalances(params.fundingAmount, nextLocalBalance, nextRemoteBalance))
             }
 
+            val fundingPubkeyScript = params.fundingPubkeyScript(channelKeys)
             val sharedOutput = listOf(InteractiveTxOutput.Shared(0, fundingPubkeyScript, nextLocalBalance, nextRemoteBalance, sharedUtxo?.second?.toHtlcs ?: 0.msat))
             val nonChangeOutputs = localOutputs.map { o -> InteractiveTxOutput.Local.NonChange(0, o.amount, o.publicKeyScript) }
             val changeOutput = when (changePubKey) {
                 null -> listOf()
                 else -> {
+                    val weightWithChange = computeWeightPaid(params.isInitiator, sharedUtxo?.first, fundingPubkeyScript, walletInputs, localOutputs + listOf(TxOut(0.sat, Script.pay2wpkh(Transactions.PlaceHolderPubKey))))
                     val changeAmount = totalAmountIn - totalAmountOut - Transactions.weight2fee(params.targetFeerate, weightWithChange)
                     if (params.dustLimit <= changeAmount) {
                         listOf(InteractiveTxOutput.Local.Change(0, changeAmount, Script.write(Script.pay2wpkh(changePubKey)).byteVector()))
@@ -936,8 +932,10 @@ data class InteractiveTxSession(
                 return InteractiveTxSessionAction.InvalidTxFeerate(fundingParams.channelId, tx.txid, fundingParams.targetFeerate, nextFeerate)
             }
         } else {
+            // We allow the feerate to be lower than requested: when using on-the-fly liquidity, we may not be able to contribute
+            // as much as we expected, but that's fine because we instead overshoot the feerate and pays liquidity fees accordingly.
             val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
-            if (sharedTx.fees < minimumFee) {
+            if (sharedTx.fees < minimumFee * 0.5) {
                 return InteractiveTxSessionAction.InvalidTxFeerate(fundingParams.channelId, tx.txid, fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, tx.weight()))
             }
         }
@@ -1163,7 +1161,7 @@ sealed class SpliceStatus {
     /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
     data class ReceivedStfu(val stfu: Stfu) : QuiescenceNegotiation.NonInitiator()
     /** Our updates have been added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
-    object NonInitiatorQuiescent : QuiescentSpliceStatus()
+    data object NonInitiatorQuiescent : QuiescentSpliceStatus()
     /** We told our peer we want to splice funds in the channel. */
     data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : QuiescentSpliceStatus()
     /** We both agreed to splice and are building the splice transaction. */

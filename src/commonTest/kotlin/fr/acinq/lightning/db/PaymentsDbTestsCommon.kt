@@ -1,6 +1,9 @@
 package fr.acinq.lightning.db
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -8,7 +11,6 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.TooManyAcceptedHtlcs
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.FinalFailure
-import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
@@ -57,7 +59,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive incoming payment with several parts`() = runSuspendTest {
+    fun `receive incoming payment with on-chain part`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         assertNull(db.getIncomingPayment(pr.paymentHash))
 
@@ -68,23 +70,39 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertNotNull(pending)
         assertEquals(incoming, pending)
 
+        // The on-chain part is initially pending, until the corresponding on-chain transaction is created.
         db.receivePayment(
-            pr.paymentHash, listOf(
+            pr.paymentHash,
+            listOf(
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 57_000.msat, channelId = channelId1, htlcId = 1L),
                 IncomingPayment.ReceivedWith.LightningPayment(amount = 43_000.msat, channelId = channelId2, htlcId = 54L),
-                IncomingPayment.ReceivedWith.NewChannel(amount = 99_000.msat, channelId = channelId3, serviceFee = 1_000.msat, miningFee = 0.sat, txId = TxId(randomBytes32()), confirmedAt = null, lockedAt = null)
-            ), 110
+                IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending(50_000.msat),
+            )
         )
-        val received = db.getIncomingPayment(pr.paymentHash)
-        assertNotNull(received)
-        assertEquals(199_000.msat, received.amount)
-        assertEquals(1_000.msat, received.fees)
-        assertEquals(3, received.received!!.receivedWith.size)
-        assertEquals(57_000.msat, received.received!!.receivedWith.elementAt(0).amount)
-        assertEquals(0.msat, received.received!!.receivedWith.elementAt(0).fees)
-        assertEquals(channelId1, (received.received!!.receivedWith.elementAt(0) as IncomingPayment.ReceivedWith.LightningPayment).channelId)
-        assertEquals(54L, (received.received!!.receivedWith.elementAt(1) as IncomingPayment.ReceivedWith.LightningPayment).htlcId)
-        assertEquals(channelId3, (received.received!!.receivedWith.elementAt(2) as IncomingPayment.ReceivedWith.NewChannel).channelId)
+        run {
+            val received = db.getIncomingPayment(pr.paymentHash)
+            assertNotNull(received)
+            assertEquals(100_000.msat, received.amount)
+            assertEquals(0.msat, received.fees)
+            assertNull(received.completedAt)
+        }
+
+        // The on-chain part completes.
+        val onChainPart = IncomingPayment.ReceivedWith.OnChainIncomingPayment.Received.NewChannel(45_000.msat, serviceFee = 2_000.msat, miningFee = 3.sat, channelId3, TxId(randomBytes32()), confirmedAt = null, lockedAt = null)
+        db.receivePayment(pr.paymentHash, listOf(onChainPart))
+        run {
+            val received = db.getIncomingPayment(pr.paymentHash)
+            assertNotNull(received)
+            assertEquals(145_000.msat, received.amount)
+            assertEquals(5_000.msat, received.fees)
+            assertEquals(3, received.received!!.receivedWith.size)
+            assertFalse(received.received!!.receivedWith.any { it is IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending })
+            assertEquals(57_000.msat, received.received!!.receivedWith[0].amount)
+            assertEquals(0.msat, received.received!!.receivedWith[0].fees)
+            assertEquals(channelId1, (received.received!!.receivedWith[0] as IncomingPayment.ReceivedWith.LightningPayment).channelId)
+            assertEquals(54, (received.received!!.receivedWith[1] as IncomingPayment.ReceivedWith.LightningPayment).htlcId)
+            assertEquals(channelId3, (received.received!!.receivedWith[2] as IncomingPayment.ReceivedWith.OnChainIncomingPayment.Received.NewChannel).channelId)
+        }
     }
 
     @Test
@@ -143,7 +161,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
         db.receivePayment(
             pr.paymentHash, listOf(
-                IncomingPayment.ReceivedWith.NewChannel(
+                IncomingPayment.ReceivedWith.OnChainIncomingPayment.Received.NewChannel(
                     amount = 500_000.msat,
                     serviceFee = 15_000.msat,
                     miningFee = 0.sat,
@@ -154,10 +172,10 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
                 )
             ), 110
         )
-        val received1 = db.getIncomingPayment(pr.paymentHash)
-        assertNotNull(received1?.received)
-        assertEquals(500_000.msat, received1!!.amount)
-        assertEquals(15_000.msat, received1.fees)
+        val received = db.getIncomingPayment(pr.paymentHash)
+        assertNotNull(received?.received)
+        assertEquals(500_000.msat, received!!.amount)
+        assertEquals(15_000.msat, received.fees)
     }
 
     @Test

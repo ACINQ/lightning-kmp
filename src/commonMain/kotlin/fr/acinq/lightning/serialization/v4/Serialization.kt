@@ -464,7 +464,7 @@ object Serialization {
     private fun Output.writeChannelOrigin(o: Origin) = when (o) {
         is Origin.OffChainPayment -> {
             write(0x03)
-            writeByteVector32(o.paymentHash)
+            writeByteVector32(o.paymentPreimage)
             writeNumber(o.amount.toLong())
             writeNumber(o.fees.miningFee.toLong())
             writeNumber(o.fees.serviceFee.toLong())

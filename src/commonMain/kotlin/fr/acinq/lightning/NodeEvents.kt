@@ -9,7 +9,6 @@ import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.utils.sum
-import kotlinx.coroutines.CompletableDeferred
 
 sealed interface NodeEvents
 
@@ -32,11 +31,11 @@ sealed interface LiquidityEvents : NodeEvents {
                 data class OverAbsoluteFee(val maxAbsoluteFee: Satoshi) : TooExpensive()
                 data class OverRelativeFee(val maxRelativeFeeBasisPoints: Int) : TooExpensive()
             }
-            data object ChannelInitializing : Reason()
+            data object ChannelFundingInProgress : Reason()
+            data class MissingOffChainAmountTooLow(val missingOffChainAmount: MilliSatoshi) : Reason()
+            data class ChannelFundingCancelled(val paymentHash: ByteVector32) : Reason()
         }
     }
-
-    data class ApprovalRequested(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source, val replyTo: CompletableDeferred<Boolean>) : LiquidityEvents
 }
 
 /** This is useful on iOS to ask the OS for time to finish some sensitive tasks. */

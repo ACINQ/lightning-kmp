@@ -46,22 +46,33 @@ interface IncomingPaymentsDb {
      * Mark an incoming payment as received (paid).
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      *
-     * With pay-to-open, there is a delay before we receive the parts, and we may not receive any parts at all if the pay-to-open
-     * was cancelled due to a disconnection. That is why the payment should not be considered received (and not be displayed to
-     * the user) if there are no parts.
+     * With on-the-fly funding, there is a delay before we receive the on-chain funds.
+     * We may not receive them at all if our peer has cancelled the corresponding HTLCs before receiving the preimage.
+     * We first mark the on-chain payment as [IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending].
+     * If the on-chain transaction is correctly created, we update it to [IncomingPayment.ReceivedWith.OnChainIncomingPayment.Received].
+     * If it is irrevocably cancelled, we update it to [IncomingPayment.ReceivedWith.OnChainIncomingPayment.Cancelled].
      *
-     * This method is additive:
-     * - receivedWith set is appended to the existing set in database.
-     * - receivedAt must be updated in database.
+     * This method is called every time a part completes, so we must:
+     *  - update [receivedAt] in the database.
+     *  - when [receivedWith] contains [IncomingPayment.ReceivedWith.LightningPayment] parts, they must be appended to the existing [receivedWith] from the database.
+     *  - when [receivedWith] contains [IncomingPayment.ReceivedWith.OnChainIncomingPayment], we must remove any [IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending]
+     *  from the database and add the new [IncomingPayment.ReceivedWith.OnChainIncomingPayment] part.
      *
      * @param receivedWith Is a set containing the payment parts holding the incoming amount.
      */
     suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
 
+    /**
+     * List incoming payments that have incomplete on-the-fly funding (they contain an [IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending] part).
+     * This usually happens when we disconnect before signing the corresponding funding transaction.
+     * Our peer keeps track of what they owe us, so we can re-send the corresponding open_channel or splice_init message to restart the funding flow.
+     */
+    suspend fun listPendingOnTheFlyPayments(): List<Pair<IncomingPayment, IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending>>
+
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
 
-    /** Remove a pending incoming payment.*/
+    /** Remove a pending (unpaid) incoming payment. */
     suspend fun removeIncomingPayment(paymentHash: ByteVector32): Boolean
 }
 
@@ -133,12 +144,12 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
      *   confirmed (if zero-conf is used), but both sides have to agree that the funds are
      *   usable, a.k.a. "locked".
      */
-    override val completedAt: Long?
-        get() = when {
-            received == null -> null // payment has not yet been received
-            received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment && it.lockedAt == null } -> null // payment has been received, but there is at least one unconfirmed on-chain part
-            else -> received.receivedAt
-        }
+    override val completedAt: Long? = when {
+        received == null -> null // payment has not yet been received
+        received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment.Pending } -> null // on-chain part is still pending
+        received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment.Received && it.lockedAt == null } -> null // payment has been received, but there is at least one unconfirmed on-chain part
+        else -> received.receivedAt
+    }
 
     /** Total fees paid to receive this payment. */
     override val fees: MilliSatoshi = received?.fees ?: 0.msat
@@ -156,67 +167,92 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         /** DEPRECATED: this is the legacy trusted swap-in, which we keep for backwards-compatibility (previous payments inside the DB). */
         data class SwapIn(val address: String?) : Origin()
 
-        /** Trustless swap-in (dual-funding or splice-in) */
+        /** Trustless swap-in (dual-funding or splice-in). */
         data class OnChain(val txId: TxId, val localInputs: Set<OutPoint>) : Origin()
     }
 
     data class Received(val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
-        /** Total amount received after applying the fees. */
-        val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
+        /** Total amount received after subtracting the fees. */
+        val amount: MilliSatoshi = receivedWith.map {
+            when (it) {
+                is ReceivedWith.LightningPayment -> it.amount
+                is ReceivedWith.OnChainIncomingPayment.Received -> it.amount
+                is ReceivedWith.OnChainIncomingPayment.Cancelled -> 0.msat
+                is ReceivedWith.OnChainIncomingPayment.Pending -> 0.msat
+            }
+        }.sum()
 
-        /** Fees applied to receive this payment. */
-        val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
+        /** Fees paid to receive this payment. */
+        val fees: MilliSatoshi = receivedWith.map {
+            when (it) {
+                is ReceivedWith.LightningPayment -> it.fees
+                is ReceivedWith.OnChainIncomingPayment.Received -> it.fees
+                is ReceivedWith.OnChainIncomingPayment.Cancelled -> 0.msat
+                is ReceivedWith.OnChainIncomingPayment.Pending -> 0.msat
+            }
+        }.sum()
     }
 
     sealed class ReceivedWith {
-        /** Amount received for this part after applying the fees. This is the final amount we can use. */
+        /** Amount received for this part after subtracting the fees. This is the final amount we can use. */
         abstract val amount: MilliSatoshi
 
-        /** Fees applied to receive this part. Is zero for Lightning payments. */
+        /** Fees paid to receive this part (zero for lightning payments). */
         abstract val fees: MilliSatoshi
 
-        /** Payment was received via existing lightning channels. */
+        /** Payment was received off-chain via existing lightning channels. */
         data class LightningPayment(override val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : ReceivedWith() {
             override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
         }
 
+        /** Payment was received by pushing funds using an on-chain transaction. */
         sealed class OnChainIncomingPayment : ReceivedWith() {
-            abstract val serviceFee: MilliSatoshi
-            abstract val miningFee: Satoshi
-            override val fees: MilliSatoshi get() = serviceFee + miningFee.toMilliSatoshi()
-            abstract val channelId: ByteVector32
-            abstract val txId: TxId
-            abstract val confirmedAt: Long?
-            abstract val lockedAt: Long?
+            /** An on-chain transaction was initiated for this payment, but isn't guaranteed to complete yet. */
+            data class Pending(override val amount: MilliSatoshi) : OnChainIncomingPayment() {
+                // We don't know the final fees yet, they depend on the feerate we use for the funding transaction.
+                override val fees: MilliSatoshi = 0.msat
+            }
+
+            /**
+             * An on-chain transaction was initiated for this payment but couldn't complete, potentially resulting in a partial payment.
+             * This usually indicates a cheating attempt or data loss on the service provider end: users should contact support.
+             */
+            data class Cancelled(override val amount: MilliSatoshi) : OnChainIncomingPayment() {
+                override val fees: MilliSatoshi = 0.msat
+            }
+
+            sealed class Received : OnChainIncomingPayment() {
+                abstract val serviceFee: MilliSatoshi
+                abstract val miningFee: Satoshi
+                override val fees: MilliSatoshi get() = serviceFee + miningFee.toMilliSatoshi()
+                abstract val channelId: ByteVector32
+                abstract val txId: TxId
+                abstract val confirmedAt: Long?
+                abstract val lockedAt: Long?
+
+                /** Payment was received by pushing funds in a new channel opened to us. */
+                data class NewChannel(
+                    override val amount: MilliSatoshi,
+                    override val serviceFee: MilliSatoshi,
+                    override val miningFee: Satoshi,
+                    override val channelId: ByteVector32,
+                    override val txId: TxId,
+                    override val confirmedAt: Long?,
+                    override val lockedAt: Long?
+                ) : Received()
+
+                /** Payment was received by pushing funds during a splice on our existing channel. */
+                data class SpliceIn(
+                    override val amount: MilliSatoshi,
+                    override val serviceFee: MilliSatoshi,
+                    override val miningFee: Satoshi,
+                    override val channelId: ByteVector32,
+                    override val txId: TxId,
+                    override val confirmedAt: Long?,
+                    override val lockedAt: Long?
+                ) : Received()
+            }
         }
-
-        /**
-         * Payment was received via a new channel opened to us.
-         *
-         * @param amount Our side of the balance of this channel when it's created. This is the amount pushed to us once the creation fees are applied.
-         * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
-         * @param miningFee Feed paid to bitcoin miners for processing the L1 transaction.
-         * @param channelId The long id of the channel created to receive this payment. May be null if the channel id is not known.
-         */
-        data class NewChannel(
-            override val amount: MilliSatoshi,
-            override val serviceFee: MilliSatoshi,
-            override val miningFee: Satoshi,
-            override val channelId: ByteVector32,
-            override val txId: TxId,
-            override val confirmedAt: Long?,
-            override val lockedAt: Long?
-        ) : OnChainIncomingPayment()
-
-        data class SpliceIn(
-            override val amount: MilliSatoshi,
-            override val serviceFee: MilliSatoshi,
-            override val miningFee: Satoshi,
-            override val channelId: ByteVector32,
-            override val txId: TxId,
-            override val confirmedAt: Long?,
-            override val lockedAt: Long?
-        ) : OnChainIncomingPayment()
     }
 
     /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. [Origin.KeySend] or [Origin.SwapIn] do not expire. */

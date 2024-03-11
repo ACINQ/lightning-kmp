@@ -60,8 +60,8 @@ suspend fun connect(
     automateMessaging: Boolean = true
 ): PeerTuple {
     val logger = MDCLogger(testLoggerFactory.newLogger("PeerConnection"))
-    val aliceConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), logger)
-    val bobConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), logger)
+    val aliceConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), Channel(Channel.UNLIMITED), logger)
+    val bobConnection = PeerConnection(connectionId, Channel(Channel.UNLIMITED), Channel(Channel.UNLIMITED), logger)
     alice.send(Connected(aliceConnection))
     bob.send(Connected(bobConnection))
 
@@ -142,7 +142,7 @@ suspend fun CoroutineScope.newPeer(
     val peer = buildPeer(this, nodeParams, walletParams, db)
 
     val logger = MDCLogger(nodeParams.loggerFactory.newLogger("PeerConnection"))
-    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), logger)
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), Channel(Channel.UNLIMITED), logger)
     peer.send(Connected(connection))
 
     remotedNodeChannelState?.let { state ->
@@ -197,7 +197,7 @@ suspend fun buildPeer(
         fastFeerate = FeeratePerKw(FeeratePerByte(50.sat))
     )
     val logger = MDCLogger(nodeParams.loggerFactory.newLogger("PeerConnection"))
-    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), logger)
+    val connection = PeerConnection(0, Channel(Channel.UNLIMITED), Channel(Channel.UNLIMITED), logger)
     peer.send(Connected(connection))
 
     return peer

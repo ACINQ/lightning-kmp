@@ -4,10 +4,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
-import fr.acinq.lightning.channel.ChannelAction
-import fr.acinq.lightning.channel.ChannelCommand
-import fr.acinq.lightning.channel.Helpers
-import fr.acinq.lightning.channel.LocalFundingStatus
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ChannelTlv
 import fr.acinq.lightning.wire.OpenDualFundedChannel
@@ -56,6 +53,10 @@ data object WaitForInit : ChannelState() {
                             add(ChannelTlv.ChannelTypeTlv(cmd.channelType))
                             cmd.requestRemoteFunding?.let { add(it.requestFunds) }
                             if (cmd.pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(cmd.pushAmount))
+                            when (cmd.channelOrigin) {
+                                is Origin.OffChainPayment -> add(ChannelTlv.OnTheFlyFundingPreimage(cmd.channelOrigin.paymentPreimage))
+                                else -> {}
+                            }
                         }
                     )
                 )

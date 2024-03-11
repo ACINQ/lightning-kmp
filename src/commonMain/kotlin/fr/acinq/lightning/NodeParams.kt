@@ -182,16 +182,16 @@ data class NodeParams(
             Feature.StaticRemoteKey to FeatureSupport.Mandatory,
             Feature.AnchorOutputs to FeatureSupport.Optional, // can't set Mandatory because peers prefers AnchorOutputsZeroFeeHtlcTx
             Feature.DualFunding to FeatureSupport.Mandatory,
+            Feature.Quiescence to FeatureSupport.Mandatory,
             Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,
             Feature.ChannelType to FeatureSupport.Mandatory,
             Feature.PaymentMetadata to FeatureSupport.Optional,
             Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
             Feature.ZeroReserveChannels to FeatureSupport.Optional,
             Feature.WakeUpNotificationClient to FeatureSupport.Optional,
-            Feature.PayToOpenClient to FeatureSupport.Optional,
             Feature.ChannelBackupClient to FeatureSupport.Optional,
             Feature.ExperimentalSplice to FeatureSupport.Optional,
-            Feature.Quiescence to FeatureSupport.Mandatory
+            Feature.OnTheFlyFundingClient to FeatureSupport.Optional,
         ),
         dustLimit = 546.sat,
         maxRemoteDustLimit = 600.sat,

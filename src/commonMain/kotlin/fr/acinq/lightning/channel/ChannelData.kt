@@ -409,10 +409,14 @@ data class TransactionFees(val miningFee: Satoshi, val serviceFee: Satoshi) {
 /** Reason for creating a new channel or splicing into an existing channel. */
 // @formatter:off
 sealed class Origin {
+    /** Amount of the origin payment, before fees are paid. */
     abstract val amount: MilliSatoshi
+    /** Fees applied for the channel funding transaction. */
     abstract val fees: TransactionFees
 
-    data class OffChainPayment(val paymentHash: ByteVector32, override val amount: MilliSatoshi, override val fees: TransactionFees) : Origin()
+    data class OffChainPayment(val paymentPreimage: ByteVector32, override val amount: MilliSatoshi, override val fees: TransactionFees) : Origin() {
+        val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).byteVector32()
+    }
     data class OnChainWallet(val inputs: Set<OutPoint>, override val amount: MilliSatoshi, override val fees: TransactionFees) : Origin()
 }
 // @formatter:on
