@@ -9,6 +9,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.PrivateKeyDescriptor
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.logging.*
@@ -380,7 +381,7 @@ object TestsHelper {
             localPerCommitmentPoint,
             alternativeSpec
         )
-        val localSig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
+        val localSig = channelKeys.fundingKey(fundingTxIndex).sign(localCommitTx)
         val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubKey, localSig, alternative.sig)
         assertTrue(Transactions.checkSpendable(signedCommitTx).isSuccess)
         return signedCommitTx.tx
@@ -409,7 +410,7 @@ object TestsHelper {
         return Pair(paymentPreimage, cmd)
     }
 
-    fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKey, List<WalletState.Utxo>> {
+    fun createWallet(keyManager: KeyManager, amount: Satoshi): Pair<PrivateKeyDescriptor, List<WalletState.Utxo>> {
         val swapInAddressIndex = 0
         val (privateKey, script) = keyManager.swapInOnChainWallet.run { Pair(userPrivateKey, getSwapInProtocol(swapInAddressIndex).pubkeyScript) }
         val parentTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 3), 0)), listOf(TxOut(amount, script)), 0)

@@ -408,7 +408,7 @@ object Helpers {
             require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitment.params.localParams.dustLimit.max(commitment.params.remoteParams.dustLimit)
             val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, dustLimit, closingFees.preferred, commitment.localCommit.spec)
-            val localClosingSig = Transactions.sign(closingTx, channelKeys.fundingKey(commitment.fundingTxIndex))
+            val localClosingSig = channelKeys.fundingKey(commitment.fundingTxIndex).sign(closingTx)
             val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
             return Pair(closingTx, closingSigned)
         }
@@ -479,7 +479,7 @@ object Helpers {
                     feerateDelayed
                 )
             }?.let {
-                val sig = Transactions.sign(it, channelKeys.delayedPaymentKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL)
+                val sig = channelKeys.delayedPaymentKey.deriveForCommitment(localPerCommitmentPoint).sign(it, SigHash.SIGHASH_ALL)
                 Transactions.addSigs(it, sig)
             }
 
@@ -513,7 +513,7 @@ object Helpers {
                         feerateDelayed
                     )
                 }?.let {
-                    val sig = Transactions.sign(it, channelKeys.delayedPaymentKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL)
+                    val sig = channelKeys.delayedPaymentKey.deriveForCommitment(localPerCommitmentPoint).sign(it, SigHash.SIGHASH_ALL)
                     Transactions.addSigs(it, sig)
                 }
             }
@@ -601,7 +601,7 @@ object Helpers {
                                 null -> Pair(claimHtlcTx.input.outPoint, null)
                                 // incoming htlc for which we have the preimage: we can spend it directly
                                 else -> {
-                                    val sig = Transactions.sign(claimHtlcTx, channelKeys.htlcKey.deriveForCommitment(remoteCommit.remotePerCommitmentPoint), SigHash.SIGHASH_ALL)
+                                    val sig = channelKeys.htlcKey.deriveForCommitment(remoteCommit.remotePerCommitmentPoint).sign(claimHtlcTx, SigHash.SIGHASH_ALL)
                                     Pair(claimHtlcTx.input.outPoint, Transactions.addSigs(claimHtlcTx, sig, preimage))
                                 }
                             }
@@ -622,7 +622,7 @@ object Helpers {
                                 feerateClaimHtlc
                             )
                         }?.let { claimHtlcTx ->
-                            val sig = Transactions.sign(claimHtlcTx, channelKeys.htlcKey.deriveForCommitment(remoteCommit.remotePerCommitmentPoint), SigHash.SIGHASH_ALL)
+                            val sig = channelKeys.htlcKey.deriveForCommitment(remoteCommit.remotePerCommitmentPoint).sign(claimHtlcTx, SigHash.SIGHASH_ALL)
                             Pair(claimHtlcTx.input.outPoint, Transactions.addSigs(claimHtlcTx, sig))
                         }
                     }
@@ -651,7 +651,7 @@ object Helpers {
                     claimMainFeerate
                 )
             }?.let {
-                val sig = Transactions.sign(it, channelKeys.paymentKey)
+                val sig = channelKeys.paymentKey.sign(it)
                 Transactions.addSigs(it, sig)
             }
 
@@ -709,7 +709,7 @@ object Helpers {
                     feerateMain
                 )
             }?.let {
-                val sig = Transactions.sign(it, channelKeys.paymentKey)
+                val sig = channelKeys.paymentKey.sign(it)
                 Transactions.addSigs(it, sig)
             }
 
@@ -725,7 +725,7 @@ object Helpers {
                     feeratePenalty
                 )
             }?.let {
-                val sig = Transactions.sign(it, channelKeys.revocationKey.deriveForRevocation(remotePerCommitmentSecret))
+                val sig = channelKeys.revocationKey.deriveForRevocation(remotePerCommitmentSecret).sign(it)
                 Transactions.addSigs(it, sig)
             }
 
@@ -770,7 +770,7 @@ object Helpers {
                             feeratePenalty
                         )
                     }?.let { htlcPenaltyTx ->
-                        val sig = Transactions.sign(htlcPenaltyTx, channelKeys.revocationKey.deriveForRevocation(revokedCommitPublished.remotePerCommitmentSecret))
+                        val sig = channelKeys.revocationKey.deriveForRevocation(revokedCommitPublished.remotePerCommitmentSecret).sign(htlcPenaltyTx)
                         Transactions.addSigs(htlcPenaltyTx, sig, remoteRevocationPubkey)
                     }
                 }
@@ -827,7 +827,7 @@ object Helpers {
                     generateTx("claim-htlc-delayed-penalty") {
                         claimDelayedOutputPenaltyTx
                     }?.let {
-                        val sig = Transactions.sign(it, channelKeys.revocationKey.deriveForRevocation(revokedCommitPublished.remotePerCommitmentSecret))
+                        val sig = channelKeys.revocationKey.deriveForRevocation(revokedCommitPublished.remotePerCommitmentSecret).sign(it)
                         val signedTx = Transactions.addSigs(it, sig)
                         // we need to make sure that the tx is indeed valid
                         when (runTrying { Transaction.correctlySpends(signedTx.tx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {

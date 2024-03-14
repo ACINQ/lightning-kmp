@@ -1,11 +1,13 @@
 package fr.acinq.lightning.crypto
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.hardened
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.Lightning.secureRandom
 import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
+import fr.acinq.lightning.crypto.local.LocalExtendedPrivateKeyDescriptor
+import fr.acinq.lightning.crypto.local.LocalPrivateKeyDescriptor
+import fr.acinq.lightning.crypto.local.RootExtendedPrivateKeyDescriptor
 
 /**
  * An implementation of [KeyManager] that supports deterministic derivation for [KeyManager.ChannelKeys] based
@@ -35,14 +37,15 @@ import fr.acinq.lightning.crypto.LocalKeyManager.Companion.channelKeyPath
  */
 data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwapInExtendedPublicKey: String) : KeyManager {
 
-    private val master = DeterministicWallet.generate(seed)
+    private val master =
+        RootExtendedPrivateKeyDescriptor(DeterministicWallet.generate(seed))
 
     override val nodeKeys: KeyManager.NodeKeys = KeyManager.NodeKeys(
-        legacyNodeKey = @Suppress("DEPRECATION") derivePrivateKey(master, eclairNodeKeyBasePath(chain)),
-        nodeKey = derivePrivateKey(master, nodeKeyBasePath(chain)),
+        legacyNodeKey = @Suppress("DEPRECATION")   (master.derive(eclairNodeKeyBasePath(chain)) as LocalExtendedPrivateKeyDescriptor).instantiate(),
+        nodeKey = (master.derive(nodeKeyBasePath(chain)) as LocalExtendedPrivateKeyDescriptor).instantiate(),
     )
 
-    override val finalOnChainWallet: KeyManager.Bip84OnChainKeys = KeyManager.Bip84OnChainKeys(chain, master, account = 0)
+    override val finalOnChainWallet: KeyManager.Bip84OnChainKeys = KeyManager.Bip84OnChainKeys(chain, master,  account = 0)
     override val swapInOnChainWallet: KeyManager.SwapInOnChainKeys = run {
         val (prefix, xpub) = DeterministicWallet.ExtendedPublicKey.decode(remoteSwapInExtendedPublicKey)
         val expectedPrefix = when (chain) {
@@ -51,7 +54,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         }
         require(prefix == expectedPrefix) { "unexpected swap-in xpub prefix $prefix (expected $expectedPrefix)" }
         val remoteSwapInPublicKey = DeterministicWallet.derivePublicKey(xpub, KeyManager.SwapInOnChainKeys.perUserPath(nodeKeys.nodeKey.publicKey)).publicKey
-        KeyManager.SwapInOnChainKeys(chain, master, remoteSwapInPublicKey)
+        KeyManager.SwapInOnChainKeys(chain, master,  remoteSwapInPublicKey)
     }
 
     private val channelKeyBasePath: KeyPath = channelKeyBasePath(chain)
@@ -60,9 +63,14 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
      * This method offers direct access to the master key derivation. It should only be used for some advanced usage
      * like (LNURL-auth, data encryption).
      */
-    fun derivePrivateKey(keyPath: KeyPath): DeterministicWallet.ExtendedPrivateKey = derivePrivateKey(master, keyPath)
+    override fun derivePrivateKey(keyPath: KeyPath): PrivateKeyDescriptor = master.derivePrivateKey(keyPath)
 
-    fun privateKey(keyPath: KeyPath): PrivateKey = derivePrivateKey(master, keyPath).privateKey
+    override fun deterministicKeyMaterial(keyPath: KeyPath): ByteVector32 {
+        // This implementation ensures backward compatibility with Phoenix
+        // (see LocalKeyManager.cloudKey())... but it also allows one to extract
+        // any key from this key manager given they know its derivation path.
+        return (master.derivePrivateKey(keyPath) as LocalPrivateKeyDescriptor).instantiate().value
+    }
 
     override fun newFundingKeyPath(isInitiator: Boolean): KeyPath {
         val last = hardened(if (isInitiator) 1 else 0)
@@ -72,7 +80,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
 
     override fun channelKeys(fundingKeyPath: KeyPath): KeyManager.ChannelKeys {
         // We use a different funding key for each splice, with a derivation based on the fundingTxIndex.
-        val fundingKey: (Long) -> PrivateKey = { index -> derivePrivateKey(master, channelKeyBasePath / fundingKeyPath / hardened(index)).privateKey }
+        val fundingKey: (Long) -> PrivateKeyDescriptor = { index -> master.derivePrivateKey(channelKeyBasePath / fundingKeyPath / hardened(index)) }
         // We use the initial funding pubkey to compute the channel key path, and we use the recovery process even
         // in the normal case, which guarantees it works all the time.
         val initialFundingPubkey = fundingKey(0).publicKey()
@@ -97,11 +105,12 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
         val channelKeyPrefix = channelKeyBasePath / channelKeyPath(fundingPubKey)
         return RecoveredChannelKeys(
             fundingPubKey,
-            paymentKey = privateKey(channelKeyPrefix / hardened(2)),
-            delayedPaymentKey = privateKey(channelKeyPrefix / hardened(3)),
-            htlcKey = privateKey(channelKeyPrefix / hardened(4)),
-            revocationKey = privateKey(channelKeyPrefix / hardened(1)),
-            shaSeed = privateKey(channelKeyPrefix / hardened(5)).value.concat(1).sha256()
+            paymentKey = master.derivePrivateKey(channelKeyPrefix / hardened(2)),
+            delayedPaymentKey = master.derivePrivateKey(channelKeyPrefix / hardened(3)),
+            htlcKey = master.derivePrivateKey(channelKeyPrefix / hardened(4)),
+            revocationKey = master.derivePrivateKey(channelKeyPrefix / hardened(1)),
+            shaSeed = (master.derivePrivateKey(channelKeyPrefix / hardened(5)) as LocalPrivateKeyDescriptor)
+                .instantiate().value.concat(1).sha256()
         )
     }
 
@@ -112,10 +121,10 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
      */
     data class RecoveredChannelKeys(
         val fundingPubKey: PublicKey,
-        val paymentKey: PrivateKey,
-        val delayedPaymentKey: PrivateKey,
-        val htlcKey: PrivateKey,
-        val revocationKey: PrivateKey,
+        val paymentKey: PrivateKeyDescriptor,
+        val delayedPaymentKey: PrivateKeyDescriptor,
+        val htlcKey: PrivateKeyDescriptor,
+        val revocationKey: PrivateKeyDescriptor,
         val shaSeed: ByteVector32
     ) {
         val htlcBasepoint: PublicKey = htlcKey.publicKey()
@@ -166,6 +175,7 @@ data class LocalKeyManager(val seed: ByteVector, val chain: Chain, val remoteSwa
             Chain.Mainnet -> KeyPath.empty / hardened(50) / hardened(0)
         }
     }
+
 }
 
 infix operator fun KeyPath.div(index: Long): KeyPath = this.append(index)

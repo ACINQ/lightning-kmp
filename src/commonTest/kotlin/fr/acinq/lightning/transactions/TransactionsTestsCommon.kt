@@ -7,7 +7,6 @@ import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.pay2wsh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -15,6 +14,8 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
+import fr.acinq.lightning.crypto.local.HardCodedPrivateKey
+import fr.acinq.lightning.crypto.local.RootExtendedPrivateKeyDescriptor
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
@@ -49,7 +50,6 @@ import fr.acinq.lightning.transactions.Transactions.makeCommitTxOutputs
 import fr.acinq.lightning.transactions.Transactions.makeHtlcPenaltyTx
 import fr.acinq.lightning.transactions.Transactions.makeHtlcTxs
 import fr.acinq.lightning.transactions.Transactions.makeMainPenaltyTx
-import fr.acinq.lightning.transactions.Transactions.sign
 import fr.acinq.lightning.transactions.Transactions.swapInputWeight
 import fr.acinq.lightning.transactions.Transactions.swapInputWeightLegacy
 import fr.acinq.lightning.transactions.Transactions.weight2fee
@@ -60,14 +60,14 @@ import kotlin.test.*
 
 class TransactionsTestsCommon : LightningTestSuite() {
 
-    private val localFundingPriv = PrivateKey(randomBytes32())
-    private val remoteFundingPriv = PrivateKey(randomBytes32())
-    private val localRevocationPriv = PrivateKey(randomBytes32())
-    private val localPaymentPriv = PrivateKey(randomBytes32())
-    private val localDelayedPaymentPriv = PrivateKey(randomBytes32())
-    private val remotePaymentPriv = PrivateKey(randomBytes32())
-    private val localHtlcPriv = PrivateKey(randomBytes32())
-    private val remoteHtlcPriv = PrivateKey(randomBytes32())
+    private val localFundingPriv = HardCodedPrivateKey(randomBytes32())
+    private val remoteFundingPriv = HardCodedPrivateKey(randomBytes32())
+    private val localRevocationPriv = HardCodedPrivateKey(randomBytes32())
+    private val localPaymentPriv = HardCodedPrivateKey(randomBytes32())
+    private val localDelayedPaymentPriv = HardCodedPrivateKey(randomBytes32())
+    private val remotePaymentPriv = HardCodedPrivateKey(randomBytes32())
+    private val localHtlcPriv = HardCodedPrivateKey(randomBytes32())
+    private val remoteHtlcPriv = HardCodedPrivateKey(randomBytes32())
     private val commitInput = Funding.makeFundingInputInfo(TxId(randomBytes32()), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
     private val toLocalDelay = CltvExpiryDelta(144)
     private val localDustLimit = 546.sat
@@ -274,8 +274,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val commitTxNumber = 0x404142434445L
         val commitTx = run {
             val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
-            val localSig = sign(txInfo, localPaymentPriv)
-            val remoteSig = sign(txInfo, remotePaymentPriv)
+            val localSig = localPaymentPriv.sign(txInfo)
+            val remoteSig = remotePaymentPriv.sign(txInfo)
             addSigs(txInfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
         }
 
@@ -298,8 +298,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
         run {
             // either party spends local->remote htlc output with htlc timeout tx
             for (htlcTimeoutTx in htlcTimeoutTxs) {
-                val localSig = sign(htlcTimeoutTx, localHtlcPriv)
-                val remoteSig = sign(htlcTimeoutTx, remoteHtlcPriv, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)
+                val localSig = localHtlcPriv.sign(htlcTimeoutTx)
+                val remoteSig = remoteHtlcPriv.sign(htlcTimeoutTx, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)
                 val signed = addSigs(htlcTimeoutTx, localSig, remoteSig)
                 val csResult = checkSpendable(signed)
                 assertTrue(csResult.isSuccess, "is $csResult")
@@ -309,7 +309,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             // local spends delayed output of htlc1 timeout tx
             val claimHtlcDelayed = makeClaimLocalDelayedOutputTx(htlcTimeoutTxs[1].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
             assertTrue(claimHtlcDelayed is Success, "is $claimHtlcDelayed")
-            val localSig = sign(claimHtlcDelayed.result, localDelayedPaymentPriv)
+            val localSig = localDelayedPaymentPriv.sign(claimHtlcDelayed.result)
             val signedTx = addSigs(claimHtlcDelayed.result, localSig)
             assertTrue(checkSpendable(signedTx).isSuccess)
             // local can't claim delayed output of htlc3 timeout tx because it is below the dust limit
@@ -322,7 +322,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 val claimHtlcSuccessTx =
                     makeClaimHtlcSuccessTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feerate)
                 assertTrue(claimHtlcSuccessTx is Success, "is $claimHtlcSuccessTx")
-                val localSig = sign(claimHtlcSuccessTx.result, remoteHtlcPriv)
+                val localSig = remoteHtlcPriv.sign(claimHtlcSuccessTx.result)
                 val signed = addSigs(claimHtlcSuccessTx.result, localSig, paymentPreimage)
                 val csResult = checkSpendable(signed)
                 assertTrue(csResult.isSuccess, "is $csResult")
@@ -331,8 +331,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
         run {
             // local spends remote->local htlc2/htlc4 output with htlc success tx using payment preimage
             for ((htlcSuccessTx, paymentPreimage) in listOf(htlcSuccessTxs[1] to paymentPreimage2, htlcSuccessTxs[0] to paymentPreimage4)) {
-                val localSig = sign(htlcSuccessTx, localHtlcPriv)
-                val remoteSig = sign(htlcSuccessTx, remoteHtlcPriv, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)
+                val localSig = localHtlcPriv.sign(htlcSuccessTx)
+                val remoteSig = remoteHtlcPriv.sign(htlcSuccessTx, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)
                 val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage)
                 val csResult = checkSpendable(signedTx)
                 assertTrue(csResult.isSuccess, "is $csResult")
@@ -344,7 +344,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             // local spends delayed output of htlc2 success tx
             val claimHtlcDelayed = makeClaimLocalDelayedOutputTx(htlcSuccessTxs[1].tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), finalPubKeyScript, feerate)
             assertTrue(claimHtlcDelayed is Success, "is $claimHtlcDelayed")
-            val localSig = sign(claimHtlcDelayed.result, localDelayedPaymentPriv)
+            val localSig = localDelayedPaymentPriv.sign(claimHtlcDelayed.result)
             val signedTx = addSigs(claimHtlcDelayed.result, localSig)
             val csResult = checkSpendable(signedTx)
             assertTrue(csResult.isSuccess, "is $csResult")
@@ -356,7 +356,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             // remote spends main output
             val claimP2WPKHOutputTx = makeClaimRemoteDelayedOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey(), finalPubKeyScript.toByteVector(), feerate)
             assertTrue(claimP2WPKHOutputTx is Success, "is $claimP2WPKHOutputTx")
-            val localSig = sign(claimP2WPKHOutputTx.result, remotePaymentPriv)
+            val localSig = remotePaymentPriv.sign(claimP2WPKHOutputTx.result)
             val signedTx = addSigs(claimP2WPKHOutputTx.result, localSig)
             val csResult = checkSpendable(signedTx)
             assertTrue(csResult.isSuccess, "is $csResult")
@@ -367,7 +367,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertEquals(1, claimHtlcDelayedPenaltyTxs.size)
             val claimHtlcDelayedPenaltyTx = claimHtlcDelayedPenaltyTxs.first()
             assertTrue(claimHtlcDelayedPenaltyTx is Success, "is $claimHtlcDelayedPenaltyTx")
-            val sig = sign(claimHtlcDelayedPenaltyTx.result, localRevocationPriv)
+            val sig = localRevocationPriv.sign(claimHtlcDelayedPenaltyTx.result)
             val signed = addSigs(claimHtlcDelayedPenaltyTx.result, sig)
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
@@ -380,7 +380,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val claimHtlcTimeoutTx =
                 makeClaimHtlcTimeoutTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc2, feerate)
             assertTrue(claimHtlcTimeoutTx is Success, "is $claimHtlcTimeoutTx")
-            val remoteSig = sign(claimHtlcTimeoutTx.result, remoteHtlcPriv)
+            val remoteSig = remoteHtlcPriv.sign(claimHtlcTimeoutTx.result)
             val signed = addSigs(claimHtlcTimeoutTx.result, remoteSig)
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
@@ -391,7 +391,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertEquals(1, claimHtlcDelayedPenaltyTxs.size)
             val claimHtlcDelayedPenaltyTx = claimHtlcDelayedPenaltyTxs.first()
             assertTrue(claimHtlcDelayedPenaltyTx is Success, "is $claimHtlcDelayedPenaltyTx")
-            val sig = sign(claimHtlcDelayedPenaltyTx.result, localRevocationPriv)
+            val sig = localRevocationPriv.sign(claimHtlcDelayedPenaltyTx.result)
             val signed = addSigs(claimHtlcDelayedPenaltyTx.result, sig)
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
@@ -421,7 +421,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             }
             val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feerate)
             assertTrue(htlcPenaltyTx is Success, "is $htlcPenaltyTx")
-            val sig = sign(htlcPenaltyTx.result, localRevocationPriv)
+            val sig = localRevocationPriv.sign(htlcPenaltyTx.result)
             val signed = addSigs(htlcPenaltyTx.result, sig, localRevocationPriv.publicKey())
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
@@ -435,7 +435,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             }
             val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feerate)
             assertTrue(htlcPenaltyTx is Success, "is $htlcPenaltyTx")
-            val sig = sign(htlcPenaltyTx.result, localRevocationPriv)
+            val sig = localRevocationPriv.sign(htlcPenaltyTx.result)
             val signed = addSigs(htlcPenaltyTx.result, sig, localRevocationPriv.publicKey())
             val csResult = checkSpendable(signed)
             assertTrue(csResult.isSuccess, "is $csResult")
@@ -483,14 +483,16 @@ class TransactionsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `spend 2-of-2 swap-in taproot-musig2 version`() {
-        val userPrivateKey = PrivateKey(ByteArray(32) { 1 })
-        val serverPrivateKey = PrivateKey(ByteArray(32) { 2 })
+        val userPrivateKey = HardCodedPrivateKey(ByteArray(32) { 1 })
+        val serverPrivateKey = HardCodedPrivateKey(ByteArray(32) { 2 })
         val refundDelay = 25920
 
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "")
         val masterPrivateKey = DeterministicWallet.derivePrivateKey(DeterministicWallet.generate(seed), "/51'/0'/0'").copy(path = KeyPath.empty)
+        val masterPrivateKeyDescriptor = RootExtendedPrivateKeyDescriptor(masterPrivateKey)
         val userRefundPrivateKey = DeterministicWallet.derivePrivateKey(masterPrivateKey, "0").privateKey
+        val userRefundPrivateKeyDescriptor = masterPrivateKeyDescriptor.derivePrivateKey(0)
         val swapInProtocol = SwapInProtocol(userPrivateKey.publicKey(), serverPrivateKey.publicKey(), userRefundPrivateKey.publicKey(), refundDelay)
 
         val swapInTx = Transaction(
@@ -510,8 +512,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             // The first step of a musig2 signing session is to exchange nonces.
             // If participants are disconnected before the end of the signing session, they must start again with fresh nonces.
-            val userNonce = Musig2.generateNonce(randomBytes32(), userPrivateKey, listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
-            val serverNonce = Musig2.generateNonce(randomBytes32(), serverPrivateKey, listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()))
+            val userNonce = userPrivateKey.generateMusig2Nonce(randomBytes32(), listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()))
+            val serverNonce = serverPrivateKey.generateMusig2Nonce(randomBytes32(), listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()))
 
             // Once they have each other's public nonce, they can produce partial signatures.
             val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, userNonce.second, serverNonce.second).right!!
@@ -532,7 +534,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 txOut = listOf(TxOut(Satoshi(10000), pay2wpkh(PrivateKey(randomBytes32()).publicKey()))),
                 lockTime = 0
             )
-            val sig = swapInProtocol.signSwapInputRefund(tx, 0, swapInTx.txOut, userRefundPrivateKey)
+            val sig = swapInProtocol.signSwapInputRefund(tx, 0, swapInTx.txOut, userRefundPrivateKeyDescriptor)
             val signedTx = tx.updateWitness(0, swapInProtocol.witnessRefund(sig))
             Transaction.correctlySpends(signedTx, swapInTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         }
@@ -618,8 +620,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
                     spec
                 )
             val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
-            val localSig = sign(txInfo, localPaymentPriv)
-            val remoteSig = sign(txInfo, remotePaymentPriv)
+            val localSig = this.localPaymentPriv.sign(txInfo)
+            val remoteSig = this.remotePaymentPriv.sign(txInfo)
             val commitTx = addSigs(txInfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
             val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), feerate, outputs)
             Triple(commitTx, outputs, htlcTxs)
