@@ -139,7 +139,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (alice, _, _, commitSigBob) = init(aliceFundingAmount = 0.sat, alicePushAmount = 0.msat, bobPushAmount = 50_000_000.msat, channelOrigin = channelOrigin)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
         assertIs<WaitForFundingConfirmed>(alice1.state)
-        assertEquals(actionsAlice1.size, 5)
+        assertEquals(actionsAlice1.size, 6)
         actionsAlice1.hasOutgoingMessage<TxSignatures>()
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         actionsAlice1.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also {
@@ -148,7 +148,9 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertEquals(alice1.commitments.latest.fundingTxId, it.txId)
         }
         actionsAlice1.hasWatch<WatchConfirmed>()
-        actionsAlice1.has<ChannelAction.EmitEvent>()
+        val events = actionsAlice1.filterIsInstance<ChannelAction.EmitEvent>().map { it.event }
+        assertTrue(events.any { it is ChannelEvents.Created })
+        assertTrue(events.any { it is LiquidityEvents.Accepted })
     }
 
     @Test
@@ -157,7 +159,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (alice, _, _, commitSigBob) = init(aliceFundingAmount = 200_000.sat, alicePushAmount = 0.msat, bobFundingAmount = 500_000.sat, channelOrigin = channelOrigin)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
         assertIs<WaitForFundingConfirmed>(alice1.state)
-        assertEquals(actionsAlice1.size, 5)
+        assertEquals(actionsAlice1.size, 6)
         actionsAlice1.hasOutgoingMessage<TxSignatures>()
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         actionsAlice1.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also {
@@ -166,7 +168,9 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertTrue(it.localInputs.isNotEmpty())
         }
         actionsAlice1.hasWatch<WatchConfirmed>()
-        actionsAlice1.has<ChannelAction.EmitEvent>()
+        val events = actionsAlice1.filterIsInstance<ChannelAction.EmitEvent>().map { it.event }
+        assertTrue(events.any { it is ChannelEvents.Created })
+        assertTrue(events.any { it is SwapInEvents.Accepted })
     }
 
     @Test

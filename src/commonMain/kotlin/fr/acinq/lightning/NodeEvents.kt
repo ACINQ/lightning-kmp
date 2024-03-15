@@ -1,9 +1,12 @@
 package fr.acinq.lightning
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.OutPoint
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.channel.InteractiveTxParams
 import fr.acinq.lightning.channel.SharedFundingInput
+import fr.acinq.lightning.channel.TransactionFees
 import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
@@ -12,6 +15,15 @@ import fr.acinq.lightning.utils.sum
 
 sealed interface NodeEvents
 
+sealed interface SwapInEvents : NodeEvents {
+    data class Requested(val walletInputs: List<WalletState.Utxo>) : SwapInEvents {
+        val totalAmount: Satoshi = walletInputs.map { it.amount }.sum()
+    }
+    data class Accepted(val inputs: Set<OutPoint>, val amount: Satoshi, val fees: TransactionFees) : SwapInEvents {
+        val receivedAmount: Satoshi = amount - fees.serviceFee - fees.miningFee
+    }
+}
+
 sealed interface ChannelEvents : NodeEvents {
     data class Creating(val state: WaitForFundingCreated) : ChannelEvents
     data class Created(val state: ChannelStateWithCommitments) : ChannelEvents
@@ -19,6 +31,7 @@ sealed interface ChannelEvents : NodeEvents {
 }
 
 sealed interface LiquidityEvents : NodeEvents {
+    /** Amount of the liquidity event, before fees are paid. */
     val amount: MilliSatoshi
     val fee: MilliSatoshi
     val source: Source
@@ -36,6 +49,7 @@ sealed interface LiquidityEvents : NodeEvents {
             data class ChannelFundingCancelled(val paymentHash: ByteVector32) : Reason()
         }
     }
+    data class Accepted(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source) : LiquidityEvents
 }
 
 /** This is useful on iOS to ask the OS for time to finish some sensitive tasks. */
@@ -48,7 +62,6 @@ sealed interface SensitiveTaskEvents : NodeEvents {
     }
     data class TaskStarted(val id: TaskIdentifier) : SensitiveTaskEvents
     data class TaskEnded(val id: TaskIdentifier) : SensitiveTaskEvents
-
 }
 
 /** This will be emitted in a corner case where the user restores a wallet on an older version of the app, which is unable to read the channel data. */

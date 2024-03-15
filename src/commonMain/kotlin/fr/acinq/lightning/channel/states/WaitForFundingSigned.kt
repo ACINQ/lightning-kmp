@@ -4,9 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.ChannelEvents
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.channel.*
@@ -131,6 +129,12 @@ data class WaitForFundingSigned(
                     origin = channelOrigin
                 )
             )
+            channelOrigin?.let {
+                when (it) {
+                    is Origin.OffChainPayment -> add(ChannelAction.EmitEvent(LiquidityEvents.Accepted(it.amount, it.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment)))
+                    is Origin.OnChainWallet -> add(ChannelAction.EmitEvent(SwapInEvents.Accepted(it.inputs, it.amount.truncateToSatoshi(), it.fees)))
+                }
+            }
         }
         return if (staticParams.useZeroConf) {
             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }

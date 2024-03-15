@@ -1138,6 +1138,7 @@ class Peer(
                                     }
                                 }
                                 input.send(WrappedChannelCommand(channel.channelId, spliceCommand))
+                                nodeParams._nodeEvents.emit(SwapInEvents.Requested(cmd.walletInputs))
                             }
                         }
                     }
@@ -1197,6 +1198,7 @@ class Peer(
                                         val msg = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                                         _channels = _channels + (msg.temporaryChannelId to state)
                                         processActions(msg.temporaryChannelId, peerConnection, actions)
+                                        nodeParams._nodeEvents.emit(SwapInEvents.Requested(cmd.walletInputs))
                                     }
                                 }
                             }
