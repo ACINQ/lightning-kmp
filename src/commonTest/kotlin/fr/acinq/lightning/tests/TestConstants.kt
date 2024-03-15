@@ -50,6 +50,8 @@ object TestConstants {
         maxRelayFeeBase = 1_000.msat,
     )
 
+    val leaseRates = listOf(LiquidityAds.BoundedLeaseRate(0.sat, 100_000_000.sat, leaseRate))
+
     const val aliceSwapInServerXpub = "tpubDCvYeHUZisCMVTSfWDa1yevTf89NeF6TWxXUQwqkcmFrNvNdNvZQh1j4m4uTA4QcmPEwcrKVF8bJih1v16zDZacRr4j9MCAFQoSydKKy66q"
     const val bobSwapInServerXpub = "tpubDDt5vQap1awkyDXx1z1cP7QFKSZHDCCpbU8nSq9jy7X2grTjUVZDePexf6gc6AHtRRzkgfPW87K6EKUVV6t3Hu2hg7YkHkmMeLSfrP85x41"
 

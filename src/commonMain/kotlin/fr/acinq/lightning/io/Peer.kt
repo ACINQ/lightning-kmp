@@ -110,7 +110,7 @@ data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : P
  * @param walletParams High level parameters for our node. It especially contains the Peer's [NodeUri].
  * @param watcher Watches events from the Electrum client and publishes transactions and events.
  * @param db Wraps the various databases persisting the channels and payments data related to the Peer.
- * @param leaseRate Rate at which our peer sells their liquidity.
+ * @param leaseRates Rates at which our peer sells their liquidity.
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
  * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
@@ -120,7 +120,7 @@ class Peer(
     val walletParams: WalletParams,
     val watcher: ElectrumWatcher,
     val db: Databases,
-    val leaseRate: LiquidityAds.LeaseRate,
+    val leaseRates: List<LiquidityAds.BoundedLeaseRate>,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
     private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
@@ -167,7 +167,7 @@ class Peer(
     val eventsFlow: SharedFlow<PeerEvent> get() = _eventsFlow.asSharedFlow()
 
     // encapsulates logic for validating incoming payments
-    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments, leaseRate)
+    private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments, leaseRates)
 
     // encapsulates logic for sending payments
     private val outgoingPaymentHandler = OutgoingPaymentHandler(nodeParams, walletParams, db.payments)
@@ -1151,6 +1151,7 @@ class Peer(
                                     is LiquidityPolicy.Disable -> LiquidityPolicy.minInboundLiquidityTarget // we don't disable creating a channel using our own wallet inputs
                                     is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
                                 }
+                                val leaseRate = LiquidityAds.chooseLeaseRate(inboundLiquidityTarget, leaseRates)
                                 LiquidityAds.RequestRemoteFunding(inboundLiquidityTarget, currentTipFlow.filterNotNull().first().first, leaseRate)
                             }
                             val (localFundingAmount, fees) = run {
@@ -1158,7 +1159,7 @@ class Peer(
                                 val localMiningFee = Transactions.weight2fee(currentFeerates.fundingFeerate, FundingContributions.computeWeightPaid(isInitiator = true, null, dummyFundingScript, cmd.walletInputs, emptyList()))
                                 // We directly pay the on-chain fees for our inputs/outputs of the transaction.
                                 val localFundingAmount = cmd.totalAmount - localMiningFee
-                                val leaseFees = leaseRate.fees(currentFeerates.fundingFeerate, requestRemoteFunding.fundingAmount, requestRemoteFunding.fundingAmount)
+                                val leaseFees = requestRemoteFunding.rate.fees(currentFeerates.fundingFeerate, requestRemoteFunding.fundingAmount, requestRemoteFunding.fundingAmount)
                                 // We also refund the liquidity provider for some of the on-chain fees they will pay for their inputs/outputs of the transaction.
                                 val totalFees = TransactionFees(miningFee = localMiningFee + leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
                                 Pair(localFundingAmount, totalFees)
@@ -1220,6 +1221,7 @@ class Peer(
                     is LiquidityPolicy.Disable -> LiquidityPolicy.minInboundLiquidityTarget
                     is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
                 }
+                val leaseRate = LiquidityAds.chooseLeaseRate(remoteFundingAmount, leaseRates)
                 val requestRemoteFunding = LiquidityAds.RequestRemoteFunding(remoteFundingAmount, currentTipFlow.filterNotNull().first().first, leaseRate)
                 when {
                     channelFundingIsInProgress() -> {

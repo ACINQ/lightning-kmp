@@ -82,6 +82,22 @@ object LiquidityAds {
         }
     }
 
+    /**
+     * We may want to use different lease rates based on the amount that is purchased.
+     * There is an ongoing discussion to directly include this information in the advertised lease rate: https://github.com/lightning/bolts/pull/1145#discussion_r1526005244
+     */
+    data class BoundedLeaseRate(val minAmount: Satoshi, val maxAmount: Satoshi, val leaseRate: LeaseRate)
+
+    fun chooseLeaseRate(fundingAmount: Satoshi, rates: List<BoundedLeaseRate>): LeaseRate {
+        val sortedRates = rates.sortedBy { it.minAmount }
+        val matchingRate = sortedRates.firstOrNull { it.minAmount <= fundingAmount && fundingAmount <= it.maxAmount }
+        return when {
+            matchingRate != null -> matchingRate.leaseRate
+            fundingAmount <= sortedRates.first().minAmount -> sortedRates.first().leaseRate
+            else -> sortedRates.last().leaseRate
+        }
+    }
+
     /** Request inbound liquidity from a remote peer that supports liquidity ads. */
     data class RequestRemoteFunding(val fundingAmount: Satoshi, val leaseStart: Int, val rate: LeaseRate) {
         private val leaseExpiry: Int = leaseStart + rate.leaseDuration

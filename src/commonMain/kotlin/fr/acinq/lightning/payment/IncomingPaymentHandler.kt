@@ -45,7 +45,7 @@ data class OnTheFlyFundingPart(val htlc: MaybeAddHtlc, override val finalPayload
     override fun toString(): String = "maybe-htlc(amount=${htlc.amount})"
 }
 
-class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb, val leaseRate: LiquidityAds.LeaseRate) {
+class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPaymentsDb, val leaseRates: List<LiquidityAds.BoundedLeaseRate>) {
 
     sealed class ProcessAddResult {
         abstract val actions: List<PeerCommand>
@@ -255,6 +255,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                                         is LiquidityPolicy.Disable -> 0.msat
                                         is LiquidityPolicy.Auto -> {
                                             val requestedAmount = policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
+                                            val leaseRate = LiquidityAds.chooseLeaseRate(requestedAmount, leaseRates)
                                             leaseRate.fees(currentFeerate, requestedAmount, requestedAmount).total.toMilliSatoshi()
                                         }
                                     }

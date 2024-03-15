@@ -188,7 +188,7 @@ suspend fun buildPeer(
 ): Peer {
     val electrum = ElectrumClient(scope, nodeParams.loggerFactory)
     val watcher = ElectrumWatcher(electrum, scope, nodeParams.loggerFactory)
-    val peer = Peer(nodeParams, walletParams, watcher, databases, TestConstants.leaseRate, TcpSocket.Builder(), scope)
+    val peer = Peer(nodeParams, walletParams, watcher, databases, TestConstants.leaseRates, TcpSocket.Builder(), scope)
     peer.currentTipFlow.value = currentTip
     peer.onChainFeeratesFlow.value = OnChainFeerates(
         fundingFeerate = FeeratePerKw(FeeratePerByte(5.sat)),
