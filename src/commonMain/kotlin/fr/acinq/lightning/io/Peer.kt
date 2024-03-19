@@ -12,6 +12,7 @@ import fr.acinq.lightning.blockchain.electrum.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.blockchain.mempool.MempoolSpaceClient
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.noise.*
@@ -34,6 +35,7 @@ import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.*
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerCommand
@@ -84,12 +86,14 @@ data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipi
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
 sealed class PeerEvent
+
 @Deprecated("Replaced by NodeEvents", replaceWith = ReplaceWith("PaymentEvents.PaymentReceived", "fr.acinq.lightning.PaymentEvents"))
 data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
 sealed class SendPaymentResult : PeerEvent() {
     abstract val request: SendPayment
 }
+
 data class PaymentNotSent(override val request: SendPayment, val reason: OutgoingPaymentFailure) : SendPaymentResult()
 data class PaymentSent(override val request: SendPayment, val payment: LightningOutgoingPayment) : SendPaymentResult()
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
@@ -210,21 +214,34 @@ class Peer(
     init {
         logger.info { "initializing peer" }
         launch {
-            when(client) {
+            when (client) {
                 is IElectrumClient -> client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
                     .collect { msg ->
                         currentTipFlow.value = msg.blockHeight to msg.header
                     }
+                is MempoolSpaceClient -> while (true) {
+                    runCatching {
+                        client.getBlockTipHeight()?.let { currentBlockHeight ->
+                            logger.debug { "current block height is $currentBlockHeight"}
+                            currentTipFlow.value = currentBlockHeight to BlockHeader(0, BlockHash(ByteVector32.Zeroes), ByteVector32.Zeroes, 0, 0, 0)
+                        }
+                    }
+                    delay(1.minutes)
+                }
             }
 
         }
         launch {
-            when(client) {
+            when (client) {
                 is IElectrumClient -> client.connectionStatus.filter { it is ElectrumConnectionStatus.Connected }.collect {
                     // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
                     // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
                     // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
                     updateEstimateFees()
+                }
+                is MempoolSpaceClient -> while (true) {
+                    updateEstimateFees()
+                    delay(3.minutes)
                 }
             }
         }
@@ -272,20 +289,15 @@ class Peer(
     }
 
     private suspend fun updateEstimateFees() {
-        val sortedFees = listOf(
-            client.estimateFees(2),
-            client.estimateFees(6),
-            client.estimateFees(18),
-            client.estimateFees(144),
-        )
-        logger.info { "on-chain fees: $sortedFees" }
         // TODO: If some feerates are null, we may implement a retry
-        onChainFeeratesFlow.value = OnChainFeerates(
-            fundingFeerate = sortedFees[3] ?: FeeratePerKw(FeeratePerByte(2.sat)),
-            mutualCloseFeerate = sortedFees[2] ?: FeeratePerKw(FeeratePerByte(10.sat)),
-            claimMainFeerate = sortedFees[1] ?: FeeratePerKw(FeeratePerByte(20.sat)),
-            fastFeerate = sortedFees[0] ?: FeeratePerKw(FeeratePerByte(50.sat))
+        val onChainFeerates = OnChainFeerates(
+            fundingFeerate = (client.estimateFees(144) ?: onChainFeeratesFlow.value?.fundingFeerate) ?: FeeratePerKw(FeeratePerByte(2.sat)),
+            mutualCloseFeerate = (client.estimateFees(18) ?: onChainFeeratesFlow.value?.mutualCloseFeerate) ?: FeeratePerKw(FeeratePerByte(10.sat)),
+            claimMainFeerate = (client.estimateFees(6) ?: onChainFeeratesFlow.value?.claimMainFeerate) ?: FeeratePerKw(FeeratePerByte(20.sat)),
+            fastFeerate = (client.estimateFees(2) ?: onChainFeeratesFlow.value?.fastFeerate) ?: FeeratePerKw(FeeratePerByte(50.sat))
         )
+        logger.info { "on-chain fees: $onChainFeerates" }
+        onChainFeeratesFlow.value = onChainFeerates
     }
 
     data class ConnectionJob(val job: Job, val socket: TcpSocket) {
