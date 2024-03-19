@@ -4,12 +4,13 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
+import fr.acinq.lightning.blockchain.IClient
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /** Note to implementers: methods exposed through this interface must *not* throw exceptions. */
-interface IElectrumClient {
+interface IElectrumClient : IClient {
     val notifications: Flow<ElectrumSubscriptionResponse>
     val connectionStatus: StateFlow<ElectrumConnectionStatus>
 
@@ -38,7 +39,7 @@ interface IElectrumClient {
     suspend fun broadcastTransaction(tx: Transaction): TxId
 
     /** Estimate the feerate required for a transaction to be confirmed in the next [confirmations] blocks. */
-    suspend fun estimateFees(confirmations: Int): FeeratePerKw?
+    override suspend fun estimateFees(confirmations: Int): FeeratePerKw?
 
     /******************** Subscriptions ********************/
 
@@ -47,4 +48,6 @@ interface IElectrumClient {
 
     /** Subscribe to headers for new blocks found. */
     suspend fun startHeaderSubscription(): HeaderSubscriptionResponse
+
+    override suspend fun getConfirmations(txId: TxId): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }
 }
