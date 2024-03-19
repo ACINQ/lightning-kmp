@@ -1,6 +1,7 @@
 package fr.acinq.lightning.blockchain.fee
 
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.lightning.blockchain.Feerates
 import fr.acinq.lightning.utils.sat
 
 interface FeeEstimator {
@@ -15,7 +16,14 @@ interface FeeEstimator {
  * @param claimMainFeerate feerate used to claim our main output when a channel is force-closed (typically configured by the user, based on their preference).
  * @param fastFeerate feerate used to claim outputs quickly to avoid loss of funds: this one should not be set by the user (we should look at current on-chain fees).
  */
-data class OnChainFeerates(val fundingFeerate: FeeratePerKw, val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw)
+data class OnChainFeerates(val fundingFeerate: FeeratePerKw, val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw) {
+    constructor(feerates: Feerates) : this(
+        fundingFeerate = FeeratePerKw(feerates.slow),
+        mutualCloseFeerate = FeeratePerKw(feerates.medium),
+        claimMainFeerate = FeeratePerKw(feerates.medium),
+        fastFeerate = FeeratePerKw(feerates.fast),
+    )
+}
 
 data class FeerateTolerance(val ratioLow: Double, val ratioHigh: Double)
 

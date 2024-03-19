@@ -4,7 +4,9 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
+import fr.acinq.lightning.blockchain.Feerates
 import fr.acinq.lightning.blockchain.IClient
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +41,7 @@ interface IElectrumClient : IClient {
     suspend fun broadcastTransaction(tx: Transaction): TxId
 
     /** Estimate the feerate required for a transaction to be confirmed in the next [confirmations] blocks. */
-    override suspend fun estimateFees(confirmations: Int): FeeratePerKw?
+    suspend fun estimateFees(confirmations: Int): FeeratePerKw?
 
     /******************** Subscriptions ********************/
 
@@ -50,4 +52,14 @@ interface IElectrumClient : IClient {
     suspend fun startHeaderSubscription(): HeaderSubscriptionResponse
 
     override suspend fun getConfirmations(txId: TxId): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }
+
+    override suspend fun getFeerates(): Feerates? {
+        return Feerates(
+            minimum = estimateFees(144)?.let { FeeratePerByte(it) } ?: return null,
+            slow = estimateFees(18)?.let { FeeratePerByte(it) } ?: return null,
+            medium = estimateFees(6)?.let { FeeratePerByte(it) } ?: return null,
+            fast = estimateFees(2)?.let { FeeratePerByte(it) } ?: return null,
+            fastest = estimateFees(1)?.let { FeeratePerByte(it) } ?: return null,
+        )
+    }
 }

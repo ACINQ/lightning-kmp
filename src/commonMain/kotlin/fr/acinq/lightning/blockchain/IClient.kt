@@ -2,6 +2,7 @@ package fr.acinq.lightning.blockchain
 
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.TxId
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalFundingStatus
@@ -13,8 +14,16 @@ interface IClient {
     suspend fun getConfirmations(txId: TxId): Int?
 
     /** Estimate the feerate required for a transaction to be confirmed in the next [confirmations] blocks. */
-    suspend fun estimateFees(confirmations: Int): FeeratePerKw?
+    suspend fun getFeerates(): Feerates?
 }
+
+data class Feerates(
+    val minimum: FeeratePerByte,
+    val slow: FeeratePerByte,
+    val medium: FeeratePerByte,
+    val fast: FeeratePerByte,
+    val fastest: FeeratePerByte
+)
 
 /**
  * @weight must be the total estimated weight of the splice tx, otherwise the feerate estimation will be wrong

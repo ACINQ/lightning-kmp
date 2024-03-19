@@ -5,11 +5,9 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.IClient
 import fr.acinq.lightning.blockchain.IWatcher
-import fr.acinq.lightning.blockchain.IClient.*
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.computeSpliceCpfpFeerate
 import fr.acinq.lightning.blockchain.electrum.*
-import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.blockchain.mempool.MempoolSpaceClient
@@ -241,7 +239,7 @@ class Peer(
                 is MempoolSpaceClient -> while (true) {
                     runCatching {
                         client.getBlockTipHeight()?.let { currentBlockHeight ->
-                            logger.debug { "current block height is $currentBlockHeight"}
+                            logger.debug { "current block height is $currentBlockHeight" }
                             currentTipFlow.value = currentBlockHeight to BlockHeader(0, BlockHash(ByteVector32.Zeroes), ByteVector32.Zeroes, 0, 0, 0)
                         }
                     }
@@ -251,15 +249,22 @@ class Peer(
 
         }
         launch {
+            suspend fun updateFeerates() {
+                client.getFeerates()?.let { feerates ->
+                    logger.info { "on-chain fees: $feerates" }
+                    onChainFeeratesFlow.value = OnChainFeerates(feerates)
+                } ?: logger.error { "cannot retrieve feerates!" }
+            }
+
             when (client) {
                 is IElectrumClient -> client.connectionStatus.filter { it is ElectrumConnectionStatus.Connected }.collect {
                     // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
                     // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
                     // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
-                    updateEstimateFees()
+                    updateFeerates()
                 }
                 is MempoolSpaceClient -> while (true) {
-                    updateEstimateFees()
+                    updateFeerates()
                     delay(3.minutes)
                 }
             }
@@ -305,18 +310,6 @@ class Peer(
                 previousState = it
             }
         }
-    }
-
-    private suspend fun updateEstimateFees() {
-        // TODO: If some feerates are null, we may implement a retry
-        val onChainFeerates = OnChainFeerates(
-            fundingFeerate = (client.estimateFees(144) ?: onChainFeeratesFlow.value?.fundingFeerate) ?: FeeratePerKw(FeeratePerByte(2.sat)),
-            mutualCloseFeerate = (client.estimateFees(18) ?: onChainFeeratesFlow.value?.mutualCloseFeerate) ?: FeeratePerKw(FeeratePerByte(10.sat)),
-            claimMainFeerate = (client.estimateFees(6) ?: onChainFeeratesFlow.value?.claimMainFeerate) ?: FeeratePerKw(FeeratePerByte(20.sat)),
-            fastFeerate = (client.estimateFees(2) ?: onChainFeeratesFlow.value?.fastFeerate) ?: FeeratePerKw(FeeratePerByte(50.sat))
-        )
-        logger.info { "on-chain fees: $onChainFeerates" }
-        onChainFeeratesFlow.value = onChainFeerates
     }
 
     data class ConnectionJob(val job: Job, val socket: TcpSocket) {
