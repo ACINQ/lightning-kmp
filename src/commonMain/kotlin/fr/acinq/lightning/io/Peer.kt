@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.IClient
 import fr.acinq.lightning.blockchain.IWatcher
-import fr.acinq.lightning.blockchain.IClient.*
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.computeSpliceCpfpFeerate
 import fr.acinq.lightning.blockchain.electrum.*
@@ -222,7 +221,7 @@ class Peer(
                 is MempoolSpaceClient -> while (true) {
                     runCatching {
                         client.getBlockTipHeight()?.let { currentBlockHeight ->
-                            logger.debug { "current block height is $currentBlockHeight"}
+                            logger.debug { "current block height is $currentBlockHeight" }
                             currentTipFlow.value = currentBlockHeight to BlockHeader(0, BlockHash(ByteVector32.Zeroes), ByteVector32.Zeroes, 0, 0, 0)
                         }
                     }
@@ -237,10 +236,30 @@ class Peer(
                     // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
                     // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
                     // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
-                    updateEstimateFees()
+                    // TODO: If some feerates are null, we may implement a retry
+                    val onChainFeerates = OnChainFeerates(
+                        fundingFeerate = (client.estimateFees(144) ?: onChainFeeratesFlow.value?.fundingFeerate) ?: FeeratePerKw(FeeratePerByte(2.sat)),
+                        mutualCloseFeerate = (client.estimateFees(18) ?: onChainFeeratesFlow.value?.mutualCloseFeerate) ?: FeeratePerKw(FeeratePerByte(10.sat)),
+                        claimMainFeerate = (client.estimateFees(6) ?: onChainFeeratesFlow.value?.claimMainFeerate) ?: FeeratePerKw(FeeratePerByte(20.sat)),
+                        fastFeerate = (client.estimateFees(2) ?: onChainFeeratesFlow.value?.fastFeerate) ?: FeeratePerKw(FeeratePerByte(50.sat))
+                    )
+                    logger.info { "on-chain fees: $onChainFeerates" }
+                    onChainFeeratesFlow.value = onChainFeerates
                 }
                 is MempoolSpaceClient -> while (true) {
-                    updateEstimateFees()
+                    val onChainFeerates = client.getFeerates()?.let { feerates ->
+                        logger.info { "on-chain fees: $feerates" }
+                        OnChainFeerates(
+                            fundingFeerate = FeeratePerKw(feerates.slow),
+                            mutualCloseFeerate = FeeratePerKw(feerates.medium),
+                            claimMainFeerate = FeeratePerKw(feerates.medium),
+                            fastFeerate = FeeratePerKw(feerates.fast),
+                        )
+                    } ?: onChainFeeratesFlow.value
+                    if (onChainFeerates == null) {
+                        logger.error { "cannot retrieve feerates!" }
+                    }
+                    onChainFeeratesFlow.value = onChainFeerates
                     delay(3.minutes)
                 }
             }
@@ -286,18 +305,6 @@ class Peer(
                 previousState = it
             }
         }
-    }
-
-    private suspend fun updateEstimateFees() {
-        // TODO: If some feerates are null, we may implement a retry
-        val onChainFeerates = OnChainFeerates(
-            fundingFeerate = (client.estimateFees(144) ?: onChainFeeratesFlow.value?.fundingFeerate) ?: FeeratePerKw(FeeratePerByte(2.sat)),
-            mutualCloseFeerate = (client.estimateFees(18) ?: onChainFeeratesFlow.value?.mutualCloseFeerate) ?: FeeratePerKw(FeeratePerByte(10.sat)),
-            claimMainFeerate = (client.estimateFees(6) ?: onChainFeeratesFlow.value?.claimMainFeerate) ?: FeeratePerKw(FeeratePerByte(20.sat)),
-            fastFeerate = (client.estimateFees(2) ?: onChainFeeratesFlow.value?.fastFeerate) ?: FeeratePerKw(FeeratePerByte(50.sat))
-        )
-        logger.info { "on-chain fees: $onChainFeerates" }
-        onChainFeeratesFlow.value = onChainFeerates
     }
 
     data class ConnectionJob(val job: Job, val socket: TcpSocket) {

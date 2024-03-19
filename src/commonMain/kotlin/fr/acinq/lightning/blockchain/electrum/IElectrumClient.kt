@@ -39,7 +39,7 @@ interface IElectrumClient : IClient {
     suspend fun broadcastTransaction(tx: Transaction): TxId
 
     /** Estimate the feerate required for a transaction to be confirmed in the next [confirmations] blocks. */
-    override suspend fun estimateFees(confirmations: Int): FeeratePerKw?
+    suspend fun estimateFees(confirmations: Int): FeeratePerKw?
 
     /******************** Subscriptions ********************/
 

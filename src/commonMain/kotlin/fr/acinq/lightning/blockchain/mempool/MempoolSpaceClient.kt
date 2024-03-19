@@ -3,10 +3,12 @@ package fr.acinq.lightning.blockchain.mempool
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.blockchain.IClient
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.logging.debug
 import fr.acinq.lightning.logging.warning
+import fr.acinq.lightning.utils.sat
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
@@ -103,8 +105,18 @@ class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) 
             .getOrNull()
     }
 
-    override suspend fun estimateFees(confirmations: Int): FeeratePerKw? {
-        TODO("Not yet implemented")
+    suspend fun getFeerates(): Feerates? {
+        return kotlin.runCatching {
+            val res: MempoolSpaceRecommendedFeerates = client.get("/api/v1/fees/recommended").body()
+            Feerates(
+                minimum = FeeratePerByte(res.minimumFee.sat),
+                slow = FeeratePerByte(res.economyFee.sat),
+                medium = FeeratePerByte(res.hourFee.sat),
+                fast = FeeratePerByte(res.halfHourFee.sat),
+                fastest = FeeratePerByte(res.fastestFee.sat),
+            )
+        }.onFailure { logger.warning(it) { "error in getOutspend " } }
+            .getOrNull()
     }
 }
 
@@ -119,4 +131,21 @@ data class MempoolSpaceOutspendResponse(
 data class MempoolSpaceTransactionMerkleProofResponse(
     val block_height: Int,
     val pos: Int
+)
+
+@Serializable
+data class MempoolSpaceRecommendedFeerates(
+    val fastestFee: Int,
+    val halfHourFee: Int,
+    val hourFee: Int,
+    val economyFee: Int,
+    val minimumFee: Int
+)
+
+data class Feerates(
+    val minimum: FeeratePerByte,
+    val slow: FeeratePerByte,
+    val medium: FeeratePerByte,
+    val fast: FeeratePerByte,
+    val fastest: FeeratePerByte
 )
