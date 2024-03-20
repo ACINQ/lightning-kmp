@@ -31,7 +31,7 @@ kotlin {
 
     val serializationVersion = "1.6.2"
     val coroutineVersion = "1.7.3"
-    val datetimeVersion = "0.4.0"
+    val datetimeVersion = "0.6.0-RC.2"
     val ktorVersion = "2.3.7"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
     val kermitLoggerVersion = "2.0.2"
