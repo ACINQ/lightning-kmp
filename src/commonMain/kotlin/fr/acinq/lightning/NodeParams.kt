@@ -9,6 +9,7 @@ import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.logging.LoggerFactory
+import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -118,6 +119,8 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
  * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
+ * @param minFinalCltvExpiryDelta cltv-expiry-delta that we require when receiving a payment.
+ * @param bolt12invoiceExpiry duration for which bolt12 invoices that we create are valid.
  */
 data class NodeParams(
     val loggerFactory: LoggerFactory,
@@ -146,7 +149,9 @@ data class NodeParams(
     val maxPaymentAttempts: Int,
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
-    val liquidityPolicy: MutableStateFlow<LiquidityPolicy>
+    val liquidityPolicy: MutableStateFlow<LiquidityPolicy>,
+    val minFinalCltvExpiryDelta: CltvExpiryDelta,
+    val bolt12invoiceExpiry: Duration
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
@@ -219,6 +224,8 @@ data class NodeParams(
         maxPaymentAttempts = 5,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
-        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false))
+        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false)),
+        minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
+        bolt12invoiceExpiry = 60.seconds
     )
 }

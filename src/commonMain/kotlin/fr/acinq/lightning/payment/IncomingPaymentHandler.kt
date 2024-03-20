@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -89,7 +90,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             paymentHash,
             nodeParams.nodePrivateKey,
             description,
-            Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
+            nodeParams.minFinalCltvExpiryDelta,
             nodeParams.features.invoiceFeatures(),
             randomBytes32(),
             // We always include a payment metadata in our invoices, which lets us test whether senders support it
@@ -268,9 +269,13 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                                 }
                             }
 
-                            when (val paymentMetadata = paymentPart.finalPayload.paymentMetadata) {
-                                null -> logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
-                                else -> logger.info { "payment received (${payment.amountReceived}) with payment metadata ($paymentMetadata)" }
+                            when (val finalPayload = paymentPart.finalPayload) {
+                                is PaymentOnion.FinalPayload.Standard ->
+                                    if (finalPayload.paymentMetadata == null)
+                                        logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
+                                    else
+                                        logger.info { "payment received (${payment.amountReceived}) with payment metadata (${finalPayload.paymentMetadata})" }
+                                is PaymentOnion.FinalPayload.Blinded -> logger.info { "payment received (${payment.amountReceived}) with blinded route" }
                             }
                             val htlcParts = payment.parts.filterIsInstance<HtlcPart>()
                             val payToOpenParts = payment.parts.filterIsInstance<PayToOpenPart>()
@@ -298,7 +303,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
                             pending.remove(paymentPart.paymentHash)
                             val received = IncomingPayment.Received(receivedWith = receivedWith)
-                            db.receivePayment(paymentPart.paymentHash, received.receivedWith)
+                            when (incomingPayment.origin) {
+                                is IncomingPayment.Origin.Offer -> db.receiveOfferPayment(incomingPayment.origin, incomingPayment.preimage, received.receivedWith)
+                                else -> db.receivePayment(paymentPart.paymentHash, received.receivedWith)
+                            }
                             nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(paymentPart.paymentHash, received.receivedWith))
                             return ProcessAddResult.Accepted(actions, incomingPayment.copy(received = received), received)
                         }
@@ -310,59 +318,91 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
     private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult.Rejected, IncomingPayment> {
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
-        val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash)
-        return when {
-            incomingPayment == null -> {
-                logger.warning { "payment for which we don't have a preimage" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
+        when (val finalPayload = paymentPart.finalPayload) {
+            is PaymentOnion.FinalPayload.Standard -> {
+                val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash)
+                return when {
+                    incomingPayment == null -> {
+                        logger.warning { "payment for which we don't have a preimage" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
+                    }
+                    // Payments are rejected for expired invoices UNLESS invoice has already been paid
+                    // We must accept payments for already paid invoices, because it could be the channel replaying HTLCs that we already fulfilled
+                    incomingPayment.isExpired() && incomingPayment.received == null -> {
+                        logger.warning { "the invoice is expired" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    incomingPayment.origin !is IncomingPayment.Origin.Invoice -> {
+                        logger.warning { "unsupported payment type: ${incomingPayment.origin::class}" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    incomingPayment.origin.paymentRequest.paymentSecret != finalPayload.paymentSecret -> {
+                        // BOLT 04:
+                        // - if the payment_secret doesn't match the expected value for that payment_hash,
+                        //   or the payment_secret is required and is not present:
+                        //   - MUST fail the HTLC.
+                        //   - MUST return an incorrect_or_unknown_payment_details error.
+                        //
+                        //   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
+                        //
+                        // NB: We always include a paymentSecret, and mark the feature as mandatory.
+                        logger.warning { "payment with invalid paymentSecret (${finalPayload.paymentSecret})" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount < incomingPayment.origin.paymentRequest.amount -> {
+                        // BOLT 04:
+                        // - if the amount paid is less than the amount expected:
+                        //   - MUST fail the HTLC.
+                        //   - MUST return an incorrect_or_unknown_payment_details error.
+                        logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount > incomingPayment.origin.paymentRequest.amount * 2 -> {
+                        // BOLT 04:
+                        // - if the amount paid is more than twice the amount expected:
+                        //   - SHOULD fail the HTLC.
+                        //   - SHOULD return an incorrect_or_unknown_payment_details error.
+                        //
+                        //   Note: this allows the origin node to reduce information leakage by altering
+                        //   the amount while not allowing for accidental gross overpayment.
+                        logger.warning { "invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
+                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    else -> Either.Right(incomingPayment)
+                }
             }
-            // Payments are rejected for expired invoices UNLESS invoice has already been paid
-            // We must accept payments for already paid invoices, because it could be the channel replaying HTLCs that we already fulfilled
-            incomingPayment.isExpired() && incomingPayment.received == null -> {
-                logger.warning { "the invoice is expired" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+            is PaymentOnion.FinalPayload.Blinded -> try {
+                val metadata = OfferPaymentMetadata.read(nodeParams.nodeId, ByteArrayInput(finalPayload.pathId.toByteArray()))
+                val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash) ?: IncomingPayment(metadata.preimage, IncomingPayment.Origin.Offer(metadata), null)
+                return when {
+                    !paymentPart.paymentHash.toByteArray().contentEquals(Crypto.sha256(metadata.preimage)) -> {
+                        logger.warning { "payment for which we don't have a preimage" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    paymentPart.totalAmount < metadata.amount -> {
+                        logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${metadata.amount}" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong()) -> {
+                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())}" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    metadata.createdAtMillis + nodeParams.bolt12invoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
+                        logger.warning { "the invoice is expired" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                    }
+                    else -> {
+                        Either.Right(incomingPayment)
+                    }
+                }
+            } catch (ex: Throwable) {
+                logger.warning { "blinded payment to route that we did not create" }
+                return Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
             }
-            incomingPayment.origin !is IncomingPayment.Origin.Invoice -> {
-                logger.warning { "unsupported payment type: ${incomingPayment.origin::class}" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-            }
-            incomingPayment.origin.paymentRequest.paymentSecret != paymentPart.finalPayload.paymentSecret -> {
-                // BOLT 04:
-                // - if the payment_secret doesn't match the expected value for that payment_hash,
-                //   or the payment_secret is required and is not present:
-                //   - MUST fail the HTLC.
-                //   - MUST return an incorrect_or_unknown_payment_details error.
-                //
-                //   Related: https://github.com/lightningnetwork/lightning-rfc/pull/671
-                //
-                // NB: We always include a paymentSecret, and mark the feature as mandatory.
-                logger.warning { "payment with invalid paymentSecret (${paymentPart.finalPayload.paymentSecret})" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-            }
-            incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount < incomingPayment.origin.paymentRequest.amount -> {
-                // BOLT 04:
-                // - if the amount paid is less than the amount expected:
-                //   - MUST fail the HTLC.
-                //   - MUST return an incorrect_or_unknown_payment_details error.
-                logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-            }
-            incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount > incomingPayment.origin.paymentRequest.amount * 2 -> {
-                // BOLT 04:
-                // - if the amount paid is more than twice the amount expected:
-                //   - SHOULD fail the HTLC.
-                //   - SHOULD return an incorrect_or_unknown_payment_details error.
-                //
-                //   Note: this allows the origin node to reduce information leakage by altering
-                //   the amount while not allowing for accidental gross overpayment.
-                logger.warning { "invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-            }
-            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
-                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
-                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-            }
-            else -> Either.Right(incomingPayment)
         }
     }
 
@@ -434,7 +474,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
          * This is very similar to the processing of a htlc, except that we only have a packet, to decrypt into a final payload.
          */
         private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult.Rejected, PayToOpenPart> {
-            return when (val decrypted = IncomingPaymentPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, privateKey)) {
+            return when (val decrypted = IncomingPaymentPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, privateKey, payToOpenRequest.blinding)) {
                 is Either.Left -> {
                     val failureMsg = decrypted.value
                     val action = actionForPayToOpenFailure(privateKey, failureMsg, payToOpenRequest)

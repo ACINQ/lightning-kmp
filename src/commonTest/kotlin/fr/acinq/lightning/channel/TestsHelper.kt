@@ -404,7 +404,7 @@ object TestsHelper {
             paymentId,
             paymentHash,
             listOf(ChannelHop(dummyKey, destination, dummyUpdate)),
-            PaymentOnion.FinalPayload.createSinglePartPayload(amount, expiry, randomBytes32(), null)
+            PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), null)
         ).first.copy(commit = false)
         return Pair(paymentPreimage, cmd)
     }
