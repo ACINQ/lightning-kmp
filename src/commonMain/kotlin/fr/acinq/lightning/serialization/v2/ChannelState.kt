@@ -76,8 +76,30 @@ object ChannelUpdateSerializer
 @Serializer(forClass = ChannelAnnouncement::class)
 object ChannelAnnouncementSerializer
 
-@Serializer(forClass = UpdateAddHtlc::class)
-object UpdateAddHtlcSerializer
+object UpdateAddHtlcSerializer : KSerializer<UpdateAddHtlc> {
+    @Serializable
+    @SerialName("fr.acinq.lightning.wire.UpdateAddHtlc")
+    private data class Surrogate(
+        val channelId: ByteVector32,
+        val id: Long,
+        val amountMsat: MilliSatoshi,
+        val paymentHash: ByteVector32,
+        val cltvExpiry: CltvExpiry,
+        val onionRoutingPacket: OnionRoutingPacket
+    )
+
+    override val descriptor: SerialDescriptor = Surrogate.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: UpdateAddHtlc) {
+        val surrogate = Surrogate(value.channelId, value.id, value.amountMsat, value.paymentHash, value.cltvExpiry, value.onionRoutingPacket)
+        return encoder.encodeSerializableValue(Surrogate.serializer(), surrogate)
+    }
+
+    override fun deserialize(decoder: Decoder): UpdateAddHtlc {
+        val surrogate = decoder.decodeSerializableValue(Surrogate.serializer())
+        return UpdateAddHtlc(surrogate.channelId, surrogate.id, surrogate.amountMsat, surrogate.paymentHash, surrogate.cltvExpiry, surrogate.onionRoutingPacket, null)
+    }
+}
 
 @Serializer(forClass = UpdateFulfillHtlc::class)
 object UpdateFulfillHtlcSerializer

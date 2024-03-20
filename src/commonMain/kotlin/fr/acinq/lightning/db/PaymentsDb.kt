@@ -5,9 +5,7 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelException
-import fr.acinq.lightning.payment.Bolt11Invoice
-import fr.acinq.lightning.payment.FinalFailure
-import fr.acinq.lightning.payment.PaymentRequest
+import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.LiquidityAds
@@ -57,6 +55,8 @@ interface IncomingPaymentsDb {
      * @param receivedWith Is a set containing the payment parts holding the incoming amount.
      */
     suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
+
+    suspend fun receiveOfferPayment(origin: IncomingPayment.Origin.Offer, preimage: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
@@ -147,8 +147,11 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     override val amount: MilliSatoshi = received?.amount ?: 0.msat
 
     sealed class Origin {
-        /** A normal, invoice-based lightning payment. */
+        /** A normal, Bolt11 invoice-based lightning payment. */
         data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
+
+        /** A payment for an offer. */
+        data class Offer(val metadata: OfferPaymentMetadata) : Origin()
 
         /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
         data object KeySend : Origin()
