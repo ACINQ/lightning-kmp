@@ -41,6 +41,17 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
+    override suspend fun receiveOfferPayment(
+        origin: IncomingPayment.Origin.Offer,
+        preimage: ByteVector32,
+        receivedWith: List<IncomingPayment.ReceivedWith>,
+        receivedAt: Long
+    ) {
+        val paymentHash = Crypto.sha256(preimage).toByteVector32()
+        val incomingPayment = IncomingPayment(preimage, origin, IncomingPayment.Received(receivedWith, receivedAt), origin.metadata.createdAtMillis)
+        incoming[paymentHash] = incomingPayment
+    }
+
     fun listIncomingPayments(count: Int, skip: Int): List<IncomingPayment> =
         incoming.values
             .asSequence()

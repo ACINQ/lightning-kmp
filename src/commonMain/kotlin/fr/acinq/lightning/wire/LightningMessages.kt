@@ -14,6 +14,7 @@ import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
+import kotlinx.serialization.Serializable
 import kotlin.math.max
 import kotlin.math.min
 
@@ -1044,7 +1045,8 @@ data class UpdateAddHtlc(
     val amountMsat: MilliSatoshi,
     val paymentHash: ByteVector32,
     val cltvExpiry: CltvExpiry,
-    val onionRoutingPacket: OnionRoutingPacket
+    val onionRoutingPacket: OnionRoutingPacket,
+    val blinding: PublicKey? = null
 ) : HtlcMessage, UpdateMessage, HasChannelId, ForbiddenMessageDuringSplice {
     override val type: Long get() = UpdateAddHtlc.type
 
@@ -1055,6 +1057,11 @@ data class UpdateAddHtlc(
         LightningCodecs.writeBytes(paymentHash, out)
         LightningCodecs.writeU32(cltvExpiry.toLong().toInt(), out)
         OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).write(onionRoutingPacket, out)
+        blinding?.let {
+            LightningCodecs.writeBigSize(0, out) // Type
+            LightningCodecs.writeBigSize(33, out) // Length
+            LightningCodecs.writeBytes(it.value, out) // Value
+        }
     }
 
     companion object : LightningMessageReader<UpdateAddHtlc> {
@@ -1067,7 +1074,14 @@ data class UpdateAddHtlc(
             val paymentHash = ByteVector32(LightningCodecs.bytes(input, 32))
             val expiry = CltvExpiry(LightningCodecs.u32(input).toLong())
             val onion = OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).read(input)
-            return UpdateAddHtlc(channelId, id, amount, paymentHash, expiry, onion)
+            val blinding = if (input.availableBytes > 0) {
+                require(LightningCodecs.bigSize(input) == 0L)
+                require(LightningCodecs.bigSize(input) == 33L)
+                PublicKey(LightningCodecs.bytes(input, 33))
+            } else {
+                null
+            }
+            return UpdateAddHtlc(channelId, id, amount, paymentHash, expiry, onion, blinding)
         }
     }
 }
@@ -1593,7 +1607,8 @@ data class PayToOpenRequest(
     val payToOpenFeeSatoshis: Satoshi,
     val paymentHash: ByteVector32,
     val expireAt: Long,
-    val finalPacket: OnionRoutingPacket
+    val finalPacket: OnionRoutingPacket,
+    val blinding: PublicKey? = null
 ) : LightningMessage, HasChainHash {
     override val type: Long get() = PayToOpenRequest.type
 
@@ -1607,6 +1622,7 @@ data class PayToOpenRequest(
         LightningCodecs.writeU32(expireAt.toInt(), out)
         LightningCodecs.writeU16(finalPacket.payload.size(), out)
         OnionRoutingPacketSerializer(finalPacket.payload.size()).write(finalPacket, out)
+        blinding?.let { LightningCodecs.writeBytes(it.value, out) }
     }
 
     companion object : LightningMessageReader<PayToOpenRequest> {
@@ -1621,7 +1637,8 @@ data class PayToOpenRequest(
                 payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
                 paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
                 expireAt = LightningCodecs.u32(input).toLong(),
-                finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input)
+                finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input),
+                blinding = if (input.availableBytes > 0) PublicKey(LightningCodecs.bytes(input, 33)) else null
             )
         }
     }
