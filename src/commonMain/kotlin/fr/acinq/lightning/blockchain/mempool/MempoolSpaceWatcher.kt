@@ -14,9 +14,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
-class MempoolSpaceWatcher(val client: MempoolSpaceClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : IWatcher {
+class MempoolSpaceWatcher(val client: MempoolSpaceClient, val scope: CoroutineScope, loggerFactory: LoggerFactory, val pollingInterval: Duration = 10.minutes) : IWatcher {
 
     private val logger = loggerFactory.newLogger(this::class)
     private val mailbox = Channel<Watch>(Channel.BUFFERED)
@@ -34,7 +35,7 @@ class MempoolSpaceWatcher(val client: MempoolSpaceClient, val scope: CoroutineSc
                         val spendingTxs = mutableSetOf<Transaction>()
                         while (true) {
                             when (val spendingTx = client.getOutspend(watch.txId, watch.outputIndex)) {
-                                null -> delay(10.minutes)
+                                null -> delay(pollingInterval)
                                 else -> {
                                     // There may be multiple txs spending the same outpoint, due to RBFs, etc. We notify
                                     // each of them once.
@@ -79,7 +80,7 @@ class MempoolSpaceWatcher(val client: MempoolSpaceClient, val scope: CoroutineSc
                                     }
                                 }
                             }
-                            delay(1.minutes)
+                            delay(pollingInterval)
                         }
                         logger.debug { "terminating watch-confirmed on ${watch.txId}" }
                     }
