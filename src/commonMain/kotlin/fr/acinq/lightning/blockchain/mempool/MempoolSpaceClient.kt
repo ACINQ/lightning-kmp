@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.blockchain.IClient
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.logging.debug
 import fr.acinq.lightning.logging.warning
@@ -21,7 +20,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) : IClient {
+class MempoolSpaceClient(val mempoolUrl: Url, loggerFactory: LoggerFactory) : IClient {
 
     private val logger = loggerFactory.newLogger(this::class)
 
@@ -37,8 +36,7 @@ class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) 
         }
         install(DefaultRequest) {
             url {
-                protocol = URLProtocol.HTTPS
-                host = mempoolHost
+                takeFrom(mempoolUrl)
             }
         }
     }
@@ -55,7 +53,7 @@ class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) 
 
     suspend fun getTransaction(txId: TxId): Transaction? {
         return kotlin.runCatching {
-            val res = client.get("/api/tx/$txId/hex")
+            val res = client.get("api/tx/$txId/hex")
             if (res.status.isSuccess()) {
                 Transaction.read(res.bodyAsText())
             } else null
@@ -65,7 +63,7 @@ class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) 
 
     suspend fun getTransactionMerkleProof(txId: TxId): MempoolSpaceTransactionMerkleProofResponse? {
         return kotlin.runCatching {
-            val res = client.get("/api/tx/$txId/merkle-proof")
+            val res = client.get("api/tx/$txId/merkle-proof")
             if (res.status.isSuccess()) {
                 val txStatus: MempoolSpaceTransactionMerkleProofResponse = res.body()
                 txStatus
@@ -77,7 +75,7 @@ class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) 
     suspend fun getOutspend(txId: TxId, outputIndex: Int): Transaction? {
         return kotlin.runCatching {
             logger.debug { "checking output $txId:$outputIndex" }
-            val res: MempoolSpaceOutspendResponse = client.get("/api/tx/$txId/outspend/$outputIndex").body()
+            val res: MempoolSpaceOutspendResponse = client.get("api/tx/$txId/outspend/$outputIndex").body()
             res.txid?.let { getTransaction(TxId(it)) }
         }.onFailure { logger.warning(it) { "error in getOutspend " } }
             .getOrNull()
@@ -85,7 +83,7 @@ class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) 
 
     suspend fun getBlockTipHeight(): Int? {
         return kotlin.runCatching {
-            val res = client.get("/api/blocks/tip/height")
+            val res = client.get("api/blocks/tip/height")
             if (res.status.isSuccess()) {
                 res.bodyAsText().toInt()
             } else null
@@ -107,7 +105,7 @@ class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) 
 
     suspend fun getFeerates(): Feerates? {
         return kotlin.runCatching {
-            val res: MempoolSpaceRecommendedFeerates = client.get("/api/v1/fees/recommended").body()
+            val res: MempoolSpaceRecommendedFeerates = client.get("api/v1/fees/recommended").body()
             Feerates(
                 minimum = FeeratePerByte(res.minimumFee.sat),
                 slow = FeeratePerByte(res.economyFee.sat),
@@ -117,6 +115,11 @@ class MempoolSpaceClient(val mempoolHost: String, loggerFactory: LoggerFactory) 
             )
         }.onFailure { logger.warning(it) { "error in getOutspend " } }
             .getOrNull()
+    }
+
+    companion object  {
+        val OfficialMempoolMainnet = Url("https://mempool.space")
+        val OfficialMempoolTestnet = Url("https://mempool.space/testnet/")
     }
 }
 
