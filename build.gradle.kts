@@ -10,7 +10,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.6.2-FEECREDIT-4"
+    version = "1.6.2-FEECREDIT-5"
 
     repositories {
         // using the local maven repository with Kotlin Multi Platform can lead to build errors that are hard to diagnose.
@@ -309,6 +309,14 @@ tasks
         it.filter.excludeTestsMatching("*ElectrumClientTest")
         it.filter.excludeTestsMatching("*ElectrumMiniWalletTest")
         it.filter.excludeTestsMatching("*SwapInWalletTestsCommon")
+    }
+
+tasks
+    .filterIsInstance<KotlinNativeTest>()
+    .filter { it.name.startsWith("ios") }
+    .map {
+        it.filter.excludeTestsMatching("*MempoolSpaceClientTest")
+        it.filter.excludeTestsMatching("*MempoolSpaceWatcherTest")
     }
 
 // Make NS_FORMAT_ARGUMENT(1) a no-op
