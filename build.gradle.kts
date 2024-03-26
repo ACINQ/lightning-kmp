@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
+import java.io.ByteArrayOutputStream
 
 plugins {
     kotlin("multiplatform") version "1.9.23"
@@ -265,6 +266,33 @@ afterEvaluate {
             }))
         }
     }
+
+    val deviceName = project.findProperty("iosDevice") as? String ?: "iPhone 14"
+
+    val startIosSimulator by tasks.creating(Exec::class) {
+        isIgnoreExitValue = true
+        errorOutput = ByteArrayOutputStream()
+        commandLine("xcrun", "simctl", "boot", deviceName)
+        doLast {
+            val result = executionResult.get()
+            if (result.exitValue != 148 && result.exitValue != 149) {
+                println(errorOutput.toString())
+                result.assertNormalExitValue()
+            }
+        }
+    }
+
+    val stopIosSimulator by tasks.creating(Exec::class) {
+        commandLine("xcrun", "simctl", "shutdown", "all")
+    }
+
+    tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+        dependsOn(startIosSimulator)
+        device = deviceName
+        standalone.set(false)
+        finalizedBy(stopIosSimulator)
+    }
+
     tasks.withType<org.jetbrains.kotlin.gradle.targets.jvm.tasks.KotlinJvmTest> {
         environment("TEST_RESOURCES_PATH", projectDir.resolve("src/commonTest/resources"))
     }
@@ -303,7 +331,7 @@ tasks.withType<AbstractTestTask> {
 // Those tests use TLS sockets which are not supported on Linux and MacOS
 tasks
     .filterIsInstance<KotlinNativeTest>()
-    .filter { it.name == "macosX64Test" || it.name == "linuxX64Test" }
+    .filter { it.name == "macosX64Test" || it.name == "macosArm64Test" || it.name == "linuxX64Test" }
     .map {
         it.filter.excludeTestsMatching("*IntegrationTest")
         it.filter.excludeTestsMatching("*ElectrumClientTest")
