@@ -286,11 +286,13 @@ afterEvaluate {
         commandLine("xcrun", "simctl", "shutdown", "all")
     }
 
-    tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
-        dependsOn(startIosSimulator)
-        device = deviceName
-        standalone.set(false)
-        finalizedBy(stopIosSimulator)
+    if (project.findProperty("iosSimulatorMode") == "standalone") {
+        tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+            dependsOn(startIosSimulator)
+            device = deviceName
+            standalone.set(false)
+            finalizedBy(stopIosSimulator)
+        }
     }
 
     tasks.withType<org.jetbrains.kotlin.gradle.targets.jvm.tasks.KotlinJvmTest> {
