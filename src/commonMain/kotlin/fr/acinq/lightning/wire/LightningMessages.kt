@@ -79,6 +79,8 @@ interface LightningMessage {
                 OnionMessage.type -> OnionMessage.read(stream)
                 MaybeAddHtlc.type -> MaybeAddHtlc.read(stream)
                 CancelOnTheFlyFunding.type -> CancelOnTheFlyFunding.read(stream)
+                CurrentFeeCredit.type -> CurrentFeeCredit.read(stream)
+                AddFeeCredit.type -> AddFeeCredit.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
@@ -1668,6 +1670,64 @@ data class CancelOnTheFlyFunding(
             channelId = LightningCodecs.bytes(input, 32).toByteVector32(),
             paymentHash = LightningCodecs.bytes(input, 32).toByteVector32(),
             data = LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector()
+        )
+    }
+}
+
+/**
+ * This message contains our current fee credit: our peer is the source of truth for that value.
+ * They will automatically use the fee credit whenever we perform an on-chain operation.
+ */
+data class CurrentFeeCredit(
+    override val chainHash: BlockHash,
+    val amount: MilliSatoshi,
+    val tlvStream: TlvStream<CurrentFeeCreditTlv> = TlvStream.empty()
+) : LightningMessage, HasChainHash {
+    override val type: Long get() = CurrentFeeCredit.type
+
+    val latestPayments: Set<ByteVector32> = tlvStream.get<CurrentFeeCreditTlv.LatestPayments>()?.preimages?.toSet() ?: setOf()
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(chainHash.value, out)
+        LightningCodecs.writeU64(amount.toLong(), out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
+    }
+
+    companion object : LightningMessageReader<CurrentFeeCredit> {
+        const val type: Long = 35031
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            CurrentFeeCreditTlv.LatestPayments.tag to CurrentFeeCreditTlv.LatestPayments.Companion as TlvValueReader<CurrentFeeCreditTlv>,
+        )
+
+        override fun read(input: Input): CurrentFeeCredit = CurrentFeeCredit(
+            chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
+            amount = LightningCodecs.u64(input).msat,
+            tlvStream = TlvStreamSerializer(false, readers).read(input),
+        )
+    }
+}
+
+/**
+ * This message is used to reveal the preimage of a small payment for which it isn't economical to perform an on-chain
+ * transaction. The amount of the payment will be added to our fee credit, which can be used when a future on-chain
+ * transaction is needed. This message requires the [Feature.OnTheFlyFundingFeeCredit] feature.
+ */
+data class AddFeeCredit(override val chainHash: BlockHash, val preimage: ByteVector32) : LightningMessage, HasChainHash {
+    override val type: Long get() = AddFeeCredit.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(chainHash.value, out)
+        LightningCodecs.writeBytes(preimage, out)
+    }
+
+    companion object : LightningMessageReader<AddFeeCredit> {
+        const val type: Long = 35033
+
+        override fun read(input: Input): AddFeeCredit = AddFeeCredit(
+            chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
+            preimage = LightningCodecs.bytes(input, 32).byteVector32(),
         )
     }
 }

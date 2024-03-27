@@ -7,9 +7,6 @@ import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.LiquidityEvents
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
@@ -249,23 +246,25 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             val onTheFlyFundingParts = payment.parts.filterIsInstance<OnTheFlyFundingPart>()
                             val onTheFlyAmount = onTheFlyFundingParts.map { it.amount }.sum()
                             val rejected = when {
-                                onTheFlyFundingParts.isNotEmpty() -> {
-                                    val policy = nodeParams.liquidityPolicy.value
-                                    val fees = when (policy) {
-                                        is LiquidityPolicy.Disable -> 0.msat
-                                        is LiquidityPolicy.Auto -> {
+                                onTheFlyFundingParts.isNotEmpty() -> when (val policy = nodeParams.liquidityPolicy.value) {
+                                    is LiquidityPolicy.Disable -> LiquidityEvents.Rejected(payment.amountReceived, 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.PolicySetToDisabled)
+                                    is LiquidityPolicy.Auto -> {
+                                        val fees = run {
                                             val requestedAmount = policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
                                             val leaseRate = LiquidityAds.chooseLeaseRate(requestedAmount, leaseRates)
                                             leaseRate.fees(currentFeerate, requestedAmount, requestedAmount).total.toMilliSatoshi()
                                         }
-                                    }
-                                    when {
-                                        // We shouldn't initiate an on-the-fly funding if the remaining amount is too low to pay the fees.
-                                        onTheFlyAmount < fees * 2 -> LiquidityEvents.Rejected(payment.amountReceived, fees, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.MissingOffChainAmountTooLow(onTheFlyAmount))
-                                        // We consider the total amount received (not only the on-the-fly funding parts) to evaluate our relative fee policy.
-                                        // A side effect is that if a large payment is only missing a small amount to be complete, we may still create a funding transaction for it.
-                                        // This makes sense, as the user likely wants to receive this large payment, and will obtain inbound liquidity for future payments.
-                                        else -> policy.maybeReject(payment.amountReceived, fees, LiquidityEvents.Source.OffChainPayment, logger)
+                                        when {
+                                            // We never reject if we're using the fee credit feature.
+                                            // We instead add payments to our fee credit until making an on-chain operation becomes acceptable.
+                                            nodeParams.features.hasFeature(Feature.OnTheFlyFundingFeeCredit) -> null
+                                            // We shouldn't initiate an on-the-fly funding if the remaining amount is too low to pay the fees.
+                                            onTheFlyAmount < fees * 2 -> LiquidityEvents.Rejected(payment.amountReceived, fees, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.MissingOffChainAmountTooLow(onTheFlyAmount))
+                                            // We consider the total amount received (not only the on-the-fly funding parts) to evaluate our relative fee policy.
+                                            // A side effect is that if a large payment is only missing a small amount to be complete, we may still create a funding transaction for it.
+                                            // This makes sense, as the user likely wants to receive this large payment, and will obtain inbound liquidity for future payments.
+                                            else -> policy.maybeReject(payment.amountReceived, fees, LiquidityEvents.Source.OffChainPayment, logger)
+                                        }
                                     }
                                 }
                                 else -> null

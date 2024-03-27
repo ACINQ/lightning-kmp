@@ -813,6 +813,28 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `encode - decode fee credit messages`() {
+        val preimage1 = ByteVector32("d4d93abf0ed2d0d4c082a0570883690e61640f04eb8357c6a8e0255a7e69bc80")
+        val preimage2 = ByteVector32("831e7e290b94d56a078df896958f0c67332258eab5c7c2b66661d4088c1f124d")
+        val testCases = listOf(
+            // @formatter:off
+            Pair(AddFeeCredit(Block.TestnetGenesisBlock.hash, preimage1), Hex.decode("88d9 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 d4d93abf0ed2d0d4c082a0570883690e61640f04eb8357c6a8e0255a7e69bc80")),
+            Pair(CurrentFeeCredit(Block.TestnetGenesisBlock.hash, 0.msat), Hex.decode("88d7 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 0000000000000000")),
+            Pair(CurrentFeeCredit(Block.TestnetGenesisBlock.hash, 471.msat), Hex.decode("88d7 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 00000000000001d7")),
+            Pair(CurrentFeeCredit(Block.TestnetGenesisBlock.hash, 1105.msat, TlvStream(CurrentFeeCreditTlv.LatestPayments(listOf(preimage1)))), Hex.decode("88d7 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 0000000000000451 0120d4d93abf0ed2d0d4c082a0570883690e61640f04eb8357c6a8e0255a7e69bc80")),
+            Pair(CurrentFeeCredit(Block.TestnetGenesisBlock.hash, 1729.msat, TlvStream(CurrentFeeCreditTlv.LatestPayments(listOf(preimage1, preimage2)))), Hex.decode("88d7 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 00000000000006c1 0140d4d93abf0ed2d0d4c082a0570883690e61640f04eb8357c6a8e0255a7e69bc80831e7e290b94d56a078df896958f0c67332258eab5c7c2b66661d4088c1f124d")),
+            // @formatter:on
+        )
+        testCases.forEach {
+            val decoded = LightningMessage.decode(it.second)
+            assertNotNull(decoded)
+            assertEquals(it.first, decoded)
+            val encoded = LightningMessage.encode(decoded)
+            assertArrayEquals(it.second, encoded)
+        }
+    }
+
+    @Test
     fun `encode - decode phoenix-android-legacy-info messages`() {
         val testCases = listOf(
             Pair(PhoenixAndroidLegacyInfo(hasChannels = true), Hex.decode("88cfff")),

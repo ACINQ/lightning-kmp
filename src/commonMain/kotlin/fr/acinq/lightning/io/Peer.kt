@@ -180,6 +180,7 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val peerFeeratesFlow = MutableStateFlow<RecommendedFeerates?>(null)
+    val feeCreditFlow = MutableStateFlow<MilliSatoshi>(0.msat)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -673,9 +674,13 @@ class Peer(
         peerConnection?.send(message)
     }
 
-    /** Return true if we are currently funding a channel. */
+    /**
+     * Return true if we are currently funding a channel.
+     * Note that we also return true if we haven't yet received the remote [TxSignatures] for the latest splice transaction.
+     * Since our peer sends [CurrentFeeCredit] before [TxSignatures], this ensures that we never over-estimate our fee credit when initiating a funding flow.
+     */
     private fun channelFundingIsInProgress(): Boolean = when (val channel = _channels.values.firstOrNull { it is Normal }) {
-        is Normal -> channel.spliceStatus != SpliceStatus.None
+        is Normal -> channel.spliceStatus != SpliceStatus.None || channel.commitments.latest.localFundingStatus.signedTx == null
         else -> _channels.values.any { it is WaitForAcceptChannel || it is WaitForFundingCreated || it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady }
     }
 
@@ -930,6 +935,22 @@ class Peer(
                             }
                         }
                     }
+                    is CurrentFeeCredit -> {
+                        feeCreditFlow.value = msg.amount
+                        if (msg.latestPayments.isNotEmpty()) {
+                            // We may have sent add_fee_credit and disconnected before receiving their current_fee_credit.
+                            // If they have received it, they will include the corresponding preimage in current_fee_credit,
+                            // which completes the payment.
+                            db.payments.listPendingOnTheFlyPayments().forEach { (payment, pending) ->
+                                if (msg.latestPayments.contains(payment.preimage)) {
+                                    logger.info { "${pending.amount} successfully added to fee credit for payment_hash=${payment.paymentHash}" }
+                                    val receivedWith = IncomingPayment.ReceivedWith.OnChainIncomingPayment.AddedToFeeCredit(pending.amount)
+                                    db.payments.receivePayment(payment.paymentHash, listOf(receivedWith))
+                                    nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(payment.paymentHash, listOf(receivedWith)))
+                                }
+                            }
+                        }
+                    }
                     is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
                         peerConnection?.send(pong)
@@ -1026,6 +1047,14 @@ class Peer(
                     is HasChannelId -> {
                         if (msg is Error && msg.channelId == ByteVector32.Zeroes) {
                             logger.error { "connection error: ${msg.toAscii()}" }
+                        } else if (msg is CancelOnTheFlyFunding && msg.channelId == ByteVector32.Zeroes) {
+                            db.payments.listPendingOnTheFlyPayments().forEach { (payment, pending) ->
+                                if (msg.paymentHash == payment.paymentHash) {
+                                    logger.warning { "on-the-fly fee credit for payment_hash=${payment.paymentHash} rejected by our peer, payment may be partially received" }
+                                    val receivedWith = IncomingPayment.ReceivedWith.OnChainIncomingPayment.Cancelled(pending.amount)
+                                    db.payments.receivePayment(payment.paymentHash, listOf(receivedWith))
+                                }
+                            }
                         } else {
                             _channels[msg.channelId]?.let { state ->
                                 val event1 = ChannelCommand.MessageReceived(msg)
@@ -1213,6 +1242,7 @@ class Peer(
             is OpenOrSplicePayment -> {
                 val channel = channels.values.firstOrNull { it is Normal }
                 val currentFeerates = peerFeeratesFlow.filterNotNull().first()
+                val currentFeeCredit = feeCreditFlow.first()
                 // We need our peer to contribute, because they must have enough funds to pay the commitment fees.
                 // They will fund more than what we request to also cover the maybe_add_htlc parts that they will push to us.
                 // We only pay fees for the additional liquidity we request, not for the maybe_add_htlc amounts.
@@ -1225,10 +1255,22 @@ class Peer(
                 }
                 val leaseRate = LiquidityAds.chooseLeaseRate(remoteFundingAmount, leaseRates)
                 val requestRemoteFunding = LiquidityAds.RequestRemoteFunding(remoteFundingAmount, currentTipFlow.filterNotNull().first().first, leaseRate)
+                val useFeeCredit = run {
+                    val featureActivated = nodeParams.features.hasFeature(Feature.OnTheFlyFundingFeeCredit)
+                    // We use an arbitrary threshold that is higher than just the current liquidity fees.
+                    // This reduces the frequency of on-chain operations for payments that are about the size of the fees.
+                    val minAmount = leaseRate.fees(currentFeerates.fundingFeerate, remoteFundingAmount, remoteFundingAmount).total * 5
+                    val paymentAmountBelowMin = (cmd.paymentAmount + currentFeeCredit) < minAmount
+                    featureActivated && paymentAmountBelowMin
+                }
                 when {
                     channelFundingIsInProgress() -> {
                         logger.warning { "delaying on-the-fly funding, funding is already in progress" }
                         peerConnection?.delayedCommands?.send(cmd)
+                    }
+                    useFeeCredit -> {
+                        logger.info { "requesting ${cmd.paymentAmount} of additional fee credit for paymentHash=${cmd.paymentHash} (currentFeeCredit=$currentFeeCredit, feerate=${currentFeerates.fundingFeerate})" }
+                        peerConnection?.send(AddFeeCredit(nodeParams.chainHash, cmd.preimage))
                     }
                     channel is Normal -> {
                         // We don't contribute any input or output, but we must pay on-chain fees for the shared input and output.

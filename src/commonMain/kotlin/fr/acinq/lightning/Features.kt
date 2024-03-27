@@ -272,6 +272,14 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
+    /** This feature bit should be activated when a node accepts exchanging payment preimages for a fee credit using the [AddFeeCredit] message. */
+    @Serializable
+    object OnTheFlyFundingFeeCredit : Feature() {
+        override val rfcName: String = "on_the_fly_fee_credit"
+        override val mandatory get() = 160
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
+    }
+
 }
 
 @Serializable
@@ -355,6 +363,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ExperimentalSplice,
             Feature.OnTheFlyFundingClient,
             Feature.OnTheFlyFundingProvider,
+            Feature.OnTheFlyFundingFeeCredit,
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())

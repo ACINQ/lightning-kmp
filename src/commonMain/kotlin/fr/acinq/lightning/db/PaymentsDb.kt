@@ -177,6 +177,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             when (it) {
                 is ReceivedWith.LightningPayment -> it.amount
                 is ReceivedWith.OnChainIncomingPayment.Received -> it.amount
+                is ReceivedWith.OnChainIncomingPayment.AddedToFeeCredit -> it.amount
                 is ReceivedWith.OnChainIncomingPayment.Cancelled -> 0.msat
                 is ReceivedWith.OnChainIncomingPayment.Pending -> 0.msat
             }
@@ -187,6 +188,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             when (it) {
                 is ReceivedWith.LightningPayment -> it.fees
                 is ReceivedWith.OnChainIncomingPayment.Received -> it.fees
+                is ReceivedWith.OnChainIncomingPayment.AddedToFeeCredit -> 0.msat
                 is ReceivedWith.OnChainIncomingPayment.Cancelled -> 0.msat
                 is ReceivedWith.OnChainIncomingPayment.Pending -> 0.msat
             }
@@ -210,6 +212,15 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             /** An on-chain transaction was initiated for this payment, but isn't guaranteed to complete yet. */
             data class Pending(override val amount: MilliSatoshi) : OnChainIncomingPayment() {
                 // We don't know the final fees yet, they depend on the feerate we use for the funding transaction.
+                override val fees: MilliSatoshi = 0.msat
+            }
+
+            /**
+             * Payment was added to our fee credit for future on-chain operations (see [Feature.OnTheFlyFundingFeeCredit]).
+             * We didn't really receive this amount yet, but we trust our peer to include it in a future on-chain operation.
+             */
+            data class AddedToFeeCredit(override val amount: MilliSatoshi) : OnChainIncomingPayment() {
+                // Adding to the fee credit doesn't cost any fees.
                 override val fees: MilliSatoshi = 0.msat
             }
 

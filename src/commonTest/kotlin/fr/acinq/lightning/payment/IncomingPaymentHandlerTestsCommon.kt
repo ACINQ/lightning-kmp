@@ -2,11 +2,9 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.InMemoryPaymentsDb
@@ -273,26 +271,31 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `receive maybe_add_htlc with fee too high`() = runSuspendTest {
+        data class TestCase(val policy: LiquidityPolicy, val paymentAmount: MilliSatoshi, val allowFeeCredit: Boolean, val success: Boolean)
+
         val inboundLiquidityTarget = 100_000.sat
         val expectedFee = 3500.sat
         assertEquals(expectedFee, TestConstants.leaseRate.fees(TestConstants.feeratePerKw, inboundLiquidityTarget, inboundLiquidityTarget).total)
         val defaultPolicy = LiquidityPolicy.Auto(inboundLiquidityTarget, maxAbsoluteFee = 3500.sat, maxRelativeFeeBasisPoints = 10_000, skipAbsoluteFeeCheck = false)
         val testCases = listOf(
             // If payment amount is at least twice the fees, we accept the payment.
-            Triple(defaultPolicy, 7_000_000.msat, true),
+            TestCase(defaultPolicy, 7_000_000.msat, allowFeeCredit = false, success = true),
             // If fee is above our liquidity policy maximum fee, we reject the payment.
-            Triple(defaultPolicy.copy(maxAbsoluteFee = 3499.sat), 7_000_000.msat, false),
-            // If we disabled automatic liquidity management, we reject the payment.
-            Triple(LiquidityPolicy.Disable, 7_000_000.msat, false),
+            TestCase(defaultPolicy.copy(maxAbsoluteFee = 3499.sat), 7_000_000.msat, allowFeeCredit = false, success = false),
+            // If fee is above our liquidity policy maximum fee, but we can use fee credit, we accept the payment.
+            TestCase(defaultPolicy.copy(maxAbsoluteFee = 3499.sat), 7_000_000.msat, allowFeeCredit = true, success = true),
+            // If we disabled automatic liquidity management, we reject the payment, even with fee credit.
+            TestCase(LiquidityPolicy.Disable, 7_000_000.msat, allowFeeCredit = false, success = false),
+            TestCase(LiquidityPolicy.Disable, 7_000_000.msat, allowFeeCredit = true, success = false),
             // If payment is too close to the fee, we reject the payment.
-            Triple(defaultPolicy, 6_999_999.msat, false),
+            TestCase(defaultPolicy, 6_999_999.msat, allowFeeCredit = false, success = false),
         )
-        testCases.forEach { (policy, paymentAmount, success) ->
-            val (paymentHandler, incomingPayment, paymentSecret) = createFixture(paymentAmount)
-            paymentHandler.nodeParams.liquidityPolicy.emit(policy)
-            val add = makeMaybeAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(paymentAmount, paymentAmount, paymentSecret))
+        testCases.forEach {
+            val (paymentHandler, incomingPayment, paymentSecret) = createFixture(it.paymentAmount, it.allowFeeCredit)
+            paymentHandler.nodeParams.liquidityPolicy.emit(it.policy)
+            val add = makeMaybeAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(it.paymentAmount, it.paymentAmount, paymentSecret))
             val result = paymentHandler.process(add, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw)
-            if (success) {
+            if (it.success) {
                 assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
             } else {
                 assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
@@ -1149,8 +1152,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(incomingPayment.received?.receivedWith, dbPayment.received?.receivedWith)
         }
 
-        private suspend fun createFixture(invoiceAmount: MilliSatoshi?): Triple<IncomingPaymentHandler, IncomingPayment, ByteVector32> {
-            val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb(), TestConstants.leaseRates)
+        private suspend fun createFixture(invoiceAmount: MilliSatoshi?, allowFeeCredit: Boolean = false): Triple<IncomingPaymentHandler, IncomingPayment, ByteVector32> {
+            val nodeParams = when {
+                allowFeeCredit -> TestConstants.Bob.nodeParams.copy(features = TestConstants.Bob.nodeParams.features.add(Feature.OnTheFlyFundingFeeCredit to FeatureSupport.Optional))
+                else -> TestConstants.Bob.nodeParams
+            }
+            val paymentHandler = IncomingPaymentHandler(nodeParams, InMemoryPaymentsDb(), TestConstants.leaseRates)
             // We use a liquidity policy that accepts payment values used by default in this test file.
             paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 500, skipAbsoluteFeeCheck = false))
             val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, invoiceAmount)
