@@ -20,7 +20,7 @@ import fr.acinq.lightning.utils.sat
 object LiquidityAds {
 
     /**
-     * @param miningFee fee paid to miners for the underlying on-chain transaction.
+     * @param miningFee we refund the liquidity provider for some of the fee they paid to miners for the underlying on-chain transaction.
      * @param serviceFee fee paid to the liquidity provider for the inbound liquidity.
      */
     data class LeaseFees(val miningFee: Satoshi, val serviceFee: Satoshi) {
@@ -51,10 +51,14 @@ object LiquidityAds {
             return LeaseFees(onChainFees, leaseFeeBase + proportionalFee)
         }
 
-        fun signLease(nodeKey: PrivateKey, fundingScript: ByteVector, requestFunds: ChannelTlv.RequestFunds): ChannelTlv.WillFund {
+        fun signLease(nodeKey: PrivateKey, fundingAmount: Satoshi, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, requestFunds: ChannelTlv.RequestFunds): WillFundLease {
+            require(fundingAmount >= requestFunds.amount) { "funding amount is smaller than requested by our peer ($fundingAmount < ${requestFunds.amount})" }
             val witness = LeaseWitness(fundingScript, requestFunds.leaseDuration, requestFunds.leaseExpiry, maxRelayFeeProportional, maxRelayFeeBase)
             val sig = witness.sign(nodeKey)
-            return ChannelTlv.WillFund(sig, fundingWeight, leaseFeeProportional, leaseFeeBase, maxRelayFeeProportional, maxRelayFeeBase)
+            val leaseFees = fees(fundingFeerate, requestFunds.amount, fundingAmount)
+            val lease = Lease(requestFunds.amount, leaseFees, sig, witness)
+            val willFund = ChannelTlv.WillFund(sig, fundingWeight, leaseFeeProportional, leaseFeeBase, maxRelayFeeProportional, maxRelayFeeBase)
+            return WillFundLease(willFund, lease)
         }
 
         fun write(out: Output) {
@@ -75,6 +79,22 @@ object LiquidityAds {
                 maxRelayFeeProportional = LightningCodecs.u16(input),
                 maxRelayFeeBase = LightningCodecs.u32(input).msat,
             )
+        }
+    }
+
+    /**
+     * We may want to use different lease rates based on the amount that is purchased.
+     * There is an ongoing discussion to directly include this information in the advertised lease rate: https://github.com/lightning/bolts/pull/1145#discussion_r1526005244
+     */
+    data class BoundedLeaseRate(val minAmount: Satoshi, val maxAmount: Satoshi, val leaseRate: LeaseRate)
+
+    fun chooseLeaseRate(fundingAmount: Satoshi, rates: List<BoundedLeaseRate>): LeaseRate {
+        val sortedRates = rates.sortedBy { it.minAmount }
+        val matchingRate = sortedRates.firstOrNull { it.minAmount <= fundingAmount && fundingAmount <= it.maxAmount }
+        return when {
+            matchingRate != null -> matchingRate.leaseRate
+            fundingAmount <= sortedRates.first().minAmount -> sortedRates.first().leaseRate
+            else -> sortedRates.last().leaseRate
         }
     }
 
@@ -136,6 +156,8 @@ object LiquidityAds {
         val start: Int = witness.leaseEnd - witness.leaseDuration
         val expiry: Int = witness.leaseEnd
     }
+
+    data class WillFundLease(val willFund: ChannelTlv.WillFund, val lease: Lease)
 
     /** The seller signs the lease parameters: if they cheat, the buyer can use that signature to prove they cheated. */
     data class LeaseWitness(val fundingScript: ByteVector, val leaseDuration: Int, val leaseEnd: Int, val maxRelayFeeProportional: Int, val maxRelayFeeBase: MilliSatoshi) {

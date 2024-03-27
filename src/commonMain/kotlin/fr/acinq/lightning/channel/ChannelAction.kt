@@ -1,9 +1,9 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeEvents
 import fr.acinq.lightning.blockchain.Watch
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.db.ChannelClosingType
@@ -78,8 +78,14 @@ sealed class ChannelAction {
             abstract val origin: Origin?
             abstract val txId: TxId
             abstract val localInputs: Set<OutPoint>
+            /** @param amount amount received after deducing service and mining fees. */
             data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
-            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
+            /** @param amount amount received after deducing service and mining fees. */
+            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
+            data class Cancelled(override val origin: Origin.OffChainPayment) : StoreIncomingPayment() {
+                override val localInputs: Set<OutPoint> = setOf()
+                override val txId: TxId = TxId(ByteVector32.Zeroes)
+            }
         }
         /** Payment sent through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {
@@ -128,8 +134,8 @@ sealed class ChannelAction {
         }
     }
 
-    data class EmitEvent(val event: ChannelEvents) : ChannelAction()
+    data class EmitEvent(val event: NodeEvents) : ChannelAction()
 
-    object Disconnect : ChannelAction()
+    data object Disconnect : ChannelAction()
     // @formatter:on
 }

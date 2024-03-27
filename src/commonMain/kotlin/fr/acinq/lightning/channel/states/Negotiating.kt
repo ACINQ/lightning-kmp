@@ -23,7 +23,7 @@ data class Negotiating(
 ) : ChannelStateWithCommitments() {
     init {
         require(closingTxProposed.isNotEmpty()) { "there must always be a list for the current negotiation" }
-        require(!commitments.params.localParams.isInitiator || !closingTxProposed.any { it.isEmpty() }) { "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing" }
+        require(!payClosingFees || !closingTxProposed.any { it.isEmpty() }) { "the node paying the closing fees must have at least one closing signature for every negotiation attempt because it initiates the closing" }
     }
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -62,8 +62,8 @@ data class Negotiating(
                                     val theirFeeRange = cmd.message.tlvStream.get<ClosingSignedTlv.FeeRange>()
                                     val ourFeeRange = closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
                                     when {
-                                        theirFeeRange != null && !commitments.params.localParams.isInitiator -> {
-                                            // if we are not the initiator and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
+                                        theirFeeRange != null && !payClosingFees -> {
+                                            // if we are not paying the on-chain fees and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
                                             // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
                                             val closingFees = Helpers.Closing.firstClosingFee(commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, ourFeeRange)
                                             val closingFee = when {

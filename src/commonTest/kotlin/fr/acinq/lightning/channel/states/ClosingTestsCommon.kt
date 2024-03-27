@@ -269,6 +269,21 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv BITCOIN_TX_CONFIRMED -- local commit -- non-initiator pays commit fees`() {
+        val (alice0, bob0) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
+        assertFalse(alice0.commitments.params.localParams.payCommitTxFees)
+        assertTrue(bob0.commitments.params.localParams.payCommitTxFees)
+        val (alice1, localCommitPublished) = localClose(alice0)
+        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 7, localCommitPublished.commitTx)))
+        val claimMain = localCommitPublished.claimMainDelayedOutputTx!!.tx
+        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(claimMain), 43, 3, claimMain)))
+        assertIs<Closed>(alice3.state)
+        assertEquals(2, actions3.size)
+        actions3.has<ChannelAction.Storage.StoreState>()
+        actions3.find<ChannelAction.Storage.SetLocked>().also { assertEquals(localCommitPublished.commitTx.txid, it.txId) }
+    }
+
+    @Test
     fun `recv BITCOIN_TX_CONFIRMED -- local commit with multiple htlcs for the same payment`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
@@ -605,6 +620,22 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(htlcs[0], htlcFail.htlc)
         assertTrue(htlcFail.result is ChannelAction.HtlcResult.Fail.OnChainFail)
         assertEquals(3, actions.size)
+    }
+
+    @Test
+    fun `recv BITCOIN_TX_CONFIRMED -- remote commit -- non-initiator pays commit fees`() {
+        val (alice0, bob0) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
+        assertFalse(alice0.commitments.params.localParams.payCommitTxFees)
+        assertTrue(bob0.commitments.params.localParams.payCommitTxFees)
+        val remoteCommitTx = bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx
+        val (alice1, remoteCommitPublished) = remoteClose(remoteCommitTx, alice0)
+        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitTx), 42, 7, remoteCommitTx)))
+        val claimMain = remoteCommitPublished.claimMainOutputTx!!.tx
+        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(claimMain), 43, 3, claimMain)))
+        assertIs<Closed>(alice3.state)
+        assertEquals(2, actions3.size)
+        actions3.has<ChannelAction.Storage.StoreState>()
+        actions3.find<ChannelAction.Storage.SetLocked>().also { assertEquals(remoteCommitTx.txid, it.txId) }
     }
 
     @Test

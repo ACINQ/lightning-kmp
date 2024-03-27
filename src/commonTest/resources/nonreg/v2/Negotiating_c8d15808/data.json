@@ -21,7 +21,8 @@
                 "htlcMinimum": 0,
                 "toSelfDelay": 144,
                 "maxAcceptedHtlcs": 100,
-                "isInitiator": true,
+                "isChannelOpener": true,
+                "payCommitTxFees": true,
                 "defaultFinalScriptPubKey": "001405e0104aa726e34ff5cd3a6320d05c0862b5b01c",
                 "features": {
                     "activated": {
@@ -82,7 +83,10 @@
                     ]
                 }
             },
-            "channelFlags": 0
+            "channelFlags": {
+                "announceChannel": false,
+                "nonInitiatorPaysCommitFees": false
+            }
         },
         "changes": {
             "localChanges": {

@@ -19,14 +19,17 @@ import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.states.Closing
 import fr.acinq.lightning.crypto.ShaChain
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggingContext
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.lightning.wire.UpdateAddHtlc
@@ -482,9 +485,9 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     }
 
     companion object {
-        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isInitiator: Boolean = true, announceChannel: Boolean = true): Commitments {
+        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isInitiator: Boolean = true): Commitments {
             val localParams = LocalParams(
-                randomKey().publicKey(), KeyPath("42"), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, Features.empty
+                randomKey().publicKey(), KeyPath("42"), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator, isInitiator, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
                 randomKey().publicKey(), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50,
@@ -503,7 +506,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
                     localParams = localParams,
                     remoteParams = remoteParams,
-                    channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
+                    channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
                 ),
                 CommitmentChanges(
                     LocalChanges(listOf(), listOf(), listOf()),
@@ -529,9 +532,9 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             )
         }
 
-        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments {
+        fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey): Commitments {
             val localParams = LocalParams(
-                localNodeId, KeyPath("42"), 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, Features.empty
+                localNodeId, KeyPath("42"), 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isChannelOpener = true, payCommitTxFees = true, ByteVector.empty, Features.empty
             )
             val remoteParams = RemoteParams(
                 remoteNodeId, 0.sat, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), Features.empty
@@ -548,7 +551,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
                     localParams = localParams,
                     remoteParams = remoteParams,
-                    channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
+                    channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
                 ),
                 CommitmentChanges(
                     LocalChanges(listOf(), listOf(), listOf()),

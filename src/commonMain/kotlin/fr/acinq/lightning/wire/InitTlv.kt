@@ -3,6 +3,7 @@ package fr.acinq.lightning.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.byteVector32
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 
@@ -65,6 +66,27 @@ sealed class InitTlv : Tlv {
                 val legacyNodeId = PublicKey(LightningCodecs.bytes(input, 33))
                 val signature = ByteVector64(LightningCodecs.bytes(input, 64))
                 return PhoenixAndroidLegacyNodeId(legacyNodeId, signature)
+            }
+        }
+    }
+}
+
+sealed class CurrentFeeCreditTlv : Tlv {
+    /** Latest payments that were used as fee credit. */
+    data class LatestPayments(val preimages: List<ByteVector32>) : CurrentFeeCreditTlv() {
+        override val tag: Long get() = LatestPayments.tag
+
+        override fun write(out: Output) {
+            preimages.forEach { LightningCodecs.writeBytes(it, out) }
+        }
+
+        companion object : TlvValueReader<LatestPayments> {
+            const val tag: Long = 1
+
+            override fun read(input: Input): LatestPayments {
+                val count = input.availableBytes / 32
+                val preimages = (0 until count).map { LightningCodecs.bytes(input, 32).byteVector32() }
+                return LatestPayments(preimages)
             }
         }
     }

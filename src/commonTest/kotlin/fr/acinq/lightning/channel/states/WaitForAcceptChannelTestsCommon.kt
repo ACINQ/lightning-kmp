@@ -30,6 +30,17 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv AcceptChannel -- liquidity ads`() {
+        val (alice, _, accept) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept))
+        assertIs<LNChannel<WaitForFundingCreated>>(alice1)
+        val lease = alice1.state.liquidityLease
+        assertNotNull(lease)
+        assertTrue(lease.fees.total > 0.sat)
+        actions1.hasOutgoingMessage<TxAddInput>()
+    }
+
+    @Test
     fun `recv AcceptChannel -- without non-initiator contribution`() {
         val (alice, _, accept) = init(bobFundingAmount = 0.sat)
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept))
@@ -79,6 +90,36 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidFundingAmount(accept.temporaryChannelId, (-1).sat).message))
         assertIs<LNChannel<Aborted>>(alice1)
+    }
+
+    @Test
+    fun `recv AcceptChannel -- missing liquidity ads`() {
+        val (alice, _, accept) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
+        val accept1 = accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot { it is ChannelTlv.WillFund }.toSet()))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept1))
+        assertIs<LNChannel<Aborted>>(alice1)
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(error, Error(accept.temporaryChannelId, MissingLiquidityAds(accept.temporaryChannelId).message))
+    }
+
+    @Test
+    fun `recv AcceptChannel -- invalid liquidity ads amount`() {
+        val (alice, _, accept) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(fundingAmount = TestConstants.bobFundingAmount - 100.sat)))
+        assertIs<LNChannel<Aborted>>(alice1)
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(error, Error(accept.temporaryChannelId, InvalidLiquidityAdsAmount(accept.temporaryChannelId, TestConstants.bobFundingAmount - 100.sat, TestConstants.bobFundingAmount).message))
+    }
+
+    @Test
+    fun `recv AcceptChannel -- invalid liquidity ads rates`() {
+        val (alice, _, accept) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
+        val willFund = accept.willFund!!.copy(leaseFeeBase = 500.sat)
+        val accept1 = accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot { it is ChannelTlv.WillFund }.toSet() + willFund))
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept1))
+        assertIs<LNChannel<Aborted>>(alice1)
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(error, Error(accept.temporaryChannelId, InvalidLiquidityRates(accept.temporaryChannelId).message))
     }
 
     @Test
@@ -154,19 +195,24 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
+            requestRemoteFunding: Satoshi? = null,
             zeroConf: Boolean = false,
         ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForFundingCreated>, AcceptDualFundedChannel> {
-            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
+            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, requestRemoteFunding, zeroConf)
             assertEquals(open.fundingAmount, aliceFundingAmount)
             assertEquals(open.pushAmount, alicePushAmount)
-            assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
+            assertEquals(open.channelType, channelType)
+            requestRemoteFunding?.let {
+                assertTrue(open.channelFlags.nonInitiatorPaysCommitFees)
+                assertNotNull(open.requestFunds)
+            }
             val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
             assertIs<LNChannel<WaitForFundingCreated>>(bob1)
             val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
             assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
             assertEquals(accept.fundingAmount, bobFundingAmount)
             assertEquals(accept.pushAmount, bobPushAmount)
-            assertEquals(accept.tlvStream.get(), ChannelTlv.ChannelTypeTlv(channelType))
+            assertEquals(accept.channelType, channelType)
             when (zeroConf) {
                 true -> assertEquals(0, accept.minimumDepth)
                 false -> assertEquals(3, accept.minimumDepth)

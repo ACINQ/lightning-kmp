@@ -21,7 +21,8 @@ data object WaitForInit : ChannelState() {
                     cmd.walletInputs,
                     cmd.localParams,
                     cmd.channelConfig,
-                    cmd.remoteInit
+                    cmd.remoteInit,
+                    cmd.leaseRate,
                 )
                 Pair(nextState, listOf())
             }
@@ -50,12 +51,16 @@ data object WaitForInit : ChannelState() {
                     tlvStream = TlvStream(
                         buildSet {
                             add(ChannelTlv.ChannelTypeTlv(cmd.channelType))
+                            cmd.requestRemoteFunding?.let { add(it.requestFunds) }
                             if (cmd.pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(cmd.pushAmount))
-                            if (cmd.channelOrigin != null) add(ChannelTlv.OriginTlv(cmd.channelOrigin))
+                            when (cmd.channelOrigin) {
+                                is Origin.OffChainPayment -> add(ChannelTlv.OnTheFlyFundingPreimage(cmd.channelOrigin.paymentPreimage))
+                                else -> {}
+                            }
                         }
                     )
                 )
-                val nextState = WaitForAcceptChannel(cmd, open)
+                val nextState = WaitForAcceptChannel(cmd, open, cmd.channelOrigin)
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
             is ChannelCommand.Init.Restore -> {

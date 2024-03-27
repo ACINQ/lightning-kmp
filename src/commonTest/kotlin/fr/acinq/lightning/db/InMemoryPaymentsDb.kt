@@ -30,13 +30,25 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = run {
-                payment.copy(
-                    received = IncomingPayment.Received(
-                        receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
-                        receivedAt = receivedAt
-                    )
-                )
+            else -> {
+                val currentReceivedWith = payment.received?.receivedWith ?: emptySet()
+                val nextReceivedWith = when {
+                    // When receiving an on-chain part, we must remove the corresponding "pending" placeholder.
+                    receivedWith.any { it is IncomingPayment.ReceivedWith.OnChainIncomingPayment } -> currentReceivedWith.filter { it !is IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending } + receivedWith
+                    else -> currentReceivedWith + receivedWith
+                }
+                incoming[paymentHash] = payment.copy(received = IncomingPayment.Received(nextReceivedWith, receivedAt))
+            }
+        }
+    }
+
+    override suspend fun listPendingOnTheFlyPayments(): List<Pair<IncomingPayment, IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending>> {
+        return buildList {
+            incoming.values.forEach { payment ->
+                when (val pending = payment.received?.receivedWith?.firstOrNull { it is IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending }) {
+                    is IncomingPayment.ReceivedWith.OnChainIncomingPayment.Pending -> add(Pair(payment, pending))
+                    else -> {}
+                }
             }
         }
     }

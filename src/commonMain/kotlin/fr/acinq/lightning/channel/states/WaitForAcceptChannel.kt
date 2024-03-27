@@ -6,9 +6,7 @@ import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.wire.AcceptDualFundedChannel
-import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.OpenDualFundedChannel
+import fr.acinq.lightning.wire.*
 
 /*
  * We initiated a channel open and are waiting for our peer to accept it.
@@ -21,7 +19,8 @@ import fr.acinq.lightning.wire.OpenDualFundedChannel
  */
 data class WaitForAcceptChannel(
     val init: ChannelCommand.Init.Initiator,
-    val lastSent: OpenDualFundedChannel
+    val lastSent: OpenDualFundedChannel,
+    val channelOrigin: Origin?,
 ) : ChannelState() {
     val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
 
@@ -52,40 +51,66 @@ data class WaitForAcceptChannel(
                             val remoteFundingPubkey = accept.fundingPubkey
                             val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
                             val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, remoteFundingPubkey, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
-                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs)) {
-                                is Either.Left -> {
-                                    logger.error { "could not fund channel: ${fundingContributions.value}" }
-                                    Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                            when (val liquidityLease = LiquidityAds.validateLease(
+                                init.requestRemoteFunding,
+                                staticParams.remoteNodeId,
+                                channelId,
+                                fundingParams.fundingPubkeyScript(channelKeys),
+                                accept.fundingAmount,
+                                lastSent.fundingFeerate,
+                                accept.willFund
+                            )) {
+                                is Either.Left<ChannelException> -> {
+                                    logger.error { "rejecting liquidity proposal: ${liquidityLease.value.message}" }
+                                    Pair(Aborted, listOf(ChannelAction.Message.Send(Error(cmd.message.temporaryChannelId, liquidityLease.value.message))))
                                 }
-                                is Either.Right -> {
-                                    // The channel initiator always sends the first interactive-tx message.
-                                    val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(staticParams.remoteNodeId,  channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, emptySet(), fundingContributions.value).send()
-                                    when (interactiveTxAction) {
-                                        is InteractiveTxSessionAction.SendMessage -> {
-                                            val nextState = WaitForFundingCreated(
-                                                init.localParams,
-                                                remoteParams,
-                                                interactiveTxSession,
-                                                lastSent.pushAmount,
-                                                accept.pushAmount,
-                                                lastSent.commitmentFeerate,
-                                                accept.firstPerCommitmentPoint,
-                                                accept.secondPerCommitmentPoint,
-                                                lastSent.channelFlags,
-                                                init.channelConfig,
-                                                channelFeatures,
-                                                null
-                                            )
-                                            val actions = listOf(
-                                                ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
-                                                ChannelAction.Message.Send(interactiveTxAction.msg),
-                                                ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
-                                            )
-                                            Pair(nextState, actions)
-                                        }
-                                        else -> {
-                                            logger.error { "could not start interactive-tx session: $interactiveTxAction" }
+                                is Either.Right<LiquidityAds.Lease?> -> {
+                                    when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs)) {
+                                        is Either.Left -> {
+                                            logger.error { "could not fund channel: ${fundingContributions.value}" }
                                             Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                                        }
+                                        is Either.Right -> {
+                                            // The channel initiator always sends the first interactive-tx message.
+                                            val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
+                                                staticParams.remoteNodeId,
+                                                channelKeys,
+                                                keyManager.swapInOnChainWallet,
+                                                fundingParams,
+                                                0.msat,
+                                                0.msat,
+                                                emptySet(),
+                                                fundingContributions.value
+                                            ).send()
+                                            when (interactiveTxAction) {
+                                                is InteractiveTxSessionAction.SendMessage -> {
+                                                    val nextState = WaitForFundingCreated(
+                                                        init.localParams,
+                                                        remoteParams,
+                                                        interactiveTxSession,
+                                                        lastSent.pushAmount,
+                                                        accept.pushAmount,
+                                                        lastSent.commitmentFeerate,
+                                                        accept.firstPerCommitmentPoint,
+                                                        accept.secondPerCommitmentPoint,
+                                                        lastSent.channelFlags,
+                                                        init.channelConfig,
+                                                        channelFeatures,
+                                                        liquidityLease.value,
+                                                        channelOrigin
+                                                    )
+                                                    val actions = listOf(
+                                                        ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
+                                                        ChannelAction.Message.Send(interactiveTxAction.msg),
+                                                        ChannelAction.EmitEvent(ChannelEvents.Creating(nextState))
+                                                    )
+                                                    Pair(nextState, actions)
+                                                }
+                                                else -> {
+                                                    logger.error { "could not start interactive-tx session: $interactiveTxAction" }
+                                                    Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -96,6 +121,15 @@ data class WaitForAcceptChannel(
                             return Pair(Aborted, listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId(keyManager), res.value.message))))
                         }
                     }
+                }
+                is CancelOnTheFlyFunding -> {
+                    // Our peer won't accept this on-the-fly funding attempt: they didn't receive the preimage in time and failed the corresponding HTLCs.
+                    // We should stop retrying and sending open_channel, they will keep rejecting it anyway.
+                    val actions = when (channelOrigin) {
+                        is Origin.OffChainPayment -> listOf(ChannelAction.Storage.StoreIncomingPayment.Cancelled(channelOrigin))
+                        else -> listOf()
+                    }
+                    Pair(Aborted, actions)
                 }
                 is Error -> handleRemoteError(cmd.message)
                 else -> unhandled(cmd)

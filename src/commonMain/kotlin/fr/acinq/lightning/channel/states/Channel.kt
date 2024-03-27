@@ -333,7 +333,9 @@ sealed class PersistedChannelState : ChannelState() {
 sealed class ChannelStateWithCommitments : PersistedChannelState() {
     abstract val commitments: Commitments
     override val channelId: ByteVector32 get() = commitments.channelId
-    val isInitiator: Boolean get() = commitments.params.localParams.isInitiator
+    val isChannelOpener: Boolean get() = commitments.params.localParams.isChannelOpener
+    val payCommitTxFees: Boolean get() = commitments.params.localParams.payCommitTxFees
+    val payClosingFees: Boolean get() = commitments.params.localParams.payClosingFees
     val remoteNodeId: PublicKey get() = commitments.remoteNodeId
 
     fun ChannelContext.channelKeys(): KeyManager.ChannelKeys = commitments.params.localParams.channelKeys(keyManager)

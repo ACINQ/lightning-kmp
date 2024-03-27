@@ -1,6 +1,9 @@
 package fr.acinq.lightning.tests
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Chain
+import fr.acinq.bitcoin.MnemonicCode
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
@@ -11,6 +14,7 @@ import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
+import fr.acinq.lightning.wire.LiquidityAds
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import fr.acinq.secp256k1.Hex
 
@@ -36,6 +40,17 @@ object TestConstants {
         TrampolineFees(5.sat, 1000, CltvExpiryDelta(576)),
         TrampolineFees(5.sat, 1200, CltvExpiryDelta(576))
     )
+
+    val leaseRate = LiquidityAds.LeaseRate(
+        leaseDuration = 0,
+        fundingWeight = 500,
+        leaseFeeProportional = 100, // 1%
+        leaseFeeBase = 0.sat,
+        maxRelayFeeProportional = 50, // 0.5%
+        maxRelayFeeBase = 1_000.msat,
+    )
+
+    val leaseRates = listOf(LiquidityAds.BoundedLeaseRate(0.sat, 100_000_000.sat, leaseRate))
 
     const val aliceSwapInServerXpub = "tpubDCvYeHUZisCMVTSfWDa1yevTf89NeF6TWxXUQwqkcmFrNvNdNvZQh1j4m4uTA4QcmPEwcrKVF8bJih1v16zDZacRr4j9MCAFQoSydKKy66q"
     const val bobSwapInServerXpub = "tpubDDt5vQap1awkyDXx1z1cP7QFKSZHDCCpbU8nSq9jy7X2grTjUVZDePexf6gc6AHtRRzkgfPW87K6EKUVV6t3Hu2hg7YkHkmMeLSfrP85x41"
@@ -65,7 +80,6 @@ object TestConstants {
                 Feature.PaymentMetadata to FeatureSupport.Optional,
                 Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
                 Feature.WakeUpNotificationProvider to FeatureSupport.Optional,
-                Feature.PayToOpenProvider to FeatureSupport.Optional,
                 Feature.ChannelBackupProvider to FeatureSupport.Optional,
             ),
             dustLimit = 1_100.sat,
@@ -85,7 +99,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = true)
+        fun channelParams(payCommitTxFees: Boolean): LocalParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = payCommitTxFees)
     }
 
     object Bob {
@@ -116,7 +130,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = false)
+        fun channelParams(payCommitTxFees: Boolean): LocalParams = LocalParams(nodeParams, isChannelOpener = false, payCommitTxFees = payCommitTxFees)
     }
 
 }

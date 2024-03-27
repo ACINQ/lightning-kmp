@@ -454,7 +454,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         // This doesn't satisfy the feature dependency graph, but since those aren't invoice features, we should ignore it.
         val features = Features(
             mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory),
-            setOf(UnknownFeature(121), UnknownFeature(156))
+            setOf(UnknownFeature(121), UnknownFeature(256))
         )
         val pr = Bolt11Invoice.read(createInvoiceUnsafe(features = features).write()).get()
         assertEquals(pr.features, features)
