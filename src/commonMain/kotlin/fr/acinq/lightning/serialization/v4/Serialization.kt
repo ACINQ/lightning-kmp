@@ -57,13 +57,13 @@ object Serialization {
             write(0x01); writeWaitForChannelReady(o)
         }
         is Normal -> {
-            write(0x02); writeNormal(o)
+            write(0x0b); writeNormal(o)
         }
         is ShuttingDown -> {
-            write(0x03); writeShuttingDown(o)
+            write(0x0c); writeShuttingDown(o)
         }
         is Negotiating -> {
-            write(0x04); writeNegotiating(o)
+            write(0x0d); writeNegotiating(o)
         }
         is Closing -> {
             write(0x05); writeClosing(o)
@@ -135,7 +135,7 @@ object Serialization {
         writeNullable(remoteChannelUpdate) { writeLightningMessage(it) }
         writeNullable(localShutdown) { writeLightningMessage(it) }
         writeNullable(remoteShutdown) { writeLightningMessage(it) }
-        writeNullable(closingFeerates) { writeClosingFeerates(it) }
+        writeNullable(closingFeerate) { writeNumber(it.toLong()) }
         when (spliceStatus) {
             is SpliceStatus.WaitingForSigs -> {
                 write(0x01)
@@ -154,23 +154,21 @@ object Serialization {
         writeCommitments(commitments)
         writeLightningMessage(localShutdown)
         writeLightningMessage(remoteShutdown)
-        writeNullable(closingFeerates) { writeClosingFeerates(it) }
+        writeNullable(closingFeerate) { writeNumber(it.toLong()) }
     }
 
     private fun Output.writeNegotiating(o: Negotiating) = o.run {
         writeCommitments(commitments)
         writeLightningMessage(localShutdown)
         writeLightningMessage(remoteShutdown)
-        writeCollection(closingTxProposed) {
-            writeCollection(it) { closingTxProposed ->
-                closingTxProposed.run {
-                    writeTransactionWithInputInfo(unsignedTx)
-                    writeLightningMessage(localClosingSigned)
-                }
-            }
+        writeCollection(proposedClosingTxs) {
+            writeNullable(it.localAndRemote) { tx -> writeTransactionWithInputInfo(tx) }
+            writeNullable(it.localOnly) { tx -> writeTransactionWithInputInfo(tx) }
+            writeNullable(it.remoteOnly) { tx -> writeTransactionWithInputInfo(tx) }
         }
-        writeNullable(bestUnpublishedClosingTx) { writeTransactionWithInputInfo(it) }
-        writeNullable(closingFeerates) { writeClosingFeerates(it) }
+        writeCollection(publishedClosingTxs) { writeTransactionWithInputInfo(it) }
+        writeNullable(closingFeerate) { writeNumber(it.toLong()) }
+        writeNumber(waitingSinceBlock)
     }
 
     private fun Output.writeClosing(o: Closing) = o.run {
@@ -691,12 +689,6 @@ object Serialization {
                 write(0x0e); writeInputInfo(o.input); writeBtcObject(o.tx)
             }
         }
-    }
-
-    private fun Output.writeClosingFeerates(o: ClosingFeerates): Unit = o.run {
-        writeNumber(preferred.toLong())
-        writeNumber(min.toLong())
-        writeNumber(max.toLong())
     }
 
     private fun Output.writeNumber(o: Number): Unit = LightningCodecs.writeBigSize(o.toLong(), this)

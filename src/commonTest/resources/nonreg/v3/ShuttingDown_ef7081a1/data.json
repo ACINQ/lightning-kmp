@@ -273,5 +273,5 @@
             ]
         }
     },
-    "closingFeerates": null
+    "closingFeerate": null
 }

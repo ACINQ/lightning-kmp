@@ -321,9 +321,10 @@ class QuiescenceTestsCommon : LightningTestSuite() {
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(shutdownBob))
         assertIs<Negotiating>(alice2.state)
         val shutdownAlice = actionsAlice2.findOutgoingMessage<Shutdown>()
-        actionsAlice2.findOutgoingMessage<ClosingSigned>()
+        actionsAlice2.findOutgoingMessage<ClosingComplete>()
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(shutdownAlice))
         assertIs<Negotiating>(bob3.state)
+        actionsBob3.findOutgoingMessage<ClosingComplete>()
         actionsBob3.has<ChannelAction.Storage.StoreState>()
     }
 

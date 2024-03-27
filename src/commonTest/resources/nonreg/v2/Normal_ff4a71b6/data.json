@@ -368,7 +368,7 @@
     "remoteChannelUpdate": null,
     "localShutdown": null,
     "remoteShutdown": null,
-    "closingFeerates": null,
+    "closingFeerate": null,
     "spliceStatus": "None",
     "liquidityLeases": [
     ]

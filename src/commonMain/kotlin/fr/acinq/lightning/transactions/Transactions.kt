@@ -139,6 +139,17 @@ object Transactions {
         }
     }
 
+    sealed class ClosingTxFee {
+        data class PaidByUs(val fee: Satoshi) : ClosingTxFee()
+        data class PaidByThem(val fee: Satoshi) : ClosingTxFee()
+    }
+
+    @Serializable
+    data class ClosingTxs(val localAndRemote: TransactionWithInputInfo.ClosingTx?, val localOnly: TransactionWithInputInfo.ClosingTx?, val remoteOnly: TransactionWithInputInfo.ClosingTx?) {
+        val preferred: TransactionWithInputInfo.ClosingTx? = localAndRemote ?: localOnly ?: remoteOnly
+        val all: List<TransactionWithInputInfo.ClosingTx> = listOfNotNull(localAndRemote, localOnly, remoteOnly)
+    }
+
     /**
      * When *local* *current* [[CommitTx]] is published:
      *   - [[ClaimDelayedOutputTx]] spends to-local output of [[CommitTx]] after a delay
@@ -196,6 +207,7 @@ object Transactions {
                 Script.isPay2wpkh(script) -> 294.sat
                 Script.isPay2wsh(script) -> 330.sat
                 Script.isNativeWitnessScript(script) -> 354.sat
+                script[0] == OP_RETURN -> 0.sat // OP_RETURN is never dust
                 else -> 546.sat
             }
         }.getOrElse { 546.sat }
@@ -735,39 +747,44 @@ object Transactions {
         }
     }
 
-    fun makeClosingTx(
-        commitTxInput: InputInfo,
-        localScriptPubKey: ByteArray,
-        remoteScriptPubKey: ByteArray,
-        localIsInitiator: Boolean,
-        dustLimit: Satoshi,
-        closingFee: Satoshi,
-        spec: CommitmentSpec
-    ): TransactionWithInputInfo.ClosingTx {
+    fun makeClosingTxs(input: InputInfo, spec: CommitmentSpec, fee: ClosingTxFee, lockTime: Long, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector): ClosingTxs {
         require(spec.htlcs.isEmpty()) { "there shouldn't be any pending htlcs" }
 
-        val (toLocalAmount, toRemoteAmount) = if (localIsInitiator) {
-            Pair(spec.toLocal.truncateToSatoshi() - closingFee, spec.toRemote.truncateToSatoshi())
-        } else {
-            Pair(spec.toLocal.truncateToSatoshi(), spec.toRemote.truncateToSatoshi() - closingFee)
+        val (toLocalAmount, toRemoteAmount) = when (fee) {
+            is ClosingTxFee.PaidByUs -> Pair(spec.toLocal.truncateToSatoshi() - fee.fee, spec.toRemote.truncateToSatoshi())
+            is ClosingTxFee.PaidByThem -> Pair(spec.toLocal.truncateToSatoshi(), spec.toRemote.truncateToSatoshi() - fee.fee)
         } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
-        val toLocalOutputOpt = toLocalAmount.takeIf { it >= dustLimit }?.let { TxOut(it, localScriptPubKey) }
-        val toRemoteOutputOpt = toRemoteAmount.takeIf { it >= dustLimit }?.let { TxOut(it, remoteScriptPubKey) }
+        val txNoOutput = Transaction(2, listOf(TxIn(input.outPoint, listOf(), sequence = 0xFFFFFFFDL)), listOf(), lockTime)
+        val toLocalOutput = if (toLocalAmount >= dustLimit(localScriptPubKey)) TxOut(toLocalAmount, localScriptPubKey) else null
+        val toRemoteOutput = if (toRemoteAmount >= dustLimit(remoteScriptPubKey)) TxOut(toRemoteAmount, remoteScriptPubKey) else null
 
-        val tx = LexicographicalOrdering.sort(
-            Transaction(
-                version = 2,
-                txIn = listOf(TxIn(commitTxInput.outPoint, ByteVector.empty, sequence = 0xffffffffL)),
-                txOut = listOfNotNull(toLocalOutputOpt, toRemoteOutputOpt),
-                lockTime = 0
+        return when {
+            toLocalOutput != null && toRemoteOutput != null -> {
+                val txLocalAndRemote = LexicographicalOrdering.sort(txNoOutput.copy(txOut = listOf(toLocalOutput, toRemoteOutput)))
+                val toLocalIndex = when (val i = findPubKeyScriptIndex(txLocalAndRemote, localScriptPubKey.toByteArray())) {
+                    is TxResult.Skipped -> null
+                    is TxResult.Success -> i.result
+                }
+                ClosingTxs(
+                    localAndRemote = TransactionWithInputInfo.ClosingTx(input, txLocalAndRemote, toLocalIndex),
+                    // We also provide a version of the transaction without the remote output, which they may want to omit if not economical to spend.
+                    localOnly = TransactionWithInputInfo.ClosingTx(input, txNoOutput.copy(txOut = listOf(toLocalOutput)), 0),
+                    remoteOnly = null
+                )
+            }
+            toLocalOutput != null -> ClosingTxs(
+                localAndRemote = null,
+                localOnly = TransactionWithInputInfo.ClosingTx(input, txNoOutput.copy(txOut = listOf(toLocalOutput)), 0),
+                remoteOnly = null,
             )
-        )
-        val toLocalOutput = when (val toLocalIndex = findPubKeyScriptIndex(tx, localScriptPubKey)) {
-            is TxResult.Skipped -> null
-            is TxResult.Success -> toLocalIndex.result
+            toRemoteOutput != null -> ClosingTxs(
+                localAndRemote = null,
+                localOnly = null,
+                remoteOnly = TransactionWithInputInfo.ClosingTx(input, txNoOutput.copy(txOut = listOf(toRemoteOutput)), null)
+            )
+            else -> ClosingTxs(localAndRemote = null, localOnly = null, remoteOnly = null)
         }
-        return TransactionWithInputInfo.ClosingTx(commitTxInput, tx, toLocalOutput)
     }
 
     private fun findPubKeyScriptIndex(tx: Transaction, pubkeyScript: ByteArray): TxResult<Int> {

@@ -63,6 +63,8 @@ object TestConstants {
                 Feature.DualFunding to FeatureSupport.Mandatory,
                 Feature.ChannelType to FeatureSupport.Mandatory,
                 Feature.PaymentMetadata to FeatureSupport.Optional,
+                Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,
+                Feature.SimpleClose to FeatureSupport.Mandatory,
                 Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
                 Feature.WakeUpNotificationProvider to FeatureSupport.Optional,
                 Feature.PayToOpenProvider to FeatureSupport.Optional,

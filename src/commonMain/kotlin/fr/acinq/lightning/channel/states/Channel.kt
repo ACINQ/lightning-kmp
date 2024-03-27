@@ -16,10 +16,12 @@ import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutp
 import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelClosingType
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggingContext
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 
 /*
@@ -69,7 +71,8 @@ sealed class ChannelState {
                 it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
                 it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
                 it is ChannelAction.Message.Send && it.message is Shutdown -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
-                it is ChannelAction.Message.Send && it.message is ClosingSigned -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
+                it is ChannelAction.Message.Send && it.message is ClosingComplete -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
+                it is ChannelAction.Message.Send && it.message is ClosingSig -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
                 else -> it
             }
         }
@@ -106,7 +109,7 @@ sealed class ChannelState {
         }
     }
 
-    private fun ChannelContext.emitClosingEvents(oldState: ChannelStateWithCommitments, newState: Closing): List<ChannelAction> {
+    internal fun ChannelContext.emitClosingEvents(oldState: ChannelStateWithCommitments, newState: Closing): List<ChannelAction> {
         val channelBalance = oldState.commitments.latest.localCommit.spec.toLocal
         return if (channelBalance > 0.msat) {
             when {
@@ -215,20 +218,15 @@ sealed class ChannelState {
             is Normal -> forceClose(state)
             is ShuttingDown -> forceClose(state)
             is Negotiating -> when {
-                state.bestUnpublishedClosingTx != null -> {
-                    // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
+                state.publishedClosingTxs.isNotEmpty() -> {
+                    // If we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that.
                     val nextState = Closing(
                         state.commitments,
-                        waitingSinceBlock = currentBlockHeight.toLong(),
-                        mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx } + listOf(state.bestUnpublishedClosingTx),
-                        mutualClosePublished = listOf(state.bestUnpublishedClosingTx)
+                        waitingSinceBlock = state.waitingSinceBlock,
+                        mutualCloseProposed = state.proposedClosingTxs.flatMap { it.all },
+                        mutualClosePublished = state.publishedClosingTxs
                     )
-                    val actions = listOf(
-                        ChannelAction.Storage.StoreState(nextState),
-                        ChannelAction.Blockchain.PublishTx(state.bestUnpublishedClosingTx),
-                        ChannelAction.Blockchain.SendWatch(WatchConfirmed(state.channelId, state.bestUnpublishedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(state.bestUnpublishedClosingTx.tx)))
-                    )
-                    Pair(nextState, actions)
+                    Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
                 }
                 else -> forceClose(state)
             }
@@ -258,20 +256,18 @@ sealed class ChannelState {
         logger.error { "peer sent error: ascii='${e.toAscii()}' bin=${e.data.toHex()}" }
         return when (this@ChannelState) {
             is Closing -> Pair(this@ChannelState, listOf()) // nothing to do, there is already a spending tx published
-            is Negotiating -> when (this@ChannelState.bestUnpublishedClosingTx) {
-                null -> this.spendLocalCurrent()
-                else -> {
+            is Negotiating -> when {
+                publishedClosingTxs.isNotEmpty() -> {
+                    // If we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that.
                     val nexState = Closing(
                         commitments = commitments,
-                        waitingSinceBlock = currentBlockHeight.toLong(),
-                        mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                        mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
+                        waitingSinceBlock = waitingSinceBlock,
+                        mutualCloseProposed = proposedClosingTxs.flatMap { it.all },
+                        mutualClosePublished = publishedClosingTxs
                     )
-                    Pair(nexState, buildList {
-                        add(ChannelAction.Storage.StoreState(nexState))
-                        addAll(doPublish(bestUnpublishedClosingTx, nexState.channelId))
-                    })
+                    Pair(nexState, listOf(ChannelAction.Storage.StoreState(nexState)))
                 }
+                else -> this.spendLocalCurrent()
             }
             is WaitForFundingSigned -> Pair(Aborted, listOf(ChannelAction.Storage.RemoveChannel(this@ChannelState)))
             // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
@@ -424,8 +420,9 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
             is Negotiating -> Closing(
                 commitments = commitments,
-                waitingSinceBlock = currentBlockHeight.toLong(),
-                mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                waitingSinceBlock = waitingSinceBlock,
+                mutualCloseProposed = proposedClosingTxs.flatMap { it.all },
+                mutualClosePublished = publishedClosingTxs,
                 remoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
@@ -453,8 +450,9 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             is Closing -> copy(nextRemoteCommitPublished = remoteCommitPublished)
             is Negotiating -> Closing(
                 commitments = commitments,
-                waitingSinceBlock = currentBlockHeight.toLong(),
-                mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                waitingSinceBlock = waitingSinceBlock,
+                mutualCloseProposed = proposedClosingTxs.flatMap { it.all },
+                mutualClosePublished = publishedClosingTxs,
                 nextRemoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
@@ -485,8 +483,9 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 }
                 is Negotiating -> Closing(
                     commitments = commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
-                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                    waitingSinceBlock = waitingSinceBlock,
+                    mutualCloseProposed = proposedClosingTxs.flatMap { it.all },
+                    mutualClosePublished = publishedClosingTxs,
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
                 else -> Closing(
@@ -538,7 +537,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                             val remoteCommitPublished = claimRemoteCommitMainOutput(channelKeys(), commitments.params, tx, currentOnChainFeerates.claimMainFeerate)
                             val nextState = when (this@ChannelStateWithCommitments) {
                                 is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
-                                is Negotiating -> Closing(commitments, waitingSinceBlock = currentBlockHeight.toLong(), mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx }, remoteCommitPublished = remoteCommitPublished)
+                                is Negotiating -> Closing(commitments, waitingSinceBlock, proposedClosingTxs.flatMap { it.all }, publishedClosingTxs, remoteCommitPublished = remoteCommitPublished)
                                 else -> Closing(commitments, waitingSinceBlock = currentBlockHeight.toLong(), remoteCommitPublished = remoteCommitPublished)
                             }
                             return Pair(nextState, buildList {
@@ -574,8 +573,9 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 is Closing -> copy(localCommitPublished = localCommitPublished)
                 is Negotiating -> Closing(
                     commitments = commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
-                    mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                    waitingSinceBlock = waitingSinceBlock,
+                    mutualCloseProposed = proposedClosingTxs.flatMap { it.all },
+                    mutualClosePublished = publishedClosingTxs,
                     localCommitPublished = localCommitPublished
                 )
                 else -> Closing(
@@ -611,18 +611,6 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 logger.error { channelEx.message }
                 when {
                     this@ChannelStateWithCommitments is Closing -> Pair(this@ChannelStateWithCommitments, listOf()) // nothing to do, there is already a spending tx published
-                    this@ChannelStateWithCommitments is Negotiating && this@ChannelStateWithCommitments.bestUnpublishedClosingTx != null -> {
-                        val nexState = Closing(
-                            commitments,
-                            waitingSinceBlock = currentBlockHeight.toLong(),
-                            mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                            mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
-                        )
-                        Pair(nexState, buildList {
-                            add(ChannelAction.Storage.StoreState(nexState))
-                            addAll(doPublish(bestUnpublishedClosingTx, nexState.channelId))
-                        })
-                    }
                     else -> {
                         val error = Error(channelId, channelEx.message)
                         spendLocalCurrent().run { copy(second = second + ChannelAction.Message.Send(error)) }

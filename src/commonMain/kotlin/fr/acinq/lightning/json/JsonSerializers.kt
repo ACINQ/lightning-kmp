@@ -7,7 +7,6 @@
     // serialization code in this file.
     JsonSerializers.CommitmentSerializer::class,
     JsonSerializers.CommitmentsSerializer::class,
-    JsonSerializers.ClosingFeeratesSerializer::class,
     JsonSerializers.LocalParamsSerializer::class,
     JsonSerializers.RemoteParamsSerializer::class,
     JsonSerializers.LocalCommitSerializer::class,
@@ -41,7 +40,6 @@
     JsonSerializers.TransactionSerializer::class,
     JsonSerializers.OutPointSerializer::class,
     JsonSerializers.TxOutSerializer::class,
-    JsonSerializers.ClosingTxProposedSerializer::class,
     JsonSerializers.LocalCommitPublishedSerializer::class,
     JsonSerializers.RemoteCommitPublishedSerializer::class,
     JsonSerializers.RevokedCommitPublishedSerializer::class,
@@ -70,7 +68,8 @@
     JsonSerializers.LocalFundingStatusSerializer::class,
     JsonSerializers.RemoteFundingStatusSerializer::class,
     JsonSerializers.ShutdownSerializer::class,
-    JsonSerializers.ClosingSignedSerializer::class,
+    JsonSerializers.ClosingCompleteSerializer::class,
+    JsonSerializers.ClosingSigSerializer::class,
     JsonSerializers.UpdateAddHtlcSerializer::class,
     JsonSerializers.CommitSigSerializer::class,
     JsonSerializers.EncryptedChannelDataSerializer::class,
@@ -78,12 +77,12 @@
     JsonSerializers.FundingCreatedSerializer::class,
     JsonSerializers.ChannelReadySerializer::class,
     JsonSerializers.ChannelReadyTlvShortChannelIdTlvSerializer::class,
-    JsonSerializers.ClosingSignedTlvFeeRangeSerializer::class,
     JsonSerializers.ShutdownTlvChannelDataSerializer::class,
     JsonSerializers.GenericTlvSerializer::class,
     JsonSerializers.TlvStreamSerializer::class,
     JsonSerializers.ShutdownTlvSerializer::class,
-    JsonSerializers.ClosingSignedTlvSerializer::class,
+    JsonSerializers.ClosingCompleteTlvSerializer::class,
+    JsonSerializers.ClosingSigTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvSerializer::class,
     JsonSerializers.ChannelReadyTlvSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigSerializer::class,
@@ -196,7 +195,6 @@ object JsonSerializers {
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
-                subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
             }
             // TODO The following declarations are required because serializers for [TransactionWithInputInfo]
             //  depend themselves on @Contextual serializers. Once we get rid of v2/v3 serialization and we
@@ -333,9 +331,6 @@ object JsonSerializers {
     @Serializer(forClass = Commitments::class)
     object CommitmentsSerializer
 
-    @Serializer(forClass = ClosingFeerates::class)
-    object ClosingFeeratesSerializer
-
     @Serializer(forClass = LocalParams::class)
     object LocalParamsSerializer
 
@@ -439,9 +434,6 @@ object JsonSerializers {
         delegateSerializer = KeyPathSerializer
     )
 
-    @Serializer(forClass = ClosingTxProposed::class)
-    object ClosingTxProposedSerializer
-
     @Serializer(forClass = LocalCommitPublished::class)
     object LocalCommitPublishedSerializer
 
@@ -481,8 +473,11 @@ object JsonSerializers {
     @Serializer(forClass = Shutdown::class)
     object ShutdownSerializer
 
-    @Serializer(forClass = ClosingSigned::class)
-    object ClosingSignedSerializer
+    @Serializer(forClass = ClosingComplete::class)
+    object ClosingCompleteSerializer
+
+    @Serializer(forClass = ClosingSig::class)
+    object ClosingSigSerializer
 
     @Serializer(forClass = CommitSig::class)
     object CommitSigSerializer
@@ -498,9 +493,6 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
     object ChannelReadyTlvShortChannelIdTlvSerializer
-
-    @Serializer(forClass = ClosingSignedTlv.FeeRange::class)
-    object ClosingSignedTlvFeeRangeSerializer
 
     @Serializer(forClass = ShutdownTlv.ChannelData::class)
     object ShutdownTlvChannelDataSerializer
@@ -520,8 +512,11 @@ object JsonSerializers {
     @Serializer(forClass = CommitSigTlv::class)
     object CommitSigTlvSerializer
 
-    @Serializer(forClass = ClosingSignedTlv::class)
-    object ClosingSignedTlvSerializer
+    @Serializer(forClass = ClosingCompleteTlv::class)
+    object ClosingCompleteTlvSerializer
+
+    @Serializer(forClass = ClosingSigTlv::class)
+    object ClosingSigTlvSerializer
 
     @Serializer(forClass = ChannelReadyTlv::class)
     object ChannelReadyTlvSerializer

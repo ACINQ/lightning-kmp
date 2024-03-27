@@ -44,7 +44,6 @@ object Serialization {
     private val tlvSerializersModule = SerializersModule {
         polymorphic(Tlv::class) {
             subclass(ChannelReadyTlvShortChannelIdTlvSerializer)
-            subclass(ClosingSignedTlvFeeRangeSerializer)
             subclass(ShutdownTlvChannelDataSerializer)
             subclass(GenericTlvSerializer)
         }

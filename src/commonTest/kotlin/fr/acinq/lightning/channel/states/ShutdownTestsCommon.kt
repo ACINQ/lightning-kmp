@@ -11,6 +11,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
@@ -472,9 +473,23 @@ class ShutdownTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelCommand_Close_MutualClose`() {
         val (alice, _) = init()
-        val (alice1, actions) = alice.process(ChannelCommand.Close.MutualClose(null, null))
-        assertEquals(alice1, alice)
-        assertEquals(actions, listOf(ChannelAction.ProcessCmdRes.NotExecuted(ChannelCommand.Close.MutualClose(null, null), ClosingAlreadyInProgress(alice.channelId))))
+
+        // Update our closing feerate.
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(null, FeeratePerKw(5000.sat())))
+        assertIs<ShuttingDown>(alice1.state)
+        assertEquals(FeeratePerKw(5000.sat()), alice1.state.closingFeerate)
+        assertEquals(1, actions1.size)
+        actions1.has<ChannelAction.Storage.StoreState>()
+
+        // Update our closing script.
+        val closingScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
+        val (alice2, actions2) = alice1.process(ChannelCommand.Close.MutualClose(closingScript, null))
+        assertIs<ShuttingDown>(alice2.state)
+        assertEquals(FeeratePerKw(5000.sat()), alice2.state.closingFeerate)
+        assertEquals(2, actions2.size)
+        actions2.has<ChannelAction.Storage.StoreState>()
+        val shutdown = actions2.findOutgoingMessage<Shutdown>()
+        assertEquals(shutdown, alice2.state.localShutdown)
     }
 
     private fun testLocalForceClose(alice: LNChannel<ChannelState>, actions: List<ChannelAction>) {

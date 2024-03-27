@@ -14,7 +14,8 @@
     PublicKeyKSerializer::class,
     PrivateKeyKSerializer::class,
     ShutdownSerializer::class,
-    ClosingSignedSerializer::class,
+    ClosingCompleteSerializer::class,
+    ClosingSigSerializer::class,
     SatoshiKSerializer::class,
     UpdateAddHtlcSerializer::class,
     CommitSigSerializer::class,
@@ -23,7 +24,8 @@
     FundingCreatedSerializer::class,
     CommitSigTlvSerializer::class,
     ShutdownTlvSerializer::class,
-    ClosingSignedTlvSerializer::class,
+    ClosingCompleteTlvSerializer::class,
+    ClosingSigTlvSerializer::class,
     ChannelReadyTlvSerializer::class,
     ChannelReestablishTlvSerializer::class,
     TlvStreamSerializer::class,
@@ -67,8 +69,11 @@ object FundingSignedSerializer
 @Serializer(forClass = Shutdown::class)
 object ShutdownSerializer
 
-@Serializer(forClass = ClosingSigned::class)
-object ClosingSignedSerializer
+@Serializer(forClass = ClosingComplete::class)
+object ClosingCompleteSerializer
+
+@Serializer(forClass = ClosingSig::class)
+object ClosingSigSerializer
 
 @Serializer(forClass = ChannelUpdate::class)
 object ChannelUpdateSerializer
@@ -112,9 +117,6 @@ object FundingCreatedSerializer
 @Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
 object ChannelReadyTlvShortChannelIdTlvSerializer
 
-@Serializer(forClass = ClosingSignedTlv.FeeRange::class)
-object ClosingSignedTlvFeeRangeSerializer
-
 @Serializer(forClass = ShutdownTlv.ChannelData::class)
 object ShutdownTlvChannelDataSerializer
 
@@ -124,8 +126,11 @@ object ShutdownTlvSerializer
 @Serializer(forClass = CommitSigTlv::class)
 object CommitSigTlvSerializer
 
-@Serializer(forClass = ClosingSignedTlv::class)
-object ClosingSignedTlvSerializer
+@Serializer(forClass = ClosingCompleteTlv::class)
+object ClosingCompleteTlvSerializer
+
+@Serializer(forClass = ClosingSigTlv::class)
+object ClosingSigTlvSerializer
 
 @Serializer(forClass = ChannelReadyTlv::class)
 object ChannelReadyTlvSerializer
@@ -358,9 +363,10 @@ internal data class ChannelVersion(val bits: ByteVector) {
 }
 
 @Serializable
-internal data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned) {
-    fun export() = fr.acinq.lightning.channel.ClosingTxProposed(unsignedTx, localClosingSigned)
-}
+internal data class ClosingSigned(val channelId: ByteVector32, val feeSatoshis: Satoshi, val signature: ByteVector64)
+
+@Serializable
+internal data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned)
 
 @Serializable
 internal data class Commitments(
@@ -553,9 +559,10 @@ internal data class Negotiating(
         commitments.export(),
         localShutdown,
         remoteShutdown,
-        closingTxProposed.map { x -> x.map { it.export() } },
-        bestUnpublishedClosingTx,
-        null
+        listOf(),
+        listOf(),
+        null,
+        0
     )
 }
 

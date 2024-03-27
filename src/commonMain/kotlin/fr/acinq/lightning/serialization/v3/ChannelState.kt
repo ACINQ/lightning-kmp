@@ -14,7 +14,8 @@
     PublicKeyKSerializer::class,
     PrivateKeyKSerializer::class,
     ShutdownSerializer::class,
-    ClosingSignedSerializer::class,
+    ClosingCompleteSerializer::class,
+    ClosingSigSerializer::class,
     SatoshiKSerializer::class,
     UpdateAddHtlcSerializer::class,
     CommitSigSerializer::class,
@@ -23,7 +24,8 @@
     FundingCreatedSerializer::class,
     CommitSigTlvSerializer::class,
     ShutdownTlvSerializer::class,
-    ClosingSignedTlvSerializer::class,
+    ClosingCompleteTlvSerializer::class,
+    ClosingSigTlvSerializer::class,
     ChannelReadyTlvSerializer::class,
     ChannelReestablishTlvSerializer::class,
     TlvStreamSerializer::class,
@@ -41,7 +43,10 @@ package fr.acinq.lightning.serialization.v3
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.*
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Features
+import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.InteractiveTxOutput
 import fr.acinq.lightning.channel.SpliceStatus
@@ -67,8 +72,11 @@ object FundingSignedSerializer
 @Serializer(forClass = Shutdown::class)
 object ShutdownSerializer
 
-@Serializer(forClass = ClosingSigned::class)
-object ClosingSignedSerializer
+@Serializer(forClass = ClosingComplete::class)
+object ClosingCompleteSerializer
+
+@Serializer(forClass = ClosingSig::class)
+object ClosingSigSerializer
 
 @Serializer(forClass = ChannelUpdate::class)
 object ChannelUpdateSerializer
@@ -112,9 +120,6 @@ object FundingCreatedSerializer
 @Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
 object ChannelReadyTlvShortChannelIdTlvSerializer
 
-@Serializer(forClass = ClosingSignedTlv.FeeRange::class)
-object ClosingSignedTlvFeeRangeSerializer
-
 @Serializer(forClass = ShutdownTlv.ChannelData::class)
 object ShutdownTlvChannelDataSerializer
 
@@ -124,8 +129,11 @@ object ShutdownTlvSerializer
 @Serializer(forClass = CommitSigTlv::class)
 object CommitSigTlvSerializer
 
-@Serializer(forClass = ClosingSignedTlv::class)
-object ClosingSignedTlvSerializer
+@Serializer(forClass = ClosingCompleteTlv::class)
+object ClosingCompleteTlvSerializer
+
+@Serializer(forClass = ClosingSigTlv::class)
+object ClosingSigTlvSerializer
 
 @Serializer(forClass = ChannelReadyTlv::class)
 object ChannelReadyTlvSerializer
@@ -345,14 +353,13 @@ internal data class ChannelFeatures(val bin: ByteVector) {
 }
 
 @Serializable
-internal data class ClosingFeerates(val preferred: FeeratePerKw, val min: FeeratePerKw, val max: FeeratePerKw) {
-    fun export() = fr.acinq.lightning.channel.states.ClosingFeerates(preferred, min, max)
-}
+internal data class ClosingSigned(val channelId: ByteVector32, val feeSatoshis: Satoshi, val signature: ByteVector64)
 
 @Serializable
-internal data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned) {
-    fun export() = fr.acinq.lightning.channel.ClosingTxProposed(unsignedTx, localClosingSigned)
-}
+internal data class ClosingFeerates(val preferred: FeeratePerKw, val min: FeeratePerKw, val max: FeeratePerKw)
+
+@Serializable
+internal data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned)
 
 @Serializable
 internal data class Commitments(
@@ -397,7 +404,15 @@ internal data class Commitments(
                 // We will put a WatchConfirmed when starting, which will return the confirmed transaction.
                 fr.acinq.lightning.channel.LocalFundingStatus.UnconfirmedFundingTx(
                     fr.acinq.lightning.channel.PartiallySignedSharedTransaction(
-                        fr.acinq.lightning.channel.SharedTransaction(null, InteractiveTxOutput.Shared(0, commitInput.txOut.publicKeyScript, localCommit.spec.toLocal, localCommit.spec.toRemote, 0.msat), listOf(), listOf(), listOf(), listOf(), 0),
+                        fr.acinq.lightning.channel.SharedTransaction(
+                            null,
+                            InteractiveTxOutput.Shared(0, commitInput.txOut.publicKeyScript, localCommit.spec.toLocal, localCommit.spec.toRemote, 0.msat),
+                            listOf(),
+                            listOf(),
+                            listOf(),
+                            listOf(),
+                            0
+                        ),
                         // We must correctly set the txId here.
                         TxSignatures(channelId, commitInput.outPoint.txid, listOf()),
                     ),
@@ -512,7 +527,7 @@ internal data class Normal(
         remoteChannelUpdate,
         localShutdown,
         remoteShutdown,
-        closingFeerates?.export(),
+        closingFeerates?.preferred,
         SpliceStatus.None,
         listOf(),
     )
@@ -532,7 +547,7 @@ internal data class ShuttingDown(
         commitments.export(),
         localShutdown,
         remoteShutdown,
-        closingFeerates?.export()
+        closingFeerates?.preferred
     )
 }
 
@@ -557,9 +572,10 @@ internal data class Negotiating(
         commitments.export(),
         localShutdown,
         remoteShutdown,
-        closingTxProposed.map { x -> x.map { it.export() } },
-        bestUnpublishedClosingTx,
-        closingFeerates?.export()
+        listOf(),
+        listOf(),
+        closingFeerates?.preferred,
+        0
     )
 }
 

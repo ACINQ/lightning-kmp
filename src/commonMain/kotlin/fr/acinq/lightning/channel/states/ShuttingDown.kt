@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.wire.*
@@ -11,9 +12,11 @@ data class ShuttingDown(
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
-    val closingFeerates: ClosingFeerates?
+    val closingFeerate: FeeratePerKw?
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
+
+    private fun ChannelContext.closingFeerate(): FeeratePerKw = closingFeerate ?: currentOnChainFeerates.mutualCloseFeerate
 
     override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
@@ -45,33 +48,35 @@ data class ShuttingDown(
                             is Either.Right -> {
                                 val (commitments1, revocation) = result.value
                                 when {
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.params.localParams.isInitiator -> {
-                                        val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> {
+                                        val closingResult = Helpers.Closing.makeClosingTxs(
                                             channelKeys(),
                                             commitments1.latest,
-                                            localShutdown.scriptPubKey.toByteArray(),
-                                            remoteShutdown.scriptPubKey.toByteArray(),
-                                            closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                            localShutdown.scriptPubKey,
+                                            remoteShutdown.scriptPubKey,
+                                            closingFeerate()
                                         )
-                                        val nextState = Negotiating(
-                                            commitments1,
-                                            localShutdown,
-                                            remoteShutdown,
-                                            listOf(listOf(ClosingTxProposed(closingTx, closingSigned))),
-                                            bestUnpublishedClosingTx = null,
-                                            closingFeerates
-                                        )
-                                        val actions = listOf(
-                                            ChannelAction.Storage.StoreState(nextState),
-                                            ChannelAction.Message.Send(revocation),
-                                            ChannelAction.Message.Send(closingSigned)
-                                        )
-                                        Pair(nextState, actions)
-                                    }
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> {
-                                        val nextState = Negotiating(commitments1, localShutdown, remoteShutdown, listOf(listOf()), null, closingFeerates)
-                                        val actions = listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(revocation))
-                                        Pair(nextState, actions)
+                                        when (closingResult) {
+                                            is Either.Left -> {
+                                                logger.warning { "cannot create local closing txs, waiting for remote closing_complete: ${closingResult.value.message}" }
+                                                val nextState = Negotiating(commitments1, localShutdown, remoteShutdown, listOf(), listOf(), closingFeerate, currentBlockHeight.toLong())
+                                                val actions = listOf(
+                                                    ChannelAction.Storage.StoreState(nextState),
+                                                    ChannelAction.Message.Send(revocation),
+                                                )
+                                                Pair(nextState, actions)
+                                            }
+                                            is Either.Right -> {
+                                                val (closingTxs, closingComplete) = closingResult.value
+                                                val nextState = Negotiating(commitments1, localShutdown, remoteShutdown, listOf(closingTxs), listOf(), closingFeerate, currentBlockHeight.toLong())
+                                                val actions = listOf(
+                                                    ChannelAction.Storage.StoreState(nextState),
+                                                    ChannelAction.Message.Send(revocation),
+                                                    ChannelAction.Message.Send(closingComplete)
+                                                )
+                                                Pair(nextState, actions)
+                                            }
+                                        }
                                     }
                                     else -> {
                                         val nextState = this@ShuttingDown.copy(commitments = commitments1)
@@ -93,29 +98,28 @@ data class ShuttingDown(
                             val (commitments1, actions) = result.value
                             val actions1 = actions.toMutableList()
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() && commitments1.params.localParams.isInitiator -> {
-                                    val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> {
+                                    val closingResult = Helpers.Closing.makeClosingTxs(
                                         channelKeys(),
                                         commitments1.latest,
-                                        localShutdown.scriptPubKey.toByteArray(),
-                                        remoteShutdown.scriptPubKey.toByteArray(),
-                                        closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                        localShutdown.scriptPubKey,
+                                        remoteShutdown.scriptPubKey,
+                                        closingFeerate()
                                     )
-                                    val nextState = Negotiating(
-                                        commitments1,
-                                        localShutdown,
-                                        remoteShutdown,
-                                        listOf(listOf(ClosingTxProposed(closingTx, closingSigned))),
-                                        bestUnpublishedClosingTx = null,
-                                        closingFeerates
-                                    )
-                                    actions1.addAll(listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingSigned)))
-                                    Pair(nextState, actions1)
-                                }
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> {
-                                    val nextState = Negotiating(commitments1, localShutdown, remoteShutdown, listOf(listOf()), null, closingFeerates)
-                                    actions1.add(ChannelAction.Storage.StoreState(nextState))
-                                    Pair(nextState, actions1)
+                                    when (closingResult) {
+                                        is Either.Left -> {
+                                            logger.warning { "cannot create local closing txs, waiting for remote closing_complete: ${closingResult.value.message}" }
+                                            val nextState = Negotiating(commitments1, localShutdown, remoteShutdown, listOf(), listOf(), closingFeerate, currentBlockHeight.toLong())
+                                            actions1.add(ChannelAction.Storage.StoreState(nextState))
+                                            Pair(nextState, actions1)
+                                        }
+                                        is Either.Right -> {
+                                            val (closingTxs, closingComplete) = closingResult.value
+                                            val nextState = Negotiating(commitments1, localShutdown, remoteShutdown, listOf(closingTxs), listOf(), closingFeerate, currentBlockHeight.toLong())
+                                            actions1.addAll(listOf(ChannelAction.Storage.StoreState(nextState), ChannelAction.Message.Send(closingComplete)))
+                                            Pair(nextState, actions1)
+                                        }
+                                    }
                                 }
                                 else -> {
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
@@ -126,6 +130,16 @@ data class ShuttingDown(
                                     Pair(nextState, actions1)
                                 }
                             }
+                        }
+                    }
+                    is Shutdown -> {
+                        if (cmd.message.scriptPubKey != remoteShutdown.scriptPubKey) {
+                            logger.debug { "our peer updated their shutdown script (previous=${remoteShutdown.scriptPubKey}, current=${cmd.message.scriptPubKey})" }
+                            val nextState = this@ShuttingDown.copy(remoteShutdown = cmd.message)
+                            Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
+                        } else {
+                            // This is a retransmission of their previous shutdown, we can ignore it.
+                            Pair(this@ShuttingDown, listOf())
                         }
                     }
                     is Error -> {
@@ -174,7 +188,30 @@ data class ShuttingDown(
             is ChannelCommand.Htlc.Settlement.Fail -> handleCommandResult(cmd, commitments.sendFail(cmd, staticParams.nodeParams.nodePrivateKey), cmd.commit)
             is ChannelCommand.Htlc.Settlement.FailMalformed -> handleCommandResult(cmd, commitments.sendFailMalformed(cmd), cmd.commit)
             is ChannelCommand.Commitment.UpdateFee -> handleCommandResult(cmd, commitments.sendFee(cmd), cmd.commit)
-            is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
+            is ChannelCommand.Close.MutualClose -> {
+                // We may be updating our closing script or feerate.
+                when (cmd.scriptPubKey) {
+                    null -> when (cmd.feerate) {
+                        null -> Pair(this@ShuttingDown, listOf())
+                        else -> {
+                            val nextState = this@ShuttingDown.copy(closingFeerate = cmd.feerate)
+                            Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
+                        }
+                    }
+                    else -> {
+                        val localShutdown1 = localShutdown.copy(scriptPubKey = cmd.scriptPubKey)
+                        val nextState = when (cmd.feerate) {
+                            null -> this@ShuttingDown.copy(localShutdown = localShutdown1)
+                            else -> this@ShuttingDown.copy(localShutdown = localShutdown1, closingFeerate = cmd.feerate)
+                        }
+                        val actions = listOf(
+                            ChannelAction.Storage.StoreState(nextState),
+                            ChannelAction.Message.Send(localShutdown1),
+                        )
+                        Pair(nextState, actions)
+                    }
+                }
+            }
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchEventConfirmed -> updateFundingTxStatus(watch)

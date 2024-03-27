@@ -75,7 +75,8 @@ interface LightningMessage {
                 ChannelAnnouncement.type -> ChannelAnnouncement.read(stream)
                 ChannelUpdate.type -> ChannelUpdate.read(stream)
                 Shutdown.type -> Shutdown.read(stream)
-                ClosingSigned.type -> ClosingSigned.read(stream)
+                ClosingComplete.type -> ClosingComplete.read(stream)
+                ClosingSig.type -> ClosingSig.read(stream)
                 OnionMessage.type -> OnionMessage.read(stream)
                 PayToOpenRequest.type -> PayToOpenRequest.read(stream)
                 PayToOpenResponse.type -> PayToOpenResponse.read(stream)
@@ -1510,38 +1511,82 @@ data class Shutdown(
     }
 }
 
-data class ClosingSigned(
+data class ClosingComplete(
     override val channelId: ByteVector32,
-    val feeSatoshis: Satoshi,
-    val signature: ByteVector64,
-    val tlvStream: TlvStream<ClosingSignedTlv> = TlvStream.empty()
+    val fees: Satoshi,
+    val lockTime: Long,
+    val tlvStream: TlvStream<ClosingCompleteTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
-    override val type: Long get() = ClosingSigned.type
+    override val type: Long get() = ClosingComplete.type
 
-    override val channelData: EncryptedChannelData get() = tlvStream.get<ClosingSignedTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ClosingSigned = copy(tlvStream = tlvStream.addOrUpdate(ClosingSignedTlv.ChannelData(ecd)))
+    val closerNoCloseeSig: ByteVector64? = tlvStream.get<ClosingCompleteTlv.CloserNoClosee>()?.sig
+    val noCloserCloseeSig: ByteVector64? = tlvStream.get<ClosingCompleteTlv.NoCloserClosee>()?.sig
+    val closerAndCloseeSig: ByteVector64? = tlvStream.get<ClosingCompleteTlv.CloserAndClosee>()?.sig
+
+    override val channelData: EncryptedChannelData get() = tlvStream.get<ClosingCompleteTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ClosingComplete = copy(tlvStream = tlvStream.addOrUpdate(ClosingCompleteTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
-        LightningCodecs.writeU64(feeSatoshis.toLong(), out)
-        LightningCodecs.writeBytes(signature, out)
+        LightningCodecs.writeU64(fees.toLong(), out)
+        LightningCodecs.writeU32(lockTime.toInt(), out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
-    companion object : LightningMessageReader<ClosingSigned> {
-        const val type: Long = 39
+    companion object : LightningMessageReader<ClosingComplete> {
+        const val type: Long = 40
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
-            ClosingSignedTlv.FeeRange.tag to ClosingSignedTlv.FeeRange.Companion as TlvValueReader<ClosingSignedTlv>,
-            ClosingSignedTlv.ChannelData.tag to ClosingSignedTlv.ChannelData.Companion as TlvValueReader<ClosingSignedTlv>
+            ClosingCompleteTlv.CloserNoClosee.tag to ClosingCompleteTlv.CloserNoClosee.Companion as TlvValueReader<ClosingCompleteTlv>,
+            ClosingCompleteTlv.NoCloserClosee.tag to ClosingCompleteTlv.NoCloserClosee.Companion as TlvValueReader<ClosingCompleteTlv>,
+            ClosingCompleteTlv.CloserAndClosee.tag to ClosingCompleteTlv.CloserAndClosee.Companion as TlvValueReader<ClosingCompleteTlv>,
+            ClosingCompleteTlv.ChannelData.tag to ClosingCompleteTlv.ChannelData.Companion as TlvValueReader<ClosingCompleteTlv>
         )
 
-        override fun read(input: Input): ClosingSigned {
-            return ClosingSigned(
-                ByteVector32(LightningCodecs.bytes(input, 32)),
-                Satoshi(LightningCodecs.u64(input)),
-                ByteVector64(LightningCodecs.bytes(input, 64)),
+        override fun read(input: Input): ClosingComplete {
+            return ClosingComplete(
+                LightningCodecs.bytes(input, 32).byteVector32(),
+                LightningCodecs.u64(input).sat,
+                LightningCodecs.u32(input).toLong(),
+                TlvStreamSerializer(false, readers).read(input)
+            )
+        }
+    }
+}
+
+data class ClosingSig(
+    override val channelId: ByteVector32,
+    val tlvStream: TlvStream<ClosingSigTlv> = TlvStream.empty()
+) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
+    override val type: Long get() = ClosingSig.type
+
+    val closerNoCloseeSig: ByteVector64? = tlvStream.get<ClosingSigTlv.CloserNoClosee>()?.sig
+    val noCloserCloseeSig: ByteVector64? = tlvStream.get<ClosingSigTlv.NoCloserClosee>()?.sig
+    val closerAndCloseeSig: ByteVector64? = tlvStream.get<ClosingSigTlv.CloserAndClosee>()?.sig
+
+    override val channelData: EncryptedChannelData get() = tlvStream.get<ClosingSigTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
+    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ClosingSig = copy(tlvStream = tlvStream.addOrUpdate(ClosingSigTlv.ChannelData(ecd)))
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
+    }
+
+    companion object : LightningMessageReader<ClosingSig> {
+        const val type: Long = 41
+
+        @Suppress("UNCHECKED_CAST")
+        val readers = mapOf(
+            ClosingSigTlv.CloserNoClosee.tag to ClosingSigTlv.CloserNoClosee.Companion as TlvValueReader<ClosingSigTlv>,
+            ClosingSigTlv.NoCloserClosee.tag to ClosingSigTlv.NoCloserClosee.Companion as TlvValueReader<ClosingSigTlv>,
+            ClosingSigTlv.CloserAndClosee.tag to ClosingSigTlv.CloserAndClosee.Companion as TlvValueReader<ClosingSigTlv>,
+            ClosingSigTlv.ChannelData.tag to ClosingSigTlv.ChannelData.Companion as TlvValueReader<ClosingSigTlv>
+        )
+
+        override fun read(input: Input): ClosingSig {
+            return ClosingSig(
+                LightningCodecs.bytes(input, 32).byteVector32(),
                 TlvStreamSerializer(false, readers).read(input)
             )
         }

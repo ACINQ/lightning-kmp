@@ -53,11 +53,12 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             Feature.VariableLengthOnion to FeatureSupport.Mandatory,
             Feature.PaymentSecret to FeatureSupport.Mandatory,
             Feature.BasicMultiPartPayment to FeatureSupport.Optional,
-            Feature.DualFunding to FeatureSupport.Mandatory
+            Feature.DualFunding to FeatureSupport.Mandatory,
+            Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,
+            Feature.SimpleClose to FeatureSupport.Mandatory,
         )
         // The following invoice requires payment_metadata.
-        val invoice1 =
-            Bolt11InvoiceTestsCommon.createInvoiceUnsafe(features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.PaymentMetadata to FeatureSupport.Mandatory))
+        val invoice1 = Bolt11InvoiceTestsCommon.createInvoiceUnsafe(features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.PaymentMetadata to FeatureSupport.Mandatory))
         // The following invoice requires unknown feature bit 188.
         val invoice2 = Bolt11InvoiceTestsCommon.createInvoiceUnsafe(features = Features(mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory), setOf(UnknownFeature(188))))
         for (invoice in listOf(invoice1, invoice2)) {

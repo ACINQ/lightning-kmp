@@ -60,6 +60,8 @@ data class FeerateTooSmall                         (override val channelId: Byte
 data class FeerateTooDifferent                     (override val channelId: ByteVector32, val localFeeratePerKw: FeeratePerKw, val remoteFeeratePerKw: FeeratePerKw) : ChannelException(channelId, "local/remote feerates are too different: remoteFeeratePerKw=${remoteFeeratePerKw.toLong()} localFeeratePerKw=${localFeeratePerKw.toLong()}")
 data class InvalidCommitmentSignature              (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid commitment signature: txId=$txId")
 data class InvalidHtlcSignature                    (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid htlc signature: txId=$txId")
+data class CannotGenerateClosingTx                 (override val channelId: ByteVector32) : ChannelException(channelId, "failed to generate closing transaction: all outputs are trimmed")
+data class MissingCloseSignature                   (override val channelId: ByteVector32) : ChannelException(channelId, "closing_complete is missing a signature for a closing transaction including our output")
 data class InvalidCloseSignature                   (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid close signature: txId=$txId")
 data class InvalidCloseAmountBelowDust             (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid closing tx: some outputs are below dust: txId=$txId")
 data class CommitSigCountMismatch                  (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "commit sig count mismatch: expected=$expected actual=$actual")

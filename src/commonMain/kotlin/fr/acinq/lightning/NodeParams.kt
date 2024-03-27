@@ -160,6 +160,8 @@ data class NodeParams(
         require(features.hasFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)) { "${Feature.PaymentSecret.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.ChannelType, FeatureSupport.Mandatory)) { "${Feature.ChannelType.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.DualFunding, FeatureSupport.Mandatory)) { "${Feature.DualFunding.rfcName} should be mandatory" }
+        require(features.hasFeature(Feature.ShutdownAnySegwit, FeatureSupport.Mandatory)) { "${Feature.ShutdownAnySegwit.rfcName} should be mandatory" }
+        require(features.hasFeature(Feature.SimpleClose, FeatureSupport.Mandatory)) { "${Feature.SimpleClose.rfcName} should be mandatory" }
         require(!features.hasFeature(Feature.ZeroConfChannels)) { "${Feature.ZeroConfChannels.rfcName} has been deprecated: use the zeroConfPeers whitelist instead" }
         require(!features.hasFeature(Feature.TrustedSwapInClient)) { "${Feature.TrustedSwapInClient.rfcName} has been deprecated" }
         require(!features.hasFeature(Feature.TrustedSwapInProvider)) { "${Feature.TrustedSwapInProvider.rfcName} has been deprecated" }
@@ -185,6 +187,7 @@ data class NodeParams(
             Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,
             Feature.ChannelType to FeatureSupport.Mandatory,
             Feature.PaymentMetadata to FeatureSupport.Optional,
+            Feature.SimpleClose to FeatureSupport.Mandatory,
             Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
             Feature.ZeroReserveChannels to FeatureSupport.Optional,
             Feature.WakeUpNotificationClient to FeatureSupport.Optional,
