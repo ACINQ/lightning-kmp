@@ -39,7 +39,7 @@ jobs:
         with:
           java-version: 11
       - name: Check
-        run: ./gradlew check
+        run: ./gradlew -PiosSimulatorMode=standalone check
       - name: Publish Linux
         if: matrix.os == 'ubuntu-latest'
         shell: bash
