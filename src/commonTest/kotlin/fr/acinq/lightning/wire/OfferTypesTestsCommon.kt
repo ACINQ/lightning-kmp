@@ -9,6 +9,7 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.crypto.RouteBlinding
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
@@ -42,7 +43,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     @Test
     fun `invoice request is signed`() {
         val sellerKey = randomKey()
-        val offer = Offer(100_000.msat, "test offer", sellerKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createInternal(100_000.msat, "test offer", sellerKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = InvoiceRequest(offer, 100_000.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
         assertTrue(request.checkSignature())
@@ -96,7 +97,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check that invoice request matches offer`() {
-        val offer = Offer(2500.msat, "basic offer", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createInternal(2500.msat, "basic offer", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = InvoiceRequest(offer, 2500.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
@@ -112,7 +113,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check that invoice request matches offer - with features`() {
-        val offer = Offer(2500.msat, "offer with features", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createInternal(2500.msat, "offer with features", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = InvoiceRequest(offer, 2500.msat, 1, Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional), payerKey, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
@@ -127,7 +128,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check that invoice request matches offer - without amount`() {
-        val offer = Offer(null, "offer without amount", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createInternal(null, "offer without amount", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = InvoiceRequest(offer, 500.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
@@ -312,5 +313,13 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             assertEquals(encoded, out.toByteArray().toByteVector())
             assertEquals(decoded, readPath(ByteArrayInput(encoded.toByteArray())))
         }
+    }
+
+    @Test
+    fun `Default offer is deterministic`() {
+        val pathId = ByteVector32.fromValidHex("8fe8758518872aa45287e18e613326bccc6d72e5bc4049b0353137bc6d83320a")
+        val offer = Offer(null, "default offer", TestConstants.Alice.nodeParams, TestConstants.Alice.walletParams, pathId)
+        val expectedOffer = Offer.decode("lno1qgsqvgnwgcg35z6ee2h3yczraddm72xrfua9uve2rlrm9deu7xyfzrc2p4jx2enpw4k8ggr0venx2usvqvpqqqqs65pk9vv6swfs8zd5g697gqcga7elx54jx9p2uf0x4wsyvk5zyru4kpszvhkjfgd788sjgf5y6dqyvdq9s7lu68v97ad96cvsmzg99sgmcu0qyq6q20hxu4sp9gddmd0x7waap9wux94cm0246dxrjjw60qcparljtsqp5elqhdxerpqcfcup9ntxvrnpl50n226m7sm2n9jpvmqrfcnce7mdygk7wnhyl6y84nfypplcm3v25smd40lcjyemhvnvp2eqqv3ceeyp46we7d6vlfxfqggczrg55qj89nhaqzt8ymhddf2gmpcjz99dkszxp0kkupcf0dpnwpwsm52klvckyyp5ufuvldkjyt08fmj0azr6e5jqsludck92gdk6hlufzvamkfkq4vs").get()
+        assertEquals(expectedOffer, offer)
     }
 }

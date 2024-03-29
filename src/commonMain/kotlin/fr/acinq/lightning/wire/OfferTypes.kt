@@ -9,11 +9,10 @@ import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Features
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.crypto.RouteBlinding
+import fr.acinq.lightning.message.OnionMessages
 
 /**
  * Lightning Bolt 12 offers
@@ -431,7 +430,7 @@ object OfferTypes {
     }
 
     data class PaymentInfo(val feeBase: MilliSatoshi,
-                           val feeProportionalMillionths: Int,
+                           val feeProportionalMillionths: Long,
                            val cltvExpiryDelta: CltvExpiryDelta,
                            val minHtlc: MilliSatoshi,
                            val maxHtlc: MilliSatoshi,
@@ -443,7 +442,7 @@ object OfferTypes {
 
     fun writePaymentInfo(paymentInfo: PaymentInfo, out: Output) {
         LightningCodecs.writeU32(paymentInfo.feeBase.msat.toInt(), out)
-        LightningCodecs.writeU32(paymentInfo.feeProportionalMillionths, out)
+        LightningCodecs.writeU32(paymentInfo.feeProportionalMillionths.toInt(), out)
         LightningCodecs.writeU16(paymentInfo.cltvExpiryDelta.toInt(), out)
         LightningCodecs.writeU64(paymentInfo.minHtlc.msat, out)
         LightningCodecs.writeU64(paymentInfo.maxHtlc.msat, out)
@@ -459,7 +458,7 @@ object OfferTypes {
         val minHtlc = MilliSatoshi(LightningCodecs.u64(input))
         val maxHtlc = MilliSatoshi(LightningCodecs.u64(input))
         val allowedFeatures = Features(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
-        return PaymentInfo(feeBase, feeProportionalMillionths, cltvExpiryDelta, minHtlc, maxHtlc, allowedFeatures)
+        return PaymentInfo(feeBase, feeProportionalMillionths.toLong(), cltvExpiryDelta, minHtlc, maxHtlc, allowedFeatures)
     }
 
     /**
@@ -742,14 +741,14 @@ object OfferTypes {
             val hrp = "lno"
 
             /**
-             * @param amount_opt  amount if it can be determined at offer creation time.
+             * @param amount      amount if it can be determined at offer creation time.
              * @param description description of the offer.
              * @param nodeId      the nodeId to use for this offer, which should be different from our public nodeId if we're hiding behind a blinded route.
              * @param features    invoice features.
              * @param chain       chain on which the offer is valid.
              */
-            operator fun invoke(
-                amount_opt: MilliSatoshi?,
+            internal fun createInternal(
+                amount: MilliSatoshi?,
                 description: String,
                 nodeId: PublicKey,
                 features: Features,
@@ -759,12 +758,40 @@ object OfferTypes {
             ): Offer {
                 val tlvs: Set<OfferTlv> = setOfNotNull(
                     if (chain != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chain)) else null,
-                    amount_opt?.let { OfferAmount(it) },
+                    amount?.let { OfferAmount(it) },
                     OfferDescription(description),
                     if (features != Features.empty) OfferFeatures(features) else null,
-                    OfferNodeId(nodeId),
+                    OfferNodeId(nodeId) // TODO: If the spec allows it, removes `OfferNodeId` when we already set `OfferPaths`.
                 ) + additionalTlvs
                 return Offer(TlvStream(tlvs, customTlvs))
+            }
+
+            /**
+             * @param amount       amount if it can be determined at offer creation time.
+             * @param description  description of the offer.
+             * @param nodeParams   our node parameters.
+             * @param walletParams our wallet parameters.
+             * @param pathId       pathId on which we will listen for invoice requests.
+             */
+            operator fun invoke(
+                amount: MilliSatoshi?,
+                description: String,
+                nodeParams: NodeParams,
+                walletParams: WalletParams,
+                pathId: ByteVector32,
+                additionalTlvs: Set<OfferTlv> = setOf(),
+                customTlvs: Set<GenericTlv> = setOf()): Offer {
+                val path = OnionMessages.buildRoute(PrivateKey(pathId), listOf(OnionMessages.IntermediateNode(walletParams.trampolineNode.id, ShortChannelId.peerId(nodeParams.nodeId))), OnionMessages.Destination.Recipient(nodeParams.nodeId, pathId))
+                val offerNodeId = path.blindedNodeIds.last()
+                return createInternal(
+                    amount,
+                    description,
+                    offerNodeId,
+                    nodeParams.features.bolt12Features(),
+                    nodeParams.chainHash,
+                    additionalTlvs + OfferPaths(listOf(ContactInfo.BlindedPath(path))),
+                    customTlvs
+                )
             }
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {

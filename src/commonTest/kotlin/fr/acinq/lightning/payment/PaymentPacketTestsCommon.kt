@@ -366,11 +366,11 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         //            /    \
         // a -> b -> c      d -> e
         val features = Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional)
-        val offer = OfferTypes.Offer(finalAmount, "test offer", e, features, Block.LivenetGenesisBlock.hash)
+        val offer = OfferTypes.Offer.createInternal(finalAmount, "test offer", e, features, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = OfferTypes.InvoiceRequest(offer, finalAmount, 1, features, payerKey, Block.LivenetGenesisBlock.hash)
         val blindedRoute = RouteBlinding.create(randomKey(), listOf(randomKey().publicKey()), listOf(randomBytes(40).toByteVector()))
-        val paymentInfo = OfferTypes.PaymentInfo(channelUpdateDE.feeBaseMsat, channelUpdateDE.feeProportionalMillionths.toInt(), channelUpdateDE.cltvExpiryDelta, channelUpdateDE.htlcMinimumMsat, channelUpdateDE.htlcMaximumMsat!!, Features.empty)
+        val paymentInfo = OfferTypes.PaymentInfo(channelUpdateDE.feeBaseMsat, channelUpdateDE.feeProportionalMillionths, channelUpdateDE.cltvExpiryDelta, channelUpdateDE.htlcMinimumMsat, channelUpdateDE.htlcMaximumMsat!!, Features.empty)
         val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
         val invoice = Bolt12Invoice(request, paymentPreimage, privE, 600, features, listOf(path))
 

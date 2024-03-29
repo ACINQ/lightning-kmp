@@ -132,6 +132,9 @@ data class MessageOnion(val records: TlvStream<OnionMessagePayloadTlv>) {
             true, @Suppress("UNCHECKED_CAST") mapOf(
                 OnionMessagePayloadTlv.ReplyPath.tag to OnionMessagePayloadTlv.ReplyPath.Companion as TlvValueReader<OnionMessagePayloadTlv>,
                 OnionMessagePayloadTlv.EncryptedData.tag to OnionMessagePayloadTlv.EncryptedData.Companion as TlvValueReader<OnionMessagePayloadTlv>,
+                OnionMessagePayloadTlv.InvoiceRequest.tag to OnionMessagePayloadTlv.InvoiceRequest.Companion as TlvValueReader<OnionMessagePayloadTlv>,
+                OnionMessagePayloadTlv.Invoice.tag to OnionMessagePayloadTlv.Invoice.Companion as TlvValueReader<OnionMessagePayloadTlv>,
+                OnionMessagePayloadTlv.InvoiceError.tag to OnionMessagePayloadTlv.InvoiceError.Companion as TlvValueReader<OnionMessagePayloadTlv>
             )
         )
 

@@ -75,11 +75,11 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
     }
 
     /** Information for the relaying node to build the next HTLC. */
-    data class PaymentRelay(val cltvExpiryDelta: CltvExpiryDelta, val feeProportionalMillionths: Int, val feeBase: MilliSatoshi) : RouteBlindingEncryptedDataTlv() {
+    data class PaymentRelay(val cltvExpiryDelta: CltvExpiryDelta, val feeProportionalMillionths: Long, val feeBase: MilliSatoshi) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = PaymentRelay.tag
         override fun write(out: Output) {
             LightningCodecs.writeU16(cltvExpiryDelta.toInt(), out)
-            LightningCodecs.writeU32(feeProportionalMillionths, out)
+            LightningCodecs.writeU32(feeProportionalMillionths.toInt(), out)
             LightningCodecs.writeTU32(feeBase.msat.toInt(), out)
         }
 
@@ -89,7 +89,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
                 val cltvExpiryDelta = CltvExpiryDelta(LightningCodecs.u16(input))
                 val feeProportionalMillionths = LightningCodecs.u32(input)
                 val feeBase = MilliSatoshi(LightningCodecs.tu32(input).toLong())
-                return PaymentRelay(cltvExpiryDelta, feeProportionalMillionths, feeBase)
+                return PaymentRelay(cltvExpiryDelta, feeProportionalMillionths.toLong(), feeBase)
             }
         }
     }
@@ -130,6 +130,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
 
 data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryptedDataTlv>) {
     val nextNodeId = records.get<RouteBlindingEncryptedDataTlv.OutgoingNodeId>()?.nodeId
+    val outgoingChannelId = records.get<RouteBlindingEncryptedDataTlv.OutgoingChannelId>()?.shortChannelId
     val pathId = records.get<RouteBlindingEncryptedDataTlv.PathId>()?.data
     val nextBlindingOverride = records.get<RouteBlindingEncryptedDataTlv.NextBlinding>()?.blinding
 
@@ -142,7 +143,7 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
     }
 
     companion object {
-        val tlvSerializer = TlvStreamSerializer(
+        private val tlvSerializer = TlvStreamSerializer(
             false, @Suppress("UNCHECKED_CAST") mapOf(
                 RouteBlindingEncryptedDataTlv.Padding.tag to RouteBlindingEncryptedDataTlv.Padding as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.OutgoingChannelId.tag to RouteBlindingEncryptedDataTlv.OutgoingChannelId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
