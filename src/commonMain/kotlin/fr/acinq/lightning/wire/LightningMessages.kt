@@ -1619,7 +1619,7 @@ data class PayToOpenRequest(
     val paymentHash: ByteVector32,
     val expireAt: Long,
     val finalPacket: OnionRoutingPacket,
-    val liquidity: Satoshi = 0.sat,
+    val liquidity: Satoshi,
     val tlvStream: TlvStream<PayToOpenRequestTlv> = TlvStream.empty(),
 ) : LightningMessage, HasChainHash {
     override val type: Long get() = PayToOpenRequest.type
