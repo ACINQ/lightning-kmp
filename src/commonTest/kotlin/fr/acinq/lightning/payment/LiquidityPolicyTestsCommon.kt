@@ -7,7 +7,6 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 class LiquidityPolicyTestsCommon : LightningTestSuite() {
 
@@ -16,7 +15,7 @@ class LiquidityPolicyTestsCommon : LightningTestSuite() {
     @Test
     fun `policy rejection`() {
 
-        val policy = LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false, maxAllowedCredit = 0.sat)
+        val policy = LiquidityPolicy.Auto(maxMiningFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipMiningFeeCheck = false, maxAllowedCredit = 0.sat)
 
         // fee over both absolute and relative
         assertEquals(
@@ -26,7 +25,7 @@ class LiquidityPolicyTestsCommon : LightningTestSuite() {
 
         // fee over absolute
         assertEquals(
-            expected = LiquidityEvents.Decision.Rejected.Reason.TooExpensive.OverAbsoluteFee(policy.maxAbsoluteFee),
+            expected = LiquidityEvents.Decision.Rejected.Reason.TooExpensive.OverMaxMiningFee(policy.maxMiningFee),
             actual = (policy.maybeReject(amount = 15_000_000.msat, fee = 3_000_000.msat, source = LiquidityEvents.Source.OffChainPayment, logger, currentFeeCredit = 0.sat) as? LiquidityEvents.Decision.Rejected)?.reason
         )
 
@@ -45,7 +44,7 @@ class LiquidityPolicyTestsCommon : LightningTestSuite() {
     @Test
     fun `policy rejection skip absolute check`() {
 
-        val policy = LiquidityPolicy.Auto(maxAbsoluteFee = 1_000.sat, maxRelativeFeeBasisPoints = 5_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = true, maxAllowedCredit = 0.sat)
+        val policy = LiquidityPolicy.Auto(maxMiningFee = 1_000.sat, maxRelativeFeeBasisPoints = 5_000 /* 3000 = 30 % */, skipMiningFeeCheck = true, maxAllowedCredit = 0.sat)
 
         // fee is over absolute, and it's an offchain payment so the check passes
         assertEquals(
@@ -54,7 +53,7 @@ class LiquidityPolicyTestsCommon : LightningTestSuite() {
 
         // fee is over absolute, but it's an on-chain payment so the check fails
         assertEquals(
-            expected = LiquidityEvents.Decision.Rejected.Reason.TooExpensive.OverAbsoluteFee(policy.maxAbsoluteFee),
+            expected = LiquidityEvents.Decision.Rejected.Reason.TooExpensive.OverMaxMiningFee(policy.maxMiningFee),
             actual = (policy.maybeReject(amount = 4_000_000.msat, fee = 2_000_000.msat, source = LiquidityEvents.Source.OnChainWallet, logger, currentFeeCredit = 0.sat) as? LiquidityEvents.Decision.Rejected)?.reason
         )
 
