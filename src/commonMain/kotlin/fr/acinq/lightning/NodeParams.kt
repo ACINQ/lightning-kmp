@@ -231,9 +231,9 @@ data class NodeParams(
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
         liquidityPolicy = MutableStateFlow<LiquidityPolicy>(
             LiquidityPolicy.Auto(
-                maxAbsoluteFee = 2_000.sat,
+                maxMiningFee = 2_000.sat,
                 maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */,
-                skipAbsoluteFeeCheck = false,
+                skipMiningFeeCheck = false,
                 maxAllowedCredit = 0.sat
             )
         ),
