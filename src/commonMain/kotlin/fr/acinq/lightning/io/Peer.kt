@@ -969,7 +969,7 @@ class Peer(
                                 is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
                                         val totalFee = origin.serviceFee + origin.miningFee.toMilliSatoshi() - msg.pushAmount
-                                        val decision = nodeParams.liquidityPolicy.value.maybeReject(request.walletInputs.balance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger, nodeParams.feeCredit.value)
+                                        val decision = nodeParams.liquidityPolicy.value.maybeReject(request.walletInputs.balance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger, currentFeeCredit = nodeParams.feeCredit.value)
                                         when (decision) {
                                             is LiquidityEvents.Decision.Rejected -> {
                                                 logger.info { "rejecting open_channel2: reason=${decision.reason}" }
@@ -1158,7 +1158,7 @@ class Peer(
                         val (feerate, fee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
                         logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
-                        val decision = nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger, nodeParams.feeCredit.value)
+                        val decision = nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger, currentFeeCredit = nodeParams.feeCredit.value)
                         nodeParams._nodeEvents.emit(decision)
                         when (decision) {
                             is LiquidityEvents.Decision.Rejected -> {

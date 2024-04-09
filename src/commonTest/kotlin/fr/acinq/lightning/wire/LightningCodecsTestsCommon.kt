@@ -753,7 +753,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     @Test
     fun `encode - decode pay-to-open messages`() {
         val testCases = listOf(
-            PayToOpenRequest(BlockHash(randomBytes32()), 5_000.msat, 10.sat, randomBytes32(), 100, OnionRoutingPacket(0, randomKey().publicKey().value, ByteVector("0102030405"), randomBytes32())),
+            PayToOpenRequest(BlockHash(randomBytes32()), 5_000.msat, 10.sat, randomBytes32(), 100, OnionRoutingPacket(0, randomKey().publicKey().value, ByteVector("0102030405"), randomBytes32()), 1_000_000.sat),
             PayToOpenResponse(BlockHash(randomBytes32()), randomBytes32(), PayToOpenResponse.Result.Success(randomBytes32())),
             PayToOpenResponse(BlockHash(randomBytes32()), randomBytes32(), PayToOpenResponse.Result.Failure(null)),
             PayToOpenResponse(BlockHash(randomBytes32()), randomBytes32(), PayToOpenResponse.Result.Failure(ByteVector("deadbeef"))),

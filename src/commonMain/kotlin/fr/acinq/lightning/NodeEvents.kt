@@ -9,7 +9,6 @@ import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.utils.sum
-import fr.acinq.lightning.wire.Node
 import fr.acinq.lightning.wire.PleaseOpenChannel
 import kotlinx.coroutines.CompletableDeferred
 
@@ -38,7 +37,7 @@ sealed interface LiquidityEvents : NodeEvents {
             sealed class Reason {
                 data object PolicySetToDisabled : Reason()
                 sealed class TooExpensive : Reason() {
-                    data class OverAbsoluteFee(val maxAbsoluteFee: Satoshi) : TooExpensive()
+                    data class OverMaxMiningFee(val maxMiningFee: Satoshi) : TooExpensive()
                     data class OverRelativeFee(val maxRelativeFeeBasisPoints: Int) : TooExpensive()
                 }
                 data class OverMaxCredit(val maxAllowedCredit: Satoshi) : TooExpensive()

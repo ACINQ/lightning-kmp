@@ -1593,7 +1593,8 @@ data class PayToOpenRequest(
     val payToOpenFeeSatoshis: Satoshi,
     val paymentHash: ByteVector32,
     val expireAt: Long,
-    val finalPacket: OnionRoutingPacket
+    val finalPacket: OnionRoutingPacket,
+    val liquidity: Satoshi
 ) : LightningMessage, HasChainHash {
     override val type: Long get() = PayToOpenRequest.type
 
@@ -1607,6 +1608,7 @@ data class PayToOpenRequest(
         LightningCodecs.writeU32(expireAt.toInt(), out)
         LightningCodecs.writeU16(finalPacket.payload.size(), out)
         OnionRoutingPacketSerializer(finalPacket.payload.size()).write(finalPacket, out)
+        LightningCodecs.writeU64(liquidity.toLong(), out)
     }
 
     companion object : LightningMessageReader<PayToOpenRequest> {
@@ -1621,7 +1623,8 @@ data class PayToOpenRequest(
                 payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
                 paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
                 expireAt = LightningCodecs.u32(input).toLong(),
-                finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input)
+                finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input),
+                liquidity = Satoshi(LightningCodecs.u64(input))
             )
         }
     }
