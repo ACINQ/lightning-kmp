@@ -41,14 +41,16 @@ sealed interface LiquidityEvents : NodeEvents {
             sealed class Reason {
                 data object PolicySetToDisabled : Reason()
                 sealed class TooExpensive : Reason() {
-                    data class OverAbsoluteFee(val maxAbsoluteFee: Satoshi) : TooExpensive()
+                    data class OverMaxMiningFee(val maxMiningFee: Satoshi) : TooExpensive()
                     data class OverRelativeFee(val maxRelativeFeeBasisPoints: Int) : TooExpensive()
                 }
+
                 data class OverMaxCredit(val maxAllowedCredit: Satoshi) : TooExpensive()
 
                 data object ChannelInitializing : Reason()
             }
         }
+
         data class AddedToFeeCredit(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source) : Decision
         data class Accepted(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source) : Decision
     }
@@ -62,8 +64,10 @@ sealed interface SensitiveTaskEvents : NodeEvents {
         data class InteractiveTx(val channelId: ByteVector32, val fundingTxIndex: Long) : TaskIdentifier() {
             constructor(fundingParams: InteractiveTxParams) : this(fundingParams.channelId, (fundingParams.sharedInput as? SharedFundingInput.Multisig2of2)?.fundingTxIndex?.let { it + 1 } ?: 0)
         }
+
         data class IncomingMultiPartPayment(val paymentHash: ByteVector32) : TaskIdentifier()
     }
+
     data class TaskStarted(val id: TaskIdentifier) : SensitiveTaskEvents
     data class TaskEnded(val id: TaskIdentifier) : SensitiveTaskEvents
 

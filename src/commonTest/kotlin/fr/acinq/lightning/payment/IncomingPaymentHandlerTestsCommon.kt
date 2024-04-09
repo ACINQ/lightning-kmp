@@ -248,7 +248,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 hops = channelHops(paymentHandler.nodeParams.nodeId),
                 finalPayload = makeMppPayload(defaultAmount, defaultAmount, randomBytes32()),
                 payloadLength = OnionRoutingPacket.PaymentPacketLength
-            ).third.packet
+            ).third.packet,
+            liquidity = 0.sat
         )
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
@@ -338,7 +339,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 hops = trampolineHops,
                 finalPayload = makeMppPayload(defaultAmount, defaultAmount, paymentSecret.reversed()), // <-- wrong secret
                 payloadLength = 400
-            ).third.packet
+            ).third.packet,
+            liquidity = 0.sat
         )
         val result = paymentHandler.process(payToOpenRequest, TestConstants.defaultBlockHeight)
 
@@ -1405,7 +1407,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                     hops = channelHops(TestConstants.Bob.nodeParams.nodeId),
                     finalPayload = finalPayload,
                     payloadLength = OnionRoutingPacket.PaymentPacketLength
-                ).third.packet
+                ).third.packet,
+                liquidity = 0.sat
             )
         }
 
