@@ -303,10 +303,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
                             pending.remove(paymentPart.paymentHash)
                             val received = IncomingPayment.Received(receivedWith = receivedWith)
-                            when (incomingPayment.origin) {
-                                is IncomingPayment.Origin.Offer -> db.receiveOfferPayment(incomingPayment.origin, incomingPayment.preimage, received.receivedWith)
-                                else -> db.receivePayment(paymentPart.paymentHash, received.receivedWith)
+                            if (incomingPayment.origin is IncomingPayment.Origin.Offer) {
+                                db.addIncomingPayment(incomingPayment.preimage, incomingPayment.origin)
                             }
+                            db.receivePayment(paymentPart.paymentHash, received.receivedWith)
                             nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(paymentPart.paymentHash, received.receivedWith))
                             return ProcessAddResult.Accepted(actions, incomingPayment.copy(received = received), received)
                         }

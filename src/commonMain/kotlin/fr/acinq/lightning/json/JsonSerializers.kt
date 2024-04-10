@@ -48,6 +48,8 @@
     JsonSerializers.OnionRoutingPacketSerializer::class,
     JsonSerializers.FundingSignedSerializer::class,
     JsonSerializers.UpdateAddHtlcSerializer::class,
+    JsonSerializers.UpdateAddHtlcTlvSerializer::class,
+    JsonSerializers.UpdateAddHtlcTlvBlindingSerializer::class,
     JsonSerializers.UpdateFulfillHtlcSerializer::class,
     JsonSerializers.UpdateFailHtlcSerializer::class,
     JsonSerializers.UpdateFailMalformedHtlcSerializer::class,
@@ -71,7 +73,6 @@
     JsonSerializers.RemoteFundingStatusSerializer::class,
     JsonSerializers.ShutdownSerializer::class,
     JsonSerializers.ClosingSignedSerializer::class,
-    JsonSerializers.UpdateAddHtlcSerializer::class,
     JsonSerializers.CommitSigSerializer::class,
     JsonSerializers.EncryptedChannelDataSerializer::class,
     JsonSerializers.ChannelReestablishDataSerializer::class,
@@ -197,6 +198,7 @@ object JsonSerializers {
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
+                subclass(UpdateAddHtlcTlv.Blinding::class, UpdateAddHtlcTlvBlindingSerializer)
             }
             // TODO The following declarations are required because serializers for [TransactionWithInputInfo]
             //  depend themselves on @Contextual serializers. Once we get rid of v2/v3 serialization and we
@@ -456,6 +458,12 @@ object JsonSerializers {
 
     @Serializer(forClass = EncryptedChannelData::class)
     object EncryptedChannelDataSerializer
+
+    @Serializer(forClass = UpdateAddHtlcTlv.Blinding::class)
+    object UpdateAddHtlcTlvBlindingSerializer
+
+    @Serializer(forClass = UpdateAddHtlcTlv::class)
+    object UpdateAddHtlcTlvSerializer
 
     @Serializer(forClass = UpdateAddHtlc::class)
     object UpdateAddHtlcSerializer

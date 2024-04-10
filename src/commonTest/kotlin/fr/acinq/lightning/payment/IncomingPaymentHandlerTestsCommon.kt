@@ -8,6 +8,7 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx
+import fr.acinq.lightning.crypto.sphinx.Sphinx.hash
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
@@ -1230,7 +1231,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
 
         assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
-        val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(InvalidOnionPayload(0U, 0)), commit = true)
+        val expectedFailure = InvalidOnionBlinding(hash(add.onionRoutingPacket))
+        val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedFailure.onionHash, expectedFailure.code, commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
 
@@ -1289,7 +1291,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         private fun makeBlindedPayload(recipientNodeId: PublicKey, amount: MilliSatoshi, totalAmount: MilliSatoshi, cltvExpiry: CltvExpiry, offerId: ByteVector32, quantity: Long = 1, preimage: ByteVector32 = randomBytes32(), payerKey: PublicKey = randomKey().publicKey()): PaymentOnion.FinalPayload.Blinded {
-            val pathId = OfferPaymentMetadata(offerId, preimage, payerKey, currentTimestampMillis(), quantity, totalAmount, ByteVector.empty).write(TestConstants.Bob.nodeParams.nodePrivateKey)
+            val pathId = OfferPaymentMetadata(offerId, preimage, payerKey, totalAmount, quantity, currentTimestampMillis()).write(TestConstants.Bob.nodeParams.nodePrivateKey)
             val recipientData = TlvStream<RouteBlindingEncryptedDataTlv>(RouteBlindingEncryptedDataTlv.PathId(pathId))
             val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(RouteBlindingEncryptedData.tlvSerializer.write(recipientData).toByteVector()))
             return PaymentOnion.FinalPayload.Blinded(TlvStream(

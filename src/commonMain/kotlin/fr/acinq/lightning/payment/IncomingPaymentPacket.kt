@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx
+import fr.acinq.lightning.crypto.sphinx.Sphinx.hash
 import fr.acinq.lightning.wire.*
 
 object IncomingPaymentPacket {
@@ -44,26 +45,41 @@ object IncomingPaymentPacket {
 
     fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, privateKey: PrivateKey, blinding: PublicKey?): Either<FailureMessage, PaymentOnion.FinalPayload> {
         val onionDecryptionKey = blinding?.let { RouteBlinding.derivePrivateKey(privateKey, it) } ?: privateKey
-        return when (val decrypted = Sphinx.peel(onionDecryptionKey, paymentHash, packet)) {
-            is Either.Left -> Either.Left(decrypted.value)
-            is Either.Right -> run {
+        when (val decrypted = Sphinx.peel(onionDecryptionKey, paymentHash, packet)) {
+            is Either.Left -> return Either.Left(decrypted.value)
+            is Either.Right -> {
                 if (!decrypted.value.isLastPacket) {
-                    Either.Left(UnknownNextPeer)
+                    return Either.Left(UnknownNextPeer)
                 } else {
-                    try {
-                        val tlvs = PaymentOnion.PerHopPayload.tlvSerializer.read(decrypted.value.payload.toByteArray())
-                        val encryptedRecipientData = tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>()?.data
-                        if (encryptedRecipientData == null) {
-                            Either.Right(PaymentOnion.FinalPayload.Standard(tlvs))
-                        } else {
-                            val innerBlinding = tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>()?.publicKey
-                            require(blinding == null || innerBlinding == null)
-                            val (decryptedRecipientData, _) = RouteBlinding.decryptPayload(privateKey, blinding ?: innerBlinding!!, encryptedRecipientData)
-                            val recipientData = RouteBlindingEncryptedData.tlvSerializer.read(decryptedRecipientData.toByteArray())
-                            Either.Right(PaymentOnion.FinalPayload.Blinded(tlvs, recipientData))
-                        }
+                    val tlvs = try {
+                        PaymentOnion.PerHopPayload.tlvSerializer.read(decrypted.value.payload.toByteArray())
                     } catch (_: Throwable) {
-                        Either.Left(InvalidOnionPayload(0U, 0))
+                        return Either.Left(InvalidOnionPayload(0U, 0))
+                    }
+                    val encryptedRecipientData = tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>()?.data
+                    val innerBlinding = tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>()?.publicKey
+                    return if (encryptedRecipientData == null) {
+                        if (blinding != null || innerBlinding != null) {
+                            Either.Left(InvalidOnionBlinding(hash(packet)))
+                        } else {
+                            try {
+                                Either.Right(PaymentOnion.FinalPayload.Standard(tlvs))
+                            } catch (_: Throwable) {
+                                Either.Left(InvalidOnionPayload(0U, 0))
+                            }
+                        }
+                    } else {
+                        if ((blinding == null) == (innerBlinding == null)) { // exactly one of them must be non-null
+                            Either.Left(InvalidOnionBlinding(hash(packet)))
+                        } else {
+                            try {
+                                val (decryptedRecipientData, _) = RouteBlinding.decryptPayload(privateKey, blinding ?: innerBlinding!!, encryptedRecipientData)
+                                val recipientData = RouteBlindingEncryptedData.tlvSerializer.read(decryptedRecipientData.toByteArray())
+                                Either.Right(PaymentOnion.FinalPayload.Blinded(tlvs, recipientData))
+                            } catch (_: Throwable) {
+                                Either.Left(InvalidOnionBlinding(hash(packet)))
+                            }
+                        }
                     }
                 }
             }

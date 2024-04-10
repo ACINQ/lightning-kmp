@@ -56,8 +56,6 @@ interface IncomingPaymentsDb {
      */
     suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
 
-    suspend fun receiveOfferPayment(origin: IncomingPayment.Origin.Offer, preimage: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
-
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
 
@@ -150,7 +148,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         /** A normal, Bolt11 invoice-based lightning payment. */
         data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
 
-        /** A payment for an offer. */
+        /** A payment for a Bolt 12 offer: note that we only keep a few fields from the corresponding Bolt 12 invoice. */
         data class Offer(val metadata: OfferPaymentMetadata) : Origin()
 
         /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
