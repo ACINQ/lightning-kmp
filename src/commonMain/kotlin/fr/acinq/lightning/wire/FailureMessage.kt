@@ -77,6 +77,7 @@ sealed class FailureMessage {
                 is InvalidOnionVersion -> LightningCodecs.writeBytes(input.onionHash, out)
                 is InvalidOnionHmac -> LightningCodecs.writeBytes(input.onionHash, out)
                 is InvalidOnionKey -> LightningCodecs.writeBytes(input.onionHash, out)
+                is InvalidOnionBlinding -> LightningCodecs.writeBytes(input.onionHash, out)
                 is TemporaryChannelFailure -> writeChannelUpdate(input.update, out)
                 PermanentChannelFailure -> return
                 RequiredChannelFeatureMissing -> return
@@ -161,6 +162,11 @@ data class InvalidOnionKey(override val onionHash: ByteVector32) : FailureMessag
     override val code get() = InvalidOnionKey.code
     override val message get() = "ephemeral key was unparsable by the processing node"
     companion object { const val code = BADONION or PERM or 6 }
+}
+data class InvalidOnionBlinding(override val onionHash: ByteVector32) : FailureMessage(), BadOnion, Perm {
+    override val code get() = InvalidOnionBlinding.code
+    override val message get() = "the blinded onion didn't match the processing node's requirements"
+    companion object { const val code = BADONION or PERM or 24 }
 }
 data class TemporaryChannelFailure(override val update: ChannelUpdate) : FailureMessage(), Update {
     override val code get() = TemporaryChannelFailure.code

@@ -67,6 +67,11 @@ sealed class OnionPaymentPayloadTlv : Tlv {
         }
     }
 
+    /**
+     * Route blinding lets the recipient provide some encrypted data for each intermediate node in the blinded part of
+     * the route. This data cannot be decrypted or modified by the sender and usually contains information to locate the
+     * next node without revealing it to the sender.
+     */
     data class EncryptedRecipientData(val data: ByteVector) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = EncryptedRecipientData.tag
         override fun write(out: Output) {
@@ -79,6 +84,7 @@ sealed class OnionPaymentPayloadTlv : Tlv {
         }
     }
 
+    /** Blinding ephemeral public key for the introduction node of a blinded route. */
     data class BlindingPoint(val publicKey: PublicKey) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = BlindingPoint.tag
         override fun write(out: Output) {
@@ -105,6 +111,7 @@ sealed class OnionPaymentPayloadTlv : Tlv {
         }
     }
 
+    /** Total amount in blinded multi-part payments. */
     data class TotalAmount(val totalAmount: MilliSatoshi) : OnionPaymentPayloadTlv() {
         override val tag: Long get() = TotalAmount.tag
         override fun write(out: Output) {
