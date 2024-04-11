@@ -769,6 +769,7 @@ object OfferTypes {
              * @param description description of the offer.
              * @param nodeParams our node parameters.
              * @param trampolineNode our trampoline node.
+             * @param features features that should be advertised in the offer.
              * @param pathId pathId on which we will listen for invoice requests.
              */
             fun createBlindedOffer(
@@ -776,6 +777,7 @@ object OfferTypes {
                 description: String,
                 nodeParams: NodeParams,
                 trampolineNode: NodeUri,
+                features: Features,
                 pathId: ByteVector32,
                 additionalTlvs: Set<OfferTlv> = setOf(),
                 customTlvs: Set<GenericTlv> = setOf()
@@ -786,7 +788,7 @@ object OfferTypes {
                     amount,
                     description,
                     offerNodeId,
-                    nodeParams.features.bolt12Features(),
+                    features.bolt12Features(),
                     nodeParams.chainHash,
                     additionalTlvs + OfferPaths(listOf(ContactInfo.BlindedPath(path))),
                     customTlvs

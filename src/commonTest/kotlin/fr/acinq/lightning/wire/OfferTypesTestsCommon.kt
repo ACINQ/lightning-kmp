@@ -515,9 +515,21 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `generate deterministic blinded offer through trampoline node`() {
-        val pathId = ByteVector32.fromValidHex("8fe8758518872aa45287e18e613326bccc6d72e5bc4049b0353137bc6d83320a")
-        val offer = Offer.createBlindedOffer(amount = null, "default offer", TestConstants.Alice.nodeParams, TestConstants.Alice.walletParams.trampolineNode, pathId)
-        val expectedOffer = Offer.decode("lno1qgsqvgnwgcg35z6ee2h3yczraddm72xrfua9uve2rlrm9deu7xyfzrc2p4jx2enpw4k8ggr0venx2usvqvpqqqqs65pk9vv6swfs8zd5g697gqcga7elx54jx9p2uf0x4wsyvk5zyru4kpszvhkjfgd788sjgf5y6dqyvdq9s7lu68v97ad96cvsmzg99sgmcu0qyq6q20hxu4sp9gddmd0x7waap9wux94cm0246dxrjjw60qcparljtsqp5elqhdxerpqcfcup9ntxvrnpl50n226m7sm2n9jpvmqrfcnce7mdygk7wnhyl6y84nfypplcm3v25smd40lcjyemhvnvp2eqqv3ceeyp46we7d6vlfxfqggczrg55qj89nhaqzt8ymhddf2gmpcjz99dkszxp0kkupcf0dpnwpwsm52klvckyyp5ufuvldkjyt08fmj0azr6e5jqsludck92gdk6hlufzvamkfkq4vs").get()
+        val trampolineNode = NodeUri(PublicKey.fromHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), "3.33.236.230", 9735)
+        val nodeParams = TestConstants.Alice.nodeParams.copy(chain = Chain.Mainnet)
+        val (pathId, offer) = nodeParams.defaultOffer(trampolineNode)
+        assertNull(offer.amount)
+        assertEquals("LN", offer.description)
+        assertEquals(Features.empty, offer.features) // the offer shouldn't have any feature to guarantee stability
+        assertNull(offer.expirySeconds)
+        assertNotEquals(nodeParams.nodeId, offer.nodeId) // the offer should not leak our node_id
+        assertEquals(1, offer.contactInfos.size)
+        val path = offer.contactInfos.first()
+        assertIs<BlindedPath>(path)
+        assertEquals(EncodedNodeId(trampolineNode.id), path.route.introductionNodeId)
+        val expectedPathId = ByteVector32.fromValidHex("69e2c45e00f6e76c50f612b87294191cc634abfbf25eb2eb51f241bec3209897")
+        assertEquals(expectedPathId, pathId)
+        val expectedOffer = Offer.decode("lno1pgpycnss65pcvnhsyh77376c0kvfrpkwdf9ps6y4aez2jf4lcdcw9smxt9arlrcz0nlw5j3jhdsalgkz7vh0gqee9gzc5jusk6wv8fxkcsuv83e0qe8qyqemg2z2ph94xn9lk8ee0k3gngtgasrjeqg4lzje7dc05tgxwgx48uqp4cyfnedwkw3pa6ysg9axvnmfsv627x7gc4v2n7p50lqrhcdjpmrwqyztq3e0f4km9yzrfyxm5edzcvxz7kmwg7xc3u46se6sqv4sszj7329dtr0vj4ektvvgx02lt2m3mq5nck2kgnffl9q9tgfffvtds3pusgeeu0fqjfd9snrmtx6jwdgkyypmuxeqa3hqzp9sguh56mdjjpp5jrd6vk3vxrp0tdhy0rvg72agvag").get()
         assertEquals(expectedOffer, offer)
     }
 }

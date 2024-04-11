@@ -1,9 +1,7 @@
 package fr.acinq.lightning
 
 import co.touchlab.kermit.Logger
-import fr.acinq.bitcoin.Chain
-import fr.acinq.bitcoin.PublicKey
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
@@ -14,6 +12,9 @@ import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
+import fr.acinq.lightning.wire.OfferTypes
+import io.ktor.utils.io.charsets.*
+import io.ktor.utils.io.core.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -228,4 +229,21 @@ data class NodeParams(
         minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
         bolt12invoiceExpiry = 60.seconds
     )
+
+    /**
+     * We generate a default, deterministic Bolt 12 offer based on the node's seed and its trampoline node.
+     * This offer will stay valid after restoring the seed on a different device.
+     * We also return the path_id included in this offer, which should be used to route onion messages.
+     */
+    fun defaultOffer(trampolineNode: NodeUri): Pair<ByteVector32, OfferTypes.Offer> {
+        // We generate a deterministic path_id based on:
+        //  - a custom tag indicating that this is used in the Bolt 12 context
+        //  - our trampoline node, which is used as an introduction node for the offer's blinded path
+        //  - our private key, which ensures that nobody else can generate the same path_id
+        val pathId = Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8) + trampolineNode.id.value.toByteArray() + nodePrivateKey.value.toByteArray()).byteVector32()
+        // We don't use our currently activated features, otherwise the offer would change when we add support for new features.
+        // If we add a new feature that we would like to use by default, we will need to explicitly create a new offer.
+        val offer = OfferTypes.Offer.createBlindedOffer(amount = null, description = "LN", this, trampolineNode, Features.empty, pathId)
+        return Pair(pathId, offer)
+    }
 }
