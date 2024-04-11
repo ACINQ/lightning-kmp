@@ -3,16 +3,27 @@ package fr.acinq.lightning.message
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.byteVector
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.crypto.RouteBlinding
-import fr.acinq.lightning.crypto.sphinx.Sphinx
-import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.crypto.RouteBlinding
+import fr.acinq.lightning.crypto.sphinx.Sphinx
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.wire.*
 
 object OnionMessages {
-    data class IntermediateNode(val nodeId: PublicKey, val outgoingChannelId: ShortChannelId? = null, val padding: ByteVector? = null, val customTlvs: Set<GenericTlv> = setOf())
+    data class IntermediateNode(val nodeId: PublicKey, val outgoingChannelId: ShortChannelId? = null, val padding: ByteVector? = null, val customTlvs: Set<GenericTlv> = setOf()) {
+        fun toTlvStream(nextNodeId: EncodedNodeId, nextBlinding: PublicKey? = null): TlvStream<RouteBlindingEncryptedDataTlv> {
+            val tlvs = setOfNotNull(
+                outgoingChannelId?.let { RouteBlindingEncryptedDataTlv.OutgoingChannelId(it) } ?: RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId),
+                nextBlinding?.let { RouteBlindingEncryptedDataTlv.NextBlinding(it) },
+                padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) },
+            )
+            return TlvStream(tlvs, customTlvs)
+        }
+    }
 
     sealed class Destination {
         data class BlindedPath(val route: RouteBlinding.BlindedRoute) : Destination()
@@ -29,80 +40,74 @@ object OnionMessages {
 
     private fun buildIntermediatePayloads(
         intermediateNodes: List<IntermediateNode>,
-        nextNodeId: EncodedNodeId,
-        nextBlinding: PublicKey? = null
+        lastNodeId: EncodedNodeId,
+        lastBlinding: PublicKey? = null
     ): List<ByteVector> {
         return if (intermediateNodes.isEmpty()) {
             listOf()
         } else {
-            (intermediateNodes.zip(intermediateNodes.drop(1).map { Pair(EncodedNodeId(it.nodeId), null) }.plusElement(Pair(nextNodeId, nextBlinding)))).map { (current, next) ->
-                val (outgoingNodeId, blinding) = next
-                val tlvs = TlvStream(setOfNotNull(
-                    current.outgoingChannelId?.let { RouteBlindingEncryptedDataTlv.OutgoingChannelId(it) } ?: RouteBlindingEncryptedDataTlv.OutgoingNodeId(outgoingNodeId),
-                    blinding?.let { RouteBlindingEncryptedDataTlv.NextBlinding(it) },
-                    current.padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) }
-                ), current.customTlvs)
-                RouteBlindingEncryptedData(tlvs).write().toByteVector()
-            }
+            val intermediatePayloads = intermediateNodes.dropLast(1).zip(intermediateNodes.drop(1)).map { (current, next) -> current.toTlvStream(EncodedNodeId(next.nodeId)) }
+            // The last intermediate node may contain a blinding override when the recipient is hidden behind a blinded path.
+            val lastPayload = intermediateNodes.last().toTlvStream(lastNodeId, lastBlinding)
+            (intermediatePayloads + lastPayload).map { RouteBlindingEncryptedData(it).write().byteVector() }
         }
     }
 
     fun buildRoute(
         blindingSecret: PrivateKey,
         intermediateNodes: List<IntermediateNode>,
-        recipient: Destination.Recipient
-    ): RouteBlinding.BlindedRoute {
-        val intermediatePayloads = buildIntermediatePayloads(
-            intermediateNodes,
-            EncodedNodeId(recipient.nodeId)
-        )
-        val tlvs: Set<RouteBlindingEncryptedDataTlv> = setOfNotNull(
-            recipient.padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) },
-            recipient.pathId?.let { RouteBlindingEncryptedDataTlv.PathId(it) }
-        )
-        val lastPayload = RouteBlindingEncryptedData(TlvStream(tlvs, recipient.customTlvs)).write().toByteVector()
-        return RouteBlinding.create(
-            blindingSecret,
-            intermediateNodes.map { it.nodeId } + recipient.nodeId,
-            intermediatePayloads + lastPayload)
-    }
-
-    private fun buildRouteFrom(
-        blindingSecret: PrivateKey,
-        intermediateNodes: List<IntermediateNode>,
         destination: Destination
-    ): RouteBlinding.BlindedRoute? {
-        when (destination) {
-            is Destination.Recipient -> return buildRoute(blindingSecret, intermediateNodes, destination)
-            is Destination.BlindedPath ->
-                when {
-                    intermediateNodes.isEmpty() -> return destination.route
-                    else -> {
-                        val intermediatePayloads = buildIntermediatePayloads(
-                            intermediateNodes,
-                            destination.route.introductionNodeId,
-                            destination.route.blindingKey
-                        )
-                        val routePrefix = RouteBlinding.create(
-                            blindingSecret,
-                            intermediateNodes.map { it.nodeId },
-                            intermediatePayloads
-                        )
-                        return RouteBlinding.BlindedRoute(
-                            routePrefix.introductionNodeId,
-                            routePrefix.blindingKey,
-                            routePrefix.blindedNodes + destination.route.blindedNodes
-                        )
-                    }
+    ): RouteBlinding.BlindedRoute {
+        return when (destination) {
+            is Destination.Recipient -> {
+                val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, EncodedNodeId(destination.nodeId))
+                val tlvs = setOfNotNull(
+                    destination.padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) },
+                    destination.pathId?.let { RouteBlindingEncryptedDataTlv.PathId(it) }
+                )
+                val lastPayload = RouteBlindingEncryptedData(TlvStream(tlvs, destination.customTlvs)).write().toByteVector()
+                RouteBlinding.create(
+                    blindingSecret,
+                    intermediateNodes.map { it.nodeId } + destination.nodeId,
+                    intermediatePayloads + lastPayload
+                )
+            }
+            is Destination.BlindedPath -> when {
+                intermediateNodes.isEmpty() -> destination.route
+                else -> {
+                    // We concatenate our blinded path with the destination's blinded path.
+                    val intermediatePayloads = buildIntermediatePayloads(
+                        intermediateNodes,
+                        destination.route.introductionNodeId,
+                        destination.route.blindingKey
+                    )
+                    val routePrefix = RouteBlinding.create(
+                        blindingSecret,
+                        intermediateNodes.map { it.nodeId },
+                        intermediatePayloads
+                    )
+                    RouteBlinding.BlindedRoute(
+                        routePrefix.introductionNodeId,
+                        routePrefix.blindingKey,
+                        routePrefix.blindedNodes + destination.route.blindedNodes
+                    )
                 }
+            }
         }
     }
 
-    sealed interface BuildMessageError
-    data class MessageTooLarge(val payloadSize: Int) : BuildMessageError
-    data class InvalidDestination(val destination: Destination) : BuildMessageError
+    sealed class BuildMessageError
+    data class MessageTooLarge(val payloadSize: Int) : BuildMessageError()
 
-
+    /**
+     * Builds an encrypted onion containing a message that should be relayed to the destination.
+     *
+     * @param sessionKey a random key to encrypt the onion.
+     * @param blindingSecret a random key to create the blinded path.
+     * @param intermediateNodes list of intermediate nodes between us and the destination (can be empty if we want to contact the destination directly).
+     * @param destination the destination of this message, can be a node id or a blinded route.
+     * @param content list of TLVs to send to the recipient of the message.
+     */
     fun buildMessage(
         sessionKey: PrivateKey,
         blindingSecret: PrivateKey,
@@ -110,50 +115,41 @@ object OnionMessages {
         destination: Destination,
         content: TlvStream<OnionMessagePayloadTlv>
     ): Either<BuildMessageError, OnionMessage> {
-        val route = buildRouteFrom(blindingSecret, intermediateNodes, destination)
-        if (route == null) {
-            return Either.Left(InvalidDestination(destination))
-        } else {
-            val lastPayload = MessageOnion(
-                TlvStream(
-                    content.records + OnionMessagePayloadTlv.EncryptedData(route.encryptedPayloads.last()),
-                    content.unknown
-                )
-            ).write()
-            val payloads = route.encryptedPayloads.dropLast(1)
-                .map { encTlv -> MessageOnion(TlvStream(OnionMessagePayloadTlv.EncryptedData(encTlv))).write() } + lastPayload
-            val payloadSize = payloads.map { it.size + Sphinx.MacLength }.sum()
-            val packetSize = if (payloadSize <= 1300) {
-                1300
-            } else if (payloadSize <= 32768) {
-                32768
-            } else if (payloadSize > 65432) {
-                // A payload of size 65432 corresponds to a total lightning message size of 65535.
-                return Either.Left(MessageTooLarge(payloadSize))
-            } else {
-                payloadSize
-            }
-            // Since we are setting the packet size based on the payload, the onion creation should never fail (hence the `.get`).
-            val packet = Sphinx.create(
-                sessionKey,
-                route.blindedNodes.map { it.blindedPublicKey },
-                payloads,
-                null,
-                packetSize
-            ).packet
-            return Either.Right( OnionMessage(route.blindingKey, packet))
+        val route = buildRoute(blindingSecret, intermediateNodes, destination)
+        val payloads = buildList {
+            // Intermediate nodes only receive blinded path relay information.
+            addAll(route.encryptedPayloads.dropLast(1).map { MessageOnion(TlvStream(OnionMessagePayloadTlv.EncryptedData(it))).write() })
+            // The destination receives the message contents and the blinded path information.
+            add(MessageOnion(content.copy(records = content.records + OnionMessagePayloadTlv.EncryptedData(route.encryptedPayloads.last()))).write())
         }
+        val payloadSize = payloads.sumOf { it.size + Sphinx.MacLength }
+        val packetSize = when {
+            payloadSize <= 1300 -> 1300
+            payloadSize <= 32768 -> 32768
+            payloadSize <= 65432 -> 65432 // this corresponds to a total lightning message size of 65535
+            else -> return Either.Left(MessageTooLarge(payloadSize))
+        }
+        // Since we are setting the packet size based on the payload, the onion creation should never fail.
+        val packet = Sphinx.create(
+            sessionKey,
+            route.blindedNodes.map { it.blindedPublicKey },
+            payloads,
+            associatedData = null,
+            packetSize
+        ).packet
+        return Either.Right(OnionMessage(route.blindingKey, packet))
     }
 
+    /**
+     * @param content message received.
+     * @param blindedPrivateKey private key of the blinded node id used in our blinded path.
+     * @param pathId path_id that we included in our blinded path for ourselves.
+     */
     data class DecryptedMessage(val content: MessageOnion, val blindedPrivateKey: PrivateKey, val pathId: ByteVector)
 
-    fun decryptMessage(privateKey: PrivateKey, msg: OnionMessage): DecryptedMessage? {
+    fun decryptMessage(privateKey: PrivateKey, msg: OnionMessage, logger: MDCLogger): DecryptedMessage? {
         val blindedPrivateKey = RouteBlinding.derivePrivateKey(privateKey, msg.blindingKey)
-        when (val decrypted = Sphinx.peel(
-            blindedPrivateKey,
-            ByteVector.empty,
-            msg.onionRoutingPacket
-        )) {
+        return when (val decrypted = Sphinx.peel(blindedPrivateKey, associatedData = ByteVector.empty, msg.onionRoutingPacket)) {
             is Either.Right -> try {
                 val message = MessageOnion.read(decrypted.value.payload.toByteArray())
                 val (decryptedPayload, nextBlinding) = RouteBlinding.decryptPayload(
@@ -164,18 +160,21 @@ object OnionMessages {
                 val relayInfo = RouteBlindingEncryptedData.read(decryptedPayload.toByteArray())
                 if (!decrypted.value.isLastPacket && relayInfo.nextNodeId == EncodedNodeId(privateKey.publicKey())) {
                     // We may add ourselves to the route several times at the end to hide the real length of the route.
-                    return decryptMessage(privateKey, OnionMessage(relayInfo.nextBlindingOverride ?: nextBlinding, decrypted.value.nextPacket))
+                    val nextMessage = OnionMessage(relayInfo.nextBlindingOverride ?: nextBlinding, decrypted.value.nextPacket)
+                    decryptMessage(privateKey, nextMessage, logger)
                 } else if (decrypted.value.isLastPacket && relayInfo.pathId != null) {
-                    return DecryptedMessage(message, blindedPrivateKey, relayInfo.pathId)
+                    DecryptedMessage(message, blindedPrivateKey, relayInfo.pathId)
                 } else {
-                    return null // Ignore messages to relay to other nodes
+                    logger.warning { "ignoring onion message for which we're not the destination (next_node_id=${relayInfo.nextNodeId}, path_id=${relayInfo.pathId?.toHex()})" }
+                    null
                 }
-            } catch (_: Throwable) {
-                return null // Ignore bad messages
+            } catch (e: Throwable) {
+                logger.warning { "ignoring onion message that couldn't be decoded: ${e.message}" }
+                null
             }
-
             is Either.Left -> {
-                return null // Ignore bad messages
+                logger.warning { "ignoring onion message that couldn't be decrypted: ${decrypted.value.message}" }
+                null
             }
         }
     }

@@ -9,19 +9,24 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.message.OnionMessages.Destination.BlindedPath
 import fr.acinq.lightning.message.OnionMessages.Destination.Recipient
 import fr.acinq.lightning.message.OnionMessages.IntermediateNode
 import fr.acinq.lightning.message.OnionMessages.buildMessage
 import fr.acinq.lightning.message.OnionMessages.buildRoute
 import fr.acinq.lightning.message.OnionMessages.decryptMessage
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import org.kodein.memory.text.toHex
 import kotlin.test.*
 
 class OnionMessagesTestsCommon {
-    fun relayMessage(privateKey: PrivateKey, msg: OnionMessage): Pair<Either<ShortChannelId, EncodedNodeId>, OnionMessage> {
+
+    val logger: MDCLogger = MDCLogger(testLoggerFactory.newLogger(this::class))
+
+    private fun relayMessage(privateKey: PrivateKey, msg: OnionMessage): Pair<Either<ShortChannelId, EncodedNodeId>, OnionMessage> {
         val blindedPrivateKey = RouteBlinding.derivePrivateKey(privateKey, msg.blindingKey)
         val decrypted = Sphinx.peel(
             blindedPrivateKey,
@@ -51,7 +56,7 @@ class OnionMessagesTestsCommon {
         val message = buildMessage(sessionKey, blindingSecret, listOf(), Recipient(destination.publicKey(), pathId), TlvStream.empty())
         assertIs<Either.Right<OnionMessage>>(message)
 
-        val decrypted = decryptMessage(destination, message.value)
+        val decrypted = decryptMessage(destination, message.value, logger)
         assertNotNull(decrypted)
         assertEquals(pathId, decrypted.pathId)
     }
@@ -124,7 +129,7 @@ class OnionMessagesTestsCommon {
         assertEquals(Either.Right(EncodedNodeId(carol.publicKey())), nextNodeId2)
         val (nextNodeId3, onionForDave) = relayMessage(carol, onionForCarol)
         assertEquals(Either.Right(EncodedNodeId(dave.publicKey())), nextNodeId3)
-        val decrypted = decryptMessage(dave, onionForDave)!!
+        val decrypted = decryptMessage(dave, onionForDave, logger)!!
         assertNotNull(decrypted)
         assertEquals("01234567", decrypted.pathId.toHex())
     }
@@ -214,7 +219,7 @@ class OnionMessagesTestsCommon {
 
         val (nextNodeId, message2) = relayMessage(destination, message)
         assertEquals(Either.Right(EncodedNodeId(destination.publicKey())), nextNodeId)
-        val decrypted = decryptMessage(destination, message2)!!
+        val decrypted = decryptMessage(destination, message2, logger)!!
         assertNotNull(decrypted)
         assertEquals("01234567", decrypted.pathId.toHex())
     }
@@ -228,13 +233,16 @@ class OnionMessagesTestsCommon {
         val blindingSecret = randomKey()
         val pathId = randomBytes(65201).toByteVector()
         val messageForAlice = buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(alice.publicKey()), IntermediateNode(bob.publicKey())), Recipient(carol.publicKey(), pathId), TlvStream.empty()).right!!
+        // This message should use the maximum size allowed for lightning messages, without overflowing it.
+        // Note that we leave 2 bytes for the message length, resulting in a total packet of 65535 bytes.
+        assertEquals(65533, messageForAlice.write().size)
 
-        // Checking that the onion is relayed properly
+        // The onion is relayed properly:
         val (nextNodeId1, onionForBob) = relayMessage(alice, messageForAlice)
         assertEquals(Either.Right(EncodedNodeId(bob.publicKey())), nextNodeId1)
         val (nextNodeId2, onionForCarol) = relayMessage(bob, onionForBob)
         assertEquals(Either.Right(EncodedNodeId(carol.publicKey())), nextNodeId2)
-        val decrypted = decryptMessage(carol, onionForCarol)!!
+        val decrypted = decryptMessage(carol, onionForCarol, logger)!!
         assertNotNull(decrypted)
         assertEquals(pathId, decrypted.pathId)
     }
@@ -246,12 +254,11 @@ class OnionMessagesTestsCommon {
         val carol = randomKey()
         val sessionKey = randomKey()
         val blindingSecret = randomKey()
-
         val pathId = randomBytes(65202).toByteVector()
-
         assertEquals(
             Either.Left(OnionMessages.MessageTooLarge(65433)),
-            buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(alice.publicKey()), IntermediateNode(bob.publicKey())), Recipient(carol.publicKey(), pathId), TlvStream.empty()))
+            buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(alice.publicKey()), IntermediateNode(bob.publicKey())), Recipient(carol.publicKey(), pathId), TlvStream.empty())
+        )
     }
 
     @Test
@@ -266,13 +273,14 @@ class OnionMessagesTestsCommon {
         val pathId = randomBytes(64).toByteVector()
         val messageForAlice = buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(alice.publicKey(), alice2bob), IntermediateNode(bob.publicKey(), bob2carol)), Recipient(carol.publicKey(), pathId), TlvStream.empty()).right!!
 
-        // Checking that the onion is relayed properly
+        // The onion is relayed properly:
         val (outgoingChannelId1, onionForBob) = relayMessage(alice, messageForAlice)
         assertEquals(Either.Left(alice2bob), outgoingChannelId1)
         val (outgoingChannelId2, onionForCarol) = relayMessage(bob, onionForBob)
         assertEquals(Either.Left(bob2carol), outgoingChannelId2)
-        val decrypted = decryptMessage(carol, onionForCarol)!!
+        val decrypted = decryptMessage(carol, onionForCarol, logger)!!
         assertNotNull(decrypted)
         assertEquals(pathId, decrypted.pathId)
     }
+
 }

@@ -44,7 +44,7 @@ object OfferTypes {
         val blindingKey = PublicKey(LightningCodecs.bytes(input, 33))
         val blindedNodes = ArrayList<RouteBlinding.BlindedNode>()
         val numBlindedNodes = LightningCodecs.byte(input)
-        for (i in 1 .. numBlindedNodes) {
+        for (i in 1..numBlindedNodes) {
             val blindedKey = PublicKey(LightningCodecs.bytes(input, 33))
             val payload = ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
             blindedNodes.add(RouteBlinding.BlindedNode(blindedKey, payload))
@@ -201,7 +201,7 @@ object OfferTypes {
         override val tag: Long get() = OfferPaths.tag
 
         override fun write(out: Output) {
-            for(path in paths){
+            for (path in paths) {
                 writePath(path, out)
             }
         }
@@ -411,7 +411,7 @@ object OfferTypes {
         override val tag: Long get() = InvoicePaths.tag
 
         override fun write(out: Output) {
-            for(path in paths){
+            for (path in paths) {
                 writePath(path, out)
             }
         }
@@ -429,12 +429,14 @@ object OfferTypes {
         }
     }
 
-    data class PaymentInfo(val feeBase: MilliSatoshi,
-                           val feeProportionalMillionths: Long,
-                           val cltvExpiryDelta: CltvExpiryDelta,
-                           val minHtlc: MilliSatoshi,
-                           val maxHtlc: MilliSatoshi,
-                           val allowedFeatures: Features) {
+    data class PaymentInfo(
+        val feeBase: MilliSatoshi,
+        val feeProportionalMillionths: Long,
+        val cltvExpiryDelta: CltvExpiryDelta,
+        val minHtlc: MilliSatoshi,
+        val maxHtlc: MilliSatoshi,
+        val allowedFeatures: Features
+    ) {
         fun fee(amount: MilliSatoshi): MilliSatoshi {
             return feeBase + amount * feeProportionalMillionths / 1_000_000L
         }
@@ -646,7 +648,7 @@ object OfferTypes {
         // Offer TLVs are in the range (0, 80).
         return TlvStream(
             tlvs.records.filterIsInstance<OfferTlv>().toSet(),
-            tlvs.unknown.filter{it.tag < 80}.toSet()
+            tlvs.unknown.filter { it.tag < 80 }.toSet()
         )
     }
 
@@ -654,7 +656,7 @@ object OfferTypes {
         // Invoice request TLVs are in the range [0, 160): invoice request metadata (tag 0), offer TLVs, and additional invoice request TLVs in the range [80, 160).
         return TlvStream(
             tlvs.records.filterIsInstance<InvoiceRequestTlv>().toSet(),
-            tlvs.unknown.filter{it.tag < 160}.toSet()
+            tlvs.unknown.filter { it.tag < 160 }.toSet()
         )
     }
 
@@ -703,11 +705,11 @@ object OfferTypes {
         }
     }
 
-    sealed class InvalidTlvPayload {
-      abstract val tag: Long
-    }
+    // @formatter:off
+    sealed class InvalidTlvPayload { abstract val tag: Long }
     data class MissingRequiredTlv(override val tag: Long) : InvalidTlvPayload()
     data class ForbiddenTlv(override val tag: Long) : InvalidTlvPayload()
+    // @formatter:on
 
     data class Offer(val records: TlvStream<OfferTlv>) {
         val chains: List<BlockHash> = records.get<OfferChains>()?.chains ?: listOf(Block.LivenetGenesisBlock.hash)
@@ -767,21 +769,24 @@ object OfferTypes {
             }
 
             /**
-             * @param amount       amount if it can be determined at offer creation time.
-             * @param description  description of the offer.
-             * @param nodeParams   our node parameters.
-             * @param walletParams our wallet parameters.
-             * @param pathId       pathId on which we will listen for invoice requests.
+             * Create an offer using a single-hop blinded path going through our trampoline node.
+             *
+             * @param amount amount if it can be determined at offer creation time.
+             * @param description description of the offer.
+             * @param nodeParams our node parameters.
+             * @param trampolineNode our trampoline node.
+             * @param pathId pathId on which we will listen for invoice requests.
              */
-            operator fun invoke(
+            fun createBlindedOffer(
                 amount: MilliSatoshi?,
                 description: String,
                 nodeParams: NodeParams,
-                walletParams: WalletParams,
+                trampolineNode: NodeUri,
                 pathId: ByteVector32,
                 additionalTlvs: Set<OfferTlv> = setOf(),
-                customTlvs: Set<GenericTlv> = setOf()): Offer {
-                val path = OnionMessages.buildRoute(PrivateKey(pathId), listOf(OnionMessages.IntermediateNode(walletParams.trampolineNode.id, ShortChannelId.peerId(nodeParams.nodeId))), OnionMessages.Destination.Recipient(nodeParams.nodeId, pathId))
+                customTlvs: Set<GenericTlv> = setOf()
+            ): Offer {
+                val path = OnionMessages.buildRoute(PrivateKey(pathId), listOf(OnionMessages.IntermediateNode(trampolineNode.id, ShortChannelId.peerId(nodeParams.nodeId))), OnionMessages.Destination.Recipient(nodeParams.nodeId, pathId))
                 val offerNodeId = path.blindedNodeIds.last()
                 return createInternal(
                     amount,
@@ -797,8 +802,7 @@ object OfferTypes {
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
                 if (records.get<OfferDescription>() == null) return Left(MissingRequiredTlv(10L))
                 if (records.get<OfferNodeId>() == null) return Left(MissingRequiredTlv(22L))
-                if (records.unknown.any { it.tag >= 80 })
-                    return Left(ForbiddenTlv(records.unknown.find{it.tag >= 80}!!.tag))
+                if (records.unknown.any { it.tag >= 80 }) return Left(ForbiddenTlv(records.unknown.find { it.tag >= 80 }!!.tag))
                 return Right(Offer(records))
             }
 
@@ -867,7 +871,7 @@ object OfferTypes {
 
         override fun toString(): String = encode()
 
-        fun unsigned(): TlvStream<InvoiceRequestTlv>  = removeSignature(records)
+        fun unsigned(): TlvStream<InvoiceRequestTlv> = removeSignature(records)
 
         companion object {
             val hrp = "lnr"
@@ -920,8 +924,7 @@ object OfferTypes {
                 if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0L))
                 if (records.get<InvoiceRequestPayerId>() == null) return Left(MissingRequiredTlv(88))
                 if (records.get<Signature>() == null) return Left(MissingRequiredTlv(240))
-                if (records.unknown.any { it.tag >= 160 })
-                    return Left(ForbiddenTlv(records.unknown.find{ it.tag >= 160 }!!.tag))
+                if (records.unknown.any { it.tag >= 160 }) return Left(ForbiddenTlv(records.unknown.find { it.tag >= 160 }!!.tag))
                 return Right(InvoiceRequest(records))
             }
 
@@ -963,7 +966,7 @@ object OfferTypes {
             }
         }
     }
-    
+
     object Invoice {
         val tlvSerializer = TlvStreamSerializer(
             false, @Suppress("UNCHECKED_CAST") mapOf(

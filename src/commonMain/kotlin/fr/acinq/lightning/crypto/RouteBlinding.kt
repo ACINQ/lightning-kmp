@@ -10,12 +10,10 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 object RouteBlinding {
 
     /**
-     * @param nodeId               introduction node's id (which cannot be blinded since the sender need to find a route to it).
-     * @param blindedPublicKey     blinded public key, which hides the real public key.
-     * @param blindingEphemeralKey blinding tweak that can be used by the receiving node to derive the private key that
-     *                             matches the blinded public key.
-     * @param encryptedPayload     encrypted payload that can be decrypted with the introduction node's private key and the
-     *                             blinding ephemeral key.
+     * @param nodeId introduction node's id (which cannot be blinded since the sender need to find a route to it).
+     * @param blindedPublicKey blinded public key, which hides the real public key.
+     * @param blindingEphemeralKey blinding tweak that can be used by the receiving node to derive the private key that matches the blinded public key.
+     * @param encryptedPayload encrypted payload that can be decrypted with the introduction node's private key and the blinding ephemeral key.
      */
     data class IntroductionNode(
         val nodeId: EncodedNodeId,
@@ -26,16 +24,14 @@ object RouteBlinding {
 
     /**
      * @param blindedPublicKey blinded public key, which hides the real public key.
-     * @param encryptedPayload encrypted payload that can be decrypted with the receiving node's private key and the
-     *                         blinding ephemeral key.
+     * @param encryptedPayload encrypted payload that can be decrypted with the receiving node's private key and the blinding ephemeral key.
      */
     data class BlindedNode(val blindedPublicKey: PublicKey, val encryptedPayload: ByteVector)
 
     /**
      * @param introductionNodeId the first node, not blinded so that the sender can locate it.
-     * @param blindingKey        blinding tweak that can be used by the introduction node to derive the private key that
-     *                           matches the blinded public key.
-     * @param blindedNodes       blinded nodes (including the introduction node).
+     * @param blindingKey blinding tweak that can be used by the introduction node to derive the private key that matches the blinded public key.
+     * @param blindedNodes blinded nodes (including the introduction node).
      */
     data class BlindedRoute(
         val introductionNodeId: EncodedNodeId,
@@ -58,7 +54,7 @@ object RouteBlinding {
      *
      * @param sessionKey this node's session key.
      * @param publicKeys public keys of each node on the route, starting from the introduction point.
-     * @param payloads   payloads that should be encrypted for each node on the route.
+     * @param payloads payloads that should be encrypted for each node on the route.
      * @return a blinded route.
      */
     fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteVector>): BlindedRoute {
@@ -85,7 +81,7 @@ object RouteBlinding {
     /**
      * Compute the blinded private key that must be used to decrypt an incoming blinded onion.
      *
-     * @param privateKey           this node's private key.
+     * @param privateKey this node's private key.
      * @param blindingEphemeralKey unblinding ephemeral key.
      * @return this node's blinded private key.
      */
@@ -97,9 +93,9 @@ object RouteBlinding {
     /**
      * Decrypt the encrypted payload (usually found in the onion) that contains instructions to locate the next node.
      *
-     * @param privateKey           this node's private key.
+     * @param privateKey this node's private key.
      * @param blindingEphemeralKey unblinding ephemeral key.
-     * @param encryptedPayload     encrypted payload for this node.
+     * @param encryptedPayload encrypted payload for this node.
      * @return a tuple (decrypted payload, unblinding ephemeral key for the next node)
      */
     fun decryptPayload(
@@ -116,8 +112,7 @@ object RouteBlinding {
             byteArrayOf(),
             encryptedPayload.takeRight(16).toByteArray()
         )
-        val nextBlindingEphemeralKey =
-            Sphinx.blind(blindingEphemeralKey, Sphinx.computeBlindingFactor(blindingEphemeralKey, sharedSecret))
+        val nextBlindingEphemeralKey = Sphinx.blind(blindingEphemeralKey, Sphinx.computeBlindingFactor(blindingEphemeralKey, sharedSecret))
         return Pair(ByteVector(decrypted), nextBlindingEphemeralKey)
     }
 }
