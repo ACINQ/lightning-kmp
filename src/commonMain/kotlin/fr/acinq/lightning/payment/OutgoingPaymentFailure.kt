@@ -17,7 +17,12 @@ sealed class FinalFailure {
     object InvalidPaymentAmount : FinalFailure() { override fun toString(): String = "payment amount must be positive" }
     object FeaturesNotSupported : FinalFailure() { override fun toString(): String = "payment request features not supported" }
     object InvalidPaymentId : FinalFailure() { override fun toString(): String = "payment ID must be unique" }
-    object NoAvailableChannels : FinalFailure() { override fun toString(): String = "no channels available to send payment" }
+//    object NoAvailableChannels : FinalFailure() { override fun toString(): String = "no channels available to send payment" }
+
+    data class NoAvailableChannels(val channelStatus: String) : FinalFailure() {
+        override fun toString(): String = "no channels available to send payment: $channelStatus"
+    }
+
     object InsufficientBalance : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment" }
     object NoRouteToRecipient : FinalFailure() { override fun toString(): String = "unable to route payment to recipient" }
     object RecipientUnreachable : FinalFailure() { override fun toString(): String = "the recipient was offline or did not have enough liquidity to receive the payment" }

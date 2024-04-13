@@ -27,7 +27,7 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
         val sortedChannels = channels.values.filterIsInstance<Normal>().map { ChannelBalance(it) }.sortedBy { it.balance }.reversed()
         if (sortedChannels.isEmpty()) {
             logger.warning { "no available channels" }
-            return Either.Left(FinalFailure.NoAvailableChannels)
+            return Either.Left(FinalFailure.NoAvailableChannels(channels.values.first().stateName))
         }
 
         val filteredChannels = sortedChannels.filter { it.balance >= it.c.channelUpdate.htlcMinimumMsat }
