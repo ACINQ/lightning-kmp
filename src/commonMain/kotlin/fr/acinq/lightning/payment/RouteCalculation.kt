@@ -16,7 +16,11 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
 
     data class Route(val amount: MilliSatoshi, val channel: Normal)
 
-    fun findRoutes(paymentId: UUID, amount: MilliSatoshi, channels: Map<ByteVector32, ChannelState>): Either<FinalFailure, List<Route>> {
+    fun findRoutes(
+        paymentId: UUID,
+        amount: MilliSatoshi,
+        channels: Map<ByteVector32, ChannelState>
+    ): Either<FinalFailure, List<Route>> {
         val logger = MDCLogger(logger, staticMdc = mapOf("paymentId" to paymentId, "amount" to amount))
 
         data class ChannelBalance(val c: Normal) {
@@ -24,10 +28,13 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
             val capacity: Satoshi = c.commitments.latest.fundingAmount
         }
 
-        val sortedChannels = channels.values.filterIsInstance<Normal>().map { ChannelBalance(it) }.sortedBy { it.balance }.reversed()
+        val sortedChannels =
+            channels.values.filterIsInstance<Normal>().map { ChannelBalance(it) }.sortedBy { it.balance }.reversed()
         if (sortedChannels.isEmpty()) {
-            logger.warning { "no available channels" }
-            return Either.Left(FinalFailure.NoAvailableChannels(channels.values.first().stateName))
+            val channelStates = channels.values.map { it.stateName }.toString()
+            logger.warning { "no available channels: $channelStates" }
+            return Either.Left(FinalFailure.NoAvailableChannels.withErrorDetails(channelStates)
+            )
         }
 
         val filteredChannels = sortedChannels.filter { it.balance >= it.c.channelUpdate.htlcMinimumMsat }
