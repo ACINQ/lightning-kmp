@@ -200,8 +200,8 @@ object Helpers {
      *         - false if we are behind
      */
     fun checkRemoteCommit(commitments: Commitments, nextLocalCommitmentNumber: Long): Boolean {
-        return when {
-            commitments.remoteNextCommitInfo.isLeft ->
+        return when (commitments.remoteNextCommitInfo) {
+            is Either.Left ->
                 when {
                     // we just sent a new commit_sig but they didn't receive it
                     nextLocalCommitmentNumber == commitments.nextRemoteCommitIndex -> true
@@ -211,7 +211,7 @@ object Helpers {
                     nextLocalCommitmentNumber < commitments.nextRemoteCommitIndex -> true
                     else -> false
                 }
-            commitments.remoteNextCommitInfo.isRight ->
+            is Either.Right ->
                 when {
                     // they have acknowledged the last commit_sig we sent
                     nextLocalCommitmentNumber == (commitments.remoteCommitIndex + 1) -> true
@@ -219,7 +219,6 @@ object Helpers {
                     nextLocalCommitmentNumber < (commitments.remoteCommitIndex + 1) -> true
                     else -> false
                 }
-            else -> false
         }
     }
 
