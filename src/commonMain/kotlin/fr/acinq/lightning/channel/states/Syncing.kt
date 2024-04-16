@@ -21,11 +21,11 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is ChannelReestablish -> {
-                    val (nextState, actions) = when {
-                        state is LegacyWaitForFundingConfirmed -> {
+                    val (nextState, actions) = when (state) {
+                        is LegacyWaitForFundingConfirmed -> {
                             Pair(state, listOf())
                         }
-                        state is WaitForFundingSigned -> {
+                        is WaitForFundingSigned -> {
                             when (cmd.message.nextFundingTxId) {
                                 // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                                 state.signingSession.fundingTx.txId -> {
@@ -35,7 +35,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 else -> Pair(state, listOf())
                             }
                         }
-                        state is WaitForFundingConfirmed -> {
+                        is WaitForFundingConfirmed -> {
                             when (cmd.message.nextFundingTxId) {
                                 null -> Pair(state, listOf())
                                 else -> {
@@ -72,7 +72,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 }
                             }
                         }
-                        state is WaitForChannelReady -> {
+                        is WaitForChannelReady -> {
                             val actions = ArrayList<ChannelAction>()
 
                             if (state.commitments.latest.fundingTxId == cmd.message.nextFundingTxId) {
@@ -106,14 +106,14 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
 
                             Pair(state, actions)
                         }
-                        state is LegacyWaitForFundingLocked -> {
+                        is LegacyWaitForFundingLocked -> {
                             logger.debug { "re-sending channel_ready" }
                             val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
                             val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                             val actions = listOf(ChannelAction.Message.Send(channelReady))
                             Pair(state, actions)
                         }
-                        state is Normal -> {
+                        is Normal -> {
                             when {
                                 !Helpers.checkLocalCommit(state.commitments, cmd.message.nextRemoteRevocationNumber) -> {
                                     // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
@@ -235,38 +235,50 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 }
                             }
                         }
-                        // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+                        is ShuttingDown -> {
+                            try {
+                                val (commitments1, sendQueue1) = handleSync(cmd.message, state)
+                                val actions = buildList {
+                                    addAll(sendQueue1)
+                                    add(ChannelAction.Message.Send(state.localShutdown))
+                                }
+                                Pair(state.copy(commitments = commitments1), actions)
+                            } catch (e: RevocationSyncError) {
+                                val error = Error(channelId, e.message)
+                                state.run { spendLocalCurrent() }.run { copy(second = second + ChannelAction.Message.Send(error)) }
+                            }
+                        }
                         // negotiation restarts from the beginning, and is initialized by the initiator
                         // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
-                        state is Negotiating && state.commitments.params.localParams.isInitiator -> {
-                            // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
-                            val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
-                                channelKeys(),
-                                state.commitments.latest,
-                                state.localShutdown.scriptPubKey.toByteArray(),
-                                state.remoteShutdown.scriptPubKey.toByteArray(),
-                                state.closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
-                            )
-                            val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
-                            val nextState = state.copy(closingTxProposed = closingTxProposed1)
-                            val actions = listOf(
-                                ChannelAction.Storage.StoreState(nextState),
-                                ChannelAction.Message.Send(state.localShutdown),
-                                ChannelAction.Message.Send(closingSigned)
-                            )
-                            return Pair(nextState, actions)
-                        }
-                        state is Negotiating -> {
-                            // we start a new round of negotiation
-                            val closingTxProposed1 = if (state.closingTxProposed.last().isEmpty()) state.closingTxProposed else state.closingTxProposed + listOf(listOf())
-                            val nextState = state.copy(closingTxProposed = closingTxProposed1)
-                            val actions = listOf(
-                                ChannelAction.Storage.StoreState(nextState),
-                                ChannelAction.Message.Send(state.localShutdown)
-                            )
-                            return Pair(nextState, actions)
-                        }
-                        else -> unhandled(cmd)
+                        is Negotiating ->
+                            if (state.commitments.params.localParams.isInitiator) {
+                                // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
+                                val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                                    channelKeys(),
+                                    state.commitments.latest,
+                                    state.localShutdown.scriptPubKey.toByteArray(),
+                                    state.remoteShutdown.scriptPubKey.toByteArray(),
+                                    state.closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                )
+                                val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
+                                val nextState = state.copy(closingTxProposed = closingTxProposed1)
+                                val actions = listOf(
+                                    ChannelAction.Storage.StoreState(nextState),
+                                    ChannelAction.Message.Send(state.localShutdown),
+                                    ChannelAction.Message.Send(closingSigned)
+                                )
+                                return Pair(nextState, actions)
+                            } else {
+                                // we start a new round of negotiation
+                                val closingTxProposed1 = if (state.closingTxProposed.last().isEmpty()) state.closingTxProposed else state.closingTxProposed + listOf(listOf())
+                                val nextState = state.copy(closingTxProposed = closingTxProposed1)
+                                val actions = listOf(
+                                    ChannelAction.Storage.StoreState(nextState),
+                                    ChannelAction.Message.Send(state.localShutdown)
+                                )
+                                return Pair(nextState, actions)
+                            }
+                        is Closing, is Closed, is WaitForRemotePublishFutureCommitment -> unhandled(cmd)
                     }
                     Pair(nextState, buildList {
                         if (!channelReestablishSent) {
