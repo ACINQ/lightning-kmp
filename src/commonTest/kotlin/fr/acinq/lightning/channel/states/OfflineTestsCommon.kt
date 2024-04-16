@@ -320,16 +320,21 @@ class OfflineTestsCommon : LightningTestSuite() {
         // alice realizes she has an old state...
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
         // ...and asks bob to publish its current commitment
-        val error = actionsAlice3.findOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), PleasePublishYourCommitment(aliceOld.channelId).message)
+        val errorA = actionsAlice3.findOutgoingMessage<Error>()
+        assertEquals(errorA.toAscii(), PleasePublishYourCommitment(aliceOld.channelId).message)
         assertIs<WaitForRemotePublishFutureCommitment>(alice3.state)
 
-        // bob is nice and publishes its commitment as soon as it detects that alice has an outdated commitment
+        // bob detects that alice has an outdated commitment and stands by
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishA))
-        assertIs<Closing>(bob3.state)
-        assertNotNull(bob3.state.localCommitPublished)
-        val bobCommitTx = bob3.state.localCommitPublished!!.commitTx
-        actionsBob3.hasPublishTx(bobCommitTx)
+        assertIs<Syncing>(bob3.state)
+        assertTrue { actionsBob3.isEmpty() }
+
+        // bob receives the error from alice and publishes his local commitment tx
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(errorA))
+        assertIs<Closing>(bob4.state)
+        assertNotNull(bob4.state.localCommitPublished)
+        val bobCommitTx = bob4.state.localCommitPublished!!.commitTx
+        actionsBob4.hasPublishTx(bobCommitTx)
 
         // alice is able to claim her main output
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.WatchReceived(WatchEventSpent(aliceOld.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
