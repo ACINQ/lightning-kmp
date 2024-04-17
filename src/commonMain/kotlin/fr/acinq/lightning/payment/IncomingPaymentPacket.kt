@@ -75,7 +75,7 @@ object IncomingPaymentPacket {
                         } else {
                             try {
                                 val (decryptedRecipientData, _) = RouteBlinding.decryptPayload(privateKey, blinding ?: innerBlinding!!, encryptedRecipientData)
-                                val recipientData = RouteBlindingEncryptedData.tlvSerializer.read(decryptedRecipientData.toByteArray())
+                                val recipientData = RouteBlindingEncryptedData.read(decryptedRecipientData.toByteArray())
                                 Either.Right(PaymentOnion.FinalPayload.Blinded(tlvs, recipientData))
                             } catch (_: Throwable) {
                                 Either.Left(InvalidOnionBlinding(hash(packet)))

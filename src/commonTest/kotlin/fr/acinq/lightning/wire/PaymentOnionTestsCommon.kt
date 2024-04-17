@@ -182,10 +182,10 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode - decode final blinded per-hop payload`() {
-        val blindedTlvs = TlvStream(
+        val blindedTlvs = RouteBlindingEncryptedData(TlvStream(
             RouteBlindingEncryptedDataTlv.PathId(ByteVector("2a2a2a2a")),
             RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1.msat)
-        )
+        ))
         val testCases = mapOf(
             // @formatter:off
             TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1234567)), OnionPaymentPayloadTlv.EncryptedRecipientData(ByteVector("deadbeef")), OnionPaymentPayloadTlv.TotalAmount(1105.msat)) to Hex.decode("13 02020231 040312d687 0a04deadbeef 12020451"),

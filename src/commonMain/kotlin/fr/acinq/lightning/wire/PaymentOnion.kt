@@ -344,12 +344,12 @@ object PaymentOnion {
             }
         }
 
-        data class Blinded(val records: TlvStream<OnionPaymentPayloadTlv>, val recipientData: TlvStream<RouteBlindingEncryptedDataTlv>) : FinalPayload() {
+        data class Blinded(val records: TlvStream<OnionPaymentPayloadTlv>, val recipientData: RouteBlindingEncryptedData) : FinalPayload() {
             override val amount = records.get<OnionPaymentPayloadTlv.AmountToForward>()!!.amount
             override val totalAmount = records.get<OnionPaymentPayloadTlv.TotalAmount>()!!.totalAmount
             override val expiry = records.get<OnionPaymentPayloadTlv.OutgoingCltv>()!!.cltv
 
-            val pathId = recipientData.get<RouteBlindingEncryptedDataTlv.PathId>()!!.data
+            val pathId = recipientData.pathId!!
 
             override fun write(out: Output) = tlvSerializer.write(records, out)
         }

@@ -1353,8 +1353,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             payerKey: PublicKey = randomKey().publicKey()
         ): PaymentOnion.FinalPayload.Blinded {
             val pathId = OfferPaymentMetadata.V1(offerId, totalAmount, preimage, payerKey, quantity, currentTimestampMillis()).toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
-            val recipientData = TlvStream<RouteBlindingEncryptedDataTlv>(RouteBlindingEncryptedDataTlv.PathId(pathId))
-            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(RouteBlindingEncryptedData.tlvSerializer.write(recipientData).toByteVector()))
+            val recipientData = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId)))
+            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector()))
             return PaymentOnion.FinalPayload.Blinded(
                 TlvStream(
                     OnionPaymentPayloadTlv.AmountToForward(amount),
@@ -1373,8 +1373,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             cltvExpiry: CltvExpiry,
             pathId: ByteVector
         ): PaymentOnion.FinalPayload.Blinded {
-            val recipientData = TlvStream<RouteBlindingEncryptedDataTlv>(RouteBlindingEncryptedDataTlv.PathId(pathId))
-            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(RouteBlindingEncryptedData.tlvSerializer.write(recipientData).toByteVector()))
+            val recipientData = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId)))
+            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector()))
             return PaymentOnion.FinalPayload.Blinded(
                 TlvStream(
                     OnionPaymentPayloadTlv.AmountToForward(amount),
