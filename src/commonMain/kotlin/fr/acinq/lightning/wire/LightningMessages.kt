@@ -1044,9 +1044,12 @@ data class UpdateAddHtlc(
     val amountMsat: MilliSatoshi,
     val paymentHash: ByteVector32,
     val cltvExpiry: CltvExpiry,
-    val onionRoutingPacket: OnionRoutingPacket
+    val onionRoutingPacket: OnionRoutingPacket,
+    val tlvStream: TlvStream<UpdateAddHtlcTlv> = TlvStream.empty()
 ) : HtlcMessage, UpdateMessage, HasChannelId, ForbiddenMessageDuringSplice {
     override val type: Long get() = UpdateAddHtlc.type
+
+    val blinding: PublicKey? = tlvStream.get<UpdateAddHtlcTlv.Blinding>()?.publicKey
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1055,10 +1058,16 @@ data class UpdateAddHtlc(
         LightningCodecs.writeBytes(paymentHash, out)
         LightningCodecs.writeU32(cltvExpiry.toLong().toInt(), out)
         OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).write(onionRoutingPacket, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<UpdateAddHtlc> {
         const val type: Long = 128
+
+        @Suppress("UNCHECKED_CAST")
+        private val readers = mapOf(
+            UpdateAddHtlcTlv.Blinding.tag to UpdateAddHtlcTlv.Blinding as TlvValueReader<UpdateAddHtlcTlv>
+        )
 
         override fun read(input: Input): UpdateAddHtlc {
             val channelId = ByteVector32(LightningCodecs.bytes(input, 32))
@@ -1067,7 +1076,21 @@ data class UpdateAddHtlc(
             val paymentHash = ByteVector32(LightningCodecs.bytes(input, 32))
             val expiry = CltvExpiry(LightningCodecs.u32(input).toLong())
             val onion = OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).read(input)
-            return UpdateAddHtlc(channelId, id, amount, paymentHash, expiry, onion)
+            val tlvStream = TlvStreamSerializer(false, readers).read(input)
+            return UpdateAddHtlc(channelId, id, amount, paymentHash, expiry, onion, tlvStream)
+        }
+
+        operator fun invoke(
+            channelId: ByteVector32,
+            id: Long,
+            amountMsat: MilliSatoshi,
+            paymentHash: ByteVector32,
+            cltvExpiry: CltvExpiry,
+            onionRoutingPacket: OnionRoutingPacket,
+            blinding: PublicKey?
+        ): UpdateAddHtlc {
+            val tlvStream = TlvStream(setOfNotNull<UpdateAddHtlcTlv>(blinding?.let { UpdateAddHtlcTlv.Blinding(it) }))
+            return UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, tlvStream)
         }
     }
 }
@@ -1593,9 +1616,12 @@ data class PayToOpenRequest(
     val payToOpenFeeSatoshis: Satoshi,
     val paymentHash: ByteVector32,
     val expireAt: Long,
-    val finalPacket: OnionRoutingPacket
+    val finalPacket: OnionRoutingPacket,
+    val tlvStream: TlvStream<PayToOpenRequestTlv> = TlvStream.empty(),
 ) : LightningMessage, HasChainHash {
     override val type: Long get() = PayToOpenRequest.type
+
+    val blinding: PublicKey? = tlvStream.get<PayToOpenRequestTlv.Blinding>()?.publicKey
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(chainHash.value, out)
@@ -1607,10 +1633,16 @@ data class PayToOpenRequest(
         LightningCodecs.writeU32(expireAt.toInt(), out)
         LightningCodecs.writeU16(finalPacket.payload.size(), out)
         OnionRoutingPacketSerializer(finalPacket.payload.size()).write(finalPacket, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
     companion object : LightningMessageReader<PayToOpenRequest> {
         const val type: Long = 35021
+
+        @Suppress("UNCHECKED_CAST")
+        private val readers = mapOf(
+            PayToOpenRequestTlv.Blinding.tag to PayToOpenRequestTlv.Blinding as TlvValueReader<PayToOpenRequestTlv>
+        )
 
         override fun read(input: Input): PayToOpenRequest {
             return PayToOpenRequest(
@@ -1621,7 +1653,8 @@ data class PayToOpenRequest(
                 payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
                 paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
                 expireAt = LightningCodecs.u32(input).toLong(),
-                finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input)
+                finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input),
+                tlvStream = TlvStreamSerializer(false, readers).read(input),
             )
         }
     }

@@ -752,18 +752,25 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode - decode pay-to-open messages`() {
+        val onionPacket = OnionRoutingPacket(0, ByteVector("0209be9bd1016d73fc1f611c6f8fdccd99ffb0885594e96156a268ee9afd35559c"), ByteVector("0102030405"), ByteVector32("e0a0d5be2ca6faafa03880258e4af33a0d15aa950ab738c88566a471bf3bb14f"))
+        val blinding = PublicKey.fromHex("033da8b63fd839472b49935127072039e65d8f99d4603f14d79cdf74b59f895721")
+        val preimage = ByteVector32("339770785632e71fe1f4b48b8b90d14af94a2a3a2c70af66f2156ed8a150f795")
         val testCases = listOf(
-            PayToOpenRequest(BlockHash(randomBytes32()), 10_000.sat, 5_000.msat, 100.msat, 10.sat, randomBytes32(), 100, OnionRoutingPacket(0, randomKey().publicKey().value, ByteVector("0102030405"), randomBytes32())),
-            PayToOpenResponse(BlockHash(randomBytes32()), randomBytes32(), PayToOpenResponse.Result.Success(randomBytes32())),
-            PayToOpenResponse(BlockHash(randomBytes32()), randomBytes32(), PayToOpenResponse.Result.Failure(null)),
-            PayToOpenResponse(BlockHash(randomBytes32()), randomBytes32(), PayToOpenResponse.Result.Failure(ByteVector("deadbeef"))),
+            // @formatter:off
+            PayToOpenRequest(Block.LivenetGenesisBlock.hash, 10_000.sat, 5_000.msat, 100.msat, 10.sat, preimage.sha256(), 100, onionPacket) to Hex.decode("88cd 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 0000000000002710 0000000000001388 0000000000000064 000000000000000a e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 00000064 0005 000209be9bd1016d73fc1f611c6f8fdccd99ffb0885594e96156a268ee9afd35559c0102030405e0a0d5be2ca6faafa03880258e4af33a0d15aa950ab738c88566a471bf3bb14f"),
+            PayToOpenRequest(Block.LivenetGenesisBlock.hash, 10_000.sat, 5_000.msat, 100.msat, 10.sat, preimage.sha256(), 100, onionPacket, TlvStream(PayToOpenRequestTlv.Blinding(blinding))) to Hex.decode("88cd 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 0000000000002710 0000000000001388 0000000000000064 000000000000000a e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 00000064 0005 000209be9bd1016d73fc1f611c6f8fdccd99ffb0885594e96156a268ee9afd35559c0102030405e0a0d5be2ca6faafa03880258e4af33a0d15aa950ab738c88566a471bf3bb14f 0021033da8b63fd839472b49935127072039e65d8f99d4603f14d79cdf74b59f895721"),
+            PayToOpenResponse(Block.LivenetGenesisBlock.hash, preimage.sha256(), PayToOpenResponse.Result.Success(preimage)) to Hex.decode("88bb 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 339770785632e71fe1f4b48b8b90d14af94a2a3a2c70af66f2156ed8a150f795"),
+            PayToOpenResponse(Block.LivenetGenesisBlock.hash, preimage.sha256(), PayToOpenResponse.Result.Failure(null)) to Hex.decode("88bb 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 0000000000000000000000000000000000000000000000000000000000000000"),
+            PayToOpenResponse(Block.LivenetGenesisBlock.hash, preimage.sha256(), PayToOpenResponse.Result.Failure(ByteVector("deadbeef"))) to Hex.decode("88bb 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 0000000000000000000000000000000000000000000000000000000000000000 0004deadbeef"),
+            // @formatter:on
         )
 
         testCases.forEach {
-            val encoded = LightningMessage.encode(it)
-            val decoded = LightningMessage.decode(encoded)
+            val decoded = LightningMessage.decode(it.second)
             assertNotNull(decoded)
-            assertEquals(it, decoded)
+            assertEquals(it.first, decoded)
+            val encoded = LightningMessage.encode(decoded)
+            assertArrayEquals(it.second, encoded)
         }
     }
 

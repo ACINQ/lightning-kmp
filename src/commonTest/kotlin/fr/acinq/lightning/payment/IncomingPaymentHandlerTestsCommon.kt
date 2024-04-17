@@ -2,13 +2,13 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Lightning
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx
+import fr.acinq.lightning.crypto.sphinx.Sphinx.hash
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
@@ -819,7 +819,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // 1. InvalidOnionKey
         // 2. InvalidOnionHmac
         // Since we used a valid pubKey, we should get an hmac failure.
-        val expectedErr = InvalidOnionHmac(Sphinx.hash(badOnion))
+        val expectedErr = InvalidOnionHmac(hash(badOnion))
         val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedErr.onionHash, expectedErr.code, commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
@@ -1149,6 +1149,145 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(db.listIncomingPayments(5, 0), listOf(unexpiredPayment, paidPayment))
     }
 
+    @Test
+    fun `receive blinded payment with single HTLC`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
+        val preimage = randomBytes32()
+        val paymentHash = Crypto.sha256(preimage).toByteVector32()
+        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, paymentHash, makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage))
+        val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+        val expected = ChannelCommand.Htlc.Settlement.Fulfill(add.id, preimage, commit = true)
+        assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
+
+        assertEquals(result.incomingPayment.received, result.received)
+        assertEquals(defaultAmount, result.received.amount)
+        assertEquals(listOf(IncomingPayment.ReceivedWith.LightningPayment(amount = defaultAmount, channelId = add.channelId, htlcId = 8)), result.received.receivedWith)
+
+        checkDbPayment(result.incomingPayment, paymentHandler.db)
+    }
+
+    @Test
+    fun `receive blinded multipart payment with multiple HTLCs`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
+        val channelId = randomBytes32()
+        val (amount1, amount2) = Pair(100_000.msat, 50_000.msat)
+        val totalAmount = amount1 + amount2
+        val preimage = randomBytes32()
+        val paymentHash = Crypto.sha256(preimage).toByteVector32()
+        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+
+        // Step 1 of 2:
+        // - Alice sends first multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, paymentHash, makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amount1, totalAmount, cltvExpiry, preimage = preimage))
+            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertNull(result.incomingPayment.received)
+            assertTrue(result.actions.isEmpty())
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob
+        // - Bob now accepts the MPP set
+        run {
+            val add = makeUpdateAddHtlc(1, channelId, paymentHandler, paymentHash, makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amount2, totalAmount, cltvExpiry, preimage = preimage))
+            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+            val (expectedActions, expectedReceivedWith) = setOf(
+                // @formatter:off
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(0, preimage, commit = true)) to IncomingPayment.ReceivedWith.LightningPayment(amount1, channelId, 0),
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(1, preimage, commit = true)) to IncomingPayment.ReceivedWith.LightningPayment(amount2, channelId, 1),
+                // @formatter:on
+            ).unzip()
+            assertEquals(expectedActions.toSet(), result.actions.toSet())
+            assertEquals(totalAmount, result.received.amount)
+            assertEquals(expectedReceivedWith, result.received.receivedWith)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
+    }
+
+    @Test
+    fun `reject blinded payment for Bolt11 invoice`() = runSuspendTest {
+        val (paymentHandler, incomingPayment, _) = createFixture(defaultAmount)
+        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val blindedPayload = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = incomingPayment.preimage)
+        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, incomingPayment.paymentHash, blindedPayload)
+        val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+        val expectedFailure = InvalidOnionBlinding(hash(add.onionRoutingPacket))
+        val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedFailure.onionHash, expectedFailure.code, commit = true)
+        assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
+    }
+
+    @Test
+    fun `reject non-blinded payment for Bol12 invoice`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
+        val channelId = randomBytes32()
+        val (amount1, amount2) = Pair(100_000_000.msat, 50_000_000.msat)
+        val totalAmount = amount1 + amount2
+        val preimage = randomBytes32()
+        val paymentHash = Crypto.sha256(preimage).toByteVector32()
+        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+
+        // Step 1 of 2:
+        // - Alice sends first blinded multipart htlc to Bob
+        // - Bob doesn't accept the MPP set yet
+        run {
+            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, paymentHash, makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amount1, totalAmount, cltvExpiry, preimage = preimage))
+            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertNull(result.incomingPayment.received)
+            assertTrue(result.actions.isEmpty())
+        }
+
+        // Step 2 of 2:
+        // - Alice sends second multipart htlc to Bob without using blinded paths
+        // - Bob rejects that htlc (the first htlc will be rejected after the MPP timeout)
+        run {
+            val add = makeUpdateAddHtlc(1, channelId, paymentHandler, paymentHash, makeMppPayload(amount2, totalAmount, randomBytes32()))
+            val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+            val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
+            assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
+        }
+    }
+
+    @Test
+    fun `reject blinded payment with amount too low`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
+        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), 1, currentTimestampMillis())
+        val pathId = metadata.toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
+        val amountTooLow = metadata.amount - 10_000_000.msat
+        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, metadata.paymentHash, makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amountTooLow, amountTooLow, cltvExpiry, pathId))
+        val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+        val expectedFailure = InvalidOnionBlinding(hash(add.onionRoutingPacket))
+        val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedFailure.onionHash, expectedFailure.code, commit = true)
+        assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
+    }
+
+    @Test
+    fun `reject blinded payment with payment_hash mismatch`() = runSuspendTest {
+        val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
+        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), 1, currentTimestampMillis())
+        val pathId = metadata.toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
+        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, metadata.paymentHash.reversed(), makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, metadata.amount, metadata.amount, cltvExpiry, pathId))
+        val result = paymentHandler.process(add, TestConstants.defaultBlockHeight)
+
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+        val expectedFailure = InvalidOnionBlinding(hash(add.onionRoutingPacket))
+        val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedFailure.onionHash, expectedFailure.code, commit = true)
+        assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
+    }
+
     companion object {
         val defaultPreimage = randomBytes32()
         val defaultPaymentHash = Crypto.sha256(defaultPreimage).toByteVector32()
@@ -1177,9 +1316,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             return OutgoingPaymentPacket.buildCommand(UUID.randomUUID(), paymentHash, channelHops(destination), finalPayload).first.copy(commit = true)
         }
 
-        private fun makeUpdateAddHtlc(id: Long, channelId: ByteVector32, destination: IncomingPaymentHandler, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): UpdateAddHtlc {
+        private fun makeUpdateAddHtlc(id: Long, channelId: ByteVector32, destination: IncomingPaymentHandler, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload, blinding: PublicKey? = null): UpdateAddHtlc {
             val (_, _, packetAndSecrets) = OutgoingPaymentPacket.buildPacket(paymentHash, channelHops(destination.nodeParams.nodeId), finalPayload, OnionRoutingPacket.PaymentPacketLength)
-            return UpdateAddHtlc(channelId, id, finalPayload.amount, paymentHash, finalPayload.expiry, packetAndSecrets.packet)
+            return UpdateAddHtlc(channelId, id, finalPayload.amount, paymentHash, finalPayload.expiry, packetAndSecrets.packet, blinding)
         }
 
         private fun makeSinglePartPayload(
@@ -1187,9 +1326,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             paymentSecret: ByteVector32,
             cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
             currentBlockHeight: Int = TestConstants.defaultBlockHeight
-        ): PaymentOnion.FinalPayload {
+        ): PaymentOnion.FinalPayload.Standard {
             val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-            return PaymentOnion.FinalPayload.createSinglePartPayload(amount, expiry, paymentSecret, null)
+            return PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, paymentSecret, null)
         }
 
         private fun makeMppPayload(
@@ -1198,9 +1337,53 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             paymentSecret: ByteVector32,
             cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(144),
             currentBlockHeight: Int = TestConstants.defaultBlockHeight
-        ): PaymentOnion.FinalPayload {
+        ): PaymentOnion.FinalPayload.Standard {
             val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-            return PaymentOnion.FinalPayload.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, null)
+            return PaymentOnion.FinalPayload.Standard.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, null)
+        }
+
+        private fun makeBlindedPayload(
+            recipientNodeId: PublicKey,
+            amount: MilliSatoshi,
+            totalAmount: MilliSatoshi,
+            cltvExpiry: CltvExpiry,
+            offerId: ByteVector32 = randomBytes32(),
+            quantity: Long = 1,
+            preimage: ByteVector32 = randomBytes32(),
+            payerKey: PublicKey = randomKey().publicKey()
+        ): PaymentOnion.FinalPayload.Blinded {
+            val pathId = OfferPaymentMetadata.V1(offerId, totalAmount, preimage, payerKey, quantity, currentTimestampMillis()).toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
+            val recipientData = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId)))
+            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector()))
+            return PaymentOnion.FinalPayload.Blinded(
+                TlvStream(
+                    OnionPaymentPayloadTlv.AmountToForward(amount),
+                    OnionPaymentPayloadTlv.TotalAmount(totalAmount),
+                    OnionPaymentPayloadTlv.OutgoingCltv(cltvExpiry),
+                    OnionPaymentPayloadTlv.BlindingPoint(route.blindingKey),
+                    OnionPaymentPayloadTlv.EncryptedRecipientData(route.encryptedPayloads.first())
+                ), recipientData
+            )
+        }
+
+        private fun makeBlindedPayload(
+            recipientNodeId: PublicKey,
+            amount: MilliSatoshi,
+            totalAmount: MilliSatoshi,
+            cltvExpiry: CltvExpiry,
+            pathId: ByteVector
+        ): PaymentOnion.FinalPayload.Blinded {
+            val recipientData = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId)))
+            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector()))
+            return PaymentOnion.FinalPayload.Blinded(
+                TlvStream(
+                    OnionPaymentPayloadTlv.AmountToForward(amount),
+                    OnionPaymentPayloadTlv.TotalAmount(totalAmount),
+                    OnionPaymentPayloadTlv.OutgoingCltv(cltvExpiry),
+                    OnionPaymentPayloadTlv.BlindingPoint(route.blindingKey),
+                    OnionPaymentPayloadTlv.EncryptedRecipientData(route.encryptedPayloads.first())
+                ), recipientData
+            )
         }
 
         const val payToOpenFeerate = 0.1

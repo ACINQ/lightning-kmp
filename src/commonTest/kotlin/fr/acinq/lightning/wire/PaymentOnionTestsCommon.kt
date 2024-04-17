@@ -13,9 +13,9 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
-import kotlin.test.assertNull
 
 class PaymentOnionTestsCommon : LightningTestSuite() {
     @Test
@@ -55,7 +55,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode variable-length -- tlv --  node relay per-hop payload`() {
+    fun `encode - decode node relay per-hop payload`() {
         val nodeId = PublicKey(Hex.decode("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
         val expected = PaymentOnion.NodeRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(42)), OnionPaymentPayloadTlv.OutgoingNodeId(nodeId)))
         val bin = Hex.decode("2e 02020231 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")
@@ -72,7 +72,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode variable-length -- tlv --  node relay to legacy per-hop payload`() {
+    fun `encode - decode node relay to legacy per-hop payload`() {
         val nodeId = PublicKey(Hex.decode("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
         val features = ByteVector("0a")
         val node1 = PublicKey(Hex.decode("036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"))
@@ -110,7 +110,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode variable-length -- tlv --  final per-hop payload`() {
+    fun `encode - decode final per-hop payload`() {
         val testCases = mapOf(
             TlvStream(
                 OnionPaymentPayloadTlv.AmountToForward(561.msat),
@@ -170,42 +170,62 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
 
         testCases.forEach {
             val expected = it.key
-            val decoded = PaymentOnion.FinalPayload.read(it.value)
-            assertEquals(decoded, PaymentOnion.FinalPayload(expected))
+            val decoded = PaymentOnion.FinalPayload.Standard.read(it.value)
+            assertEquals(decoded, PaymentOnion.FinalPayload.Standard(expected))
             assertEquals(decoded.amount, 561.msat)
             assertEquals(decoded.expiry, CltvExpiry(42))
 
-            val encoded = PaymentOnion.FinalPayload(expected).write()
+            val encoded = PaymentOnion.FinalPayload.Standard(expected).write()
             assertArrayEquals(it.value, encoded)
         }
     }
 
     @Test
-    fun `encode - decode variable-length -- tlv --  final per-hop payload with custom user records`() {
+    fun `encode - decode final blinded per-hop payload`() {
+        val blindedTlvs = RouteBlindingEncryptedData(TlvStream(
+            RouteBlindingEncryptedDataTlv.PathId(ByteVector("2a2a2a2a")),
+            RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1.msat)
+        ))
+        val testCases = mapOf(
+            // @formatter:off
+            TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1234567)), OnionPaymentPayloadTlv.EncryptedRecipientData(ByteVector("deadbeef")), OnionPaymentPayloadTlv.TotalAmount(1105.msat)) to Hex.decode("13 02020231 040312d687 0a04deadbeef 12020451"),
+            TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1234567)), OnionPaymentPayloadTlv.EncryptedRecipientData(ByteVector("deadbeef")), OnionPaymentPayloadTlv.BlindingPoint(PublicKey.fromHex("036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")), OnionPaymentPayloadTlv.TotalAmount(1105.msat)) to Hex.decode("36 02020231 040312d687 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 12020451"),
+            // @formatter:on
+        )
+        testCases.forEach {
+            val decoded = PaymentOnion.PerHopPayload.tlvSerializer.read(it.value)
+            assertEquals(it.key, decoded)
+            val payload = PaymentOnion.FinalPayload.Blinded(it.key, blindedTlvs)
+            assertContentEquals(payload.write(), it.value)
+        }
+    }
+
+    @Test
+    fun `encode - decode final per-hop payload with custom user records`() {
         val tlvs = TlvStream(
             setOf(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(42)), OnionPaymentPayloadTlv.PaymentData(ByteVector32.Zeroes, 0.msat)),
             setOf(GenericTlv(5432123457L, ByteVector("16c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")))
         )
         val bin = Hex.decode("53 02020231 04012a 08200000000000000000000000000000000000000000000000000000000000000000 ff0000000143c7a0412016c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")
 
-        val encoded = PaymentOnion.FinalPayload(tlvs).write()
+        val encoded = PaymentOnion.FinalPayload.Standard(tlvs).write()
         assertArrayEquals(bin, encoded)
-        assertEquals(PaymentOnion.FinalPayload(tlvs), PaymentOnion.FinalPayload.read(bin))
+        assertEquals(PaymentOnion.FinalPayload.Standard(tlvs), PaymentOnion.FinalPayload.Standard.read(bin))
     }
 
     @Test
     fun `decode multi-part final per-hop payload`() {
-        val notMultiPart = PaymentOnion.FinalPayload.read(Hex.decode("29 02020231 04012a 08200000000000000000000000000000000000000000000000000000000000000000"))
+        val notMultiPart = PaymentOnion.FinalPayload.Standard.read(Hex.decode("29 02020231 04012a 08200000000000000000000000000000000000000000000000000000000000000000"))
         assertEquals(notMultiPart.totalAmount, 561.msat)
         assertEquals(notMultiPart.paymentSecret, ByteVector32.Zeroes)
 
-        val multiPart = PaymentOnion.FinalPayload.read(Hex.decode("2b 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451"))
+        val multiPart = PaymentOnion.FinalPayload.Standard.read(Hex.decode("2b 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451"))
         assertEquals(multiPart.amount, 561.msat)
         assertEquals(multiPart.expiry, CltvExpiry(42))
         assertEquals(multiPart.totalAmount, 1105.msat)
         assertEquals(multiPart.paymentSecret, ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
 
-        val multiPartNoTotalAmount = PaymentOnion.FinalPayload.read(Hex.decode("29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+        val multiPartNoTotalAmount = PaymentOnion.FinalPayload.Standard.read(Hex.decode("29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
         assertEquals(multiPartNoTotalAmount.amount, 561.msat)
         assertEquals(multiPartNoTotalAmount.expiry, CltvExpiry(42))
         assertEquals(multiPartNoTotalAmount.totalAmount, 561.msat)
@@ -213,7 +233,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `decode variable-length -- tlv --  final per-hop payload missing information`() {
+    fun `decode final per-hop payload missing information`() {
         val testCases = listOf(
             Hex.decode("25 04012a 0820ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), // missing amount
             Hex.decode("26 02020231 0820ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), // missing cltv
@@ -221,7 +241,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         )
 
         testCases.forEach {
-            assertFails { PaymentOnion.FinalPayload.read(it) }
+            assertFails { PaymentOnion.FinalPayload.Standard.read(it) }
         }
     }
 
@@ -244,7 +264,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         testCases.forEach {
             assertFails { PaymentOnion.ChannelRelayPayload.read(it) }
             assertFails { PaymentOnion.NodeRelayPayload.read(it) }
-            assertFails { PaymentOnion.FinalPayload.read(it) }
+            assertFails { PaymentOnion.FinalPayload.Standard.read(it) }
         }
     }
 }

@@ -5,9 +5,7 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelException
-import fr.acinq.lightning.payment.Bolt11Invoice
-import fr.acinq.lightning.payment.FinalFailure
-import fr.acinq.lightning.payment.PaymentRequest
+import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.LiquidityAds
@@ -147,8 +145,11 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     override val amount: MilliSatoshi = received?.amount ?: 0.msat
 
     sealed class Origin {
-        /** A normal, invoice-based lightning payment. */
+        /** A normal, Bolt11 invoice-based lightning payment. */
         data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
+
+        /** A payment for a Bolt 12 offer: note that we only keep a few fields from the corresponding Bolt 12 invoice. */
+        data class Offer(val metadata: OfferPaymentMetadata) : Origin()
 
         /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
         data object KeySend : Origin()
