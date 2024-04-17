@@ -33,6 +33,7 @@ object IncomingPaymentPacket {
                                 is Either.Left -> Either.Left(inner.value)
                                 is Either.Right -> when (val innerPayload = inner.value) {
                                     is PaymentOnion.FinalPayload.Standard -> validate(add, outer, innerPayload)
+                                    // Blinded trampoline paths are not supported.
                                     is PaymentOnion.FinalPayload.Blinded -> Either.Left(InvalidOnionPayload(0U, 0))
                                 }
                             }
@@ -86,10 +87,18 @@ object IncomingPaymentPacket {
         }
     }
 
-    private fun validate(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload): Either<FailureMessage, PaymentOnion.FinalPayload> {
+    private fun validate(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload.Standard): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when {
             add.amountMsat < payload.amount -> Either.Left(FinalIncorrectHtlcAmount(add.amountMsat))
             add.cltvExpiry < payload.expiry -> Either.Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
+            else -> Either.Right(payload)
+        }
+    }
+
+    private fun validate(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload.Blinded): Either<FailureMessage, PaymentOnion.FinalPayload> {
+        return when {
+            add.amountMsat < payload.amount -> Either.Left(InvalidOnionBlinding(hash(add.onionRoutingPacket)))
+            add.cltvExpiry < payload.expiry -> Either.Left(InvalidOnionBlinding(hash(add.onionRoutingPacket)))
             else -> Either.Right(payload)
         }
     }

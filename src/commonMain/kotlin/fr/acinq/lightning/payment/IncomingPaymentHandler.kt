@@ -4,19 +4,20 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.Origin
+import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 
@@ -25,12 +26,14 @@ sealed class PaymentPart {
     abstract val totalAmount: MilliSatoshi
     abstract val paymentHash: ByteVector32
     abstract val finalPayload: PaymentOnion.FinalPayload
+    abstract val onionPacket: OnionRoutingPacket
 }
 
 data class HtlcPart(val htlc: UpdateAddHtlc, override val finalPayload: PaymentOnion.FinalPayload) : PaymentPart() {
     override val amount: MilliSatoshi = htlc.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = htlc.paymentHash
+    override val onionPacket: OnionRoutingPacket = htlc.onionRoutingPacket
     override fun toString(): String = "htlc(channelId=${htlc.channelId},id=${htlc.id})"
 }
 
@@ -38,6 +41,7 @@ data class PayToOpenPart(val payToOpenRequest: PayToOpenRequest, override val fi
     override val amount: MilliSatoshi = payToOpenRequest.amountMsat
     override val totalAmount: MilliSatoshi = finalPayload.totalAmount
     override val paymentHash: ByteVector32 = payToOpenRequest.paymentHash
+    override val onionPacket: OnionRoutingPacket = payToOpenRequest.finalPacket
     override fun toString(): String = "pay-to-open(amount=${payToOpenRequest.amountMsat})"
 }
 
@@ -469,8 +473,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             // NB: IncomingPacket.decrypt does additional validation on top of IncomingPacket.decryptOnion
             return when (val decrypted = IncomingPaymentPacket.decrypt(htlc, privateKey)) {
                 is Either.Left -> { // Unable to decrypt onion
-                    val failureMsg = decrypted.value
-                    val action = actionForFailureMessage(failureMsg, htlc)
+                    val action = actionForFailureMessage(decrypted.value, htlc)
                     Either.Left(ProcessAddResult.Rejected(listOf(action), null))
                 }
                 is Either.Right -> Either.Right(HtlcPart(htlc, decrypted.value))
@@ -484,8 +487,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         private fun toPaymentPart(privateKey: PrivateKey, payToOpenRequest: PayToOpenRequest): Either<ProcessAddResult.Rejected, PayToOpenPart> {
             return when (val decrypted = IncomingPaymentPacket.decryptOnion(payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, privateKey, payToOpenRequest.blinding)) {
                 is Either.Left -> {
-                    val failureMsg = decrypted.value
-                    val action = actionForPayToOpenFailure(privateKey, failureMsg, payToOpenRequest)
+                    val action = actionForPayToOpenFailure(privateKey, decrypted.value, payToOpenRequest)
                     Either.Left(ProcessAddResult.Rejected(listOf(action), null))
                 }
                 is Either.Right -> Either.Right(PayToOpenPart(payToOpenRequest, decrypted.value))
@@ -493,7 +495,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         }
 
         private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: IncomingPayment?, currentBlockHeight: Int): ProcessAddResult.Rejected {
-            val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
+            val failureMsg = when (paymentPart.finalPayload) {
+                is PaymentOnion.FinalPayload.Blinded -> InvalidOnionBlinding(Sphinx.hash(paymentPart.onionPacket))
+                is PaymentOnion.FinalPayload.Standard -> IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
+            }
             val rejectedAction = when (paymentPart) {
                 is HtlcPart -> actionForFailureMessage(failureMsg, paymentPart.htlc)
                 is PayToOpenPart -> actionForPayToOpenFailure(privateKey, failureMsg, paymentPart.payToOpenRequest)
@@ -511,9 +516,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
         fun actionForPayToOpenFailure(privateKey: PrivateKey, failure: FailureMessage, payToOpenRequest: PayToOpenRequest): PayToOpenResponseCommand {
             val reason = ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(failure)
-            val encryptedReason = when (val result = OutgoingPaymentPacket.buildHtlcFailure(privateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason)) {
-                is Either.Right -> result.value
-                is Either.Left -> null
+            val encryptedReason = when (failure) {
+                is BadOnion -> null
+                else -> OutgoingPaymentPacket.buildHtlcFailure(privateKey, payToOpenRequest.paymentHash, payToOpenRequest.finalPacket, reason).right
             }
             return PayToOpenResponseCommand(PayToOpenResponse(payToOpenRequest.chainHash, payToOpenRequest.paymentHash, PayToOpenResponse.Result.Failure(encryptedReason)))
         }
