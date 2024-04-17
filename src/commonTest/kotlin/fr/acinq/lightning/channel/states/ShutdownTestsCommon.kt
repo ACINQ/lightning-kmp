@@ -533,10 +533,10 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice0, bob0) = init(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
         val (alice1, bob1, reestablishes) = SyncingTestsCommon.disconnect(alice0, bob0)
         val (aliceReestablish, bobReestablish) = reestablishes
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(aliceReestablish))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(bobReestablish))
         assertIs<ShuttingDown>(alice2.state)
         actionsAlice2.hasOutgoingMessage<Shutdown>()
-        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(bobReestablish))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceReestablish))
         assertIs<ShuttingDown>(bob2.state)
         actionsBob2.hasOutgoingMessage<Shutdown>()
     }
