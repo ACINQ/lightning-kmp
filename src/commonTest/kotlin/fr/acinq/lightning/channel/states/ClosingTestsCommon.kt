@@ -1180,24 +1180,24 @@ class ClosingTestsCommon : LightningTestSuite() {
         // alice realizes it has an old state and asks bob to publish its current commitment
         val (alice2, aliceActions2) = alice1.process(ChannelCommand.MessageReceived(channelReestablishB))
         assertIs<WaitForRemotePublishFutureCommitment>(alice2.state)
-        val error = aliceActions2.findOutgoingMessage<Error>()
-        assertEquals(PleasePublishYourCommitment(alice2.channelId).message, error.toAscii())
+        val errorA = aliceActions2.findOutgoingMessage<Error>()
+        assertEquals(PleasePublishYourCommitment(alice2.channelId).message, errorA.toAscii())
 
-        // bob is nice and publishes its commitment as soon as it detects that alice has an outdated commitment
+        // bob detects that alice has an outdated commitment and stands by
         val (bob2, bobActions2) = bob1.process(ChannelCommand.MessageReceived(channelReestablishA))
-        assertIs<Closing>(bob2.state)
-        bobActions2.hasOutgoingMessage<Error>()
+        assertIs<Syncing>(bob2.state)
+        assertTrue { bobActions2.isEmpty() }
+
+        // bob receives the error from alice and publishes his local commitment tx
+        val (bob3, bobActions3) = bob2.process(ChannelCommand.MessageReceived(errorA))
+        assertIs<Closing>(bob3.state)
         val bobCommitTx = bob2.commitments.latest.localCommit.publishableTxs.commitTx.tx
         assertEquals(6, bobCommitTx.txOut.size) // 2 main outputs + 2 anchors + 2 HTLCs
-        bobActions2.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
+        bobActions3.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(bobCommitTx.txid, it.txId)
             assertEquals(ChannelClosingType.Local, it.closingType)
             assertTrue(it.isSentToDefaultAddress)
         }
-
-        val (bob3, bobActions3) = bob2.process(ChannelCommand.MessageReceived(error))
-        assertEquals(bob2, bob3)
-        assertTrue(bobActions3.isEmpty())
 
         val (alice3, aliceActions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
         assertIs<Closing>(alice3.state)

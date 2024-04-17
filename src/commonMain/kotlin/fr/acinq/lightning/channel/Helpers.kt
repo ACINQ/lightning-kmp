@@ -172,57 +172,6 @@ object Helpers {
         toRemote > it.localChannelReserve(commitments.params)
     }
 
-    /**
-     * Tells whether or not their expected next remote commitment number matches with our data
-     *
-     * @return
-     *         - true if parties are in sync or remote is behind
-     *         - false if we are behind
-     */
-    fun checkLocalCommit(commitments: Commitments, nextRemoteRevocationNumber: Long): Boolean {
-        return when {
-            // they just sent a new commit_sig, we have received it but they didn't receive our revocation
-            commitments.localCommitIndex == nextRemoteRevocationNumber -> true
-            // we are in sync
-            commitments.localCommitIndex == nextRemoteRevocationNumber + 1 -> true
-            // remote is behind: we return true because things are fine on our side
-            commitments.localCommitIndex > nextRemoteRevocationNumber + 1 -> true
-            // we are behind
-            else -> false
-        }
-    }
-
-    /**
-     * Tells whether or not their expected next local commitment number matches with our data
-     *
-     * @return
-     *         - true if parties are in sync or remote is behind
-     *         - false if we are behind
-     */
-    fun checkRemoteCommit(commitments: Commitments, nextLocalCommitmentNumber: Long): Boolean {
-        return when {
-            commitments.remoteNextCommitInfo.isLeft ->
-                when {
-                    // we just sent a new commit_sig but they didn't receive it
-                    nextLocalCommitmentNumber == commitments.nextRemoteCommitIndex -> true
-                    // we just sent a new commit_sig, they have received it but we haven't received their revocation
-                    nextLocalCommitmentNumber == (commitments.nextRemoteCommitIndex + 1) -> true
-                    // they are behind
-                    nextLocalCommitmentNumber < commitments.nextRemoteCommitIndex -> true
-                    else -> false
-                }
-            commitments.remoteNextCommitInfo.isRight ->
-                when {
-                    // they have acknowledged the last commit_sig we sent
-                    nextLocalCommitmentNumber == (commitments.remoteCommitIndex + 1) -> true
-                    // they are behind
-                    nextLocalCommitmentNumber < (commitments.remoteCommitIndex + 1) -> true
-                    else -> false
-                }
-            else -> false
-        }
-    }
-
     /** This helper method will publish txs only if they haven't yet reached minDepth. */
     fun LoggingContext.publishIfNeeded(txs: List<ChannelAction.Blockchain.PublishTx>, irrevocablySpent: Map<OutPoint, Transaction>): List<ChannelAction.Blockchain.PublishTx> {
         val (skip, process) = txs.partition { it.tx.inputsAlreadySpent(irrevocablySpent) }

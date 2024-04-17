@@ -1,5 +1,6 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
@@ -21,11 +22,11 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is ChannelReestablish -> {
-                    val (nextState, actions) = when {
-                        state is LegacyWaitForFundingConfirmed -> {
+                    val (nextState, actions) = when (state) {
+                        is LegacyWaitForFundingConfirmed -> {
                             Pair(state, listOf())
                         }
-                        state is WaitForFundingSigned -> {
+                        is WaitForFundingSigned -> {
                             when (cmd.message.nextFundingTxId) {
                                 // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
                                 state.signingSession.fundingTx.txId -> {
@@ -35,7 +36,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 else -> Pair(state, listOf())
                             }
                         }
-                        state is WaitForFundingConfirmed -> {
+                        is WaitForFundingConfirmed -> {
                             when (cmd.message.nextFundingTxId) {
                                 null -> Pair(state, listOf())
                                 else -> {
@@ -72,7 +73,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 }
                             }
                         }
-                        state is WaitForChannelReady -> {
+                        is WaitForChannelReady -> {
                             val actions = ArrayList<ChannelAction>()
 
                             if (state.commitments.latest.fundingTxId == cmd.message.nextFundingTxId) {
@@ -106,51 +107,17 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
 
                             Pair(state, actions)
                         }
-                        state is LegacyWaitForFundingLocked -> {
+                        is LegacyWaitForFundingLocked -> {
                             logger.debug { "re-sending channel_ready" }
                             val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
                             val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                             val actions = listOf(ChannelAction.Message.Send(channelReady))
                             Pair(state, actions)
                         }
-                        state is Normal -> {
-                            when {
-                                !Helpers.checkLocalCommit(state.commitments, cmd.message.nextRemoteRevocationNumber) -> {
-                                    // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
-                                    // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
-                                    if (channelKeys().commitmentSecret(cmd.message.nextRemoteRevocationNumber - 1) == cmd.message.yourLastCommitmentSecret) {
-                                        // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
-                                        // would punish us by taking all the funds in the channel
-                                        logger.warning { "counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${state.commitments.localCommitIndex} theirCommitmentNumber=${cmd.message.nextRemoteRevocationNumber}" }
-                                    } else {
-                                        // they are deliberately trying to fool us into thinking we have a late commitment, but we cannot risk publishing it ourselves, because it may really be revoked!
-                                        logger.warning { "counterparty claims that we have an outdated commitment, but they sent an invalid proof, so our commitment may or may not be revoked: ourLocalCommitmentNumber=${state.commitments.localCommitIndex} theirRemoteCommitmentNumber=${cmd.message.nextRemoteRevocationNumber}" }
-                                    }
-                                    val exc = PleasePublishYourCommitment(channelId)
-                                    val error = Error(channelId, exc.message.encodeToByteArray().toByteVector())
-                                    val nextState = WaitForRemotePublishFutureCommitment(state.commitments, cmd.message)
-                                    val actions = listOf(
-                                        ChannelAction.Storage.StoreState(nextState),
-                                        ChannelAction.Message.Send(error)
-                                    )
-                                    Pair(nextState, actions)
-                                }
-                                !Helpers.checkRemoteCommit(state.commitments, cmd.message.nextLocalCommitmentNumber) -> {
-                                    // if next_local_commit_number is more than one more our remote commitment index, it means that either we are using an outdated commitment, or they are lying
-                                    logger.warning { "counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${state.commitments.latest.nextRemoteCommit?.commit?.index ?: state.commitments.latest.remoteCommit.index} theirCommitmentNumber=${cmd.message.nextLocalCommitmentNumber}" }
-                                    // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
-                                    // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
-                                    // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
-                                    val exc = PleasePublishYourCommitment(channelId)
-                                    val error = Error(channelId, exc.message.encodeToByteArray().toByteVector())
-                                    val nextState = WaitForRemotePublishFutureCommitment(state.commitments, cmd.message)
-                                    val actions = listOf(
-                                        ChannelAction.Storage.StoreState(nextState),
-                                        ChannelAction.Message.Send(error)
-                                    )
-                                    Pair(nextState, actions)
-                                }
-                                else -> {
+                        is Normal -> {
+                            when (val syncResult = handleSync(state.commitments, cmd.message)) {
+                                is SyncResult.Failure -> handleSyncFailure(state.commitments, cmd.message, syncResult)
+                                is SyncResult.Success -> {
                                     // normal case, our data is up-to-date
                                     val actions = ArrayList<ChannelAction>()
 
@@ -219,54 +186,76 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             actions.add(ChannelAction.Message.Send(spliceLocked))
                                         }
 
-                                    try {
-                                        val (commitments1, sendQueue1) = handleSync(cmd.message, state)
-                                        actions.addAll(sendQueue1)
-                                        // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-                                        state.localShutdown?.let {
-                                            logger.debug { "re-sending local shutdown" }
-                                            actions.add(ChannelAction.Message.Send(it))
-                                        }
-                                        Pair(state.copy(commitments = commitments1, spliceStatus = spliceStatus1), actions)
-                                    } catch (e: RevocationSyncError) {
-                                        val error = Error(channelId, e.message)
-                                        state.run { spendLocalCurrent() }.run { copy(second = second + ChannelAction.Message.Send(error)) }
+                                    // we may need to retransmit updates and/or commit_sig and/or revocation
+                                    actions.addAll(syncResult.retransmit.map { ChannelAction.Message.Send(it) })
+
+                                    // then we clean up unsigned updates
+                                    val commitments1 = discardUnsignedUpdates(state.commitments)
+
+                                    if (commitments1.changes.localHasChanges()) {
+                                        actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
                                     }
+
+                                    // When a channel is reestablished after a wallet restarts, we need to reprocess incoming HTLCs that may have been only partially processed
+                                    // (either because they didn't reach the payment handler, or because the payment handler response didn't reach the channel).
+                                    // Otherwise these HTLCs will stay in our commitment until they timeout and our peer closes the channel.
+                                    val htlcsToReprocess = commitments1.reprocessIncomingHtlcs()
+                                    logger.info { "re-processing signed IN: ${htlcsToReprocess.map { it.add.id }.joinToString()}" }
+                                    actions.addAll(htlcsToReprocess)
+
+                                    // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+                                    state.localShutdown?.let {
+                                        logger.debug { "re-sending local shutdown" }
+                                        actions.add(ChannelAction.Message.Send(it))
+                                    }
+                                    Pair(state.copy(commitments = commitments1, spliceStatus = spliceStatus1), actions)
                                 }
                             }
                         }
-                        // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+                        is ShuttingDown -> {
+                            when (val syncResult = handleSync(state.commitments, cmd.message)) {
+                                is SyncResult.Failure -> handleSyncFailure(state.commitments, cmd.message, syncResult)
+                                is SyncResult.Success -> {
+                                    val commitments1 = discardUnsignedUpdates(state.commitments)
+                                    val actions = buildList {
+                                        addAll(syncResult.retransmit)
+                                        add(state.localShutdown)
+                                    }.map { ChannelAction.Message.Send(it) }
+                                    Pair(state.copy(commitments = commitments1), actions)
+                                }
+                            }
+                        }
                         // negotiation restarts from the beginning, and is initialized by the initiator
                         // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
-                        state is Negotiating && state.commitments.params.localParams.isInitiator -> {
-                            // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
-                            val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
-                                channelKeys(),
-                                state.commitments.latest,
-                                state.localShutdown.scriptPubKey.toByteArray(),
-                                state.remoteShutdown.scriptPubKey.toByteArray(),
-                                state.closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
-                            )
-                            val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
-                            val nextState = state.copy(closingTxProposed = closingTxProposed1)
-                            val actions = listOf(
-                                ChannelAction.Storage.StoreState(nextState),
-                                ChannelAction.Message.Send(state.localShutdown),
-                                ChannelAction.Message.Send(closingSigned)
-                            )
-                            return Pair(nextState, actions)
-                        }
-                        state is Negotiating -> {
-                            // we start a new round of negotiation
-                            val closingTxProposed1 = if (state.closingTxProposed.last().isEmpty()) state.closingTxProposed else state.closingTxProposed + listOf(listOf())
-                            val nextState = state.copy(closingTxProposed = closingTxProposed1)
-                            val actions = listOf(
-                                ChannelAction.Storage.StoreState(nextState),
-                                ChannelAction.Message.Send(state.localShutdown)
-                            )
-                            return Pair(nextState, actions)
-                        }
-                        else -> unhandled(cmd)
+                        is Negotiating ->
+                            if (state.commitments.params.localParams.isInitiator) {
+                                // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
+                                val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
+                                    channelKeys(),
+                                    state.commitments.latest,
+                                    state.localShutdown.scriptPubKey.toByteArray(),
+                                    state.remoteShutdown.scriptPubKey.toByteArray(),
+                                    state.closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                )
+                                val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
+                                val nextState = state.copy(closingTxProposed = closingTxProposed1)
+                                val actions = listOf(
+                                    ChannelAction.Storage.StoreState(nextState),
+                                    ChannelAction.Message.Send(state.localShutdown),
+                                    ChannelAction.Message.Send(closingSigned)
+                                )
+                                return Pair(nextState, actions)
+                            } else {
+                                // we start a new round of negotiation
+                                val closingTxProposed1 = if (state.closingTxProposed.last().isEmpty()) state.closingTxProposed else state.closingTxProposed + listOf(listOf())
+                                val nextState = state.copy(closingTxProposed = closingTxProposed1)
+                                val actions = listOf(
+                                    ChannelAction.Storage.StoreState(nextState),
+                                    ChannelAction.Message.Send(state.localShutdown)
+                                )
+                                return Pair(nextState, actions)
+                            }
+                        is Closing, is Closed, is WaitForRemotePublishFutureCommitment -> unhandled(cmd)
                     }
                     Pair(nextState, buildList {
                         if (!channelReestablishSent) {
@@ -356,82 +345,187 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
         }
     }
 
+    private fun ChannelContext.handleSyncFailure(commitments: Commitments, remoteChannelReestablish: ChannelReestablish, syncFailure: SyncResult.Failure): Pair<ChannelState, List<ChannelAction>> {
+        return when (syncFailure) {
+            is SyncResult.Failure.LocalLateProven -> {
+                // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
+                // would punish us by taking all the funds in the channel
+                logger.warning { "counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${commitments.localCommitIndex} theirCommitmentNumber=${remoteChannelReestablish.nextRemoteRevocationNumber}" }
+                handleOutdatedCommitment(remoteChannelReestablish, commitments)
+            }
+            is SyncResult.Failure.LocalLateUnproven -> {
+                // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
+                // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
+                // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
+                logger.warning { "counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${commitments.latest.nextRemoteCommit?.commit?.index ?: commitments.latest.remoteCommit.index} theirCommitmentNumber=${remoteChannelReestablish.nextLocalCommitmentNumber}" }
+                handleOutdatedCommitment(remoteChannelReestablish, commitments)
+            }
+            is SyncResult.Failure.RemoteLying -> {
+                // they are deliberately trying to fool us into thinking we have a late commitment, but we cannot risk publishing it ourselves, because it may really be revoked!
+                logger.warning { "counterparty claims that we have an outdated commitment, but they sent an invalid proof, so our commitment may or may not be revoked: ourLocalCommitmentNumber=${commitments.localCommitIndex} theirRemoteCommitmentNumber=${remoteChannelReestablish.nextRemoteRevocationNumber}" }
+                handleOutdatedCommitment(remoteChannelReestablish, commitments)
+            }
+            is SyncResult.Failure.RemoteLate -> {
+                logger.error { "counterparty appears to be using an outdated commitment, they may request a force-close, standing by..." }
+                Pair(this@Syncing, listOf())
+            }
+        }
+    }
+
     companion object {
-        private fun ChannelContext.handleSync(channelReestablish: ChannelReestablish, d: ChannelStateWithCommitments): Pair<Commitments, List<ChannelAction>> {
-            val sendQueue = ArrayList<ChannelAction>()
-            // first we clean up unacknowledged updates
-            logger.debug { "discarding proposed OUT: ${d.commitments.changes.localChanges.proposed}" }
-            logger.debug { "discarding proposed IN: ${d.commitments.changes.remoteChanges.proposed}" }
-            val commitments1 = d.commitments.copy(
-                changes = d.commitments.changes.copy(
-                    localChanges = d.commitments.changes.localChanges.copy(proposed = emptyList()),
-                    remoteChanges = d.commitments.changes.remoteChanges.copy(proposed = emptyList()),
-                    localNextHtlcId = d.commitments.changes.localNextHtlcId - d.commitments.changes.localChanges.proposed.filterIsInstance<UpdateAddHtlc>().size,
-                    remoteNextHtlcId = d.commitments.changes.remoteNextHtlcId - d.commitments.changes.remoteChanges.proposed.filterIsInstance<UpdateAddHtlc>().size
+
+        // @formatter:off
+        sealed class SyncResult {
+            data class Success(val retransmit: List<LightningMessage>) : SyncResult()
+            sealed class Failure : SyncResult() {
+                data class LocalLateProven(val ourLocalCommitmentNumber: Long, val theirRemoteCommitmentNumber: Long) : Failure()
+                data class LocalLateUnproven(val ourRemoteCommitmentNumber: Long, val theirLocalCommitmentNumber: Long) : Failure()
+                data class RemoteLying(val ourLocalCommitmentNumber: Long, val theirRemoteCommitmentNumber: Long, val invalidPerCommitmentSecret: PrivateKey) : Failure()
+                data object RemoteLate : Failure()
+            }
+        }
+        // @formatter:on
+
+        /**
+         * Check whether we are in sync with our peer.
+         */
+        fun ChannelContext.handleSync(commitments: Commitments, remoteChannelReestablish: ChannelReestablish): SyncResult {
+            val channelKeys = keyManager.channelKeys(commitments.params.localParams.fundingKeyPath)
+            // This is done in two steps:
+            // - step 1: we check our local commitment
+            // - step 2: we check the remote commitment
+            // step 2 depends on step 1 because we need to preserve ordering between commit_sig and revocation
+
+            // step 2: we check the remote commitment
+            fun checkRemoteCommit(remoteChannelReestablish: ChannelReestablish, retransmitRevocation: RevokeAndAck?): SyncResult {
+                return when (val rnci = commitments.remoteNextCommitInfo) {
+                    is Either.Left -> {
+                        when {
+                            remoteChannelReestablish.nextLocalCommitmentNumber == commitments.nextRemoteCommitIndex -> {
+                                // we just sent a new commit_sig but they didn't receive it
+                                // we resend the same updates and the same sig, and preserve the same ordering
+                                val signedUpdates = commitments.changes.localChanges.signed
+                                val commitSigs = commitments.active.map { it.nextRemoteCommit }.filterIsInstance<NextRemoteCommit>().map { it.sig }
+                                SyncResult.Success(retransmit = when (retransmitRevocation) {
+                                    null -> buildList {
+                                        addAll(signedUpdates)
+                                        addAll(commitSigs)
+                                    }
+                                    else -> if (commitments.localCommitIndex > rnci.value.sentAfterLocalCommitIndex) {
+                                        buildList {
+                                            addAll(signedUpdates)
+                                            addAll(commitSigs)
+                                            add(retransmitRevocation)
+                                        }
+                                    } else {
+                                        buildList {
+                                            add(retransmitRevocation)
+                                            addAll(signedUpdates)
+                                            addAll(commitSigs)
+                                        }
+                                    }
+                                })
+                            }
+                            remoteChannelReestablish.nextLocalCommitmentNumber == (commitments.nextRemoteCommitIndex + 1) -> {
+                                // we just sent a new commit_sig, they have received it but we haven't received their revocation
+                                SyncResult.Success(retransmit = listOfNotNull(retransmitRevocation))
+                            }
+                            remoteChannelReestablish.nextLocalCommitmentNumber < commitments.nextRemoteCommitIndex -> {
+                                // they are behind
+                                SyncResult.Failure.RemoteLate
+                            }
+                            else -> {
+                                // we are behind
+                                SyncResult.Failure.LocalLateUnproven(
+                                    ourRemoteCommitmentNumber = commitments.nextRemoteCommitIndex,
+                                    theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
+                                )
+                            }
+                        }
+                    }
+                    is Either.Right -> {
+                        when {
+                            remoteChannelReestablish.nextLocalCommitmentNumber == (commitments.remoteCommitIndex + 1) -> {
+                                // they have acknowledged the last commit_sig we sent
+                                SyncResult.Success(retransmit = listOfNotNull(retransmitRevocation))
+                            }
+                            remoteChannelReestablish.nextLocalCommitmentNumber < (commitments.remoteCommitIndex + 1) -> {
+                                // they are behind
+                                SyncResult.Failure.RemoteLate
+                            }
+                            else -> {
+                                // we are behind
+                                SyncResult.Failure.LocalLateUnproven(
+                                    ourRemoteCommitmentNumber = commitments.remoteCommitIndex,
+                                    theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // step 1: we check our local commitment
+            return if (commitments.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber) {
+                // our local commitment is in sync, let's check the remote commitment
+                checkRemoteCommit(remoteChannelReestablish, retransmitRevocation = null)
+            } else if (commitments.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
+                // they just sent a new commit_sig, we have received it but they didn't receive our revocation
+                val localPerCommitmentSecret = channelKeys.commitmentSecret(commitments.localCommitIndex - 1)
+                val localNextPerCommitmentPoint = channelKeys.commitmentPoint(commitments.localCommitIndex + 1)
+                val revocation = RevokeAndAck(
+                    channelId = commitments.channelId,
+                    perCommitmentSecret = localPerCommitmentSecret,
+                    nextPerCommitmentPoint = localNextPerCommitmentPoint
+                )
+                checkRemoteCommit(remoteChannelReestablish, retransmitRevocation = revocation)
+            } else if (commitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
+                SyncResult.Failure.RemoteLate
+            } else {
+                // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
+                // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
+                if (channelKeys.commitmentSecret(remoteChannelReestablish.nextRemoteRevocationNumber - 1) == remoteChannelReestablish.yourLastCommitmentSecret) {
+                    SyncResult.Failure.LocalLateProven(
+                        ourLocalCommitmentNumber = commitments.localCommitIndex,
+                        theirRemoteCommitmentNumber = remoteChannelReestablish.nextRemoteRevocationNumber
+                    )
+                } else {
+                    // they lied! the last per_commitment_secret they claimed to have received from us is invalid
+                    SyncResult.Failure.RemoteLying(
+                        ourLocalCommitmentNumber = commitments.localCommitIndex,
+                        theirRemoteCommitmentNumber = remoteChannelReestablish.nextRemoteRevocationNumber,
+                        invalidPerCommitmentSecret = remoteChannelReestablish.yourLastCommitmentSecret
+                    )
+                }
+            }
+        }
+
+        /** When reconnecting, we drop all unsigned changes. */
+        fun ChannelContext.discardUnsignedUpdates(commitments: Commitments): Commitments {
+            logger.debug { "discarding proposed OUT: ${commitments.changes.localChanges.proposed}" }
+            logger.debug { "discarding proposed IN: ${commitments.changes.remoteChanges.proposed}" }
+            val commitments1 = commitments.copy(
+                changes = commitments.changes.copy(
+                    localChanges = commitments.changes.localChanges.copy(proposed = emptyList()),
+                    remoteChanges = commitments.changes.remoteChanges.copy(proposed = emptyList()),
+                    localNextHtlcId = commitments.changes.localNextHtlcId - commitments.changes.localChanges.proposed.filterIsInstance<UpdateAddHtlc>().size,
+                    remoteNextHtlcId = commitments.changes.remoteNextHtlcId - commitments.changes.remoteChanges.proposed.filterIsInstance<UpdateAddHtlc>().size
                 )
             )
-            logger.debug { "localNextHtlcId=${d.commitments.changes.localNextHtlcId}->${commitments1.changes.localNextHtlcId}" }
-            logger.debug { "remoteNextHtlcId=${d.commitments.changes.remoteNextHtlcId}->${commitments1.changes.remoteNextHtlcId}" }
+            logger.debug { "localNextHtlcId=${commitments.changes.localNextHtlcId}->${commitments1.changes.localNextHtlcId}" }
+            logger.debug { "remoteNextHtlcId=${commitments.changes.remoteNextHtlcId}->${commitments1.changes.remoteNextHtlcId}" }
+            return commitments1
+        }
 
-            fun resendRevocation() {
-                // let's see the state of remote sigs
-                when (commitments1.localCommitIndex) {
-                    channelReestablish.nextRemoteRevocationNumber -> {
-                        // nothing to do
-                    }
-                    channelReestablish.nextRemoteRevocationNumber + 1 -> {
-                        // our last revocation got lost, let's resend it
-                        logger.debug { "re-sending last revocation" }
-                        val channelKeys = keyManager.channelKeys(d.commitments.params.localParams.fundingKeyPath)
-                        val localPerCommitmentSecret = channelKeys.commitmentSecret(d.commitments.localCommitIndex - 1)
-                        val localNextPerCommitmentPoint = channelKeys.commitmentPoint(d.commitments.localCommitIndex + 1)
-                        val revocation = RevokeAndAck(commitments1.channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
-                        sendQueue.add(ChannelAction.Message.Send(revocation))
-                    }
-                    else -> throw RevocationSyncError(d.channelId)
-                }
-            }
-
-            when {
-                commitments1.remoteNextCommitInfo.isLeft && commitments1.nextRemoteCommitIndex + 1 == channelReestablish.nextLocalCommitmentNumber -> {
-                    // we had sent a new sig and were waiting for their revocation
-                    // they had received the new sig but their revocation was lost during the disconnection
-                    // they will send us the revocation, nothing to do here
-                    logger.debug { "waiting for them to re-send their last revocation" }
-                    resendRevocation()
-                }
-                commitments1.remoteNextCommitInfo.isLeft && commitments1.nextRemoteCommitIndex == channelReestablish.nextLocalCommitmentNumber -> {
-                    // we had sent a new sig and were waiting for their revocation
-                    // they didn't receive the new sig because of the disconnection
-                    // we just resend the same updates and the same sig
-                    val revWasSentLast = commitments1.localCommitIndex > commitments1.remoteNextCommitInfo.left!!.sentAfterLocalCommitIndex
-                    if (!revWasSentLast) resendRevocation()
-
-                    logger.debug { "re-sending previously local signed changes: ${commitments1.changes.localChanges.signed}" }
-                    commitments1.changes.localChanges.signed.forEach { sendQueue.add(ChannelAction.Message.Send(it)) }
-                    logger.debug { "re-sending the exact same previous sig" }
-                    commitments1.active.forEach { sendQueue.add(ChannelAction.Message.Send(it.nextRemoteCommit!!.sig)) }
-                    if (revWasSentLast) resendRevocation()
-                }
-                commitments1.remoteNextCommitInfo.isRight && commitments1.remoteCommitIndex + 1 == channelReestablish.nextLocalCommitmentNumber -> {
-                    // there wasn't any sig in-flight when the disconnection occurred
-                    resendRevocation()
-                }
-                else -> throw RevocationSyncError(d.channelId)
-            }
-
-            if (commitments1.changes.localHasChanges()) {
-                sendQueue.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
-            }
-
-            // When a channel is reestablished after a wallet restarts, we need to reprocess incoming HTLCs that may have been only partially processed
-            // (either because they didn't reach the payment handler, or because the payment handler response didn't reach the channel).
-            // Otherwise these HTLCs will stay in our commitment until they timeout and our peer closes the channel.
-            val htlcsToReprocess = commitments1.reprocessIncomingHtlcs()
-            logger.info { "re-processing signed IN: ${htlcsToReprocess.map { it.add.id }.joinToString()}" }
-            sendQueue.addAll(htlcsToReprocess)
-
-            return Pair(commitments1, sendQueue)
+        private fun handleOutdatedCommitment(remoteChannelReestablish: ChannelReestablish, commitments: Commitments): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
+            val exc = PleasePublishYourCommitment(commitments.channelId)
+            val error = Error(commitments.channelId, exc.message.encodeToByteArray().toByteVector())
+            val nextState = WaitForRemotePublishFutureCommitment(commitments, remoteChannelReestablish)
+            val actions = listOf(
+                ChannelAction.Storage.StoreState(nextState),
+                ChannelAction.Message.Send(error)
+            )
+            return Pair(nextState, actions)
         }
     }
 

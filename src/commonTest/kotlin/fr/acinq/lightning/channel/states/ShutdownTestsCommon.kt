@@ -528,6 +528,19 @@ class ShutdownTestsCommon : LightningTestSuite() {
         testLocalForceClose(alice1, actions1)
     }
 
+    @Test
+    fun `basic disconnection and reconnection`() {
+        val (alice0, bob0) = init(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
+        val (alice1, bob1, reestablishes) = SyncingTestsCommon.disconnect(alice0, bob0)
+        val (aliceReestablish, bobReestablish) = reestablishes
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(bobReestablish))
+        assertIs<ShuttingDown>(alice2.state)
+        actionsAlice2.hasOutgoingMessage<Shutdown>()
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceReestablish))
+        assertIs<ShuttingDown>(bob2.state)
+        actionsBob2.hasOutgoingMessage<Shutdown>()
+    }
+
     companion object {
         val r1 = randomBytes32()
         val r2 = randomBytes32()
@@ -566,6 +579,8 @@ class ShutdownTestsCommon : LightningTestSuite() {
             val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(shutdown1))
             assertIs<LNChannel<ShuttingDown>>(alice2)
             assertIs<LNChannel<ShuttingDown>>(bob1)
+            assertIs<ShuttingDown>(alice2.state)
+            assertIs<ShuttingDown>(bob1.state)
             if (alice2.state.commitments.params.channelFeatures.hasFeature(Feature.ChannelBackupClient)) assertFalse(shutdown.channelData.isEmpty())
             if (bob1.state.commitments.params.channelFeatures.hasFeature(Feature.ChannelBackupClient)) assertFalse(shutdown1.channelData.isEmpty())
             return Pair(alice2, bob1)

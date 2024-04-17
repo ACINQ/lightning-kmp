@@ -84,7 +84,6 @@ data class CannotSignWithoutChanges                (override val channelId: Byte
 data class CannotSignBeforeRevocation              (override val channelId: ByteVector32) : ChannelException(channelId, "cannot sign until next revocation hash is received")
 data class UnexpectedRevocation                    (override val channelId: ByteVector32) : ChannelException(channelId, "received unexpected RevokeAndAck message")
 data class InvalidRevocation                       (override val channelId: ByteVector32) : ChannelException(channelId, "invalid revocation")
-data class RevocationSyncError                     (override val channelId: ByteVector32) : ChannelException(channelId, "revocation sync error")
 data class InvalidFailureCode                      (override val channelId: ByteVector32) : ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 data class PleasePublishYourCommitment             (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")
 data class CommandUnavailableInThisState           (override val channelId: ByteVector32, val state: String) : ChannelException(channelId, "cannot execute command in state=$state")
