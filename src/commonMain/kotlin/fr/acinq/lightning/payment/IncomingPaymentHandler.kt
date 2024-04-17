@@ -270,11 +270,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             }
 
                             when (val finalPayload = paymentPart.finalPayload) {
-                                is PaymentOnion.FinalPayload.Standard ->
-                                    if (finalPayload.paymentMetadata == null)
-                                        logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
-                                    else
-                                        logger.info { "payment received (${payment.amountReceived}) with payment metadata (${finalPayload.paymentMetadata})" }
+                                is PaymentOnion.FinalPayload.Standard -> when (finalPayload.paymentMetadata) {
+                                    null -> logger.info { "payment received (${payment.amountReceived}) without payment metadata" }
+                                    else -> logger.info { "payment received (${payment.amountReceived}) with payment metadata (${finalPayload.paymentMetadata})" }
+                                }
                                 is PaymentOnion.FinalPayload.Blinded -> logger.info { "payment received (${payment.amountReceived}) with blinded route" }
                             }
                             val htlcParts = payment.parts.filterIsInstance<HtlcPart>()
@@ -304,6 +303,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             pending.remove(paymentPart.paymentHash)
                             val received = IncomingPayment.Received(receivedWith = receivedWith)
                             if (incomingPayment.origin is IncomingPayment.Origin.Offer) {
+                                // We didn't store the Bolt 12 invoice in our DB when receiving the invoice_request (to protect against DoS).
+                                // We need to create the DB entry now otherwise the payment won't be recorded.
                                 db.addIncomingPayment(incomingPayment.preimage, incomingPayment.origin)
                             }
                             db.receivePayment(paymentPart.paymentHash, received.receivedWith)
@@ -375,33 +376,40 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                     else -> Either.Right(incomingPayment)
                 }
             }
-            is PaymentOnion.FinalPayload.Blinded -> try {
-                val metadata = OfferPaymentMetadata.read(nodeParams.nodeId, ByteArrayInput(finalPayload.pathId.toByteArray()))
-                val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash) ?: IncomingPayment(metadata.preimage, IncomingPayment.Origin.Offer(metadata), null)
-                return when {
-                    !paymentPart.paymentHash.toByteArray().contentEquals(Crypto.sha256(metadata.preimage)) -> {
-                        logger.warning { "payment for which we don't have a preimage" }
-                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-                    }
-                    paymentPart.totalAmount < metadata.amount -> {
-                        logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${metadata.amount}" }
-                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-                    }
-                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong()) -> {
-                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())}" }
-                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
-                    }
-                    metadata.createdAtMillis + nodeParams.bolt12invoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
-                        logger.warning { "the invoice is expired" }
-                        Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+            is PaymentOnion.FinalPayload.Blinded -> {
+                // We encrypted the payment metadata for ourselves in the blinded path we included in the invoice.
+                return when (val metadata = OfferPaymentMetadata.fromPathId(nodeParams.nodeId, finalPayload.pathId)) {
+                    null -> {
+                        logger.warning { "invalid path_id: ${finalPayload.pathId.toHex()}" }
+                        Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
                     }
                     else -> {
-                        Either.Right(incomingPayment)
+                        val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash) ?: IncomingPayment(metadata.preimage, IncomingPayment.Origin.Offer(metadata), null)
+                        when {
+                            incomingPayment.origin !is IncomingPayment.Origin.Offer -> {
+                                logger.warning { "unsupported payment type: ${incomingPayment.origin::class}" }
+                                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                            }
+                            paymentPart.paymentHash != metadata.paymentHash -> {
+                                logger.warning { "payment for which we don't have a preimage" }
+                                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                            }
+                            paymentPart.totalAmount < metadata.amount -> {
+                                logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${metadata.amount}" }
+                                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                            }
+                            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong()) -> {
+                                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())}" }
+                                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                            }
+                            metadata.createdAtMillis + nodeParams.bolt12invoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
+                                logger.warning { "the invoice is expired" }
+                                Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
+                            }
+                            else -> Either.Right(incomingPayment)
+                        }
                     }
                 }
-            } catch (ex: Throwable) {
-                logger.warning { "blinded payment to route that we did not create" }
-                return Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
             }
         }
     }
