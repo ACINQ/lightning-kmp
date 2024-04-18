@@ -150,27 +150,40 @@ object OnionMessages {
     fun decryptMessage(privateKey: PrivateKey, msg: OnionMessage, logger: MDCLogger): DecryptedMessage? {
         val blindedPrivateKey = RouteBlinding.derivePrivateKey(privateKey, msg.blindingKey)
         return when (val decrypted = Sphinx.peel(blindedPrivateKey, associatedData = ByteVector.empty, msg.onionRoutingPacket)) {
-            is Either.Right -> try {
-                val message = MessageOnion.read(decrypted.value.payload.toByteArray())
-                val (decryptedPayload, nextBlinding) = RouteBlinding.decryptPayload(
-                    privateKey,
-                    msg.blindingKey,
-                    message.encryptedData
-                )
-                val relayInfo = RouteBlindingEncryptedData.read(decryptedPayload.toByteArray())
-                if (!decrypted.value.isLastPacket && relayInfo.nextNodeId == EncodedNodeId(privateKey.publicKey())) {
-                    // We may add ourselves to the route several times at the end to hide the real length of the route.
-                    val nextMessage = OnionMessage(relayInfo.nextBlindingOverride ?: nextBlinding, decrypted.value.nextPacket)
-                    decryptMessage(privateKey, nextMessage, logger)
-                } else if (decrypted.value.isLastPacket && relayInfo.pathId != null) {
-                    DecryptedMessage(message, blindedPrivateKey, relayInfo.pathId)
-                } else {
-                    logger.warning { "ignoring onion message for which we're not the destination (next_node_id=${relayInfo.nextNodeId}, path_id=${relayInfo.pathId?.toHex()})" }
-                    null
+            is Either.Right -> {
+                val message = try {
+                    MessageOnion.read(decrypted.value.payload.toByteArray())
+                } catch (e: Throwable) {
+                    logger.warning { "ignoring onion message that couldn't be decoded: ${e.message}" }
+                    return null
                 }
-            } catch (e: Throwable) {
-                logger.warning { "ignoring onion message that couldn't be decoded: ${e.message}" }
-                null
+                when (val payload = RouteBlinding.decryptPayload(privateKey, msg.blindingKey, message.encryptedData)) {
+                    is Either.Left -> {
+                        logger.warning { "ignoring onion message that couldn't be decrypted: ${payload.value}" }
+                        null
+                    }
+                    is Either.Right -> {
+                        val (decryptedPayload, nextBlinding) = payload.value
+                        when (val relayInfo = RouteBlindingEncryptedData.read(decryptedPayload.toByteArray())) {
+                            is Either.Left -> {
+                                logger.warning { "ignoring onion message with invalid relay info: ${relayInfo.value}" }
+                                null
+                            }
+                            is Either.Right -> when {
+                                !decrypted.value.isLastPacket && relayInfo.value.nextNodeId == EncodedNodeId(privateKey.publicKey()) -> {
+                                    // We may add ourselves to the route several times at the end to hide the real length of the route.
+                                    val nextMessage = OnionMessage(relayInfo.value.nextBlindingOverride ?: nextBlinding, decrypted.value.nextPacket)
+                                    decryptMessage(privateKey, nextMessage, logger)
+                                }
+                                decrypted.value.isLastPacket && relayInfo.value.pathId != null -> DecryptedMessage(message, blindedPrivateKey, relayInfo.value.pathId!!)
+                                else -> {
+                                    logger.warning { "ignoring onion message for which we're not the destination (next_node_id=${relayInfo.value.nextNodeId}, path_id=${relayInfo.value.pathId?.toHex()})" }
+                                    null
+                                }
+                            }
+                        }
+                    }
+                }
             }
             is Either.Left -> {
                 logger.warning { "ignoring onion message that couldn't be decrypted: ${decrypted.value.message}" }

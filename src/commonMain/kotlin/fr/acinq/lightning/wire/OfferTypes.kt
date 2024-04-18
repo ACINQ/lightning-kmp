@@ -705,12 +705,6 @@ object OfferTypes {
         }
     }
 
-    // @formatter:off
-    sealed class InvalidTlvPayload { abstract val tag: Long }
-    data class MissingRequiredTlv(override val tag: Long) : InvalidTlvPayload()
-    data class ForbiddenTlv(override val tag: Long) : InvalidTlvPayload()
-    // @formatter:on
-
     data class Offer(val records: TlvStream<OfferTlv>) {
         val chains: List<BlockHash> = records.get<OfferChains>()?.chains ?: listOf(Block.LivenetGenesisBlock.hash)
         val metadata: ByteVector? = records.get<OfferMetadata>()?.data

@@ -53,7 +53,7 @@ class RouteBlindingTestsCommon : LightningTestSuite() {
         for (payload in payloads) {
             val encoded = payload.key
             val data = payload.value
-            assertEquals(data, RouteBlindingEncryptedData.read(encoded.toByteArray()))
+            assertEquals(data, RouteBlindingEncryptedData.read(encoded.toByteArray()).right)
             assertEquals(encoded, ByteVector(data.write()))
         }
     }

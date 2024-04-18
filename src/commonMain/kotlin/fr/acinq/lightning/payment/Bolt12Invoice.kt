@@ -9,11 +9,9 @@ import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.utils.currentTimestampSeconds
-import fr.acinq.lightning.wire.GenericTlv
-import fr.acinq.lightning.wire.OfferTypes
+import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.OfferTypes.ContactInfo.BlindedPath
 import fr.acinq.lightning.wire.OfferTypes.FallbackAddress
-import fr.acinq.lightning.wire.OfferTypes.InvalidTlvPayload
 import fr.acinq.lightning.wire.OfferTypes.InvoiceAmount
 import fr.acinq.lightning.wire.OfferTypes.InvoiceBlindedPay
 import fr.acinq.lightning.wire.OfferTypes.InvoiceCreatedAt
@@ -25,7 +23,6 @@ import fr.acinq.lightning.wire.OfferTypes.InvoicePaymentHash
 import fr.acinq.lightning.wire.OfferTypes.InvoiceRelativeExpiry
 import fr.acinq.lightning.wire.OfferTypes.InvoiceRequest
 import fr.acinq.lightning.wire.OfferTypes.InvoiceTlv
-import fr.acinq.lightning.wire.OfferTypes.MissingRequiredTlv
 import fr.acinq.lightning.wire.OfferTypes.PaymentInfo
 import fr.acinq.lightning.wire.OfferTypes.Signature
 import fr.acinq.lightning.wire.OfferTypes.filterInvoiceRequestFields
@@ -33,7 +30,6 @@ import fr.acinq.lightning.wire.OfferTypes.removeSignature
 import fr.acinq.lightning.wire.OfferTypes.rootHash
 import fr.acinq.lightning.wire.OfferTypes.signSchnorr
 import fr.acinq.lightning.wire.OfferTypes.verifySchnorr
-import fr.acinq.lightning.wire.TlvStream
 
 data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() {
     val invoiceRequest: InvoiceRequest = InvoiceRequest.validate(filterInvoiceRequestFields(records)).right!!
@@ -45,7 +41,6 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
     val createdAtSeconds: Long = records.get<InvoiceCreatedAt>()!!.timestampSeconds
     val relativeExpirySeconds: Long = records.get<InvoiceRelativeExpiry>()?.seconds ?: DEFAULT_EXPIRY_SECONDS
 
-
     // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
     override val features: Features =
         (records.get<InvoiceFeatures>()?.features?.invoiceFeatures() ?: Features.empty).let {
@@ -55,7 +50,6 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
     val blindedPaths: List<PaymentBlindedContactInfo> = records.get<InvoicePaths>()!!.paths.zip(records.get<InvoiceBlindedPay>()!!.paymentInfos).map { PaymentBlindedContactInfo(it.first, it.second) }
     val fallbacks: List<FallbackAddress>? = records.get<InvoiceFallbacks>()?.addresses
     val signature: ByteVector64 = records.get<Signature>()!!.signature
-
 
     override fun isExpired(currentTimestampSeconds: Long): Boolean = createdAtSeconds + relativeExpirySeconds <= currentTimestampSeconds
 

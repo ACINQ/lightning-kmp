@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 
 sealed class RouteBlindingEncryptedDataTlv : Tlv {
@@ -16,8 +17,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
 
         companion object : TlvValueReader<Padding> {
             const val tag: Long = 1
-            override fun read(input: Input): Padding =
-                Padding(ByteVector(LightningCodecs.bytes(input, input.availableBytes)))
+            override fun read(input: Input): Padding = Padding(ByteVector(LightningCodecs.bytes(input, input.availableBytes)))
         }
     }
 
@@ -28,8 +28,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
 
         companion object : TlvValueReader<OutgoingChannelId> {
             const val tag: Long = 2
-            override fun read(input: Input): OutgoingChannelId =
-                OutgoingChannelId(ShortChannelId(LightningCodecs.int64(input)))
+            override fun read(input: Input): OutgoingChannelId = OutgoingChannelId(ShortChannelId(LightningCodecs.int64(input)))
         }
     }
 
@@ -40,8 +39,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
 
         companion object : TlvValueReader<OutgoingNodeId> {
             const val tag: Long = 4
-            override fun read(input: Input): OutgoingNodeId =
-                OutgoingNodeId(LightningCodecs.encodedNodeId(input))
+            override fun read(input: Input): OutgoingNodeId = OutgoingNodeId(LightningCodecs.encodedNodeId(input))
         }
     }
 
@@ -57,8 +55,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
 
         companion object : TlvValueReader<PathId> {
             const val tag: Long = 6
-            override fun read(input: Input): PathId =
-                PathId(ByteVector(LightningCodecs.bytes(input, input.availableBytes)))
+            override fun read(input: Input): PathId = PathId(ByteVector(LightningCodecs.bytes(input, input.availableBytes)))
         }
     }
 
@@ -69,8 +66,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
 
         companion object : TlvValueReader<NextBlinding> {
             const val tag: Long = 8
-            override fun read(input: Input): NextBlinding =
-                NextBlinding(PublicKey(LightningCodecs.bytes(input, 33)))
+            override fun read(input: Input): NextBlinding = NextBlinding(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 
@@ -122,8 +118,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
 
         companion object : TlvValueReader<AllowedFeatures> {
             const val tag: Long = 14
-            override fun read(input: Input): AllowedFeatures =
-                AllowedFeatures(Features(LightningCodecs.bytes(input, input.availableBytes)))
+            override fun read(input: Input): AllowedFeatures = AllowedFeatures(Features(LightningCodecs.bytes(input, input.availableBytes)))
         }
     }
 }
@@ -133,6 +128,8 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
     val outgoingChannelId = records.get<RouteBlindingEncryptedDataTlv.OutgoingChannelId>()?.shortChannelId
     val pathId = records.get<RouteBlindingEncryptedDataTlv.PathId>()?.data
     val nextBlindingOverride = records.get<RouteBlindingEncryptedDataTlv.NextBlinding>()?.blinding
+    val paymentConstraints = records.get<RouteBlindingEncryptedDataTlv.PaymentConstraints>()
+    val allowedFeatures: Features = records.get<RouteBlindingEncryptedDataTlv.AllowedFeatures>()?.features ?: Features.empty
 
     fun write(out: Output) = tlvSerializer.write(records, out)
 
@@ -156,8 +153,15 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
             )
         )
 
-        fun read(input: Input): RouteBlindingEncryptedData = RouteBlindingEncryptedData(tlvSerializer.read(input))
+        /** @return null if the tlv stream cannot be decoded. */
+        fun read(input: Input): Either<InvalidTlvPayload, RouteBlindingEncryptedData> {
+            return try {
+                Either.Right(RouteBlindingEncryptedData(tlvSerializer.read(input)))
+            } catch (_: Throwable) {
+                Either.Left(CannotDecodeTlv(0))
+            }
+        }
 
-        fun read(bytes: ByteArray): RouteBlindingEncryptedData = read(ByteArrayInput(bytes))
+        fun read(bytes: ByteArray): Either<InvalidTlvPayload, RouteBlindingEncryptedData> = read(ByteArrayInput(bytes))
     }
 }

@@ -12,10 +12,7 @@ import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.secp256k1.Hex
-import kotlin.test.Test
-import kotlin.test.assertContentEquals
-import kotlin.test.assertEquals
-import kotlin.test.assertFails
+import kotlin.test.*
 
 class PaymentOnionTestsCommon : LightningTestSuite() {
     @Test
@@ -47,7 +44,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
 
         testCases.forEach {
             val expected = it.key
-            val decoded = PaymentOnion.ChannelRelayPayload.read(it.value)
+            val decoded = PaymentOnion.ChannelRelayPayload.read(it.value).right!!
             assertEquals(expected, decoded)
             val encoded = decoded.write()
             assertArrayEquals(it.value, encoded)
@@ -60,7 +57,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         val expected = PaymentOnion.NodeRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(42)), OnionPaymentPayloadTlv.OutgoingNodeId(nodeId)))
         val bin = Hex.decode("2e 02020231 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")
 
-        val decoded = PaymentOnion.NodeRelayPayload.read(bin)
+        val decoded = PaymentOnion.NodeRelayPayload.read(bin).right!!
         assertEquals(expected, decoded)
         assertEquals(decoded.amountToForward, 561.msat)
         assertEquals(decoded.totalAmount, 561.msat)
@@ -92,10 +89,11 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
                 OnionPaymentPayloadTlv.InvoiceRoutingInfo(routingHints)
             )
         )
-        val bin =
-            Hex.decode("fa 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 fe00010231010a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619 fe000102339b01036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e200000000000000010000000a00000064009002025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce148600000000000000020000001400000096000c02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee00000000000000030000001e000000c80018")
+        val bin = Hex.decode(
+            "fa 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 fe00010231010a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619 fe000102339b01036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e200000000000000010000000a00000064009002025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce148600000000000000020000001400000096000c02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee00000000000000030000001e000000c80018"
+        )
 
-        val decoded = PaymentOnion.RelayToNonTrampolinePayload.read(bin)
+        val decoded = PaymentOnion.RelayToNonTrampolinePayload.read(bin).right!!
         assertEquals(decoded, expected)
         assertEquals(decoded.amountToForward, 561.msat)
         assertEquals(decoded.totalAmount, 1105.msat)
@@ -170,7 +168,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
 
         testCases.forEach {
             val expected = it.key
-            val decoded = PaymentOnion.FinalPayload.Standard.read(it.value)
+            val decoded = PaymentOnion.FinalPayload.Standard.read(it.value).right!!
             assertEquals(decoded, PaymentOnion.FinalPayload.Standard(expected))
             assertEquals(decoded.amount, 561.msat)
             assertEquals(decoded.expiry, CltvExpiry(42))
@@ -182,10 +180,12 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode - decode final blinded per-hop payload`() {
-        val blindedTlvs = RouteBlindingEncryptedData(TlvStream(
-            RouteBlindingEncryptedDataTlv.PathId(ByteVector("2a2a2a2a")),
-            RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1.msat)
-        ))
+        val blindedTlvs = RouteBlindingEncryptedData(
+            TlvStream(
+                RouteBlindingEncryptedDataTlv.PathId(ByteVector("2a2a2a2a")),
+                RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1.msat)
+            )
+        )
         val testCases = mapOf(
             // @formatter:off
             TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1234567)), OnionPaymentPayloadTlv.EncryptedRecipientData(ByteVector("deadbeef")), OnionPaymentPayloadTlv.TotalAmount(1105.msat)) to Hex.decode("13 02020231 040312d687 0a04deadbeef 12020451"),
@@ -210,22 +210,22 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
 
         val encoded = PaymentOnion.FinalPayload.Standard(tlvs).write()
         assertArrayEquals(bin, encoded)
-        assertEquals(PaymentOnion.FinalPayload.Standard(tlvs), PaymentOnion.FinalPayload.Standard.read(bin))
+        assertEquals(PaymentOnion.FinalPayload.Standard(tlvs), PaymentOnion.FinalPayload.Standard.read(bin).right)
     }
 
     @Test
     fun `decode multi-part final per-hop payload`() {
-        val notMultiPart = PaymentOnion.FinalPayload.Standard.read(Hex.decode("29 02020231 04012a 08200000000000000000000000000000000000000000000000000000000000000000"))
+        val notMultiPart = PaymentOnion.FinalPayload.Standard.read(Hex.decode("29 02020231 04012a 08200000000000000000000000000000000000000000000000000000000000000000")).right!!
         assertEquals(notMultiPart.totalAmount, 561.msat)
         assertEquals(notMultiPart.paymentSecret, ByteVector32.Zeroes)
 
-        val multiPart = PaymentOnion.FinalPayload.Standard.read(Hex.decode("2b 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451"))
+        val multiPart = PaymentOnion.FinalPayload.Standard.read(Hex.decode("2b 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451")).right!!
         assertEquals(multiPart.amount, 561.msat)
         assertEquals(multiPart.expiry, CltvExpiry(42))
         assertEquals(multiPart.totalAmount, 1105.msat)
         assertEquals(multiPart.paymentSecret, ByteVector32("eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
 
-        val multiPartNoTotalAmount = PaymentOnion.FinalPayload.Standard.read(Hex.decode("29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+        val multiPartNoTotalAmount = PaymentOnion.FinalPayload.Standard.read(Hex.decode("29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")).right!!
         assertEquals(multiPartNoTotalAmount.amount, 561.msat)
         assertEquals(multiPartNoTotalAmount.expiry, CltvExpiry(42))
         assertEquals(multiPartNoTotalAmount.totalAmount, 561.msat)
@@ -241,7 +241,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         )
 
         testCases.forEach {
-            assertFails { PaymentOnion.FinalPayload.Standard.read(it) }
+            assertTrue(PaymentOnion.FinalPayload.Standard.read(it).isLeft)
         }
     }
 
@@ -262,9 +262,9 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         )
 
         testCases.forEach {
-            assertFails { PaymentOnion.ChannelRelayPayload.read(it) }
-            assertFails { PaymentOnion.NodeRelayPayload.read(it) }
-            assertFails { PaymentOnion.FinalPayload.Standard.read(it) }
+            assertTrue(PaymentOnion.ChannelRelayPayload.read(it).isLeft)
+            assertTrue(PaymentOnion.NodeRelayPayload.read(it).isLeft)
+            assertTrue(PaymentOnion.FinalPayload.Standard.read(it).isLeft)
         }
     }
 }

@@ -612,31 +612,31 @@ class SphinxTestsCommon : LightningTestSuite() {
         ))
 
         // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
-        val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.introductionNode.blindingEphemeralKey, blindedRoute.encryptedPayloads[0])
+        val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.introductionNode.blindingEphemeralKey, blindedRoute.encryptedPayloads[0]).right!!
         assertEquals(payload0, routeBlindingPayloads[0])
         assertEquals(ephKey1, PublicKey.fromHex("035cb4c003d58e16cc9207270b3596c2be3309eca64c36b208c946bbb599bfcad0"))
 
         // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
         assertEquals(RouteBlinding.derivePrivateKey(privKeys[1], ephKey1).publicKey(), blindedRoute.blindedNodeIds[1])
-        val (payload1, ephKey2) = RouteBlinding.decryptPayload(privKeys[1], ephKey1, blindedRoute.encryptedPayloads[1])
+        val (payload1, ephKey2) = RouteBlinding.decryptPayload(privKeys[1], ephKey1, blindedRoute.encryptedPayloads[1]).right!!
         assertEquals(payload1, routeBlindingPayloads[1])
         assertEquals(ephKey2, PublicKey.fromHex("02e105bc01a7af07074a1b0b1d9a112a1d89c6cd87cc4e2b6ba3a824731d9508bd"))
 
         // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
         assertEquals(RouteBlinding.derivePrivateKey(privKeys[2], ephKey2).publicKey(), blindedRoute.blindedNodeIds[2])
-        val (payload2, ephKey3) = RouteBlinding.decryptPayload(privKeys[2], ephKey2, blindedRoute.encryptedPayloads[2])
+        val (payload2, ephKey3) = RouteBlinding.decryptPayload(privKeys[2], ephKey2, blindedRoute.encryptedPayloads[2]).right!!
         assertEquals(payload2, routeBlindingPayloads[2])
         assertEquals(ephKey3, PublicKey.fromHex("0349164db5398925ef234002e62d2834da115b8eafc73436fab98ed12266e797cc"))
 
         // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
         assertEquals(RouteBlinding.derivePrivateKey(privKeys[3], ephKey3).publicKey(), blindedRoute.blindedNodeIds[3])
-        val (payload3, ephKey4) = RouteBlinding.decryptPayload(privKeys[3], ephKey3, blindedRoute.encryptedPayloads[3])
+        val (payload3, ephKey4) = RouteBlinding.decryptPayload(privKeys[3], ephKey3, blindedRoute.encryptedPayloads[3]).right!!
         assertEquals(payload3, routeBlindingPayloads[3])
         assertEquals(ephKey4, PublicKey.fromHex("020a6d1951916adcac22125063f62c35b3686f36e5db2f77073f3d35b19c7a118a"))
 
         // The last node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
         assertEquals(RouteBlinding.derivePrivateKey(privKeys[4], ephKey4).publicKey(), blindedRoute.blindedNodeIds[4])
-        val (payload4, _) = RouteBlinding.decryptPayload(privKeys[4], ephKey4, blindedRoute.encryptedPayloads[4])
+        val (payload4, _) = RouteBlinding.decryptPayload(privKeys[4], ephKey4, blindedRoute.encryptedPayloads[4]).right!!
         assertEquals(payload4, routeBlindingPayloads[4])
     }
 
@@ -682,34 +682,34 @@ class SphinxTestsCommon : LightningTestSuite() {
         ))
 
         // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
-        val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.blindingKey, blindedRoute.encryptedPayloads[0])
+        val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.blindingKey, blindedRoute.encryptedPayloads[0]).right!!
         assertEquals(payload0, payloadsStart[0])
         assertEquals(ephKey1, PublicKey.fromHex("02be4b436dbc6cfa43d7d5652bc630ffdaf0dac93e6682db7950828506055ad1a7"))
 
         // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
         assertEquals(RouteBlinding.derivePrivateKey(privKeys[1], ephKey1).publicKey(), blindedRoute.blindedNodeIds[1])
-        val (payload1, ephKey2) = RouteBlinding.decryptPayload(privKeys[1], ephKey1, blindedRoute.encryptedPayloads[1])
+        val (payload1, ephKey2) = RouteBlinding.decryptPayload(privKeys[1], ephKey1, blindedRoute.encryptedPayloads[1]).right!!
         assertEquals(payload1, payloadsStart[1])
         assertEquals(ephKey2, PublicKey.fromHex("03fb82254d740754efddc3318674f4e26cefcb8dec42a3910c08c64d19f25e50b7"))
         // NB: this node finds a blinding override and will transmit that instead of ephKey2 to the next node.
         assertTrue(payload1.toHex().contains(blindingOverride.value.toHex()))
 
         // The next node must be given the blinding override to derive the private key used to unwrap the onion and decrypt its encrypted payload.
-        assertFails { RouteBlinding.decryptPayload(privKeys[2], ephKey2, blindedRoute.encryptedPayloads[2]) }
+        assertTrue(RouteBlinding.decryptPayload(privKeys[2], ephKey2, blindedRoute.encryptedPayloads[2]).isLeft)
         assertEquals(RouteBlinding.derivePrivateKey(privKeys[2], blindingOverride).publicKey(), blindedRoute.blindedNodeIds[2])
-        val (payload2, ephKey3) = RouteBlinding.decryptPayload(privKeys[2], blindingOverride, blindedRoute.encryptedPayloads[2])
+        val (payload2, ephKey3) = RouteBlinding.decryptPayload(privKeys[2], blindingOverride, blindedRoute.encryptedPayloads[2]).right!!
         assertEquals(payload2, payloadsEnd[0])
         assertEquals(ephKey3, PublicKey.fromHex("03932f4ab7605e8c046b5677becd4d61fdfdc8b9d10f1e9c3080ced0d64fd76931"))
 
         // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
         assertEquals(RouteBlinding.derivePrivateKey(privKeys[3], ephKey3).publicKey(), blindedRoute.blindedNodeIds[3])
-        val (payload3, ephKey4) = RouteBlinding.decryptPayload(privKeys[3], ephKey3, blindedRoute.encryptedPayloads[3])
+        val (payload3, ephKey4) = RouteBlinding.decryptPayload(privKeys[3], ephKey3, blindedRoute.encryptedPayloads[3]).right!!
         assertEquals(payload3, payloadsEnd[1])
         assertEquals(ephKey4, PublicKey.fromHex("037bceb365470d24f8204c622e1b7959c6beeb774c634640de6c8401079159fc58"))
 
         // The last node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
         assertEquals(RouteBlinding.derivePrivateKey(privKeys[4], ephKey4).publicKey(), blindedRoute.blindedNodeIds[4])
-        val (payload4, ephKey5) = RouteBlinding.decryptPayload(privKeys[4], ephKey4, blindedRoute.encryptedPayloads[4])
+        val (payload4, ephKey5) = RouteBlinding.decryptPayload(privKeys[4], ephKey4, blindedRoute.encryptedPayloads[4]).right!!
         assertEquals(payload4, payloadsEnd[2])
         assertEquals(ephKey5, PublicKey.fromHex("0339ddfa85a2155fb27e94742885fad85696e54920aa148cb86e00bcb8ee346bd4"))
     }
@@ -719,10 +719,10 @@ class SphinxTestsCommon : LightningTestSuite() {
         val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).encryptedPayloads
         // Invalid node private key:
         val ephKey0 = sessionKey.publicKey()
-        assertFails { RouteBlinding.decryptPayload(privKeys[1], ephKey0, encryptedPayloads[0]) }
+        assertTrue(RouteBlinding.decryptPayload(privKeys[1], ephKey0, encryptedPayloads[0]).isLeft)
         // Invalid unblinding ephemeral key:
-        assertFails { RouteBlinding.decryptPayload(privKeys[0], PrivateKey(ByteVector32("4141414141414141414141414141414141414141414141414141414141414142")).publicKey(), encryptedPayloads[0]) }
+        assertTrue(RouteBlinding.decryptPayload(privKeys[0], PrivateKey(ByteVector32("4141414141414141414141414141414141414141414141414141414141414142")).publicKey(), encryptedPayloads[0]).isLeft)
         // Invalid encrypted payload:
-        assertFails { RouteBlinding.decryptPayload(privKeys[0], ephKey0, encryptedPayloads[1]) }
+        assertTrue(RouteBlinding.decryptPayload(privKeys[0], ephKey0, encryptedPayloads[1]).isLeft)
     }
 }

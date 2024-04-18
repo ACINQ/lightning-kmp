@@ -29,6 +29,13 @@ interface TlvValueReader<T : Tlv> {
     fun read(hex: String): T = read(Hex.decode(hex))
 }
 
+// @formatter:off
+sealed class InvalidTlvPayload { abstract val tag: Long }
+data class CannotDecodeTlv(override val tag: Long) : InvalidTlvPayload() { override fun toString(): String = "cannot decode tlv (tag=$tag)" }
+data class MissingRequiredTlv(override val tag: Long) : InvalidTlvPayload() { override fun toString(): String = "missing required tlv (tag=$tag)" }
+data class ForbiddenTlv(override val tag: Long) : InvalidTlvPayload() { override fun toString(): String = "forbidden tlv (tag=$tag)" }
+// @formatter:on
+
 /**
  * Generic tlv type we fallback to if we don't understand the incoming tlv.
  *

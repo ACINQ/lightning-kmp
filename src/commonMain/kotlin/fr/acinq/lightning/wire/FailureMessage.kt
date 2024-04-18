@@ -54,7 +54,7 @@ sealed class FailureMessage {
                 FinalIncorrectHtlcAmount.code -> FinalIncorrectHtlcAmount(MilliSatoshi(LightningCodecs.u64(stream)))
                 ChannelDisabled.code -> ChannelDisabled(LightningCodecs.byte(stream).toByte(), LightningCodecs.byte(stream).toByte(), readChannelUpdate(stream))
                 ExpiryTooFar.code -> ExpiryTooFar
-                InvalidOnionPayload.code -> InvalidOnionPayload(LightningCodecs.bigSize(stream).toULong(), LightningCodecs.u16(stream))
+                InvalidOnionPayload.code -> InvalidOnionPayload(LightningCodecs.bigSize(stream), LightningCodecs.u16(stream))
                 PaymentTimeout.code -> PaymentTimeout
                 else -> UnknownFailureMessage(code)
             }
@@ -70,18 +70,18 @@ sealed class FailureMessage {
         fun encode(input: FailureMessage, out: Output) {
             LightningCodecs.writeU16(input.code, out)
             when (input) {
-                InvalidRealm -> return
-                TemporaryNodeFailure -> return
-                PermanentNodeFailure -> return
-                RequiredNodeFeatureMissing -> return
+                InvalidRealm -> {}
+                TemporaryNodeFailure -> {}
+                PermanentNodeFailure -> {}
+                RequiredNodeFeatureMissing -> {}
                 is InvalidOnionVersion -> LightningCodecs.writeBytes(input.onionHash, out)
                 is InvalidOnionHmac -> LightningCodecs.writeBytes(input.onionHash, out)
                 is InvalidOnionKey -> LightningCodecs.writeBytes(input.onionHash, out)
                 is InvalidOnionBlinding -> LightningCodecs.writeBytes(input.onionHash, out)
                 is TemporaryChannelFailure -> writeChannelUpdate(input.update, out)
-                PermanentChannelFailure -> return
-                RequiredChannelFeatureMissing -> return
-                UnknownNextPeer -> return
+                PermanentChannelFailure -> {}
+                RequiredChannelFeatureMissing -> {}
+                UnknownNextPeer -> {}
                 is AmountBelowMinimum -> {
                     LightningCodecs.writeU64(input.amount.toLong(), out)
                     writeChannelUpdate(input.update, out)
@@ -90,13 +90,13 @@ sealed class FailureMessage {
                     LightningCodecs.writeU64(input.amount.toLong(), out)
                     writeChannelUpdate(input.update, out)
                 }
-                TrampolineFeeInsufficient -> return
+                TrampolineFeeInsufficient -> {}
                 is IncorrectCltvExpiry -> {
                     LightningCodecs.writeU32(input.expiry.toLong().toInt(), out)
                     writeChannelUpdate(input.update, out)
                 }
                 is ExpiryTooSoon -> writeChannelUpdate(input.update, out)
-                TrampolineExpiryTooSoon -> return
+                TrampolineExpiryTooSoon -> {}
                 is IncorrectOrUnknownPaymentDetails -> {
                     LightningCodecs.writeU64(input.amount.toLong(), out)
                     LightningCodecs.writeU32(input.height.toInt(), out)
@@ -108,13 +108,13 @@ sealed class FailureMessage {
                     LightningCodecs.writeByte(input.channelFlags.toInt(), out)
                     writeChannelUpdate(input.update, out)
                 }
-                ExpiryTooFar -> return
+                ExpiryTooFar -> {}
                 is InvalidOnionPayload -> {
-                    LightningCodecs.writeBigSize(input.tag.toLong(), out)
+                    LightningCodecs.writeBigSize(input.tag, out)
                     LightningCodecs.writeU16(input.offset, out)
                 }
-                PaymentTimeout -> return
-                is UnknownFailureMessage -> return
+                PaymentTimeout -> {}
+                is UnknownFailureMessage -> {}
             }
         }
 
@@ -237,7 +237,7 @@ data object ExpiryTooFar : FailureMessage() {
     override val code get() = 21
     override val message get() = "payment expiry is too far in the future"
 }
-data class InvalidOnionPayload(val tag: ULong, val offset: Int) : FailureMessage(), Perm {
+data class InvalidOnionPayload(val tag: Long, val offset: Int) : FailureMessage(), Perm {
     override val code get() = InvalidOnionPayload.code
     override val message get() = "onion per-hop payload is invalid"
     companion object { const val code = PERM or 22 }
