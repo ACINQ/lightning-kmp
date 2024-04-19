@@ -7,7 +7,6 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.RouteBlinding
-import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.crypto.sphinx.Sphinx.hash
 import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.IncomingPayment
@@ -1364,7 +1363,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         ): Pair<PaymentOnion.FinalPayload.Blinded, RouteBlinding.BlindedRoute> {
             val pathId = OfferPaymentMetadata.V1(offerId, totalAmount, preimage, payerKey, quantity, currentTimestampMillis()).toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
             val recipientData = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId)))
-            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector()))
+            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector())).route
             val payload = PaymentOnion.FinalPayload.Blinded(
                 TlvStream(
                     OnionPaymentPayloadTlv.AmountToForward(amount),
@@ -1384,7 +1383,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             pathId: ByteVector
         ): Pair<PaymentOnion.FinalPayload.Blinded, RouteBlinding.BlindedRoute> {
             val recipientData = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId)))
-            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector()))
+            val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector())).route
             val payload = PaymentOnion.FinalPayload.Blinded(
                 TlvStream(
                     OnionPaymentPayloadTlv.AmountToForward(amount),
@@ -1420,11 +1419,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val paymentRequest = payee.createInvoice(defaultPreimage, amount, Either.Left("unit test"), listOf(), expirySeconds, timestamp)
             assertNotNull(paymentRequest.paymentMetadata)
             return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret)
-        }
-
-        private fun makeReceivedWithNewChannel(payToOpen: PayToOpenRequest, feeRatio: Double = 0.1): IncomingPayment.ReceivedWith.NewChannel {
-            val fee = payToOpen.amountMsat * feeRatio
-            return IncomingPayment.ReceivedWith.NewChannel(amount = payToOpen.amountMsat - fee, serviceFee = fee, miningFee = 0.sat, channelId = randomBytes32(), txId = TxId(randomBytes32()), confirmedAt = null, lockedAt = null)
         }
 
         private suspend fun checkDbPayment(incomingPayment: IncomingPayment, db: IncomingPaymentsDb) {

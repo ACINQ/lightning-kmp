@@ -343,15 +343,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 NodeHop(walletParams.trampolineNode.id, request.recipient, fees.cltvExpiryDelta, fees.calculateFees(request.amount))
             )
         }
-
         when (request.paymentRequest) {
             is Bolt11Invoice -> {
                 val minFinalExpiryDelta = request.paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
                 val finalExpiry = nodeParams.paymentRecipientExpiryParams.computeFinalExpiry(currentBlockHeight, minFinalExpiryDelta)
                 val finalPayload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(request.amount, finalExpiry, request.paymentRequest.paymentSecret, request.paymentRequest.paymentMetadata)
-
                 val invoiceFeatures = request.paymentRequest.features
                 val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (invoiceFeatures.hasFeature(Feature.TrampolinePayment) || invoiceFeatures.hasFeature(Feature.ExperimentalTrampolinePayment)) {
+                    // We may be paying an older version of lightning-kmp that only supports trampoline packets of size 400.
                     OutgoingPaymentPacket.buildPacket(request.paymentHash, trampolineRoute, finalPayload, 400)
                 } else {
                     OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(request.paymentRequest, trampolineRoute, finalPayload)
@@ -360,8 +359,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             }
             is Bolt12Invoice -> {
                 val finalExpiry = nodeParams.paymentRecipientExpiryParams.computeFinalExpiry(currentBlockHeight, CltvExpiryDelta(0))
-                val dummyFinalPayload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(request.amount, finalExpiry, ByteVector32.Zeroes, null)
-                val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(request.paymentRequest, trampolineRoute, dummyFinalPayload)
+                val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(request.paymentRequest, trampolineRoute.last(), request.amount, finalExpiry)
                 return Triple(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
             }
         }

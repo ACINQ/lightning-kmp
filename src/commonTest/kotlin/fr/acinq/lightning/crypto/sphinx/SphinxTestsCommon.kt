@@ -4,8 +4,8 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
-import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.bitcoin.utils.Either
+import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.Sphinx.computeEphemeralPublicKeysAndSharedSecrets
 import fr.acinq.lightning.crypto.sphinx.Sphinx.decodePayloadLength
@@ -425,7 +425,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             // each node parses and forwards the packet
             // node #0
             assertEquals(packetAndSecrets.packet.payload.size(), packetLength)
-            val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet, ).right!!
+            val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet).right!!
             // node #1
             assertEquals(decrypted0.nextPacket.payload.size(), packetLength)
             val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket).right!!
@@ -584,32 +584,39 @@ class SphinxTestsCommon : LightningTestSuite() {
     @Test
     fun `create blinded route -- reference test vector`() {
         val sessionKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"))
-        val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
+        val (blindedRoute, lastBlinding) = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
         assertEquals(blindedRoute.introductionNode.nodeId, EncodedNodeId(publicKeys[0]))
         assertEquals(blindedRoute.introductionNodeId, EncodedNodeId(publicKeys[0]))
         assertEquals(blindedRoute.introductionNode.blindedPublicKey, PublicKey.fromHex("02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"))
         assertEquals(blindedRoute.introductionNode.blindingEphemeralKey, PublicKey.fromHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
         assertEquals(blindedRoute.introductionNode.encryptedPayload, ByteVector("af4fbf67bd52520bdfab6a88cd4e7f22ffad08d8b153b17ff303f93fdb4712"))
-        assertEquals(blindedRoute.blindedNodeIds, listOf(
-            PublicKey.fromHex("02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"),
-            PublicKey.fromHex("022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
-            PublicKey.fromHex("03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
-            PublicKey.fromHex("03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
-            PublicKey.fromHex("03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
-        ))
-        assertEquals(blindedRoute.subsequentNodes.map { it.blindedPublicKey }, listOf(
-            PublicKey.fromHex("022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
-            PublicKey.fromHex("03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
-            PublicKey.fromHex("03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
-            PublicKey.fromHex("03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
-        ))
+        assertEquals(
+            blindedRoute.blindedNodeIds, listOf(
+                PublicKey.fromHex("02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"),
+                PublicKey.fromHex("022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
+                PublicKey.fromHex("03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
+                PublicKey.fromHex("03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
+                PublicKey.fromHex("03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
+            )
+        )
+        assertEquals(
+            blindedRoute.subsequentNodes.map { it.blindedPublicKey }, listOf(
+                PublicKey.fromHex("022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
+                PublicKey.fromHex("03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
+                PublicKey.fromHex("03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
+                PublicKey.fromHex("03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
+            )
+        )
         assertEquals(blindedRoute.encryptedPayloads, listOf(blindedRoute.introductionNode.encryptedPayload) + blindedRoute.subsequentNodes.map { it.encryptedPayload })
-        assertEquals(blindedRoute.subsequentNodes.map { it.encryptedPayload }, listOf(
-            ByteVector("146c9694ead7de2a54fc43e8bb927bfc377dda7ed5a2e36b327b739e368aa602e43e07e14bfb81d66e1e295f848b6f15ee6483005abb830f4ef08a9da6"),
-            ByteVector("8ad7d5d448f15208417a1840f82274101b3c254c24b1b49fd676fd0c4293c9aa66ed51da52579e934a869f016f213044d1b13b63bf586e9c9832106b59"),
-            ByteVector("52a45a884542d180e76fe84fc13e71a01f65d943ff89aed29b94644a91b037b9143cfda8f1ff25ba61c37108a5ae57d9ddc5ab688ee8b2f9f6bd94522c"),
-            ByteVector("6a4ac764cbf146ffd73299563b07c56052af4acd681d9d0882728c6f399ace90392b694d5e347612dc1417f1b3a9c82d6d4db18b6eb32134e554db7d00"),
-        ))
+        assertEquals(
+            blindedRoute.subsequentNodes.map { it.encryptedPayload }, listOf(
+                ByteVector("146c9694ead7de2a54fc43e8bb927bfc377dda7ed5a2e36b327b739e368aa602e43e07e14bfb81d66e1e295f848b6f15ee6483005abb830f4ef08a9da6"),
+                ByteVector("8ad7d5d448f15208417a1840f82274101b3c254c24b1b49fd676fd0c4293c9aa66ed51da52579e934a869f016f213044d1b13b63bf586e9c9832106b59"),
+                ByteVector("52a45a884542d180e76fe84fc13e71a01f65d943ff89aed29b94644a91b037b9143cfda8f1ff25ba61c37108a5ae57d9ddc5ab688ee8b2f9f6bd94522c"),
+                ByteVector("6a4ac764cbf146ffd73299563b07c56052af4acd681d9d0882728c6f399ace90392b694d5e347612dc1417f1b3a9c82d6d4db18b6eb32134e554db7d00"),
+            )
+        )
+        assertEquals(blindedRoute.blindedNodeIds.last(), RouteBlinding.derivePrivateKey(privKeys.last(), lastBlinding).publicKey())
 
         // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
         val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.introductionNode.blindingEphemeralKey, blindedRoute.encryptedPayloads[0]).right!!
@@ -650,7 +657,7 @@ class SphinxTestsCommon : LightningTestSuite() {
                 ByteVector("042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145"),
                 ByteVector("010f000000000000000000000000000000 061000112233445566778899aabbccddeeff")
             )
-            val blindedRoute = RouteBlinding.create(sessionKey, publicKeys.drop(2), payloads)
+            val blindedRoute = RouteBlinding.create(sessionKey, publicKeys.drop(2), payloads).route
             assertEquals(blindedRoute.blindingKey, PublicKey.fromHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
             Triple(blindedRoute.blindingKey, blindedRoute, payloads)
         }
@@ -662,24 +669,28 @@ class SphinxTestsCommon : LightningTestSuite() {
                 // NB: this payload contains the blinding key override.
                 ByteVector("0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007 0821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")
             )
-            Pair(RouteBlinding.create(sessionKey, publicKeys.take(2), payloads), payloads)
+            Pair(RouteBlinding.create(sessionKey, publicKeys.take(2), payloads).route, payloads)
         }
         val blindedRoute = RouteBlinding.BlindedRoute(EncodedNodeId(publicKeys[0]), blindedRouteStart.blindingKey, blindedRouteStart.blindedNodes + blindedRouteEnd.blindedNodes)
         assertEquals(blindedRoute.blindingKey, PublicKey.fromHex("024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"))
-        assertEquals(blindedRoute.blindedNodeIds, listOf(
-            PublicKey.fromHex("0303176d13958a8a59d59517a6223e12cf291ba5f65c8011efcdca0a52c3850abc"),
-            PublicKey.fromHex("03adbdd3c0fb69641e96de2d5ac923ffc0910d3ed4dfe2314609fae61a71df4da2"),
-            PublicKey.fromHex("021026e6369e42b7f6d723c0c56a3e0b4d67111f07685bd03e9fa6d93ac6bb6dbe"),
-            PublicKey.fromHex("02ba3db3fe7f1ed28c4d82f28cf358373cbf3241a16aba265b1b6fb26f094c0c7f"),
-            PublicKey.fromHex("0379d4ca14cb19e2f7bcb217d36267e3d03b027bc4228923967f5b2e32cbb763c1"),
-        ))
-        assertEquals(blindedRoute.encryptedPayloads, listOf(
-            ByteVector("31da0d438752ed0f19ccd970a386ead7155fd187becd4e1770d561dffdb03d3568dac746dde98725f146582cb040207e8b6c070e28d707564a4dd9fb53f9274ad69d09add393b509a2fa42df5055d7c8aeda5881d5aa"),
-            ByteVector("d9dfa92f898dc8e37b73c944aa4205f225337b2edde67623e775c79e2bcf395dc205004aa07fdc65712afa5c2687aff9bb3d5e6af7c89cc94f23f962a27844ce7629773f9413ebcf131dbc35818410df207f29b013b0"),
-            ByteVector("30015dcdcbce70bdcd0125be8ccd541b101d95bcb049ccfc737f91c98cc139cb6f16354ec5a38e77eca769c2245ac4467524d6"),
-            ByteVector("11e49a0e5f4f8a73b30551bd20448abeb297339b6983ab30d4a227a858311656cbf2444aeff66bd4c8f320ce00ce4ddfed7ca3"),
-            ByteVector("fe7e62b65ac8e1c2a319ba53a5519b3f8073416971ae3e722ebc008f38999d590d70d40557e44557c0d32b891bd967119c1f78"),
-        ))
+        assertEquals(
+            blindedRoute.blindedNodeIds, listOf(
+                PublicKey.fromHex("0303176d13958a8a59d59517a6223e12cf291ba5f65c8011efcdca0a52c3850abc"),
+                PublicKey.fromHex("03adbdd3c0fb69641e96de2d5ac923ffc0910d3ed4dfe2314609fae61a71df4da2"),
+                PublicKey.fromHex("021026e6369e42b7f6d723c0c56a3e0b4d67111f07685bd03e9fa6d93ac6bb6dbe"),
+                PublicKey.fromHex("02ba3db3fe7f1ed28c4d82f28cf358373cbf3241a16aba265b1b6fb26f094c0c7f"),
+                PublicKey.fromHex("0379d4ca14cb19e2f7bcb217d36267e3d03b027bc4228923967f5b2e32cbb763c1"),
+            )
+        )
+        assertEquals(
+            blindedRoute.encryptedPayloads, listOf(
+                ByteVector("31da0d438752ed0f19ccd970a386ead7155fd187becd4e1770d561dffdb03d3568dac746dde98725f146582cb040207e8b6c070e28d707564a4dd9fb53f9274ad69d09add393b509a2fa42df5055d7c8aeda5881d5aa"),
+                ByteVector("d9dfa92f898dc8e37b73c944aa4205f225337b2edde67623e775c79e2bcf395dc205004aa07fdc65712afa5c2687aff9bb3d5e6af7c89cc94f23f962a27844ce7629773f9413ebcf131dbc35818410df207f29b013b0"),
+                ByteVector("30015dcdcbce70bdcd0125be8ccd541b101d95bcb049ccfc737f91c98cc139cb6f16354ec5a38e77eca769c2245ac4467524d6"),
+                ByteVector("11e49a0e5f4f8a73b30551bd20448abeb297339b6983ab30d4a227a858311656cbf2444aeff66bd4c8f320ce00ce4ddfed7ca3"),
+                ByteVector("fe7e62b65ac8e1c2a319ba53a5519b3f8073416971ae3e722ebc008f38999d590d70d40557e44557c0d32b891bd967119c1f78"),
+            )
+        )
 
         // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
         val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.blindingKey, blindedRoute.encryptedPayloads[0]).right!!
@@ -716,7 +727,7 @@ class SphinxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `invalid blinded route`() {
-        val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).encryptedPayloads
+        val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).route.encryptedPayloads
         // Invalid node private key:
         val ephKey0 = sessionKey.publicKey()
         assertTrue(RouteBlinding.decryptPayload(privKeys[1], ephKey0, encryptedPayloads[0]).isLeft)
