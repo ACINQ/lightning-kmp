@@ -720,9 +720,8 @@ object OfferTypes {
         private val paths: List<ContactInfo.BlindedPath>? = records.get<OfferPaths>()?.paths
         val issuer: String? = records.get<OfferIssuer>()?.issuer
         val quantityMax: Long? = records.get<OfferQuantityMax>()?.max?.let { if (it == 0L) Long.MAX_VALUE else it }
-        val nodeId: PublicKey = records.get<OfferNodeId>()!!.publicKey
-
-        val contactInfos: List<ContactInfo> = paths ?: listOf(ContactInfo.RecipientNodeId(nodeId))
+        val nodeId: PublicKey? = records.get<OfferNodeId>()?.publicKey
+        val contactInfos: List<ContactInfo> = paths ?: listOfNotNull(nodeId?.let { ContactInfo.RecipientNodeId(it) })
 
         fun encode(): String {
             val data = tlvSerializer.write(records)
@@ -737,13 +736,15 @@ object OfferTypes {
             val hrp = "lno"
 
             /**
-             * @param amount      amount if it can be determined at offer creation time.
+             * Create an offer without using a blinded path to hide our nodeId.
+             *
+             * @param amount amount if it can be determined at offer creation time.
              * @param description description of the offer.
-             * @param nodeId      the nodeId to use for this offer, which should be different from our public nodeId if we're hiding behind a blinded route.
-             * @param features    invoice features.
-             * @param chain       chain on which the offer is valid.
+             * @param nodeId the nodeId to use for this offer.
+             * @param features invoice features.
+             * @param chain chain on which the offer is valid.
              */
-            internal fun createInternal(
+            internal fun createNonBlindedOffer(
                 amount: MilliSatoshi?,
                 description: String,
                 nodeId: PublicKey,
@@ -757,9 +758,9 @@ object OfferTypes {
                     amount?.let { OfferAmount(it) },
                     OfferDescription(description),
                     if (features != Features.empty) OfferFeatures(features) else null,
-                    OfferNodeId(nodeId) // TODO: If the spec allows it, removes `OfferNodeId` when we already set `OfferPaths`.
-                ) + additionalTlvs
-                return Offer(TlvStream(tlvs, customTlvs))
+                    OfferNodeId(nodeId)
+                )
+                return Offer(TlvStream(tlvs + additionalTlvs, customTlvs))
             }
 
             /**
@@ -783,21 +784,20 @@ object OfferTypes {
                 customTlvs: Set<GenericTlv> = setOf()
             ): Offer {
                 val path = OnionMessages.buildRoute(PrivateKey(pathId), listOf(OnionMessages.IntermediateNode(trampolineNode.id, ShortChannelId.peerId(nodeParams.nodeId))), OnionMessages.Destination.Recipient(nodeParams.nodeId, pathId))
-                val offerNodeId = path.blindedNodeIds.last()
-                return createInternal(
-                    amount,
-                    description,
-                    offerNodeId,
-                    features.bolt12Features(),
-                    nodeParams.chainHash,
-                    additionalTlvs + OfferPaths(listOf(ContactInfo.BlindedPath(path))),
-                    customTlvs
+                val tlvs: Set<OfferTlv> = setOfNotNull(
+                    if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
+                    amount?.let { OfferAmount(it) },
+                    OfferDescription(description),
+                    if (features.bolt12Features() != Features.empty) OfferFeatures(features.bolt12Features()) else null,
+                    // Note that we don't include an offer_node_id since we're using a blinded path.
+                    OfferPaths(listOf(ContactInfo.BlindedPath(path))),
                 )
+                return Offer(TlvStream(tlvs + additionalTlvs, customTlvs))
             }
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
                 if (records.get<OfferDescription>() == null) return Left(MissingRequiredTlv(10L))
-                if (records.get<OfferNodeId>() == null) return Left(MissingRequiredTlv(22L))
+                if (records.get<OfferNodeId>() == null && records.get<OfferPaths>() == null) return Left(MissingRequiredTlv(22L))
                 if (records.unknown.any { it.tag >= 80 }) return Left(ForbiddenTlv(records.unknown.find { it.tag >= 80 }!!.tag))
                 return Right(Offer(records))
             }

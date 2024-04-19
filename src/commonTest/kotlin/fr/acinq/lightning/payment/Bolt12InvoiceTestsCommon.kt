@@ -84,7 +84,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val nodeKey = randomKey()
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
-        val offer = Offer.createInternal(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
+        val offer = Offer.createNonBlindedOffer(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
         val request = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, chain)
         val invoice = Bolt12Invoice(
             request,
@@ -121,7 +121,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val nodeKey = randomKey()
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
-        val offer = Offer.createInternal(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
+        val offer = Offer.createNonBlindedOffer(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
         val basicRequest = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, chain)
         val requestWithUnknownTlv = basicRequest.copy(records = TlvStream(basicRequest.records.records, setOf(GenericTlv(87, ByteVector.fromHex("0404")))))
         val invoice = Bolt12Invoice(
@@ -143,7 +143,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val nodeKey = randomKey()
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
-        val offer = Offer.createInternal(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
+        val offer = Offer.createNonBlindedOffer(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
         val request = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, chain)
         val invoice = Bolt12Invoice(
             request,
@@ -189,7 +189,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val nodeKey = randomKey()
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
-        val offer = Offer.createInternal(15000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
+        val offer = Offer.createNonBlindedOffer(15000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
         val request = InvoiceRequest(offer, 15000.msat, 1, Features.empty, payerKey, chain)
         assertTrue(request.quantity_opt == null) // when paying for a single item, the quantity field must not be present
         val invoice = Bolt12Invoice(
@@ -271,7 +271,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val nodeKey = randomKey()
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
-        val offer = Offer.createInternal(5000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
+        val offer = Offer.createNonBlindedOffer(5000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
         val request = InvoiceRequest(offer, 5000.msat, 1, Features.empty, payerKey, chain)
         val invoice = Bolt12Invoice(
             request,
@@ -408,7 +408,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val payerKey = PrivateKey.fromHex("d817e8896c67d0bcabfdb93da7eb7fc698c829a181f994dd0ad866a8eda745e8")
         assertEquals(payerKey.publicKey(), PublicKey.fromHex("031ef4439f638914de79220483dda32dfb7a431e799a5ce5a7643fbd70b2118e4e"))
         val preimage = ByteVector32.fromValidHex("317d1fd8fec5f3ea23044983c2ba2a8043395b2a0790a815c9b12719aa5f1516")
-        val offer = Offer.createInternal(null, "minimal tip", nodeKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createNonBlindedOffer(null, "minimal tip", nodeKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val encodedOffer = "lno1pg9k66twd9kkzmpqw35hq93pqf8l2vtlq5w87m4vqfnvtn82adk9wadfgratnp2wg7l7ha4u0gzqw"
         assertEquals(offer.toString(), encodedOffer)
         assertEquals(Offer.decode(encodedOffer).get(), offer)
@@ -446,7 +446,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val payerKey = PrivateKey.fromHex("0e00a9ef505292f90a0e8a7aa99d31750e885c42a3ef8866dd2bf97919aa3891")
         assertEquals(payerKey.publicKey(), PublicKey.fromHex("033e94f2afd568d128f02ece844ad4a0a1ddf2a4e3a08beb2dba11b3f1134b0517"))
         val preimage = ByteVector32.fromValidHex("09ad5e952ec39d45461ebdeceac206fb45574ae9054b5a454dd02c65f5ba1b7c")
-        val offer = Offer.createInternal(456000000.msat, "minimal offer", nodeKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createNonBlindedOffer(456000000.msat, "minimal offer", nodeKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val encodedOffer = "lno1pqzpktszqq9q6mtfde5k6ctvyphkven9wgtzzq7y3tyhuz0newawkdds924x6pet2aexssdrf5je2g2het9xpgw275"
         assertEquals(offer.toString(), encodedOffer)
         assertEquals(Offer.decode(encodedOffer).get(), offer)

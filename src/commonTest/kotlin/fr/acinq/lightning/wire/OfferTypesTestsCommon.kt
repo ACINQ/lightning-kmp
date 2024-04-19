@@ -46,7 +46,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     @Test
     fun `invoice request is signed`() {
         val sellerKey = randomKey()
-        val offer = Offer.createInternal(100_000.msat, "test offer", sellerKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createNonBlindedOffer(100_000.msat, "test offer", sellerKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = InvoiceRequest(offer, 100_000.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
         assertTrue(request.checkSignature())
@@ -104,7 +104,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check that invoice request matches offer`() {
-        val offer = Offer.createInternal(2500.msat, "basic offer", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createNonBlindedOffer(2500.msat, "basic offer", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = InvoiceRequest(offer, 2500.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
@@ -130,7 +130,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check that invoice request matches offer - with features`() {
-        val offer = Offer.createInternal(2500.msat, "offer with features", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createNonBlindedOffer(2500.msat, "offer with features", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = InvoiceRequest(offer, 2500.msat, 1, Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional), payerKey, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
@@ -145,7 +145,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check that invoice request matches offer - without amount`() {
-        val offer = Offer.createInternal(null, "offer without amount", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
+        val offer = Offer.createNonBlindedOffer(null, "offer without amount", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
         val request = InvoiceRequest(offer, 500.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
@@ -522,14 +522,14 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         assertEquals("LN", offer.description)
         assertEquals(Features.empty, offer.features) // the offer shouldn't have any feature to guarantee stability
         assertNull(offer.expirySeconds)
-        assertNotEquals(nodeParams.nodeId, offer.nodeId) // the offer should not leak our node_id
+        assertNull(offer.nodeId) // the offer should not leak our node_id
         assertEquals(1, offer.contactInfos.size)
         val path = offer.contactInfos.first()
         assertIs<BlindedPath>(path)
         assertEquals(EncodedNodeId(trampolineNode.id), path.route.introductionNodeId)
         val expectedPathId = ByteVector32.fromValidHex("69e2c45e00f6e76c50f612b87294191cc634abfbf25eb2eb51f241bec3209897")
         assertEquals(expectedPathId, pathId)
-        val expectedOffer = Offer.decode("lno1pgpycnss65pcvnhsyh77376c0kvfrpkwdf9ps6y4aez2jf4lcdcw9smxt9arlrcz0nlw5j3jhdsalgkz7vh0gqee9gzc5jusk6wv8fxkcsuv83e0qe8qyqemg2z2ph94xn9lk8ee0k3gngtgasrjeqg4lzje7dc05tgxwgx48uqp4cyfnedwkw3pa6ysg9axvnmfsv627x7gc4v2n7p50lqrhcdjpmrwqyztq3e0f4km9yzrfyxm5edzcvxz7kmwg7xc3u46se6sqv4sszj7329dtr0vj4ektvvgx02lt2m3mq5nck2kgnffl9q9tgfffvtds3pusgeeu0fqjfd9snrmtx6jwdgkyypmuxeqa3hqzp9sguh56mdjjpp5jrd6vk3vxrp0tdhy0rvg72agvag").get()
+        val expectedOffer = Offer.decode("lno1pgpycnss65pcvnhsyh77376c0kvfrpkwdf9ps6y4aez2jf4lcdcw9smxt9arlrcz0nlw5j3jhdsalgkz7vh0gqee9gzc5jusk6wv8fxkcsuv83e0qe8qyqemg2z2ph94xn9lk8ee0k3gngtgasrjeqg4lzje7dc05tgxwgx48uqp4cyfnedwkw3pa6ysg9axvnmfsv627x7gc4v2n7p50lqrhcdjpmrwqyztq3e0f4km9yzrfyxm5edzcvxz7kmwg7xc3u46se6sqv4sszj7329dtr0vj4ektvvgx02lt2m3mq5nck2kgnffl9q9tgfffvtds3pusgeeu0fqjfd9snrmtx6jwdg").get()
         assertEquals(expectedOffer, offer)
     }
 }
