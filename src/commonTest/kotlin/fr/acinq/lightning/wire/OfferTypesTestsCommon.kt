@@ -527,9 +527,9 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val path = offer.contactInfos.first()
         assertIs<BlindedPath>(path)
         assertEquals(EncodedNodeId(trampolineNode.id), path.route.introductionNodeId)
-        val expectedPathId = ByteVector32.fromValidHex("69e2c45e00f6e76c50f612b87294191cc634abfbf25eb2eb51f241bec3209897")
+        val expectedPathId = ByteVector32.fromValidHex("7c3ba519d4178ab63adce3688353a7fe937ebaabaa4d379bdf1f8f123128f712")
         assertEquals(expectedPathId, pathId)
-        val expectedOffer = Offer.decode("lno1pgpycnss65pcvnhsyh77376c0kvfrpkwdf9ps6y4aez2jf4lcdcw9smxt9arlrcz0nlw5j3jhdsalgkz7vh0gqee9gzc5jusk6wv8fxkcsuv83e0qe8qyqemg2z2ph94xn9lk8ee0k3gngtgasrjeqg4lzje7dc05tgxwgx48uqp4cyfnedwkw3pa6ysg9axvnmfsv627x7gc4v2n7p50lqrhcdjpmrwqyztq3e0f4km9yzrfyxm5edzcvxz7kmwg7xc3u46se6sqv4sszj7329dtr0vj4ektvvgx02lt2m3mq5nck2kgnffl9q9tgfffvtds3pusgeeu0fqjfd9snrmtx6jwdg").get()
+        val expectedOffer = Offer.decode("lno1pgpycnss65pcvnhsyh77376c0kvfrpkwdf9ps6y4aez2jf4lcdcw9smxt9arlrczmzxemxtvvcnwxy9uvytwws2y590r39vz9z46cxj4rkhjfe3vu6tsyq39guar7hm0px8w08tk49laaakj0fr39vpvulw96aqafuzqdpechvqp5rcn23y8s4y855pxzchqt4ln5yr8m0ujsznqzq8k8ggrlpjlj6u9yy9g6aglcmwh28gu9j6aamgjvg3l79t2l874scs2wmjsqvhk7dm4yvk4g3rphcsche7uuz5dqmx3fcgy592jk8qf6vcrhcxhu5km78xhcxf6fj2j9de6q7cfy7maalg").get()
         assertEquals(expectedOffer, offer)
     }
 }

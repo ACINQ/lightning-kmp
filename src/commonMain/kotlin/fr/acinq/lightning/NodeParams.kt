@@ -236,14 +236,16 @@ data class NodeParams(
      * We also return the path_id included in this offer, which should be used to route onion messages.
      */
     fun defaultOffer(trampolineNode: NodeUri): Pair<ByteVector32, OfferTypes.Offer> {
+        val description = "LN"
         // We generate a deterministic path_id based on:
         //  - a custom tag indicating that this is used in the Bolt 12 context
+        //  - the offer description
         //  - our trampoline node, which is used as an introduction node for the offer's blinded path
         //  - our private key, which ensures that nobody else can generate the same path_id
-        val pathId = Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8) + trampolineNode.id.value.toByteArray() + nodePrivateKey.value.toByteArray()).byteVector32()
+        val pathId = Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8) + description.toByteArray(Charsets.UTF_8) + trampolineNode.id.value.toByteArray() + nodePrivateKey.value.toByteArray()).byteVector32()
         // We don't use our currently activated features, otherwise the offer would change when we add support for new features.
         // If we add a new feature that we would like to use by default, we will need to explicitly create a new offer.
-        val offer = OfferTypes.Offer.createBlindedOffer(amount = null, description = "LN", this, trampolineNode, Features.empty, pathId)
+        val offer = OfferTypes.Offer.createBlindedOffer(amount = null, description, this, trampolineNode, Features.empty, pathId)
         return Pair(pathId, offer)
     }
 }
