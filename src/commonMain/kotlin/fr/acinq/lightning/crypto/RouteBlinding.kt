@@ -4,8 +4,12 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.lightning.crypto.sphinx.Sphinx
+import fr.acinq.lightning.wire.CannotDecodeTlv
+import fr.acinq.lightning.wire.InvalidTlvPayload
+import fr.acinq.lightning.wire.OnionPaymentPayloadTlv
 
 object RouteBlinding {
 
@@ -102,17 +106,21 @@ object RouteBlinding {
         privateKey: PrivateKey,
         blindingEphemeralKey: PublicKey,
         encryptedPayload: ByteVector
-    ): Pair<ByteVector, PublicKey> {
+    ): Either<InvalidTlvPayload, Pair<ByteVector, PublicKey>> {
         val sharedSecret = Sphinx.computeSharedSecret(blindingEphemeralKey, privateKey)
         val rho = Sphinx.generateKey("rho", sharedSecret)
-        val decrypted = ChaCha20Poly1305.decrypt(
-            rho.toByteArray(),
-            Sphinx.zeroes(12),
-            encryptedPayload.dropRight(16).toByteArray(),
-            byteArrayOf(),
-            encryptedPayload.takeRight(16).toByteArray()
-        )
-        val nextBlindingEphemeralKey = Sphinx.blind(blindingEphemeralKey, Sphinx.computeBlindingFactor(blindingEphemeralKey, sharedSecret))
-        return Pair(ByteVector(decrypted), nextBlindingEphemeralKey)
+        return try {
+            val decrypted = ChaCha20Poly1305.decrypt(
+                rho.toByteArray(),
+                Sphinx.zeroes(12),
+                encryptedPayload.dropRight(16).toByteArray(),
+                byteArrayOf(),
+                encryptedPayload.takeRight(16).toByteArray()
+            )
+            val nextBlindingEphemeralKey = Sphinx.blind(blindingEphemeralKey, Sphinx.computeBlindingFactor(blindingEphemeralKey, sharedSecret))
+            Either.Right(Pair(ByteVector(decrypted), nextBlindingEphemeralKey))
+        } catch (_: Throwable) {
+            Either.Left(CannotDecodeTlv(OnionPaymentPayloadTlv.EncryptedRecipientData.tag))
+        }
     }
 }

@@ -283,7 +283,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // The recipient should receive the right amount and expiry.
         val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
-        val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload.toByteArray())
+        val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
         assertEquals(200_000.msat, payloadC.amount)
         assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
         assertEquals(payloadC.amount, payloadC.totalAmount)
@@ -335,7 +335,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             // The recipient should receive the right amount and expiry.
             val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
-            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload.toByteArray())
+            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
             assertEquals(300_000.msat, payloadC.amount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
             assertEquals(payloadC.amount, payloadC.totalAmount)
@@ -441,7 +441,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             // The recipient should receive the right amount and expiry.
             val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
-            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload.toByteArray())
+            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
             assertEquals(300_000.msat, payloadC.amount)
             assertTrue(minFinalExpiry <= payloadC.expiry)
             assertEquals(innerB.outgoingCltv, payloadC.expiry)
@@ -538,7 +538,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
             // The recipient should receive the right amount and expiry.
             val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
-            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload.toByteArray())
+            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
             assertEquals(300_000.msat, payloadC.amount)
             assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
             assertEquals(payloadC.amount, payloadC.totalAmount)

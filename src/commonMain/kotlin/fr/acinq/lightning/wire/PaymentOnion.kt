@@ -7,10 +7,14 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.lightning.*
+import fr.acinq.bitcoin.utils.Either
+import fr.acinq.bitcoin.utils.flatMap
+import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.Bolt12Invoice
-import fr.acinq.lightning.payment.PaymentRequest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
 
@@ -260,12 +264,22 @@ object PaymentOnion {
                     OnionPaymentPayloadTlv.OutgoingBlindedPaths.tag to OnionPaymentPayloadTlv.OutgoingBlindedPaths.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                 )
             )
+
+            fun read(input: Input): Either<InvalidOnionPayload, TlvStream<OnionPaymentPayloadTlv>> = try {
+                Either.Right(tlvSerializer.read(input))
+            } catch (_: Throwable) {
+                // We should change TlvStream.read to return an Either<InvalidTlvPayload, TlvStream<T>>, which allows returning a more accurate error here.
+                Either.Left(InvalidOnionPayload(0, 0))
+            }
+
+            fun read(bytes: ByteArray): Either<InvalidOnionPayload, TlvStream<OnionPaymentPayloadTlv>> = read(ByteArrayInput(bytes))
         }
     }
 
     interface PerHopPayloadReader<T : PerHopPayload> {
-        fun read(input: Input): T
-        fun read(bytes: ByteArray): T = read(ByteArrayInput(bytes))
+        fun read(input: Input): Either<InvalidOnionPayload, T>
+        fun read(bytes: ByteArray): Either<InvalidOnionPayload, T> = read(ByteArrayInput(bytes))
+        fun read(bytes: ByteVector): Either<InvalidOnionPayload, T> = read(bytes.toByteArray())
     }
 
     sealed class FinalPayload : PerHopPayload() {
@@ -286,7 +300,17 @@ object PaymentOnion {
             override fun write(out: Output) = tlvSerializer.write(records, out)
 
             companion object : PerHopPayloadReader<Standard> {
-                override fun read(input: Input): Standard = Standard(tlvSerializer.read(input))
+                override fun read(input: Input): Either<InvalidOnionPayload, Standard> {
+                    return PerHopPayload.read(input).flatMap { tlvs ->
+                        when {
+                            tlvs.get<OnionPaymentPayloadTlv.AmountToForward>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.AmountToForward.tag, 0))
+                            tlvs.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingCltv.tag, 0))
+                            tlvs.get<OnionPaymentPayloadTlv.PaymentData>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.PaymentData.tag, 0))
+                            tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
+                            else -> Either.Right(Standard(tlvs))
+                        }
+                    }
+                }
 
                 /** Create a single-part payment (total amount sent at once). */
                 fun createSinglePartPayload(
@@ -348,10 +372,32 @@ object PaymentOnion {
             override val amount = records.get<OnionPaymentPayloadTlv.AmountToForward>()!!.amount
             override val totalAmount = records.get<OnionPaymentPayloadTlv.TotalAmount>()!!.totalAmount
             override val expiry = records.get<OnionPaymentPayloadTlv.OutgoingCltv>()!!.cltv
-
             val pathId = recipientData.pathId!!
 
             override fun write(out: Output) = tlvSerializer.write(records, out)
+
+            companion object {
+                fun validate(records: TlvStream<OnionPaymentPayloadTlv>, blindedRecords: RouteBlindingEncryptedData): Either<InvalidTlvPayload, Blinded> {
+                    // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data`, `current_blinding_point`, `amt_to_forward`, `outgoing_cltv_value` and `total_amount_msat`.
+                    val allowed = setOf(
+                        OnionPaymentPayloadTlv.AmountToForward.tag,
+                        OnionPaymentPayloadTlv.OutgoingCltv.tag,
+                        OnionPaymentPayloadTlv.EncryptedRecipientData.tag,
+                        OnionPaymentPayloadTlv.BlindingPoint.tag,
+                        OnionPaymentPayloadTlv.TotalAmount.tag,
+                    )
+                    return when {
+                        records.get<OnionPaymentPayloadTlv.AmountToForward>() == null -> Either.Left(MissingRequiredTlv(OnionPaymentPayloadTlv.AmountToForward.tag))
+                        records.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(MissingRequiredTlv(OnionPaymentPayloadTlv.OutgoingCltv.tag))
+                        records.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() == null -> Either.Left(MissingRequiredTlv(OnionPaymentPayloadTlv.EncryptedRecipientData.tag))
+                        records.get<OnionPaymentPayloadTlv.TotalAmount>() == null -> Either.Left(MissingRequiredTlv(OnionPaymentPayloadTlv.TotalAmount.tag))
+                        records.records.any { !allowed.contains(it.tag) } -> Either.Left(ForbiddenTlv(records.records.first { !allowed.contains(it.tag) }.tag))
+                        records.unknown.isNotEmpty() -> Either.Left(ForbiddenTlv(records.unknown.first().tag))
+                        blindedRecords.pathId == null -> Either.Left(MissingRequiredTlv(RouteBlindingEncryptedDataTlv.PathId.tag))
+                        else -> Either.Right(Blinded(records, blindedRecords))
+                    }
+                }
+            }
         }
     }
 
@@ -363,7 +409,17 @@ object PaymentOnion {
         override fun write(out: Output) = tlvSerializer.write(records, out)
 
         companion object : PerHopPayloadReader<ChannelRelayPayload> {
-            override fun read(input: Input): ChannelRelayPayload = ChannelRelayPayload(tlvSerializer.read(input))
+            override fun read(input: Input): Either<InvalidOnionPayload, ChannelRelayPayload> {
+                return PerHopPayload.read(input).flatMap { tlvs ->
+                    when {
+                        tlvs.get<OnionPaymentPayloadTlv.AmountToForward>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.AmountToForward.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingCltv.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.OutgoingChannelId>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingChannelId.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
+                        else -> Either.Right(ChannelRelayPayload(tlvs))
+                    }
+                }
+            }
 
             fun create(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry): ChannelRelayPayload =
                 ChannelRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountToForward), OnionPaymentPayloadTlv.OutgoingCltv(outgoingCltv), OnionPaymentPayloadTlv.OutgoingChannelId(outgoingChannelId)))
@@ -386,7 +442,18 @@ object PaymentOnion {
         override fun write(out: Output) = tlvSerializer.write(records, out)
 
         companion object : PerHopPayloadReader<NodeRelayPayload> {
-            override fun read(input: Input): NodeRelayPayload = NodeRelayPayload(tlvSerializer.read(input))
+            override fun read(input: Input): Either<InvalidOnionPayload, NodeRelayPayload> {
+                return PerHopPayload.read(input).flatMap { tlvs ->
+                    when {
+                        tlvs.get<OnionPaymentPayloadTlv.AmountToForward>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.AmountToForward.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingCltv.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.OutgoingNodeId>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingNodeId.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.BlindingPoint.tag, 0))
+                        else -> Either.Right(NodeRelayPayload(tlvs))
+                    }
+                }
+            }
 
             fun create(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey) =
                 NodeRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amount), OnionPaymentPayloadTlv.OutgoingCltv(expiry), OnionPaymentPayloadTlv.OutgoingNodeId(nextNodeId)))
@@ -415,7 +482,21 @@ object PaymentOnion {
         override fun write(out: Output) = tlvSerializer.write(records, out)
 
         companion object : PerHopPayloadReader<RelayToNonTrampolinePayload> {
-            override fun read(input: Input): RelayToNonTrampolinePayload = RelayToNonTrampolinePayload(tlvSerializer.read(input))
+            override fun read(input: Input): Either<InvalidOnionPayload, RelayToNonTrampolinePayload> {
+                return PerHopPayload.read(input).flatMap { tlvs ->
+                    when {
+                        tlvs.get<OnionPaymentPayloadTlv.AmountToForward>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.AmountToForward.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingCltv.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.OutgoingNodeId>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingNodeId.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.PaymentData>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.PaymentData.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.InvoiceFeatures>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.InvoiceFeatures.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.InvoiceRoutingInfo>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.InvoiceRoutingInfo.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.BlindingPoint.tag, 0))
+                        else -> Either.Right(RelayToNonTrampolinePayload(tlvs))
+                    }
+                }
+            }
 
             fun create(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): RelayToNonTrampolinePayload =
                 RelayToNonTrampolinePayload(
@@ -443,7 +524,19 @@ object PaymentOnion {
         override fun write(out: Output) = tlvSerializer.write(records, out)
 
         companion object : PerHopPayloadReader<RelayToBlindedPayload> {
-            override fun read(input: Input): RelayToBlindedPayload = RelayToBlindedPayload(tlvSerializer.read(input))
+            override fun read(input: Input): Either<InvalidOnionPayload, RelayToBlindedPayload> {
+                return PerHopPayload.read(input).flatMap { tlvs ->
+                    when {
+                        tlvs.get<OnionPaymentPayloadTlv.AmountToForward>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.AmountToForward.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingCltv.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.InvoiceFeatures>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.InvoiceFeatures.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.OutgoingBlindedPaths>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingBlindedPaths.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.BlindingPoint.tag, 0))
+                        else -> Either.Right(RelayToBlindedPayload(tlvs))
+                    }
+                }
+            }
 
             fun create(amount: MilliSatoshi, expiry: CltvExpiry, invoice: Bolt12Invoice): RelayToBlindedPayload =
                 RelayToBlindedPayload(
@@ -458,4 +551,5 @@ object PaymentOnion {
                 )
         }
     }
+
 }

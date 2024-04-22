@@ -51,7 +51,7 @@ class FailureMessageTestsCommon : LightningTestSuite() {
             FinalIncorrectHtlcAmount(123456.msat),
             ChannelDisabled(0, 1, channelUpdate),
             ExpiryTooFar,
-            InvalidOnionPayload(561.toULong(), 1105),
+            InvalidOnionPayload(561, 1105),
             PaymentTimeout,
             TrampolineFeeInsufficient,
             TrampolineExpiryTooSoon
