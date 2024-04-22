@@ -70,7 +70,7 @@ object OnionMessages {
                     blindingSecret,
                     intermediateNodes.map { it.nodeId } + destination.nodeId,
                     intermediatePayloads + lastPayload
-                )
+                ).route
             }
             is Destination.BlindedPath -> when {
                 intermediateNodes.isEmpty() -> destination.route
@@ -85,7 +85,7 @@ object OnionMessages {
                         blindingSecret,
                         intermediateNodes.map { it.nodeId },
                         intermediatePayloads
-                    )
+                    ).route
                     RouteBlinding.BlindedRoute(
                         routePrefix.introductionNodeId,
                         routePrefix.blindingKey,

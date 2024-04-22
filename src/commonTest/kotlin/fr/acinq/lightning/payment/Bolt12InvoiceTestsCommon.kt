@@ -67,20 +67,16 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         sessionKey: PrivateKey = randomKey(),
         pathId: ByteVector = randomBytes32()
     ): PaymentBlindedContactInfo {
-        val selfPayload = RouteBlindingEncryptedData(TlvStream(
-            RouteBlindingEncryptedDataTlv.PathId(pathId),
-            RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1234567), 0.msat),
-            RouteBlindingEncryptedDataTlv.AllowedFeatures(Features.empty)
-        )).write().toByteVector()
-        return PaymentBlindedContactInfo(
-            ContactInfo.BlindedPath(
-                RouteBlinding.create(
-                    sessionKey,
-                    listOf(nodeId),
-                    listOf(selfPayload)
-                )
-            ), PaymentInfo(1.msat, 2, CltvExpiryDelta(3), 4.msat, 5.msat, Features.empty)
-        )
+        val selfPayload = RouteBlindingEncryptedData(
+            TlvStream(
+                RouteBlindingEncryptedDataTlv.PathId(pathId),
+                RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1234567), 0.msat),
+                RouteBlindingEncryptedDataTlv.AllowedFeatures(Features.empty)
+            )
+        ).write().toByteVector()
+        val blindedRoute = RouteBlinding.create(sessionKey, listOf(nodeId), listOf(selfPayload)).route
+        val paymentInfo = PaymentInfo(1.msat, 2, CltvExpiryDelta(3), 4.msat, 5.msat, Features.empty)
+        return PaymentBlindedContactInfo(ContactInfo.BlindedPath(blindedRoute), paymentInfo)
     }
 
     @Test

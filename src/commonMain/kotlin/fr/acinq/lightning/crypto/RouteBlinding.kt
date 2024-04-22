@@ -54,6 +54,15 @@ object RouteBlinding {
     }
 
     /**
+     * @param route blinded route.
+     * @param lastBlinding blinding point for the last node, which can be used to derive the blinded private key.
+     */
+    data class BlindedRouteDetails(val route: BlindedRoute, val lastBlinding: PublicKey) {
+        /** @param nodeKey private key associated with our non-blinded node_id. */
+        fun blindedPrivateKey(nodeKey: PrivateKey): PrivateKey = derivePrivateKey(nodeKey, lastBlinding)
+    }
+
+    /**
      * Blind the provided route and encrypt intermediate nodes' payloads.
      *
      * @param sessionKey this node's session key.
@@ -61,7 +70,7 @@ object RouteBlinding {
      * @param payloads payloads that should be encrypted for each node on the route.
      * @return a blinded route.
      */
-    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteVector>): BlindedRoute {
+    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteVector>): BlindedRouteDetails {
         require(publicKeys.size == payloads.size) { "a payload must be provided for each node in the blinded path" }
         var e = sessionKey
         val (blindedHops, blindingKeys) = publicKeys.zip(payloads).map { pair ->
@@ -79,7 +88,7 @@ object RouteBlinding {
             e *= PrivateKey(Crypto.sha256(blindingKey.value.toByteArray() + sharedSecret.toByteArray()))
             Pair(BlindedNode(blindedPublicKey, ByteVector(encryptedPayload + mac)), blindingKey)
         }.unzip()
-        return BlindedRoute(EncodedNodeId(publicKeys.first()), blindingKeys.first(), blindedHops)
+        return BlindedRouteDetails(BlindedRoute(EncodedNodeId(publicKeys.first()), blindingKeys.first(), blindedHops), blindingKeys.last())
     }
 
     /**
