@@ -153,7 +153,6 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
             )
         )
 
-        /** @return null if the tlv stream cannot be decoded. */
         fun read(input: Input): Either<InvalidTlvPayload, RouteBlindingEncryptedData> {
             return try {
                 Either.Right(RouteBlindingEncryptedData(tlvSerializer.read(input)))

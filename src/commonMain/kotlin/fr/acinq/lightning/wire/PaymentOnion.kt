@@ -306,6 +306,7 @@ object PaymentOnion {
                             tlvs.get<OnionPaymentPayloadTlv.AmountToForward>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.AmountToForward.tag, 0))
                             tlvs.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingCltv.tag, 0))
                             tlvs.get<OnionPaymentPayloadTlv.PaymentData>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.PaymentData.tag, 0))
+                            tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
                             else -> Either.Right(Standard(tlvs))
                         }
                     }
@@ -414,6 +415,7 @@ object PaymentOnion {
                         tlvs.get<OnionPaymentPayloadTlv.AmountToForward>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.AmountToForward.tag, 0))
                         tlvs.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingCltv.tag, 0))
                         tlvs.get<OnionPaymentPayloadTlv.OutgoingChannelId>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingChannelId.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
                         else -> Either.Right(ChannelRelayPayload(tlvs))
                     }
                 }

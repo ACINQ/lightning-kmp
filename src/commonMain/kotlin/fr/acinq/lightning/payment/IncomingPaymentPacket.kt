@@ -52,18 +52,18 @@ object IncomingPaymentPacket {
             when {
                 !decrypted.isLastPacket -> Either.Left(UnknownNextPeer)
                 else -> PaymentOnion.PerHopPayload.read(decrypted.payload.toByteArray()).flatMap { tlvs ->
-                    // This blinding point is provided in the onion when we're the introduction node of a blinded path.
-                    val introductionBlinding = tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>()?.publicKey
                     when (val encryptedRecipientData = tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>()?.data) {
                         null -> when {
-                            blinding != null || introductionBlinding != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            blinding != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
                             else -> PaymentOnion.FinalPayload.Standard.read(decrypted.payload)
                         }
                         else -> when {
-                            // We must receive a blinding point, either for the introduction node (in the onion),
-                            // or for an intermediate node (in update_add_htlc), but not both.
-                            (blinding == null) == (introductionBlinding == null) -> Either.Left(InvalidOnionBlinding(hash(packet)))
-                            else -> when (val payload = decryptRecipientData(privateKey, blinding ?: introductionBlinding!!, encryptedRecipientData, tlvs)) {
+                            // We're never the introduction node of a blinded path, since we don't have public channels.
+                            tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            // We must receive the blinding point to be able to decrypt the blinded path data.
+                            blinding == null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            else -> when (val payload = decryptRecipientData(privateKey, blinding, encryptedRecipientData, tlvs)) {
                                 is Either.Left -> Either.Left(InvalidOnionBlinding(hash(packet)))
                                 is Either.Right -> Either.Right(payload.value)
                             }
