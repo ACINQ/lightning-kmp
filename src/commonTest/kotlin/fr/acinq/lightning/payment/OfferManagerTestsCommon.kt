@@ -23,6 +23,7 @@ import fr.acinq.lightning.wire.OfferTypes
 import fr.acinq.lightning.wire.OnionMessage
 import fr.acinq.lightning.wire.RouteBlindingEncryptedData
 import kotlin.test.*
+import kotlin.time.Duration.Companion.seconds
 
 class OfferManagerTestsCommon : LightningTestSuite() {
     val trampolineKey = randomKey()
@@ -65,20 +66,20 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         )
         aliceOfferManager.registerOffer(offer, pathId)
 
-        val payOffer = PayOffer(UUID.randomUUID(), 5500.msat, 5, offer, 2)
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
         val invoiceRequests = bobOfferManager.requestInvoice(payOffer)
         assertTrue(invoiceRequests.size == 1)
         val relay1 = trampolineRelay(invoiceRequests.first())
         assertEquals(Either.Right(EncodedNodeId(trampolineKey.publicKey())), relay1.second)
         val relay2 = trampolineRelay(relay1.first)
         assertEquals(Either.Left(ShortChannelId.peerId(TestConstants.Alice.nodeParams.nodeId)), relay2.second)
-        val invoiceResponse = aliceOfferManager.receiveMessage(relay2.first, mapOf(), 0)
+        val invoiceResponse = aliceOfferManager.receiveMessage(relay2.first, listOf(), 0)
         assertIs<OnionMessageAction.SendMessage>(invoiceResponse)
         val relay3 = trampolineRelay(invoiceResponse.message)
         assertEquals(Either.Right(EncodedNodeId(trampolineKey.publicKey())), relay3.second)
         val relay4 = trampolineRelay(relay3.first)
         assertEquals(Either.Right(EncodedNodeId(TestConstants.Bob.nodeParams.nodeId)), relay4.second)
-        val payInvoice = bobOfferManager.receiveMessage(relay4.first, mapOf(), 0)
+        val payInvoice = bobOfferManager.receiveMessage(relay4.first, listOf(), 0)
         assertIs<OnionMessageAction.PayInvoice>(payInvoice)
         assertEquals(payOffer, payInvoice.payOffer)
     }

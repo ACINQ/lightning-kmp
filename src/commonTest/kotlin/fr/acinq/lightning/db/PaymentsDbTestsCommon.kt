@@ -367,7 +367,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val (db, _, pr) = createFixture()
         assertTrue(db.listLightningOutgoingPayments(pr.paymentHash).isEmpty())
 
-        val payment1 = LightningOutgoingPayment(UUID.randomUUID(), 50_000.msat, pr.nodeId, pr)
+        val payment1 = LightningOutgoingPayment(UUID.randomUUID(), 50_000.msat, pr.nodeId, LightningOutgoingPayment.Details.Normal(pr))
         db.addOutgoingPayment(payment1)
         assertEquals(listOf(payment1), db.listLightningOutgoingPayments(pr.paymentHash))
 
