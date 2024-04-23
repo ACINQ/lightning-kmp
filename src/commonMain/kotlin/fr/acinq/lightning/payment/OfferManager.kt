@@ -1,6 +1,5 @@
 package fr.acinq.lightning.payment
 
-import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
@@ -9,10 +8,6 @@ import fr.acinq.bitcoin.utils.Either.Right
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.channel.states.ChannelState
-import fr.acinq.lightning.channel.states.Normal
-import fr.acinq.lightning.channel.states.Offline
-import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.io.PayOffer
 import fr.acinq.lightning.logging.MDCLogger
@@ -25,7 +20,6 @@ import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
-import kotlin.math.max
 
 sealed class OnionMessageAction {
     data class SendMessage(val message: OnionMessage): OnionMessageAction()
@@ -33,7 +27,7 @@ sealed class OnionMessageAction {
     data class ReportPaymentFailure(val payOffer: PayOffer, val failure: OfferPaymentFailure): OnionMessageAction()
 }
 
-private data class PendingInvoiceRequest(val payOffer: PayOffer, val payerKey: PrivateKey, val request: OfferTypes.InvoiceRequest, val createAtSeconds: Long)
+private data class PendingInvoiceRequest(val payOffer: PayOffer, val payerKey: PrivateKey, val request: OfferTypes.InvoiceRequest, val createdAtSeconds: Long)
 
 class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, val logger: MDCLogger) {
     val remoteNodeId: PublicKey = walletParams.trampolineNode.id
@@ -45,11 +39,10 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     }
 
     fun requestInvoice(payOffer: PayOffer): List<OnionMessage> {
-        val payerKey = randomKey()
-        val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, payOffer.quantity, nodeParams.features.bolt12Features(), payerKey, nodeParams.chainHash)
+        val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, 1, nodeParams.features.bolt12Features(), payOffer.payerKey, nodeParams.chainHash)
         val replyPathId = randomBytes32()
-        pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, payerKey, request, currentTimestampSeconds())
-        val numHopsToAdd = max(0, payOffer.minReplyPathHops - 1)
+        pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, payOffer.payerKey, request, currentTimestampSeconds())
+        val numHopsToAdd = 2
         val replyPathHops = (listOf(remoteNodeId) + List(numHopsToAdd) { nodeParams.nodeId }).map { IntermediateNode(it) }
         val lastHop = Destination.Recipient(nodeParams.nodeId, replyPathId)
         val replyPath = OnionMessages.buildRoute(randomKey(), replyPathHops, lastHop)
@@ -57,7 +50,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         return payOffer.offer.contactInfos.mapNotNull { contactInfo -> buildMessage(randomKey(), randomKey(), listOf(IntermediateNode(remoteNodeId)), Destination(contactInfo), messageContent).right }
     }
 
-    fun receiveMessage(msg: OnionMessage, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): OnionMessageAction? {
+    fun receiveMessage(msg: OnionMessage, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction? {
         val decrypted = OnionMessages.decryptMessage(nodeParams.nodePrivateKey, msg, logger)
         if (decrypted == null) {
             return null
@@ -89,14 +82,6 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     val preimage = randomBytes32()
                     val pathId = OfferPaymentMetadata.V1(offerPathId, amount, preimage, request.payerId, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
                     val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId))).write().toByteVector()
-                    val remoteChannelUpdates = channels.values.mapNotNull { channelState ->
-                        when (channelState) {
-                            is Normal -> channelState.remoteChannelUpdate
-                            is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
-                            is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
-                            else -> null
-                        }
-                    }
                     val paymentInfo = OfferTypes.PaymentInfo(
                         feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
                         feeProportionalMillionths = remoteChannelUpdates.maxOfOrNull { it.feeProportionalMillionths } ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
@@ -114,25 +99,39 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
                     val invoice = Bolt12Invoice(request, preimage, decrypted.blindedPrivateKey, nodeParams.bolt12invoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
                     return when (val invoiceMessage = buildMessage(randomKey(), randomKey(), listOf(IntermediateNode(remoteNodeId)), Destination.BlindedPath(decrypted.content.replyPath), TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)))) {
-                        is Left -> null
+                        is Left -> run {
+                            logger.warning { "ignoring invoice request for path id ${decrypted.pathId}, could not build onion message: ${invoiceMessage.value}" }
+                            null
+                        }
                         is Right -> OnionMessageAction.SendMessage(invoiceMessage.value)
                     }
                 } else {
                     // TODO: send back invoice error
+                    if (request == null) {
+                        logger.warning { "ignoring onion message for path id ${decrypted.pathId}: no invoice request" }
+                    } else if (request.offer == offer) {
+                        logger.warning { "ignoring invoice request for path id ${decrypted.pathId}: wrong offer" }
+                    } else {
+                        logger.warning { "ignoring invoice request for path id ${decrypted.pathId}: invalid invoice request" }
+                    }
                     return null
                 }
             } else {
                 // Ignore unexpected messages.
+                if (!localOffers.containsKey(decrypted.pathId)) {
+                    logger.warning { "ignoring onion message with unrecognized path id" }
+                } else if (decrypted.content.replyPath == null) {
+                    logger.warning { "ignoring invoice request for path id ${decrypted.pathId}: no reply path" }
+                }
                 return null
             }
         }
     }
 
-    fun checkInvoiceRequestTimeout(timeoutSeconds: Long): List<OnionMessageAction.ReportPaymentFailure> {
+    fun checkInvoiceRequestsTimeout(currentTimestampSeconds: Long): List<OnionMessageAction.ReportPaymentFailure> {
         val timedOut = ArrayList<OnionMessageAction.ReportPaymentFailure>()
-        val cutoff = currentTimestampSeconds() - timeoutSeconds
         for ((pathId, pending) in pendingInvoiceRequests) {
-            if (pending.createAtSeconds < cutoff) {
+            if (pending.createdAtSeconds + pending.payOffer.fetchInvoiceTimeout.inWholeSeconds < currentTimestampSeconds) {
                 timedOut.add(OnionMessageAction.ReportPaymentFailure(pending.payOffer, OfferPaymentFailure.NoResponse))
                 pendingInvoiceRequests.remove(pathId)
             }
