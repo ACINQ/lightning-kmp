@@ -1,38 +1,41 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
-import fr.acinq.lightning.*
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.WalletParams
 import fr.acinq.lightning.crypto.RouteBlinding
+import fr.acinq.lightning.io.OfferInvoiceReceived
+import fr.acinq.lightning.io.OfferNotPaid
 import fr.acinq.lightning.io.PayOffer
+import fr.acinq.lightning.io.PeerEvent
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.message.OnionMessages
 import fr.acinq.lightning.message.OnionMessages.Destination
 import fr.acinq.lightning.message.OnionMessages.IntermediateNode
 import fr.acinq.lightning.message.OnionMessages.buildMessage
 import fr.acinq.lightning.utils.currentTimestampMillis
-import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 
 sealed class OnionMessageAction {
     /** Send an outgoing onion message (invoice or invoice_request). */
     data class SendMessage(val message: OnionMessage) : OnionMessageAction()
     /** We received a valid invoice for an offer we're trying to pay: we should now pay that invoice. */
     data class PayInvoice(val payOffer: PayOffer, val invoice: Bolt12Invoice) : OnionMessageAction()
-    /** We couldn't pay the requested offer. */
-    data class ReportPaymentFailure(val payOffer: PayOffer, val failure: OfferPaymentFailure) : OnionMessageAction()
 }
 
-private data class PendingInvoiceRequest(val payOffer: PayOffer, val request: OfferTypes.InvoiceRequest, val createdAtSeconds: Long)
+private data class PendingInvoiceRequest(val payOffer: PayOffer, val request: OfferTypes.InvoiceRequest)
 
-class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, val logger: MDCLogger) {
+class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, val eventsFlow: MutableSharedFlow<PeerEvent>, val logger: MDCLogger) {
     val remoteNodeId: PublicKey = walletParams.trampolineNode.id
     private val pendingInvoiceRequests: HashMap<ByteVector32, PendingInvoiceRequest> = HashMap()
     private val localOffers: HashMap<ByteVector32, OfferTypes.Offer> = HashMap()
@@ -41,39 +44,51 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         localOffers[pathId] = offer
     }
 
-    fun requestInvoice(payOffer: PayOffer): List<OnionMessage> {
+    /**
+     * @return invoice requests that must be sent and the corresponding path_id that must be used in case of a timeout.
+     */
+    fun requestInvoice(payOffer: PayOffer): Pair<ByteVector32, List<OnionMessage>> {
         val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, 1, nodeParams.features.bolt12Features(), payOffer.payerKey, nodeParams.chainHash)
         val replyPathId = randomBytes32()
-        pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, request, currentTimestampSeconds())
-        val numHopsToAdd = 2
-        val replyPathHops = (listOf(remoteNodeId) + List(numHopsToAdd) { nodeParams.nodeId }).map { IntermediateNode(it) }
+        pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, request)
+        // We add dummy hops to the reply path: this way the receiver only learns that we're at most 3 hops away from our peer.
+        val replyPathHops = listOf(remoteNodeId, nodeParams.nodeId, nodeParams.nodeId).map { IntermediateNode(it) }
         val lastHop = Destination.Recipient(nodeParams.nodeId, replyPathId)
         val replyPath = OnionMessages.buildRoute(randomKey(), replyPathHops, lastHop)
         val messageContent = TlvStream(OnionMessagePayloadTlv.ReplyPath(replyPath), OnionMessagePayloadTlv.InvoiceRequest(request.records))
-        return payOffer.offer.contactInfos.mapNotNull { contactInfo -> buildMessage(randomKey(), randomKey(), listOf(IntermediateNode(remoteNodeId)), Destination(contactInfo), messageContent).right }
+        val invoiceRequests = payOffer.offer.contactInfos.mapNotNull { contactInfo -> buildMessage(randomKey(), randomKey(), listOf(IntermediateNode(remoteNodeId)), Destination(contactInfo), messageContent).right }
+        return Pair(replyPathId, invoiceRequests)
     }
 
-    fun receiveMessage(msg: OnionMessage, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction? {
+    suspend fun checkInvoiceRequestTimeout(pathId: ByteVector32, payOffer: PayOffer) {
+        if (pendingInvoiceRequests.containsKey(pathId)) {
+            logger.warning { "paymentId:${payOffer.paymentId} offerId=${payOffer.offer.offerId} invoice request timed out" }
+            eventsFlow.emit(OfferNotPaid(payOffer, OfferPaymentFailure.NoResponse))
+            pendingInvoiceRequests.remove(pathId)
+        }
+    }
+
+    suspend fun receiveMessage(msg: OnionMessage, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction? {
         val decrypted = OnionMessages.decryptMessage(nodeParams.nodePrivateKey, msg, logger)
         if (decrypted == null) {
             return null
         } else {
             if (pendingInvoiceRequests.containsKey(decrypted.pathId)) {
-                val (payOffer, request, _) = pendingInvoiceRequests[decrypted.pathId]!!
+                val (payOffer, request) = pendingInvoiceRequests[decrypted.pathId]!!
                 pendingInvoiceRequests.remove(decrypted.pathId)
                 val invoice = decrypted.content.records.get<OnionMessagePayloadTlv.Invoice>()?.let { Bolt12Invoice.validate(it.tlvs).right }
                 if (invoice == null) {
                     val error = decrypted.content.records.get<OnionMessagePayloadTlv.InvoiceError>()?.let { OfferTypes.InvoiceError.validate(it.tlvs).right }
                     val failure = error?.let { OfferPaymentFailure.InvoiceError(request, it) } ?: OfferPaymentFailure.InvalidResponse(request)
-                    return OnionMessageAction.ReportPaymentFailure(payOffer, failure)
+                    eventsFlow.emit(OfferNotPaid(payOffer, failure))
+                    return null
                 } else {
                     if (invoice.validateFor(request).isRight) {
+                        eventsFlow.emit(OfferInvoiceReceived(payOffer, invoice))
                         return OnionMessageAction.PayInvoice(payOffer, invoice)
                     } else {
-                        return OnionMessageAction.ReportPaymentFailure(
-                            payOffer,
-                            OfferPaymentFailure.InvalidInvoice(request, invoice)
-                        )
+                        eventsFlow.emit(OfferNotPaid(payOffer, OfferPaymentFailure.InvalidInvoice(request, invoice)))
+                        return null
                     }
                 }
             } else if (localOffers.containsKey(decrypted.pathId) && decrypted.content.replyPath != null) {
@@ -131,16 +146,5 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 return null
             }
         }
-    }
-
-    fun checkInvoiceRequestsTimeout(currentTimestampSeconds: Long): List<OnionMessageAction.ReportPaymentFailure> {
-        val timedOut = ArrayList<OnionMessageAction.ReportPaymentFailure>()
-        for ((pathId, pending) in pendingInvoiceRequests) {
-            if (pending.createdAtSeconds + pending.payOffer.fetchInvoiceTimeout.inWholeSeconds < currentTimestampSeconds) {
-                timedOut.add(OnionMessageAction.ReportPaymentFailure(pending.payOffer, OfferPaymentFailure.NoResponse))
-                pendingInvoiceRequests.remove(pathId)
-            }
-        }
-        return timedOut
     }
 }

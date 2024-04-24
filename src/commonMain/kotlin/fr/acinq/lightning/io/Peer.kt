@@ -72,7 +72,7 @@ data object Disconnected : PeerCommand()
 
 sealed class PaymentCommand : PeerCommand()
 private data object CheckPaymentsTimeout : PaymentCommand()
-private data object CheckInvoiceRequestsTimeout : PaymentCommand()
+private data class CheckInvoiceRequestTimeout(val pathId: ByteVector32, val payOffer: PayOffer) : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
 
 // @formatter:off
@@ -220,7 +220,7 @@ class Peer(
 
     private var swapInJob: Job? = null
 
-    private val offerManager = OfferManager(nodeParams, walletParams, logger)
+    private val offerManager = OfferManager(nodeParams, walletParams, _eventsFlow, logger)
 
     init {
         logger.info { "initializing peer" }
@@ -407,13 +407,6 @@ class Peer(
                 }
             }
 
-            suspend fun checkInvoiceRequestsTimeout() {
-                while (isActive) {
-                    delay(10.seconds)
-                    input.send(CheckInvoiceRequestsTimeout)
-                }
-            }
-
             suspend fun receiveLoop() {
                 try {
                     while (isActive) {
@@ -452,7 +445,6 @@ class Peer(
 
             launch(CoroutineName("keep-alive")) { doPing() }
             launch(CoroutineName("check-payments-timeout")) { checkPaymentsTimeout() }
-            launch(CoroutineName("check-invoice-requests-timeout")) { checkInvoiceRequestsTimeout() }
             launch(CoroutineName("send-loop")) { sendLoop() }
             val receiveJob = launch(CoroutineName("receive-loop")) { receiveLoop() }
             // Suspend until the coroutine is cancelled or the socket is closed.
@@ -1143,7 +1135,12 @@ class Peer(
                                 else -> null
                             }
                         }
-                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first().first)?.let { processOnionMessageAction(it) }
+                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first().first)?.let {
+                            when (it) {
+                                is OnionMessageAction.PayInvoice -> input.send(PayInvoice(it.payOffer.paymentId, it.payOffer.amount, LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey), it.payOffer.trampolineFeesOverride))
+                                is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(it.message))
+                            }
+                        }
                     }
                 }
             }
@@ -1256,10 +1253,6 @@ class Peer(
                 val actions = incomingPaymentHandler.checkPaymentsTimeout(currentTimestampSeconds())
                 actions.forEach { input.send(it) }
             }
-            is CheckInvoiceRequestsTimeout -> {
-                val actions = offerManager.checkInvoiceRequestsTimeout(currentTimestampSeconds())
-                actions.forEach { processOnionMessageAction(it) }
-            }
             is WrappedChannelCommand -> {
                 if (cmd.channelId == ByteVector32.Zeroes) {
                     // this is for all channels
@@ -1297,25 +1290,17 @@ class Peer(
                 }
             }
             is PayOffer -> {
-                val invoiceRequests = offerManager.requestInvoice(cmd)
+                val (pathId, invoiceRequests) = offerManager.requestInvoice(cmd)
                 invoiceRequests.forEach { input.send(SendOnionMessage(it)) }
-                if (invoiceRequests.isEmpty()) {
-                    _eventsFlow.emit(OfferNotPaid(cmd, OfferPaymentFailure.NoResponse))
+                coroutineScope {
+                    launch {
+                        delay(cmd.fetchInvoiceTimeout)
+                        input.send(CheckInvoiceRequestTimeout(pathId, cmd))
+                    }
                 }
             }
+            is CheckInvoiceRequestTimeout -> offerManager.checkInvoiceRequestTimeout(cmd.pathId, cmd.payOffer)
             is SendOnionMessage -> peerConnection?.send(cmd.message)
-            // TODO: timeout invoice requests
-        }
-    }
-
-    private suspend fun processOnionMessageAction(action: OnionMessageAction) {
-        when (action) {
-            is OnionMessageAction.PayInvoice -> {
-                _eventsFlow.emit(OfferInvoiceReceived(action.payOffer, action.invoice))
-                input.send(PayInvoice(action.payOffer.paymentId, action.payOffer.amount, LightningOutgoingPayment.Details.Blinded(action.invoice, action.payOffer.payerKey), action.payOffer.trampolineFeesOverride))
-            }
-            is OnionMessageAction.ReportPaymentFailure -> _eventsFlow.emit(OfferNotPaid(action.payOffer, action.failure))
-            is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(action.message))
         }
     }
 }

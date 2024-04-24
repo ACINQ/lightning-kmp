@@ -11,6 +11,7 @@ import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.DecryptedPacket
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.io.PayOffer
+import fr.acinq.lightning.io.PeerEvent
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -22,6 +23,7 @@ import fr.acinq.lightning.wire.MessageOnion
 import fr.acinq.lightning.wire.OfferTypes
 import fr.acinq.lightning.wire.OnionMessage
 import fr.acinq.lightning.wire.RouteBlindingEncryptedData
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlin.test.*
 import kotlin.time.Duration.Companion.seconds
 
@@ -52,8 +54,9 @@ class OfferManagerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `offer workflow`() = runSuspendTest {
-        val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, walletParams, logger)
-        val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, walletParams, logger)
+        val eventsFlow = MutableSharedFlow<PeerEvent>(extraBufferCapacity = 64)
+        val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, walletParams, eventsFlow, logger)
+        val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, walletParams, eventsFlow, logger)
 
         val pathId = randomBytes32()
         val offer = OfferTypes.Offer.createBlindedOffer(
@@ -67,7 +70,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         aliceOfferManager.registerOffer(offer, pathId)
 
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
-        val invoiceRequests = bobOfferManager.requestInvoice(payOffer)
+        val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         assertTrue(invoiceRequests.size == 1)
         val relay1 = trampolineRelay(invoiceRequests.first())
         assertEquals(Either.Right(EncodedNodeId(trampolineKey.publicKey())), relay1.second)
