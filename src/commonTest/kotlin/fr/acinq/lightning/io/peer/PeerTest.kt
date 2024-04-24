@@ -518,7 +518,7 @@ class PeerTest : LightningTestSuite() {
 
         val invoice = bob.createInvoice(randomBytes32(), 15_000_000.msat, Either.Left("test invoice"), null)
 
-        alice.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, LightningOutgoingPayment.Details.Normal(invoice)))
+        alice.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, LightningOutgoingPayment.Details.Normal(invoice)))
 
         val updateHtlc = alice2bob.expect<UpdateAddHtlc>()
         val aliceCommitSig = alice2bob.expect<CommitSig>()
@@ -563,7 +563,7 @@ class PeerTest : LightningTestSuite() {
         // Bob sends a multipart payment to Alice.
         val (alice, bob, alice2bob1, bob2alice1) = newPeers(this, nodeParams, walletParams, listOf(aliceChan1 to bobChan1, aliceChan2 to bobChan2), automateMessaging = false)
         val invoice = alice.createInvoice(randomBytes32(), 150_000_000.msat, Either.Left("test invoice"), null)
-        bob.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, alice.nodeParams.nodeId, LightningOutgoingPayment.Details.Normal(invoice)))
+        bob.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, LightningOutgoingPayment.Details.Normal(invoice)))
 
         // Bob sends one HTLC on each channel.
         val htlcs = listOf(
@@ -663,7 +663,7 @@ class PeerTest : LightningTestSuite() {
 
         val invoice = bob.createInvoice(randomBytes32(), 15_000_000.msat, Either.Left("test invoice"), null)
 
-        alice.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, alice.remoteNodeId, LightningOutgoingPayment.Details.Normal(invoice)))
+        alice.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, LightningOutgoingPayment.Details.Normal(invoice)))
 
         alice.expectState<Normal> { commitments.availableBalanceForReceive() > alice0.commitments.availableBalanceForReceive() }
     }

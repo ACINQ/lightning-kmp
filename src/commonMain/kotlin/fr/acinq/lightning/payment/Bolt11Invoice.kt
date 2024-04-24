@@ -17,7 +17,7 @@ data class Bolt11Invoice(
     val prefix: String,
     override val amount: MilliSatoshi?,
     val timestampSeconds: Long,
-    val nodeId: PublicKey,
+    override val nodeId: PublicKey,
     val tags: List<TaggedField>,
     val signature: ByteVector
 ) : PaymentRequest() {

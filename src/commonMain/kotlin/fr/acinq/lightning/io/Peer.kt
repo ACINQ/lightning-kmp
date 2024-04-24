@@ -75,14 +75,17 @@ private data object CheckPaymentsTimeout : PaymentCommand()
 private data object CheckInvoiceRequestsTimeout : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
 
+// @formatter:off
 sealed class SendPayment : PaymentCommand() {
     abstract val paymentId: UUID
     abstract val amount: MilliSatoshi
 }
-data class PayInvoice(override val paymentId: UUID, override val amount: MilliSatoshi, val recipient: PublicKey, val paymentDetails: LightningOutgoingPayment.Details, val trampolineFeesOverride: List<TrampolineFees>? = null) : SendPayment() {
+data class PayInvoice(override val paymentId: UUID, override val amount: MilliSatoshi, val paymentDetails: LightningOutgoingPayment.Details, val trampolineFeesOverride: List<TrampolineFees>? = null) : SendPayment() {
     val paymentHash: ByteVector32 = paymentDetails.paymentHash
+    val recipient: PublicKey = paymentDetails.paymentRequest.nodeId
 }
 data class PayOffer(override val paymentId: UUID, val payerKey: PrivateKey, override val amount: MilliSatoshi, val offer: OfferTypes.Offer, val fetchInvoiceTimeout: Duration, val trampolineFeesOverride: List<TrampolineFees>? = null) : SendPayment()
+// @formatter:on
 
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
 
@@ -645,7 +648,7 @@ class Peer(
                 .first()
             )
         }
-        send(PayInvoice(paymentId, amount, paymentRequest.nodeId, LightningOutgoingPayment.Details.Normal(paymentRequest)))
+        send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Normal(paymentRequest)))
         return res.await()
     }
 
@@ -1295,7 +1298,7 @@ class Peer(
         when (action) {
             is OnionMessageAction.PayInvoice -> {
                 _eventsFlow.emit(OfferInvoiceReceived(action.payOffer, action.invoice, action.payerKey))
-                input.send(PayInvoice(action.payOffer.paymentId, action.payOffer.amount, action.invoice.nodeId, LightningOutgoingPayment.Details.Blinded(action.invoice, action.payerKey), action.payOffer.trampolineFeesOverride))
+                input.send(PayInvoice(action.payOffer.paymentId, action.payOffer.amount, LightningOutgoingPayment.Details.Blinded(action.invoice, action.payerKey), action.payOffer.trampolineFeesOverride))
             }
             is OnionMessageAction.ReportPaymentFailure -> _eventsFlow.emit(OfferNotPaid(action.payOffer, action.failure))
             is OnionMessageAction.SendMessage -> input.send(SendMessage(action.message))
