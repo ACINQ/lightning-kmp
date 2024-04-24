@@ -229,7 +229,7 @@ data class NodeParams(
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
         liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false)),
         minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-        maxFinalCltvExpiryDelta = CltvExpiryDelta(500),
+        maxFinalCltvExpiryDelta = CltvExpiryDelta(360),
         bolt12invoiceExpiry = 60.seconds
     )
 
