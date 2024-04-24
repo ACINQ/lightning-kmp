@@ -721,7 +721,8 @@ object OfferTypes {
         val issuer: String? = records.get<OfferIssuer>()?.issuer
         val quantityMax: Long? = records.get<OfferQuantityMax>()?.max?.let { if (it == 0L) Long.MAX_VALUE else it }
         val nodeId: PublicKey? = records.get<OfferNodeId>()?.publicKey
-        val contactInfos: List<ContactInfo> = paths ?: listOfNotNull(nodeId?.let { ContactInfo.RecipientNodeId(it) })
+        // A valid offer must contain a blinded path or a nodeId.
+        val contactInfos: List<ContactInfo> = paths ?: listOf(ContactInfo.RecipientNodeId(nodeId!!))
 
         fun encode(): String {
             val data = tlvSerializer.write(records)
