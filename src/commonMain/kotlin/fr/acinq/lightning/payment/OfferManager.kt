@@ -22,12 +22,15 @@ import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 
 sealed class OnionMessageAction {
-    data class SendMessage(val message: OnionMessage): OnionMessageAction()
-    data class PayInvoice(val payOffer: PayOffer, val invoice: Bolt12Invoice, val payerKey: PrivateKey): OnionMessageAction()
-    data class ReportPaymentFailure(val payOffer: PayOffer, val failure: OfferPaymentFailure): OnionMessageAction()
+    /** Send an outgoing onion message (invoice or invoice_request). */
+    data class SendMessage(val message: OnionMessage) : OnionMessageAction()
+    /** We received a valid invoice for an offer we're trying to pay: we should now pay that invoice. */
+    data class PayInvoice(val payOffer: PayOffer, val invoice: Bolt12Invoice) : OnionMessageAction()
+    /** We couldn't pay the requested offer. */
+    data class ReportPaymentFailure(val payOffer: PayOffer, val failure: OfferPaymentFailure) : OnionMessageAction()
 }
 
-private data class PendingInvoiceRequest(val payOffer: PayOffer, val payerKey: PrivateKey, val request: OfferTypes.InvoiceRequest, val createdAtSeconds: Long)
+private data class PendingInvoiceRequest(val payOffer: PayOffer, val request: OfferTypes.InvoiceRequest, val createdAtSeconds: Long)
 
 class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, val logger: MDCLogger) {
     val remoteNodeId: PublicKey = walletParams.trampolineNode.id
@@ -41,7 +44,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     fun requestInvoice(payOffer: PayOffer): List<OnionMessage> {
         val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, 1, nodeParams.features.bolt12Features(), payOffer.payerKey, nodeParams.chainHash)
         val replyPathId = randomBytes32()
-        pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, payOffer.payerKey, request, currentTimestampSeconds())
+        pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, request, currentTimestampSeconds())
         val numHopsToAdd = 2
         val replyPathHops = (listOf(remoteNodeId) + List(numHopsToAdd) { nodeParams.nodeId }).map { IntermediateNode(it) }
         val lastHop = Destination.Recipient(nodeParams.nodeId, replyPathId)
@@ -56,7 +59,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             return null
         } else {
             if (pendingInvoiceRequests.containsKey(decrypted.pathId)) {
-                val (payOffer, payerKey, request, _) = pendingInvoiceRequests[decrypted.pathId]!!
+                val (payOffer, request, _) = pendingInvoiceRequests[decrypted.pathId]!!
                 pendingInvoiceRequests.remove(decrypted.pathId)
                 val invoice = decrypted.content.records.get<OnionMessagePayloadTlv.Invoice>()?.let { Bolt12Invoice.validate(it.tlvs).right }
                 if (invoice == null) {
@@ -65,7 +68,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     return OnionMessageAction.ReportPaymentFailure(payOffer, failure)
                 } else {
                     if (invoice.validateFor(request).isRight) {
-                        return OnionMessageAction.PayInvoice(payOffer, invoice, payerKey)
+                        return OnionMessageAction.PayInvoice(payOffer, invoice)
                     } else {
                         return OnionMessageAction.ReportPaymentFailure(
                             payOffer,
@@ -90,11 +93,13 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                         maxHtlc = amount,
                         allowedFeatures = Features.empty
                     )
-                    val remoteNodePayload = RouteBlindingEncryptedData(TlvStream(
-                        RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId.peerId(nodeParams.nodeId)),
-                        RouteBlindingEncryptedDataTlv.PaymentRelay(paymentInfo.cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
-                        RouteBlindingEncryptedDataTlv.PaymentConstraints((paymentInfo.cltvExpiryDelta + nodeParams.maxFinalCltvExpiryDelta).toCltvExpiry(currentBlockHeight.toLong()), paymentInfo.minHtlc)
-                    )).write().toByteVector()
+                    val remoteNodePayload = RouteBlindingEncryptedData(
+                        TlvStream(
+                            RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId.peerId(nodeParams.nodeId)),
+                            RouteBlindingEncryptedDataTlv.PaymentRelay(paymentInfo.cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
+                            RouteBlindingEncryptedDataTlv.PaymentConstraints((paymentInfo.cltvExpiryDelta + nodeParams.maxFinalCltvExpiryDelta).toCltvExpiry(currentBlockHeight.toLong()), paymentInfo.minHtlc)
+                        )
+                    ).write().toByteVector()
                     val blindedRoute = RouteBlinding.create(randomKey(), listOf(remoteNodeId, nodeParams.nodeId), listOf(remoteNodePayload, recipientPayload)).route
                     val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
                     val invoice = Bolt12Invoice(request, preimage, decrypted.blindedPrivateKey, nodeParams.bolt12invoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))

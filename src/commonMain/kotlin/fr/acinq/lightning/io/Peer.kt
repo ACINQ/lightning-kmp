@@ -105,7 +105,7 @@ data class PaymentNotSent(override val request: PayInvoice, val reason: Outgoing
 /** We successfully paid the corresponding request. */
 data class PaymentSent(override val request: PayInvoice, val payment: LightningOutgoingPayment) : SendPaymentResult()
 
-data class OfferInvoiceReceived(val request: PayOffer, val invoice: Bolt12Invoice, val payerKey: PrivateKey) : PeerEvent()
+data class OfferInvoiceReceived(val request: PayOffer, val invoice: Bolt12Invoice) : PeerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 /**
@@ -1311,8 +1311,8 @@ class Peer(
     private suspend fun processOnionMessageAction(action: OnionMessageAction) {
         when (action) {
             is OnionMessageAction.PayInvoice -> {
-                _eventsFlow.emit(OfferInvoiceReceived(action.payOffer, action.invoice, action.payerKey))
-                input.send(PayInvoice(action.payOffer.paymentId, action.payOffer.amount, LightningOutgoingPayment.Details.Blinded(action.invoice, action.payerKey), action.payOffer.trampolineFeesOverride))
+                _eventsFlow.emit(OfferInvoiceReceived(action.payOffer, action.invoice))
+                input.send(PayInvoice(action.payOffer.paymentId, action.payOffer.amount, LightningOutgoingPayment.Details.Blinded(action.invoice, action.payOffer.payerKey), action.payOffer.trampolineFeesOverride))
             }
             is OnionMessageAction.ReportPaymentFailure -> _eventsFlow.emit(OfferNotPaid(action.payOffer, action.failure))
             is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(action.message))
