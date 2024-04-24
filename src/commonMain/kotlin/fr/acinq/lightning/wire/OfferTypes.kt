@@ -714,7 +714,7 @@ object OfferTypes {
         } else {
             null // TODO: add exchange rates
         }
-        val description: String = records.get<OfferDescription>()!!.description
+        val description: String? = records.get<OfferDescription>()?.description
         val features: Features = records.get<OfferFeatures>()?.features ?: Features.empty
         val expirySeconds: Long? = records.get<OfferAbsoluteExpiry>()?.absoluteExpirySeconds
         private val paths: List<ContactInfo.BlindedPath>? = records.get<OfferPaths>()?.paths
@@ -739,24 +739,25 @@ object OfferTypes {
              * Create an offer without using a blinded path to hide our nodeId.
              *
              * @param amount amount if it can be determined at offer creation time.
-             * @param description description of the offer.
+             * @param description description of the offer (may be null if [amount] is also null).
              * @param nodeId the nodeId to use for this offer.
              * @param features invoice features.
              * @param chain chain on which the offer is valid.
              */
             internal fun createNonBlindedOffer(
                 amount: MilliSatoshi?,
-                description: String,
+                description: String?,
                 nodeId: PublicKey,
                 features: Features,
                 chain: BlockHash,
                 additionalTlvs: Set<OfferTlv> = setOf(),
                 customTlvs: Set<GenericTlv> = setOf()
             ): Offer {
+                if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
                 val tlvs: Set<OfferTlv> = setOfNotNull(
                     if (chain != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chain)) else null,
                     amount?.let { OfferAmount(it) },
-                    OfferDescription(description),
+                    description?.let { OfferDescription(it) },
                     if (features != Features.empty) OfferFeatures(features) else null,
                     OfferNodeId(nodeId)
                 )
@@ -767,7 +768,7 @@ object OfferTypes {
              * Create an offer using a single-hop blinded path going through our trampoline node.
              *
              * @param amount amount if it can be determined at offer creation time.
-             * @param description description of the offer.
+             * @param description description of the offer (may be null if [amount] is also null).
              * @param nodeParams our node parameters.
              * @param trampolineNode our trampoline node.
              * @param features features that should be advertised in the offer.
@@ -775,7 +776,7 @@ object OfferTypes {
              */
             fun createBlindedOffer(
                 amount: MilliSatoshi?,
-                description: String,
+                description: String?,
                 nodeParams: NodeParams,
                 trampolineNode: NodeUri,
                 features: Features,
@@ -783,11 +784,12 @@ object OfferTypes {
                 additionalTlvs: Set<OfferTlv> = setOf(),
                 customTlvs: Set<GenericTlv> = setOf()
             ): Offer {
+                if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
                 val path = OnionMessages.buildRoute(PrivateKey(pathId), listOf(OnionMessages.IntermediateNode(trampolineNode.id, ShortChannelId.peerId(nodeParams.nodeId))), OnionMessages.Destination.Recipient(nodeParams.nodeId, pathId))
                 val tlvs: Set<OfferTlv> = setOfNotNull(
                     if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
                     amount?.let { OfferAmount(it) },
-                    OfferDescription(description),
+                    description?.let { OfferDescription(it) },
                     if (features.bolt12Features() != Features.empty) OfferFeatures(features.bolt12Features()) else null,
                     // Note that we don't include an offer_node_id since we're using a blinded path.
                     OfferPaths(listOf(ContactInfo.BlindedPath(path))),
@@ -796,8 +798,8 @@ object OfferTypes {
             }
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
-                if (records.get<OfferDescription>() == null) return Left(MissingRequiredTlv(10L))
-                if (records.get<OfferNodeId>() == null && records.get<OfferPaths>() == null) return Left(MissingRequiredTlv(22L))
+                if (records.get<OfferDescription>() == null && records.get<OfferAmount>() != null) return Left(MissingRequiredTlv(10))
+                if (records.get<OfferNodeId>() == null && records.get<OfferPaths>() == null) return Left(MissingRequiredTlv(22))
                 if (records.unknown.any { it.tag >= 80 }) return Left(ForbiddenTlv(records.unknown.find { it.tag >= 80 }!!.tag))
                 return Right(Offer(records))
             }

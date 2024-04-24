@@ -37,7 +37,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
     override val amount: MilliSatoshi? = records.get<InvoiceAmount>()?.amount
     val nodeId: PublicKey = records.get<InvoiceNodeId>()!!.nodeId
     override val paymentHash: ByteVector32 = records.get<InvoicePaymentHash>()!!.hash
-    val description: String = invoiceRequest.offer.description
+    val description: String? = invoiceRequest.offer.description
     val createdAtSeconds: Long = records.get<InvoiceCreatedAt>()!!.timestampSeconds
     val relativeExpirySeconds: Long = records.get<InvoiceRelativeExpiry>()?.seconds ?: DEFAULT_EXPIRY_SECONDS
 

@@ -307,7 +307,6 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val nodeKey = randomKey()
         val tlvs = setOf(
             InvoiceRequestMetadata(ByteVector.fromHex("012345")),
-            OfferDescription("minimal invoice"),
             OfferNodeId(nodeKey.publicKey()),
             InvoiceRequestPayerId(randomKey().publicKey()),
             InvoicePaths(listOf(createPaymentBlindedRoute(randomKey().publicKey()).route)),
