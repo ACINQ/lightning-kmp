@@ -225,7 +225,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     logger.warning { "payment failed: ${FinalFailure.WalletRestarted}" }
                     db.completeOutgoingPaymentOffchain(payment.id, FinalFailure.WalletRestarted)
                     val request = when (payment.details) {
-                        is LightningOutgoingPayment.Details.Normal -> PayInvoice(payment.id, payment.recipientAmount, payment.recipient, payment.details)
+                        is LightningOutgoingPayment.Details.Normal -> PayInvoice(payment.id, payment.recipientAmount, payment.details)
                         else -> {
                             logger.debug { "cannot recreate send-payment-request failure from db data with details=${payment.details}" }
                             return null
@@ -289,7 +289,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 db.completeOutgoingLightningPart(partId, preimage)
                 // We try to re-create the request from what we have in the DB.
                 val request = when (payment.details) {
-                    is LightningOutgoingPayment.Details.Normal -> PayInvoice(payment.id, payment.recipientAmount, payment.recipient, payment.details)
+                    is LightningOutgoingPayment.Details.Normal -> PayInvoice(payment.id, payment.recipientAmount, payment.details)
                     else -> {
                         logger.warning { "cannot recreate send-payment-request fulfill from db data with details=${payment.details}" }
                         return null
@@ -343,9 +343,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 NodeHop(walletParams.trampolineNode.id, request.recipient, fees.cltvExpiryDelta, fees.calculateFees(request.amount))
             )
         }
-        when (request.paymentDetails) {
-            is LightningOutgoingPayment.Details.Normal -> {
-                val paymentRequest = request.paymentDetails.paymentRequest
+        when (val paymentRequest = request.paymentDetails.paymentRequest) {
+            is Bolt11Invoice -> {
                 val minFinalExpiryDelta = paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
                 val finalExpiry = nodeParams.paymentRecipientExpiryParams.computeFinalExpiry(currentBlockHeight, minFinalExpiryDelta)
                 val finalPayload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(request.amount, finalExpiry, paymentRequest.paymentSecret, paymentRequest.paymentMetadata)
@@ -358,12 +357,11 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 }
                 return Triple(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
             }
-            is LightningOutgoingPayment.Details.Blinded -> {
+            is Bolt12Invoice -> {
                 val finalExpiry = nodeParams.paymentRecipientExpiryParams.computeFinalExpiry(currentBlockHeight, CltvExpiryDelta(0))
-                val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(request.paymentDetails.paymentRequest, trampolineRoute.last(), request.amount, finalExpiry)
+                val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPaymentPacket.buildTrampolineToNonTrampolinePacket(paymentRequest, trampolineRoute.last(), request.amount, finalExpiry)
                 return Triple(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
             }
-            is LightningOutgoingPayment.Details.SwapOut -> throw NotImplementedError("Legacy swap-out payments are not supported.")
         }
     }
 
