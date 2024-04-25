@@ -57,6 +57,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
             "Blockaccino",
             offerManager.nodeParams,
             offerManager.walletParams.trampolineNode,
+            offerManager.nodeParams.features,
             pathId,
         )
         offerManager.registerOffer(offer, pathId)

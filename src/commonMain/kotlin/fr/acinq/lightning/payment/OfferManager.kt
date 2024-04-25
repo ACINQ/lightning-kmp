@@ -37,6 +37,11 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     private val pendingInvoiceRequests: HashMap<ByteVector32, PendingInvoiceRequest> = HashMap()
     private val localOffers: HashMap<ByteVector32, OfferTypes.Offer> = HashMap()
 
+    init {
+        val (defaultOfferPathId, defaultOffer) = nodeParams.defaultOffer(walletParams.trampolineNode)
+        registerOffer(defaultOffer, defaultOfferPathId)
+    }
+
     fun registerOffer(offer: OfferTypes.Offer, pathId: ByteVector32) {
         localOffers[pathId] = offer
     }
