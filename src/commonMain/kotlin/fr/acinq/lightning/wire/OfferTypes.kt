@@ -717,7 +717,7 @@ object OfferTypes {
         val description: String? = records.get<OfferDescription>()?.description
         val features: Features = records.get<OfferFeatures>()?.features ?: Features.empty
         val expirySeconds: Long? = records.get<OfferAbsoluteExpiry>()?.absoluteExpirySeconds
-        private val paths: List<ContactInfo.BlindedPath>? = records.get<OfferPaths>()?.paths
+        val paths: List<ContactInfo.BlindedPath>? = records.get<OfferPaths>()?.paths
         val issuer: String? = records.get<OfferIssuer>()?.issuer
         val quantityMax: Long? = records.get<OfferQuantityMax>()?.max?.let { if (it == 0L) Long.MAX_VALUE else it }
         val nodeId: PublicKey? = records.get<OfferNodeId>()?.publicKey

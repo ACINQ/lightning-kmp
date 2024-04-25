@@ -245,13 +245,10 @@ data class LightningOutgoingPayment(
     val recipientAmount: MilliSatoshi,
     val recipient: PublicKey,
     val details: Details,
-    val parts: List<Part>,
-    val status: Status,
+    val parts: List<Part> = listOf(),
+    val status: Status = Status.Pending,
     override val createdAt: Long = currentTimestampMillis()
 ) : OutgoingPayment() {
-
-    /** Create an outgoing payment in a pending status, without any parts yet. */
-    constructor(id: UUID, amount: MilliSatoshi, recipient: PublicKey, invoice: PaymentRequest) : this(id, amount, recipient, Details.Normal(invoice), listOf(), Status.Pending)
 
     val paymentHash: ByteVector32 = details.paymentHash
 
@@ -283,16 +280,17 @@ data class LightningOutgoingPayment(
     }
 
     sealed class Details {
+        abstract val paymentRequest: PaymentRequest
         abstract val paymentHash: ByteVector32
 
         /** A normal lightning payment. */
-        data class Normal(val paymentRequest: PaymentRequest) : Details() {
+        data class Normal(override val paymentRequest: Bolt11Invoice) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
 
-        /** KeySend payments are spontaneous donations that don't need an invoice from the recipient. */
-        data class KeySend(val preimage: ByteVector32) : Details() {
-            override val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
+        /** A blinded lightning payment. */
+        data class Blinded(override val paymentRequest: Bolt12Invoice, val payerKey: PrivateKey) : Details() {
+            override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
 
         /**
@@ -300,7 +298,7 @@ data class LightningOutgoingPayment(
          * Swap-out payments send a lightning payment to a swap server, which will send an on-chain transaction to a given address.
          * The swap-out fee is taken by the swap server to cover the miner fee.
          */
-        data class SwapOut(val address: String, val paymentRequest: PaymentRequest, val swapOutFee: Satoshi) : Details() {
+        data class SwapOut(val address: String, override val paymentRequest: PaymentRequest, val swapOutFee: Satoshi) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
     }

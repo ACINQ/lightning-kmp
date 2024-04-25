@@ -3,7 +3,7 @@ package fr.acinq.lightning.logging
 import co.touchlab.kermit.Logger
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.db.LightningOutgoingPayment
-import fr.acinq.lightning.io.SendPayment
+import fr.acinq.lightning.io.PayInvoice
 import fr.acinq.lightning.payment.PaymentPart
 import fr.acinq.lightning.wire.HasChannelId
 import fr.acinq.lightning.wire.HasTemporaryChannelId
@@ -63,7 +63,7 @@ fun PaymentPart.mdc(): Map<String, Any> = mapOf(
     "totalAmount" to totalAmount
 )
 
-fun SendPayment.mdc(): Map<String, Any> = mapOf(
+fun PayInvoice.mdc(): Map<String, Any> = mapOf(
     "paymentId" to paymentId,
     "paymentHash" to paymentHash,
     "amount" to amount,

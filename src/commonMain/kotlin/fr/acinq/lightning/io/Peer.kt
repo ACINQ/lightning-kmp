@@ -12,7 +12,9 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.*
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.logging.mdc
+import fr.acinq.lightning.logging.withMDC
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
@@ -70,12 +72,24 @@ data object Disconnected : PeerCommand()
 
 sealed class PaymentCommand : PeerCommand()
 private data object CheckPaymentsTimeout : PaymentCommand()
+private data class CheckInvoiceRequestTimeout(val pathId: ByteVector32, val payOffer: PayOffer) : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
-data class SendPayment(val paymentId: UUID, val amount: MilliSatoshi, val recipient: PublicKey, val paymentRequest: PaymentRequest, val trampolineFeesOverride: List<TrampolineFees>? = null) : PaymentCommand() {
-    val paymentHash: ByteVector32 = paymentRequest.paymentHash
+
+// @formatter:off
+sealed class SendPayment : PaymentCommand() {
+    abstract val paymentId: UUID
+    abstract val amount: MilliSatoshi
 }
+data class PayInvoice(override val paymentId: UUID, override val amount: MilliSatoshi, val paymentDetails: LightningOutgoingPayment.Details, val trampolineFeesOverride: List<TrampolineFees>? = null) : SendPayment() {
+    val paymentHash: ByteVector32 = paymentDetails.paymentHash
+    val recipient: PublicKey = paymentDetails.paymentRequest.nodeId
+}
+data class PayOffer(override val paymentId: UUID, val payerKey: PrivateKey, override val amount: MilliSatoshi, val offer: OfferTypes.Offer, val fetchInvoiceTimeout: Duration, val trampolineFeesOverride: List<TrampolineFees>? = null) : SendPayment()
+// @formatter:on
 
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
+
+data class SendOnionMessage(val message: OnionMessage) : PeerCommand()
 
 sealed class PeerEvent
 @Deprecated("Replaced by NodeEvents", replaceWith = ReplaceWith("PaymentEvents.PaymentReceived", "fr.acinq.lightning.PaymentEvents"))
@@ -84,8 +98,14 @@ data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : P
 sealed class SendPaymentResult : PeerEvent() {
     abstract val request: SendPayment
 }
-data class PaymentNotSent(override val request: SendPayment, val reason: OutgoingPaymentFailure) : SendPaymentResult()
-data class PaymentSent(override val request: SendPayment, val payment: LightningOutgoingPayment) : SendPaymentResult()
+/** We couldn't obtain a valid invoice to pay the corresponding offer. */
+data class OfferNotPaid(override val request: PayOffer, val reason: OfferPaymentFailure) : SendPaymentResult()
+/** We couldn't pay the corresponding invoice. */
+data class PaymentNotSent(override val request: PayInvoice, val reason: OutgoingPaymentFailure) : SendPaymentResult()
+/** We successfully paid the corresponding request. */
+data class PaymentSent(override val request: PayInvoice, val payment: LightningOutgoingPayment) : SendPaymentResult()
+
+data class OfferInvoiceReceived(val request: PayOffer, val invoice: Bolt12Invoice) : PeerEvent()
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 /**
@@ -199,6 +219,8 @@ class Peer(
     val swapInWallet = SwapInWallet(nodeParams.chain, nodeParams.keyManager.swapInOnChainWallet, watcher.client, scope, nodeParams.loggerFactory)
 
     private var swapInJob: Job? = null
+
+    private val offerManager = OfferManager(nodeParams, walletParams, _eventsFlow, logger)
 
     init {
         logger.info { "initializing peer" }
@@ -608,7 +630,7 @@ class Peer(
             }
     }
 
-    suspend fun sendLightning(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
+    suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = randomUUID()
         this.launch {
@@ -618,7 +640,21 @@ class Peer(
                 .first()
             )
         }
-        send(SendPayment(paymentId, amount, paymentRequest.nodeId, paymentRequest))
+        send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Normal(paymentRequest)))
+        return res.await()
+    }
+
+    suspend fun payOffer(amount: MilliSatoshi, offer: OfferTypes.Offer, payerKey: PrivateKey, fetchInvoiceTimeout: Duration): SendPaymentResult {
+        val res = CompletableDeferred<SendPaymentResult>()
+        val paymentId = randomUUID()
+        this.launch {
+            res.complete(eventsFlow
+                .filterIsInstance<SendPaymentResult>()
+                .filter { it.request.paymentId == paymentId }
+                .first()
+            )
+        }
+        send(PayOffer(paymentId, payerKey, amount, offer, fetchInvoiceTimeout))
         return res.await()
     }
 
@@ -1091,7 +1127,20 @@ class Peer(
                     }
                     is OnionMessage -> {
                         logger.info { "received ${msg::class.simpleName}" }
-                        // TODO: process onion message
+                        val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
+                            when (channelState) {
+                                is Normal -> channelState.remoteChannelUpdate
+                                is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
+                                is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
+                                else -> null
+                            }
+                        }
+                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first().first)?.let {
+                            when (it) {
+                                is OnionMessageAction.PayInvoice -> input.send(PayInvoice(it.payOffer.paymentId, it.payOffer.amount, LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey), it.payOffer.trampolineFeesOverride))
+                                is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(it.message))
+                            }
+                        }
                     }
                 }
             }
@@ -1187,7 +1236,7 @@ class Peer(
                 logger.info { "sending ${cmd.payToOpenResponse::class.simpleName}" }
                 peerConnection?.send(cmd.payToOpenResponse)
             }
-            is SendPayment -> {
+            is PayInvoice -> {
                 val currentTip = currentTipFlow.filterNotNull().first()
                 when (val result = outgoingPaymentHandler.sendPayment(cmd, _channels, currentTip.first)) {
                     is OutgoingPaymentHandler.Progress -> {
@@ -1240,6 +1289,18 @@ class Peer(
                     }
                 }
             }
+            is PayOffer -> {
+                val (pathId, invoiceRequests) = offerManager.requestInvoice(cmd)
+                invoiceRequests.forEach { input.send(SendOnionMessage(it)) }
+                coroutineScope {
+                    launch {
+                        delay(cmd.fetchInvoiceTimeout)
+                        input.send(CheckInvoiceRequestTimeout(pathId, cmd))
+                    }
+                }
+            }
+            is CheckInvoiceRequestTimeout -> offerManager.checkInvoiceRequestTimeout(cmd.pathId, cmd.payOffer)
+            is SendOnionMessage -> peerConnection?.send(cmd.message)
         }
     }
 }

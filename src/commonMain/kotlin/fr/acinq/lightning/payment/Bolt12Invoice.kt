@@ -35,7 +35,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
     val invoiceRequest: InvoiceRequest = InvoiceRequest.validate(filterInvoiceRequestFields(records)).right!!
 
     override val amount: MilliSatoshi? = records.get<InvoiceAmount>()?.amount
-    val nodeId: PublicKey = records.get<InvoiceNodeId>()!!.nodeId
+    override val nodeId: PublicKey = records.get<InvoiceNodeId>()!!.nodeId
     override val paymentHash: ByteVector32 = records.get<InvoicePaymentHash>()!!.hash
     val description: String? = invoiceRequest.offer.description
     val createdAtSeconds: Long = records.get<InvoiceCreatedAt>()!!.timestampSeconds
@@ -54,10 +54,11 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
     override fun isExpired(currentTimestampSeconds: Long): Boolean = createdAtSeconds + relativeExpirySeconds <= currentTimestampSeconds
 
     // It is assumed that the request is valid for this offer.
-    fun validateFor(request: InvoiceRequest): Either<String, Unit> =
-        if (invoiceRequest.unsigned() != request.unsigned()) {
+    fun validateFor(request: InvoiceRequest): Either<String, Unit> {
+        val offerNodeIds = invoiceRequest.offer.nodeId?.let { listOf(it) } ?: invoiceRequest.offer.paths!!.map { it.route.blindedNodeIds.last() }
+        return if (invoiceRequest.unsigned() != request.unsigned()) {
             Either.Left("Invoice does not match request")
-        } else if (nodeId != invoiceRequest.offer.nodeId) {
+        } else if (!offerNodeIds.contains(nodeId)) {
             Either.Left("Wrong node id")
         } else if (isExpired()) {
             Either.Left("Invoice expired")
@@ -70,6 +71,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
         } else {
             Either.Right(Unit)
         }
+    }
 
     fun checkSignature(): Boolean =
         verifySchnorr(signatureTag, rootHash(removeSignature(records)), signature, nodeId)

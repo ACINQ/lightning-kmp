@@ -1,6 +1,7 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
@@ -9,6 +10,7 @@ import fr.acinq.lightning.utils.currentTimestampSeconds
 sealed class PaymentRequest {
     abstract val amount: MilliSatoshi?
     abstract val paymentHash: ByteVector32
+    abstract val nodeId: PublicKey
     abstract val features: Features
 
     abstract fun isExpired(currentTimestampSeconds: Long = currentTimestampSeconds()): Boolean
