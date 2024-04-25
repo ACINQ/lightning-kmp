@@ -389,7 +389,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
     @Test
     fun `build a trampoline payment to blinded paths`() {
         val features = Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional)
-        val offer = OfferTypes.Offer.createInternal(finalAmount, "test offer", e, features, Block.LivenetGenesisBlock.hash)
+        val offer = OfferTypes.Offer.createNonBlindedOffer(finalAmount, "test offer", e, features, Block.LivenetGenesisBlock.hash)
         // E uses a 1-hop blinded path from its LSP.
         val (invoice, blindedRoute) = run {
             val payerKey = randomKey()
