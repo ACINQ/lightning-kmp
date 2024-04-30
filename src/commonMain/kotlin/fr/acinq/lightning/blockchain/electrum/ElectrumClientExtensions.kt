@@ -1,12 +1,14 @@
 package fr.acinq.lightning.blockchain.electrum
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalFundingStatus
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
 
@@ -55,4 +57,17 @@ suspend fun IElectrumClient.computeSpliceCpfpFeerate(commitments: Commitments, t
     logger.info { "projectedFeerate=$projectedFeerate projectedFee=$projectedFee" }
     logger.info { "actualFeerate=$actualFeerate actualFee=$actualFee" }
     return Pair(actualFeerate, actualFee)
+}
+
+suspend fun IElectrumClient.spendExpiredSwapIn(swapInKeys: KeyManager.SwapInOnChainKeys, wallet: WalletState.WalletWithConfirmations, scriptPubKey: ByteVector, feerate: FeeratePerKw): Transaction? {
+    val utxos = wallet.readyForRefund.map {
+        KeyManager.SwapInOnChainKeys.SwapInUtxo(
+            txOut = it.txOut,
+            outPoint = it.outPoint,
+            addressIndex = it.addressMeta.indexOrNull
+        )
+    }
+    val tx = swapInKeys.createRecoveryTransaction(utxos, scriptPubKey, feerate)
+    tx?.let { broadcastTransaction(tx) }
+    return tx
 }

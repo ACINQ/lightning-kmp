@@ -35,7 +35,8 @@ data class WalletState(val addresses: Map<String, AddressState>) {
 
     data class Utxo(val txId: TxId, val outputIndex: Int, val blockHeight: Long, val previousTx: Transaction, val addressMeta: AddressMeta) {
         val outPoint = OutPoint(previousTx, outputIndex.toLong())
-        val amount = previousTx.txOut[outputIndex].amount
+        val txOut = previousTx.txOut[outputIndex]
+        val amount = txOut.amount
     }
 
     data class AddressState(val meta: AddressMeta, val alreadyUsed: Boolean, val utxos: List<Utxo>)
@@ -43,13 +44,13 @@ data class WalletState(val addresses: Map<String, AddressState>) {
     sealed class AddressMeta {
         data object Single : AddressMeta()
         data class Derived(val index: Int) : AddressMeta()
-    }
 
-    val AddressMeta.indexOrNull: Int?
-        get() = when (this) {
-            is AddressMeta.Single -> null
-            is AddressMeta.Derived -> this.index
-        }
+        val indexOrNull: Int?
+            get() = when (this) {
+                is Single -> null
+                is Derived -> this.index
+            }
+    }
 
     /**
      * The utxos of a wallet may be discriminated against their number of confirmations. Typically, this is used in the

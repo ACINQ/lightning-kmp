@@ -11,6 +11,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.transactions.SwapInProtocol
 import fr.acinq.lightning.transactions.SwapInProtocolLegacy
 import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.LightningCodecs
@@ -161,49 +162,75 @@ interface KeyManager {
             return swapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts, userPrivateKey, privateNonce, userNonce, serverNonce)
         }
 
+        data class SwapInUtxo(val txOut: TxOut, val outPoint: OutPoint, val addressIndex: Int?)
+
+        /**
+         * Create a recovery transaction that spends swap-in outputs after their refund delay has passed.
+         * @param utxos a list of swap-in utxos
+         * @param scriptPubKey pubkey script to send funds to
+         * @param feerate fee rate for the refund transaction
+         * @return a signed transaction that spends our swap-in transaction. It cannot be published until `swapInTx` has enough confirmations
+         */
+        fun createRecoveryTransaction(utxos: List<SwapInUtxo>, scriptPubKey: ByteVector, feerate: FeeratePerKw): Transaction? {
+            return if (utxos.isEmpty()) {
+                null
+            } else {
+                val unsignedTx = Transaction(
+                    version = 2,
+                    txIn = utxos.map { TxIn(it.outPoint, sequence = refundDelay.toLong()) },
+                    txOut = listOf(TxOut(0.sat, scriptPubKey)),
+                    lockTime = 0
+                )
+
+                fun sign(tx: Transaction, inputIndex: Int, utxo: SwapInUtxo): Transaction {
+                    return when (val addressIndex = utxo.addressIndex) {
+                        null -> {
+                            val sig = legacySwapInProtocol.signSwapInputUser(tx, inputIndex, utxo.txOut, userPrivateKey)
+                            tx.updateWitness(inputIndex, legacySwapInProtocol.witnessRefund(sig))
+                        }
+                        else -> {
+                            val userRefundPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(userRefundExtendedPrivateKey, addressIndex.toLong()).privateKey
+                            val swapInProtocol = getSwapInProtocol(addressIndex)
+                            val sig = swapInProtocol.signSwapInputRefund(tx, inputIndex, utxos.map { it.txOut }, userRefundPrivateKey)
+                            tx.updateWitness(inputIndex, swapInProtocol.witnessRefund(sig))
+                        }
+                    }
+                }
+
+                val fees = run {
+                    val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo -> sign(tx, index, utxo) }
+                    Transactions.weight2fee(feerate, recoveryTx.weight())
+                }
+                val inputAmount = utxos.map { it.txOut.amount }.sum()
+                val outputAmount = inputAmount - fees
+                val unsignedTx1 = unsignedTx.copy(txOut = listOf(TxOut(outputAmount, scriptPubKey)))
+                val signedTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo -> sign(tx, index, utxo) }
+                signedTx
+            }
+        }
+
         /**
          * Create a recovery transaction that spends a swap-in transaction after the refund delay has passed
          * @param swapInTx swap-in transaction
          * @param address address to send funds to
-         * @param feeRate fee rate for the refund transaction
+         * @param feerate fee rate for the refund transaction
          * @return a signed transaction that spends our swap-in transaction. It cannot be published until `swapInTx` has enough confirmations
          */
-        fun createRecoveryTransaction(swapInTx: Transaction, address: String, feeRate: FeeratePerKw): Transaction? {
+        fun createRecoveryTransaction(swapInTx: Transaction, address: String, feerate: FeeratePerKw): Transaction? {
             val swapInProtocols = (0 until 100).map { getSwapInProtocol(it) }
             val utxos = swapInTx.txOut.filter { it.publicKeyScript.contentEquals(Script.write(legacySwapInProtocol.pubkeyScript)) || swapInProtocols.find { p -> p.serializedPubkeyScript == it.publicKeyScript } != null }
             return if (utxos.isEmpty()) {
                 null
             } else {
                 Bitcoin.addressToPublicKeyScript(chain.chainHash, address).right?.let { script ->
-                    val ourOutput = TxOut(utxos.map { it.amount }.sum(), script)
-                    val unsignedTx = Transaction(
-                        version = 2,
-                        txIn = utxos.map { TxIn(OutPoint(swapInTx, swapInTx.txOut.indexOf(it).toLong()), sequence = refundDelay.toLong()) },
-                        txOut = listOf(ourOutput),
-                        lockTime = 0
-                    )
-
-                    fun sign(tx: Transaction, index: Int, utxo: TxOut): Transaction {
-                        return if (Script.isPay2wsh(utxo.publicKeyScript.toByteArray())) {
-                            val sig = legacySwapInProtocol.signSwapInputUser(tx, index, utxo, userPrivateKey)
-                            tx.updateWitness(index, legacySwapInProtocol.witnessRefund(sig))
-                        } else {
-                            val i = swapInProtocols.indexOfFirst { it.serializedPubkeyScript == utxo.publicKeyScript }
-                            val userRefundPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(userRefundExtendedPrivateKey, i.toLong()).privateKey
-                            val swapInProtocol = swapInProtocols[i]
-                            val sig = swapInProtocol.signSwapInputRefund(tx, index, utxos, userRefundPrivateKey)
-                            tx.updateWitness(index, swapInProtocol.witnessRefund(sig))
-                        }
+                    val swapInUtxos = utxos.map { txOut ->
+                        SwapInUtxo(
+                            txOut = txOut,
+                            outPoint = OutPoint(swapInTx, swapInTx.txOut.indexOf(txOut).toLong()),
+                            addressIndex = if (Script.isPay2wsh(txOut.publicKeyScript.toByteArray())) null else swapInProtocols.indexOfFirst { it.serializedPubkeyScript == txOut.publicKeyScript }
+                        )
                     }
-
-                    val fees = run {
-                        val recoveryTx = utxos.foldIndexed(unsignedTx) { index, tx, utxo -> sign(tx, index, utxo) }
-                        Transactions.weight2fee(feeRate, recoveryTx.weight())
-                    }
-                    val unsignedTx1 = unsignedTx.copy(txOut = listOf(ourOutput.copy(amount = ourOutput.amount - fees)))
-                    val recoveryTx = utxos.foldIndexed(unsignedTx1) { index, tx, utxo -> sign(tx, index, utxo) }
-                    // this tx is signed but cannot be published until swapInTx has `refundDelay` confirmations
-                    recoveryTx
+                    createRecoveryTransaction(swapInUtxos, ByteVector(Script.write(script)), feerate)
                 }
             }
         }
