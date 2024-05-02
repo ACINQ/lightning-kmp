@@ -64,7 +64,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
             channelId2 to Syncing(makeChannel(channelId2, 20_000.msat, 5.msat), channelReestablishSent = true),
             channelId3 to Offline(makeChannel(channelId3, 10_000.msat, 10.msat)),
         )
-        assertEquals(Either.Left(FinalFailure.NoAvailableChannels), routeCalculation.findRoutes(paymentId, 5_000.msat, channels))
+        assertEquals(Either.Left(FinalFailure.ChannelNotConnected), routeCalculation.findRoutes(paymentId, 5_000.msat, channels))
     }
 
     @Test
@@ -75,7 +75,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
             channelId2 to makeChannel(channelId2, 18_000.msat, 5.msat),
             channelId3 to makeChannel(channelId3, 12_000.msat, 10.msat),
         )
-        assertEquals(Either.Left(FinalFailure.InsufficientBalance), routeCalculation.findRoutes(paymentId, 50_000.msat, channels))
+        assertEquals(Either.Left(FinalFailure.InsufficientBalance(45_000.msat)), routeCalculation.findRoutes(paymentId, 50_000.msat, channels))
     }
 
     @Test
@@ -112,7 +112,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
             RouteCalculation.Route(20_000.msat, channels.getValue(channelId4)),
         )
         assertEquals(expected, routes.toSet())
-        assertEquals(Either.Left(FinalFailure.InsufficientBalance), routeCalculation.findRoutes(paymentId, 50010.msat, channels))
+        assertEquals(Either.Left(FinalFailure.InsufficientBalance(50000.msat)), routeCalculation.findRoutes(paymentId, 50010.msat, channels))
     }
 
     @Test
