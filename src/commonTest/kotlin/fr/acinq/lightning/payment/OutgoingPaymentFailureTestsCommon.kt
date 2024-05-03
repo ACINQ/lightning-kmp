@@ -48,6 +48,18 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `explain failures`() {
+        val failure = OutgoingPaymentFailure(
+            FinalFailure.NoAvailableChannels,
+            listOf(
+                Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42)),
+                Either.Right(PaymentTimeout),
+            )
+        )
+        assertEquals(Either.Left(LightningOutgoingPayment.Part.Status.Failure.RecipientLiquidityIssue), failure.explain())
+    }
+
+    @Test
     fun `prints technical details`() {
         val failure = OutgoingPaymentFailure(
             FinalFailure.InsufficientBalance(500.msat),

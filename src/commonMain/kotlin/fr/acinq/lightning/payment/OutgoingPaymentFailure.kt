@@ -40,6 +40,15 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
         failures.map { LightningOutgoingPayment.Part.Status.Failed(convertFailure(it), completedAt) }
     )
 
+    /** Extracts the most user-friendly reason for the payment failure. */
+    fun explain(): Either<LightningOutgoingPayment.Part.Status.Failure, FinalFailure> {
+        val partFailure = failures.map { it.failure }.lastOrNull { it !is LightningOutgoingPayment.Part.Status.Failure.Uninterpretable } ?: failures.lastOrNull()?.failure
+        return when (reason) {
+            FinalFailure.NoAvailableChannels, FinalFailure.UnknownError -> partFailure?.let { Either.Left(it) } ?: Either.Right(reason)
+            else -> Either.Right(reason)
+        }
+    }
+
     /**
      * A detailed summary of the all internal errors.
      * This is targeted at users with technical knowledge of the lightning protocol.
