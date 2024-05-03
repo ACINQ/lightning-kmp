@@ -4,9 +4,9 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.lightning.*
-import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.states.Channel
 import fr.acinq.lightning.channel.ChannelAction
+import fr.acinq.lightning.channel.ChannelException
+import fr.acinq.lightning.channel.states.Channel
 import fr.acinq.lightning.channel.states.ChannelState
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.SharedSecrets
@@ -15,10 +15,14 @@ import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.PayInvoice
 import fr.acinq.lightning.io.WrappedChannelCommand
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.logging.error
+import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.NodeHop
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.*
 
 class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
@@ -105,7 +109,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         val logger = MDCLogger(logger, staticMdc = mapOf("channelId" to channelId, "childPaymentId" to add.paymentId) + payment.request.mdc())
 
         logger.debug { "could not send HTLC: ${event.error.message}" }
-        db.completeOutgoingLightningPart(add.paymentId, Either.Left(event.error))
+        db.completeOutgoingLightningPart(add.paymentId, OutgoingPaymentFailure.convertFailure(Either.Left(event.error)))
 
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
@@ -147,7 +151,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
 
         logger.debug { "HTLC failed: ${failure.message}" }
-        db.completeOutgoingLightningPart(event.paymentId, Either.Right(failure))
+        db.completeOutgoingLightningPart(event.paymentId, OutgoingPaymentFailure.convertFailure(Either.Right(failure)))
 
         val (updated, result) = when (payment) {
             is PaymentAttempt.PaymentInProgress -> {
@@ -219,7 +223,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             else -> {
                 val logger = MDCLogger(logger, staticMdc = mapOf("childPaymentId" to partId) + payment.mdc())
                 logger.debug { "could not send HTLC (wallet restart): ${failure.fold({ it.message }, { it.message })}" }
-                db.completeOutgoingLightningPart(partId, failure)
+                val status = LightningOutgoingPayment.Part.Status.Failed(OutgoingPaymentFailure.convertFailure(failure))
+                db.completeOutgoingLightningPart(partId, status.failure)
                 val hasMorePendingParts = payment.parts.any { it.status == LightningOutgoingPayment.Part.Status.Pending && it.id != partId }
                 return if (!hasMorePendingParts) {
                     logger.warning { "payment failed: ${FinalFailure.WalletRestarted}" }
@@ -235,7 +240,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                         request = request,
                         failure = OutgoingPaymentFailure(
                             reason = FinalFailure.WalletRestarted,
-                            failures = payment.parts.map { it.status }.filterIsInstance<LightningOutgoingPayment.Part.Status.Failed>() + OutgoingPaymentFailure.convertFailure(failure)
+                            failures = payment.parts.map { it.status }.filterIsInstance<LightningOutgoingPayment.Part.Status.Failed>() + status
                         )
                     )
                 } else {

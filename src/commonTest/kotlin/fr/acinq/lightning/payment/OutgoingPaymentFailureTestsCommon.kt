@@ -3,6 +3,7 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.channel.TooManyAcceptedHtlcs
+import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
@@ -26,9 +27,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42))
             )
         )
-        assertIs<PartFailure.RouteFailure>(failure.failures[0].failure)
-        assertIs<PartFailure.RouteFailure>(failure.failures[1].failure)
-        assertIsNot<PartFailure.RouteFailure>(failure.failures[2].failure)
+        assertIs<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[0].failure)
+        assertIs<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[1].failure)
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[2].failure)
     }
 
     @Test
@@ -41,9 +42,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Right(IncorrectOrUnknownPaymentDetails(100_000.msat, 150))
             )
         )
-        assertIsNot<PartFailure.RecipientRejectedPayment>(failure.failures[0].failure)
-        assertIsNot<PartFailure.RecipientRejectedPayment>(failure.failures[1].failure)
-        assertIs<PartFailure.RecipientRejectedPayment>(failure.failures[2].failure)
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[0].failure)
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[1].failure)
+        assertIs<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[2].failure)
     }
 
     @Test

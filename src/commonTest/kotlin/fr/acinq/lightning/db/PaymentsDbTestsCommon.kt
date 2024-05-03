@@ -8,14 +8,11 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.channel.TooManyAcceptedHtlcs
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.FinalFailure
-import fr.acinq.lightning.payment.PartFailure
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.wire.TemporaryNodeFailure
 import kotlin.test.*
 
 class PaymentsDbTestsCommon : LightningTestSuite() {
@@ -212,16 +209,16 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         // One of the parts fails.
         val onePartFailed = initialPayment.copy(
             parts = listOf(
-                initialParts[0].copy(status = LightningOutgoingPayment.Part.Status.Failed(PartFailure.TemporaryRemoteFailure, 110)),
+                initialParts[0].copy(status = LightningOutgoingPayment.Part.Status.Failed(LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure, 110)),
                 initialParts[1]
             )
         )
-        db.completeOutgoingLightningPart(initialPayment.parts[0].id, Either.Right(TemporaryNodeFailure), 110)
+        db.completeOutgoingLightningPart(initialPayment.parts[0].id, LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure, 110)
         assertEquals(onePartFailed, db.getLightningOutgoingPayment(initialPayment.id))
         initialPayment.parts.forEach { assertEquals(onePartFailed, db.getLightningOutgoingPaymentFromPartId(it.id)) }
 
         // We should never update non-existing parts.
-        assertFails { db.completeOutgoingLightningPart(UUID.randomUUID(), Either.Right(TemporaryNodeFailure)) }
+        assertFails { db.completeOutgoingLightningPart(UUID.randomUUID(), LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure) }
         assertFails { db.completeOutgoingLightningPart(UUID.randomUUID(), randomBytes32()) }
 
         // Other payment parts are added.
@@ -346,15 +343,14 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         db.addOutgoingPayment(initialPayment)
         assertEquals(initialPayment, db.getLightningOutgoingPayment(initialPayment.id))
 
-        val channelId = randomBytes32()
         val partsFailed = initialPayment.copy(
             parts = listOf(
-                initialParts[0].copy(status = LightningOutgoingPayment.Part.Status.Failed(PartFailure.TemporaryRemoteFailure, 110)),
-                initialParts[1].copy(status = LightningOutgoingPayment.Part.Status.Failed(PartFailure.TooManyPendingPayments, 111)),
+                initialParts[0].copy(status = LightningOutgoingPayment.Part.Status.Failed(LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure, 110)),
+                initialParts[1].copy(status = LightningOutgoingPayment.Part.Status.Failed(LightningOutgoingPayment.Part.Status.Failure.TooManyPendingPayments, 111)),
             )
         )
-        db.completeOutgoingLightningPart(initialPayment.parts[0].id, Either.Right(TemporaryNodeFailure), 110)
-        db.completeOutgoingLightningPart(initialPayment.parts[1].id, Either.Left(TooManyAcceptedHtlcs(channelId, 10)), 111)
+        db.completeOutgoingLightningPart(initialPayment.parts[0].id, LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure, 110)
+        db.completeOutgoingLightningPart(initialPayment.parts[1].id, LightningOutgoingPayment.Part.Status.Failure.TooManyPendingPayments, 111)
         assertEquals(partsFailed, db.getLightningOutgoingPayment(initialPayment.id))
         initialPayment.parts.forEach { assertEquals(partsFailed, db.getLightningOutgoingPaymentFromPartId(it.id)) }
 
