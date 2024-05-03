@@ -56,9 +56,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42))
             )
         )
-        val expected = "1: general temporary failure of the processing node\n" +
-                "2: processing node does not know the next peer in the route\n" +
-                "3: 0000000000000000000000000000000000000000000000000000000000000000: too many accepted htlcs: maximum=42\n"
+        val expected = "1: TemporaryRemoteFailure\n" +
+                "2: RecipientIsOffline\n" +
+                "3: TooManyPendingPayments\n"
         assertEquals(failure.details(), expected)
     }
 

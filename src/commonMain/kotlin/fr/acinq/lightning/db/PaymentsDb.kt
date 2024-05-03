@@ -337,14 +337,7 @@ data class LightningOutgoingPayment(
         sealed class Status {
             data object Pending : Status()
             data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
-
-            /**
-             * @param remoteFailureCode Bolt4 failure code when the failure came from a remote node (see [FailureMessage]).
-             * If null this was a local error (channel unavailable for low-level technical reasons).
-             */
-            data class Failed(val remoteFailureCode: Int?, val details: String, val completedAt: Long = currentTimestampMillis()) : Status() {
-                fun isLocalFailure(): Boolean = remoteFailureCode == null
-            }
+            data class Failed(val failure: PartFailure, val completedAt: Long = currentTimestampMillis()) : Status()
         }
     }
 }

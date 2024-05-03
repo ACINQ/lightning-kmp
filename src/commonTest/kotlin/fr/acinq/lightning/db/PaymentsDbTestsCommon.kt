@@ -1,6 +1,9 @@
 package fr.acinq.lightning.db
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -8,7 +11,7 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.TooManyAcceptedHtlcs
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.FinalFailure
-import fr.acinq.lightning.payment.PaymentRequest
+import fr.acinq.lightning.payment.PartFailure
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
@@ -209,7 +212,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         // One of the parts fails.
         val onePartFailed = initialPayment.copy(
             parts = listOf(
-                initialParts[0].copy(status = LightningOutgoingPayment.Part.Status.Failed(TemporaryNodeFailure.code, TemporaryNodeFailure.message, 110)),
+                initialParts[0].copy(status = LightningOutgoingPayment.Part.Status.Failed(PartFailure.TemporaryRemoteFailure, 110)),
                 initialParts[1]
             )
         )
@@ -346,8 +349,8 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val channelId = randomBytes32()
         val partsFailed = initialPayment.copy(
             parts = listOf(
-                initialParts[0].copy(status = LightningOutgoingPayment.Part.Status.Failed(TemporaryNodeFailure.code, TemporaryNodeFailure.message, 110)),
-                initialParts[1].copy(status = LightningOutgoingPayment.Part.Status.Failed(null, TooManyAcceptedHtlcs(channelId, 10).details(), 111)),
+                initialParts[0].copy(status = LightningOutgoingPayment.Part.Status.Failed(PartFailure.TemporaryRemoteFailure, 110)),
+                initialParts[1].copy(status = LightningOutgoingPayment.Part.Status.Failed(PartFailure.TooManyPendingPayments, 111)),
             )
         )
         db.completeOutgoingLightningPart(initialPayment.parts[0].id, Either.Right(TemporaryNodeFailure), 110)

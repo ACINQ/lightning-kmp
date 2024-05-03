@@ -732,8 +732,6 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (channelId, add) = filterAddHtlcCommands(progress).first()
         val fail = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, TooManyAcceptedHtlcs(channelId, 15), null), channels) as OutgoingPaymentHandler.Failure
         assertEquals(FinalFailure.InsufficientBalance(0.msat), fail.failure.reason)
-        assertEquals(5, fail.failure.failures.filter { it.isLocalFailure() }.size)
-
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 5)
     }
