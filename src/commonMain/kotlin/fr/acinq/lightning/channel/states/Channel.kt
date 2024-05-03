@@ -665,7 +665,7 @@ object Channel {
 
     // this is defined in BOLT 11
     val MIN_CLTV_EXPIRY_DELTA = CltvExpiryDelta(18)
-    val MAX_CLTV_EXPIRY_DELTA = CltvExpiryDelta(7 * 144) // one week
+    val MAX_CLTV_EXPIRY_DELTA = CltvExpiryDelta(2 * 7 * 144) // two weeks
 
     // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
     val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
