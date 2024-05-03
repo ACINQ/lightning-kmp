@@ -11,8 +11,8 @@ import fr.acinq.lightning.wire.TemporaryNodeFailure
 import fr.acinq.lightning.wire.UnknownNextPeer
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.assertIs
+import kotlin.test.assertIsNot
 
 class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
 
@@ -26,9 +26,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42))
             )
         )
-        assertTrue(OutgoingPaymentFailure.isRouteError(failure.failures[0]))
-        assertTrue(OutgoingPaymentFailure.isRouteError(failure.failures[1]))
-        assertFalse(OutgoingPaymentFailure.isRouteError(failure.failures[2]))
+        assertIs<PartFailure.RouteFailure>(failure.failures[0].failure)
+        assertIs<PartFailure.RouteFailure>(failure.failures[1].failure)
+        assertIsNot<PartFailure.RouteFailure>(failure.failures[2].failure)
     }
 
     @Test
@@ -41,9 +41,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Right(IncorrectOrUnknownPaymentDetails(100_000.msat, 150))
             )
         )
-        assertFalse(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[0]))
-        assertFalse(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[1]))
-        assertTrue(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[2]))
+        assertIsNot<PartFailure.RecipientRejectedPayment>(failure.failures[0].failure)
+        assertIsNot<PartFailure.RecipientRejectedPayment>(failure.failures[1].failure)
+        assertIs<PartFailure.RecipientRejectedPayment>(failure.failures[2].failure)
     }
 
     @Test

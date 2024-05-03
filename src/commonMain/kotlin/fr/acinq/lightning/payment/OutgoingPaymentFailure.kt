@@ -56,12 +56,13 @@ sealed class PartFailure {
     data object ChannelIsSplicing : PartFailure()
     /** The channel is closing: another channel should be created to send the payment. */
     data object ChannelIsClosing : PartFailure()
+    sealed class RouteFailure : PartFailure()
     /** A remote node had a temporary failure: the payment may succeed if retried. */
-    data object TemporaryRemoteFailure : PartFailure()
+    data object TemporaryRemoteFailure : RouteFailure()
     /** The payment amount could not be relayed to the recipient, most likely because they don't have enough inbound liquidity. */
-    data object RecipientLiquidityIssue : PartFailure()
+    data object RecipientLiquidityIssue : RouteFailure()
     /** The payment recipient is offline and could not accept the payment. */
-    data object RecipientIsOffline : PartFailure()
+    data object RecipientIsOffline : RouteFailure()
     /** The payment recipient received the payment but rejected it. */
     data object RecipientRejectedPayment : PartFailure()
     /** This is an error that cannot be easily interpreted: we don't know what exactly went wrong and cannot correctly inform the user. */
@@ -130,20 +131,6 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
                 }
             }
             return LightningOutgoingPayment.Part.Status.Failed(converted, completedAt)
-        }
-
-        /** Return true if this is a remote routing error. */
-        fun isRouteError(failure: LightningOutgoingPayment.Part.Status.Failed) = when (failure.failure) {
-            is PartFailure.TemporaryRemoteFailure -> true
-            is PartFailure.RecipientLiquidityIssue -> true
-            is PartFailure.RecipientIsOffline -> true
-            else -> false
-        }
-
-        /** Return true if the recipient received the payment and rejected it, indicating that we shouldn't retry. */
-        fun isRejectedByRecipient(failure: LightningOutgoingPayment.Part.Status.Failed) = when (failure.failure) {
-            is PartFailure.RecipientRejectedPayment -> true
-            else -> false
         }
     }
 }
