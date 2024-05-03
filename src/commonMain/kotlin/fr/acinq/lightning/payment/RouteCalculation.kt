@@ -9,7 +9,6 @@ import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sum
 
 class RouteCalculation(loggerFactory: LoggerFactory) {
 
@@ -52,7 +51,7 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
 
         return if (remaining > 0.msat) {
             logger.info { "insufficient balance: ${sortedChannels.joinToString { "${it.c.shortChannelId}->${it.balance}/${it.capacity}" }}" }
-            Either.Left(FinalFailure.InsufficientBalance(filteredChannels.map { it.balance }.sum()))
+            Either.Left(FinalFailure.InsufficientBalance)
         } else {
             logger.info { "routes found: ${routes.map { "${it.channel.shortChannelId}->${it.amount}" }}" }
             Either.Right(routes)

@@ -1,7 +1,6 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.utils.currentTimestampMillis
@@ -25,7 +24,7 @@ sealed class FinalFailure {
     data object ChannelOpening : FinalFailure() { override fun toString(): String = "channel creation is in progress, please retry when ready" }
     data object ChannelClosing : FinalFailure() { override fun toString(): String = "channel closing is in progress, please retry when a new channel has been created" }
     data object NoAvailableChannels : FinalFailure() { override fun toString(): String = "payment could not be sent through existing channels, check individual failures for more details" }
-    data class InsufficientBalance(val available: MilliSatoshi) : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment (available = $available)" }
+    data object InsufficientBalance : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment" }
     data object NoRouteToRecipient : FinalFailure() { override fun toString(): String = "unable to route payment to recipient" }
     data object RecipientUnreachable : FinalFailure() { override fun toString(): String = "the recipient was offline or did not have enough liquidity to receive the payment" }
     data object RetryExhausted: FinalFailure() { override fun toString(): String = "payment attempts exhausted without success" }

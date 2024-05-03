@@ -20,7 +20,7 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
     @Test
     fun `identify common route failures`() {
         val failure = OutgoingPaymentFailure(
-            FinalFailure.InsufficientBalance(100.msat),
+            FinalFailure.InsufficientBalance,
             listOf(
                 Either.Right(TemporaryNodeFailure),
                 Either.Right(UnknownNextPeer),
@@ -62,7 +62,7 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
     @Test
     fun `prints technical details`() {
         val failure = OutgoingPaymentFailure(
-            FinalFailure.InsufficientBalance(500.msat),
+            FinalFailure.InsufficientBalance,
             listOf(
                 Either.Right(TemporaryNodeFailure),
                 Either.Right(UnknownNextPeer),
