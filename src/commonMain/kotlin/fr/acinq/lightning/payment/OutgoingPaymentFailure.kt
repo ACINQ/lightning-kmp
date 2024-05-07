@@ -25,7 +25,6 @@ sealed class FinalFailure {
     data object ChannelClosing : FinalFailure() { override fun toString(): String = "channel closing is in progress, please retry when a new channel has been created" }
     data object NoAvailableChannels : FinalFailure() { override fun toString(): String = "payment could not be sent through existing channels, check individual failures for more details" }
     data object InsufficientBalance : FinalFailure() { override fun toString(): String = "not enough funds in wallet to afford payment" }
-    data object NoRouteToRecipient : FinalFailure() { override fun toString(): String = "unable to route payment to recipient" }
     data object RecipientUnreachable : FinalFailure() { override fun toString(): String = "the recipient was offline or did not have enough liquidity to receive the payment" }
     data object RetryExhausted: FinalFailure() { override fun toString(): String = "payment attempts exhausted without success" }
     data object WalletRestarted: FinalFailure() { override fun toString(): String = "wallet restarted while a payment was ongoing" }
@@ -43,7 +42,7 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
     fun explain(): Either<LightningOutgoingPayment.Part.Status.Failure, FinalFailure> {
         val partFailure = failures.map { it.failure }.lastOrNull { it !is LightningOutgoingPayment.Part.Status.Failure.Uninterpretable } ?: failures.lastOrNull()?.failure
         return when (reason) {
-            FinalFailure.NoAvailableChannels, FinalFailure.UnknownError -> partFailure?.let { Either.Left(it) } ?: Either.Right(reason)
+            FinalFailure.NoAvailableChannels, FinalFailure.UnknownError, FinalFailure.RetryExhausted -> partFailure?.let { Either.Left(it) } ?: Either.Right(reason)
             else -> Either.Right(reason)
         }
     }
