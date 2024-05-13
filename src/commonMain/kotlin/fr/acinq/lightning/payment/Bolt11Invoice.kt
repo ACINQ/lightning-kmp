@@ -75,12 +75,7 @@ data class Bolt11Invoice(
     }
 
     private fun signedPreimage(): ByteArray {
-        val stream = BitStream()
-        rawData().forEach {
-            val bits = toBits(it)
-            stream.writeBits(bits)
-        }
-        return hrp().encodeToByteArray() + stream.getBytes()
+        return hrp().encodeToByteArray() + toByteArray(rawData())
     }
 
     private fun signedHash(): ByteVector32 = Crypto.sha256(signedPreimage()).toByteVector32()
@@ -273,6 +268,25 @@ data class Bolt11Invoice(
             (value and 2) != 0.toByte(),
             (value and 1) != 0.toByte()
         )
+
+        // converts a list of booleans (1 per bit) to a byte, right-padded if there are less than 8 bits
+        internal fun toByte(bits: List<Boolean>): Byte {
+            require(bits.size <= 8)
+            val raw = bits.fold(0) { a, b -> 2 * a + if (b) 1 else 0 }
+            val shift = 8 - bits.size
+            return (raw.shl(shift) and 0xff).toByte()
+        }
+
+        // converts a list of 5 bits values to a byte array
+        internal fun toByteArray(int5s: List<Int5>): ByteArray {
+            val stream = BitStream()
+            int5s.forEach {
+                val bits = toBits(it)
+                stream.writeBits(bits)
+            }
+            return stream.getBytes()
+        }
+
     }
 
     sealed class TaggedField {

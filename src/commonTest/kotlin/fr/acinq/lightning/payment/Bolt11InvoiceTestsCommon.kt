@@ -9,6 +9,8 @@ import fr.acinq.lightning.channel.remove
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
+import kotlinx.datetime.Clock
+import kotlin.random.Random
 import kotlin.test.*
 
 class Bolt11InvoiceTestsCommon : LightningTestSuite() {
@@ -528,6 +530,20 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         val pr1 = Bolt11Invoice.read(pr.write()).get()
         assertEquals(pr1.descriptionHash, pr.descriptionHash)
         assertNull(pr1.description)
+    }
+
+    @Test
+    fun `perf test`() {
+        val random = Random.Default
+        fun random5(): Byte = (random.nextInt() and 0x1f).toByte()
+        val int5s = (0..1000).map { random5() }
+        var foo = 0
+        val start = currentTimestampMillis()
+        (0..1000).forEach {
+            foo += Bolt11Invoice.toByteArray(int5s).size
+        }
+        val end = currentTimestampMillis()
+        println("${end  - start} $foo")
     }
 
     companion object {
