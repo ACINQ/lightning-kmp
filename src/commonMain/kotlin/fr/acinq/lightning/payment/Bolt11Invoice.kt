@@ -96,23 +96,8 @@ data class Bolt11Invoice(
     }
 
     override fun write(): String {
-        val stream = BitStream()
-        rawData().forEach {
-            val bits = toBits(it)
-            stream.writeBits(bits)
-        }
-        stream.writeBytes(signature.toByteArray().toList())
-
-        fun read5(): Int5 {
-            val bits = stream.readBits(5)
-            val value = (if (bits[0]) 1 shl 4 else 0) + (if (bits[1]) 1 shl 3 else 0) + (if (bits[2]) 1 shl 2 else 0) + (if (bits[3]) 1 shl 1 else 0) + (if (bits[4]) 1 shl 0 else 0)
-            return value.toByte()
-        }
-
-        val int5s = ArrayList<Int5>()
-        while (stream.bitCount() >= 5) int5s.add(read5())
-
-        return Bech32.encode(hrp(), int5s.toTypedArray(), Bech32.Encoding.Bech32)
+        val signature5 = Bech32.eight2five(signature.toByteArray())
+        return Bech32.encode(hrp(), rawData().toTypedArray() + signature5, Bech32.Encoding.Bech32)
     }
 
     companion object {
@@ -177,12 +162,11 @@ data class Bolt11Invoice(
             val prefix = prefixes.values.find { hrp.startsWith(it) } ?: throw IllegalArgumentException("unknown prefix $hrp")
             val amount = decodeAmount(hrp.drop(prefix.length))
             val timestamp = decodeTimestamp(data.toList())
-            val stream = BitStream()
-            data.forEach { stream.writeBits(toBits(it)) }
-            val sigandrecid = stream.popBytes(65).reversed().toByteArray()
+            // signature and recovery id, encoded on 65 bytes = 5 * 13 bytes = 5 * 13 * 8 bits =  8 * 13 "5-bits integers"
+            val sigandrecid = toByteArray(data.copyOfRange(data.size - 8 * 13, data.size).toList())
             val sig = sigandrecid.dropLast(1).toByteArray().toByteVector64()
             val recid = sigandrecid.last()
-            val data1 = stream.getBytes()
+            val data1 = toByteArray(data.copyOfRange(0, data.size - 8 * 13).toList())
             val tohash = hrp.encodeToByteArray() + data1
             val msg = Crypto.sha256(tohash)
             val nodeId = Crypto.recoverPublicKey(sig, msg, recid.toInt())
