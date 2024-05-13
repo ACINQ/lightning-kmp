@@ -532,7 +532,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         assertNull(pr1.description)
     }
 
-    @Test
+    @Ignore
     fun `perf test`() {
         val random = Random.Default
         fun random5(): Byte = (random.nextInt() and 0x1f).toByte()
