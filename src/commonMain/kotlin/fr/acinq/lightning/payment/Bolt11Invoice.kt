@@ -279,14 +279,9 @@ data class Bolt11Invoice(
 
         // converts a list of 5 bits values to a byte array
         internal fun toByteArray(int5s: List<Int5>): ByteArray {
-            val stream = BitStream()
-            int5s.forEach {
-                val bits = toBits(it)
-                stream.writeBits(bits)
-            }
-            return stream.getBytes()
+            val allbits = int5s.flatMap { toBits(it) }
+            return allbits.windowed(8, 8, partialWindows = true){ toByte(it) }.toByteArray()
         }
-
     }
 
     sealed class TaggedField {
