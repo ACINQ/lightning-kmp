@@ -9,6 +9,8 @@ import fr.acinq.lightning.channel.remove
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
+import kotlinx.datetime.Clock
+import kotlin.random.Random
 import kotlin.test.*
 
 class Bolt11InvoiceTestsCommon : LightningTestSuite() {
