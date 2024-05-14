@@ -532,20 +532,6 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         assertNull(pr1.description)
     }
 
-    @Ignore
-    fun `perf test`() {
-        val random = Random.Default
-        fun random5(): Byte = (random.nextInt() and 0x1f).toByte()
-        val int5s = (0..1000).map { random5() }
-        var foo = 0
-        val start = currentTimestampMillis()
-        (0..1000).forEach {
-            foo += Bolt11Invoice.toByteArray(int5s).size
-        }
-        val end = currentTimestampMillis()
-        println("${end  - start} $foo")
-    }
-
     companion object {
         fun createInvoiceUnsafe(
             amount: MilliSatoshi? = null,
