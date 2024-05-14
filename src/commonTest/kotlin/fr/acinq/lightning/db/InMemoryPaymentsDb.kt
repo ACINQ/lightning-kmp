@@ -3,13 +3,9 @@ package fr.acinq.lightning.db
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.TxId
-import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.payment.FinalFailure
-import fr.acinq.lightning.payment.OutgoingPaymentFailure
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.toByteVector32
-import fr.acinq.lightning.wire.FailureMessage
 
 class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, IncomingPayment>()
@@ -106,10 +102,10 @@ class InMemoryPaymentsDb : PaymentsDb {
         parts.forEach { outgoingParts[it.id] = Pair(parentId, it) }
     }
 
-    override suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long) {
+    override suspend fun completeOutgoingLightningPart(partId: UUID, failure: LightningOutgoingPayment.Part.Status.Failure, completedAt: Long) {
         require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
         val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, part.copy(status = OutgoingPaymentFailure.convertFailure(failure, completedAt)))
+        outgoingParts[partId] = Pair(parentId, part.copy(status = LightningOutgoingPayment.Part.Status.Failed(failure, completedAt)))
     }
 
     override suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long) {

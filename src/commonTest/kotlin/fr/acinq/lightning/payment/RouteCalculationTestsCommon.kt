@@ -64,7 +64,7 @@ class RouteCalculationTestsCommon : LightningTestSuite() {
             channelId2 to Syncing(makeChannel(channelId2, 20_000.msat, 5.msat), channelReestablishSent = true),
             channelId3 to Offline(makeChannel(channelId3, 10_000.msat, 10.msat)),
         )
-        assertEquals(Either.Left(FinalFailure.NoAvailableChannels), routeCalculation.findRoutes(paymentId, 5_000.msat, channels))
+        assertEquals(Either.Left(FinalFailure.ChannelNotConnected), routeCalculation.findRoutes(paymentId, 5_000.msat, channels))
     }
 
     @Test

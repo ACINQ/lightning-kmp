@@ -1,13 +1,10 @@
 package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.LiquidityAds
 
 interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
@@ -80,7 +77,7 @@ interface OutgoingPaymentsDb {
     suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>)
 
     /** Mark an outgoing payment part as failed. */
-    suspend fun completeOutgoingLightningPart(partId: UUID, failure: Either<ChannelException, FailureMessage>, completedAt: Long = currentTimestampMillis())
+    suspend fun completeOutgoingLightningPart(partId: UUID, failure: LightningOutgoingPayment.Part.Status.Failure, completedAt: Long = currentTimestampMillis())
 
     /** Mark an outgoing payment part as succeeded. This should not update the parent payment, since some parts may still be pending. */
     suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
@@ -337,13 +334,43 @@ data class LightningOutgoingPayment(
         sealed class Status {
             data object Pending : Status()
             data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
+            data class Failed(val failure: Failure, val completedAt: Long = currentTimestampMillis()) : Status()
 
             /**
-             * @param remoteFailureCode Bolt4 failure code when the failure came from a remote node (see [FailureMessage]).
-             * If null this was a local error (channel unavailable for low-level technical reasons).
+             * User-friendly payment part failure reason, whenever possible.
+             * Applications should define their own localized message for each of these failure cases.
              */
-            data class Failed(val remoteFailureCode: Int?, val details: String, val completedAt: Long = currentTimestampMillis()) : Status() {
-                fun isLocalFailure(): Boolean = remoteFailureCode == null
+            sealed class Failure {
+                // @formatter:off
+                /** The payment is too small: try sending a larger amount. */
+                data object PaymentAmountTooSmall : Failure()
+                /** The user has sufficient balance, but the payment is too big: try sending a smaller amount. */
+                data object PaymentAmountTooBig : Failure()
+                /** The user doesn't have sufficient balance: try sending a smaller amount. */
+                data object NotEnoughFunds : Failure()
+                /** The payment must be retried with more fees to reach the recipient. */
+                data object NotEnoughFees : Failure()
+                /** The payment expiry specified by the recipient is too far away in the future. */
+                data object PaymentExpiryTooBig : Failure()
+                /** There are too many pending payments: wait for them to settle and retry. */
+                data object TooManyPendingPayments : Failure()
+                /** Payments are temporarily paused while a channel is splicing: the payment can be retried after the splice. */
+                data object ChannelIsSplicing : Failure()
+                /** The channel is closing: another channel should be created to send the payment. */
+                data object ChannelIsClosing : Failure()
+                /** Remote failure from an intermediate node in the payment route. */
+                sealed class RouteFailure : Failure()
+                /** A remote node had a temporary failure: the payment may succeed if retried. */
+                data object TemporaryRemoteFailure : RouteFailure()
+                /** The payment amount could not be relayed to the recipient, most likely because they don't have enough inbound liquidity. */
+                data object RecipientLiquidityIssue : RouteFailure()
+                /** The payment recipient is offline and could not accept the payment. */
+                data object RecipientIsOffline : RouteFailure()
+                /** The payment recipient received the payment but rejected it. */
+                data object RecipientRejectedPayment : Failure()
+                /** This is an error that cannot be easily interpreted: we don't know what exactly went wrong and cannot correctly inform the user. */
+                data class Uninterpretable(val message: String) : Failure()
+                // @formatter:on
             }
         }
     }

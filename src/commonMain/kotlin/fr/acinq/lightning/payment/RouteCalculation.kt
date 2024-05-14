@@ -4,9 +4,9 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.channel.states.ChannelState
-import fr.acinq.lightning.channel.states.Normal
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.channel.states.*
+import fr.acinq.lightning.logging.LoggerFactory
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 
@@ -16,18 +16,25 @@ class RouteCalculation(loggerFactory: LoggerFactory) {
 
     data class Route(val amount: MilliSatoshi, val channel: Normal)
 
+    data class ChannelBalance(val c: Normal) {
+        val balance: MilliSatoshi = c.commitments.availableBalanceForSend()
+        val capacity: Satoshi = c.commitments.latest.fundingAmount
+    }
+
     fun findRoutes(paymentId: UUID, amount: MilliSatoshi, channels: Map<ByteVector32, ChannelState>): Either<FinalFailure, List<Route>> {
         val logger = MDCLogger(logger, staticMdc = mapOf("paymentId" to paymentId, "amount" to amount))
 
-        data class ChannelBalance(val c: Normal) {
-            val balance: MilliSatoshi = c.commitments.availableBalanceForSend()
-            val capacity: Satoshi = c.commitments.latest.fundingAmount
-        }
-
         val sortedChannels = channels.values.filterIsInstance<Normal>().map { ChannelBalance(it) }.sortedBy { it.balance }.reversed()
         if (sortedChannels.isEmpty()) {
-            logger.warning { "no available channels" }
-            return Either.Left(FinalFailure.NoAvailableChannels)
+            val failure = when {
+                channels.values.any { it is Syncing || it is Offline } -> FinalFailure.ChannelNotConnected
+                channels.values.any { it is WaitForOpenChannel || it is WaitForAcceptChannel || it is WaitForFundingCreated || it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } -> FinalFailure.ChannelOpening
+                channels.values.any { it is ShuttingDown || it is Negotiating || it is Closing || it is WaitForRemotePublishFutureCommitment } -> FinalFailure.ChannelClosing
+                // This may happen if adding an HTLC failed because we hit channel limits (e.g. max-accepted-htlcs) and we're retrying with this channel filtered out.
+                else -> FinalFailure.NoAvailableChannels
+            }
+            logger.warning { "no available channels: $failure" }
+            return Either.Left(failure)
         }
 
         val filteredChannels = sortedChannels.filter { it.balance >= it.c.channelUpdate.htlcMinimumMsat }

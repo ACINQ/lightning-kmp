@@ -3,6 +3,7 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.channel.TooManyAcceptedHtlcs
+import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
@@ -11,8 +12,8 @@ import fr.acinq.lightning.wire.TemporaryNodeFailure
 import fr.acinq.lightning.wire.UnknownNextPeer
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.assertIs
+import kotlin.test.assertIsNot
 
 class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
 
@@ -26,9 +27,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42))
             )
         )
-        assertTrue(OutgoingPaymentFailure.isRouteError(failure.failures[0]))
-        assertTrue(OutgoingPaymentFailure.isRouteError(failure.failures[1]))
-        assertFalse(OutgoingPaymentFailure.isRouteError(failure.failures[2]))
+        assertIs<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[0].failure)
+        assertIs<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[1].failure)
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[2].failure)
     }
 
     @Test
@@ -41,9 +42,21 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Right(IncorrectOrUnknownPaymentDetails(100_000.msat, 150))
             )
         )
-        assertFalse(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[0]))
-        assertFalse(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[1]))
-        assertTrue(OutgoingPaymentFailure.isRejectedByRecipient(failure.failures[2]))
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[0].failure)
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[1].failure)
+        assertIs<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[2].failure)
+    }
+
+    @Test
+    fun `explain failures`() {
+        val failure = OutgoingPaymentFailure(
+            FinalFailure.NoAvailableChannels,
+            listOf(
+                Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42)),
+                Either.Right(PaymentTimeout),
+            )
+        )
+        assertEquals(Either.Left(LightningOutgoingPayment.Part.Status.Failure.RecipientLiquidityIssue), failure.explain())
     }
 
     @Test
@@ -56,9 +69,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42))
             )
         )
-        val expected = "1: general temporary failure of the processing node\n" +
-                "2: processing node does not know the next peer in the route\n" +
-                "3: 0000000000000000000000000000000000000000000000000000000000000000: too many accepted htlcs: maximum=42\n"
+        val expected = "1: TemporaryRemoteFailure\n" +
+                "2: RecipientIsOffline\n" +
+                "3: TooManyPendingPayments\n"
         assertEquals(failure.details(), expected)
     }
 

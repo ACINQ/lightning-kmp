@@ -10,8 +10,6 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.ChannelAction
-import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.Offline
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
@@ -77,7 +75,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
         val payment = PayInvoice(UUID.randomUUID(), 100_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
         val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to Offline(alice.state)), alice.currentBlockHeight)
-        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.NoAvailableChannels.toPaymentFailure()))
+        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.ChannelNotConnected.toPaymentFailure()))
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
         val dbPayment = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
@@ -85,7 +83,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(100_000.msat, dbPayment.recipientAmount)
         assertEquals(invoice.nodeId, dbPayment.recipient)
         assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Completed.Failed)
-        assertEquals(FinalFailure.NoAvailableChannels, (dbPayment.status as LightningOutgoingPayment.Status.Completed.Failed).reason)
+        assertEquals(FinalFailure.ChannelNotConnected, (dbPayment.status as LightningOutgoingPayment.Status.Completed.Failed).reason)
         assertTrue(dbPayment.parts.isEmpty())
     }
 
@@ -629,22 +627,23 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, walletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
-        val payment = PayInvoice(UUID.randomUUID(), 550_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
+        val payment = PayInvoice(UUID.randomUUID(), 650_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
         val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
         val adds1 = filterAddHtlcCommands(progress1)
-        assertEquals(3, adds1.size)
-        assertEquals(560_000.msat, adds1.map { it.second.amount }.sum())
+        assertEquals(4, adds1.size)
+        assertEquals(660_000.msat, adds1.map { it.second.amount }.sum())
 
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
         assertNull(outgoingPaymentHandler.processAddSettled(adds1[0].first, createRemoteFailure(adds1[0].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
         assertNull(outgoingPaymentHandler.processAddSettled(adds1[1].first, createRemoteFailure(adds1[1].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
-        val fail = outgoingPaymentHandler.processAddSettled(adds1[2].first, createRemoteFailure(adds1[2].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+        assertNull(outgoingPaymentHandler.processAddSettled(adds1[2].first, createRemoteFailure(adds1[2].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
+        val fail = outgoingPaymentHandler.processAddSettled(adds1[3].first, createRemoteFailure(adds1[3].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
         val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(TrampolineFeeInsufficient))))
         assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 3)
+        assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 4)
     }
 
     @Test
@@ -721,6 +720,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             { channelId: ByteVector32 -> TooManyAcceptedHtlcs(channelId, 15) },
             { channelId: ByteVector32 -> InsufficientFunds(channelId, 5_000.msat, 1.sat, 20.sat, 1.sat) },
             { channelId: ByteVector32 -> HtlcValueTooHighInFlight(channelId, 150_000U, 155_000.msat) },
+            { channelId: ByteVector32 -> ForbiddenDuringSplice(channelId, "update-add-htlc") }
         )
         localFailures.forEach { localFailure ->
             val (channelId, add) = filterAddHtlcCommands(progress).first()
@@ -732,10 +732,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (channelId, add) = filterAddHtlcCommands(progress).first()
         val fail = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, TooManyAcceptedHtlcs(channelId, 15), null), channels) as OutgoingPaymentHandler.Failure
         assertEquals(FinalFailure.InsufficientBalance, fail.failure.reason)
-        assertEquals(4, fail.failure.failures.filter { it.isLocalFailure() }.size)
-
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 4)
+        assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 5)
     }
 
     @Test
@@ -935,6 +933,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             Pair(ShortChannelId(3), 0.msat),
             Pair(ShortChannelId(4), 10_000.msat),
             Pair(ShortChannelId(5), 200_000.msat),
+            Pair(ShortChannelId(6), 100_000.msat),
         )
         return channelDetails.associate {
             val channelId = randomBytes32()

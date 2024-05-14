@@ -11,7 +11,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.wire.InteractiveTxMessage
 import fr.acinq.lightning.wire.UpdateAddHtlc
 
-open class ChannelException(open val channelId: ByteVector32, override val message: String) : RuntimeException(message) {
+sealed class ChannelException(open val channelId: ByteVector32, override val message: String) : RuntimeException(message) {
     fun details(): String = "$channelId: $message"
 }
 
@@ -63,7 +63,6 @@ data class InvalidHtlcSignature                    (override val channelId: Byte
 data class InvalidCloseSignature                   (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid close signature: txId=$txId")
 data class InvalidCloseAmountBelowDust             (override val channelId: ByteVector32, val txId: TxId) : ChannelException(channelId, "invalid closing tx: some outputs are below dust: txId=$txId")
 data class CommitSigCountMismatch                  (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "commit sig count mismatch: expected=$expected actual=$actual")
-data class SwapInSigCountMismatch                  (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "swap-in sig count mismatch: expected=$expected actual=$actual")
 data class HtlcSigCountMismatch                    (override val channelId: ByteVector32, val expected: Int, val actual: Int) : ChannelException(channelId, "htlc sig count mismatch: expected=$expected actual: $actual")
 data class ForcedLocalCommit                       (override val channelId: ByteVector32) : ChannelException(channelId, "forced local commit")
 data class UnexpectedHtlcId                        (override val channelId: ByteVector32, val expected: Long, val actual: Long) : ChannelException(channelId, "unexpected htlc id: expected=$expected actual=$actual")
