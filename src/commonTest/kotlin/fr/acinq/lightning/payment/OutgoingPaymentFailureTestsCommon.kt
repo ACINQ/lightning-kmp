@@ -69,9 +69,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42))
             )
         )
-        val expected = "1: TemporaryRemoteFailure\n" +
-                "2: RecipientIsOffline\n" +
-                "3: TooManyPendingPayments\n"
+        val expected = "1: a node in the route had a temporary failure\n" +
+                "2: recipient node is offline or unreachable\n" +
+                "3: too many pending payments\n"
         assertEquals(failure.details(), expected)
     }
 

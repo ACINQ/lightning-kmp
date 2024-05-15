@@ -343,33 +343,33 @@ data class LightningOutgoingPayment(
             sealed class Failure {
                 // @formatter:off
                 /** The payment is too small: try sending a larger amount. */
-                data object PaymentAmountTooSmall : Failure()
+                data object PaymentAmountTooSmall : Failure() { override fun toString(): String = "the payment amount is too small" }
                 /** The user has sufficient balance, but the payment is too big: try sending a smaller amount. */
-                data object PaymentAmountTooBig : Failure()
+                data object PaymentAmountTooBig : Failure() { override fun toString(): String = "the payment amount is too large" }
                 /** The user doesn't have sufficient balance: try sending a smaller amount. */
-                data object NotEnoughFunds : Failure()
+                data object NotEnoughFunds : Failure() { override fun toString(): String = "not enough funds" }
                 /** The payment must be retried with more fees to reach the recipient. */
-                data object NotEnoughFees : Failure()
+                data object NotEnoughFees : Failure() { override fun toString(): String = "routing fees are insufficient" }
                 /** The payment expiry specified by the recipient is too far away in the future. */
-                data object PaymentExpiryTooBig : Failure()
+                data object PaymentExpiryTooBig : Failure() { override fun toString(): String = "the payment expiry is too far in the future" }
                 /** There are too many pending payments: wait for them to settle and retry. */
-                data object TooManyPendingPayments : Failure()
+                data object TooManyPendingPayments : Failure() { override fun toString(): String = "too many pending payments" }
                 /** Payments are temporarily paused while a channel is splicing: the payment can be retried after the splice. */
-                data object ChannelIsSplicing : Failure()
+                data object ChannelIsSplicing : Failure() { override fun toString(): String = "a splicing operation is in progress" }
                 /** The channel is closing: another channel should be created to send the payment. */
-                data object ChannelIsClosing : Failure()
+                data object ChannelIsClosing : Failure() { override fun toString(): String = "channel closing is in progress" }
                 /** Remote failure from an intermediate node in the payment route. */
                 sealed class RouteFailure : Failure()
                 /** A remote node had a temporary failure: the payment may succeed if retried. */
-                data object TemporaryRemoteFailure : RouteFailure()
+                data object TemporaryRemoteFailure : RouteFailure() { override fun toString(): String = "a node in the route had a temporary failure" }
                 /** The payment amount could not be relayed to the recipient, most likely because they don't have enough inbound liquidity. */
-                data object RecipientLiquidityIssue : RouteFailure()
+                data object RecipientLiquidityIssue : RouteFailure() { override fun toString(): String = "liquidity issue at the recipient node" }
                 /** The payment recipient is offline and could not accept the payment. */
-                data object RecipientIsOffline : RouteFailure()
+                data object RecipientIsOffline : RouteFailure() { override fun toString(): String = "recipient node is offline or unreachable" }
                 /** The payment recipient received the payment but rejected it. */
-                data object RecipientRejectedPayment : Failure()
+                data object RecipientRejectedPayment : Failure() { override fun toString(): String = "recipient node rejected the payment" }
                 /** This is an error that cannot be easily interpreted: we don't know what exactly went wrong and cannot correctly inform the user. */
-                data class Uninterpretable(val message: String) : Failure()
+                data class Uninterpretable(val message: String) : Failure() { override fun toString(): String = message }
                 // @formatter:on
             }
         }
