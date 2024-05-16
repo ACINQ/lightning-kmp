@@ -1,5 +1,7 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
+import org.jetbrains.kotlin.types.ConstantValueKind
+import java.io.ByteArrayOutputStream
 
 plugins {
     kotlin("multiplatform") version "1.9.23"
@@ -10,7 +12,7 @@ plugins {
 
 allprojects {
     group = "fr.acinq.lightning"
-    version = "1.6.2-SNAPSHOT"
+    version = "1.6.2-FEECREDIT-7"
 
     repositories {
         // using the local maven repository with Kotlin Multi Platform can lead to build errors that are hard to diagnose.
@@ -31,7 +33,7 @@ kotlin {
 
     val serializationVersion = "1.6.2"
     val coroutineVersion = "1.7.3"
-    val datetimeVersion = "0.4.0"
+    val datetimeVersion = "0.6.0-RC.2"
     val ktorVersion = "2.3.7"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
     val kermitLoggerVersion = "2.0.2"
@@ -89,16 +91,16 @@ kotlin {
                 api("co.touchlab:kermit:$kermitLoggerVersion")
                 api(ktor("network"))
                 api(ktor("network-tls"))
-            }
-        }
-
-        commonTest {
-            dependencies {
                 implementation(ktor("client-core"))
                 implementation(ktor("client-auth"))
                 implementation(ktor("client-json"))
                 implementation(ktor("client-content-negotiation"))
                 implementation(ktor("serialization-kotlinx-json"))
+            }
+        }
+
+        commonTest {
+            dependencies {
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
                 implementation("org.kodein.memory:klio-files:0.12.0")
@@ -123,14 +125,19 @@ kotlin {
         }
 
         if (currentOs.isMacOsX) {
-            iosTest {
+            iosMain {
                 dependencies {
                     implementation(ktor("client-ios"))
                 }
             }
+            macosMain {
+                dependencies {
+                    implementation(ktor("client-darwin"))
+                }
+            }
         }
 
-        linuxTest {
+        linuxMain {
             dependencies {
                 implementation(ktor("client-curl"))
             }
@@ -260,6 +267,52 @@ afterEvaluate {
             }))
         }
     }
+
+    val deviceName = project.findProperty("iosDevice") as? String ?: "iPhone 14"
+
+    val listSimulators by tasks.creating(Exec::class) {
+        isIgnoreExitValue = true
+        standardOutput = ByteArrayOutputStream()
+        errorOutput = ByteArrayOutputStream()
+        commandLine("xcrun", "simctl", "list")
+        doLast {
+            val result = executionResult.get()
+            println("listSimulators returned ${result.exitValue} ${standardOutput.toString()}")
+            if (result.exitValue != 148 && result.exitValue != 149) {
+                println(errorOutput.toString())
+                result.assertNormalExitValue()
+            }
+        }
+    }
+    val startIosSimulator by tasks.creating(Exec::class) {
+        isIgnoreExitValue = true
+        standardOutput = ByteArrayOutputStream()
+        errorOutput = ByteArrayOutputStream()
+        commandLine("xcrun", "simctl", "boot", deviceName)
+        doLast {
+            val result = executionResult.get()
+            println("startIosSimulator returned ${result.exitValue} ${standardOutput.toString()}")
+            if (result.exitValue != 148 && result.exitValue != 149) {
+                println(errorOutput.toString())
+                result.assertNormalExitValue()
+            }
+        }
+    }
+
+    val stopIosSimulator by tasks.creating(Exec::class) {
+        commandLine("xcrun", "simctl", "shutdown", "all")
+    }
+
+    if (project.findProperty("iosSimulatorMode") == "standalone") {
+        tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+            dependsOn(listSimulators)
+            dependsOn(startIosSimulator)
+            device = deviceName
+            standalone.set(false)
+            finalizedBy(stopIosSimulator)
+        }
+    }
+
     tasks.withType<org.jetbrains.kotlin.gradle.targets.jvm.tasks.KotlinJvmTest> {
         environment("TEST_RESOURCES_PATH", projectDir.resolve("src/commonTest/resources"))
     }
@@ -298,7 +351,7 @@ tasks.withType<AbstractTestTask> {
 // Those tests use TLS sockets which are not supported on Linux and MacOS
 tasks
     .filterIsInstance<KotlinNativeTest>()
-    .filter { it.name == "macosX64Test" || it.name == "linuxX64Test" }
+    .filter { it.name == "macosX64Test" || it.name == "macosArm64Test" || it.name == "linuxX64Test" }
     .map {
         it.filter.excludeTestsMatching("*IntegrationTest")
         it.filter.excludeTestsMatching("*ElectrumClientTest")

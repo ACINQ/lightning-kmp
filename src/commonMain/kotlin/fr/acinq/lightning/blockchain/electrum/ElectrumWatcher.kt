@@ -3,7 +3,9 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggerFactory
+import fr.acinq.lightning.logging.debug
+import fr.acinq.lightning.logging.info
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.currentTimestampMillis
 import kotlinx.coroutines.*
@@ -15,24 +17,24 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlin.math.max
 
-class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : CoroutineScope by scope {
+class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : IWatcher, CoroutineScope by scope {
 
     private val logger = loggerFactory.newLogger(this::class)
     private val mailbox = Channel<WatcherCommand>(Channel.BUFFERED)
 
     private val _notificationsFlow = MutableSharedFlow<WatchEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
-    fun openWatchNotificationsFlow(): Flow<WatchEvent> = _notificationsFlow.asSharedFlow()
+    override fun openWatchNotificationsFlow(): Flow<WatchEvent> = _notificationsFlow.asSharedFlow()
 
     // this is used by a Swift watch-tower module in the Phoenix iOS app to tell when the watcher is up-to-date
     // the value that is emitted in the time elapsed (in milliseconds) since the watcher is ready and idle
     private val _uptodateFlow = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
     fun openUpToDateFlow(): Flow<Long> = _uptodateFlow.asSharedFlow()
 
-    suspend fun watch(watch: Watch) {
+    override suspend fun watch(watch: Watch) {
         mailbox.send(WatcherCommand.AddWatch(watch))
     }
 
-    suspend fun publish(tx: Transaction) {
+    override suspend fun publish(tx: Transaction) {
         mailbox.send(WatcherCommand.Publish(tx))
     }
 

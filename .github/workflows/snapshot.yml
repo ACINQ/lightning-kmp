@@ -19,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest]
+        os: [macOS-latest]
     steps:
       - name: Check out
         uses: actions/checkout@v2
@@ -47,7 +47,7 @@ jobs:
         with:
           java-version: 11
       - name: Check
-        run: ./gradlew check
+        run: ./gradlew -PiosSimulatorMode=standalone -PiosDevice="iPhone 15" check
       - name: Publish Linux to Maven Local
         if: matrix.os == 'ubuntu-latest'
         shell: bash
