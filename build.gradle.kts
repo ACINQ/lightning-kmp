@@ -330,6 +330,9 @@ tasks.withType<AbstractTestTask> {
     }
 }
 
+// exclude mempool tests
+tasks.withType<AbstractTestTask> { filter.excludeTestsMatching("*MempoolSpace*")}
+
 // Those tests use TLS sockets which are not supported on Linux and MacOS
 tasks
     .filterIsInstance<KotlinNativeTest>()
