@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
+import org.jetbrains.kotlin.types.ConstantValueKind
 import java.io.ByteArrayOutputStream
 
 plugins {
@@ -269,12 +270,28 @@ afterEvaluate {
 
     val deviceName = project.findProperty("iosDevice") as? String ?: "iPhone 14"
 
+    val listSimulators by tasks.creating(Exec::class) {
+        isIgnoreExitValue = true
+        standardOutput = ByteArrayOutputStream()
+        errorOutput = ByteArrayOutputStream()
+        commandLine("xcrun", "simctl", "list")
+        doLast {
+            val result = executionResult.get()
+            println("listSimulators returned ${result.exitValue} ${standardOutput.toString()}")
+            if (result.exitValue != 148 && result.exitValue != 149) {
+                println(errorOutput.toString())
+                result.assertNormalExitValue()
+            }
+        }
+    }
     val startIosSimulator by tasks.creating(Exec::class) {
         isIgnoreExitValue = true
+        standardOutput = ByteArrayOutputStream()
         errorOutput = ByteArrayOutputStream()
         commandLine("xcrun", "simctl", "boot", deviceName)
         doLast {
             val result = executionResult.get()
+            println("startIosSimulator returned ${result.exitValue} ${standardOutput.toString()}")
             if (result.exitValue != 148 && result.exitValue != 149) {
                 println(errorOutput.toString())
                 result.assertNormalExitValue()
@@ -288,6 +305,7 @@ afterEvaluate {
 
     if (project.findProperty("iosSimulatorMode") == "standalone") {
         tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+            dependsOn(listSimulators)
             dependsOn(startIosSimulator)
             device = deviceName
             standalone.set(false)
