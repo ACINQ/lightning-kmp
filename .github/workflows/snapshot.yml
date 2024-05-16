@@ -47,7 +47,7 @@ jobs:
         with:
           java-version: 11
       - name: Check
-        run: ./gradlew -PiosSimulatorMode=not_standalone check
+        run: ./gradlew -PiosSimulatorMode=standalone -PiosDevice="iPhone 15" check
       - name: Publish Linux to Maven Local
         if: matrix.os == 'ubuntu-latest'
         shell: bash
