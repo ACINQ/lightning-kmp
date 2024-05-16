@@ -178,6 +178,10 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
         }
 
+        data class FeeCreditPayment(override val amount: MilliSatoshi) : ReceivedWith() {
+            override val fees: MilliSatoshi get() = 0.msat // there are no fees when payment is added to the fee credit
+        }
+
         sealed class OnChainIncomingPayment : ReceivedWith() {
             abstract val serviceFee: MilliSatoshi
             abstract val miningFee: Satoshi
