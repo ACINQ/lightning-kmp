@@ -23,12 +23,14 @@ import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.utils.UUID.Companion.randomUUID
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
+import io.ktor.util.date.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.*
+import kotlin.math.min
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -70,9 +72,10 @@ data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
 data object Disconnected : PeerCommand()
 
+sealed class DelayedCommand : PeerCommand() { abstract val timeToRunMillis: Long }
+data class CheckPaymentsTimeout(override val timeToRunMillis: Long) : DelayedCommand()
+private data class CheckInvoiceRequestTimeout(val pathId: ByteVector32, val payOffer: PayOffer, override val timeToRunMillis: Long) : DelayedCommand()
 sealed class PaymentCommand : PeerCommand()
-private data object CheckPaymentsTimeout : PaymentCommand()
-private data class CheckInvoiceRequestTimeout(val pathId: ByteVector32, val payOffer: PayOffer) : PaymentCommand()
 data class PayToOpenResponseCommand(val payToOpenResponse: PayToOpenResponse) : PeerCommand()
 
 // @formatter:off
@@ -400,13 +403,6 @@ class Peer(
                 }
             }
 
-            suspend fun checkPaymentsTimeout() {
-                while (isActive) {
-                    delay(nodeParams.checkHtlcTimeoutInterval)
-                    input.send(CheckPaymentsTimeout)
-                }
-            }
-
             suspend fun receiveLoop() {
                 try {
                     while (isActive) {
@@ -444,7 +440,6 @@ class Peer(
             }
 
             launch(CoroutineName("keep-alive")) { doPing() }
-            launch(CoroutineName("check-payments-timeout")) { checkPaymentsTimeout() }
             launch(CoroutineName("send-loop")) { sendLoop() }
             val receiveJob = launch(CoroutineName("receive-loop")) { receiveLoop() }
             // Suspend until the coroutine is cancelled or the socket is closed.
@@ -901,10 +896,44 @@ class Peer(
 
     private suspend fun run() {
         logger.info { "peer is active" }
-        for (event in input) {
-            logger.withMDC(logger.staticMdc + (peerConnection?.logger?.staticMdc ?: emptyMap()) + ((event as? MessageReceived)?.msg?.mdc() ?: emptyMap())) { logger ->
-                processEvent(event, logger)
+        while (true) {
+            val event = waitForCommand()
+            if (event != null) {
+                logger.withMDC(logger.staticMdc + (peerConnection?.logger?.staticMdc ?: emptyMap()) + ((event as? MessageReceived)?.msg?.mdc() ?: emptyMap())) { logger ->
+                    processEvent(event, logger)
+                }
             }
+        }
+    }
+
+    private suspend fun waitForCommand(): PeerCommand? {
+        val delayedCommands: MutableList<DelayedCommand> = mutableListOf()
+        var earliestTimeToRun = Long.MAX_VALUE
+        var event = input.tryReceive().getOrNull()
+        while (event != null) {
+            if (event is DelayedCommand && event.timeToRunMillis > getTimeMillis()) {
+                delayedCommands.add(event)
+                earliestTimeToRun = min(earliestTimeToRun, event.timeToRunMillis)
+                event = input.tryReceive().getOrNull()
+            } else {
+                for (command in delayedCommands) {
+                    input.send(command)
+                }
+                return event
+            }
+        }
+        val timeoutMillis = earliestTimeToRun - currentTimestampMillis()
+        val newEvent = withTimeoutOrNull(timeoutMillis) {
+            input.receive()
+        }
+        for (command in delayedCommands) {
+            input.send(command)
+        }
+        if (newEvent is DelayedCommand && newEvent.timeToRunMillis > getTimeMillis()) {
+            input.send(newEvent)
+            return null
+        } else {
+            return newEvent
         }
     }
 
@@ -1292,12 +1321,7 @@ class Peer(
             is PayOffer -> {
                 val (pathId, invoiceRequests) = offerManager.requestInvoice(cmd)
                 invoiceRequests.forEach { input.send(SendOnionMessage(it)) }
-                coroutineScope {
-                    launch {
-                        delay(cmd.fetchInvoiceTimeout)
-                        input.send(CheckInvoiceRequestTimeout(pathId, cmd))
-                    }
-                }
+                input.send(CheckInvoiceRequestTimeout(pathId, cmd, getTimeMillis() + cmd.fetchInvoiceTimeout.inWholeMilliseconds))
             }
             is CheckInvoiceRequestTimeout -> offerManager.checkInvoiceRequestTimeout(cmd.pathId, cmd.payOffer)
             is SendOnionMessage -> peerConnection?.send(cmd.message)

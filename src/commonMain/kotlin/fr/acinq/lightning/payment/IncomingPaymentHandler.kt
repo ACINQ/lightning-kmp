@@ -13,6 +13,7 @@ import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.db.IncomingPaymentsDb
+import fr.acinq.lightning.io.CheckPaymentsTimeout
 import fr.acinq.lightning.io.PayToOpenResponseCommand
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.WrappedChannelCommand
@@ -52,8 +53,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
 
         data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : ProcessAddResult()
         data class Rejected(override val actions: List<PeerCommand>, val incomingPayment: IncomingPayment?) : ProcessAddResult()
-        data class Pending(val incomingPayment: IncomingPayment, val pendingPayment: PendingPayment) : ProcessAddResult() {
-            override val actions: List<PeerCommand> = listOf()
+        data class Pending(val incomingPayment: IncomingPayment, val pendingPayment: PendingPayment, val timeoutSeconds: Long) : ProcessAddResult() {
+            override val actions: List<PeerCommand> = listOf(CheckPaymentsTimeout((pendingPayment.startedAtSeconds + timeoutSeconds) * 1000))
         }
     }
 
@@ -252,7 +253,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                         payment.amountReceived < payment.totalAmount -> {
                             // Still waiting for more payments.
                             pending[paymentPart.paymentHash] = payment
-                            return ProcessAddResult.Pending(incomingPayment, payment)
+                            return ProcessAddResult.Pending(incomingPayment, payment, nodeParams.mppAggregationWindow.inWholeSeconds)
                         }
                         else -> {
                             if (payment.parts.filterIsInstance<PayToOpenPart>().isNotEmpty()) {
