@@ -1579,7 +1579,7 @@ data class OnionMessage(
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(blindingKey.value, out)
-        LightningCodecs.writeU16(onionRoutingPacket.payload.size(), out)
+        LightningCodecs.writeU16(onionRoutingPacket.payload.size() + 66, out)
         OnionRoutingPacketSerializer(onionRoutingPacket.payload.size()).write(onionRoutingPacket, out)
     }
 

@@ -13,6 +13,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.assertArrayEquals
+import fr.acinq.lightning.message.OnionMessages
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -863,5 +864,11 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             assertEquals(encoded, out.toByteArray().toByteVector())
             assertEquals(decoded, LightningCodecs.encodedNodeId(ByteArrayInput(encoded.toByteArray())))
         }
+    }
+
+    @Test
+    fun `encode and decode onion message`() {
+        val onionMessage = OnionMessages.buildMessage(randomKey(), randomKey(), listOf(), OnionMessages.Destination.Recipient(randomKey().publicKey(), null), TlvStream.empty()).right!!
+        assertEquals(onionMessage, OnionMessage.read(onionMessage.write()))
     }
 }
