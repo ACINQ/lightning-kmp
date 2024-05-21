@@ -5,7 +5,6 @@ import fr.acinq.lightning.Features.Companion.validateFeatureGraph
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.BitField
 import fr.acinq.secp256k1.Hex
-import org.kodein.memory.text.toHex
 import kotlin.test.*
 
 class FeaturesTestsCommon : LightningTestSuite() {
