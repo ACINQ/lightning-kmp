@@ -270,7 +270,7 @@ class Peer(
                 logger.info { "checking for timed out htlcs for channels: ${channelIds.joinToString(", ")}" }
                 channelIds.forEach { input.send(WrappedChannelCommand(it, ChannelCommand.Commitment.CheckHtlcTimeout)) }
             }
-            run()
+            run(scope)
         }
         launch {
             var previousState = connectionState.value
@@ -899,11 +899,11 @@ class Peer(
         return Triple(enc, dec, ck)
     }
 
-    private suspend fun run() {
+    private suspend fun run(scope: CoroutineScope) {
         logger.info { "peer is active" }
         for (event in input) {
             logger.withMDC(logger.staticMdc + (peerConnection?.logger?.staticMdc ?: emptyMap()) + ((event as? MessageReceived)?.msg?.mdc() ?: emptyMap())) { logger ->
-                processEvent(event, logger)
+                processEvent(event, scope, logger)
             }
         }
     }
@@ -912,7 +912,7 @@ class Peer(
     private var peerConnection: PeerConnection? = null
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private suspend fun processEvent(cmd: PeerCommand, logger: MDCLogger) {
+    private suspend fun processEvent(cmd: PeerCommand, scope: CoroutineScope, logger: MDCLogger) {
         when (cmd) {
             is Connected -> {
                 logger.info { "new connection with id=${cmd.peerConnection.id}, sending init $ourInit" }
@@ -1292,11 +1292,9 @@ class Peer(
             is PayOffer -> {
                 val (pathId, invoiceRequests) = offerManager.requestInvoice(cmd)
                 invoiceRequests.forEach { input.send(SendOnionMessage(it)) }
-                coroutineScope {
-                    launch {
-                        delay(cmd.fetchInvoiceTimeout)
-                        input.send(CheckInvoiceRequestTimeout(pathId, cmd))
-                    }
+                scope.launch {
+                    delay(cmd.fetchInvoiceTimeout)
+                    input.trySend(CheckInvoiceRequestTimeout(pathId, cmd))
                 }
             }
             is CheckInvoiceRequestTimeout -> offerManager.checkInvoiceRequestTimeout(cmd.pathId, cmd.payOffer)
