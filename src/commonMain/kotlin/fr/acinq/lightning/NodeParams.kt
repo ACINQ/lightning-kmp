@@ -189,6 +189,7 @@ data class NodeParams(
             Feature.Wumbo to FeatureSupport.Optional,
             Feature.StaticRemoteKey to FeatureSupport.Mandatory,
             Feature.AnchorOutputs to FeatureSupport.Optional, // can't set Mandatory because peers prefers AnchorOutputsZeroFeeHtlcTx
+            Feature.RouteBlinding to FeatureSupport.Optional,
             Feature.DualFunding to FeatureSupport.Mandatory,
             Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,
             Feature.ChannelType to FeatureSupport.Mandatory,

@@ -5,6 +5,7 @@ import fr.acinq.lightning.Features.Companion.validateFeatureGraph
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.BitField
 import fr.acinq.secp256k1.Hex
+import org.kodein.memory.text.toHex
 import kotlin.test.*
 
 class FeaturesTestsCommon : LightningTestSuite() {
@@ -237,17 +238,17 @@ class FeaturesTestsCommon : LightningTestSuite() {
                 PaymentSecret to FeatureSupport.Optional,
                 BasicMultiPartPayment to FeatureSupport.Optional
             ),
-            Hex.decode("09004200") to Features(
+            Hex.decode("08404200") to Features(
                 mapOf(
                     VariableLengthOnion to FeatureSupport.Optional,
                     PaymentSecret to FeatureSupport.Mandatory,
                     ShutdownAnySegwit to FeatureSupport.Optional
                 ),
-                setOf(UnknownFeature(24))
+                setOf(UnknownFeature(22))
             ),
-            Hex.decode("52000000") to Features(
+            Hex.decode("50800000") to Features(
                 mapOf(DualFunding to FeatureSupport.Mandatory),
-                setOf(UnknownFeature(25), UnknownFeature(30))
+                setOf(UnknownFeature(23), UnknownFeature(30))
             )
         )
 
