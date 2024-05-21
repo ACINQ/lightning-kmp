@@ -1292,11 +1292,9 @@ class Peer(
             is PayOffer -> {
                 val (pathId, invoiceRequests) = offerManager.requestInvoice(cmd)
                 invoiceRequests.forEach { input.send(SendOnionMessage(it)) }
-                coroutineScope {
-                    launch {
-                        delay(cmd.fetchInvoiceTimeout)
-                        input.send(CheckInvoiceRequestTimeout(pathId, cmd))
-                    }
+                this.launch {
+                    delay(cmd.fetchInvoiceTimeout)
+                    input.send(CheckInvoiceRequestTimeout(pathId, cmd))
                 }
             }
             is CheckInvoiceRequestTimeout -> offerManager.checkInvoiceRequestTimeout(cmd.pathId, cmd.payOffer)
