@@ -148,9 +148,6 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         /** A payment for a Bolt 12 offer: note that we only keep a few fields from the corresponding Bolt 12 invoice. */
         data class Offer(val metadata: OfferPaymentMetadata) : Origin()
 
-        /** KeySend payments are spontaneous donations for which we didn't create an invoice. */
-        data object KeySend : Origin()
-
         /** DEPRECATED: this is the legacy trusted swap-in, which we keep for backwards-compatibility (previous payments inside the DB). */
         data class SwapIn(val address: String?) : Origin()
 
@@ -217,7 +214,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         ) : OnChainIncomingPayment()
     }
 
-    /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. [Origin.KeySend] or [Origin.SwapIn] do not expire. */
+    /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. */
     fun isExpired(): Boolean = origin is Origin.Invoice && origin.paymentRequest.isExpired()
 }
 
