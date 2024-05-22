@@ -60,6 +60,7 @@ object TestConstants {
                 Feature.Wumbo to FeatureSupport.Optional,
                 Feature.StaticRemoteKey to FeatureSupport.Mandatory,
                 Feature.AnchorOutputs to FeatureSupport.Mandatory,
+                Feature.RouteBlinding to FeatureSupport.Optional,
                 Feature.DualFunding to FeatureSupport.Mandatory,
                 Feature.ChannelType to FeatureSupport.Mandatory,
                 Feature.PaymentMetadata to FeatureSupport.Optional,
