@@ -109,7 +109,7 @@ sealed class Feature {
     object RouteBlinding : Feature() {
         override val rfcName get() = "option_route_blinding"
         override val mandatory get() = 24
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
     @Serializable
@@ -319,6 +319,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment,
             Feature.Wumbo,
             Feature.AnchorOutputs,
+            Feature.RouteBlinding,
             Feature.ShutdownAnySegwit,
             Feature.DualFunding,
             Feature.ChannelType,

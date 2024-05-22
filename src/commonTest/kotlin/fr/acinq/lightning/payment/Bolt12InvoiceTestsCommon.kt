@@ -133,7 +133,6 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
             listOf(createPaymentBlindedRoute(nodeKey.publicKey()))
         )
         assertEquals(invoice.records.unknown, setOf(GenericTlv(87, ByteVector.fromHex("0404"))))
-        println(invoice.validateFor(requestWithUnknownTlv))
         assertTrue(invoice.validateFor(requestWithUnknownTlv).isRight)
         assertEquals(Bolt12Invoice.fromString(invoice.toString()).get().toString(), invoice.toString())
     }
@@ -337,7 +336,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val chain = Block.TestnetGenesisBlock.hash
         val amount = 123456.msat
         val description = "invoice with many fields"
-        val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.RouteBlinding to FeatureSupport.Mandatory)
+        val features = Features.empty
         val issuer = "alice"
         val nodeKey = PrivateKey.fromHex("998cf8ecab46f949bb960813b79d3317cabf4193452a211795cd8af1b9a25d90")
         val path = createPaymentBlindedRoute(

@@ -41,11 +41,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
     val createdAtSeconds: Long = records.get<InvoiceCreatedAt>()!!.timestampSeconds
     val relativeExpirySeconds: Long = records.get<InvoiceRelativeExpiry>()?.seconds ?: DEFAULT_EXPIRY_SECONDS
 
-    // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
-    override val features: Features =
-        (records.get<InvoiceFeatures>()?.features?.invoiceFeatures() ?: Features.empty).let {
-            it.copy(activated = it.activated + (Feature.VariableLengthOnion to FeatureSupport.Mandatory) + (Feature.RouteBlinding to FeatureSupport.Mandatory))
-        }
+    override val features: Features = records.get<InvoiceFeatures>()?.features?.invoiceFeatures() ?: Features.empty
 
     val blindedPaths: List<PaymentBlindedContactInfo> = records.get<InvoicePaths>()!!.paths.zip(records.get<InvoiceBlindedPay>()!!.paymentInfos).map { PaymentBlindedContactInfo(it.first, it.second) }
     val fallbacks: List<FallbackAddress>? = records.get<InvoiceFallbacks>()?.addresses
