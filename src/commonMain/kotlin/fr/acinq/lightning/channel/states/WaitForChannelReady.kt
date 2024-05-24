@@ -81,7 +81,6 @@ data class WaitForChannelReady(
                         null,
                         null,
                         SpliceStatus.None,
-                        listOf(),
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),

@@ -32,21 +32,14 @@ sealed class InitTlv : Tlv {
     }
 
     /** Rates at which we sell inbound liquidity to remote peers. */
-    data class LiquidityAdsRates(val leaseRates: List<LiquidityAds.LeaseRate>) : InitTlv() {
-        override val tag: Long get() = LiquidityAdsRates.tag
+    data class OptionWillFund(val rates: LiquidityAds.WillFundRates) : InitTlv() {
+        override val tag: Long get() = OptionWillFund.tag
 
-        override fun write(out: Output) {
-            leaseRates.forEach { it.write(out) }
-        }
+        override fun write(out: Output) = rates.write(out)
 
-        companion object : TlvValueReader<LiquidityAdsRates> {
-            const val tag: Long = 1337
-
-            override fun read(input: Input): LiquidityAdsRates {
-                val count = input.availableBytes / 16
-                val rates = (0 until count).map { LiquidityAds.LeaseRate.read(input) }
-                return LiquidityAdsRates(rates)
-            }
+        companion object : TlvValueReader<OptionWillFund> {
+            const val tag: Long = 1339
+            override fun read(input: Input): OptionWillFund = OptionWillFund(LiquidityAds.WillFundRates.read(input))
         }
     }
 

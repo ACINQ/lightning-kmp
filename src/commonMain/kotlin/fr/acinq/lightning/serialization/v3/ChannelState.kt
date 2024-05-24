@@ -538,7 +538,6 @@ internal data class Normal(
         remoteShutdown,
         closingFeerates?.export(),
         SpliceStatus.None,
-        listOf(),
     )
 }
 

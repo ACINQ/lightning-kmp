@@ -31,7 +31,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         TestConstants.trampolineFees,
         InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)),
         TestConstants.swapInParams,
-        TestConstants.leaseRate
+        TestConstants.fundingRates,
     )
 
     @Test

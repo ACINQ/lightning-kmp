@@ -24,7 +24,8 @@ data object WaitForInit : ChannelState() {
                     cmd.walletInputs,
                     cmd.localParams,
                     cmd.channelConfig,
-                    cmd.remoteInit
+                    cmd.remoteInit,
+                    cmd.fundingRates,
                 )
                 Pair(nextState, listOf())
             }
@@ -53,7 +54,7 @@ data object WaitForInit : ChannelState() {
                     tlvStream = TlvStream(
                         buildSet {
                             add(ChannelTlv.ChannelTypeTlv(cmd.channelType))
-                            cmd.requestRemoteFunding?.let { add(it.requestFunds) }
+                            cmd.requestRemoteFunding?.let { add(ChannelTlv.RequestFundingTlv(it)) }
                             if (cmd.pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(cmd.pushAmount))
                         }
                     )

@@ -536,7 +536,6 @@ internal data class Normal(
         remoteShutdown,
         null,
         SpliceStatus.None,
-        listOf(),
     )
 }
 

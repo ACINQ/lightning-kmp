@@ -147,6 +147,42 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv ClosingSigned -- theirCloseFee == ourCloseFee -- non-initiator pays commit fees`() {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 200_000.sat, alicePushAmount = 0.msat, requestRemoteFunding = TestConstants.bobFundingAmount)
+        assertFalse(alice.commitments.params.localParams.paysCommitTxFees)
+        assertTrue(bob.commitments.params.localParams.paysCommitTxFees)
+        // Alice sends all of her balance to Bob.
+        val (nodes1, r, htlc) = TestsHelper.addHtlc(alice.commitments.availableBalanceForSend(), alice, bob)
+        val (alice1, bob1) = TestsHelper.crossSign(nodes1.first, nodes1.second)
+        val (alice2, bob2) = TestsHelper.fulfillHtlc(htlc.id, r, alice1, bob1)
+        val (bob3, alice3) = TestsHelper.crossSign(bob2, alice2)
+        assertEquals(0.msat, alice3.commitments.latest.localCommit.spec.toLocal)
+        // Alice and Bob agree on the current feerate.
+        val alice4 = alice3.updateFeerate(FeeratePerKw(3_000.sat))
+        val bob4 = bob3.updateFeerate(FeeratePerKw(3_000.sat))
+        // Bob initiates the mutual close.
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.Close.MutualClose(null, null))
+        assertIs<LNChannel<ShuttingDown>>(bob5)
+        val shutdownBob = actionsBob5.findOutgoingMessage<Shutdown>()
+        assertNull(actionsBob5.findOutgoingMessageOpt<ClosingSigned>())
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(shutdownBob))
+        assertIs<LNChannel<Negotiating>>(alice5)
+        val shutdownAlice = actionsAlice5.findOutgoingMessage<Shutdown>()
+        assertNull(actionsAlice5.findOutgoingMessageOpt<ClosingSigned>())
+        val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(shutdownAlice))
+        assertIs<LNChannel<Negotiating>>(bob6)
+        val closingSignedBob = actionsBob6.findOutgoingMessage<ClosingSigned>()
+        val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(closingSignedBob))
+        assertIs<Closing>(alice6.state)
+        val closingSignedAlice = actionsAlice6.findOutgoingMessage<ClosingSigned>()
+        val mutualCloseTx = actionsAlice6.findPublishTxs().first()
+        assertEquals(1, mutualCloseTx.txOut.size)
+        val (bob7, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(closingSignedAlice))
+        assertIs<Closing>(bob7.state)
+        actionsBob7.hasPublishTx(mutualCloseTx)
+    }
+
+    @Test
     fun `override on-chain fee estimator -- initiator`() {
         val (alice, bob) = reachNormal()
         val alice1 = alice.updateFeerate(FeeratePerKw(10_000.sat))

@@ -70,14 +70,15 @@ object DefaultSwapInParams {
  * @param trampolineFees ordered list of trampoline fees to try when making an outgoing payment.
  * @param invoiceDefaultRoutingFees default routing fees set in invoices when we don't have any channel.
  * @param swapInParams parameters for swap-in transactions.
- * @param leaseRate rate at which our peer sells their liquidity.
+ * @param remoteFundingRates rates at which our peer sells their liquidity.
  */
 data class WalletParams(
     val trampolineNode: NodeUri,
     val trampolineFees: List<TrampolineFees>,
     val invoiceDefaultRoutingFees: InvoiceDefaultRoutingFees,
     val swapInParams: SwapInParams,
-    val leaseRate: LiquidityAds.LeaseRate,
+    // TODO: once standardized, we should get this data from our peer's init message.
+    val remoteFundingRates: LiquidityAds.WillFundRates,
 )
 
 /**

@@ -362,6 +362,5 @@
     "localShutdown": null,
     "remoteShutdown": null,
     "closingFeerates": null,
-    "spliceStatus": "None",
-    "liquidityLeases": []
+    "spliceStatus": "None"
 }

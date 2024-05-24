@@ -25,23 +25,21 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
         val commitInput = alice.state.signingSession.commitInput
         run {
-            val (_, _) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
-                .also { (state, actions) ->
-                    assertIs<WaitForFundingSigned>(state.state)
-                    assertTrue(actions.isEmpty())
-                }
+            alice.process(ChannelCommand.MessageReceived(commitSigBob)).also { (state, actions) ->
+                assertIs<WaitForFundingSigned>(state.state)
+                assertTrue(actions.isEmpty())
+            }
         }
         run {
-            val (_, _) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
-                .also { (state, actions) ->
-                    assertIs<WaitForFundingConfirmed>(state.state)
-                    assertEquals(actions.size, 5)
-                    actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
-                    actions.findWatch<WatchConfirmed>().also { assertEquals(WatchConfirmed(state.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), it) }
-                    actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amount) }
-                    actions.has<ChannelAction.Storage.StoreState>()
-                    actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
-                }
+            bob.process(ChannelCommand.MessageReceived(commitSigAlice)).also { (state, actions) ->
+                assertIs<WaitForFundingConfirmed>(state.state)
+                assertEquals(actions.size, 5)
+                actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
+                actions.findWatch<WatchConfirmed>().also { assertEquals(WatchConfirmed(state.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), it) }
+                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amount) }
+                actions.has<ChannelAction.Storage.StoreState>()
+                actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
+            }
         }
     }
 
@@ -49,24 +47,49 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     fun `recv CommitSig -- zero conf`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         run {
-            val (_, _) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
-                .also { (state, actions) ->
-                    assertIs<WaitForFundingSigned>(state.state)
-                    assertTrue(actions.isEmpty())
-                }
+            alice.process(ChannelCommand.MessageReceived(commitSigBob)).also { (state, actions) ->
+                assertIs<WaitForFundingSigned>(state.state)
+                assertTrue(actions.isEmpty())
+            }
         }
         run {
-            val (_, _) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
-                .also { (state, actions) ->
-                    assertIs<WaitForChannelReady>(state.state)
-                    assertEquals(actions.size, 6)
-                    actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
-                    actions.hasOutgoingMessage<ChannelReady>().also { assertEquals(ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId), it.alias) }
-                    actions.findWatch<WatchConfirmed>().also { assertEquals(state.commitments.latest.fundingTxId, it.txId) }
-                    actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amount) }
-                    actions.has<ChannelAction.Storage.StoreState>()
-                    actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
-                }
+            bob.process(ChannelCommand.MessageReceived(commitSigAlice)).also { (state, actions) ->
+                assertIs<WaitForChannelReady>(state.state)
+                assertEquals(actions.size, 6)
+                actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
+                actions.hasOutgoingMessage<ChannelReady>().also { assertEquals(ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId), it.alias) }
+                actions.findWatch<WatchConfirmed>().also { assertEquals(state.commitments.latest.fundingTxId, it.txId) }
+                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amount) }
+                actions.has<ChannelAction.Storage.StoreState>()
+                actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
+            }
+        }
+    }
+
+    @Test
+    fun `recv CommitSig -- liquidity ads`() {
+        val (alice, commitSigAlice, bob, commitSigBob) = init(requestRemoteFunding = TestConstants.bobFundingAmount, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val purchase = alice.process(ChannelCommand.MessageReceived(commitSigBob)).let { (state, actions) ->
+            assertIs<WaitForFundingSigned>(state.state)
+            assertTrue(actions.isEmpty())
+            val purchase = state.state.liquidityPurchase
+            assertNotNull(purchase)
+            assertEquals(TestConstants.bobFundingAmount / 100, purchase.fees.serviceFee)
+            val localCommit = state.state.signingSession.localCommit.right!!
+            assertEquals(TestConstants.aliceFundingAmount - purchase.fees.total, localCommit.spec.toLocal.truncateToSatoshi())
+            assertEquals(TestConstants.bobFundingAmount + purchase.fees.total, localCommit.spec.toRemote.truncateToSatoshi())
+            purchase
+        }
+        bob.process(ChannelCommand.MessageReceived(commitSigAlice)).also { (state, actions) ->
+            assertIs<WaitForFundingConfirmed>(state.state)
+            assertEquals(actions.size, 5)
+            assertEquals(TestConstants.bobFundingAmount + purchase.fees.total, state.commitments.latest.localCommit.spec.toLocal.truncateToSatoshi())
+            assertEquals(TestConstants.aliceFundingAmount - purchase.fees.total, state.commitments.latest.localCommit.spec.toRemote.truncateToSatoshi())
+            actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
+            actions.findWatch<WatchConfirmed>().also { assertEquals(BITCOIN_FUNDING_DEPTHOK, it.event) }
+            actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals((TestConstants.bobFundingAmount + purchase.fees.total).toMilliSatoshi(), it.amount) }
+            actions.has<ChannelAction.Storage.StoreState>()
+            actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
         }
     }
 
@@ -149,6 +172,36 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
             val watchConfirmedAlice = actionsAlice2.findWatch<WatchConfirmed>()
             assertEquals(WatchConfirmed(alice2.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmedAlice)
+            assertEquals(ChannelEvents.Created(alice2.state), actionsAlice2.find<ChannelAction.EmitEvent>().event)
+            val fundingTx = actionsAlice2.find<ChannelAction.Blockchain.PublishTx>().tx
+            assertEquals(fundingTx.txid, txSigsBob.txId)
+            assertEquals(commitInput.outPoint.txid, fundingTx.txid)
+        }
+    }
+
+    @Test
+    fun `recv TxSignatures -- liquidity ads`() {
+        val (alice, commitSigAlice, bob, commitSigBob) = init(requestRemoteFunding = TestConstants.bobFundingAmount, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val commitInput = alice.state.signingSession.commitInput
+        val txSigsBob = run {
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
+            assertIs<WaitForFundingConfirmed>(bob1.state)
+            actionsBob1.hasOutgoingMessage<TxSignatures>()
+        }
+        run {
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
+            assertIs<WaitForFundingSigned>(alice1.state)
+            assertTrue(actionsAlice1.isEmpty())
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(txSigsBob))
+            assertIs<WaitForFundingConfirmed>(alice2.state)
+            assertEquals(7, actionsAlice2.size)
+            assertTrue(actionsAlice2.hasOutgoingMessage<TxSignatures>().channelData.isEmpty())
+            actionsAlice2.has<ChannelAction.Storage.StoreState>()
+            val watchConfirmedAlice = actionsAlice2.findWatch<WatchConfirmed>()
+            assertEquals(WatchConfirmed(alice2.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmedAlice)
+            val liquidityPurchase = actionsAlice2.find<ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest>()
+            assertEquals(liquidityPurchase.txId, txSigsBob.txId)
+            assertIs<LiquidityAds.PaymentDetails.FromChannelBalance>(liquidityPurchase.purchase.paymentDetails)
             assertEquals(ChannelEvents.Created(alice2.state), actionsAlice2.find<ChannelAction.EmitEvent>().event)
             val fundingTx = actionsAlice2.find<ChannelAction.Blockchain.PublishTx>().tx
             assertEquals(fundingTx.txid, txSigsBob.txId)
@@ -298,6 +351,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
+            requestRemoteFunding: Satoshi? = null,
             zeroConf: Boolean = false,
             channelOrigin: Origin? = null
         ): Fixture {
@@ -310,6 +364,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 bobFundingAmount,
                 alicePushAmount,
                 bobPushAmount,
+                requestRemoteFunding,
                 zeroConf,
                 channelOrigin
             )

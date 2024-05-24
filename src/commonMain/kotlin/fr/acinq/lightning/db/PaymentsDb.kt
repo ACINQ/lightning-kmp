@@ -418,12 +418,12 @@ data class InboundLiquidityOutgoingPayment(
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val miningFees: Satoshi,
-    val lease: LiquidityAds.Lease,
+    val purchase: LiquidityAds.Purchase,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val fees: MilliSatoshi = (miningFees + lease.fees.serviceFee).toMilliSatoshi()
+    override val fees: MilliSatoshi = (miningFees + purchase.fees.serviceFee).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
     override val completedAt: Long? = lockedAt
 }
