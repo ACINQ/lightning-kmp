@@ -201,10 +201,11 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
+            requestRemoteFunding: Satoshi? = null,
             zeroConf: Boolean = false,
         ): Fixture {
             return if (zeroConf) {
-                val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
+                val (alice, commitAlice, bob, commitBob) = WaitForFundingSignedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, requestRemoteFunding, zeroConf)
                 val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitBob))
                 assertIs<LNChannel<WaitForFundingSigned>>(alice1)
                 assertTrue(actionsAlice1.isEmpty())
@@ -221,7 +222,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
                 actionsAlice2.has<ChannelAction.Storage.StoreState>()
                 Fixture(alice2, channelReadyAlice, bob1, channelReadyBob)
             } else {
-                val (alice, bob, fundingTx) = WaitForFundingConfirmedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount)
+                val (alice, bob, fundingTx) = WaitForFundingConfirmedTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, requestRemoteFunding)
                 val (alice1, actionsAlice1) = alice.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
                 assertIs<LNChannel<WaitForChannelReady>>(alice1)
                 val channelReadyAlice = actionsAlice1.findOutgoingMessage<ChannelReady>()

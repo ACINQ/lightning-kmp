@@ -35,7 +35,7 @@ sealed class ChannelCommand {
             val channelFlags: ChannelFlags,
             val channelConfig: ChannelConfig,
             val channelType: ChannelType.SupportedChannelType,
-            val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?,
+            val requestRemoteFunding: LiquidityAds.RequestFunding?,
             val channelOrigin: Origin?,
         ) : Init() {
             fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = keyManager.channelKeys(localParams.fundingKeyPath).temporaryChannelId
@@ -48,7 +48,8 @@ sealed class ChannelCommand {
             val walletInputs: List<WalletState.Utxo>,
             val localParams: LocalParams,
             val channelConfig: ChannelConfig,
-            val remoteInit: InitMessage
+            val remoteInit: InitMessage,
+            val fundingRates: LiquidityAds.WillFundRates?
         ) : Init()
 
         data class Restore(val state: PersistedChannelState) : Init()
@@ -86,7 +87,7 @@ sealed class ChannelCommand {
         data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
         data object CheckHtlcTimeout : Commitment()
         sealed class Splice : Commitment() {
-            data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?, val feerate: FeeratePerKw, val origins: List<Origin>) : Splice() {
+            data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestFunding?, val feerate: FeeratePerKw, val origins: List<Origin>) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
                 val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 
@@ -105,7 +106,7 @@ sealed class ChannelCommand {
                     val fundingTxId: TxId,
                     val capacity: Satoshi,
                     val balance: MilliSatoshi,
-                    val liquidityLease: LiquidityAds.Lease?,
+                    val liquidityPurchase: LiquidityAds.Purchase?,
                 ) : Response()
 
                 sealed class Failure : Response() {
