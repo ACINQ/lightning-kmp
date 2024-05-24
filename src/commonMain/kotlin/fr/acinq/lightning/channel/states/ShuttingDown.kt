@@ -51,7 +51,7 @@ data class ShuttingDown(
                                             commitments1.latest,
                                             localShutdown.scriptPubKey.toByteArray(),
                                             remoteShutdown.scriptPubKey.toByteArray(),
-                                            closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                            closingFeerates ?: ClosingFeerates(currentOnChainFeerates().mutualCloseFeerate)
                                         )
                                         val nextState = Negotiating(
                                             commitments1,
@@ -99,7 +99,7 @@ data class ShuttingDown(
                                         commitments1.latest,
                                         localShutdown.scriptPubKey.toByteArray(),
                                         remoteShutdown.scriptPubKey.toByteArray(),
-                                        closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                        closingFeerates ?: ClosingFeerates(currentOnChainFeerates().mutualCloseFeerate)
                                     )
                                     val nextState = Negotiating(
                                         commitments1,

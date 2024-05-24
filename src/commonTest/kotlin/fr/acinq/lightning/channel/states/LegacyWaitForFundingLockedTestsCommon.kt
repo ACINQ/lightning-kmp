@@ -15,6 +15,7 @@ import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.Init
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -34,7 +35,7 @@ class LegacyWaitForFundingLockedTestsCommon {
         val ctx = ChannelContext(
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.nodeParams.nodeId),
             TestConstants.defaultBlockHeight,
-            OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+            MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
             MDCLogger(testLoggerFactory.newLogger("ChannelState"))
         )
         val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Init.Restore(state))
