@@ -773,7 +773,7 @@ object OfferTypes {
              * @param nodeParams our node parameters.
              * @param trampolineNode our trampoline node.
              * @param features features that should be advertised in the offer.
-             * @param pathId pathId on which we will listen for invoice requests.
+             * @param blindingSecret session key used for the blinded path included in the offer.
              */
             fun createBlindedOffer(
                 amount: MilliSatoshi?,

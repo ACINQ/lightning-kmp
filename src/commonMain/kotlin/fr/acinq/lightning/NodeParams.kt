@@ -238,7 +238,6 @@ data class NodeParams(
     /**
      * We generate a default, deterministic Bolt 12 offer based on the node's seed and its trampoline node.
      * This offer will stay valid after restoring the seed on a different device.
-     * We also return the path_id included in this offer, which should be used to route onion messages.
      */
     fun defaultOffer(trampolineNode: NodeUri): OfferTypes.Offer {
         // We generate a deterministic blindingSecret based on:
