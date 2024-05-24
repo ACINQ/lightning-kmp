@@ -14,7 +14,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
 
     val channelId = state.channelId
 
-    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.Connected -> {
                 when (state) {

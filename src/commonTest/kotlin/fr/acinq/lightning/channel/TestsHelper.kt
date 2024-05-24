@@ -11,7 +11,8 @@ import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.json.JsonSerializers
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
 import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
@@ -20,6 +21,7 @@ import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlin.test.*
 
@@ -89,7 +91,7 @@ data class LNChannel<out S : ChannelState>(
         }
     }
 
-    fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> =
+    fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> = runBlocking {
         state
             .run { ctx.copy(logger = ctx.logger.copy(staticMdc = state.mdc())).process(cmd) }
             .let { (newState, actions) ->
@@ -97,6 +99,7 @@ data class LNChannel<out S : ChannelState>(
                 JsonSerializers.json.encodeToString(newState)
                 LNChannel(ctx, newState) to actions
             }
+    }
 
     /** same as [process] but with the added assumption that we stay in the same state */
     fun processSameState(event: ChannelCommand): Pair<LNChannel<S>, List<ChannelAction>> {

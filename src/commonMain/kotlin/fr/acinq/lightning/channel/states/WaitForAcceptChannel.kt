@@ -25,7 +25,7 @@ data class WaitForAcceptChannel(
 ) : ChannelState() {
     val temporaryChannelId: ByteVector32 get() = lastSent.temporaryChannelId
 
-    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is AcceptDualFundedChannel -> {
