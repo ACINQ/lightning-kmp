@@ -510,7 +510,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(1, localCommitPublished.claimHtlcDelayedTxs.size)
 
         // Simulate a wallet restart
-        val initState = LNChannel(aliceClosing.ctx, WaitForInit)
+        val initState = aliceClosing.setState(WaitForInit)
         val (alice1, actions1) = initState.process(ChannelCommand.Init.Restore(aliceClosing.state))
         assertIs<Closing>(alice1.state)
         assertEquals(aliceClosing, alice1)
@@ -838,7 +838,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(1, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
         // Simulate a wallet restart
-        val initState = LNChannel(aliceClosing.ctx, WaitForInit)
+        val initState = aliceClosing.setState(WaitForInit)
         val (alice1, actions1) = initState.process(ChannelCommand.Init.Restore(aliceClosing.state))
         assertIs<Closing>(alice1.state)
         assertEquals(aliceClosing, alice1)
@@ -1117,7 +1117,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(2, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
         // Simulate a wallet restart
-        val initState = LNChannel(aliceClosing.ctx, WaitForInit)
+        val initState = aliceClosing.setState(WaitForInit)
         val (alice1, actions1) = initState.process(ChannelCommand.Init.Restore(aliceClosing.state))
         assertTrue(alice1.state is Closing)
         assertEquals(aliceClosing, alice1)
@@ -1170,7 +1170,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         val remoteInit = Init(bob0.commitments.params.localParams.features)
 
         // then we manually replace alice's state with an older one and reconnect them.
-        val (alice1, aliceActions1) = LNChannel(alice0.ctx, Offline(alice0.state)).process(ChannelCommand.Connected(localInit, remoteInit))
+        val (alice1, aliceActions1) = alice0.setState(Offline(alice0.state)).process(ChannelCommand.Connected(localInit, remoteInit))
         assertIs<Syncing>(alice1.state)
         val channelReestablishA = aliceActions1.findOutgoingMessage<ChannelReestablish>()
         val (bob1, bobActions1) = bobDisconnected.process(ChannelCommand.Connected(remoteInit, localInit))
@@ -1216,7 +1216,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         // simulate a wallet restart
         run {
-            val initState = LNChannel(alice3.ctx, WaitForInit)
+            val initState = alice3.setState(WaitForInit)
             val (alice4, actions4) = initState.process(ChannelCommand.Init.Restore(alice3.state))
             assertIs<Closing>(alice4.state)
             assertEquals(alice3, alice4)
@@ -1312,7 +1312,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         // simulate a wallet restart
         run {
-            val initState = LNChannel(alice2.ctx, WaitForInit)
+            val initState = alice2.setState(WaitForInit)
             val (alice3, actions3) = initState.process(ChannelCommand.Init.Restore(alice2.state))
             assertIs<Closing>(alice3.state)
             assertEquals(alice2, alice3)
@@ -1684,7 +1684,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelReestablish`() {
         val (alice0, bob0, _) = initMutualClose()
-        val bobCurrentPerCommitmentPoint = bob0.commitments.params.localParams.channelKeys(bob0.ctx.keyManager).commitmentPoint(bob0.commitments.localCommitIndex)
+        val bobCurrentPerCommitmentPoint = bob0.commitments.params.localParams.channelKeys(bob0.keyManager).commitmentPoint(bob0.commitments.localCommitIndex)
         val channelReestablish = ChannelReestablish(bob0.channelId, 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint)
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(channelReestablish))
         assertIs<Closing>(alice1.state)
@@ -1717,7 +1717,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         run {
-            val alice1 = aliceClosing.copy(ctx = alice.ctx.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt()))
+            val alice1 = aliceClosing.copy(currentBlockHeight = htlc.cltvExpiry.toLong().toInt())
             val (alice2, actions) = alice1.process(ChannelCommand.Commitment.CheckHtlcTimeout)
             assertEquals(alice1.state, alice2.state)
             assertTrue(actions.isEmpty())

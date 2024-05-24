@@ -37,12 +37,17 @@ data class StaticParams(val nodeParams: NodeParams, val remoteNodeId: PublicKey)
 
 data class ChannelContext(
     val staticParams: StaticParams,
-    val currentBlockHeight: Int,
+    val blockHeight: StateFlow<Int?>,
     val onChainFeerates: StateFlow<OnChainFeerates?>,
     override val logger: MDCLogger
 ) : LoggingContext {
     val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
     val privateKey: PrivateKey get() = staticParams.nodeParams.nodePrivateKey
+    suspend fun currentBlockHeight(): Long {
+        logger.info { "retrieving current blockheight" }
+        return blockHeight.filterNotNull().first().toLong()
+            .also { logger.info { "using currentBlockHeight=$it" } }
+    }
     suspend fun currentOnChainFeerates(): OnChainFeerates {
         logger.info { "retrieving feerates" }
         return onChainFeerates.filterNotNull().first()
@@ -227,7 +232,7 @@ sealed class ChannelState {
                     // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
                     val nextState = Closing(
                         state.commitments,
-                        waitingSinceBlock = currentBlockHeight.toLong(),
+                        waitingSinceBlock = currentBlockHeight(),
                         mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx } + listOf(state.bestUnpublishedClosingTx),
                         mutualClosePublished = listOf(state.bestUnpublishedClosingTx)
                     )
@@ -271,7 +276,7 @@ sealed class ChannelState {
                 else -> {
                     val nexState = Closing(
                         commitments = commitments,
-                        waitingSinceBlock = currentBlockHeight.toLong(),
+                        waitingSinceBlock = currentBlockHeight(),
                         mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                         mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                     )
@@ -432,13 +437,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
             is Negotiating -> Closing(
                 commitments = commitments,
-                waitingSinceBlock = currentBlockHeight.toLong(),
+                waitingSinceBlock = currentBlockHeight(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 remoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
                 commitments = commitments,
-                waitingSinceBlock = currentBlockHeight.toLong(),
+                waitingSinceBlock = currentBlockHeight(),
                 remoteCommitPublished = remoteCommitPublished
             )
         }
@@ -461,13 +466,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             is Closing -> copy(nextRemoteCommitPublished = remoteCommitPublished)
             is Negotiating -> Closing(
                 commitments = commitments,
-                waitingSinceBlock = currentBlockHeight.toLong(),
+                waitingSinceBlock = currentBlockHeight(),
                 mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                 nextRemoteCommitPublished = remoteCommitPublished
             )
             else -> Closing(
                 commitments = commitments,
-                waitingSinceBlock = currentBlockHeight.toLong(),
+                waitingSinceBlock = currentBlockHeight(),
                 nextRemoteCommitPublished = remoteCommitPublished
             )
         }
@@ -493,13 +498,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 }
                 is Negotiating -> Closing(
                     commitments = commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
+                    waitingSinceBlock = currentBlockHeight(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
                 else -> Closing(
                     commitments = commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
+                    waitingSinceBlock = currentBlockHeight(),
                     revokedCommitPublished = listOf(revokedCommitPublished)
                 )
             }
@@ -516,7 +521,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     val remoteCommitPublished = claimRemoteCommitMainOutput(channelKeys(), commitments.params, tx, currentOnChainFeerates().claimMainFeerate)
                     val nextState = Closing(
                         commitments = commitments,
-                        waitingSinceBlock = currentBlockHeight.toLong(),
+                        waitingSinceBlock = currentBlockHeight(),
                         futureRemoteCommitPublished = remoteCommitPublished
                     )
                     Pair(nextState, buildList {
@@ -546,8 +551,8 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                             val remoteCommitPublished = claimRemoteCommitMainOutput(channelKeys(), commitments.params, tx, currentOnChainFeerates().claimMainFeerate)
                             val nextState = when (this@ChannelStateWithCommitments) {
                                 is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
-                                is Negotiating -> Closing(commitments, waitingSinceBlock = currentBlockHeight.toLong(), mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx }, remoteCommitPublished = remoteCommitPublished)
-                                else -> Closing(commitments, waitingSinceBlock = currentBlockHeight.toLong(), remoteCommitPublished = remoteCommitPublished)
+                                is Negotiating -> Closing(commitments, waitingSinceBlock = currentBlockHeight(), mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx }, remoteCommitPublished = remoteCommitPublished)
+                                else -> Closing(commitments, waitingSinceBlock = currentBlockHeight(), remoteCommitPublished = remoteCommitPublished)
                             }
                             return Pair(nextState, buildList {
                                 add(ChannelAction.Storage.StoreState(nextState))
@@ -582,13 +587,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 is Closing -> copy(localCommitPublished = localCommitPublished)
                 is Negotiating -> Closing(
                     commitments = commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
+                    waitingSinceBlock = currentBlockHeight(),
                     mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                     localCommitPublished = localCommitPublished
                 )
                 else -> Closing(
                     commitments = commitments,
-                    waitingSinceBlock = currentBlockHeight.toLong(),
+                    waitingSinceBlock = currentBlockHeight(),
                     localCommitPublished = localCommitPublished
                 )
             }
@@ -605,9 +610,9 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
      * If HTLCs are at risk, we will publish our local commitment and close the channel.
      */
     internal suspend fun ChannelContext.checkHtlcTimeout(): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
-        logger.info { "checking htlcs timeout at blockHeight=${currentBlockHeight}" }
-        val timedOutOutgoing = commitments.timedOutOutgoingHtlcs(currentBlockHeight.toLong())
-        val almostTimedOutIncoming = commitments.almostTimedOutIncomingHtlcs(currentBlockHeight.toLong(), staticParams.nodeParams.fulfillSafetyBeforeTimeoutBlocks)
+        logger.info { "checking htlcs timeout at blockHeight=${currentBlockHeight()}" }
+        val timedOutOutgoing = commitments.timedOutOutgoingHtlcs(currentBlockHeight())
+        val almostTimedOutIncoming = commitments.almostTimedOutIncomingHtlcs(currentBlockHeight(), staticParams.nodeParams.fulfillSafetyBeforeTimeoutBlocks)
         val channelEx: ChannelException? = when {
             timedOutOutgoing.isNotEmpty() -> HtlcsTimedOutDownstream(channelId, timedOutOutgoing)
             almostTimedOutIncoming.isNotEmpty() -> FulfilledHtlcsWillTimeout(channelId, almostTimedOutIncoming)
@@ -622,7 +627,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     this@ChannelStateWithCommitments is Negotiating && this@ChannelStateWithCommitments.bestUnpublishedClosingTx != null -> {
                         val nexState = Closing(
                             commitments,
-                            waitingSinceBlock = currentBlockHeight.toLong(),
+                            waitingSinceBlock = currentBlockHeight(),
                             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOfNotNull(bestUnpublishedClosingTx)
                         )

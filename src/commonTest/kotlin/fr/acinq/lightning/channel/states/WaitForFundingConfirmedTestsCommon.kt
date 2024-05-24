@@ -106,7 +106,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     fun `recv BITCOIN_FUNDING_DEPTHOK -- after restart`() {
         val (alice, bob, fundingTx) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         run {
-            val (alice1, _) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Init.Restore(alice.state))
+            val (alice1, _) = alice.setState(WaitForInit).process(ChannelCommand.Init.Restore(alice.state))
                 .also { (state, actions) ->
                     assertIs<Offline>(state.state)
                     assertEquals(actions.size, 2)
@@ -122,7 +122,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 }
         }
         run {
-            val (bob1, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Init.Restore(bob.state))
+            val (bob1, _) = bob.setState(WaitForInit).process(ChannelCommand.Init.Restore(bob.state))
                 .also { (state, actions) ->
                     assertIs<Offline>(state.state)
                     assertEquals(actions.size, 2)
@@ -144,7 +144,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (alice, bob, fundingTx1, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1, fundingTx2) = rbf(alice, bob, walletAlice)
         run {
-            val (alice2, _) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Init.Restore(alice1.state))
+            val (alice2, _) = alice.setState(WaitForInit).process(ChannelCommand.Init.Restore(alice1.state))
                 .also { (state, actions) ->
                     assertIs<Offline>(state.state)
                     assertEquals(actions.size, 4)
@@ -164,7 +164,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 }
         }
         run {
-            val (bob2, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Init.Restore(bob1.state))
+            val (bob2, _) = bob.setState(WaitForInit).process(ChannelCommand.Init.Restore(bob1.state))
                 .also { (state, actions) ->
                     assertIs<Offline>(state.state)
                     assertEquals(actions.size, 4)

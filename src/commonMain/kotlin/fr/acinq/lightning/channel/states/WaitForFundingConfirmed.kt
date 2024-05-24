@@ -56,7 +56,7 @@ data class WaitForFundingConfirmed(
                     }
                     is FullySignedSharedTransaction -> when (rbfStatus) {
                         is RbfStatus.WaitingForSigs -> {
-                            when (val res = rbfStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight.toLong())) {
+                            when (val res = rbfStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight())) {
                                 is Either.Left -> {
                                     val action: InteractiveTxSigningSessionAction.AbortFundingAttempt = res.value
                                     logger.warning { "rbf attempt failed: ${action.reason.message}" }
@@ -214,7 +214,7 @@ data class WaitForFundingConfirmed(
                 }
                 is CommitSig -> when (rbfStatus) {
                     is RbfStatus.WaitingForSigs -> {
-                        val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong(), logger)
+                        val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight(), logger)
                         when (action) {
                             is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                 logger.warning { "rbf attempt failed: ${action.reason.message}" }

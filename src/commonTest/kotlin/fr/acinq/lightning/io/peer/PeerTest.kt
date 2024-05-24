@@ -29,6 +29,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.test.*
@@ -336,7 +337,7 @@ class PeerTest : LightningTestSuite() {
             alice0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Alice.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice1.state) },
-            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+            currentTip = htlc.cltvExpiry.toLong().toInt()
         )
 
         val initChannels = peer.channelsFlow.first { it.values.isNotEmpty() }
@@ -406,13 +407,14 @@ class PeerTest : LightningTestSuite() {
             bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Bob.walletParams,
             databases = InMemoryDatabases(), // NB: empty database (Bob has lost its channel state)
-            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+            currentTip = htlc.cltvExpiry.toLong().toInt()
         )
 
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
         peer.expectStatus(Connection.ESTABLISHED)
-        val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
+        val ctx = ChannelContext(alice1.staticParams, MutableStateFlow(alice1.currentBlockHeight), alice1.onChainFeerates, alice1.logger)
+        val aliceReestablish = alice1.state.run { ctx.createChannelReestablish() }
         assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
 
@@ -436,13 +438,14 @@ class PeerTest : LightningTestSuite() {
             bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Bob.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(bob0.state) }, // NB: outdated channel data
-            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+            currentTip = htlc.cltvExpiry.toLong().toInt()
         )
 
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
         peer.expectStatus(Connection.ESTABLISHED)
-        val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
+        val ctx = ChannelContext(alice1.staticParams, MutableStateFlow(alice1.currentBlockHeight), alice1.onChainFeerates, alice1.logger)
+        val aliceReestablish = alice1.state.run { ctx.createChannelReestablish() }
         assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
 
@@ -487,7 +490,7 @@ class PeerTest : LightningTestSuite() {
         }
         run {
             val aliceUpdate =
-                Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.ctx.privateKey, alice0.staticParams.remoteNodeId, alice0.state.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
+                Announcements.makeChannelUpdate(alice0.staticParams.nodeParams.chainHash, alice0.privateKey, alice0.staticParams.remoteNodeId, alice0.state.shortChannelId, CltvExpiryDelta(48), 100.msat, 50.msat, 250, 150_000.msat)
             bob.forward(aliceUpdate)
             // wait until the update is processed
             bob.channelsFlow

@@ -154,7 +154,7 @@ data class Negotiating(
                         val closingTx = getMutualClosePublished(watch.tx)
                         val nextState = Closing(
                             commitments,
-                            waitingSinceBlock = currentBlockHeight.toLong(),
+                            waitingSinceBlock = currentBlockHeight(),
                             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
                             mutualClosePublished = listOf(closingTx)
                         )
@@ -189,10 +189,10 @@ data class Negotiating(
         return closingTxProposed.flatten().first { it.unsignedTx.tx.txid == tx.txid }.unsignedTx.copy(tx = tx)
     }
 
-    private fun ChannelContext.completeMutualClose(signedClosingTx: ClosingTx, closingSigned: ClosingSigned?): Pair<ChannelState, List<ChannelAction>> {
+    private suspend fun ChannelContext.completeMutualClose(signedClosingTx: ClosingTx, closingSigned: ClosingSigned?): Pair<ChannelState, List<ChannelAction>> {
         val nextState = Closing(
             commitments,
-            waitingSinceBlock = currentBlockHeight.toLong(),
+            waitingSinceBlock = currentBlockHeight(),
             mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
             mutualClosePublished = listOf(signedClosingTx)
         )

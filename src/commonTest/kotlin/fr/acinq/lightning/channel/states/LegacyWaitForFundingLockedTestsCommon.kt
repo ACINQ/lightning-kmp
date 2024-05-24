@@ -32,13 +32,14 @@ class LegacyWaitForFundingLockedTestsCommon {
         assertIs<LegacyWaitForFundingLocked>(state)
         val fundingTx = Transaction.read("020000000100000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0140420f0000000000220020f9aafa9be1212d0d373760c279f3817f9be707d674cae5f38bb31c1fd85c202900000000")
         assertEquals(state.commitments.latest.fundingTxId, fundingTx.txid)
-        val ctx = ChannelContext(
+        val state0 = LNChannel(
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.nodeParams.nodeId),
             TestConstants.defaultBlockHeight,
             MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
-            MDCLogger(testLoggerFactory.newLogger("ChannelState"))
+            MDCLogger(testLoggerFactory.newLogger("ChannelState")),
+            WaitForInit
         )
-        val (state1, actions1) = LNChannel(ctx, WaitForInit).process(ChannelCommand.Init.Restore(state))
+        val (state1, actions1) = state0.process(ChannelCommand.Init.Restore(state))
         assertIs<LNChannel<Offline>>(state1)
         assertEquals(actions1.size, 1)
         val watchConfirmed = actions1.findWatch<WatchConfirmed>()

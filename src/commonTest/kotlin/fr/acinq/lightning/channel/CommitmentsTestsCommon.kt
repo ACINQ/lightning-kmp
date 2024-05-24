@@ -45,8 +45,8 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- success case`() {
         val (alice, bob) = reachNormal()
 
-        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
-        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
+        val aliceKeys = alice.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
+        val bobKeys = bob.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
 
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
@@ -134,8 +134,8 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- failure case`() {
         val (alice, bob) = reachNormal()
 
-        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
-        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
+        val aliceKeys = alice.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
+        val bobKeys = bob.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
 
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
@@ -223,8 +223,8 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- multiple htlcs`() {
         val (alice, bob) = reachNormal()
 
-        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
-        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
+        val aliceKeys = alice.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
+        val bobKeys = bob.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
 
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob

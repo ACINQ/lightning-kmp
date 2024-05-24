@@ -447,7 +447,7 @@ class QuiescenceTestsCommon : LightningTestSuite() {
         val (alice3, _, _) = exchangeStfu(createSpliceCommand(alice2), alice2, bob2)
         // The outgoing HTLC from Alice has timed out: she should force-close to avoid an on-chain race.
         val (alice4, actionsAlice4) = run {
-            val tmp = alice3.copy(ctx = alice3.ctx.copy(currentBlockHeight = add.cltvExpiry.toLong().toInt()))
+            val tmp = alice3.copy(currentBlockHeight = add.cltvExpiry.toLong().toInt())
             tmp.process(ChannelCommand.Commitment.CheckHtlcTimeout)
         }
         assertIs<Closing>(alice4.state)
@@ -477,7 +477,7 @@ class QuiescenceTestsCommon : LightningTestSuite() {
             // The incoming HTLC to Alice has timed out: it is Bob's responsibility to force-close.
             // If Bob doesn't force-close, Alice will fulfill or fail the HTLC when they reconnect.
             val (alice5, actionsAlice5) = run {
-                val tmp = alice4.copy(ctx = alice4.ctx.copy(currentBlockHeight = add.cltvExpiry.toLong().toInt()))
+                val tmp = alice4.copy(currentBlockHeight = add.cltvExpiry.toLong().toInt())
                 tmp.process(ChannelCommand.Commitment.CheckHtlcTimeout)
             }
             assertTrue(actionsAlice5.isEmpty())

@@ -22,6 +22,7 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlin.test.*
@@ -64,17 +65,20 @@ internal inline fun <reified T : ChannelAction> List<ChannelAction>.find() = fin
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.doesNotHave() = assertTrue { none { it is T } }
 
-fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChannel<S> = this.copy(ctx = this.ctx.copy(onChainFeerates = MutableStateFlow(OnChainFeerates(feerate, feerate, feerate, feerate))))
+fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChannel<S> = this.copy(onChainFeerates = MutableStateFlow(OnChainFeerates(feerate, feerate, feerate, feerate)))
 
 fun Features.add(vararg pairs: Pair<Feature, FeatureSupport>): Features = this.copy(activated = this.activated + mapOf(*pairs))
 fun Features.remove(vararg features: Feature): Features = this.copy(activated = activated.filterKeys { f -> !features.contains(f) })
 
 data class LNChannel<out S : ChannelState>(
-    val ctx: ChannelContext,
+    val staticParams: StaticParams,
+    val currentBlockHeight: Int,
+    val onChainFeerates: StateFlow<OnChainFeerates?>,
+    val logger: MDCLogger,
     val state: S
 ) {
-    val staticParams = ctx.staticParams
-    val currentBlockHeight = ctx.currentBlockHeight
+    val keyManager: KeyManager get() = staticParams.nodeParams.keyManager
+    val privateKey: PrivateKey get() = staticParams.nodeParams.nodePrivateKey
     val channelId: ByteVector32 by lazy {
         when (state) {
             is ChannelStateWithCommitments -> state.channelId
@@ -92,13 +96,21 @@ data class LNChannel<out S : ChannelState>(
         }
     }
 
+    fun <N : ChannelState> setState(newState: N): LNChannel<N> = LNChannel(staticParams, currentBlockHeight, onChainFeerates, logger, newState)
+
     fun process(cmd: ChannelCommand): Pair<LNChannel<ChannelState>, List<ChannelAction>> = runBlocking {
+        val ctx = ChannelContext(
+            staticParams = staticParams,
+            blockHeight = MutableStateFlow(currentBlockHeight),
+            onChainFeerates= onChainFeerates,
+            logger = logger
+        )
         state
             .run { ctx.copy(logger = ctx.logger.copy(staticMdc = state.mdc())).process(cmd) }
             .let { (newState, actions) ->
                 checkSerialization(actions)
                 JsonSerializers.json.encodeToString(newState)
-                LNChannel(ctx, newState) to actions
+                setState(newState) to actions
             }
     }
 
@@ -163,21 +175,17 @@ object TestsHelper {
             )
         }
         val alice = LNChannel(
-            ChannelContext(
-                StaticParams(aliceNodeParams, TestConstants.Bob.nodeParams.nodeId),
-                currentBlockHeight = currentHeight,
-                onChainFeerates = MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
-                logger = MDCLogger(testLoggerFactory.newLogger("ChannelState"))
-            ),
+            staticParams = StaticParams(aliceNodeParams, TestConstants.Bob.nodeParams.nodeId),
+            currentBlockHeight = currentHeight,
+            onChainFeerates = MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
+            logger = MDCLogger(testLoggerFactory.newLogger("ChannelState")),
             WaitForInit
         )
         val bob = LNChannel(
-            ChannelContext(
-                StaticParams(bobNodeParams, TestConstants.Alice.nodeParams.nodeId),
-                currentBlockHeight = currentHeight,
-                onChainFeerates = MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
-                logger = MDCLogger(testLoggerFactory.newLogger("ChannelState"))
-            ),
+            staticParams = StaticParams(bobNodeParams, TestConstants.Alice.nodeParams.nodeId),
+            currentBlockHeight = currentHeight,
+            onChainFeerates = MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
+            logger = MDCLogger(testLoggerFactory.newLogger("ChannelState")),
             WaitForInit
         )
 
@@ -203,7 +211,7 @@ object TestsHelper {
         )
         assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else listOf()
-        val (bob1, _) = bob.process(ChannelCommand.Init.NonInitiator(aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val (bob1, _) = bob.process(ChannelCommand.Init.NonInitiator(aliceChannelParams.channelKeys(alice.keyManager).temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
         assertIs<LNChannel<WaitForOpenChannel>>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
@@ -367,7 +375,7 @@ object TestsHelper {
     }
 
     fun useAlternativeCommitSig(s: LNChannel<ChannelState>, commitment: Commitment, alternative: CommitSigTlv.AlternativeFeerateSig): Transaction {
-        val channelKeys = s.commitments.params.localParams.channelKeys(s.ctx.keyManager)
+        val channelKeys = s.commitments.params.localParams.channelKeys(s.keyManager)
         val alternativeSpec = commitment.localCommit.spec.copy(feerate = alternative.feerate)
         val fundingTxIndex = commitment.fundingTxIndex
         val commitInput = commitment.commitInput

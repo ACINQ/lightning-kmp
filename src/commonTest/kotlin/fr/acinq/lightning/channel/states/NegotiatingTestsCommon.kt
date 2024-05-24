@@ -455,8 +455,8 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         private fun makeLegacyClosingSigned(alice: LNChannel<Negotiating>, bob: LNChannel<Negotiating>, closingFee: Satoshi): Pair<ClosingSigned, ClosingSigned> {
             val aliceScript = alice.state.localShutdown.scriptPubKey.toByteArray()
             val bobScript = bob.state.localShutdown.scriptPubKey.toByteArray()
-            val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
-            val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
+            val aliceKeys = alice.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
+            val bobKeys = bob.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
             val (_, aliceClosingSigned) = Helpers.Closing.makeClosingTx(aliceKeys, alice.commitments.latest, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
             val (_, bobClosingSigned) = Helpers.Closing.makeClosingTx(bobKeys, bob.commitments.latest, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
             return Pair(aliceClosingSigned.copy(tlvStream = TlvStream.empty()), bobClosingSigned.copy(tlvStream = TlvStream.empty()))
@@ -465,7 +465,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         tailrec fun converge(a: LNChannel<ChannelState>, b: LNChannel<ChannelState>, aliceCloseSig: ClosingSigned?): Pair<LNChannel<Closing>, LNChannel<Closing>>? {
             return when {
                 a.state !is ChannelStateWithCommitments || b.state !is ChannelStateWithCommitments -> null
-                a.state is Closing && b.state is Closing -> Pair(LNChannel(a.ctx, a.state), LNChannel(b.ctx, b.state))
+                a.state is Closing && b.state is Closing -> Pair(a.setState(a.state), b.setState(b.state))
                 aliceCloseSig != null -> {
                     val (b1, actions) = b.process(ChannelCommand.MessageReceived(aliceCloseSig))
                     val bobCloseSig = actions.findOutgoingMessageOpt<ClosingSigned>()

@@ -51,7 +51,7 @@ data class WaitForFundingSigned(
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is CommitSig -> {
-                    val (signingSession1, action) = signingSession.receiveCommitSig(channelParams.localParams.channelKeys(keyManager), channelParams, cmd.message, currentBlockHeight.toLong(), logger)
+                    val (signingSession1, action) = signingSession.receiveCommitSig(channelParams.localParams.channelKeys(keyManager), channelParams, cmd.message, currentBlockHeight(), logger)
                     when (action) {
                         is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
                         // No need to store their commit_sig, they will re-send it if we disconnect.
@@ -60,7 +60,7 @@ data class WaitForFundingSigned(
                     }
                 }
                 is TxSignatures -> {
-                    when (val res = signingSession.receiveTxSigs(channelParams.localParams.channelKeys(keyManager), cmd.message, currentBlockHeight.toLong())) {
+                    when (val res = signingSession.receiveTxSigs(channelParams.localParams.channelKeys(keyManager), cmd.message, currentBlockHeight())) {
                         is Either.Left -> {
                             val action: InteractiveTxSigningSessionAction.AbortFundingAttempt = res.value
                             handleLocalError(cmd, action.reason)
@@ -100,7 +100,7 @@ data class WaitForFundingSigned(
         }
     }
 
-    private fun ChannelContext.sendTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<ChannelState, List<ChannelAction>> {
+    private suspend fun ChannelContext.sendTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<ChannelState, List<ChannelAction>> {
         logger.info { "funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
@@ -153,7 +153,7 @@ data class WaitForFundingSigned(
                 commitments,
                 localPushAmount,
                 remotePushAmount,
-                currentBlockHeight.toLong(),
+                currentBlockHeight(),
                 null,
                 RbfStatus.None
             )

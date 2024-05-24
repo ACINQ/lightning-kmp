@@ -38,7 +38,7 @@ data object WaitForInit : ChannelState() {
                     htlcMinimum = cmd.localParams.htlcMinimum,
                     toSelfDelay = cmd.localParams.toSelfDelay,
                     maxAcceptedHtlcs = cmd.localParams.maxAcceptedHtlcs,
-                    lockTime = currentBlockHeight.toLong(),
+                    lockTime = currentBlockHeight(),
                     fundingPubkey = channelKeys.fundingPubKey(0),
                     revocationBasepoint = channelKeys.revocationBasepoint,
                     paymentBasepoint = channelKeys.paymentBasepoint,

@@ -191,7 +191,7 @@ class Peer(
     private val ourInit = Init(features.initFeatures(), initTlvStream)
     private var theirInit: Init? = null
 
-    val currentTipFlow = MutableStateFlow<Pair<Int, BlockHeader>?>(null)
+    val currentTipFlow = MutableStateFlow<Int?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val swapInFeeratesFlow = MutableStateFlow<FeeratePerKw?>(null)
 
@@ -200,7 +200,7 @@ class Peer(
         val state = this
         val ctx = ChannelContext(
             StaticParams(nodeParams, remoteNodeId),
-            currentTipFlow.filterNotNull().first().first,
+            currentTipFlow,
             onChainFeeratesFlow,
             logger = MDCLogger(
                 logger = _channelLogger,
@@ -227,7 +227,7 @@ class Peer(
         launch {
             watcher.client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
                 .collect { msg ->
-                    currentTipFlow.value = msg.blockHeight to msg.header
+                    currentTipFlow.value = msg.blockHeight
                 }
         }
         launch {
@@ -472,7 +472,7 @@ class Peer(
         waitForPeerReady()
         swapInJob = launch {
             swapInWallet.wallet.walletStateFlow
-                .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip.first) }
+                .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip) }
                 .combine(swapInFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerate -> Triple(walletState, currentTip, feerate) }
                 .combine(nodeParams.liquidityPolicy) { (walletState, currentTip, feerate), policy -> TrySwapInFlow(currentTip, walletState, feerate, policy) }
                 .collect { w ->
@@ -617,7 +617,7 @@ class Peer(
             .filterIsInstance<Normal>()
             .firstOrNull()
             ?.let { channel ->
-                val leaseStart = currentTipFlow.filterNotNull().first().first
+                val leaseStart = currentTipFlow.filterNotNull().first()
                 val spliceCommand = ChannelCommand.Commitment.Splice.Request(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
@@ -717,7 +717,7 @@ class Peer(
 
                     is ChannelAction.ProcessCmdRes.AddSettledFail -> {
                         val currentTip = currentTipFlow.filterNotNull().first()
-                        when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip.first)) {
+                        when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip)) {
                             is OutgoingPaymentHandler.Progress -> {
                                 _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                                 result.actions.forEach { input.send(it) }
@@ -839,7 +839,7 @@ class Peer(
     }
 
     private suspend fun processIncomingPayment(item: Either<PayToOpenRequest, UpdateAddHtlc>) {
-        val currentBlockHeight = currentTipFlow.filterNotNull().first().first
+        val currentBlockHeight = currentTipFlow.filterNotNull().first()
         val result = when (item) {
             is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight)
             is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight)
@@ -1135,7 +1135,7 @@ class Peer(
                                 else -> null
                             }
                         }
-                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first().first)?.let {
+                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first())?.let {
                             when (it) {
                                 is OnionMessageAction.PayInvoice -> input.send(PayInvoice(it.payOffer.paymentId, it.payOffer.amount, LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey), it.payOffer.trampolineFeesOverride))
                                 is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(it.message))
@@ -1238,7 +1238,7 @@ class Peer(
             }
             is PayInvoice -> {
                 val currentTip = currentTipFlow.filterNotNull().first()
-                when (val result = outgoingPaymentHandler.sendPayment(cmd, _channels, currentTip.first)) {
+                when (val result = outgoingPaymentHandler.sendPayment(cmd, _channels, currentTip)) {
                     is OutgoingPaymentHandler.Progress -> {
                         _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                         result.actions.forEach { input.send(it) }

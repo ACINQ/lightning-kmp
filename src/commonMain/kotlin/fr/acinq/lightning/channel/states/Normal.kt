@@ -53,7 +53,7 @@ data class Normal(
                     val error = NoMoreHtlcsClosingInProgress(channelId)
                     return handleCommandError(cmd, error, channelUpdate)
                 }
-                handleCommandResult(cmd, commitments.sendAdd(cmd, cmd.paymentId, currentBlockHeight.toLong()), cmd.commit)
+                handleCommandResult(cmd, commitments.sendAdd(cmd, cmd.paymentId, currentBlockHeight()), cmd.commit)
             }
             is ChannelCommand.Htlc.Settlement.Fulfill -> handleCommandResult(cmd, commitments.sendFulfill(cmd), cmd.commit)
             is ChannelCommand.Htlc.Settlement.Fail -> handleCommandResult(cmd, commitments.sendFail(cmd, this.privateKey), cmd.commit)
@@ -170,7 +170,7 @@ data class Normal(
                             Pair(this@Normal, listOf())
                         }
                         spliceStatus is SpliceStatus.WaitingForSigs -> {
-                            val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong(), logger)
+                            val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight(), logger)
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                     logger.warning { "splice attempt failed: ${action.reason.message} (fundingTxId=${spliceStatus.session.fundingTx.txId})" }
@@ -417,7 +417,7 @@ data class Normal(
                                             val spliceInit = SpliceInit(
                                                 channelId,
                                                 fundingContribution = fundingContribution,
-                                                lockTime = currentBlockHeight.toLong(),
+                                                lockTime = currentBlockHeight(),
                                                 feerate = spliceStatus.command.feerate,
                                                 fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                                 pushAmount = spliceStatus.command.pushAmount,
@@ -667,7 +667,7 @@ data class Normal(
                     }
                     is TxSignatures -> when (spliceStatus) {
                         is SpliceStatus.WaitingForSigs -> {
-                            when (val res = spliceStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight.toLong())) {
+                            when (val res = spliceStatus.session.receiveTxSigs(channelKeys(), cmd.message, currentBlockHeight())) {
                                 is Either.Left -> {
                                     val action: InteractiveTxSigningSessionAction.AbortFundingAttempt = res.value
                                     logger.warning { "splice attempt failed: ${action.reason.message}" }

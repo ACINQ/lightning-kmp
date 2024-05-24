@@ -85,7 +85,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                             val closingTx = state.getMutualClosePublished(watch.tx)
                             val nextState = Closing(
                                 state.commitments,
-                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                waitingSinceBlock = currentBlockHeight(),
                                 mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
                                 mutualClosePublished = listOf(closingTx)
                             )
