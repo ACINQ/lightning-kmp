@@ -1188,8 +1188,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         ): Fixture {
             val channelId = randomBytes32()
             val fundingTxIndex = 0L
-            val localParamsA = TestConstants.Alice.channelParams()
-            val localParamsB = TestConstants.Bob.channelParams()
+            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = true)
+            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = false)
             val channelKeysA = localParamsA.channelKeys(TestConstants.Alice.keyManager)
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet
@@ -1219,8 +1219,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             lockTime: Long
         ): Either<FundingContributionFailure, FundingContributions> {
             val channelId = randomBytes32()
-            val localParamsA = TestConstants.Alice.channelParams()
-            val localParamsB = TestConstants.Bob.channelParams()
+            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = true)
+            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = false)
             val channelKeysA = localParamsA.channelKeys(TestConstants.Alice.keyManager)
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet
@@ -1252,8 +1252,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         ): Fixture {
             val channelId = randomBytes32()
             val fundingTxIndex = 0L
-            val localParamsA = TestConstants.Alice.channelParams()
-            val localParamsB = TestConstants.Bob.channelParams()
+            val localParamsA = TestConstants.Alice.channelParams(payCommitTxFees = true)
+            val localParamsB = TestConstants.Bob.channelParams(payCommitTxFees = false)
             val channelKeysA = localParamsA.channelKeys(TestConstants.Alice.keyManager)
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet

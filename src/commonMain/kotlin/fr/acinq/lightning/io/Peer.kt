@@ -630,17 +630,16 @@ class Peer(
             }
     }
 
-    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, leaseRate: LiquidityAds.LeaseRate): ChannelCommand.Commitment.Splice.Response? {
+    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, fundingRate: LiquidityAds.FundingLease): ChannelCommand.Commitment.Splice.Response? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
             ?.let { channel ->
-                val leaseStart = currentTipFlow.filterNotNull().first()
                 val spliceCommand = ChannelCommand.Commitment.Splice.Request(
                     replyTo = CompletableDeferred(),
                     spliceIn = null,
                     spliceOut = null,
-                    requestRemoteFunding = LiquidityAds.RequestRemoteFunding(amount, leaseStart, leaseRate),
+                    requestRemoteFunding = LiquidityAds.RequestFunding(amount, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance),
                     feerate = feerate,
                     origins = listOf(),
                 )
@@ -1006,7 +1005,7 @@ class Peer(
                             val localParams = LocalParams(nodeParams, isChannelOpener = false, payCommitTxFees = msg.channelFlags.nonInitiatorPaysCommitFees)
                             val state = WaitForInit
                             val channelConfig = ChannelConfig.standard
-                            val (state1, actions1) = state.process(ChannelCommand.Init.NonInitiator(msg.temporaryChannelId, 0.sat, 0.msat, listOf(), localParams, channelConfig, theirInit!!))
+                            val (state1, actions1) = state.process(ChannelCommand.Init.NonInitiator(msg.temporaryChannelId, 0.sat, 0.msat, listOf(), localParams, channelConfig, theirInit!!, fundingRates = null))
                             val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
                             _channels = _channels + (msg.temporaryChannelId to state2)
                             processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2)
@@ -1232,7 +1231,9 @@ class Peer(
                                 is LiquidityPolicy.Disable -> LiquidityPolicy.minInboundLiquidityTarget
                                 is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
                             }
-                            LiquidityAds.RequestRemoteFunding(inboundLiquidityTarget, currentTipFlow.filterNotNull().first(), walletParams.leaseRate)
+                            // We assume that the liquidity policy is correctly configured to match a funding lease offered by our peer.
+                            val fundingRate = walletParams.remoteFundingRates.findLease(inboundLiquidityTarget)!!
+                            LiquidityAds.RequestFunding(inboundLiquidityTarget, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance)
                         }
                         val (localFundingAmount, fees) = run {
                             // We need to know the local channel funding amount to be able use channel opening messages.
@@ -1241,7 +1242,7 @@ class Peer(
                             val dummyFundingScript = Script.write(Scripts.multiSig2of2(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey)).byteVector()
                             val localMiningFee = Transactions.weight2fee(currentFeerates.fundingFeerate, FundingContributions.computeWeightPaid(isInitiator = true, null, dummyFundingScript, cmd.walletInputs, emptyList()))
                             val localFundingAmount = cmd.totalAmount - localMiningFee
-                            val leaseFees = walletParams.leaseRate.fees(currentFeerates.fundingFeerate, requestRemoteFunding.fundingAmount, requestRemoteFunding.fundingAmount)
+                            val leaseFees = requestRemoteFunding.fees(currentFeerates.fundingFeerate)
                             // We also refund the liquidity provider for some of the on-chain fees they will pay for their inputs/outputs of the transaction.
                             // This will be taken from our channel balance during the interactive-tx construction, they shouldn't be deducted from our funding amount.
                             val totalFees = ChannelManagementFees(miningFee = localMiningFee + leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
@@ -1251,7 +1252,7 @@ class Peer(
                             logger.warning { "cannot create channel, not enough funds to pay fees (fees=${fees.total}, available=${cmd.totalAmount})" }
                             swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                         } else {
-                            when (val rejected = nodeParams.liquidityPolicy.first().maybeReject(requestRemoteFunding.fundingAmount.toMilliSatoshi(), fees.total.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)) {
+                            when (val rejected = nodeParams.liquidityPolicy.first().maybeReject(requestRemoteFunding.requestedAmount.toMilliSatoshi(), fees.total.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)) {
                                 is LiquidityEvents.Rejected -> {
                                     logger.info { "rejecting channel open: reason=${rejected.reason}" }
                                     nodeParams._nodeEvents.emit(rejected)

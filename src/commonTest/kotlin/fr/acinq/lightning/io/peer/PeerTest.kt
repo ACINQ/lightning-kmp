@@ -231,7 +231,7 @@ class PeerTest : LightningTestSuite() {
         val open = bob2alice.expect<OpenDualFundedChannel>()
         assertTrue(open.fundingAmount < 500_000.sat) // we pay the mining fees
         assertTrue(open.channelFlags.nonInitiatorPaysCommitFees)
-        assertEquals(open.requestFunds?.amount, 100_000.sat) // we always request funds from the remote, because we ask them to pay the commit tx fees
+        assertEquals(open.requestFunding?.requestedAmount, 100_000.sat) // we always request funds from the remote, because we ask them to pay the commit tx fees
         assertEquals(open.channelType, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         // We cannot test the rest of the flow as lightning-kmp doesn't implement the LSP side that responds to the liquidity ads request.
     }

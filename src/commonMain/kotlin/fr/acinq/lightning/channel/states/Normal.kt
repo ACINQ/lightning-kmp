@@ -24,7 +24,6 @@ data class Normal(
     val remoteShutdown: Shutdown?,
     val closingFeerates: ClosingFeerates?,
     val spliceStatus: SpliceStatus,
-    val liquidityLeases: List<LiquidityAds.Lease>,
 ) : ChannelStateWithCommitments() {
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -179,7 +178,7 @@ data class Normal(
                                     logger.info { "waiting for tx_sigs" }
                                     Pair(this@Normal.copy(spliceStatus = spliceStatus.copy(session = signingSession1)), listOf())
                                 }
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityLease, cmd.message.channelData)
+                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.liquidityLease, cmd.message.channelData)
                             }
                         }
                         ignoreRetransmittedCommitSig(cmd.message) -> {
@@ -406,8 +405,8 @@ data class Normal(
                                                 add(ChannelAction.Disconnect)
                                             }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
-                                        } else if (spliceStatus.command.requestRemoteFunding?.let { r -> r.rate.fees(spliceStatus.command.feerate, r.fundingAmount, r.fundingAmount).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() } == false) {
-                                            val missing = spliceStatus.command.requestRemoteFunding.let { r -> r.rate.fees(spliceStatus.command.feerate, r.fundingAmount, r.fundingAmount).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
+                                        } else if (!canAffordSpliceLiquidityFees(spliceStatus.command, parentCommitment)) {
+                                            val missing = spliceStatus.command.requestRemoteFunding?.let { r -> r.fees(spliceStatus.command.feerate).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
                                             logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
                                             spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
                                             Pair(this@Normal, emptyList())
@@ -419,7 +418,7 @@ data class Normal(
                                                 feerate = spliceStatus.command.feerate,
                                                 fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                                 pushAmount = spliceStatus.command.pushAmount,
-                                                requestFunds = spliceStatus.command.requestRemoteFunding?.requestFunds,
+                                                requestFunding = spliceStatus.command.requestRemoteFunding,
                                             )
                                             logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(spliceStatus.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
@@ -642,7 +641,7 @@ data class Normal(
                                                     liquidityLease = spliceStatus.liquidityLease,
                                                 )
                                             )
-                                            val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(session, spliceStatus.origins))
+                                            val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(session, spliceStatus.liquidityLease, spliceStatus.origins))
                                             val actions = buildList {
                                                 interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
                                                 add(ChannelAction.Storage.StoreState(nextState))
@@ -674,7 +673,7 @@ data class Normal(
                                 }
                                 is Either.Right -> {
                                     val action: InteractiveTxSigningSessionAction.SendTxSigs = res.value
-                                    sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityLease, cmd.message.channelData)
+                                    sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.liquidityLease, cmd.message.channelData)
                                 }
                             }
                         }
@@ -840,6 +839,19 @@ data class Normal(
         }
     }
 
+    private fun canAffordSpliceLiquidityFees(splice: ChannelCommand.Commitment.Splice.Request, parentCommitment: Commitment): Boolean {
+        return when (val request = splice.requestRemoteFunding) {
+            null -> true
+            else -> when (request.paymentDetails) {
+                is LiquidityAds.PaymentDetails.FromChannelBalance -> request.fees(splice.feerate).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
+                is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> request.fees(splice.feerate).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
+                // Fees don't need to be paid during the splice, they will be deducted from relayed HTLCs.
+                is LiquidityAds.PaymentDetails.FromFutureHtlc -> true
+                is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> true
+            }
+        }
+    }
+
     private fun ChannelContext.sendSpliceTxSigs(
         origins: List<Origin>,
         action: InteractiveTxSigningSessionAction.SendTxSigs,
@@ -851,7 +863,7 @@ data class Normal(
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
         val commitments = commitments.add(action.commitment).copy(remoteChannelData = remoteChannelData)
-        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None, liquidityLeases = liquidityLeases + listOfNotNull(liquidityLease))
+        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None)
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
