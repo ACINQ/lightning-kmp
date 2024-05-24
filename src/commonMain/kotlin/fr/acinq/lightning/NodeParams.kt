@@ -238,17 +238,15 @@ data class NodeParams(
     /**
      * We generate a default, deterministic Bolt 12 offer based on the node's seed and its trampoline node.
      * This offer will stay valid after restoring the seed on a different device.
-     * We also return the path_id included in this offer, which should be used to route onion messages.
      */
-    fun defaultOffer(trampolineNode: NodeUri): Pair<ByteVector32, OfferTypes.Offer> {
-        // We generate a deterministic path_id based on:
+    fun defaultOffer(trampolineNode: NodeUri): OfferTypes.Offer {
+        // We generate a deterministic blindingSecret based on:
         //  - a custom tag indicating that this is used in the Bolt 12 context
         //  - our trampoline node, which is used as an introduction node for the offer's blinded path
-        //  - our private key, which ensures that nobody else can generate the same path_id
-        val pathId = Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8) + trampolineNode.id.value.toByteArray() + nodePrivateKey.value.toByteArray()).byteVector32()
+        //  - our private key, which ensures that nobody else can generate the same blindingSecret
+        val blindingSecret = PrivateKey(Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8) + trampolineNode.id.value.toByteArray() + nodePrivateKey.value.toByteArray()).byteVector32())
         // We don't use our currently activated features, otherwise the offer would change when we add support for new features.
         // If we add a new feature that we would like to use by default, we will need to explicitly create a new offer.
-        val offer = OfferTypes.Offer.createBlindedOffer(amount = null, description = null, this, trampolineNode, Features.empty, pathId)
-        return Pair(pathId, offer)
+        return OfferTypes.Offer.createBlindedOffer(amount = null, description = null, this, trampolineNode, Features.empty, blindingSecret)
     }
 }

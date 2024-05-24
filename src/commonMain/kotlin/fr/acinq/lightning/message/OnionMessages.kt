@@ -1,9 +1,6 @@
 package fr.acinq.lightning.message
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.PublicKey
-import fr.acinq.bitcoin.byteVector
+import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.EncodedNodeId
 import fr.acinq.lightning.ShortChannelId
@@ -175,7 +172,7 @@ object OnionMessages {
                                     val nextMessage = OnionMessage(relayInfo.value.nextBlindingOverride ?: nextBlinding, decrypted.value.nextPacket)
                                     decryptMessage(privateKey, nextMessage, logger)
                                 }
-                                decrypted.value.isLastPacket && relayInfo.value.pathId != null -> DecryptedMessage(message, blindedPrivateKey, relayInfo.value.pathId!!)
+                                decrypted.value.isLastPacket -> DecryptedMessage(message, blindedPrivateKey, relayInfo.value.pathId ?: ByteVector32.Zeroes)
                                 else -> {
                                     logger.warning { "ignoring onion message for which we're not the destination (next_node_id=${relayInfo.value.nextNodeId}, path_id=${relayInfo.value.pathId?.toHex()})" }
                                     null
