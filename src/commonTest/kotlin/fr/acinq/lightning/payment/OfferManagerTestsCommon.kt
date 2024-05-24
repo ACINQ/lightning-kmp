@@ -51,16 +51,16 @@ class OfferManagerTestsCommon : LightningTestSuite() {
     }
 
     private fun createOffer(offerManager: OfferManager, amount: MilliSatoshi? = null): OfferTypes.Offer {
-        val pathId = randomBytes32()
+        val blindingSecret = randomKey()
         val offer = OfferTypes.Offer.createBlindedOffer(
             amount,
             "Blockaccino",
             offerManager.nodeParams,
             offerManager.walletParams.trampolineNode,
             offerManager.nodeParams.features,
-            pathId,
+            blindingSecret,
         )
-        offerManager.registerOffer(offer, pathId)
+        offerManager.registerOffer(offer, null)
         return offer
     }
 
