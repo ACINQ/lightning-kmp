@@ -21,6 +21,7 @@ import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlin.test.*
@@ -63,7 +64,7 @@ internal inline fun <reified T : ChannelAction> List<ChannelAction>.find() = fin
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.doesNotHave() = assertTrue { none { it is T } }
 
-fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChannel<S> = this.copy(ctx = this.ctx.copy(currentOnChainFeerates = OnChainFeerates(feerate, feerate, feerate, feerate)))
+fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChannel<S> = this.copy(ctx = this.ctx.copy(onChainFeerates = MutableStateFlow(OnChainFeerates(feerate, feerate, feerate, feerate))))
 
 fun Features.add(vararg pairs: Pair<Feature, FeatureSupport>): Features = this.copy(activated = this.activated + mapOf(*pairs))
 fun Features.remove(vararg features: Feature): Features = this.copy(activated = activated.filterKeys { f -> !features.contains(f) })
@@ -165,7 +166,7 @@ object TestsHelper {
             ChannelContext(
                 StaticParams(aliceNodeParams, TestConstants.Bob.nodeParams.nodeId),
                 currentBlockHeight = currentHeight,
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+                onChainFeerates = MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
                 logger = MDCLogger(testLoggerFactory.newLogger("ChannelState"))
             ),
             WaitForInit
@@ -174,7 +175,7 @@ object TestsHelper {
             ChannelContext(
                 StaticParams(bobNodeParams, TestConstants.Alice.nodeParams.nodeId),
                 currentBlockHeight = currentHeight,
-                currentOnChainFeerates = OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw),
+                onChainFeerates = MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
                 logger = MDCLogger(testLoggerFactory.newLogger("ChannelState"))
             ),
             WaitForInit

@@ -60,7 +60,7 @@ data class Negotiating(
                                 }
                                 else -> {
                                     val theirFeeRange = cmd.message.tlvStream.get<ClosingSignedTlv.FeeRange>()
-                                    val ourFeeRange = closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                    val ourFeeRange = closingFeerates ?: ClosingFeerates(currentOnChainFeerates().mutualCloseFeerate)
                                     when {
                                         theirFeeRange != null && !commitments.params.localParams.isInitiator -> {
                                             // if we are not the initiator and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
