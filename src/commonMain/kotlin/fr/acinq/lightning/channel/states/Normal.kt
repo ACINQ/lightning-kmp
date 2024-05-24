@@ -24,7 +24,6 @@ data class Normal(
     val remoteShutdown: Shutdown?,
     val closingFeerates: ClosingFeerates?,
     val spliceStatus: SpliceStatus,
-    val liquidityLeases: List<LiquidityAds.Lease>,
 ) : ChannelStateWithCommitments() {
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -179,7 +178,7 @@ data class Normal(
                                     logger.info { "waiting for tx_sigs" }
                                     Pair(this@Normal.copy(spliceStatus = spliceStatus.copy(session = signingSession1)), listOf())
                                 }
-                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityLease, cmd.message.channelData)
+                                is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.liquidityPurchase, cmd.message.channelData)
                             }
                         }
                         ignoreRetransmittedCommitSig(cmd.message) -> {
@@ -406,8 +405,8 @@ data class Normal(
                                                 add(ChannelAction.Disconnect)
                                             }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
-                                        } else if (spliceStatus.command.requestRemoteFunding?.let { r -> r.rate.fees(spliceStatus.command.feerate, r.fundingAmount, r.fundingAmount).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() } == false) {
-                                            val missing = spliceStatus.command.requestRemoteFunding.let { r -> r.rate.fees(spliceStatus.command.feerate, r.fundingAmount, r.fundingAmount).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
+                                        } else if (!canAffordSpliceLiquidityFees(spliceStatus.command, parentCommitment)) {
+                                            val missing = spliceStatus.command.requestRemoteFunding?.let { r -> r.fees(spliceStatus.command.feerate).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
                                             logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
                                             spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
                                             Pair(this@Normal, emptyList())
@@ -419,7 +418,7 @@ data class Normal(
                                                 feerate = spliceStatus.command.feerate,
                                                 fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                                 pushAmount = spliceStatus.command.pushAmount,
-                                                requestFunds = spliceStatus.command.requestRemoteFunding?.requestFunds,
+                                                requestFunding = spliceStatus.command.requestRemoteFunding,
                                             )
                                             logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(spliceStatus.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
@@ -490,7 +489,7 @@ data class Normal(
                                         session,
                                         localPushAmount = 0.msat,
                                         remotePushAmount = cmd.message.pushAmount,
-                                        liquidityLease = null,
+                                        liquidityPurchase = null,
                                         origins = listOf()
                                     )
                                 )
@@ -511,7 +510,7 @@ data class Normal(
                     is SpliceAck -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
-                            when (val liquidityLease = LiquidityAds.validateLease(
+                            when (val liquidityPurchase = LiquidityAds.validateRemoteFunding(
                                 spliceStatus.command.requestRemoteFunding,
                                 remoteNodeId,
                                 channelId,
@@ -521,11 +520,11 @@ data class Normal(
                                 cmd.message.willFund,
                             )) {
                                 is Either.Left<ChannelException> -> {
-                                    logger.error { "rejecting liquidity proposal: ${liquidityLease.value.message}" }
-                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidLiquidityAds(liquidityLease.value))
-                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, liquidityLease.value.message))))
+                                    logger.error { "rejecting liquidity proposal: ${liquidityPurchase.value.message}" }
+                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidLiquidityAds(liquidityPurchase.value))
+                                    Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, liquidityPurchase.value.message))))
                                 }
-                                is Either.Right<LiquidityAds.Lease?> -> {
+                                is Either.Right<LiquidityAds.Purchase?> -> {
                                     val parentCommitment = commitments.active.first()
                                     val sharedInput = SharedFundingInput.Multisig2of2(parentCommitment)
                                     val fundingParams = InteractiveTxParams(
@@ -575,7 +574,7 @@ data class Normal(
                                                             interactiveTxSession,
                                                             localPushAmount = spliceStatus.spliceInit.pushAmount,
                                                             remotePushAmount = cmd.message.pushAmount,
-                                                            liquidityLease = liquidityLease.value,
+                                                            liquidityPurchase = liquidityPurchase.value,
                                                             origins = spliceStatus.command.origins,
                                                         )
                                                     )
@@ -613,7 +612,7 @@ data class Normal(
                                         interactiveTxAction.sharedTx,
                                         localPushAmount = spliceStatus.localPushAmount,
                                         remotePushAmount = spliceStatus.remotePushAmount,
-                                        liquidityLease = spliceStatus.liquidityLease,
+                                        liquidityPurchase = spliceStatus.liquidityPurchase,
                                         localCommitmentIndex = parentCommitment.localCommit.index,
                                         remoteCommitmentIndex = parentCommitment.remoteCommit.index,
                                         parentCommitment.localCommit.spec.feerate,
@@ -639,10 +638,10 @@ data class Normal(
                                                     fundingTxId = session.fundingTx.txId,
                                                     capacity = session.fundingParams.fundingAmount,
                                                     balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal,
-                                                    liquidityLease = spliceStatus.liquidityLease,
+                                                    liquidityPurchase = spliceStatus.liquidityPurchase,
                                                 )
                                             )
-                                            val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(session, spliceStatus.origins))
+                                            val nextState = this@Normal.copy(spliceStatus = SpliceStatus.WaitingForSigs(session, spliceStatus.liquidityPurchase, spliceStatus.origins))
                                             val actions = buildList {
                                                 interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }
                                                 add(ChannelAction.Storage.StoreState(nextState))
@@ -674,7 +673,7 @@ data class Normal(
                                 }
                                 is Either.Right -> {
                                     val action: InteractiveTxSigningSessionAction.SendTxSigs = res.value
-                                    sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.session.liquidityLease, cmd.message.channelData)
+                                    sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.liquidityPurchase, cmd.message.channelData)
                                 }
                             }
                         }
@@ -840,10 +839,23 @@ data class Normal(
         }
     }
 
+    private fun canAffordSpliceLiquidityFees(splice: ChannelCommand.Commitment.Splice.Request, parentCommitment: Commitment): Boolean {
+        return when (val request = splice.requestRemoteFunding) {
+            null -> true
+            else -> when (request.paymentDetails) {
+                is LiquidityAds.PaymentDetails.FromChannelBalance -> request.fees(splice.feerate).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
+                is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> request.fees(splice.feerate).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
+                // Fees don't need to be paid during the splice, they will be deducted from relayed HTLCs.
+                is LiquidityAds.PaymentDetails.FromFutureHtlc -> true
+                is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> true
+            }
+        }
+    }
+
     private fun ChannelContext.sendSpliceTxSigs(
         origins: List<Origin>,
         action: InteractiveTxSigningSessionAction.SendTxSigs,
-        liquidityLease: LiquidityAds.Lease?,
+        liquidityPurchase: LiquidityAds.Purchase?,
         remoteChannelData: EncryptedChannelData
     ): Pair<Normal, List<ChannelAction>> {
         logger.info { "sending tx_sigs" }
@@ -851,7 +863,7 @@ data class Normal(
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
         val commitments = commitments.add(action.commitment).copy(remoteChannelData = remoteChannelData)
-        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None, liquidityLeases = liquidityLeases + listOfNotNull(liquidityLease))
+        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None)
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
@@ -891,11 +903,11 @@ data class Normal(
             if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {
                 add(ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(), txId = action.fundingTx.txId))
             }
-            liquidityLease?.let { lease ->
+            liquidityPurchase?.let { purchase ->
                 // The actual mining fees contain the inputs and outputs we paid for in the interactive-tx transaction,
                 // and what we refunded the remote peer for some of their inputs and outputs via the lease.
-                val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + lease.fees.miningFee
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, lease = lease))
+                val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + purchase.fees.miningFee
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, purchase = purchase))
             }
             addAll(origins.map { origin ->
                 when (origin) {

@@ -41,6 +41,7 @@ data class WaitForFundingSigned(
     val localPushAmount: MilliSatoshi,
     val remotePushAmount: MilliSatoshi,
     val remoteSecondPerCommitmentPoint: PublicKey,
+    val liquidityPurchase: LiquidityAds.Purchase?,
     val channelOrigin: Origin?,
     val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) : PersistedChannelState() {
@@ -129,6 +130,14 @@ data class WaitForFundingSigned(
                     origin = channelOrigin
                 )
             )
+            liquidityPurchase?.let { purchase ->
+                if (channelParams.localParams.isChannelOpener) {
+                    // The actual mining fees contain the inputs and outputs we paid for in the interactive-tx transaction,
+                    // and what we refunded the remote peer for some of their inputs and outputs via the lease.
+                    val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + purchase.fees.miningFee
+                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, purchase = purchase))
+                }
+            }
             channelOrigin?.let {
                 when (it) {
                     is Origin.OffChainPayment -> add(ChannelAction.EmitEvent(LiquidityEvents.Accepted(it.amount, it.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment)))

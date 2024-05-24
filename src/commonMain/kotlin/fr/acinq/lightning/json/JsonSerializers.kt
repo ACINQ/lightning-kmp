@@ -63,9 +63,9 @@
     JsonSerializers.InteractiveTxSigningSessionSerializer::class,
     JsonSerializers.RbfStatusSerializer::class,
     JsonSerializers.SpliceStatusSerializer::class,
-    JsonSerializers.LiquidityLeaseFeesSerializer::class,
-    JsonSerializers.LiquidityLeaseWitnessSerializer::class,
-    JsonSerializers.LiquidityLeaseSerializer::class,
+    JsonSerializers.LiquidityFeesSerializer::class,
+    JsonSerializers.LiquidityPaymentDetailsSerializer::class,
+    JsonSerializers.LiquidityPurchaseSerializer::class,
     JsonSerializers.ChannelFlagsSerializer::class,
     JsonSerializers.ChannelParamsSerializer::class,
     JsonSerializers.ChannelOriginSerializer::class,
@@ -301,14 +301,14 @@ object JsonSerializers {
 
     object SpliceStatusSerializer : StringSerializer<SpliceStatus>({ it::class.simpleName!! })
 
-    @Serializer(forClass = LiquidityAds.LeaseFees::class)
-    object LiquidityLeaseFeesSerializer
+    @Serializer(forClass = LiquidityAds.Fees::class)
+    object LiquidityFeesSerializer
 
-    @Serializer(forClass = LiquidityAds.LeaseWitness::class)
-    object LiquidityLeaseWitnessSerializer
+    @Serializer(forClass = LiquidityAds.PaymentDetails::class)
+    object LiquidityPaymentDetailsSerializer
 
-    @Serializer(forClass = LiquidityAds.Lease::class)
-    object LiquidityLeaseSerializer
+    @Serializer(forClass = LiquidityAds.Purchase::class)
+    object LiquidityPurchaseSerializer
 
     @Serializer(forClass = ChannelFlags::class)
     object ChannelFlagsSerializer

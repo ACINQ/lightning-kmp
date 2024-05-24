@@ -820,6 +820,27 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv CommitSig -- multiple htlcs in both directions -- non-initiator pays commit fees`() {
+        val (alice0, bob0) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
+        assertFalse(alice0.commitments.params.localParams.paysCommitTxFees)
+        assertTrue(bob0.commitments.params.localParams.paysCommitTxFees)
+        val (nodes1, _, _) = addHtlc(75_000_000.msat, alice0, bob0)
+        val (alice1, bob1) = nodes1
+        val (nodes2, _, _) = addHtlc(500_000.msat, alice1, bob1)
+        val (alice2, bob2) = nodes2
+        val (nodes3, _, _) = addHtlc(10_000_000.msat, bob2, alice2)
+        val (bob3, alice3) = nodes3
+        val (nodes4, _, _) = addHtlc(100_000.msat, bob3, alice3)
+        val (bob4, alice4) = nodes4
+        val (alice5, bob5) = crossSign(alice4, bob4)
+        assertEquals(2, alice5.commitments.latest.localCommit.publishableTxs.htlcTxsAndSigs.size)
+        assertEquals(2, bob5.commitments.latest.localCommit.publishableTxs.htlcTxsAndSigs.size)
+        // Alice opened the channel, but Bob is paying the commitment fees.
+        assertEquals(alice5.commitments.latest.localCommit.spec.toLocal - alice5.commitments.latest.localChannelReserve.toMilliSatoshi(), alice5.commitments.availableBalanceForSend())
+        assertTrue(bob5.commitments.availableBalanceForSend() < bob5.commitments.latest.localCommit.spec.toLocal - bob5.commitments.latest.localChannelReserve.toMilliSatoshi())
+    }
+
+    @Test
     fun `recv CommitSig -- only fee update`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, actions1) = alice0.process(ChannelCommand.Commitment.UpdateFee(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat), false))
@@ -1420,6 +1441,22 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(fee))
         assertIs<LNChannel<Normal>>(bob1)
         assertEquals(bob.commitments.copy(changes = bob.commitments.changes.copy(remoteChanges = bob.commitments.changes.remoteChanges.copy(proposed = bob.commitments.changes.remoteChanges.proposed + fee))), bob1.commitments)
+    }
+
+    @Test
+    fun `recv UpdateFee -- non-initiator pays commit fees`() {
+        val (alice, bob) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
+        val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(7_500.sat))
+        run {
+            val (alice1, _) = alice.process(ChannelCommand.MessageReceived(fee))
+            assertIs<LNChannel<Normal>>(alice1)
+            assertTrue(alice1.commitments.changes.remoteChanges.proposed.contains(fee))
+        }
+        run {
+            val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(fee))
+            assertIs<LNChannel<Closing>>(bob1)
+            actions1.findOutgoingMessage<Error>().also { assertEquals(NonInitiatorCannotSendUpdateFee(alice.channelId).message, it.toAscii()) }
+        }
     }
 
     @Test
