@@ -3,11 +3,15 @@ package fr.acinq.lightning.io
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
+import fr.acinq.lightning.blockchain.IClient
+import fr.acinq.lightning.blockchain.IWatcher
 import fr.acinq.lightning.blockchain.WatchEvent
+import fr.acinq.lightning.blockchain.computeSpliceCpfpFeerate
 import fr.acinq.lightning.blockchain.electrum.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
+import fr.acinq.lightning.blockchain.mempool.MempoolSpaceClient
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.noise.*
@@ -30,6 +34,7 @@ import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.*
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 sealed class PeerCommand
@@ -92,6 +97,7 @@ data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) 
 data class SendOnionMessage(val message: OnionMessage) : PeerCommand()
 
 sealed class PeerEvent
+
 @Deprecated("Replaced by NodeEvents", replaceWith = ReplaceWith("PaymentEvents.PaymentReceived", "fr.acinq.lightning.PaymentEvents"))
 data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
@@ -129,7 +135,8 @@ data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : P
 class Peer(
     val nodeParams: NodeParams,
     val walletParams: WalletParams,
-    val watcher: ElectrumWatcher,
+    val client: IClient,
+    val watcher: IWatcher,
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
     scope: CoroutineScope,
@@ -215,8 +222,8 @@ class Peer(
             }
     }
 
-    val finalWallet = FinalWallet(nodeParams.chain, nodeParams.keyManager.finalOnChainWallet, watcher.client, scope, nodeParams.loggerFactory)
-    val swapInWallet = SwapInWallet(nodeParams.chain, nodeParams.keyManager.swapInOnChainWallet, watcher.client, scope, nodeParams.loggerFactory)
+    //val finalWallet = FinalWallet(nodeParams.chain, nodeParams.keyManager.finalOnChainWallet, watcher.client, scope, nodeParams.loggerFactory)
+    //val swapInWallet = SwapInWallet(nodeParams.chain, nodeParams.keyManager.swapInOnChainWallet, watcher.client, scope, nodeParams.loggerFactory)
 
     private var swapInJob: Job? = null
 
@@ -225,17 +232,55 @@ class Peer(
     init {
         logger.info { "initializing peer" }
         launch {
-            watcher.client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
-                .collect { msg ->
-                    currentTipFlow.value = msg.blockHeight to msg.header
+            when (client) {
+                is IElectrumClient -> client.notifications.filterIsInstance<HeaderSubscriptionResponse>()
+                    .collect { msg ->
+                        currentTipFlow.value = msg.blockHeight to msg.header
+                    }
+                is MempoolSpaceClient -> while (true) {
+                    runCatching {
+                        client.getBlockTipHeight()?.let { currentBlockHeight ->
+                            logger.debug { "current block height is $currentBlockHeight" }
+                            currentTipFlow.value = currentBlockHeight to BlockHeader(0, BlockHash(ByteVector32.Zeroes), ByteVector32.Zeroes, 0, 0, 0)
+                        }
+                    }
+                    delay(1.minutes)
                 }
+            }
+
         }
         launch {
-            watcher.client.connectionStatus.filter { it is ElectrumConnectionStatus.Connected }.collect {
-                // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
-                // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
-                // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
-                updateEstimateFees()
+            when (client) {
+                is IElectrumClient -> client.connectionStatus.filter { it is ElectrumConnectionStatus.Connected }.collect {
+                    // onchain fees are retrieved punctually, when electrum status moves to Connection.ESTABLISHED
+                    // since the application is not running most of the time, and when it is, it will be only for a few minutes, this is good enough.
+                    // (for a node that is online most of the time things would be different and we would need to re-evaluate onchain fee estimates on a regular basis)
+                    // TODO: If some feerates are null, we may implement a retry
+                    val onChainFeerates = OnChainFeerates(
+                        fundingFeerate = (client.estimateFees(144) ?: onChainFeeratesFlow.value?.fundingFeerate) ?: FeeratePerKw(FeeratePerByte(2.sat)),
+                        mutualCloseFeerate = (client.estimateFees(18) ?: onChainFeeratesFlow.value?.mutualCloseFeerate) ?: FeeratePerKw(FeeratePerByte(10.sat)),
+                        claimMainFeerate = (client.estimateFees(6) ?: onChainFeeratesFlow.value?.claimMainFeerate) ?: FeeratePerKw(FeeratePerByte(20.sat)),
+                        fastFeerate = (client.estimateFees(2) ?: onChainFeeratesFlow.value?.fastFeerate) ?: FeeratePerKw(FeeratePerByte(50.sat))
+                    )
+                    logger.info { "on-chain fees: $onChainFeerates" }
+                    onChainFeeratesFlow.value = onChainFeerates
+                }
+                is MempoolSpaceClient -> while (true) {
+                    val onChainFeerates = client.getFeerates()?.let { feerates ->
+                        logger.info { "on-chain fees: $feerates" }
+                        OnChainFeerates(
+                            fundingFeerate = FeeratePerKw(feerates.slow),
+                            mutualCloseFeerate = FeeratePerKw(feerates.medium),
+                            claimMainFeerate = FeeratePerKw(feerates.medium),
+                            fastFeerate = FeeratePerKw(feerates.fast),
+                        )
+                    } ?: onChainFeeratesFlow.value
+                    if (onChainFeerates == null) {
+                        logger.error { "cannot retrieve feerates!" }
+                    }
+                    onChainFeeratesFlow.value = onChainFeerates
+                    delay(3.minutes)
+                }
             }
         }
         launch {
@@ -279,24 +324,6 @@ class Peer(
                 previousState = it
             }
         }
-    }
-
-    private suspend fun updateEstimateFees() {
-        watcher.client.connectionStatus.filter { it is ElectrumConnectionStatus.Connected }.first()
-        val sortedFees = listOf(
-            watcher.client.estimateFees(2),
-            watcher.client.estimateFees(6),
-            watcher.client.estimateFees(18),
-            watcher.client.estimateFees(144),
-        )
-        logger.info { "on-chain fees: $sortedFees" }
-        // TODO: If some feerates are null, we may implement a retry
-        onChainFeeratesFlow.value = OnChainFeerates(
-            fundingFeerate = sortedFees[3] ?: FeeratePerKw(FeeratePerByte(2.sat)),
-            mutualCloseFeerate = sortedFees[2] ?: FeeratePerKw(FeeratePerByte(10.sat)),
-            claimMainFeerate = sortedFees[1] ?: FeeratePerKw(FeeratePerByte(20.sat)),
-            fastFeerate = sortedFees[0] ?: FeeratePerKw(FeeratePerByte(50.sat))
-        )
     }
 
     data class ConnectionJob(val job: Job, val socket: TcpSocket) {
@@ -462,30 +489,30 @@ class Peer(
      * and trigger swap-ins.
      * Warning: not thread-safe!
      */
-    suspend fun startWatchSwapInWallet() {
-        logger.info { "starting swap-in watch job" }
-        if (swapInJob != null) {
-            logger.info { "swap-in watch job already started" }
-            return
-        }
-        logger.info { "waiting for peer to be ready" }
-        waitForPeerReady()
-        swapInJob = launch {
-            swapInWallet.wallet.walletStateFlow
-                .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip.first) }
-                .combine(swapInFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerate -> Triple(walletState, currentTip, feerate) }
-                .combine(nodeParams.liquidityPolicy) { (walletState, currentTip, feerate), policy -> TrySwapInFlow(currentTip, walletState, feerate, policy) }
-                .collect { w ->
-                    // Local mutual close txs from pre-splice channels can be used as zero-conf inputs for swap-in to facilitate migration
-                    val mutualCloseTxs = channels.values
-                        .filterIsInstance<Closing>()
-                        .filterNot { it.commitments.params.channelFeatures.hasFeature(Feature.DualFunding) }
-                        .flatMap { state -> state.mutualClosePublished.map { closingTx -> closingTx.tx.txid } }
-                    val trustedTxs = trustedSwapInTxs + mutualCloseTxs
-                    swapInCommands.send(SwapInCommand.TrySwapIn(w.currentBlockHeight, w.walletState, walletParams.swapInParams, trustedTxs))
-                }
-        }
-    }
+//    suspend fun startWatchSwapInWallet() {
+//        logger.info { "starting swap-in watch job" }
+//        if (swapInJob != null) {
+//            logger.info { "swap-in watch job already started" }
+//            return
+//        }
+//        logger.info { "waiting for peer to be ready" }
+//        waitForPeerReady()
+//        swapInJob = launch {
+//            swapInWallet.wallet.walletStateFlow
+//                .combine(currentTipFlow.filterNotNull()) { walletState, currentTip -> Pair(walletState, currentTip.first) }
+//                .combine(swapInFeeratesFlow.filterNotNull()) { (walletState, currentTip), feerate -> Triple(walletState, currentTip, feerate) }
+//                .combine(nodeParams.liquidityPolicy) { (walletState, currentTip, feerate), policy -> TrySwapInFlow(currentTip, walletState, feerate, policy) }
+//                .collect { w ->
+//                    // Local mutual close txs from pre-splice channels can be used as zero-conf inputs for swap-in to facilitate migration
+//                    val mutualCloseTxs = channels.values
+//                        .filterIsInstance<Closing>()
+//                        .filterNot { it.commitments.params.channelFeatures.hasFeature(Feature.DualFunding) }
+//                        .flatMap { state -> state.mutualClosePublished.map { closingTx -> closingTx.tx.txid } }
+//                    val trustedTxs = trustedSwapInTxs + mutualCloseTxs
+//                    swapInCommands.send(SwapInCommand.TrySwapIn(w.currentBlockHeight, w.walletState, walletParams.swapInParams, trustedTxs))
+//                }
+//        }
+//    }
 
     suspend fun stopWatchSwapInWallet() {
         logger.info { "stopping swap-in watch job" }
@@ -530,7 +557,7 @@ class Peer(
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
-                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
             }
     }
@@ -549,7 +576,7 @@ class Peer(
             .find { it.channelId == channelId }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
-                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
             }
     }
@@ -565,7 +592,7 @@ class Peer(
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList()) + leaseRate.fundingWeight
                 // The mining fee below pays for the entirety of the splice transaction, including inputs and outputs from the liquidity provider.
-                val (actualFeerate, miningFee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 // The mining fee in the lease only covers the remote node's inputs and outputs, they are already included in the mining fee above.
                 val leaseFees = leaseRate.fees(actualFeerate, amount, amount)
                 Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, leaseFees.serviceFee.toMilliSatoshi()))
@@ -688,6 +715,11 @@ class Peer(
     fun registerFcmToken(token: String?) {
         val message = if (token == null) UnsetFCMToken else FCMToken(token)
         peerConnection?.send(message)
+    }
+
+    fun setAutoLiquidityParams(amount: Satoshi) {
+        logger.info { "setting auto-liquidity=$amount" }
+        peerConnection?.send(AutoLiquidityParams(amount))
     }
 
     private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>) {
@@ -970,12 +1002,16 @@ class Peer(
                                 is Origin.PleaseOpenChannelOrigin -> when (val request = channelRequests[origin.requestId]) {
                                     is RequestChannelOpen -> {
                                         val totalFee = origin.serviceFee + origin.miningFee.toMilliSatoshi() - msg.pushAmount
-                                        nodeParams.liquidityPolicy.value.maybeReject(request.walletInputs.balance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
-                                            logger.info { "rejecting open_channel2: reason=${rejected.reason}" }
-                                            nodeParams._nodeEvents.emit(rejected)
-                                            swapInCommands.send(SwapInCommand.UnlockWalletInputs(request.walletInputs.map { it.outPoint }.toSet()))
-                                            peerConnection?.send(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
-                                            return
+                                        val decision = nodeParams.liquidityPolicy.value.maybeReject(request.walletInputs.balance.toMilliSatoshi(), totalFee, LiquidityEvents.Source.OnChainWallet, logger, currentFeeCredit = nodeParams.feeCredit.value)
+                                        when (decision) {
+                                            is LiquidityEvents.Decision.Rejected -> {
+                                                logger.info { "rejecting open_channel2: reason=${decision.reason}" }
+                                                nodeParams._nodeEvents.emit(decision)
+                                                swapInCommands.send(SwapInCommand.UnlockWalletInputs(request.walletInputs.map { it.outPoint }.toSet()))
+                                                peerConnection?.send(Error(msg.temporaryChannelId, "cancelling open due to local liquidity policy"))
+                                                return
+                                            }
+                                            else -> {}
                                         }
                                         val fundingFee = Transactions.weight2fee(msg.fundingFeerate, FundingContributions.weight(request.walletInputs))
                                         // We have to pay the fees for our inputs, so we deduce them from our funding amount.
@@ -1112,7 +1148,7 @@ class Peer(
                                 && !_channels.values.any { it is Normal } // we don't have a channel that can be spliced
                                 && _channels.values.any { it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } // but we will have one soon
                         if (channelInitializing) {
-                            val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
+                            val rejected = LiquidityEvents.Decision.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Decision.Rejected.Reason.ChannelInitializing)
                             logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
                             nodeParams._nodeEvents.emit(rejected)
                             val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)
@@ -1142,6 +1178,10 @@ class Peer(
                             }
                         }
                     }
+                    is CurrentFeeCredit -> {
+                        logger.info { "current fee credit: ${msg.amount}" }
+                        nodeParams._feeCredit.emit(msg.amount)
+                    }
                 }
             }
             is WatchReceived -> {
@@ -1161,14 +1201,18 @@ class Peer(
                         // we have a channel and we are connected (otherwise state would be Offline/Syncing)
                         val targetFeerate = swapInFeeratesFlow.filterNotNull().first()
                         val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
-                        val (feerate, fee) = watcher.client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                        val (feerate, fee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
                         logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
-                        nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
-                            logger.info { "rejecting splice: reason=${rejected.reason}" }
-                            nodeParams._nodeEvents.emit(rejected)
-                            swapInCommands.send(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
-                            return
+                        val decision = nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger, currentFeeCredit = nodeParams.feeCredit.value)
+                        nodeParams._nodeEvents.emit(decision)
+                        when (decision) {
+                            is LiquidityEvents.Decision.Rejected -> {
+                                logger.info { "rejecting splice: reason=${decision.reason}" }
+                                swapInCommands.send(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                                return
+                            }
+                            else -> {}
                         }
 
                         val spliceCommand = ChannelCommand.Commitment.Splice.Request(
