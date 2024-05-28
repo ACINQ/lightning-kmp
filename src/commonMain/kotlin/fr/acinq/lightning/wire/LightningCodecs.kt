@@ -244,6 +244,7 @@ object LightningCodecs {
             writeByte(if (input.isNode1) 0 else 1, out)
             writeInt64(input.scid.toLong(), out)
         }
+        is EncodedNodeId.PhoenixId -> writeBytes(input.publicKey.value, out)
     }
 
 }

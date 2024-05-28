@@ -518,7 +518,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val path = offer.contactInfos.first()
         assertIs<BlindedPath>(path)
         assertEquals(EncodedNodeId(trampolineNode.id), path.route.introductionNodeId)
-        val expectedOffer = Offer.decode("lno1zzes8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0qf70a6j2x2akrhazctejaaqr8y4qtzjtjzmfesay6mzr3s789uryuqsr8dpgfgxuk56vh7cl89769zdpdrkqwtypzhu2t8ehp73dqeeq65lsqxhq3x0946e6y8hgjpqh5ej0dxpnftcmerz4320cx3luqwlpkg8vdcqsfvz89axkmv5sgdysmwn95tpsct6mdercmz8jh2r82qqscrf6uc3tse5gw5sv5xjdfw8f6c").get()
+        val expectedOffer = Offer.decode("lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0qf70a6j2x2akrhazctejaaqr8y4qtzjtjzmfesay6mzr3s789uryuqsr8dpgfgxuk56vh7cl89769zdpdrkqwtypzhu2t8ehp73dqeeq65lsqvlz5p38mw2kz54p4f6ct66stdfxz0df8nqq7svjjdjn2dv8sz28y7z07yg4d345c2rek88h30cp6fr5qfwxqwlpkg8vdcqsfvz89axkmv5sgdysmwn95tpsct6mdercmz8jh2r82qqscrf6uc3tse5gw5sv5xjdfw8f6c").get()
         assertEquals(expectedOffer, offer)
     }
 }

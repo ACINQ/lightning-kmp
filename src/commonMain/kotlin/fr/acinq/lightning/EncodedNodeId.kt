@@ -16,6 +16,10 @@ sealed class EncodedNodeId {
         override fun toString(): String = if (isNode1) "<-$scid" else "$scid->"
     }
 
+    data class PhoenixId(val publicKey: PublicKey) : EncodedNodeId() {
+        override fun toString(): String = publicKey.toString()
+    }
+
     companion object {
         operator fun invoke(publicKey: PublicKey): EncodedNodeId = Plain(publicKey)
     }

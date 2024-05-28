@@ -868,7 +868,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode and decode onion message`() {
-        val onionMessage = OnionMessages.buildMessage(randomKey(), randomKey(), listOf(), OnionMessages.Destination.Recipient(randomKey().publicKey(), null), TlvStream.empty()).right!!
+        val onionMessage = OnionMessages.buildMessage(randomKey(), randomKey(), listOf(), OnionMessages.Destination.Recipient(randomKey().publicKey(), null, isPhoenix = false), TlvStream.empty()).right!!
         assertEquals(onionMessage, OnionMessage.read(onionMessage.write()))
     }
 }
