@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.bitcoin.utils.Either
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelException
 import fr.acinq.lightning.channel.InvalidLiquidityAdsAmount
@@ -28,6 +29,9 @@ object LiquidityAds {
     data class Fees(val miningFee: Satoshi, val serviceFee: Satoshi) {
         val total: Satoshi = miningFee + serviceFee
     }
+
+    /** Fees paid for the funding transaction that provides liquidity. */
+    data class FundingFee(val amount: MilliSatoshi, val fundingTxId: TxId)
 
     /**
      * Rate at which a liquidity seller sells its liquidity.
