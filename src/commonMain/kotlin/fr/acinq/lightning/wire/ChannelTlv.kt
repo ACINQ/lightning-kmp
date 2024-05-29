@@ -239,17 +239,3 @@ sealed class ClosingSignedTlv : Tlv {
         }
     }
 }
-
-sealed class PayToOpenRequestTlv : Tlv {
-    /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
-    data class Blinding(val publicKey: PublicKey) : PayToOpenRequestTlv() {
-        override val tag: Long get() = Blinding.tag
-
-        override fun write(out: Output) = LightningCodecs.writeBytes(publicKey.value, out)
-
-        companion object : TlvValueReader<Blinding> {
-            const val tag: Long = 0
-            override fun read(input: Input): Blinding = Blinding(PublicKey(LightningCodecs.bytes(input, 33)))
-        }
-    }
-}

@@ -29,6 +29,7 @@ import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.test.*
@@ -253,8 +254,7 @@ class PeerTest : LightningTestSuite() {
         val walletBob = createWallet(nodeParams.second.keyManager, 1_000_000.sat).second
         bob.send(AddWalletInputsToChannel(walletBob))
 
-        val rejected = bob.nodeParams.nodeEvents.first { it is LiquidityEvents }
-        assertIs<LiquidityEvents.Rejected>(rejected)
+        val rejected = bob.nodeParams.nodeEvents.filterIsInstance<LiquidityEvents.Rejected>().first()
         assertEquals(1_500_000_000.msat, rejected.amount)
         assertEquals(LiquidityEvents.Source.OnChainWallet, rejected.source)
         assertEquals(LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(maxRelativeFeeBasisPoints = 10), rejected.reason)
