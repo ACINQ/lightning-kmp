@@ -10,7 +10,6 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelFlags
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
@@ -80,8 +79,10 @@ interface LightningMessage {
                 Shutdown.type -> Shutdown.read(stream)
                 ClosingSigned.type -> ClosingSigned.read(stream)
                 OnionMessage.type -> OnionMessage.read(stream)
-                PayToOpenRequest.type -> PayToOpenRequest.read(stream)
-                PayToOpenResponse.type -> PayToOpenResponse.read(stream)
+                WillAddHtlc.type -> WillAddHtlc.read(stream)
+                WillFailHtlc.type -> WillFailHtlc.read(stream)
+                WillFailMalformedHtlc.type -> WillFailMalformedHtlc.read(stream)
+                CancelOnTheFlyFunding.type -> CancelOnTheFlyFunding.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
                 DNSAddressRequest.type -> DNSAddressRequest.read(stream)
@@ -185,6 +186,8 @@ interface HasEncryptedChannelData : HasChannelId {
 }
 
 interface ChannelMessage
+
+interface OnTheFlyFundingMessage : LightningMessage
 
 data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
     val networks = tlvs.get<InitTlv.Networks>()?.chainHashes ?: listOf()
@@ -1086,6 +1089,7 @@ data class UpdateAddHtlc(
     override val type: Long get() = UpdateAddHtlc.type
 
     val blinding: PublicKey? = tlvStream.get<UpdateAddHtlcTlv.Blinding>()?.publicKey
+    val fundingFee: LiquidityAds.FundingFee? = tlvStream.get<UpdateAddHtlcTlv.FundingFeeTlv>()?.fee
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1102,7 +1106,8 @@ data class UpdateAddHtlc(
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
-            UpdateAddHtlcTlv.Blinding.tag to UpdateAddHtlcTlv.Blinding as TlvValueReader<UpdateAddHtlcTlv>
+            UpdateAddHtlcTlv.Blinding.tag to UpdateAddHtlcTlv.Blinding as TlvValueReader<UpdateAddHtlcTlv>,
+            UpdateAddHtlcTlv.FundingFeeTlv.tag to UpdateAddHtlcTlv.FundingFeeTlv as TlvValueReader<UpdateAddHtlcTlv>,
         )
 
         override fun read(input: Input): UpdateAddHtlc {
@@ -1123,10 +1128,14 @@ data class UpdateAddHtlc(
             paymentHash: ByteVector32,
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
-            blinding: PublicKey?
+            blinding: PublicKey?,
+            fundingFee: LiquidityAds.FundingFee?
         ): UpdateAddHtlc {
-            val tlvStream = TlvStream(setOfNotNull<UpdateAddHtlcTlv>(blinding?.let { UpdateAddHtlcTlv.Blinding(it) }))
-            return UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, tlvStream)
+            val tlvs = setOfNotNull(
+                blinding?.let { UpdateAddHtlcTlv.Blinding(it) },
+                fundingFee?.let { UpdateAddHtlcTlv.FundingFeeTlv(it) }
+            )
+            return UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
         }
     }
 }
@@ -1634,111 +1643,137 @@ data class OnionMessage(
 }
 
 /**
- * When we don't have enough incoming liquidity to receive a payment, our peer may open a channel to us on-the-fly to carry that payment.
- * This message contains details that allow us to recalculate the fee that our peer will take in exchange for the new channel.
- * This allows us to combine multiple requests for the same payment and figure out the final fee that will be applied.
- *
- * @param chainHash chain we're on.
- * @param amountMsat payment amount covered by this new channel: we will receive push_msat = amountMsat - fees.
- * @param payToOpenFeeSatoshis fees that will be deducted from the amount pushed to us (this fee covers the on-chain fees our peer will pay to open the channel).
- * @param paymentHash payment hash.
- * @param expireAt after the proposal expires, our peer will fail the payment and won't open a channel to us.
- * @param finalPacket onion packet that we would have received if there had been a channel to forward the payment to.
+ * This message is sent when an HTLC couldn't be relayed to our node because we don't have enough inbound liquidity.
+ * This allows us to treat it as an incoming payment, and request on-the-fly liquidity accordingly if we wish to receive that payment.
+ * If we accept the payment, we will send an [OpenDualFundedChannel] or [SpliceInit] message containing [ChannelTlv.RequestFundingTlv].
+ * Our peer will then provide the requested funding liquidity and will relay the corresponding HTLC(s) afterwards.
  */
-data class PayToOpenRequest(
+data class WillAddHtlc(
     override val chainHash: BlockHash,
-    val amountMsat: MilliSatoshi,
-    val payToOpenFeeSatoshis: Satoshi,
+    val id: ByteVector32,
+    val amount: MilliSatoshi,
     val paymentHash: ByteVector32,
-    val expireAt: Long,
+    val expiry: CltvExpiry,
     val finalPacket: OnionRoutingPacket,
-    val liquidity: Satoshi = 0.sat,
-    val tlvStream: TlvStream<PayToOpenRequestTlv> = TlvStream.empty(),
-) : LightningMessage, HasChainHash {
-    override val type: Long get() = PayToOpenRequest.type
+    val tlvStream: TlvStream<WillAddHtlcTlv> = TlvStream.empty()
+) : OnTheFlyFundingMessage, HasChainHash {
+    override val type: Long get() = WillAddHtlc.type
 
-    val blinding: PublicKey? = tlvStream.get<PayToOpenRequestTlv.Blinding>()?.publicKey
+    val blinding: PublicKey? = tlvStream.get<WillAddHtlcTlv.Blinding>()?.publicKey
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(chainHash.value, out)
-        LightningCodecs.writeU64(0, out) // backward compat for removed field fundingSatoshis
-        LightningCodecs.writeU64(amountMsat.toLong(), out)
-        LightningCodecs.writeU64(0, out) // backward compat for removed field payToOpenMinAmountMsat
-        LightningCodecs.writeU64(payToOpenFeeSatoshis.toLong(), out)
+        LightningCodecs.writeBytes(id, out)
+        LightningCodecs.writeU64(amount.toLong(), out)
         LightningCodecs.writeBytes(paymentHash, out)
-        LightningCodecs.writeU32(expireAt.toInt(), out)
-        LightningCodecs.writeU16(finalPacket.payload.size(), out)
-        OnionRoutingPacketSerializer(finalPacket.payload.size()).write(finalPacket, out)
-        LightningCodecs.writeU64(liquidity.toLong(), out)
+        LightningCodecs.writeU32(expiry.toLong().toInt(), out)
+        OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).write(finalPacket, out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
-    companion object : LightningMessageReader<PayToOpenRequest> {
-        const val type: Long = 35021
+    companion object : LightningMessageReader<WillAddHtlc> {
+        const val type: Long = 41041
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
-            PayToOpenRequestTlv.Blinding.tag to PayToOpenRequestTlv.Blinding as TlvValueReader<PayToOpenRequestTlv>
+            WillAddHtlcTlv.Blinding.tag to WillAddHtlcTlv.Blinding as TlvValueReader<WillAddHtlcTlv>,
         )
 
-        override fun read(input: Input): PayToOpenRequest {
-            return PayToOpenRequest(
-                chainHash = BlockHash(LightningCodecs.bytes(input, 32))
-                    .also { LightningCodecs.u64(input) }, // ignoring removed field fundingSatoshis
-                amountMsat = MilliSatoshi(LightningCodecs.u64(input))
-                    .also { LightningCodecs.u64(input) }, // ignoring removed field payToOpenMinAmountMsat
-                payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
-                paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
-                expireAt = LightningCodecs.u32(input).toLong(),
-                finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input),
-                liquidity = Satoshi(LightningCodecs.u64(input)),
-                tlvStream = TlvStreamSerializer(false, readers).read(input),
-            )
+        override fun read(input: Input): WillAddHtlc = WillAddHtlc(
+            chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
+            id = LightningCodecs.bytes(input, 32).byteVector32(),
+            amount = LightningCodecs.u64(input).msat,
+            paymentHash = LightningCodecs.bytes(input, 32).byteVector32(),
+            expiry = CltvExpiry(LightningCodecs.u32(input).toLong()),
+            finalPacket = OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).read(input),
+            tlvStream = TlvStreamSerializer(false, readers).read(input)
+        )
+
+        operator fun invoke(
+            chainHash: BlockHash,
+            id: ByteVector32,
+            amount: MilliSatoshi,
+            paymentHash: ByteVector32,
+            cltvExpiry: CltvExpiry,
+            onionRoutingPacket: OnionRoutingPacket,
+            blinding: PublicKey?
+        ): WillAddHtlc {
+            val tlvStream = TlvStream(setOfNotNull<WillAddHtlcTlv>(blinding?.let { WillAddHtlcTlv.Blinding(it) }))
+            return WillAddHtlc(chainHash, id, amount, paymentHash, cltvExpiry, onionRoutingPacket, tlvStream)
         }
     }
 }
 
-data class PayToOpenResponse(override val chainHash: BlockHash, val paymentHash: ByteVector32, val result: Result) : LightningMessage, HasChainHash {
-    override val type: Long get() = PayToOpenResponse.type
-
-    sealed class Result {
-        // @formatter:off
-        data class Success(val paymentPreimage: ByteVector32) : Result()
-        /** reason is an onion-encrypted failure message, like those in UpdateFailHtlc */
-        data class Failure(val reason: ByteVector?) : Result()
-        // @formatter:on
-    }
+data class WillFailHtlc(val id: ByteVector32, val paymentHash: ByteVector32, val reason: ByteVector) : OnTheFlyFundingMessage {
+    override val type: Long get() = WillFailHtlc.type
 
     override fun write(out: Output) {
-        LightningCodecs.writeBytes(chainHash.value, out)
+        LightningCodecs.writeBytes(id, out)
         LightningCodecs.writeBytes(paymentHash, out)
-        when (result) {
-            is Result.Success -> LightningCodecs.writeBytes(result.paymentPreimage, out)
-            is Result.Failure -> {
-                LightningCodecs.writeBytes(ByteVector32.Zeroes, out) // this is for backward compatibility
-                result.reason?.let {
-                    LightningCodecs.writeU16(it.size(), out)
-                    LightningCodecs.writeBytes(it, out)
-                }
-            }
-        }
+        LightningCodecs.writeU16(reason.size(), out)
+        LightningCodecs.writeBytes(reason, out)
     }
 
-    companion object : LightningMessageReader<PayToOpenResponse> {
-        const val type: Long = 35003
+    companion object : LightningMessageReader<WillFailHtlc> {
+        const val type: Long = 41042
 
-        override fun read(input: Input): PayToOpenResponse {
-            val chainHash = BlockHash(LightningCodecs.bytes(input, 32))
-            val paymentHash = LightningCodecs.bytes(input, 32).toByteVector32()
-            return when (val preimage = LightningCodecs.bytes(input, 32).toByteVector32()) {
-                ByteVector32.Zeroes -> {
-                    val failure = if (input.availableBytes > 0) LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector() else null
-                    PayToOpenResponse(chainHash, paymentHash, Result.Failure(failure))
-                }
+        override fun read(input: Input): WillFailHtlc = WillFailHtlc(
+            id = LightningCodecs.bytes(input, 32).byteVector32(),
+            paymentHash = LightningCodecs.bytes(input, 32).byteVector32(),
+            reason = LightningCodecs.bytes(input, LightningCodecs.u16(input)).byteVector()
+        )
+    }
+}
 
-                else -> PayToOpenResponse(chainHash, paymentHash, Result.Success(preimage))
-            }
-        }
+data class WillFailMalformedHtlc(val id: ByteVector32, val paymentHash: ByteVector32, val onionHash: ByteVector32, val failureCode: Int) : OnTheFlyFundingMessage {
+    override val type: Long get() = WillFailMalformedHtlc.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(id, out)
+        LightningCodecs.writeBytes(paymentHash, out)
+        LightningCodecs.writeBytes(onionHash, out)
+        LightningCodecs.writeU16(failureCode, out)
+    }
+
+    companion object : LightningMessageReader<WillFailMalformedHtlc> {
+        const val type: Long = 41043
+
+        override fun read(input: Input): WillFailMalformedHtlc = WillFailMalformedHtlc(
+            id = LightningCodecs.bytes(input, 32).byteVector32(),
+            paymentHash = LightningCodecs.bytes(input, 32).byteVector32(),
+            onionHash = LightningCodecs.bytes(input, 32).byteVector32(),
+            failureCode = LightningCodecs.u16(input),
+        )
+    }
+}
+
+/**
+ * This message is sent in response to an [OpenDualFundedChannel] or [SpliceInit] message containing an invalid [LiquidityAds.RequestFunds].
+ * The receiver must consider the funding attempt failed when receiving this message.
+ */
+data class CancelOnTheFlyFunding(override val channelId: ByteVector32, val paymentHashes: List<ByteVector32>, val reason: ByteVector) : OnTheFlyFundingMessage, HasChannelId {
+    constructor(channelId: ByteVector32, paymentHashes: List<ByteVector32>, message: String?) : this(channelId, paymentHashes, ByteVector(message?.encodeToByteArray() ?: ByteArray(0)))
+
+    override val type: Long get() = CancelOnTheFlyFunding.type
+
+    fun toAscii(): String = reason.toByteArray().decodeToString()
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeU16(paymentHashes.size, out)
+        paymentHashes.forEach { LightningCodecs.writeBytes(it, out) }
+        LightningCodecs.writeU16(reason.size(), out)
+        LightningCodecs.writeBytes(reason, out)
+    }
+
+    companion object : LightningMessageReader<CancelOnTheFlyFunding> {
+        const val type: Long = 41044
+
+        override fun read(input: Input): CancelOnTheFlyFunding = CancelOnTheFlyFunding(
+            channelId = LightningCodecs.bytes(input, 32).byteVector32(),
+            paymentHashes = (0 until LightningCodecs.u16(input)).map { LightningCodecs.bytes(input, 32).byteVector32() },
+            reason = LightningCodecs.bytes(input, LightningCodecs.u16(input)).byteVector()
+        )
     }
 }
 

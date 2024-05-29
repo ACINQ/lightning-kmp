@@ -247,7 +247,9 @@ class SpliceTestsCommon : LightningTestSuite() {
             val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
             val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
             val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
-            assertTrue(actionsBob2.isEmpty())
+            assertEquals(2, actionsBob2.size)
+            actionsBob2.hasOutgoingMessage<Warning>()
+            actionsBob2.has<ChannelAction.Disconnect>()
             assertTrue(cmd.replyTo.isCompleted)
             assertEquals(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds, cmd.replyTo.getCompleted())
         }
@@ -277,6 +279,44 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `splice to purchase inbound liquidity -- not enough funds but on-the-fly funding`() {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 0.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val fundingRate = LiquidityAds.FundingRate(0.sat, 500_000.sat, 0, 50, 0.sat)
+        val origin = Origin.OffChainPayment(randomBytes32(), 25_000_000.msat, ChannelManagementFees(0.sat, 500.sat))
+        run {
+            // We don't have enough funds to pay fees from our channel balance.
+            val fundingRequest = LiquidityAds.RequestFunding(100_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(origin.paymentHash)))
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, fundingRequest, FeeratePerKw(1000.sat), listOf(origin))
+            val (bob1, actionsBob1) = bob.process(cmd)
+            val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
+            val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
+            val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
+            val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
+            assertEquals(2, actionsBob2.size)
+            actionsBob2.hasOutgoingMessage<Warning>()
+            actionsBob2.has<ChannelAction.Disconnect>()
+            assertTrue(cmd.replyTo.isCompleted)
+            assertEquals(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds, cmd.replyTo.getCompleted())
+        }
+        run {
+            // We can use future HTLCs to pay fees for the liquidity we're purchasing.
+            val fundingRequest = LiquidityAds.RequestFunding(100_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(origin.paymentHash)))
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, fundingRequest, FeeratePerKw(1000.sat), listOf(origin))
+            val (bob1, actionsBob1) = bob.process(cmd)
+            val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
+            val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
+            val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
+            val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
+            assertEquals(actionsBob2.size, 1)
+            actionsBob2.findOutgoingMessage<SpliceInit>().also {
+                assertEquals(0.sat, it.fundingContribution)
+                assertEquals(fundingRequest, it.requestFunding)
+            }
+        }
+    }
+
+    @Test
     fun `reject splice_init`() {
         val cmd = createSpliceOutRequest(25_000.sat)
         val (alice, bob) = reachNormal()
@@ -288,6 +328,17 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(alice2.state.spliceStatus, SpliceStatus.None)
         assertEquals(actionsAlice2.size, 1)
         actionsAlice2.hasOutgoingMessage<TxAbort>()
+    }
+
+    @Test
+    fun `reject splice_init -- cancel on-the-fly funding`() {
+        val cmd = createSpliceOutRequest(50_000.sat)
+        val (alice, bob) = reachNormal()
+        val (alice1, _, _) = reachQuiescent(cmd, alice, bob)
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(CancelOnTheFlyFunding(alice.channelId, listOf(randomBytes32()), "cancelling on-the-fly funding")))
+        assertIs<Normal>(alice2.state)
+        assertEquals(alice2.state.spliceStatus, SpliceStatus.None)
+        assertTrue(actionsAlice2.isEmpty())
     }
 
     @Test
