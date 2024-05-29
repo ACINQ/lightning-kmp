@@ -2,8 +2,11 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.*
+import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
@@ -1564,7 +1567,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Close_MutualClose -- with unsupported native segwit script`() {
-        val (alice, _) = reachNormal()
+        val (alice, _) = reachNormal(aliceFeatures = TestConstants.Alice.nodeParams.features.remove(Feature.ShutdownAnySegwit))
         assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(ByteVector("51050102030405"), null))
         assertIs<LNChannel<Normal>>(alice1)
@@ -1573,10 +1576,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Close_MutualClose -- with native segwit script`() {
-        val (alice, _) = reachNormal(
-            aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
-            bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
-        )
+        val (alice, _) = reachNormal()
         assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(ByteVector("51050102030405"), null))
         actions1.hasOutgoingMessage<Shutdown>()
@@ -1724,7 +1724,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Shutdown -- with unsupported native segwit script`() {
-        val (_, bob) = reachNormal()
+        val (_, bob) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ShutdownAnySegwit))
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
         assertIs<LNChannel<Closing>>(bob1)
         actions1.hasOutgoingMessage<Error>()
@@ -1734,10 +1734,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Shutdown -- with native segwit script`() {
-        val (_, bob) = reachNormal(
-            aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
-            bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
-        )
+        val (_, bob) = reachNormal()
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
         assertIs<LNChannel<Negotiating>>(bob1)
         actions1.hasOutgoingMessage<Shutdown>()

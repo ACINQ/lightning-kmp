@@ -98,7 +98,7 @@ object UpdateAddHtlcSerializer : KSerializer<UpdateAddHtlc> {
 
     override fun deserialize(decoder: Decoder): UpdateAddHtlc {
         val surrogate = decoder.decodeSerializableValue(Surrogate.serializer())
-        return UpdateAddHtlc(surrogate.channelId, surrogate.id, surrogate.amountMsat, surrogate.paymentHash, surrogate.cltvExpiry, surrogate.onionRoutingPacket, null)
+        return UpdateAddHtlc(surrogate.channelId, surrogate.id, surrogate.amountMsat, surrogate.paymentHash, surrogate.cltvExpiry, surrogate.onionRoutingPacket, null, null)
     }
 }
 

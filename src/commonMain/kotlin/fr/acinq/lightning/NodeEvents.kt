@@ -48,7 +48,10 @@ sealed interface LiquidityEvents : NodeEvents {
                 data class OverAbsoluteFee(val maxAbsoluteFee: Satoshi) : TooExpensive()
                 data class OverRelativeFee(val maxRelativeFeeBasisPoints: Int) : TooExpensive()
             }
-            data object ChannelInitializing : Reason()
+            data object ChannelFundingInProgress : Reason()
+            data object NoMatchingFundingRate : Reason()
+            data class MissingOffChainAmountTooLow(val missingOffChainAmount: MilliSatoshi) : Reason()
+            data class TooManyParts(val parts: Int) : Reason()
         }
     }
     data class Accepted(override val amount: MilliSatoshi, override val fee: MilliSatoshi, override val source: Source) : LiquidityEvents

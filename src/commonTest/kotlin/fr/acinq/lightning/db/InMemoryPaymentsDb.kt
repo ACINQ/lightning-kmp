@@ -10,6 +10,7 @@ import fr.acinq.lightning.utils.toByteVector32
 class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, IncomingPayment>()
     private val outgoing = mutableMapOf<UUID, LightningOutgoingPayment>()
+    private val onChainOutgoing = mutableMapOf<TxId, OnChainOutgoingPayment>()
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
     override suspend fun setLocked(txId: TxId) {}
 
@@ -70,7 +71,7 @@ class InMemoryPaymentsDb : PaymentsDb {
                 outgoing[outgoingPayment.id] = outgoingPayment.copy(parts = listOf())
                 outgoingPayment.parts.forEach { outgoingParts[it.id] = Pair(outgoingPayment.id, it) }
             }
-            is OnChainOutgoingPayment -> {} // we don't persist on-chain payments
+            is OnChainOutgoingPayment -> onChainOutgoing[outgoingPayment.txId] = outgoingPayment
         }
     }
 
@@ -81,6 +82,13 @@ class InMemoryPaymentsDb : PaymentsDb {
                 is LightningOutgoingPayment.Status.Completed.Succeeded -> payment.copy(parts = parts.filter { it.status is LightningOutgoingPayment.Part.Status.Succeeded })
                 else -> payment.copy(parts = parts)
             }
+        }
+    }
+
+    override suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment? {
+        return when (val onChainPayment = onChainOutgoing[fundingTxId]) {
+            is InboundLiquidityOutgoingPayment -> onChainPayment
+            else -> null
         }
     }
 

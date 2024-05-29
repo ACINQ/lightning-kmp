@@ -6,10 +6,7 @@ import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.wire.AcceptDualFundedChannel
-import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.LiquidityAds
-import fr.acinq.lightning.wire.OpenDualFundedChannel
+import fr.acinq.lightning.wire.*
 
 /*
  * We initiated a channel open and are waiting for our peer to accept it.
@@ -122,6 +119,11 @@ data class WaitForAcceptChannel(
                             return Pair(Aborted, listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId(keyManager), res.value.message))))
                         }
                     }
+                }
+                is CancelOnTheFlyFunding -> {
+                    // Our peer won't accept this on-the-fly funding attempt: they probably already failed the corresponding HTLCs.
+                    logger.warning { "on-the-fly funding was rejected by our peer: ${cmd.message.toAscii()}" }
+                    Pair(Aborted, listOf())
                 }
                 is Error -> handleRemoteError(cmd.message)
                 else -> unhandled(cmd)

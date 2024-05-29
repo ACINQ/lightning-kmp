@@ -41,10 +41,6 @@ interface IncomingPaymentsDb {
      * Mark an incoming payment as received (paid).
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      *
-     * With pay-to-open, there is a delay before we receive the parts, and we may not receive any parts at all if the pay-to-open
-     * was cancelled due to a disconnection. That is why the payment should not be considered received (and not be displayed to
-     * the user) if there are no parts.
-     *
      * This method is additive:
      * - receivedWith set is appended to the existing set in database.
      * - receivedAt must be updated in database.
@@ -66,6 +62,9 @@ interface OutgoingPaymentsDb {
 
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getLightningOutgoingPayment(id: UUID): LightningOutgoingPayment?
+
+    /** Get information about a liquidity purchase (for which the funding transaction has been signed). */
+    suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment?
 
     /** Mark an outgoing payment as completed over Lightning. */
     suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
@@ -171,8 +170,9 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         abstract val fees: MilliSatoshi
 
         /** Payment was received via existing lightning channels. */
-        data class LightningPayment(override val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : ReceivedWith() {
-            override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
+        data class LightningPayment(override val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?) : ReceivedWith() {
+            // If there is no funding fee, the fees are paid by the sender for lightning payments.
+            override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
         }
 
         sealed class OnChainIncomingPayment : ReceivedWith() {
@@ -426,6 +426,7 @@ data class InboundLiquidityOutgoingPayment(
     override val fees: MilliSatoshi = (miningFees + purchase.fees.serviceFee).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
     override val completedAt: Long? = lockedAt
+    val fundingFee: LiquidityAds.FundingFee = LiquidityAds.FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
 }
 
 enum class ChannelClosingType {
