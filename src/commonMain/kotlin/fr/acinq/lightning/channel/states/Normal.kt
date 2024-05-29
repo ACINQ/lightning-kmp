@@ -409,7 +409,11 @@ data class Normal(
                                             val missing = spliceStatus.command.requestRemoteFunding?.let { r -> r.fees(spliceStatus.command.feerate).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
                                             logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
                                             spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
-                                            Pair(this@Normal, emptyList())
+                                            val actions = buildList {
+                                                add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
+                                                add(ChannelAction.Disconnect)
+                                            }
+                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
                                         } else {
                                             val spliceInit = SpliceInit(
                                                 channelId,
@@ -766,6 +770,17 @@ data class Normal(
                                 add(ChannelAction.Disconnect)
                             }
                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                        }
+                    }
+                    is CancelOnTheFlyFunding -> when (spliceStatus) {
+                        is SpliceStatus.Requested -> {
+                            logger.info { "our peer rejected our on-the-fly splice request: ascii='${cmd.message.toAscii()}'" }
+                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), endQuiescence())
+                        }
+                        else -> {
+                            logger.warning { "received unexpected cancel_on_the_fly_funding (spliceStatus=${spliceStatus::class.simpleName}, message='${cmd.message.toAscii()}')" }
+                            Pair(this@Normal, listOf(ChannelAction.Disconnect))
                         }
                     }
                     is SpliceLocked -> {
