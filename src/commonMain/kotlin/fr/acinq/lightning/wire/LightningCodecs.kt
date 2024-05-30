@@ -232,19 +232,28 @@ object LightningCodecs {
             return EncodedNodeId.ShortChannelIdDir(isNode1, scid)
         } else if (firstByte == 2 || firstByte == 3) {
             val publicKey = PublicKey(ByteArray(1) { firstByte.toByte() } + bytes(input, 32))
-            return EncodedNodeId.Plain(publicKey)
+            return EncodedNodeId.WithPublicKey.Plain(publicKey)
+        } else if (firstByte == 4 || firstByte == 5) {
+            val publicKey = PublicKey(ByteArray(1) { (firstByte - 2).toByte() } + bytes(input, 32))
+            return EncodedNodeId.WithPublicKey.Wallet(publicKey)
+
         } else {
             throw IllegalArgumentException("unexpected first byte: $firstByte")
         }
     }
 
     fun writeEncodedNodeId(input: EncodedNodeId, out: Output): Unit = when (input) {
-        is EncodedNodeId.Plain -> writeBytes(input.publicKey.value, out)
+        is EncodedNodeId.WithPublicKey.Plain -> writeBytes(input.publicKey.value, out)
         is EncodedNodeId.ShortChannelIdDir -> {
             writeByte(if (input.isNode1) 0 else 1, out)
             writeInt64(input.scid.toLong(), out)
         }
-        is EncodedNodeId.PhoenixId -> writeBytes(input.publicKey.value, out)
+
+        is EncodedNodeId.WithPublicKey.Wallet -> {
+            val firstByte = input.publicKey.value[0]
+            writeByte(firstByte + 2, out)
+            writeBytes(input.publicKey.value.drop(1), out)
+        }
     }
 
 }

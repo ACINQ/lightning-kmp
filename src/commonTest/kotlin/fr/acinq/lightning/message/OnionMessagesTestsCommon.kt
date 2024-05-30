@@ -53,7 +53,7 @@ class OnionMessagesTestsCommon {
         val blindingSecret = randomKey()
         val destination = randomKey()
         val pathId = randomBytes32()
-        val message = buildMessage(sessionKey, blindingSecret, listOf(), Recipient(destination.publicKey(), pathId, isPhoenix = false), TlvStream.empty())
+        val message = buildMessage(sessionKey, blindingSecret, listOf(), Recipient(EncodedNodeId(destination.publicKey()), pathId), TlvStream.empty())
         assertIs<Either.Right<OnionMessage>>(message)
 
         val decrypted = decryptMessage(destination, message.value, logger)
@@ -117,9 +117,9 @@ class OnionMessagesTestsCommon {
         val onionForAlice = OnionMessage(blindingSecret.publicKey(), packet)
 
         // Building the onion with functions from `OnionMessages`
-        val replyPath = buildRoute(blindingOverride, listOf(IntermediateNode(carol.publicKey(), padding = ByteVector.fromHex("0000000000000000000000000000000000000000000000000000000000000000000000"))), Recipient(dave.publicKey(), ByteVector.fromHex("01234567"), isPhoenix = false))
+        val replyPath = buildRoute(blindingOverride, listOf(IntermediateNode(EncodedNodeId(carol.publicKey()), padding = ByteVector.fromHex("0000000000000000000000000000000000000000000000000000000000000000000000"))), Recipient(EncodedNodeId(dave.publicKey()), ByteVector.fromHex("01234567")))
         assertEquals(routeFromCarol, replyPath)
-        val message = buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(alice.publicKey()), IntermediateNode(bob.publicKey())), BlindedPath(replyPath), TlvStream.empty())
+        val message = buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(EncodedNodeId(alice.publicKey())), IntermediateNode(EncodedNodeId(bob.publicKey()))), BlindedPath(replyPath), TlvStream.empty())
         assertEquals(Either.Right(onionForAlice), message)
 
         // Checking that the onion is relayed properly
@@ -211,7 +211,7 @@ class OnionMessagesTestsCommon {
         val blindingSecret = randomKey()
         val blindingOverride = randomKey()
         val destination = randomKey()
-        val replyPath = buildRoute(blindingOverride, listOf(IntermediateNode(destination.publicKey())), Recipient(destination.publicKey(), pathId = ByteVector.fromHex("01234567"), isPhoenix = false))
+        val replyPath = buildRoute(blindingOverride, listOf(IntermediateNode(EncodedNodeId(destination.publicKey()))), Recipient(EncodedNodeId(destination.publicKey()), pathId = ByteVector.fromHex("01234567")))
         assertEquals(blindingOverride.publicKey(), replyPath.blindingKey)
         assertEquals(EncodedNodeId(destination.publicKey()), replyPath.introductionNodeId)
         val message = buildMessage(sessionKey, blindingSecret, listOf(), BlindedPath(replyPath), TlvStream.empty()).right!!
@@ -232,7 +232,7 @@ class OnionMessagesTestsCommon {
         val sessionKey = randomKey()
         val blindingSecret = randomKey()
         val pathId = randomBytes(65201).toByteVector()
-        val messageForAlice = buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(alice.publicKey()), IntermediateNode(bob.publicKey())), Recipient(carol.publicKey(), pathId, isPhoenix = false), TlvStream.empty()).right!!
+        val messageForAlice = buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(EncodedNodeId(alice.publicKey())), IntermediateNode(EncodedNodeId(bob.publicKey()))), Recipient(EncodedNodeId(carol.publicKey()), pathId), TlvStream.empty()).right!!
         // This message should use the maximum size allowed for lightning messages, without overflowing it.
         // Note that we leave 2 bytes for the message length, resulting in a total packet of 65535 bytes.
         assertEquals(65533, messageForAlice.write().size)
@@ -257,7 +257,7 @@ class OnionMessagesTestsCommon {
         val pathId = randomBytes(65202).toByteVector()
         assertEquals(
             Either.Left(OnionMessages.MessageTooLarge(65433)),
-            buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(alice.publicKey()), IntermediateNode(bob.publicKey())), Recipient(carol.publicKey(), pathId, isPhoenix = false), TlvStream.empty())
+            buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(EncodedNodeId(alice.publicKey())), IntermediateNode(EncodedNodeId(bob.publicKey()))), Recipient(EncodedNodeId(carol.publicKey()), pathId), TlvStream.empty())
         )
     }
 
@@ -271,7 +271,7 @@ class OnionMessagesTestsCommon {
         val sessionKey = randomKey()
         val blindingSecret = randomKey()
         val pathId = randomBytes(64).toByteVector()
-        val messageForAlice = buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(alice.publicKey(), isPhoenix = false, alice2bob), IntermediateNode(bob.publicKey(), isPhoenix = false, bob2carol)), Recipient(carol.publicKey(), pathId, isPhoenix = false), TlvStream.empty()).right!!
+        val messageForAlice = buildMessage(sessionKey, blindingSecret, listOf(IntermediateNode(EncodedNodeId(alice.publicKey()), alice2bob), IntermediateNode(EncodedNodeId(bob.publicKey()), bob2carol)), Recipient(EncodedNodeId(carol.publicKey()), pathId), TlvStream.empty()).right!!
 
         // The onion is relayed properly:
         val (outgoingChannelId1, onionForBob) = relayMessage(alice, messageForAlice)

@@ -10,17 +10,6 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 
 sealed class RouteBlindingEncryptedDataTlv : Tlv {
-    /** Id of the next node. */
-    data class OutgoingPhoenixId(val nodeId: PublicKey) : RouteBlindingEncryptedDataTlv() {
-        override val tag: Long get() = OutgoingPhoenixId.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(nodeId.value, out)
-
-        companion object : TlvValueReader<OutgoingPhoenixId> {
-            const val tag: Long = 0
-            override fun read(input: Input): OutgoingPhoenixId = OutgoingPhoenixId(PublicKey(LightningCodecs.bytes(input, 33)))
-        }
-    }
-
     /** Some padding can be added to ensure all payloads are the same size to improve privacy. */
     data class Padding(val dummy: ByteVector) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = Padding.tag
@@ -135,7 +124,7 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
 }
 
 data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryptedDataTlv>) {
-    val nextNodeId = records.get<RouteBlindingEncryptedDataTlv.OutgoingNodeId>()?.nodeId ?: records.get<RouteBlindingEncryptedDataTlv.OutgoingPhoenixId>()?.let { EncodedNodeId.PhoenixId(it.nodeId) }
+    val nextNodeId = records.get<RouteBlindingEncryptedDataTlv.OutgoingNodeId>()?.nodeId
     val outgoingChannelId = records.get<RouteBlindingEncryptedDataTlv.OutgoingChannelId>()?.shortChannelId
     val pathId = records.get<RouteBlindingEncryptedDataTlv.PathId>()?.data
     val nextBlindingOverride = records.get<RouteBlindingEncryptedDataTlv.NextBlinding>()?.blinding
@@ -153,7 +142,6 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
     companion object {
         private val tlvSerializer = TlvStreamSerializer(
             false, @Suppress("UNCHECKED_CAST") mapOf(
-                RouteBlindingEncryptedDataTlv.OutgoingPhoenixId.tag to RouteBlindingEncryptedDataTlv.OutgoingPhoenixId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.Padding.tag to RouteBlindingEncryptedDataTlv.Padding as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.OutgoingChannelId.tag to RouteBlindingEncryptedDataTlv.OutgoingChannelId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.OutgoingNodeId.tag to RouteBlindingEncryptedDataTlv.OutgoingNodeId as TlvValueReader<RouteBlindingEncryptedDataTlv>,

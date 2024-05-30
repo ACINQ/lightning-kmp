@@ -478,7 +478,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
                 ByteVector.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73 0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966 01 02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328 0002 cafe"),
                 BlindedPath(
                     RouteBlinding.BlindedRoute(
-                        EncodedNodeId.Plain(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+                        EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
                         PublicKey.fromHex("0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966"),
                         listOf(RouteBlinding.BlindedNode(PublicKey.fromHex("02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328"), ByteVector.fromHex("cafe")))
                     )
@@ -488,7 +488,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
                 ByteVector.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922 028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd 01 02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2 0003 ec1a13"),
                 BlindedPath(
                     RouteBlinding.BlindedRoute(
-                        EncodedNodeId.Plain(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+                        EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
                         PublicKey.fromHex("028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd"),
                         listOf(RouteBlinding.BlindedNode(PublicKey.fromHex("02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2"), ByteVector.fromHex("ec1a13")))
                     )
@@ -518,7 +518,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val path = offer.contactInfos.first()
         assertIs<BlindedPath>(path)
         assertEquals(EncodedNodeId(trampolineNode.id), path.route.introductionNodeId)
-        val expectedOffer = Offer.decode("lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0qf70a6j2x2akrhazctejaaqr8y4qtzjtjzmfesay6mzr3s789uryuqsr8dpgfgxuk56vh7cl89769zdpdrkqwtypzhu2t8ehp73dqeeq65lsqvlz5p38mw2kz54p4f6ct66stdfxz0df8nqq7svjjdjn2dv8sz28y7z07yg4d345c2rek88h30cp6fr5qfwxqwlpkg8vdcqsfvz89axkmv5sgdysmwn95tpsct6mdercmz8jh2r82qqscrf6uc3tse5gw5sv5xjdfw8f6c").get()
+        val expectedOffer = Offer.decode("lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0qf70a6j2x2akrhazctejaaqr8y4qtzjtjzmfesay6mzr3s789uryuqsr8dpgfgxuk56vh7cl89769zdpdrkqwtypzhu2t8ehp73dqeeq65lsqvlx5pj8mw2kz54p4f6ct66stdfxz0df8nqq7svjjdjn2dv8sz28y7z07yg3vqyfyy8ywevqc8kzp36lhd5cqwlpkg8vdcqsfvz89axkmv5sgdysmwn95tpsct6mdercmz8jh2r82qqscrf6uc3tse5gw5sv5xjdfw8f6c").get()
         assertEquals(expectedOffer, offer)
     }
 }

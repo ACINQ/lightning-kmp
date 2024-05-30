@@ -53,8 +53,8 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         val replyPathId = randomBytes32()
         pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, request)
         // We add dummy hops to the reply path: this way the receiver only learns that we're at most 3 hops away from our peer.
-        val replyPathHops = listOf(IntermediateNode(remoteNodeId, isPhoenix = false), IntermediateNode(nodeParams.nodeId, isPhoenix = true), IntermediateNode(nodeParams.nodeId, isPhoenix = true))
-        val lastHop = Destination.Recipient(nodeParams.nodeId, replyPathId, isPhoenix = true)
+        val replyPathHops = listOf(IntermediateNode(EncodedNodeId.WithPublicKey.Plain(remoteNodeId)), IntermediateNode(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)), IntermediateNode(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)))
+        val lastHop = Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), replyPathId)
         val replyPath = OnionMessages.buildRoute(randomKey(), replyPathHops, lastHop)
         val messageContent = TlvStream(OnionMessagePayloadTlv.ReplyPath(replyPath), OnionMessagePayloadTlv.InvoiceRequest(request.records))
         val invoiceRequests = payOffer.offer.contactInfos.mapNotNull { contactInfo ->
@@ -154,7 +154,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 )
                 val remoteNodePayload = RouteBlindingEncryptedData(
                     TlvStream(
-                        RouteBlindingEncryptedDataTlv.OutgoingPhoenixId(nodeParams.nodeId),
+                        RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
                         RouteBlindingEncryptedDataTlv.PaymentRelay(paymentInfo.cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
                         RouteBlindingEncryptedDataTlv.PaymentConstraints((paymentInfo.cltvExpiryDelta + nodeParams.maxFinalCltvExpiryDelta).toCltvExpiry(currentBlockHeight.toLong()), paymentInfo.minHtlc)
                     )
@@ -186,11 +186,12 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     private fun intermediateNodes(destination: Destination): List<IntermediateNode> {
         val needIntermediateHop = when (destination) {
             is Destination.BlindedPath -> when (val introduction = destination.route.introductionNodeId) {
-                is EncodedNodeId.Plain -> introduction.publicKey != remoteNodeId
-                else -> true // we don't have access to the graph data and rely on our peer to resolve the scid
+                is EncodedNodeId.WithPublicKey.Plain -> introduction.publicKey != remoteNodeId
+                is EncodedNodeId.WithPublicKey.Wallet -> true
+                is EncodedNodeId.ShortChannelIdDir -> true // we don't have access to the graph data and rely on our peer to resolve the scid
             }
-            is Destination.Recipient -> destination.nodeId != remoteNodeId
+            is Destination.Recipient -> destination.nodeId.publicKey != remoteNodeId
         }
-        return if (needIntermediateHop) listOf(IntermediateNode(remoteNodeId, isPhoenix = false)) else listOf()
+        return if (needIntermediateHop) listOf(IntermediateNode(EncodedNodeId.WithPublicKey.Plain(remoteNodeId))) else listOf()
     }
 }
