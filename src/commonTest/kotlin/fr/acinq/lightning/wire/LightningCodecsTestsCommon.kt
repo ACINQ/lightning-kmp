@@ -852,9 +852,13 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             ByteVector.fromHex("01 0c0a14000d800005") to
                     EncodedNodeId.ShortChannelIdDir(isNode1 = false, ShortChannelId(789012, 3456, 5)),
             ByteVector.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73") to
-                    EncodedNodeId.Plain(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+                    EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
             ByteVector.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922") to
-                    EncodedNodeId.Plain(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+                    EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+            ByteVector.fromHex("042d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73") to
+                    EncodedNodeId.WithPublicKey.Wallet(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+            ByteVector.fromHex("05ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922") to
+                    EncodedNodeId.WithPublicKey.Wallet(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
         )
 
         for (testCase in testCases) {
@@ -868,7 +872,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode and decode onion message`() {
-        val onionMessage = OnionMessages.buildMessage(randomKey(), randomKey(), listOf(), OnionMessages.Destination.Recipient(randomKey().publicKey(), null), TlvStream.empty()).right!!
+        val onionMessage = OnionMessages.buildMessage(randomKey(), randomKey(), listOf(), OnionMessages.Destination.Recipient(EncodedNodeId(randomKey().publicKey()), null), TlvStream.empty()).right!!
         assertEquals(onionMessage, OnionMessage.read(onionMessage.write()))
     }
 }

@@ -786,7 +786,7 @@ object OfferTypes {
                 customTlvs: Set<GenericTlv> = setOf()
             ): Offer {
                 if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
-                val path = OnionMessages.buildRoute(blindingSecret, listOf(OnionMessages.IntermediateNode(trampolineNode.id, ShortChannelId.peerId(nodeParams.nodeId))), OnionMessages.Destination.Recipient(nodeParams.nodeId, null))
+                val path = OnionMessages.buildRoute(blindingSecret, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNode.id))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), null))
                 val tlvs: Set<OfferTlv> = setOfNotNull(
                     if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
                     amount?.let { OfferAmount(it) },

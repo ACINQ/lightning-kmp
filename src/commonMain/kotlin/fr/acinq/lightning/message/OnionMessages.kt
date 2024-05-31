@@ -11,7 +11,7 @@ import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 
 object OnionMessages {
-    data class IntermediateNode(val nodeId: PublicKey, val outgoingChannelId: ShortChannelId? = null, val padding: ByteVector? = null, val customTlvs: Set<GenericTlv> = setOf()) {
+    data class IntermediateNode(val nodeId: EncodedNodeId.WithPublicKey, val outgoingChannelId: ShortChannelId? = null, val padding: ByteVector? = null, val customTlvs: Set<GenericTlv> = setOf()) {
         fun toTlvStream(nextNodeId: EncodedNodeId, nextBlinding: PublicKey? = null): TlvStream<RouteBlindingEncryptedDataTlv> {
             val tlvs = setOfNotNull(
                 outgoingChannelId?.let { RouteBlindingEncryptedDataTlv.OutgoingChannelId(it) } ?: RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId),
@@ -24,13 +24,13 @@ object OnionMessages {
 
     sealed class Destination {
         data class BlindedPath(val route: RouteBlinding.BlindedRoute) : Destination()
-        data class Recipient(val nodeId: PublicKey, val pathId: ByteVector?, val padding: ByteVector? = null, val customTlvs: Set<GenericTlv> = setOf()) : Destination()
+        data class Recipient(val nodeId: EncodedNodeId.WithPublicKey, val pathId: ByteVector?, val padding: ByteVector? = null, val customTlvs: Set<GenericTlv> = setOf()) : Destination()
 
         companion object {
             operator fun invoke(contactInfo: OfferTypes.ContactInfo): Destination =
                 when (contactInfo) {
                     is OfferTypes.ContactInfo.BlindedPath -> BlindedPath(contactInfo.route)
-                    is OfferTypes.ContactInfo.RecipientNodeId -> Recipient(contactInfo.nodeId, null)
+                    is OfferTypes.ContactInfo.RecipientNodeId -> Recipient(EncodedNodeId.WithPublicKey.Plain(contactInfo.nodeId), null)
                 }
         }
     }
@@ -43,7 +43,9 @@ object OnionMessages {
         return if (intermediateNodes.isEmpty()) {
             listOf()
         } else {
-            val intermediatePayloads = intermediateNodes.dropLast(1).zip(intermediateNodes.drop(1)).map { (current, next) -> current.toTlvStream(EncodedNodeId(next.nodeId)) }
+            val intermediatePayloads = intermediateNodes.dropLast(1).zip(intermediateNodes.drop(1)).map { (current, next) ->
+                current.toTlvStream(next.nodeId)
+            }
             // The last intermediate node may contain a blinding override when the recipient is hidden behind a blinded path.
             val lastPayload = intermediateNodes.last().toTlvStream(lastNodeId, lastBlinding)
             (intermediatePayloads + lastPayload).map { RouteBlindingEncryptedData(it).write().byteVector() }
@@ -57,7 +59,7 @@ object OnionMessages {
     ): RouteBlinding.BlindedRoute {
         return when (destination) {
             is Destination.Recipient -> {
-                val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, EncodedNodeId(destination.nodeId))
+                val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, destination.nodeId)
                 val tlvs = setOfNotNull(
                     destination.padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) },
                     destination.pathId?.let { RouteBlindingEncryptedDataTlv.PathId(it) }
@@ -65,7 +67,7 @@ object OnionMessages {
                 val lastPayload = RouteBlindingEncryptedData(TlvStream(tlvs, destination.customTlvs)).write().toByteVector()
                 RouteBlinding.create(
                     blindingSecret,
-                    intermediateNodes.map { it.nodeId } + destination.nodeId,
+                    intermediateNodes.map { it.nodeId.publicKey } + destination.nodeId.publicKey,
                     intermediatePayloads + lastPayload
                 ).route
             }
@@ -80,7 +82,7 @@ object OnionMessages {
                     )
                     val routePrefix = RouteBlinding.create(
                         blindingSecret,
-                        intermediateNodes.map { it.nodeId },
+                        intermediateNodes.map { it.nodeId.publicKey },
                         intermediatePayloads
                     ).route
                     RouteBlinding.BlindedRoute(
@@ -167,7 +169,7 @@ object OnionMessages {
                                 null
                             }
                             is Either.Right -> when {
-                                !decrypted.value.isLastPacket && relayInfo.value.nextNodeId == EncodedNodeId(privateKey.publicKey()) -> {
+                                !decrypted.value.isLastPacket && relayInfo.value.nextNodeId == EncodedNodeId.WithPublicKey.Wallet(privateKey.publicKey()) -> {
                                     // We may add ourselves to the route several times at the end to hide the real length of the route.
                                     val nextMessage = OnionMessage(relayInfo.value.nextBlindingOverride ?: nextBlinding, decrypted.value.nextPacket)
                                     decryptMessage(privateKey, nextMessage, logger)
