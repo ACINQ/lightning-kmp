@@ -59,7 +59,6 @@ object OnionMessages {
     ): RouteBlinding.BlindedRoute {
         return when (destination) {
             is Destination.Recipient -> {
-
                 val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, destination.nodeId)
                 val tlvs = setOfNotNull(
                     destination.padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) },
