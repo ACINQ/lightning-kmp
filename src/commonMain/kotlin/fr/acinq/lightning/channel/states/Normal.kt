@@ -31,7 +31,7 @@ data class Normal(
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
-    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         val forbiddenPreSplice = cmd is ChannelCommand.ForbiddenDuringQuiescence && spliceStatus is QuiescenceNegotiation
         val forbiddenDuringSplice = cmd is ChannelCommand.ForbiddenDuringSplice && spliceStatus is QuiescentSpliceStatus
         if (forbiddenPreSplice || forbiddenDuringSplice) {

@@ -49,9 +49,9 @@ sealed class ChannelState {
      * @param cmd input event (for example, a message was received, a command was sent by the GUI/API, etc)
      * @return a (new state, list of actions) pair
      */
-    abstract fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>>
+    abstract suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>>
 
-    fun ChannelContext.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    suspend fun ChannelContext.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return try {
             processInternal(cmd)
                 .let { (newState, actions) -> Pair(newState, newState.run { maybeAddBackupToMessages(actions) }) }

@@ -11,7 +11,7 @@ import fr.acinq.lightning.wire.OpenDualFundedChannel
 import fr.acinq.lightning.wire.TlvStream
 
 data object WaitForInit : ChannelState() {
-    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.Init.NonInitiator -> {
                 val nextState = WaitForOpenChannel(

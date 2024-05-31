@@ -14,7 +14,7 @@ data class Closed(val state: Closing) : ChannelStateWithCommitments() {
         return this.copy(state = state.updateCommitments(input) as Closing)
     }
 
-    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return Pair(this@Closed, listOf())
     }
 }

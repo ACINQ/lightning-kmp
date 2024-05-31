@@ -29,7 +29,7 @@ data class WaitForOpenChannel(
     val channelConfig: ChannelConfig,
     val remoteInit: Init
 ) : ChannelState() {
-    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is OpenDualFundedChannel -> {

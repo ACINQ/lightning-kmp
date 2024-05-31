@@ -45,7 +45,7 @@ data class WaitForFundingCreated(
 ) : ChannelState() {
     val channelId: ByteVector32 = interactiveTxSession.fundingParams.channelId
 
-    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is InteractiveTxConstructionMessage -> {

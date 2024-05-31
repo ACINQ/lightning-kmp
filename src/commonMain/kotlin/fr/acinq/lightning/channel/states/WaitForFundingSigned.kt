@@ -47,7 +47,7 @@ data class WaitForFundingSigned(
 ) : PersistedChannelState() {
     override val channelId: ByteVector32 = channelParams.channelId
 
-    override fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
+    override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is CommitSig -> {
