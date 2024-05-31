@@ -225,20 +225,21 @@ object LightningCodecs {
     }
 
     fun encodedNodeId(input: Input): EncodedNodeId {
-        val firstByte = byte(input)
-        if (firstByte == 0 || firstByte == 1) {
-            val isNode1 = firstByte == 0
-            val scid = ShortChannelId(int64(input))
-            return EncodedNodeId.ShortChannelIdDir(isNode1, scid)
-        } else if (firstByte == 2 || firstByte == 3) {
-            val publicKey = PublicKey(ByteArray(1) { firstByte.toByte() } + bytes(input, 32))
-            return EncodedNodeId.WithPublicKey.Plain(publicKey)
-        } else if (firstByte == 4 || firstByte == 5) {
-            val publicKey = PublicKey(ByteArray(1) { (firstByte - 2).toByte() } + bytes(input, 32))
-            return EncodedNodeId.WithPublicKey.Wallet(publicKey)
-
-        } else {
-            throw IllegalArgumentException("unexpected first byte: $firstByte")
+        return when (val firstByte = byte(input)) {
+            0, 1 -> {
+                val isNode1 = firstByte == 0
+                val scid = ShortChannelId(int64(input))
+                EncodedNodeId.ShortChannelIdDir(isNode1, scid)
+            }
+            2, 3 -> {
+                val publicKey = PublicKey(ByteArray(1) { firstByte.toByte() } + bytes(input, 32))
+                EncodedNodeId.WithPublicKey.Plain(publicKey)
+            }
+            4, 5 -> {
+                val publicKey = PublicKey(ByteArray(1) { (firstByte - 2).toByte() } + bytes(input, 32))
+                EncodedNodeId.WithPublicKey.Wallet(publicKey)
+            }
+            else -> throw IllegalArgumentException("unexpected first byte: $firstByte")
         }
     }
 
@@ -248,7 +249,6 @@ object LightningCodecs {
             writeByte(if (input.isNode1) 0 else 1, out)
             writeInt64(input.scid.toLong(), out)
         }
-
         is EncodedNodeId.WithPublicKey.Wallet -> {
             val firstByte = input.publicKey.value[0]
             writeByte(firstByte + 2, out)
