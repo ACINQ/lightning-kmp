@@ -201,7 +201,7 @@ class Peer(
         val ctx = ChannelContext(
             StaticParams(nodeParams, remoteNodeId),
             currentTipFlow.filterNotNull().first().first,
-            onChainFeeratesFlow.filterNotNull().first(),
+            onChainFeeratesFlow,
             logger = MDCLogger(
                 logger = _channelLogger,
                 staticMdc = mapOf("remoteNodeId" to remoteNodeId) + state.mdc()

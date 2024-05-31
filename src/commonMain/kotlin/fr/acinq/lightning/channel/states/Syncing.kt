@@ -235,7 +235,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     state.commitments.latest,
                                     state.localShutdown.scriptPubKey.toByteArray(),
                                     state.remoteShutdown.scriptPubKey.toByteArray(),
-                                    state.closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate)
+                                    state.closingFeerates ?: ClosingFeerates(currentOnChainFeerates().mutualCloseFeerate)
                                 )
                                 val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
                                 val nextState = state.copy(closingTxProposed = closingTxProposed1)

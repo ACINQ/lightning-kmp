@@ -248,7 +248,7 @@ data class Normal(
                                             commitments1.latest,
                                             localShutdown.scriptPubKey.toByteArray(),
                                             remoteShutdown.scriptPubKey.toByteArray(),
-                                            closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate),
+                                            closingFeerates ?: ClosingFeerates(currentOnChainFeerates().mutualCloseFeerate),
                                         )
                                         listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
                                     } else {
@@ -319,7 +319,7 @@ data class Normal(
                                             commitments1.latest,
                                             localShutdown.scriptPubKey.toByteArray(),
                                             cmd.message.scriptPubKey.toByteArray(),
-                                            closingFeerates ?: ClosingFeerates(currentOnChainFeerates.mutualCloseFeerate),
+                                            closingFeerates ?: ClosingFeerates(currentOnChainFeerates().mutualCloseFeerate),
                                         )
                                         val nextState = Negotiating(
                                             commitments1,
