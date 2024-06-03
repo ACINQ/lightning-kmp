@@ -52,73 +52,68 @@ class MempoolSpaceClient(val mempoolUrl: Url, loggerFactory: LoggerFactory) : IC
         }
     }
 
-    suspend fun getTransaction(txId: TxId): Transaction? {
-        return kotlin.runCatching {
-            val res = client.get("api/tx/$txId/hex")
-            if (res.status.isSuccess()) {
-                Transaction.read(res.bodyAsText())
-            } else null
-        }.onFailure { logger.warning(it) { "error in getTransaction " } }
+    /** Helper method to factor error handling and logging for api calls. */
+    private suspend fun <T> tryWithLogs(f: suspend () -> T?): T? {
+        return kotlin.runCatching { f() }
+            .onFailure { logger.warning(it) { "mempool.space api error: " } }
             .getOrNull()
     }
 
-    suspend fun getTransactionMerkleProof(txId: TxId): MempoolSpaceTransactionMerkleProofResponse? {
-        return kotlin.runCatching {
-            val res = client.get("api/tx/$txId/merkle-proof")
-            if (res.status.isSuccess()) {
-                val txStatus: MempoolSpaceTransactionMerkleProofResponse = res.body()
-                txStatus
-            } else null
-        }.onFailure { logger.warning(it) { "error in getTransactionMerkleProof " } }
-            .getOrNull()
+    suspend fun getTransaction(txId: TxId): Transaction? = tryWithLogs {
+        val res = client.get("api/tx/$txId/hex")
+        if (res.status.isSuccess()) {
+            Transaction.read(res.bodyAsText())
+        } else null
     }
 
-    suspend fun getOutspend(txId: TxId, outputIndex: Int): Transaction? {
-        return kotlin.runCatching {
-            logger.debug { "checking output $txId:$outputIndex" }
-            val res: MempoolSpaceOutspendResponse = client.get("api/tx/$txId/outspend/$outputIndex").body()
-            res.txid?.let { getTransaction(TxId(it)) }
-        }.onFailure { logger.warning(it) { "error in getOutspend " } }
-            .getOrNull()
+    /**
+     * Returns a merkle inclusion proof for the transaction using Electrum's blockchain.transaction.get_merkle
+     * format.
+     * */
+    suspend fun getTransactionMerkleProof(txId: TxId): MempoolSpaceTransactionMerkleProofResponse? = tryWithLogs {
+        val res = client.get("api/tx/$txId/merkle-proof")
+        if (res.status.isSuccess()) {
+            val txStatus: MempoolSpaceTransactionMerkleProofResponse = res.body()
+            txStatus
+        } else null
     }
 
-    suspend fun getBlockTipHeight(): Int? {
-        return kotlin.runCatching {
-            val res = client.get("api/blocks/tip/height")
-            if (res.status.isSuccess()) {
-                res.bodyAsText().toInt()
-            } else null
-        }.onFailure { logger.warning(it) { "error in getBlockTipHeight " } }
-            .getOrNull()
+    /** Returns the spending status of a transaction output. */
+    suspend fun getOutspend(txId: TxId, outputIndex: Int): Transaction? = tryWithLogs {
+        logger.debug { "checking output $txId:$outputIndex" }
+        val res: MempoolSpaceOutspendResponse = client.get("api/tx/$txId/outspend/$outputIndex").body()
+        res.txid?.let { getTransaction(TxId(it)) }
     }
 
-    override suspend fun getConfirmations(txId: TxId): Int? {
-        return kotlin.runCatching {
-            val confirmedAtBlockHeight = getTransactionMerkleProof(txId)?.block_height
-            val currentBlockHeight = getBlockTipHeight()
-            when {
-                confirmedAtBlockHeight != null && currentBlockHeight != null -> currentBlockHeight - confirmedAtBlockHeight + 1
-                else -> null
-            }
-        }.onFailure { logger.warning(it) { "error in getConfirmations" } }
-            .getOrNull()
+    /** Returns the height of the last block. */
+    suspend fun getBlockTipHeight(): Int? = tryWithLogs {
+        val res = client.get("api/blocks/tip/height")
+        if (res.status.isSuccess()) {
+            res.bodyAsText().toInt()
+        } else null
     }
 
-   override suspend fun getFeerates(): Feerates? {
-        return kotlin.runCatching {
-            val res: MempoolSpaceRecommendedFeerates = client.get("api/v1/fees/recommended").body()
-            Feerates(
-                minimum = FeeratePerByte(res.minimumFee.sat),
-                slow = FeeratePerByte(res.economyFee.sat),
-                medium = FeeratePerByte(res.hourFee.sat),
-                fast = FeeratePerByte(res.halfHourFee.sat),
-                fastest = FeeratePerByte(res.fastestFee.sat),
-            )
-        }.onFailure { logger.warning(it) { "error in getFeerates " } }
-            .getOrNull()
+    override suspend fun getConfirmations(txId: TxId): Int? = tryWithLogs {
+        val confirmedAtBlockHeight = getTransactionMerkleProof(txId)?.block_height
+        val currentBlockHeight = getBlockTipHeight()
+        when {
+            confirmedAtBlockHeight != null && currentBlockHeight != null -> currentBlockHeight - confirmedAtBlockHeight + 1
+            else -> null
+        }
     }
 
-    companion object  {
+    override suspend fun getFeerates(): Feerates? = tryWithLogs {
+        val res: MempoolSpaceRecommendedFeerates = client.get("api/v1/fees/recommended").body()
+        Feerates(
+            minimum = FeeratePerByte(res.minimumFee.sat),
+            slow = FeeratePerByte(res.economyFee.sat),
+            medium = FeeratePerByte(res.hourFee.sat),
+            fast = FeeratePerByte(res.halfHourFee.sat),
+            fastest = FeeratePerByte(res.fastestFee.sat),
+        )
+    }
+
+    companion object {
         val OfficialMempoolMainnet = Url("https://mempool.space")
         val OfficialMempoolTestnet = Url("https://mempool.space/testnet/")
     }
