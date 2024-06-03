@@ -51,6 +51,22 @@ interface IElectrumClient : IClient {
     /** Subscribe to headers for new blocks found. */
     suspend fun startHeaderSubscription(): HeaderSubscriptionResponse
 
+    /**
+     * @return the number of confirmations, zero if the transaction is in the mempool, null if the transaction is not found
+     */
+    suspend fun getConfirmations(tx: Transaction): Int? {
+        return when (val status = connectionStatus.value) {
+            is ElectrumConnectionStatus.Connected -> {
+                val currentBlockHeight = status.height
+                val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
+                val scriptHashHistory = getScriptHashHistory(scriptHash)
+                val item = scriptHashHistory.find { it.txid == tx.txid }
+                item?.let { if (item.blockHeight > 0) currentBlockHeight - item.blockHeight + 1 else 0 }
+            }
+            else -> null
+        }
+    }
+
     override suspend fun getConfirmations(txId: TxId): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }
 
     override suspend fun getFeerates(): Feerates? {

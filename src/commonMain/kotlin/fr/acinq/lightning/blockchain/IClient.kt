@@ -13,7 +13,6 @@ import fr.acinq.lightning.utils.sat
 interface IClient {
     suspend fun getConfirmations(txId: TxId): Int?
 
-    /** Estimate the feerate required for a transaction to be confirmed in the next [confirmations] blocks. */
     suspend fun getFeerates(): Feerates?
 }
 

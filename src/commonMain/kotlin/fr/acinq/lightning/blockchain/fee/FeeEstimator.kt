@@ -18,7 +18,7 @@ interface FeeEstimator {
  */
 data class OnChainFeerates(val fundingFeerate: FeeratePerKw, val mutualCloseFeerate: FeeratePerKw, val claimMainFeerate: FeeratePerKw, val fastFeerate: FeeratePerKw) {
     constructor(feerates: Feerates) : this(
-        fundingFeerate = FeeratePerKw(feerates.slow),
+        fundingFeerate = FeeratePerKw(feerates.medium),
         mutualCloseFeerate = FeeratePerKw(feerates.medium),
         claimMainFeerate = FeeratePerKw(feerates.medium),
         fastFeerate = FeeratePerKw(feerates.fast),
