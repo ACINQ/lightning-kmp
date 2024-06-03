@@ -182,7 +182,7 @@ suspend fun buildPeer(
     nodeParams: NodeParams,
     walletParams: WalletParams,
     databases: InMemoryDatabases = InMemoryDatabases(),
-    currentTip: Pair<Int, BlockHeader> = 0 to Block.RegtestGenesisBlock.header
+    currentTip: Int = 0
 ): Peer {
     val electrum = ElectrumClient(scope, nodeParams.loggerFactory)
     val watcher = ElectrumWatcher(electrum, scope, nodeParams.loggerFactory)
