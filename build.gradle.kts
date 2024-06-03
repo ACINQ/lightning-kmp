@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
@@ -309,6 +310,13 @@ tasks
         it.filter.excludeTestsMatching("*ElectrumClientTest")
         it.filter.excludeTestsMatching("*ElectrumMiniWalletTest")
         it.filter.excludeTestsMatching("*SwapInWalletTestsCommon")
+    }
+
+// Those tests do not work with the ios simulator
+tasks
+    .filterIsInstance<KotlinNativeSimulatorTest>()
+    .map {
+        it.filter.excludeTestsMatching("*MempoolSpace*Test")
     }
 
 // Make NS_FORMAT_ARGUMENT(1) a no-op
