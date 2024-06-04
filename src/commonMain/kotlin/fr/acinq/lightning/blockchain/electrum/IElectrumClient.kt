@@ -4,12 +4,15 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
+import fr.acinq.lightning.blockchain.Feerates
+import fr.acinq.lightning.blockchain.IClient
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /** Note to implementers: methods exposed through this interface must *not* throw exceptions. */
-interface IElectrumClient {
+interface IElectrumClient : IClient {
     val notifications: Flow<ElectrumSubscriptionResponse>
     val connectionStatus: StateFlow<ElectrumConnectionStatus>
 
@@ -47,4 +50,32 @@ interface IElectrumClient {
 
     /** Subscribe to headers for new blocks found. */
     suspend fun startHeaderSubscription(): HeaderSubscriptionResponse
+
+    /**
+     * @return the number of confirmations, zero if the transaction is in the mempool, null if the transaction is not found
+     */
+    suspend fun getConfirmations(tx: Transaction): Int? {
+        return when (val status = connectionStatus.value) {
+            is ElectrumConnectionStatus.Connected -> {
+                val currentBlockHeight = status.height
+                val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
+                val scriptHashHistory = getScriptHashHistory(scriptHash)
+                val item = scriptHashHistory.find { it.txid == tx.txid }
+                item?.let { if (item.blockHeight > 0) currentBlockHeight - item.blockHeight + 1 else 0 }
+            }
+            else -> null
+        }
+    }
+
+    override suspend fun getConfirmations(txId: TxId): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }
+
+    override suspend fun getFeerates(): Feerates? {
+        return Feerates(
+            minimum = estimateFees(144)?.let { FeeratePerByte(it) } ?: return null,
+            slow = estimateFees(18)?.let { FeeratePerByte(it) } ?: return null,
+            medium = estimateFees(6)?.let { FeeratePerByte(it) } ?: return null,
+            fast = estimateFees(2)?.let { FeeratePerByte(it) } ?: return null,
+            fastest = estimateFees(1)?.let { FeeratePerByte(it) } ?: return null,
+        )
+    }
 }

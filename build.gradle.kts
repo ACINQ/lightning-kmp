@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
@@ -89,16 +90,16 @@ kotlin {
                 api("co.touchlab:kermit:$kermitLoggerVersion")
                 api(ktor("network"))
                 api(ktor("network-tls"))
-            }
-        }
-
-        commonTest {
-            dependencies {
                 implementation(ktor("client-core"))
                 implementation(ktor("client-auth"))
                 implementation(ktor("client-json"))
                 implementation(ktor("client-content-negotiation"))
                 implementation(ktor("serialization-kotlinx-json"))
+            }
+        }
+
+        commonTest {
+            dependencies {
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
                 implementation("org.kodein.memory:klio-files:0.12.0")
@@ -123,14 +124,19 @@ kotlin {
         }
 
         if (currentOs.isMacOsX) {
-            iosTest {
+            iosMain {
                 dependencies {
                     implementation(ktor("client-ios"))
                 }
             }
+            macosMain {
+                dependencies {
+                    implementation(ktor("client-darwin"))
+                }
+            }
         }
 
-        linuxTest {
+        linuxMain {
             dependencies {
                 implementation(ktor("client-curl"))
             }
@@ -304,6 +310,13 @@ tasks
         it.filter.excludeTestsMatching("*ElectrumClientTest")
         it.filter.excludeTestsMatching("*ElectrumMiniWalletTest")
         it.filter.excludeTestsMatching("*SwapInWalletTestsCommon")
+    }
+
+// Those tests do not work with the ios simulator
+tasks
+    .filterIsInstance<KotlinNativeSimulatorTest>()
+    .map {
+        it.filter.excludeTestsMatching("*MempoolSpace*Test")
     }
 
 // Make NS_FORMAT_ARGUMENT(1) a no-op

@@ -1,37 +1,33 @@
-package fr.acinq.lightning.blockchain.electrum
+package fr.acinq.lightning.blockchain
 
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.LocalFundingStatus
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
 
-suspend fun IElectrumClient.getConfirmations(txId: TxId): Int? = getTx(txId)?.let { tx -> getConfirmations(tx) }
+interface IClient {
+    suspend fun getConfirmations(txId: TxId): Int?
 
-/**
- * @return the number of confirmations, zero if the transaction is in the mempool, null if the transaction is not found
- */
-suspend fun IElectrumClient.getConfirmations(tx: Transaction): Int? {
-    return when (val status = connectionStatus.value) {
-        is ElectrumConnectionStatus.Connected -> {
-            val currentBlockHeight = status.height
-            val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
-            val scriptHashHistory = getScriptHashHistory(scriptHash)
-            val item = scriptHashHistory.find { it.txid == tx.txid }
-            item?.let { if (item.blockHeight > 0) currentBlockHeight - item.blockHeight + 1 else 0 }
-        }
-        else -> null
-    }
+    suspend fun getFeerates(): Feerates?
 }
+
+data class Feerates(
+    val minimum: FeeratePerByte,
+    val slow: FeeratePerByte,
+    val medium: FeeratePerByte,
+    val fast: FeeratePerByte,
+    val fastest: FeeratePerByte
+)
 
 /**
  * @weight must be the total estimated weight of the splice tx, otherwise the feerate estimation will be wrong
  */
-suspend fun IElectrumClient.computeSpliceCpfpFeerate(commitments: Commitments, targetFeerate: FeeratePerKw, spliceWeight: Int, logger: MDCLogger): Pair<FeeratePerKw, Satoshi> {
+suspend fun IClient.computeSpliceCpfpFeerate(commitments: Commitments, targetFeerate: FeeratePerKw, spliceWeight: Int, logger: MDCLogger): Pair<FeeratePerKw, Satoshi> {
     val (parentsWeight, parentsFees) = commitments.all
         .takeWhile { getConfirmations(it.fundingTxId).let { confirmations -> confirmations == null || confirmations == 0 } } // we check for null in case the tx has been evicted
         .fold(Pair(0, 0.sat)) { (parentsWeight, parentsFees), commitment ->

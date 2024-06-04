@@ -336,7 +336,7 @@ class PeerTest : LightningTestSuite() {
             alice0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Alice.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(alice1.state) },
-            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+            currentTip = htlc.cltvExpiry.toLong().toInt()
         )
 
         val initChannels = peer.channelsFlow.first { it.values.isNotEmpty() }
@@ -406,7 +406,7 @@ class PeerTest : LightningTestSuite() {
             bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Bob.walletParams,
             databases = InMemoryDatabases(), // NB: empty database (Bob has lost its channel state)
-            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+            currentTip = htlc.cltvExpiry.toLong().toInt()
         )
 
         // Simulate a reconnection with Alice.
@@ -436,7 +436,7 @@ class PeerTest : LightningTestSuite() {
             bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
             TestConstants.Bob.walletParams,
             databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(bob0.state) }, // NB: outdated channel data
-            currentTip = htlc.cltvExpiry.toLong().toInt() to Block.RegtestGenesisBlock.header
+            currentTip = htlc.cltvExpiry.toLong().toInt()
         )
 
         // Simulate a reconnection with Alice.
