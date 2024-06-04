@@ -768,58 +768,58 @@ class Peer(
                     }
                     is ChannelAction.Storage.StoreOutgoingPayment -> {
                         logger.info { "storing $action" }
-                        db.payments.addOutgoingPayment(
-                            when (action) {
-                                is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
-                                    SpliceOutgoingPayment(
-                                        id = UUID.randomUUID(),
-                                        recipientAmount = action.amount,
-                                        address = action.address,
-                                        miningFees = action.miningFees,
-                                        channelId = channelId,
-                                        txId = action.txId,
-                                        createdAt = currentTimestampMillis(),
-                                        confirmedAt = null,
-                                        lockedAt = null
-                                    )
-                                is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp ->
-                                    SpliceCpfpOutgoingPayment(
-                                        id = UUID.randomUUID(),
-                                        miningFees = action.miningFees,
-                                        channelId = channelId,
-                                        txId = action.txId,
-                                        createdAt = currentTimestampMillis(),
-                                        confirmedAt = null,
-                                        lockedAt = null
-                                    )
-                                is ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest ->
-                                    InboundLiquidityOutgoingPayment(
-                                        id = UUID.randomUUID(),
-                                        channelId = channelId,
-                                        txId = action.txId,
-                                        miningFees = action.miningFees,
-                                        lease = action.lease,
-                                        createdAt = currentTimestampMillis(),
-                                        confirmedAt = null,
-                                        lockedAt = null
-                                    )
-                                is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
-                                    ChannelCloseOutgoingPayment(
-                                        id = UUID.randomUUID(),
-                                        recipientAmount = action.amount,
-                                        address = action.address,
-                                        isSentToDefaultAddress = action.isSentToDefaultAddress,
-                                        miningFees = action.miningFees,
-                                        channelId = channelId,
-                                        txId = action.txId,
-                                        createdAt = currentTimestampMillis(),
-                                        confirmedAt = null,
-                                        lockedAt = currentTimestampMillis(), // channel close are not splices, they are final
-                                        closingType = action.closingType
-                                    )
+                        val payment = when (action) {
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
+                                SpliceOutgoingPayment(
+                                    id = UUID.randomUUID(),
+                                    recipientAmount = action.amount,
+                                    address = action.address,
+                                    miningFees = action.miningFees,
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = null
+                                )
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp ->
+                                SpliceCpfpOutgoingPayment(
+                                    id = UUID.randomUUID(),
+                                    miningFees = action.miningFees,
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = null
+                                )
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest ->
+                                InboundLiquidityOutgoingPayment(
+                                    id = UUID.randomUUID(),
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    miningFees = action.miningFees,
+                                    lease = action.lease,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = null
+                                )
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaClose -> {
+                                _eventsFlow.emit(ChannelClosing(channelId))
+                                ChannelCloseOutgoingPayment(
+                                    id = UUID.randomUUID(),
+                                    recipientAmount = action.amount,
+                                    address = action.address,
+                                    isSentToDefaultAddress = action.isSentToDefaultAddress,
+                                    miningFees = action.miningFees,
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = currentTimestampMillis(), // channel close are not splices, they are final
+                                    closingType = action.closingType
+                                )
                             }
-                        )
-                        _eventsFlow.emit(ChannelClosing(channelId))
+                        }
+                        db.payments.addOutgoingPayment(payment)
                     }
                     is ChannelAction.Storage.SetLocked -> {
                         logger.info { "setting status locked for txid=${action.txId}" }
