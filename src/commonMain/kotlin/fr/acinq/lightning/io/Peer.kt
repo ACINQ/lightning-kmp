@@ -23,7 +23,6 @@ import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.utils.UUID.Companion.randomUUID
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
 import kotlinx.coroutines.*
@@ -650,7 +649,7 @@ class Peer(
 
     suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
-        val paymentId = randomUUID()
+        val paymentId = UUID.randomUUID()
         this.launch {
             res.complete(eventsFlow
                 .filterIsInstance<SendPaymentResult>()
@@ -664,7 +663,7 @@ class Peer(
 
     suspend fun payOffer(amount: MilliSatoshi, offer: OfferTypes.Offer, payerKey: PrivateKey, fetchInvoiceTimeout: Duration): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
-        val paymentId = randomUUID()
+        val paymentId = UUID.randomUUID()
         this.launch {
             res.complete(eventsFlow
                 .filterIsInstance<SendPaymentResult>()
@@ -732,7 +731,6 @@ class Peer(
                             null -> logger.debug { "non-final error, more partial payments are still pending: ${action.error.message}" }
                         }
                     }
-
                     is ChannelAction.ProcessCmdRes.AddSettledFail -> {
                         val currentTip = currentTipFlow.filterNotNull().first()
                         when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip)) {
@@ -746,7 +744,6 @@ class Peer(
                             null -> logger.debug { "non-final error, more partial payments are still pending: ${action.result}" }
                         }
                     }
-
                     is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                         when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                             is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
@@ -754,26 +751,21 @@ class Peer(
                             null -> logger.debug { "unknown payment" }
                         }
                     }
-
                     is ChannelAction.Storage.StoreState -> {
                         logger.info { "storing state=${action.data::class.simpleName}" }
                         db.channels.addOrUpdateChannel(action.data)
                     }
-
                     is ChannelAction.Storage.RemoveChannel -> {
                         logger.info { "removing channelId=${action.data.channelId} state=${action.data::class.simpleName}" }
                         db.channels.removeChannel(action.data.channelId)
                     }
-
                     is ChannelAction.Storage.StoreHtlcInfos -> {
                         action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                     }
-
                     is ChannelAction.Storage.StoreIncomingPayment -> {
                         logger.info { "storing incoming payment $action" }
                         incomingPaymentHandler.process(actualChannelId, action)
                     }
-
                     is ChannelAction.Storage.StoreOutgoingPayment -> {
                         logger.info { "storing $action" }
                         db.payments.addOutgoingPayment(
@@ -829,24 +821,19 @@ class Peer(
                         )
                         _eventsFlow.emit(ChannelClosing(channelId))
                     }
-
                     is ChannelAction.Storage.SetLocked -> {
                         logger.info { "setting status locked for txid=${action.txId}" }
                         db.payments.setLocked(action.txId)
                     }
-
                     is ChannelAction.Storage.GetHtlcInfos -> {
                         val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
                         input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.Closing.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
                     }
-
                     is ChannelAction.ChannelId.IdAssigned -> {
                         logger.info { "switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
                         _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
                     }
-
                     is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
-
                     is ChannelAction.Disconnect -> {
                         logger.warning { "channel disconnected due to a protocol error" }
                         disconnect()
@@ -1155,7 +1142,14 @@ class Peer(
                         }
                         offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first())?.let {
                             when (it) {
-                                is OnionMessageAction.PayInvoice -> input.send(PayInvoice(it.payOffer.paymentId, it.payOffer.amount, LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey), it.payOffer.trampolineFeesOverride))
+                                is OnionMessageAction.PayInvoice -> input.send(
+                                    PayInvoice(
+                                        it.payOffer.paymentId,
+                                        it.payOffer.amount,
+                                        LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey),
+                                        it.payOffer.trampolineFeesOverride
+                                    )
+                                )
                                 is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(it.message))
                             }
                         }
