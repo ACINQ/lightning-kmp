@@ -707,6 +707,34 @@ class Peer(
         peerConnection?.send(message)
     }
 
+    sealed class SelectChannelResult {
+        /** We have a channel that is available for payments and splicing. */
+        data class Available(val channel: Normal) : SelectChannelResult()
+        /** We have a channel, or will have one soon, but it is not ready yet. */
+        data object NotReady : SelectChannelResult()
+        /** We don't have any channel, or our channel is closing, so we need a new one. */
+        data object None : SelectChannelResult()
+    }
+
+    private fun selectChannelForSplicing(): SelectChannelResult = when (val channel = channels.values.firstOrNull { it is Normal }) {
+        is Normal -> when {
+            channel.spliceStatus == SpliceStatus.None -> SelectChannelResult.Available(channel)
+            else -> SelectChannelResult.NotReady
+        }
+        else -> when {
+            // We haven't finished reconnecting to our peer.
+            channels.values.any { it is Offline || it is Syncing } -> SelectChannelResult.NotReady
+            // We are currently funding a new channel, which should be available soon.
+            channels.values.any { it is WaitForOpenChannel || it is WaitForAcceptChannel || it is WaitForFundingCreated || it is WaitForFundingSigned } -> SelectChannelResult.NotReady
+            // We have funded a channel and are waiting for it to be ready.
+            channels.values.any { it is WaitForFundingConfirmed || it is WaitForChannelReady } -> SelectChannelResult.NotReady
+            // All channels are closing, we need a new one.
+            channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted } -> SelectChannelResult.None
+            // Otherwise we need a new channel.
+            else -> SelectChannelResult.None
+        }
+    }
+
     private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>) {
         // we peek into the actions to see if the id of the channel is going to change, but we're not processing it yet
         val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
@@ -1108,22 +1136,21 @@ class Peer(
                     }
                     is PayToOpenRequest -> {
                         logger.info { "received ${msg::class.simpleName}" }
-                        // If a channel is currently being created, it can't process splices yet. We could accept this payment, but
-                        // it wouldn't be reflected in the user balance until the channel is ready, because we only insert
-                        // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
-                        // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
-                        // payment rather that having the user wonder where their money went.
-                        val channelInitializing = _channels.isNotEmpty()
-                                && !_channels.values.any { it is Normal } // we don't have a channel that can be spliced
-                                && _channels.values.any { it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } // but we will have one soon
-                        if (channelInitializing) {
-                            val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
-                            logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
-                            nodeParams._nodeEvents.emit(rejected)
-                            val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)
-                            input.send(action)
-                        } else {
-                            processIncomingPayment(Either.Left(msg))
+                        when (selectChannelForSplicing()) {
+                            is SelectChannelResult.Available -> processIncomingPayment(Either.Left(msg))
+                            SelectChannelResult.None -> processIncomingPayment(Either.Left(msg))
+                            SelectChannelResult.NotReady -> {
+                                // If a channel is currently being created, it can't process splices yet. We could accept this payment, but
+                                // it wouldn't be reflected in the user balance until the channel is ready, because we only insert
+                                // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
+                                // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
+                                // payment rather that having the user wonder where their money went.
+                                val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
+                                logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
+                                nodeParams._nodeEvents.emit(rejected)
+                                val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)
+                                input.send(action)
+                            }
                         }
                     }
                     is PhoenixAndroidLegacyInfo -> {
@@ -1168,12 +1195,12 @@ class Peer(
                 }
             }
             is RequestChannelOpen -> {
-                when (val channel = channels.values.firstOrNull { it is Normal }) {
-                    is Normal -> {
-                        // we have a channel and we are connected (otherwise state would be Offline/Syncing)
+                when (val available = selectChannelForSplicing()) {
+                    is SelectChannelResult.Available -> {
+                        // We have a channel and we are connected (otherwise state would be Offline/Syncing).
                         val targetFeerate = swapInFeeratesFlow.filterNotNull().first()
-                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
-                        val (feerate, fee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
+                        val (feerate, fee) = client.computeSpliceCpfpFeerate(available.channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
                         logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
                         nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
@@ -1196,30 +1223,29 @@ class Peer(
                                 swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                             }
                         }
-                        input.send(WrappedChannelCommand(channel.channelId, spliceCommand))
+                        input.send(WrappedChannelCommand(available.channel.channelId, spliceCommand))
                     }
-                    else -> {
-                        if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted }) {
-                            // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel.
-                            // Grandparents are supplied as a proof of migration
-                            val grandParents = cmd.walletInputs.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
-                            val pleaseOpenChannel = PleaseOpenChannel(
-                                nodeParams.chainHash,
-                                cmd.requestId,
-                                cmd.walletInputs.balance,
-                                cmd.walletInputs.size,
-                                FundingContributions.weight(cmd.walletInputs),
-                                TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
-                            )
-                            logger.info { "sending please_open_channel with ${cmd.walletInputs.size} utxos (amount = ${cmd.walletInputs.balance})" }
-                            peerConnection?.send(pleaseOpenChannel)
-                            nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
-                            channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
-                        } else {
-                            // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet
-                            logger.info { "ignoring channel request, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
-                            swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
-                        }
+                    SelectChannelResult.NotReady -> {
+                        // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet.
+                        logger.info { "ignoring channel request, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
+                        swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                    }
+                    SelectChannelResult.None -> {
+                        // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel.
+                        // Grandparents are supplied as a proof of migration.
+                        val grandParents = cmd.walletInputs.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
+                        val pleaseOpenChannel = PleaseOpenChannel(
+                            nodeParams.chainHash,
+                            cmd.requestId,
+                            cmd.walletInputs.balance,
+                            cmd.walletInputs.size,
+                            FundingContributions.weight(cmd.walletInputs),
+                            TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
+                        )
+                        logger.info { "sending please_open_channel with ${cmd.walletInputs.size} utxos (amount = ${cmd.walletInputs.balance})" }
+                        peerConnection?.send(pleaseOpenChannel)
+                        nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
+                        channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
                     }
                 }
             }
