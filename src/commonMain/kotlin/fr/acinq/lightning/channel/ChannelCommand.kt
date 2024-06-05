@@ -83,7 +83,7 @@ sealed class ChannelCommand {
     sealed class Commitment : ChannelCommand() {
         object Sign : Commitment(), ForbiddenDuringSplice
         data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
-        object CheckHtlcTimeout : Commitment()
+        data object CheckHtlcTimeout : Commitment()
         sealed class Splice : Commitment() {
             data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
@@ -92,12 +92,6 @@ sealed class ChannelCommand {
                 data class SpliceIn(val walletInputs: List<WalletState.Utxo>, val pushAmount: MilliSatoshi = 0.msat)
                 data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
             }
-
-            /**
-             * @param miningFee on-chain fee that will be paid for the splice transaction.
-             * @param serviceFee service-fee that will be paid to the remote node for a service they provide with the splice transaction.
-             */
-            data class Fees(val miningFee: Satoshi, val serviceFee: MilliSatoshi)
 
             sealed class Response {
                 /**

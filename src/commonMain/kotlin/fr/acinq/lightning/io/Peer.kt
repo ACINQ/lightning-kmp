@@ -541,14 +541,14 @@ class Peer(
      * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
      * for a splice out, taking into account potential unconfirmed parent splices.
      */
-    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
+    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelManagementFees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
-                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
+                Pair(actualFeerate, ChannelManagementFees(miningFee, 0.sat))
             }
     }
 
@@ -560,14 +560,14 @@ class Peer(
      *         NB: if the output feerate is equal to the input feerate then the cpfp is useless and
      *         should not be attempted.
      */
-    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
+    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelManagementFees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .find { it.channelId == channelId }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
-                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
+                Pair(actualFeerate, ChannelManagementFees(miningFee, 0.sat))
             }
     }
 
@@ -575,7 +575,7 @@ class Peer(
      * Estimate the actual feerate to use (and corresponding fee to pay) to purchase inbound liquidity with a splice
      * that reaches the target feerate.
      */
-    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw, leaseRate: LiquidityAds.LeaseRate): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
+    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw, leaseRate: LiquidityAds.LeaseRate): Pair<FeeratePerKw, ChannelManagementFees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
@@ -585,7 +585,7 @@ class Peer(
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 // The mining fee in the lease only covers the remote node's inputs and outputs, they are already included in the mining fee above.
                 val leaseFees = leaseRate.fees(actualFeerate, amount, amount)
-                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, leaseFees.serviceFee.toMilliSatoshi()))
+                Pair(actualFeerate, ChannelManagementFees(miningFee, leaseFees.serviceFee))
             }
     }
 
