@@ -1,6 +1,7 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
@@ -8,10 +9,10 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.lightning.utils.toByteVector64
+import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.channel.Origin
+import fr.acinq.lightning.channel.PartialSignatureWithNonce
+import fr.acinq.lightning.wire.ChannelReadyTlv.NextLocalNonceTlv
 
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
@@ -100,6 +101,23 @@ sealed class ChannelTlv : Tlv {
             override fun read(input: Input): FeeCreditUsedTlv = FeeCreditUsedTlv(LightningCodecs.tu64(input).msat)
         }
     }
+    
+     data class NextLocalNoncesTlv(val nonces: List<IndividualNonce>) : ChannelTlv() {
+        override val tag: Long get() = NextLocalNoncesTlv.tag
+
+        override fun write(out: Output) {
+            nonces.forEach { LightningCodecs.writeBytes(it.toByteArray(), out) }
+        }
+
+        companion object : TlvValueReader<NextLocalNoncesTlv> {
+            const val tag: Long = 4
+            override fun read(input: Input): NextLocalNoncesTlv {
+                val count = input.availableBytes / 66
+                val nonces = (0 until count).map { IndividualNonce(LightningCodecs.bytes(input, 66)) }
+                return NextLocalNoncesTlv(nonces)
+            }
+        }
+    }
 }
 
 sealed class ChannelReadyTlv : Tlv {
@@ -110,6 +128,19 @@ sealed class ChannelReadyTlv : Tlv {
         companion object : TlvValueReader<ShortChannelIdTlv> {
             const val tag: Long = 1
             override fun read(input: Input): ShortChannelIdTlv = ShortChannelIdTlv(ShortChannelId(LightningCodecs.u64(input)))
+        }
+    }
+
+    data class NextLocalNonceTlv(val nonce: IndividualNonce) : ChannelReadyTlv() {
+        override val tag: Long get() = NextLocalNonceTlv.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<NextLocalNonceTlv> {
+            const val tag: Long = 4
+            override fun read(input: Input): NextLocalNonceTlv = NextLocalNonceTlv(IndividualNonce(LightningCodecs.bytes(input, 66)))
         }
     }
 }
@@ -165,6 +196,27 @@ sealed class CommitSigTlv : Tlv {
             override fun read(input: Input): Batch = Batch(size = LightningCodecs.tu16(input))
         }
     }
+
+    data class PartialSignatureWithNonceTlv(val psig: PartialSignatureWithNonce) : CommitSigTlv() {
+        override val tag: Long get() = PartialSignatureWithNonceTlv.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(psig.partialSig, out)
+            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<CommitSigTlv> {
+            const val tag: Long = 2
+            override fun read(input: Input): PartialSignatureWithNonceTlv {
+                return PartialSignatureWithNonceTlv(
+                    PartialSignatureWithNonce(
+                        LightningCodecs.bytes(input, 32).byteVector32(),
+                        IndividualNonce(LightningCodecs.bytes(input, 66))
+                    )
+                )
+            }
+        }
+    }
 }
 
 sealed class RevokeAndAckTlv : Tlv {
@@ -175,6 +227,23 @@ sealed class RevokeAndAckTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+
+    data class NextLocalNoncesTlv(val nonces: List<IndividualNonce>) : RevokeAndAckTlv() {
+        override val tag: Long get() = NextLocalNoncesTlv.tag
+
+        override fun write(out: Output) {
+            nonces.forEach { LightningCodecs.writeBytes(it.toByteArray(), out) }
+        }
+
+        companion object : TlvValueReader<NextLocalNoncesTlv> {
+            const val tag: Long = 4
+            override fun read(input: Input): NextLocalNoncesTlv {
+                val count = input.availableBytes / 66
+                val nonces = (0 until count).map { IndividualNonce(LightningCodecs.bytes(input, 66)) }
+                return NextLocalNoncesTlv(nonces)
+            }
         }
     }
 }
@@ -199,6 +268,23 @@ sealed class ChannelReestablishTlv : Tlv {
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
         }
     }
+
+    data class NextLocalNoncesTlv(val nonces: List<IndividualNonce>) : ChannelReestablishTlv() {
+        override val tag: Long get() = NextLocalNoncesTlv.tag
+
+        override fun write(out: Output) {
+            nonces.forEach { LightningCodecs.writeBytes(it.toByteArray(), out) }
+        }
+
+        companion object : TlvValueReader<NextLocalNoncesTlv> {
+            const val tag: Long = 4
+            override fun read(input: Input): NextLocalNoncesTlv {
+                val count = input.availableBytes / 66
+                val nonces = (0 until count).map { IndividualNonce(LightningCodecs.bytes(input, 66)) }
+                return NextLocalNoncesTlv(nonces)
+            }
+        }
+    }
 }
 
 sealed class ShutdownTlv : Tlv {
@@ -209,6 +295,20 @@ sealed class ShutdownTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+
+    data class ShutdownNonce(val nonce: IndividualNonce) : ShutdownTlv() {
+        override val tag: Long get() = ShutdownNonce.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<ShutdownNonce> {
+            const val tag: Long = 8
+
+            override fun read(input: Input): ShutdownNonce = ShutdownNonce(IndividualNonce(LightningCodecs.bytes(input, 66)))
         }
     }
 }
@@ -235,6 +335,17 @@ sealed class ClosingSignedTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+
+    data class PartialSignature(val partialSignature: ByteVector32) : ClosingSignedTlv() {
+        override val tag: Long get() = PartialSignature.tag
+
+        override fun write(out: Output) = LightningCodecs.writeBytes(partialSignature, out)
+
+        companion object : TlvValueReader<PartialSignature> {
+            const val tag: Long = 6
+            override fun read(input: Input): PartialSignature = PartialSignature(LightningCodecs.bytes(input, 32).toByteVector32())
         }
     }
 }
