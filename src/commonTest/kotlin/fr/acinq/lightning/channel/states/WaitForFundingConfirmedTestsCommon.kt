@@ -408,7 +408,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 bobFundingAmount,
                 alicePushAmount,
                 bobPushAmount,
-                zeroConf = false
+                zeroConf = false,
             )
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitBob))
             assertIs<WaitForFundingSigned>(alice1.state)

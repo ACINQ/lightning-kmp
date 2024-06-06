@@ -1,8 +1,9 @@
 package fr.acinq.lightning.serialization
 
-import fr.acinq.bitcoin.byteVector
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomBytes
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
@@ -13,6 +14,7 @@ import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.SpliceTestsCommon
 import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.value
@@ -165,5 +167,35 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             )
             assertEquals(state1, Serialization.deserialize(Serialization.serialize(state1)).value)
         }
+    }
+
+    @Test
+    fun `encode taproot specific fields`() {
+        val (alice, _) = TestsHelper.reachNormal()
+        val bytes = Serialization.serialize(alice.state)
+        val check = Serialization.deserialize(bytes).value
+        assertEquals(alice.state, check)
+        val input = alice.commitments.active[0].localCommit.publishableTxs.commitTx.input
+        val scriptTree = Transactions.ScriptTreeAndInternalKey(ScriptTree.Branch(ScriptTree.Leaf(0, Script.pay2tr(randomKey().xOnlyPublicKey())), ScriptTree.Leaf(1, Script.pay2wpkh(randomKey().publicKey()))), randomKey().xOnlyPublicKey())
+        val input1 = input.copy(redeemScript = ByteVector.empty, scriptTreeAndInternalKey = scriptTree)
+        val alice1 = alice.state.copy(
+            commitments = alice.commitments.copy(
+                active = alice.commitments.active.updated(
+                    0,
+                    alice.commitments.active[0].copy(
+                        localCommit = alice.commitments.active[0].localCommit.copy(
+                            publishableTxs = alice.commitments.active[0].localCommit.publishableTxs.copy(
+                                commitTx = alice.commitments.active[0].localCommit.publishableTxs.commitTx.copy(
+                                    input = input1
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        val bytes1 = Serialization.serialize(alice1)
+        val check1 = Serialization.deserialize(bytes1).value
+        assertEquals(alice1, check1)
     }
 }

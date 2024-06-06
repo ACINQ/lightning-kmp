@@ -65,6 +65,7 @@ object Deserialization {
         localPushAmount = readNumber().msat,
         remotePushAmount = readNumber().msat,
         remoteSecondPerCommitmentPoint = readPublicKey(),
+        secondRemoteNonce = null,
         channelOrigin = readNullable { readChannelOrigin() }
     )
 
@@ -189,6 +190,11 @@ object Deserialization {
 
     private fun Input.readSharedFundingInput(): SharedFundingInput = when (val discriminator = read()) {
         0x01 -> SharedFundingInput.Multisig2of2(
+            info = readInputInfo(),
+            fundingTxIndex = readNumber(),
+            remoteFundingPubkey = readPublicKey()
+        )
+        0x02 -> SharedFundingInput.Musig2Input(
             info = readInputInfo(),
             fundingTxIndex = readNumber(),
             remoteFundingPubkey = readPublicKey()
@@ -570,7 +576,10 @@ object Deserialization {
             lastIndex = readNullable { readNumber() }
         )
         val remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
-        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
+        val nextRemoteNonces = if (params.isTaprootChannel) {
+            readCollection { readPublicNonce() }
+        } else listOf()
+        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData, nextRemoteNonces.toList())
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {
@@ -605,11 +614,23 @@ object Deserialization {
         toRemote = readNumber().msat
     )
 
-    private fun Input.readInputInfo(): Transactions.InputInfo = Transactions.InputInfo(
-        outPoint = readOutPoint(),
-        txOut = TxOut.read(readDelimitedByteArray()),
-        redeemScript = readDelimitedByteArray().toByteVector()
+    private fun Input.readScriptTree(): ScriptTree = ScriptTree.read(readDelimitedByteArray())
+
+    private fun Input.readScriptTreeAndInternalKey(): Transactions.ScriptTreeAndInternalKey = Transactions.ScriptTreeAndInternalKey(
+        readScriptTree(),
+        XonlyPublicKey(readByteVector32())
     )
+
+    private fun Input.readInputInfo(): Transactions.InputInfo {
+        val outPoint = readOutPoint()
+        val txOut = TxOut.read(readDelimitedByteArray())
+        val redeemScript = readDelimitedByteArray().toByteVector()
+        val scriptTreeAndInternalKey = when (redeemScript.isEmpty()) {
+            true -> readNullable { readScriptTreeAndInternalKey() }
+            else -> null
+        }
+        return Transactions.InputInfo(outPoint, txOut, redeemScript, scriptTreeAndInternalKey)
+    }
 
     private fun Input.readOutPoint(): OutPoint = OutPoint.read(readDelimitedByteArray())
 

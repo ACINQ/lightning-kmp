@@ -59,6 +59,15 @@ sealed class ChannelType {
             override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)
         }
 
+        object SimpleTaprootStaging : SupportedChannelType() {
+            override val name: String get() = "simple_taproot_staging"
+            override val features: Set<Feature> get() = setOf(Feature.SimpleTaprootStaging, Feature.StaticRemoteKey, Feature.AnchorOutputs)
+        }
+
+        object SimpleTaprootStagingZeroReserve : SupportedChannelType() {
+            override val name: String get() = "simple_taproot_staging_zero_reserve"
+            override val features: Set<Feature> get() = setOf(Feature.SimpleTaprootStaging, Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)
+        }
     }
 
     data class UnsupportedChannelType(val featureBits: Features) : ChannelType() {
@@ -71,6 +80,8 @@ sealed class ChannelType {
         // NB: Bolt 2: features must exactly match in order to identify a channel type.
         fun fromFeatures(features: Features): ChannelType = when (features) {
             // @formatter:off
+            Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory, Feature.ZeroReserveChannels to FeatureSupport.Mandatory, Feature.SimpleTaprootStaging to FeatureSupport.Mandatory) -> SupportedChannelType.SimpleTaprootStagingZeroReserve
+            Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory, Feature.SimpleTaprootStaging to FeatureSupport.Mandatory) -> SupportedChannelType.SimpleTaprootStaging
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory, Feature.ZeroReserveChannels to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputsZeroReserve
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputs
             else -> UnsupportedChannelType(features)
