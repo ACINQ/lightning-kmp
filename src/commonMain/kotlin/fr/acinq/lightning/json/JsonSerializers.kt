@@ -27,6 +27,7 @@
     JsonSerializers.KeyPathSerializer::class,
     JsonSerializers.SatoshiSerializer::class,
     JsonSerializers.MilliSatoshiSerializer::class,
+    JsonSerializers.PartialSignatureWithNonceSerializer::class,
     JsonSerializers.CltvExpirySerializer::class,
     JsonSerializers.CltvExpiryDeltaSerializer::class,
     JsonSerializers.FeeratePerKwSerializer::class,
@@ -41,6 +42,8 @@
     JsonSerializers.TransactionSerializer::class,
     JsonSerializers.OutPointSerializer::class,
     JsonSerializers.TxOutSerializer::class,
+    JsonSerializers.IndividualNonceSerializer::class,
+    JsonSerializers.SecretNonceSerializer::class,
     JsonSerializers.ClosingTxProposedSerializer::class,
     JsonSerializers.LocalCommitPublishedSerializer::class,
     JsonSerializers.RemoteCommitPublishedSerializer::class,
@@ -81,6 +84,7 @@
     JsonSerializers.ChannelReadySerializer::class,
     JsonSerializers.ChannelReadyTlvShortChannelIdTlvSerializer::class,
     JsonSerializers.ClosingSignedTlvFeeRangeSerializer::class,
+    JsonSerializers.ClosingSignedTlvPartialSignatureSerializer::class,
     JsonSerializers.ShutdownTlvChannelDataSerializer::class,
     JsonSerializers.GenericTlvSerializer::class,
     JsonSerializers.TlvStreamSerializer::class,
@@ -91,6 +95,7 @@
     JsonSerializers.CommitSigTlvAlternativeFeerateSigSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigsSerializer::class,
     JsonSerializers.CommitSigTlvBatchSerializer::class,
+    JsonSerializers.CommitSigTlvPartialSignatureWithNonceSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
     JsonSerializers.ClosingSerializer::class,
@@ -108,6 +113,8 @@
 package fr.acinq.lightning.json
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -205,10 +212,14 @@ object JsonSerializers {
             }
             polymorphic(Tlv::class) {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
+                subclass(ChannelReadyTlv.NextLocalNonceTlv::class, ChannelReadyTlvNextLocalNonceTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
+                subclass(CommitSigTlv.PartialSignatureWithNonceTlv::class, CommitSigTlvPartialSignatureWithNonceSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
+                subclass(ShutdownTlv.ShutdownNonce::class, ShutdownTlvShutdownNonceSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
+                subclass(ClosingSignedTlv.PartialSignature::class, ClosingSignedTlvPartialSignatureSerializer)
                 subclass(UpdateAddHtlcTlv.Blinding::class, UpdateAddHtlcTlvBlindingSerializer)
             }
             // TODO The following declarations are required because serializers for [TransactionWithInputInfo]
@@ -220,6 +231,8 @@ object JsonSerializers {
             contextual(TransactionSerializer)
             contextual(ByteVectorSerializer)
             contextual(ByteVector32Serializer)
+            contextual(IndividualNonceSerializer)
+            contextual(SecretNonceSerializer)
 
             contextual(Bolt11InvoiceSerializer)
             contextual(OfferSerializer)
@@ -278,6 +291,7 @@ object JsonSerializers {
         transform = { i ->
             when (i) {
                 is SharedFundingInput.Multisig2of2 -> SharedFundingInputSurrogate(i.info.outPoint, i.info.txOut.amount)
+                is SharedFundingInput.Musig2Input -> SharedFundingInputSurrogate(i.info.outPoint, i.info.txOut.amount)
             }
         },
         delegateSerializer = SharedFundingInputSurrogate.serializer()
@@ -404,6 +418,9 @@ object JsonSerializers {
     object OutPointSerializer : StringSerializer<OutPoint>({ "${it.txid}:${it.index}" })
     object TransactionSerializer : StringSerializer<Transaction>()
 
+    object IndividualNonceSerializer : StringSerializer<IndividualNonce>({ "${it.data} " })
+    object SecretNonceSerializer : StringSerializer<SecretNonce>({ "<redacted>" })
+
     @Serializer(forClass = PublishableTxs::class)
     object PublishableTxsSerializer
 
@@ -524,11 +541,20 @@ object JsonSerializers {
     @Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
     object ChannelReadyTlvShortChannelIdTlvSerializer
 
+    @Serializer(forClass = ChannelReadyTlv.NextLocalNonceTlv::class)
+    object ChannelReadyTlvNextLocalNonceTlvSerializer
+
     @Serializer(forClass = ClosingSignedTlv.FeeRange::class)
     object ClosingSignedTlvFeeRangeSerializer
 
+    @Serializer(forClass = ClosingSignedTlv.PartialSignature::class)
+    object ClosingSignedTlvPartialSignatureSerializer
+
     @Serializer(forClass = ShutdownTlv.ChannelData::class)
     object ShutdownTlvChannelDataSerializer
+
+    @Serializer(forClass = ShutdownTlv.ShutdownNonce::class)
+    object ShutdownTlvShutdownNonceSerializer
 
     @Serializer(forClass = ShutdownTlv::class)
     object ShutdownTlvSerializer
@@ -541,6 +567,12 @@ object JsonSerializers {
 
     @Serializer(forClass = CommitSigTlv.Batch::class)
     object CommitSigTlvBatchSerializer
+
+    @Serializer(forClass = PartialSignatureWithNonce::class)
+    object PartialSignatureWithNonceSerializer
+
+    @Serializer(forClass = CommitSigTlv.PartialSignatureWithNonceTlv::class)
+    object CommitSigTlvPartialSignatureWithNonceSerializer
 
     @Serializer(forClass = CommitSigTlv::class)
     object CommitSigTlvSerializer
