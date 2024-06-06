@@ -184,7 +184,8 @@ class AnchorOutputsTestsCommon {
             remote_payment_privkey.publicKey(),
             local_htlc_privkey.publicKey(),
             remote_htlc_privkey.publicKey(),
-            spec
+            spec,
+            false
         )
         val commitTx = Transactions.makeCommitTx(
             commitTxInput,
@@ -201,7 +202,7 @@ class AnchorOutputsTestsCommon {
 
         val txs = testCase.HtlcDescs.map { it.ResolutionTx.txid to it.ResolutionTx }.toMap()
         val remoteHtlcSigs = testCase.HtlcDescs.map { it.ResolutionTx.txid to ByteVector(it.RemoteSigHex) }.toMap()
-        val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, 546.sat, local_revocation_pubkey, CltvExpiryDelta(144), local_delayedpubkey, spec.feerate, outputs)
+        val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, 546.sat, local_revocation_pubkey, CltvExpiryDelta(144), local_delayedpubkey, spec.feerate, outputs, isTaprootChannel = false)
         assertTrue { remoteHtlcSigs.keys.containsAll(htlcTxs.map { it.tx.txid }) }
         htlcTxs.forEach { htlcTx ->
             val localHtlcSig = Transactions.sign(htlcTx, local_htlc_privkey, SigHash.SIGHASH_ALL)
