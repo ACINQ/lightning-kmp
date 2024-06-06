@@ -6,10 +6,12 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.channel.Origin
+import fr.acinq.lightning.channel.PartialSignatureWithNonce
 import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
@@ -487,6 +489,7 @@ data class TxSignatures(
         tx: Transaction,
         witnesses: List<ScriptWitness>,
         previousFundingSig: ByteVector64?,
+        previousFundingPartialSig: PartialSignatureWithNonce?,
         swapInUserSigs: List<ByteVector64>,
         swapInServerSigs: List<ByteVector64>,
         swapInUserPartialSigs: List<TxSignaturesTlv.PartialSignature>,
@@ -498,6 +501,7 @@ data class TxSignatures(
         TlvStream(
             setOfNotNull(
                 previousFundingSig?.let { TxSignaturesTlv.PreviousFundingTxSig(it) },
+                previousFundingPartialSig?.let { TxSignaturesTlv.PreviousFundingTxPartialSig(it) },
                 if (swapInUserSigs.isNotEmpty()) TxSignaturesTlv.SwapInUserSigs(swapInUserSigs) else null,
                 if (swapInServerSigs.isNotEmpty()) TxSignaturesTlv.SwapInServerSigs(swapInServerSigs) else null,
                 if (swapInUserPartialSigs.isNotEmpty()) TxSignaturesTlv.SwapInUserPartialSigs(swapInUserPartialSigs) else null,
@@ -509,6 +513,7 @@ data class TxSignatures(
     override val type: Long get() = TxSignatures.type
 
     val previousFundingTxSig: ByteVector64? = tlvs.get<TxSignaturesTlv.PreviousFundingTxSig>()?.sig
+    val previousFundingTxPartialSig: PartialSignatureWithNonce? = tlvs.get<TxSignaturesTlv.PreviousFundingTxPartialSig>()?.partialSigWithNonce
     val swapInUserSigs: List<ByteVector64> = tlvs.get<TxSignaturesTlv.SwapInUserSigs>()?.sigs ?: listOf()
     val swapInServerSigs: List<ByteVector64> = tlvs.get<TxSignaturesTlv.SwapInServerSigs>()?.sigs ?: listOf()
     val swapInUserPartialSigs: List<TxSignaturesTlv.PartialSignature> = tlvs.get<TxSignaturesTlv.SwapInUserPartialSigs>()?.psigs ?: listOf()
@@ -536,6 +541,7 @@ data class TxSignatures(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             TxSignaturesTlv.PreviousFundingTxSig.tag to TxSignaturesTlv.PreviousFundingTxSig.Companion as TlvValueReader<TxSignaturesTlv>,
+            TxSignaturesTlv.PreviousFundingTxPartialSig.tag to TxSignaturesTlv.PreviousFundingTxPartialSig.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInUserSigs.tag to TxSignaturesTlv.SwapInUserSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInServerSigs.tag to TxSignaturesTlv.SwapInServerSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInUserPartialSigs.tag to TxSignaturesTlv.SwapInUserPartialSigs.Companion as TlvValueReader<TxSignaturesTlv>,
@@ -671,6 +677,9 @@ data class OpenDualFundedChannel(
     val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
     val requestFunds: ChannelTlv.RequestFunds? get() = tlvStream.get<ChannelTlv.RequestFunds>()
     val origin: Origin? get() = tlvStream.get<ChannelTlv.OriginTlv>()?.origin
+    val nextLocalNonces: List<IndividualNonce> get() = tlvStream.get<ChannelTlv.NextLocalNoncesTlv>()?.nonces ?: listOf()
+    val firstRemoteNonce: IndividualNonce? = if (nextLocalNonces.isEmpty()) null else nextLocalNonces[0]
+    val secondRemoteNonce: IndividualNonce? = if (nextLocalNonces.isEmpty()) null else nextLocalNonces[1]
 
     override val type: Long get() = OpenDualFundedChannel.type
 
@@ -708,6 +717,7 @@ data class OpenDualFundedChannel(
             ChannelTlv.RequestFunds.tag to ChannelTlv.RequestFunds as TlvValueReader<ChannelTlv>,
             ChannelTlv.OriginTlv.tag to ChannelTlv.OriginTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.NextLocalNoncesTlv.tag to ChannelTlv.NextLocalNoncesTlv.Companion as TlvValueReader<ChannelTlv>,
         )
 
         override fun read(input: Input): OpenDualFundedChannel = OpenDualFundedChannel(
@@ -756,6 +766,9 @@ data class AcceptDualFundedChannel(
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
     val willFund: ChannelTlv.WillFund? get() = tlvStream.get<ChannelTlv.WillFund>()
     val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
+    val nextLocalNonces: List<IndividualNonce> get() = tlvStream.get<ChannelTlv.NextLocalNoncesTlv>()?.nonces ?: listOf()
+    val firstRemoteNonce: IndividualNonce? = if (nextLocalNonces.isEmpty()) null else nextLocalNonces[0]
+    val secondRemoteNonce: IndividualNonce? = if (nextLocalNonces.isEmpty()) null else nextLocalNonces[1]
 
     override val type: Long get() = AcceptDualFundedChannel.type
 
@@ -788,6 +801,7 @@ data class AcceptDualFundedChannel(
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.WillFund.tag to ChannelTlv.WillFund as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
+            ChannelTlv.NextLocalNoncesTlv.tag to ChannelTlv.NextLocalNoncesTlv.Companion as TlvValueReader<ChannelTlv>,
         )
 
         override fun read(input: Input): AcceptDualFundedChannel = AcceptDualFundedChannel(
@@ -870,6 +884,7 @@ data class ChannelReady(
 ) : ChannelMessage, HasChannelId {
     override val type: Long get() = ChannelReady.type
     val alias: ShortChannelId? = tlvStream.get<ChannelReadyTlv.ShortChannelIdTlv>()?.alias
+    val nextLocalNonce: IndividualNonce? = tlvStream.get<ChannelReadyTlv.NextLocalNonceTlv>()?.nonce
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -881,7 +896,9 @@ data class ChannelReady(
         const val type: Long = 36
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(ChannelReadyTlv.ShortChannelIdTlv.tag to ChannelReadyTlv.ShortChannelIdTlv.Companion as TlvValueReader<ChannelReadyTlv>)
+        val readers = mapOf(
+            ChannelReadyTlv.ShortChannelIdTlv.tag to ChannelReadyTlv.ShortChannelIdTlv.Companion as TlvValueReader<ChannelReadyTlv>,
+            ChannelReadyTlv.NextLocalNonceTlv.tag to ChannelReadyTlv.NextLocalNonceTlv.Companion as TlvValueReader<ChannelReadyTlv>)
 
         override fun read(input: Input) = ChannelReady(
             ByteVector32(LightningCodecs.bytes(input, 32)),
@@ -1190,6 +1207,8 @@ data class CommitSig(
 
     val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
     val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
+    val partialSig = tlvStream.get<CommitSigTlv.PartialSignatureWithNonceTlv>()?.psig
+    val sigOrPartialSig: Either<ByteVector64, PartialSignatureWithNonce> = partialSig?.let { Either.Right(it) } ?: Either.Left(signature)
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1207,6 +1226,7 @@ data class CommitSig(
             CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.AlternativeFeerateSigs.tag to CommitSigTlv.AlternativeFeerateSigs.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
+            CommitSigTlv.PartialSignatureWithNonceTlv.tag to CommitSigTlv.PartialSignatureWithNonceTlv.Companion as TlvValueReader<CommitSigTlv>,
         )
 
         override fun read(input: Input): CommitSig {
@@ -1233,6 +1253,8 @@ data class RevokeAndAck(
     override val channelData: EncryptedChannelData get() = tlvStream.get<RevokeAndAckTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): RevokeAndAck = copy(tlvStream = tlvStream.addOrUpdate(RevokeAndAckTlv.ChannelData(ecd)))
 
+    val nextLocalNonces = tlvStream.get<RevokeAndAckTlv.NextLocalNoncesTlv>()?.nonces ?: listOf()
+
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeBytes(perCommitmentSecret.value, out)
@@ -1244,7 +1266,10 @@ data class RevokeAndAck(
         const val type: Long = 133
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(RevokeAndAckTlv.ChannelData.tag to RevokeAndAckTlv.ChannelData.Companion as TlvValueReader<RevokeAndAckTlv>)
+        val readers = mapOf(
+            RevokeAndAckTlv.ChannelData.tag to RevokeAndAckTlv.ChannelData.Companion as TlvValueReader<RevokeAndAckTlv>,
+            RevokeAndAckTlv.NextLocalNoncesTlv.tag to RevokeAndAckTlv.NextLocalNoncesTlv.Companion as TlvValueReader<RevokeAndAckTlv>
+        )
 
         override fun read(input: Input): RevokeAndAck {
             return RevokeAndAck(
@@ -1291,6 +1316,8 @@ data class ChannelReestablish(
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
+    val nextLocalNonces: List<IndividualNonce> = tlvStream.get<ChannelReestablishTlv.NextLocalNoncesTlv>()?.nonces ?: listOf()
+
     override val channelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ChannelReestablish = copy(tlvStream = tlvStream.addOrUpdate(ChannelReestablishTlv.ChannelData(ecd)))
 
@@ -1310,6 +1337,7 @@ data class ChannelReestablish(
         val readers = mapOf(
             ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.NextLocalNoncesTlv.tag to ChannelReestablishTlv.NextLocalNoncesTlv.Companion as TlvValueReader<ChannelReestablishTlv>,
         )
 
         override fun read(input: Input): ChannelReestablish {
@@ -1510,6 +1538,8 @@ data class Shutdown(
     override val channelData: EncryptedChannelData get() = tlvStream.get<ShutdownTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): Shutdown = copy(tlvStream = tlvStream.addOrUpdate(ShutdownTlv.ChannelData(ecd)))
 
+    val shutdownNonce: IndividualNonce? = tlvStream.get<ShutdownTlv.ShutdownNonce>()?.nonce
+
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeU16(scriptPubKey.size(), out)
@@ -1521,7 +1551,10 @@ data class Shutdown(
         const val type: Long = 38
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(ShutdownTlv.ChannelData.tag to ShutdownTlv.ChannelData.Companion as TlvValueReader<ShutdownTlv>)
+        val readers = mapOf(
+            ShutdownTlv.ChannelData.tag to ShutdownTlv.ChannelData.Companion as TlvValueReader<ShutdownTlv>,
+            ShutdownTlv.ShutdownNonce.tag to ShutdownTlv.ShutdownNonce.Companion as TlvValueReader<ShutdownTlv>,
+        )
 
         override fun read(input: Input): Shutdown {
             return Shutdown(
@@ -1544,6 +1577,8 @@ data class ClosingSigned(
     override val channelData: EncryptedChannelData get() = tlvStream.get<ClosingSignedTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ClosingSigned = copy(tlvStream = tlvStream.addOrUpdate(ClosingSignedTlv.ChannelData(ecd)))
 
+    val partialSignature = tlvStream.get<ClosingSignedTlv.PartialSignature>()?.partialSignature
+
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
         LightningCodecs.writeU64(feeSatoshis.toLong(), out)
@@ -1557,7 +1592,8 @@ data class ClosingSigned(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             ClosingSignedTlv.FeeRange.tag to ClosingSignedTlv.FeeRange.Companion as TlvValueReader<ClosingSignedTlv>,
-            ClosingSignedTlv.ChannelData.tag to ClosingSignedTlv.ChannelData.Companion as TlvValueReader<ClosingSignedTlv>
+            ClosingSignedTlv.ChannelData.tag to ClosingSignedTlv.ChannelData.Companion as TlvValueReader<ClosingSignedTlv>,
+            ClosingSignedTlv.PartialSignature.tag to ClosingSignedTlv.PartialSignature.Companion as TlvValueReader<ClosingSignedTlv>
         )
 
         override fun read(input: Input): ClosingSigned {

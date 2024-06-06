@@ -188,6 +188,7 @@ class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice to purchase inbound liquidity`() {
+        val isTaprootChannel = false
         val (alice, bob) = reachNormal()
         val leaseRate = LiquidityAds.LeaseRate(0, 250, 250 /* 2.5% */, 10.sat, 200, 100.msat)
         val liquidityRequest = LiquidityAds.RequestRemoteFunding(200_000.sat, alice.currentBlockHeight, leaseRate)
@@ -200,7 +201,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(spliceInit))
         val defaultSpliceAck = actionsBob2.findOutgoingMessage<SpliceAck>()
         assertNull(defaultSpliceAck.willFund)
-        val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey)
+        val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey, isTaprootChannel)
         run {
             val willFund = leaseRate.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
             val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)

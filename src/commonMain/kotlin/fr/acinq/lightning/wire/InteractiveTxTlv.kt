@@ -4,8 +4,10 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.lightning.channel.PartialSignatureWithNonce
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.utils.toByteVector64
 
 sealed class TxAddInputTlv : Tlv {
@@ -99,6 +101,24 @@ sealed class TxSignaturesTlv : Tlv {
         companion object : TlvValueReader<PreviousFundingTxSig> {
             const val tag: Long = 601
             override fun read(input: Input): PreviousFundingTxSig = PreviousFundingTxSig(LightningCodecs.bytes(input, 64).toByteVector64())
+        }
+    }
+
+    data class PreviousFundingTxPartialSig(val partialSigWithNonce: PartialSignatureWithNonce) : TxSignaturesTlv() {
+        override val tag: Long get() = PreviousFundingTxSig.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(partialSigWithNonce.partialSig.toByteArray(), out)
+            LightningCodecs.writeBytes(partialSigWithNonce.nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<PreviousFundingTxPartialSig> {
+            const val tag: Long = 2
+            override fun read(input: Input): PreviousFundingTxPartialSig = PreviousFundingTxPartialSig(
+                PartialSignatureWithNonce(
+                    LightningCodecs.bytes(input, 32).byteVector32(),
+                    IndividualNonce(LightningCodecs.bytes(input, 66))
+                )
+            )
         }
     }
 

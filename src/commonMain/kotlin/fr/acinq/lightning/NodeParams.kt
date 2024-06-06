@@ -201,7 +201,8 @@ data class NodeParams(
             Feature.PayToOpenClient to FeatureSupport.Optional,
             Feature.ChannelBackupClient to FeatureSupport.Optional,
             Feature.ExperimentalSplice to FeatureSupport.Optional,
-            Feature.Quiescence to FeatureSupport.Mandatory
+            Feature.Quiescence to FeatureSupport.Mandatory,
+            Feature.SimpleTaprootStaging to FeatureSupport.Optional
         ),
         dustLimit = 546.sat,
         maxRemoteDustLimit = 600.sat,

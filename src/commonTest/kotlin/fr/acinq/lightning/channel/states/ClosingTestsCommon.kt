@@ -108,6 +108,17 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv BITCOIN_TX_CONFIRMED -- mutual close -- simple taproot channel`() {
+        val (alice0, _, _) = initMutualClose(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
+        val mutualCloseTx = alice0.state.mutualClosePublished.last()
+
+        // actual test starts here
+        val (alice1, actions1) = alice0.process(ChannelCommand.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
+        assertIs<Closed>(alice1.state)
+        assertContains(actions1, ChannelAction.Storage.SetLocked(mutualCloseTx.tx.txid))
+    }
+
+    @Test
     fun `recv BITCOIN_TX_CONFIRMED -- mutual close with external btc address`() {
         val pubKey = Lightning.randomKey().publicKey()
         val bobBtcAddr = computeP2PkhAddress(pubKey, TestConstants.Bob.nodeParams.chainHash)
@@ -213,6 +224,18 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv BITCOIN_FUNDING_SPENT -- local commit -- simple taproot channels`() {
+        val (aliceNormal, _) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
+        val (aliceClosing, localCommitPublished) = localClose(aliceNormal)
+
+        // actual test starts here
+        // we are notified afterwards from our watcher about the tx that we just published
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventSpent(aliceNormal.state.channelId, BITCOIN_FUNDING_SPENT, localCommitPublished.commitTx)))
+        assertEquals(aliceClosing, alice1)
+        assertTrue(actions1.isEmpty())
+    }
+
+    @Test
     fun `recv BITCOIN_TX_CONFIRMED -- local commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, htlcs) = run {
@@ -271,6 +294,49 @@ class ClosingTestsCommon : LightningTestSuite() {
     @Test
     fun `recv BITCOIN_TX_CONFIRMED -- local commit with multiple htlcs for the same payment`() {
         val (alice0, bob0) = reachNormal()
+        // alice sends an htlc to bob
+        val (aliceClosing, localCommitPublished) = run {
+            val (nodes1, preimage, _) = addHtlc(30_000_000.msat, alice0, bob0)
+            val (alice1, bob1) = nodes1
+            // and more htlcs with the same payment_hash
+            val (_, cmd2) = makeCmdAdd(25_000_000.msat, bob0.staticParams.nodeParams.nodeId, alice1.currentBlockHeight.toLong(), preimage)
+            val (alice2, bob2, _) = addHtlc(cmd2, alice1, bob1)
+            val (_, cmd3) = makeCmdAdd(30_000_000.msat, bob0.staticParams.nodeParams.nodeId, alice2.currentBlockHeight.toLong(), preimage)
+            val (alice3, bob3, _) = addHtlc(cmd3, alice2, bob2)
+            val amountBelowDust = alice0.state.commitments.params.localParams.dustLimit.toMilliSatoshi() - 100.msat
+            val (_, dustCmd) = makeCmdAdd(amountBelowDust, bob0.staticParams.nodeParams.nodeId, alice3.currentBlockHeight.toLong(), preimage)
+            val (alice4, bob4, _) = addHtlc(dustCmd, alice3, bob3)
+            val (_, cmd4) = makeCmdAdd(20_000_000.msat, bob0.staticParams.nodeParams.nodeId, alice4.currentBlockHeight.toLong() + 1, preimage)
+            val (alice5, bob5, _) = addHtlc(cmd4, alice4, bob4)
+            val (alice6, _) = crossSign(alice5, bob5)
+            localClose(alice6)
+        }
+
+        // actual test starts here
+        assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
+        assertTrue(localCommitPublished.htlcSuccessTxs().isEmpty())
+        assertEquals(4, localCommitPublished.htlcTimeoutTxs().size)
+        assertEquals(4, localCommitPublished.claimHtlcDelayedTxs.size)
+
+        // if commit tx and htlc-timeout txs end up in the same block, we may receive the htlc-timeout confirmation before the commit tx confirmation
+        val watchConfirmed = listOf(
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[2].tx), 42, 0, localCommitPublished.htlcTimeoutTxs()[2].tx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[1].tx), 202, 0, localCommitPublished.htlcTimeoutTxs()[1].tx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[2].tx), 203, 2, localCommitPublished.claimHtlcDelayedTxs[2].tx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[0].tx), 202, 1, localCommitPublished.htlcTimeoutTxs()[0].tx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[0].tx), 203, 0, localCommitPublished.claimHtlcDelayedTxs[0].tx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[1].tx), 203, 1, localCommitPublished.claimHtlcDelayedTxs[1].tx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[3].tx), 203, 0, localCommitPublished.htlcTimeoutTxs()[3].tx),
+            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[3].tx), 203, 3, localCommitPublished.claimHtlcDelayedTxs[3].tx)
+        )
+        confirmWatchedTxs(aliceClosing, watchConfirmed)
+    }
+
+    @Test
+    fun `recv BITCOIN_TX_CONFIRMED -- local commit with multiple htlcs for the same payment -- simple taproot channels`() {
+        val (alice0, bob0) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
         // alice sends an htlc to bob
         val (aliceClosing, localCommitPublished) = run {
             val (nodes1, preimage, _) = addHtlc(30_000_000.msat, alice0, bob0)
@@ -1732,8 +1798,8 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        fun initMutualClose(withPayments: Boolean = false): Triple<LNChannel<Closing>, LNChannel<Closing>, List<PublishableTxs>> {
-            val (aliceInit, bobInit) = reachNormal()
+        fun initMutualClose(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs, withPayments: Boolean = false): Triple<LNChannel<Closing>, LNChannel<Closing>, List<PublishableTxs>> {
+            val (aliceInit, bobInit) = reachNormal(channelType = channelType)
             var mutableAlice: LNChannel<Normal> = aliceInit
             var mutableBob: LNChannel<Normal> = bobInit
 

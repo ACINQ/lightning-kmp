@@ -256,6 +256,12 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
+    @Serializable
+    object SimpleTaprootStaging : Feature() {
+        override val rfcName get() = "option_simple_taproot_staging"
+        override val mandatory get() = 180
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
 }
 
 @Serializable
@@ -337,7 +343,8 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ChannelBackupClient,
             Feature.ChannelBackupProvider,
             Feature.ExperimentalSplice,
-            Feature.Quiescence
+            Feature.Quiescence,
+            Feature.SimpleTaprootStaging
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())
@@ -369,7 +376,8 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment to listOf(Feature.PaymentSecret),
             Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
             Feature.TrampolinePayment to listOf(Feature.PaymentSecret),
-            Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret)
+            Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret),
+            Feature.SimpleTaprootStaging to listOf(Feature.AnchorOutputs, Feature.StaticRemoteKey)
         )
 
         class FeatureException(message: String) : IllegalArgumentException(message)

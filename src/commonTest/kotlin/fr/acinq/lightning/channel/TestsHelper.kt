@@ -121,7 +121,10 @@ data class LNChannel<out S : ChannelState>(
             is Normal -> when (state.spliceStatus) {
                 is SpliceStatus.WaitingForSigs -> state
                 else -> state.copy(spliceStatus = SpliceStatus.None)
-            }
+            }.updateCommitments(state.commitments.copy(closingNonce = null))
+
+            is WaitForFundingSigned -> state.copy(secondRemoteNonce = null)
+            is ChannelStateWithCommitments -> state.updateCommitments(state.commitments.copy(closingNonce = null))
             else -> state
         }
 
@@ -152,14 +155,27 @@ object TestsHelper {
         zeroConf: Boolean = false,
         channelOrigin: Origin? = null
     ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForOpenChannel>, OpenDualFundedChannel> {
+        val isTaprootChannel = when (channelType) {
+            is ChannelType.SupportedChannelType.SimpleTaprootStaging -> true
+            is ChannelType.SupportedChannelType.SimpleTaprootStagingZeroReserve -> true
+            else -> false
+        }
+        val aliceFeatures1 = when (isTaprootChannel) {
+            true -> aliceFeatures.add(Feature.SimpleTaprootStaging to FeatureSupport.Mandatory)
+            false -> aliceFeatures
+        }
+        val bobFeatures1 = when (isTaprootChannel) {
+            true -> bobFeatures.add(Feature.SimpleTaprootStaging to FeatureSupport.Mandatory)
+            false -> bobFeatures
+        }
         val (aliceNodeParams, bobNodeParams) = when (zeroConf) {
             true -> Pair(
-                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId)),
-                TestConstants.Bob.nodeParams.copy(features = bobFeatures, zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId))
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures1, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId)),
+                TestConstants.Bob.nodeParams.copy(features = bobFeatures1, zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId))
             )
             false -> Pair(
-                TestConstants.Alice.nodeParams.copy(features = aliceFeatures),
-                TestConstants.Bob.nodeParams.copy(features = bobFeatures)
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures1),
+                TestConstants.Bob.nodeParams.copy(features = bobFeatures1)
             )
         }
         val alice = LNChannel(
@@ -182,10 +198,10 @@ object TestsHelper {
         )
 
         val channelFlags = 0.toByte()
-        val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures.initFeatures())
-        val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures.initFeatures())
-        val aliceInit = Init(aliceFeatures)
-        val bobInit = Init(bobFeatures)
+        val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures1)
+        val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures1)
+        val aliceInit = Init(aliceFeatures1)
+        val bobInit = Init(bobFeatures1)
         val (alice1, actionsAlice1) = alice.process(
             ChannelCommand.Init.Initiator(
                 aliceFundingAmount,
@@ -220,7 +236,17 @@ object TestsHelper {
         bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         zeroConf: Boolean = false,
     ): Triple<LNChannel<Normal>, LNChannel<Normal>, Transaction> {
-        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
+        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(
+            channelType,
+            aliceFeatures,
+            bobFeatures,
+            currentHeight,
+            aliceFundingAmount,
+            bobFundingAmount,
+            alicePushAmount,
+            bobPushAmount,
+            zeroConf,
+        )
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
         assertIs<LNChannel<Normal>>(alice1)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
