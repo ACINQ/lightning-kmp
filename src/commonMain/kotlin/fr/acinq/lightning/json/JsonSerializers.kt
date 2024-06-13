@@ -93,6 +93,9 @@
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
     JsonSerializers.ClosingSerializer::class,
+    JsonSerializers.Bolt11ExtraHopSerializer::class,
+    JsonSerializers.Bolt11UnknownTagSerializer::class,
+    JsonSerializers.Bolt11InvalidTagSerializer::class,
 )
 @file:UseContextualSerialization(
     PersistedChannelState::class
@@ -111,6 +114,8 @@ import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.json.JsonSerializers.LongSerializer
 import fr.acinq.lightning.json.JsonSerializers.StringSerializer
 import fr.acinq.lightning.json.JsonSerializers.SurrogateSerializer
+import fr.acinq.lightning.payment.Bolt11Invoice
+import fr.acinq.lightning.payment.Bolt11Invoice.TaggedField
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.IncomingHtlc
 import fr.acinq.lightning.transactions.OutgoingHtlc
@@ -569,4 +574,54 @@ object JsonSerializers {
     object WaitingForRevocationSerializer
 
     object UUIDSerializer : StringSerializer<UUID>()
+
+    @Serializer(forClass = TaggedField.ExtraHop::class)
+    object Bolt11ExtraHopSerializer
+
+    @Serializer(forClass = TaggedField.UnknownTag::class)
+    object Bolt11UnknownTagSerializer
+
+    @Serializer(forClass = TaggedField.InvalidTag::class)
+    object Bolt11InvalidTagSerializer
+
+    @Serializable
+    data class Bolt11InvoiceSurrogate(
+        val chain: String,
+        val amount: MilliSatoshi?,
+        val paymentHash: ByteVector32,
+        val description: String?,
+        val descriptionHash: ByteVector32?,
+        val minFinalCltvExpiryDelta: CltvExpiryDelta?,
+        val paymentSecret: ByteVector32,
+        val paymentMetadata: ByteVector?,
+        val expirySeconds: Long?,
+        val extraHops: List<List<TaggedField.ExtraHop>>,
+        val features: Features?,
+        val timestampSeconds: Long,
+        val unknownTags: List<TaggedField.UnknownTag>?,
+        val invalidTags: List<TaggedField.InvalidTag>?,
+    )
+
+    object Bolt11InvoiceSerializer : SurrogateSerializer<Bolt11Invoice, Bolt11InvoiceSurrogate>(
+        transform = { o ->
+            Bolt11InvoiceSurrogate(
+                chain = o.chain?.name?.lowercase() ?: "unknown",
+                amount = o.amount,
+                paymentHash = o.paymentHash,
+                description = o.description,
+                descriptionHash = o.descriptionHash,
+                minFinalCltvExpiryDelta = o.minFinalExpiryDelta,
+                paymentSecret = o.paymentSecret,
+                paymentMetadata = o.paymentMetadata,
+                expirySeconds = o.expirySeconds,
+                extraHops = o.routingInfo.map { it.hints },
+                features = o.features.let { if (it == Features.empty) null else it },
+                timestampSeconds = o.timestampSeconds,
+                unknownTags = o.tags.filterIsInstance<TaggedField.UnknownTag>().run { ifEmpty { null } },
+                invalidTags = o.tags.filterIsInstance<TaggedField.InvalidTag>().run { ifEmpty { null } }
+            )
+        },
+        delegateSerializer = Bolt11InvoiceSurrogate.serializer()
+    )
+
 }

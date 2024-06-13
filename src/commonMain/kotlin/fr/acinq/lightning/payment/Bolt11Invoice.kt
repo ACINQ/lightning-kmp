@@ -21,6 +21,8 @@ data class Bolt11Invoice(
     val tags: List<TaggedField>,
     val signature: ByteVector
 ) : PaymentRequest() {
+    val chain: Chain? = prefixes.entries.firstOrNull { it.value == prefix }?.key
+
     override val paymentHash: ByteVector32 = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
 
     val paymentSecret: ByteVector32 = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
