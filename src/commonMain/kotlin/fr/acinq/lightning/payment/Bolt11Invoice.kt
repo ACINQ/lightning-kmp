@@ -105,13 +105,13 @@ data class Bolt11Invoice(
         val DEFAULT_MIN_FINAL_EXPIRY_DELTA = CltvExpiryDelta(18)
 
         private val prefixes = mapOf(
-            Block.RegtestGenesisBlock.hash to "lnbcrt",
-            Block.TestnetGenesisBlock.hash to "lntb",
-            Block.LivenetGenesisBlock.hash to "lnbc"
+            Chain.Regtest to "lnbcrt",
+            Chain.Testnet to "lntb",
+            Chain.Mainnet to "lnbc"
         )
 
         fun create(
-            chainHash: BlockHash,
+            chain: Chain,
             amount: MilliSatoshi?,
             paymentHash: ByteVector32,
             privateKey: PrivateKey,
@@ -124,7 +124,7 @@ data class Bolt11Invoice(
             extraHops: List<List<TaggedField.ExtraHop>> = listOf(),
             timestampSeconds: Long = currentTimestampSeconds()
         ): Bolt11Invoice {
-            val prefix = prefixes[chainHash] ?: error("unknown chain hash")
+            val prefix = prefixes[chain] ?: error("unknown chain hash")
             val tags = mutableListOf(
                 TaggedField.PaymentHash(paymentHash),
                 TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toLong()),

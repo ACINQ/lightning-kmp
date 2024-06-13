@@ -89,7 +89,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
         logger.debug(mapOf("paymentHash" to paymentHash)) { "using routing hints $extraHops" }
         val pr = Bolt11Invoice.create(
-            nodeParams.chainHash,
+            nodeParams.chain,
             amount,
             paymentHash,
             nodeParams.nodePrivateKey,

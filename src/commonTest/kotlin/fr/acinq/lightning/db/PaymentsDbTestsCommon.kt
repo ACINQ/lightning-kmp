@@ -1,7 +1,7 @@
 package fr.acinq.lightning.db
 
-import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Chain
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.utils.Either
@@ -393,13 +393,13 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         }
 
         private fun createInvoice(preimage: ByteVector32): Bolt11Invoice {
-            return Bolt11Invoice.create(Block.LivenetGenesisBlock.hash, 150_000.msat, Crypto.sha256(preimage).toByteVector32(), randomKey(), Either.Left("invoice"), CltvExpiryDelta(16), defaultFeatures)
+            return Bolt11Invoice.create(Chain.Mainnet, 150_000.msat, Crypto.sha256(preimage).toByteVector32(), randomKey(), Either.Left("invoice"), CltvExpiryDelta(16), defaultFeatures)
         }
 
         private fun createExpiredInvoice(preimage: ByteVector32 = randomBytes32()): Bolt11Invoice {
             val now = currentTimestampSeconds()
             return Bolt11Invoice.create(
-                Block.LivenetGenesisBlock.hash,
+                Chain.Mainnet,
                 150_000.msat,
                 Crypto.sha256(preimage).toByteVector32(),
                 randomKey(),

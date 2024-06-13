@@ -1,9 +1,6 @@
 package fr.acinq.lightning.payment
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -246,7 +243,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
                 Feature.TrampolinePayment to FeatureSupport.Optional
             )
             Bolt11Invoice.create(
-                chainHash = Block.LivenetGenesisBlock.hash,
+                chain = Chain.Mainnet,
                 amount = 195_000.msat,
                 paymentHash = randomBytes32(),
                 privateKey = recipientKey,
@@ -914,7 +911,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         return Bolt11Invoice.create(
-            chainHash = Block.LivenetGenesisBlock.hash,
+            chain = Chain.Mainnet,
             amount = amount,
             paymentHash = paymentHash,
             privateKey = privKey,
