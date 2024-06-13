@@ -759,7 +759,7 @@ object OfferTypes {
                     if (chain != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chain)) else null,
                     amount?.let { OfferAmount(it) },
                     description?.let { OfferDescription(it) },
-                    if (features != Features.empty) OfferFeatures(features) else null,
+                    features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it) else null },
                     OfferNodeId(nodeId)
                 )
                 return Offer(TlvStream(tlvs + additionalTlvs, customTlvs))
@@ -791,7 +791,7 @@ object OfferTypes {
                     if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
                     amount?.let { OfferAmount(it) },
                     description?.let { OfferDescription(it) },
-                    if (features.bolt12Features() != Features.empty) OfferFeatures(features.bolt12Features()) else null,
+                    features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it) else null },
                     // Note that we don't include an offer_node_id since we're using a blinded path.
                     OfferPaths(listOf(ContactInfo.BlindedPath(path))),
                 )
