@@ -218,6 +218,9 @@ object JsonSerializers {
             contextual(TransactionSerializer)
             contextual(ByteVectorSerializer)
             contextual(ByteVector32Serializer)
+
+            contextual(Bolt11InvoiceSerializer)
+            contextual(OfferSerializer)
         }
     }
 
