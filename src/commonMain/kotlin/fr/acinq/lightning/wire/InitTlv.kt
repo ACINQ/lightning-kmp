@@ -3,6 +3,7 @@ package fr.acinq.lightning.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.byteVector32
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 
@@ -32,21 +33,14 @@ sealed class InitTlv : Tlv {
     }
 
     /** Rates at which we sell inbound liquidity to remote peers. */
-    data class LiquidityAdsRates(val leaseRates: List<LiquidityAds.LeaseRate>) : InitTlv() {
-        override val tag: Long get() = LiquidityAdsRates.tag
+    data class OptionWillFund(val rates: LiquidityAds.WillFundRates) : InitTlv() {
+        override val tag: Long get() = OptionWillFund.tag
 
-        override fun write(out: Output) {
-            leaseRates.forEach { it.write(out) }
-        }
+        override fun write(out: Output) = rates.write(out)
 
-        companion object : TlvValueReader<LiquidityAdsRates> {
-            const val tag: Long = 1337
-
-            override fun read(input: Input): LiquidityAdsRates {
-                val count = input.availableBytes / 16
-                val rates = (0 until count).map { LiquidityAds.LeaseRate.read(input) }
-                return LiquidityAdsRates(rates)
-            }
+        companion object : TlvValueReader<OptionWillFund> {
+            const val tag: Long = 1339
+            override fun read(input: Input): OptionWillFund = OptionWillFund(LiquidityAds.WillFundRates.read(input))
         }
     }
 
@@ -65,6 +59,27 @@ sealed class InitTlv : Tlv {
                 val legacyNodeId = PublicKey(LightningCodecs.bytes(input, 33))
                 val signature = ByteVector64(LightningCodecs.bytes(input, 64))
                 return PhoenixAndroidLegacyNodeId(legacyNodeId, signature)
+            }
+        }
+    }
+}
+
+sealed class CurrentFeeCreditTlv : Tlv {
+    /** Latest payments that were added to fee credit. */
+    data class LatestPayments(val preimages: List<ByteVector32>) : CurrentFeeCreditTlv() {
+        override val tag: Long get() = LatestPayments.tag
+
+        override fun write(out: Output) {
+            preimages.forEach { LightningCodecs.writeBytes(it, out) }
+        }
+
+        companion object : TlvValueReader<LatestPayments> {
+            const val tag: Long = 1
+
+            override fun read(input: Input): LatestPayments {
+                val count = input.availableBytes / 32
+                val preimages = (0 until count).map { LightningCodecs.bytes(input, 32).byteVector32() }
+                return LatestPayments(preimages)
             }
         }
     }
