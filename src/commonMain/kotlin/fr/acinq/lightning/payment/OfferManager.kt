@@ -38,7 +38,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     private val localOffers: HashMap<ByteVector32, OfferTypes.Offer> = HashMap()
 
     init {
-        registerOffer(nodeParams.defaultOffer(walletParams.trampolineNode), null)
+        registerOffer(nodeParams.defaultOffer(walletParams.trampolineNode.id), null)
     }
 
     fun registerOffer(offer: OfferTypes.Offer, pathId: ByteVector32?) {
