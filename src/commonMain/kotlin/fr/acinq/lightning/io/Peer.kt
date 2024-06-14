@@ -23,7 +23,6 @@ import fr.acinq.lightning.serialization.Encryption.from
 import fr.acinq.lightning.serialization.Serialization.DeserializationResult
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.utils.UUID.Companion.randomUUID
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.Ping
 import kotlinx.coroutines.*
@@ -542,14 +541,14 @@ class Peer(
      * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
      * for a splice out, taking into account potential unconfirmed parent splices.
      */
-    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
+    suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelManagementFees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
-                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
+                Pair(actualFeerate, ChannelManagementFees(miningFee, 0.sat))
             }
     }
 
@@ -561,14 +560,14 @@ class Peer(
      *         NB: if the output feerate is equal to the input feerate then the cpfp is useless and
      *         should not be attempted.
      */
-    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
+    suspend fun estimateFeeForSpliceCpfp(channelId: ByteVector32, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelManagementFees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .find { it.channelId == channelId }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
-                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, 0.msat))
+                Pair(actualFeerate, ChannelManagementFees(miningFee, 0.sat))
             }
     }
 
@@ -576,7 +575,7 @@ class Peer(
      * Estimate the actual feerate to use (and corresponding fee to pay) to purchase inbound liquidity with a splice
      * that reaches the target feerate.
      */
-    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw, leaseRate: LiquidityAds.LeaseRate): Pair<FeeratePerKw, ChannelCommand.Commitment.Splice.Fees>? {
+    suspend fun estimateFeeForInboundLiquidity(amount: Satoshi, targetFeerate: FeeratePerKw, leaseRate: LiquidityAds.LeaseRate): Pair<FeeratePerKw, ChannelManagementFees>? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
@@ -586,7 +585,7 @@ class Peer(
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 // The mining fee in the lease only covers the remote node's inputs and outputs, they are already included in the mining fee above.
                 val leaseFees = leaseRate.fees(actualFeerate, amount, amount)
-                Pair(actualFeerate, ChannelCommand.Commitment.Splice.Fees(miningFee, leaseFees.serviceFee.toMilliSatoshi()))
+                Pair(actualFeerate, ChannelManagementFees(miningFee, leaseFees.serviceFee))
             }
     }
 
@@ -650,7 +649,7 @@ class Peer(
 
     suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
-        val paymentId = randomUUID()
+        val paymentId = UUID.randomUUID()
         this.launch {
             res.complete(eventsFlow
                 .filterIsInstance<SendPaymentResult>()
@@ -664,7 +663,7 @@ class Peer(
 
     suspend fun payOffer(amount: MilliSatoshi, offer: OfferTypes.Offer, payerKey: PrivateKey, fetchInvoiceTimeout: Duration): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
-        val paymentId = randomUUID()
+        val paymentId = UUID.randomUUID()
         this.launch {
             res.complete(eventsFlow
                 .filterIsInstance<SendPaymentResult>()
@@ -708,6 +707,34 @@ class Peer(
         peerConnection?.send(message)
     }
 
+    sealed class SelectChannelResult {
+        /** We have a channel that is available for payments and splicing. */
+        data class Available(val channel: Normal) : SelectChannelResult()
+        /** We have a channel, or will have one soon, but it is not ready yet. */
+        data object NotReady : SelectChannelResult()
+        /** We don't have any channel, or our channel is closing, so we need a new one. */
+        data object None : SelectChannelResult()
+    }
+
+    private fun selectChannelForSplicing(): SelectChannelResult = when (val channel = channels.values.firstOrNull { it is Normal }) {
+        is Normal -> when {
+            channel.spliceStatus == SpliceStatus.None -> SelectChannelResult.Available(channel)
+            else -> SelectChannelResult.NotReady
+        }
+        else -> when {
+            // We haven't finished reconnecting to our peer.
+            channels.values.any { it is Offline || it is Syncing } -> SelectChannelResult.NotReady
+            // We are currently funding a new channel, which should be available soon.
+            channels.values.any { it is WaitForOpenChannel || it is WaitForAcceptChannel || it is WaitForFundingCreated || it is WaitForFundingSigned } -> SelectChannelResult.NotReady
+            // We have funded a channel and are waiting for it to be ready.
+            channels.values.any { it is WaitForFundingConfirmed || it is WaitForChannelReady } -> SelectChannelResult.NotReady
+            // All channels are closing, we need a new one.
+            channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted } -> SelectChannelResult.None
+            // Otherwise we need a new channel.
+            else -> SelectChannelResult.None
+        }
+    }
+
     private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>) {
         // we peek into the actions to see if the id of the channel is going to change, but we're not processing it yet
         val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
@@ -732,7 +759,6 @@ class Peer(
                             null -> logger.debug { "non-final error, more partial payments are still pending: ${action.error.message}" }
                         }
                     }
-
                     is ChannelAction.ProcessCmdRes.AddSettledFail -> {
                         val currentTip = currentTipFlow.filterNotNull().first()
                         when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip)) {
@@ -746,7 +772,6 @@ class Peer(
                             null -> logger.debug { "non-final error, more partial payments are still pending: ${action.result}" }
                         }
                     }
-
                     is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                         when (val result = outgoingPaymentHandler.processAddSettled(action)) {
                             is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
@@ -754,99 +779,89 @@ class Peer(
                             null -> logger.debug { "unknown payment" }
                         }
                     }
-
                     is ChannelAction.Storage.StoreState -> {
                         logger.info { "storing state=${action.data::class.simpleName}" }
                         db.channels.addOrUpdateChannel(action.data)
                     }
-
                     is ChannelAction.Storage.RemoveChannel -> {
                         logger.info { "removing channelId=${action.data.channelId} state=${action.data::class.simpleName}" }
                         db.channels.removeChannel(action.data.channelId)
                     }
-
                     is ChannelAction.Storage.StoreHtlcInfos -> {
                         action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                     }
-
                     is ChannelAction.Storage.StoreIncomingPayment -> {
                         logger.info { "storing incoming payment $action" }
                         incomingPaymentHandler.process(actualChannelId, action)
                     }
-
                     is ChannelAction.Storage.StoreOutgoingPayment -> {
                         logger.info { "storing $action" }
-                        db.payments.addOutgoingPayment(
-                            when (action) {
-                                is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
-                                    SpliceOutgoingPayment(
-                                        id = UUID.randomUUID(),
-                                        recipientAmount = action.amount,
-                                        address = action.address,
-                                        miningFees = action.miningFees,
-                                        channelId = channelId,
-                                        txId = action.txId,
-                                        createdAt = currentTimestampMillis(),
-                                        confirmedAt = null,
-                                        lockedAt = null
-                                    )
-                                is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp ->
-                                    SpliceCpfpOutgoingPayment(
-                                        id = UUID.randomUUID(),
-                                        miningFees = action.miningFees,
-                                        channelId = channelId,
-                                        txId = action.txId,
-                                        createdAt = currentTimestampMillis(),
-                                        confirmedAt = null,
-                                        lockedAt = null
-                                    )
-                                is ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest ->
-                                    InboundLiquidityOutgoingPayment(
-                                        id = UUID.randomUUID(),
-                                        channelId = channelId,
-                                        txId = action.txId,
-                                        miningFees = action.miningFees,
-                                        lease = action.lease,
-                                        createdAt = currentTimestampMillis(),
-                                        confirmedAt = null,
-                                        lockedAt = null
-                                    )
-                                is ChannelAction.Storage.StoreOutgoingPayment.ViaClose ->
-                                    ChannelCloseOutgoingPayment(
-                                        id = UUID.randomUUID(),
-                                        recipientAmount = action.amount,
-                                        address = action.address,
-                                        isSentToDefaultAddress = action.isSentToDefaultAddress,
-                                        miningFees = action.miningFees,
-                                        channelId = channelId,
-                                        txId = action.txId,
-                                        createdAt = currentTimestampMillis(),
-                                        confirmedAt = null,
-                                        lockedAt = currentTimestampMillis(), // channel close are not splices, they are final
-                                        closingType = action.closingType
-                                    )
+                        val payment = when (action) {
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut ->
+                                SpliceOutgoingPayment(
+                                    id = UUID.randomUUID(),
+                                    recipientAmount = action.amount,
+                                    address = action.address,
+                                    miningFees = action.miningFees,
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = null
+                                )
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp ->
+                                SpliceCpfpOutgoingPayment(
+                                    id = UUID.randomUUID(),
+                                    miningFees = action.miningFees,
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = null
+                                )
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest ->
+                                InboundLiquidityOutgoingPayment(
+                                    id = UUID.randomUUID(),
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    miningFees = action.miningFees,
+                                    lease = action.lease,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = null
+                                )
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaClose -> {
+                                _eventsFlow.emit(ChannelClosing(channelId))
+                                ChannelCloseOutgoingPayment(
+                                    id = UUID.randomUUID(),
+                                    recipientAmount = action.amount,
+                                    address = action.address,
+                                    isSentToDefaultAddress = action.isSentToDefaultAddress,
+                                    miningFees = action.miningFees,
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = currentTimestampMillis(), // channel close are not splices, they are final
+                                    closingType = action.closingType
+                                )
                             }
-                        )
-                        _eventsFlow.emit(ChannelClosing(channelId))
+                        }
+                        db.payments.addOutgoingPayment(payment)
                     }
-
                     is ChannelAction.Storage.SetLocked -> {
                         logger.info { "setting status locked for txid=${action.txId}" }
                         db.payments.setLocked(action.txId)
                     }
-
                     is ChannelAction.Storage.GetHtlcInfos -> {
                         val htlcInfos = db.channels.listHtlcInfos(actualChannelId, action.commitmentNumber).map { ChannelAction.Storage.HtlcInfo(actualChannelId, action.commitmentNumber, it.first, it.second) }
                         input.send(WrappedChannelCommand(actualChannelId, ChannelCommand.Closing.GetHtlcInfosResponse(action.revokedCommitTxId, htlcInfos)))
                     }
-
                     is ChannelAction.ChannelId.IdAssigned -> {
                         logger.info { "switching channel id from ${action.temporaryChannelId} to ${action.channelId}" }
                         _channels[action.temporaryChannelId]?.let { _channels = _channels + (action.channelId to it) - action.temporaryChannelId }
                     }
-
                     is ChannelAction.EmitEvent -> nodeParams._nodeEvents.emit(action.event)
-
                     is ChannelAction.Disconnect -> {
                         logger.warning { "channel disconnected due to a protocol error" }
                         disconnect()
@@ -1121,22 +1136,21 @@ class Peer(
                     }
                     is PayToOpenRequest -> {
                         logger.info { "received ${msg::class.simpleName}" }
-                        // If a channel is currently being created, it can't process splices yet. We could accept this payment, but
-                        // it wouldn't be reflected in the user balance until the channel is ready, because we only insert
-                        // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
-                        // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
-                        // payment rather that having the user wonder where their money went.
-                        val channelInitializing = _channels.isNotEmpty()
-                                && !_channels.values.any { it is Normal } // we don't have a channel that can be spliced
-                                && _channels.values.any { it is WaitForFundingSigned || it is WaitForFundingConfirmed || it is WaitForChannelReady } // but we will have one soon
-                        if (channelInitializing) {
-                            val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
-                            logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
-                            nodeParams._nodeEvents.emit(rejected)
-                            val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)
-                            input.send(action)
-                        } else {
-                            processIncomingPayment(Either.Left(msg))
+                        when (selectChannelForSplicing()) {
+                            is SelectChannelResult.Available -> processIncomingPayment(Either.Left(msg))
+                            SelectChannelResult.None -> processIncomingPayment(Either.Left(msg))
+                            SelectChannelResult.NotReady -> {
+                                // If a channel is currently being created, it can't process splices yet. We could accept this payment, but
+                                // it wouldn't be reflected in the user balance until the channel is ready, because we only insert
+                                // the payment in db when we will process the corresponding splice and see the pay-to-open origin. This
+                                // can take a long time depending on the confirmation speed. It is better and simpler to reject the incoming
+                                // payment rather that having the user wonder where their money went.
+                                val rejected = LiquidityEvents.Rejected(msg.amountMsat, msg.payToOpenFeeSatoshis.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.ChannelInitializing)
+                                logger.info { "rejecting pay-to-open: reason=${rejected.reason}" }
+                                nodeParams._nodeEvents.emit(rejected)
+                                val action = IncomingPaymentHandler.actionForPayToOpenFailure(nodeParams.nodePrivateKey, TemporaryNodeFailure, msg)
+                                input.send(action)
+                            }
                         }
                     }
                     is PhoenixAndroidLegacyInfo -> {
@@ -1155,7 +1169,14 @@ class Peer(
                         }
                         offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first())?.let {
                             when (it) {
-                                is OnionMessageAction.PayInvoice -> input.send(PayInvoice(it.payOffer.paymentId, it.payOffer.amount, LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey), it.payOffer.trampolineFeesOverride))
+                                is OnionMessageAction.PayInvoice -> input.send(
+                                    PayInvoice(
+                                        it.payOffer.paymentId,
+                                        it.payOffer.amount,
+                                        LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey),
+                                        it.payOffer.trampolineFeesOverride
+                                    )
+                                )
                                 is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(it.message))
                             }
                         }
@@ -1174,12 +1195,12 @@ class Peer(
                 }
             }
             is RequestChannelOpen -> {
-                when (val channel = channels.values.firstOrNull { it is Normal }) {
-                    is Normal -> {
-                        // we have a channel and we are connected (otherwise state would be Offline/Syncing)
+                when (val available = selectChannelForSplicing()) {
+                    is SelectChannelResult.Available -> {
+                        // We have a channel and we are connected (otherwise state would be Offline/Syncing).
                         val targetFeerate = swapInFeeratesFlow.filterNotNull().first()
-                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
-                        val (feerate, fee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
+                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
+                        val (feerate, fee) = client.computeSpliceCpfpFeerate(available.channel.commitments, targetFeerate, spliceWeight = weight, logger)
 
                         logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
                         nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)?.let { rejected ->
@@ -1202,30 +1223,29 @@ class Peer(
                                 swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                             }
                         }
-                        input.send(WrappedChannelCommand(channel.channelId, spliceCommand))
+                        input.send(WrappedChannelCommand(available.channel.channelId, spliceCommand))
                     }
-                    else -> {
-                        if (channels.values.all { it is ShuttingDown || it is Negotiating || it is Closing || it is Closed || it is Aborted }) {
-                            // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel.
-                            // Grandparents are supplied as a proof of migration
-                            val grandParents = cmd.walletInputs.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
-                            val pleaseOpenChannel = PleaseOpenChannel(
-                                nodeParams.chainHash,
-                                cmd.requestId,
-                                cmd.walletInputs.balance,
-                                cmd.walletInputs.size,
-                                FundingContributions.weight(cmd.walletInputs),
-                                TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
-                            )
-                            logger.info { "sending please_open_channel with ${cmd.walletInputs.size} utxos (amount = ${cmd.walletInputs.balance})" }
-                            peerConnection?.send(pleaseOpenChannel)
-                            nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
-                            channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
-                        } else {
-                            // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet
-                            logger.info { "ignoring channel request, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
-                            swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
-                        }
+                    SelectChannelResult.NotReady -> {
+                        // There are existing channels but not immediately usable (e.g. creating, disconnected), we don't do anything yet.
+                        logger.info { "ignoring channel request, existing channels are not ready for splice-in: ${channels.values.map { it::class.simpleName }}" }
+                        swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                    }
+                    SelectChannelResult.None -> {
+                        // Either there are no channels, or they will never be suitable for a splice-in: we request a new channel.
+                        // Grandparents are supplied as a proof of migration.
+                        val grandParents = cmd.walletInputs.map { utxo -> utxo.previousTx.txIn.map { txIn -> txIn.outPoint } }.flatten()
+                        val pleaseOpenChannel = PleaseOpenChannel(
+                            nodeParams.chainHash,
+                            cmd.requestId,
+                            cmd.walletInputs.balance,
+                            cmd.walletInputs.size,
+                            FundingContributions.weight(cmd.walletInputs),
+                            TlvStream(PleaseOpenChannelTlv.GrandParents(grandParents))
+                        )
+                        logger.info { "sending please_open_channel with ${cmd.walletInputs.size} utxos (amount = ${cmd.walletInputs.balance})" }
+                        peerConnection?.send(pleaseOpenChannel)
+                        nodeParams._nodeEvents.emit(SwapInEvents.Requested(pleaseOpenChannel))
+                        channelRequests = channelRequests + (pleaseOpenChannel.requestId to cmd)
                     }
                 }
             }

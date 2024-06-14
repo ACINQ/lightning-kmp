@@ -9,7 +9,7 @@ import fr.acinq.lightning.channel.Helpers.publishIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.wire.ClosingSigned
@@ -354,7 +354,7 @@ data class LocalParams(
     val defaultFinalScriptPubKey: ByteVector,
     val features: Features
 ) {
-    constructor(nodeParams: NodeParams, isInitiator: Boolean): this(
+    constructor(nodeParams: NodeParams, isInitiator: Boolean) : this(
         nodeId = nodeParams.nodeId,
         fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key path end differently
         dustLimit = nodeParams.dustLimit,
@@ -390,6 +390,14 @@ object ChannelFlags {
 }
 
 data class ClosingTxProposed(val unsignedTx: ClosingTx, val localClosingSigned: ClosingSigned)
+
+/**
+ * @param miningFee fee paid to miners for the underlying on-chain transaction.
+ * @param serviceFee fee paid to our peer for any service provided with the on-chain transaction.
+ */
+data class ChannelManagementFees(val miningFee: Satoshi, val serviceFee: Satoshi) {
+    val total: Satoshi = miningFee + serviceFee
+}
 
 /** Reason for creating a new channel or a splice. */
 // @formatter:off
