@@ -9,8 +9,6 @@ import fr.acinq.lightning.channel.remove
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
-import kotlinx.datetime.Clock
-import kotlin.random.Random
 import kotlin.test.*
 
 class Bolt11InvoiceTestsCommon : LightningTestSuite() {
@@ -446,7 +444,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
             mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.ShutdownAnySegwit to FeatureSupport.Optional),
             setOf(UnknownFeature(103), UnknownFeature(256))
         )
-        val pr = Bolt11Invoice.create(Block.LivenetGenesisBlock.hash, 500.msat, randomBytes32(), randomKey(), Either.Left("non-invoice features"), CltvExpiryDelta(6), nodeFeatures)
+        val pr = Bolt11Invoice.create(Chain.Mainnet, 500.msat, randomBytes32(), randomKey(), Either.Left("non-invoice features"), CltvExpiryDelta(6), nodeFeatures)
         assertEquals(Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory), pr.features)
     }
 
@@ -492,7 +490,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
     @Test
     fun `payment secret`() {
         val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
-        val pr = Bolt11Invoice.create(Block.LivenetGenesisBlock.hash, 123.msat, ByteVector32.One, priv, Either.Left("Some invoice"), CltvExpiryDelta(18), features)
+        val pr = Bolt11Invoice.create(Chain.Mainnet, 123.msat, ByteVector32.One, priv, Either.Left("Some invoice"), CltvExpiryDelta(18), features)
         assertNotNull(pr.paymentSecret)
         assertEquals(ByteVector("024100"), pr.features.toByteArray().toByteVector())
 
@@ -508,7 +506,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         // Invoices must use a payment secret.
         assertFails {
             Bolt11Invoice.create(
-                Block.LivenetGenesisBlock.hash,
+                Chain.Mainnet,
                 123.msat,
                 ByteVector32.One,
                 priv,
@@ -523,7 +521,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
     fun `invoice with descriptionHash`() {
         val descriptionHash = randomBytes32()
         val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
-        val pr = Bolt11Invoice.create(Block.LivenetGenesisBlock.hash, 123.msat, ByteVector32.One, priv, Either.Right(descriptionHash), CltvExpiryDelta(18), features)
+        val pr = Bolt11Invoice.create(Chain.Mainnet, 123.msat, ByteVector32.One, priv, Either.Right(descriptionHash), CltvExpiryDelta(18), features)
         assertNotNull(pr.descriptionHash)
         assertNull(pr.description)
 

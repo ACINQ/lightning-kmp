@@ -93,6 +93,12 @@
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
     JsonSerializers.ClosingSerializer::class,
+    JsonSerializers.Bolt11ExtraHopSerializer::class,
+    JsonSerializers.Bolt11UnknownTagSerializer::class,
+    JsonSerializers.Bolt11InvalidTagSerializer::class,
+    JsonSerializers.EncodedNodeIdSerializer::class,
+    JsonSerializers.BlindedNodeSerializer::class,
+    JsonSerializers.BlindedRouteSerializer::class,
 )
 @file:UseContextualSerialization(
     PersistedChannelState::class
@@ -107,10 +113,13 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.json.JsonSerializers.LongSerializer
 import fr.acinq.lightning.json.JsonSerializers.StringSerializer
 import fr.acinq.lightning.json.JsonSerializers.SurrogateSerializer
+import fr.acinq.lightning.payment.Bolt11Invoice
+import fr.acinq.lightning.payment.Bolt11Invoice.TaggedField
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.IncomingHtlc
 import fr.acinq.lightning.transactions.OutgoingHtlc
@@ -569,4 +578,115 @@ object JsonSerializers {
     object WaitingForRevocationSerializer
 
     object UUIDSerializer : StringSerializer<UUID>()
+
+    @Serializer(forClass = TaggedField.ExtraHop::class)
+    object Bolt11ExtraHopSerializer
+
+    @Serializer(forClass = TaggedField.UnknownTag::class)
+    object Bolt11UnknownTagSerializer
+
+    @Serializer(forClass = TaggedField.InvalidTag::class)
+    object Bolt11InvalidTagSerializer
+
+    @Serializable
+    data class Bolt11InvoiceSurrogate(
+        val chain: String,
+        val amount: MilliSatoshi?,
+        val paymentHash: ByteVector32,
+        val description: String?,
+        val descriptionHash: ByteVector32?,
+        val minFinalCltvExpiryDelta: CltvExpiryDelta?,
+        val paymentSecret: ByteVector32,
+        val paymentMetadata: ByteVector?,
+        val expirySeconds: Long?,
+        val extraHops: List<List<TaggedField.ExtraHop>>,
+        val features: Features?,
+        val timestampSeconds: Long,
+        val unknownTags: List<TaggedField.UnknownTag>?,
+        val invalidTags: List<TaggedField.InvalidTag>?,
+    )
+
+    object Bolt11InvoiceSerializer : SurrogateSerializer<Bolt11Invoice, Bolt11InvoiceSurrogate>(
+        transform = { o ->
+            Bolt11InvoiceSurrogate(
+                chain = o.chain?.name?.lowercase() ?: "unknown",
+                amount = o.amount,
+                paymentHash = o.paymentHash,
+                description = o.description,
+                descriptionHash = o.descriptionHash,
+                minFinalCltvExpiryDelta = o.minFinalExpiryDelta,
+                paymentSecret = o.paymentSecret,
+                paymentMetadata = o.paymentMetadata,
+                expirySeconds = o.expirySeconds,
+                extraHops = o.routingInfo.map { it.hints },
+                features = o.features.let { if (it == Features.empty) null else it },
+                timestampSeconds = o.timestampSeconds,
+                unknownTags = o.tags.filterIsInstance<TaggedField.UnknownTag>().run { ifEmpty { null } },
+                invalidTags = o.tags.filterIsInstance<TaggedField.InvalidTag>().run { ifEmpty { null } }
+            )
+        },
+        delegateSerializer = Bolt11InvoiceSurrogate.serializer()
+    )
+
+    @Serializable
+    data class EncodedNodeIdSurrogate(val isNode1: Boolean?, val scid: ShortChannelId?, val publicKey: PublicKey?, val walletPublicKey: PublicKey?)
+    object EncodedNodeIdSerializer : SurrogateSerializer<EncodedNodeId, EncodedNodeIdSurrogate>(
+        transform = { o ->
+            when (o) {
+                is EncodedNodeId.WithPublicKey.Plain -> EncodedNodeIdSurrogate(isNode1 = null, scid = null, publicKey = o.publicKey, walletPublicKey = null)
+                is EncodedNodeId.WithPublicKey.Wallet -> EncodedNodeIdSurrogate(isNode1 = null, scid = null, publicKey = null, walletPublicKey = o.publicKey)
+                is EncodedNodeId.ShortChannelIdDir -> EncodedNodeIdSurrogate(isNode1 = o.isNode1, scid = o.scid, publicKey = null, walletPublicKey = null)
+            }
+        },
+        delegateSerializer = EncodedNodeIdSurrogate.serializer()
+    )
+
+    @Serializer(forClass = RouteBlinding.BlindedNode::class)
+    object BlindedNodeSerializer
+
+    @Serializer(forClass = RouteBlinding.BlindedRoute::class)
+    object BlindedRouteSerializer
+
+    @Serializable
+    data class OfferSurrogate(
+        val chain: String,
+        val chainHashes: List<BlockHash>?,
+        val amount: MilliSatoshi?,
+        val currency: String?,
+        val issuer: String?,
+        val quantityMax: Long?,
+        val description: String?,
+        val metadata: ByteVector?,
+        val expirySeconds: Long?,
+        val nodeId: PublicKey?,
+        val path: List<RouteBlinding.BlindedRoute>?,
+        val features: Features?,
+        val unknownTlvs: List<GenericTlv>?
+    )
+    object OfferSerializer : SurrogateSerializer<OfferTypes.Offer, OfferSurrogate>(
+        transform = { o ->
+            OfferSurrogate(
+                chain = when {
+                    o.chains.isEmpty() -> Chain.Mainnet.name
+                    o.chains.contains(Chain.Mainnet.chainHash) && o.chains.size == 1 -> Chain.Mainnet.name
+                    o.chains.contains(Chain.Testnet.chainHash) && o.chains.size == 1 -> Chain.Testnet.name
+                    o.chains.contains(Chain.Regtest.chainHash) && o.chains.size == 1 -> Chain.Regtest.name
+                    else -> "unknown"
+                }.lowercase(),
+                chainHashes = o.chains.run { ifEmpty { null } },
+                amount = o.amount,
+                currency = o.currency,
+                issuer = o.issuer,
+                quantityMax = o.quantityMax,
+                description = o.description,
+                metadata = o.metadata,
+                expirySeconds = o.expirySeconds,
+                nodeId = o.nodeId,
+                path = o.paths?.map { it.route }?.run { ifEmpty { null } },
+                features = o.features.let { if (it == Features.empty) null else it },
+                unknownTlvs = o.records.unknown.toList().run { ifEmpty { null } }
+            )
+        },
+        delegateSerializer = OfferSurrogate.serializer()
+    )
 }
