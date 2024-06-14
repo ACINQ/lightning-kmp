@@ -139,6 +139,7 @@ data object WaitForInit : ChannelState() {
                     }
                 }
             }
+            is ChannelCommand.Init.ForceReestablish -> unhandled(cmd)
             is ChannelCommand.Close -> Pair(Aborted, listOf())
             is ChannelCommand.MessageReceived -> unhandled(cmd)
             is ChannelCommand.WatchReceived -> unhandled(cmd)

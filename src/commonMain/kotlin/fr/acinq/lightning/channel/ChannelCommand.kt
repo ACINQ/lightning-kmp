@@ -51,6 +51,9 @@ sealed class ChannelCommand {
         ) : Init()
 
         data class Restore(val state: PersistedChannelState) : Init()
+
+        /** Force sending our channel_reestablish if we timeout waiting for theirs. */
+        data object ForceReestablish : Init()
     }
 
     sealed class Funding : ChannelCommand() {

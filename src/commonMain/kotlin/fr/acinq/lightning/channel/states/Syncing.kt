@@ -20,6 +20,14 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
 
     override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
+            is ChannelCommand.Init.ForceReestablish -> when (channelReestablishSent) {
+                true -> Pair(this@Syncing, listOf()) // nothing to do, we already sent our channel_reestablish
+                false -> {
+                    logger.warning { "timed out waiting for their channel_reestablish: sending ours instead" }
+                    val channelReestablish = state.run { createChannelReestablish() }
+                    Pair(this@Syncing.copy(channelReestablishSent = true), listOf(ChannelAction.Message.Send(channelReestablish)))
+                }
+            }
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is ChannelReestablish -> {
                     val (nextState, actions) = when (state) {

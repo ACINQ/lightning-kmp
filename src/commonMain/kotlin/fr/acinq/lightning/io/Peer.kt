@@ -69,6 +69,7 @@ data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, v
 }
 
 data class Connected(val peerConnection: PeerConnection) : PeerCommand()
+data class ReestablishPendingChannels(val connectionId: Long) : PeerCommand()
 data class MessageReceived(val connectionId: Long, val msg: LightningMessage) : PeerCommand()
 data class WatchReceived(val watch: WatchEvent) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
@@ -521,21 +522,10 @@ class Peer(
         input.send(cmd)
     }
 
-    /**
-     * This function blocks until the peer is connected and existing channels have been fully reestablished.
-     */
+    /** This function blocks until the peer is connected and existing channels have been fully reestablished. */
     private suspend fun waitForPeerReady() {
-        // In theory we would only need to verify that no channel is in state Offline/Syncing, but there is a corner
-        // case where a channel permanently stays in Syncing, because it is only present locally, and the peer will
-        // never send a channel_reestablish (this happens e.g. due to an error at funding). That is why we consider
-        // the peer ready if "all channels are synced" OR "peer has been connected for 10s".
         connectionState.first { it is Connection.ESTABLISHED }
-        val result = withTimeoutOrNull(10.seconds) {
-            channelsFlow.first { it.values.all { channel -> channel !is Offline && channel !is Syncing } }
-        }
-        if (result == null) {
-            logger.info { "peer ready timeout elapsed, not all channels are synced but proceeding anyway" }
-        }
+        channelsFlow.first { it.values.all { channel -> channel !is Offline && channel !is Syncing } }
     }
 
     /**
@@ -937,6 +927,20 @@ class Peer(
                 peerConnection = cmd.peerConnection
                 peerConnection?.send(ourInit)
             }
+            is ReestablishPendingChannels -> {
+                if (cmd.connectionId == peerConnection?.id) {
+                    _channels.mapValues { entry ->
+                        when (val state = entry.value) {
+                            is Syncing -> {
+                                val (state1, actions) = state.process(ChannelCommand.Init.ForceReestablish)
+                                processActions(entry.key, peerConnection, actions)
+                                state1
+                            }
+                            else -> state
+                        }
+                    }
+                }
+            }
             is MessageReceived -> {
                 if (cmd.connectionId != peerConnection?.id) {
                     logger.warning { "ignoring ${cmd.msg} for connectionId=${cmd.connectionId}" }
@@ -953,7 +957,7 @@ class Peer(
                         when (val error = Features.validateFeatureGraph(msg.features)) {
                             is Features.Companion.FeatureException -> {
                                 logger.error(error) { "feature validation error" }
-                                // TODO: disconnect peer
+                                disconnect()
                             }
                             else -> {
                                 theirInit = msg
@@ -962,6 +966,16 @@ class Peer(
                                     val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, theirInit!!))
                                     processActions(entry.key, peerConnection, actions)
                                     state1
+                                }
+                                if (nodeParams.features.hasFeature(Feature.ChannelBackupClient)) {
+                                    // When using channel backups, we wait for our peer to send their channel_reestablish first.
+                                    // This can be an issue for channels that are only present locally, and have been forgotten by our peer.
+                                    // In that case we would stay in Syncing indefinitely: to avoid that, we send our channel_reestablish
+                                    // if we haven't received theirs, which gives them an opportunity to send back an error and forget the channel.
+                                    this.launch {
+                                        delay(10.seconds)
+                                        input.send(ReestablishPendingChannels(cmd.connectionId))
+                                    }
                                 }
                             }
                         }
@@ -1155,7 +1169,14 @@ class Peer(
                         }
                         offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first())?.let {
                             when (it) {
-                                is OnionMessageAction.PayInvoice -> input.send(PayInvoice(it.payOffer.paymentId, it.payOffer.amount, LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey), it.payOffer.trampolineFeesOverride))
+                                is OnionMessageAction.PayInvoice -> input.send(
+                                    PayInvoice(
+                                        it.payOffer.paymentId,
+                                        it.payOffer.amount,
+                                        LightningOutgoingPayment.Details.Blinded(it.invoice, it.payOffer.payerKey),
+                                        it.payOffer.trampolineFeesOverride
+                                    )
+                                )
                                 is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(it.message))
                             }
                         }

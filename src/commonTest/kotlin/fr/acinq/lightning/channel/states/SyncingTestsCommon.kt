@@ -265,6 +265,25 @@ class SyncingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `reestablish channel forgotten by our peer`() {
+        val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        // Bob is waiting for Alice to send channel_reestablish first.
+        val (_, bob2, _, channelReestablishBob) = disconnectWithBackup(alice1, bob1)
+        assertNull(channelReestablishBob)
+        // But Alice doesn't send it, because she force-closed that channel while Bob was offline.
+        // Bob eventually sends its channel_reestablish to unblock the channel.
+        val (bob3, actions3) = bob2.process(ChannelCommand.Init.ForceReestablish)
+        assertIs<Syncing>(bob3.state)
+        assertTrue(bob3.state.channelReestablishSent)
+        assertEquals(1, actions3.size)
+        val channelReestablish = actions3.hasOutgoingMessage<ChannelReestablish>()
+        // Alice doesn't have that channel anymore: she sends an error back.
+        val (bob4, actions4) = bob3.process(ChannelCommand.MessageReceived(Error(channelReestablish.channelId, "unknown channel")))
+        assertIs<Closing>(bob4.state)
+        actions4.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.CommitTx)
+    }
+
+    @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK`() {
         val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()

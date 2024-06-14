@@ -22,13 +22,16 @@ import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.io.*
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.test.*
@@ -393,6 +396,37 @@ class PeerTest : LightningTestSuite() {
         val unknownChannelReestablish = ChannelReestablish(randomBytes32(), 1, 0, randomKey(), randomKey().publicKey())
         alice.send(MessageReceived(connectionId = 0, unknownChannelReestablish))
         alice2bob.expect<Error>()
+    }
+
+    @Test
+    fun `restore channel -- remote channel_reestablish timeout`() = runSuspendTest {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val peer = buildPeer(
+            this,
+            bob0.staticParams.nodeParams,
+            TestConstants.Bob.walletParams,
+            databases = InMemoryDatabases().also { it.channels.addOrUpdateChannel(bob0.state) }
+        )
+
+        val initChannels = peer.channelsFlow.first { it.values.isNotEmpty() }
+        assertEquals(1, initChannels.size)
+        assertIs<Offline>(initChannels.values.first())
+
+        // Bob connects to Alice.
+        val conn = PeerConnection(0, Channel(Channel.UNLIMITED), MDCLogger(testLoggerFactory.newLogger("PeerConnection")))
+        peer.send(Connected(conn))
+        // Bob receives Alice's init and responds with his init.
+        peer.send(MessageReceived(conn.id, Init(alice0.staticParams.nodeParams.features)))
+        assertIs<Init>(conn.output.receive())
+        // Wait until the peer is ready and channels are syncing.
+        peer.expectStatus(Connection.ESTABLISHED)
+        val syncChannels = peer.channelsFlow
+            .first { it.values.size == 1 && it.values.all { channelState -> channelState is Syncing } }
+            .map { it.value as Syncing }
+        // Bob waits for Alice to send channel_reestablish first.
+        assertFalse(syncChannels.first().channelReestablishSent)
+        // But after a while, if he doesn't receive Alice's channel_reestablish, Bob sends his channel_reestablish.
+        assertIs<ChannelReestablish>(conn.output.receive())
     }
 
     @Test
