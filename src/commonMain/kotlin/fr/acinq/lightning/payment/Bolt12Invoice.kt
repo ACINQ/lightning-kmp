@@ -15,6 +15,7 @@ import fr.acinq.lightning.wire.OfferTypes.FallbackAddress
 import fr.acinq.lightning.wire.OfferTypes.InvoiceAmount
 import fr.acinq.lightning.wire.OfferTypes.InvoiceBlindedPay
 import fr.acinq.lightning.wire.OfferTypes.InvoiceCreatedAt
+import fr.acinq.lightning.wire.OfferTypes.InvoiceError
 import fr.acinq.lightning.wire.OfferTypes.InvoiceFallbacks
 import fr.acinq.lightning.wire.OfferTypes.InvoiceFeatures
 import fr.acinq.lightning.wire.OfferTypes.InvoiceNodeId
@@ -125,7 +126,33 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
             return Bolt12Invoice(TlvStream(tlvs + Signature(signature), request.records.unknown + customTlvs))
         }
 
-        fun validate(records: TlvStream<InvoiceTlv>): Either<InvalidTlvPayload, Bolt12Invoice> {
+        sealed class Bolt12ParsingResult {
+            data class Success(val invoice: Bolt12Invoice) : Bolt12ParsingResult()
+            sealed class Failure : Bolt12ParsingResult() {
+                data class Malformed(val invalidTlvPayload: InvalidTlvPayload) : Failure()
+                data class RecipientError(val invoiceError: InvoiceError) : Failure()
+            }
+        }
+
+        fun extract(records: TlvStream<OnionMessagePayloadTlv>): Bolt12ParsingResult {
+            return when (val invoiceTlvs = records.get<OnionMessagePayloadTlv.Invoice>()?.tlvs) {
+                null -> {
+                    when (val invoiceError = records.get<OnionMessagePayloadTlv.InvoiceError>()) {
+                        null -> Bolt12ParsingResult.Failure.Malformed(MissingRequiredTlv(OnionMessagePayloadTlv.InvoiceError.tag)) // if no invoice is present, there must be an InvoiceError tlv
+                        else -> when (val res = InvoiceError.validate(invoiceError.tlvs)) {
+                            is Either.Left -> Bolt12ParsingResult.Failure.Malformed(res.value) // the InvoiceError itself is malformed
+                            is Either.Right -> Bolt12ParsingResult.Failure.RecipientError(res.value) // recipient provided an informative error message
+                        }
+                    }
+                }
+                else -> when (val res = validate(invoiceTlvs)) {
+                    is Either.Left -> Bolt12ParsingResult.Failure.Malformed(res.value)
+                    is Either.Right -> Bolt12ParsingResult.Success(res.value)
+                }
+            }
+        }
+
+        private fun validate(records: TlvStream<InvoiceTlv>): Either<InvalidTlvPayload, Bolt12Invoice> {
             when (val invoiceRequest = InvoiceRequest.validate(filterInvoiceRequestFields(records))) {
                 is Either.Left -> return Either.Left(invoiceRequest.value)
                 is Either.Right -> {}

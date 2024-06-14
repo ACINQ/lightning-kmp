@@ -506,7 +506,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `generate deterministic blinded offer through trampoline node`() {
-        val trampolineNode = NodeUri(PublicKey.fromHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), "3.33.236.230", 9735)
+        val trampolineNode = PublicKey.fromHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")
         val nodeParams = TestConstants.Alice.nodeParams.copy(chain = Chain.Mainnet)
         val offer = nodeParams.defaultOffer(trampolineNode)
         assertNull(offer.amount)
@@ -517,7 +517,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         assertEquals(1, offer.contactInfos.size)
         val path = offer.contactInfos.first()
         assertIs<BlindedPath>(path)
-        assertEquals(EncodedNodeId(trampolineNode.id), path.route.introductionNodeId)
+        assertEquals(EncodedNodeId(trampolineNode), path.route.introductionNodeId)
         val expectedOffer = Offer.decode("lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0qf70a6j2x2akrhazctejaaqr8y4qtzjtjzmfesay6mzr3s789uryuqsr8dpgfgxuk56vh7cl89769zdpdrkqwtypzhu2t8ehp73dqeeq65lsqvlx5pj8mw2kz54p4f6ct66stdfxz0df8nqq7svjjdjn2dv8sz28y7z07yg3vqyfyy8ywevqc8kzp36lhd5cqwlpkg8vdcqsfvz89axkmv5sgdysmwn95tpsct6mdercmz8jh2r82qqscrf6uc3tse5gw5sv5xjdfw8f6c").get()
         assertEquals(expectedOffer, offer)
     }

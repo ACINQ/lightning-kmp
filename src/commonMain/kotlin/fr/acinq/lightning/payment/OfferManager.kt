@@ -32,13 +32,23 @@ sealed class OnionMessageAction {
 
 private data class PendingInvoiceRequest(val payOffer: PayOffer, val request: OfferTypes.InvoiceRequest)
 
+/** Failures occurring when fetching an invoice to pay an offer */
+sealed class Bolt12InvoiceRequestFailure {
+    // @formatter:off
+    data class NoResponse(val request: OfferTypes.InvoiceRequest) : Bolt12InvoiceRequestFailure() { override fun toString(): String = "no response to the invoice request" }
+    data class MalformedResponse(val request: OfferTypes.InvoiceRequest, val failure: Bolt12Invoice.Companion.Bolt12ParsingResult.Failure.Malformed) : Bolt12InvoiceRequestFailure() { override fun toString(): String = "recipient returned an invalid response to the invoice request" }
+    data class ErrorFromRecipient(val request: OfferTypes.InvoiceRequest, val failure: Bolt12Invoice.Companion.Bolt12ParsingResult.Failure.RecipientError) : Bolt12InvoiceRequestFailure() { override fun toString(): String = "recipient responded to the invoice request with an error" }
+    data class InvoiceMismatch(val request: OfferTypes.InvoiceRequest, val reason: String) : Bolt12InvoiceRequestFailure() { override fun toString(): String = "recipient returned an invoice that does not match the request" }
+    // @formatter:on
+}
+
 class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, val eventsFlow: MutableSharedFlow<PeerEvent>, private val logger: MDCLogger) {
     val remoteNodeId: PublicKey = walletParams.trampolineNode.id
     private val pendingInvoiceRequests: HashMap<ByteVector32, PendingInvoiceRequest> = HashMap()
     private val localOffers: HashMap<ByteVector32, OfferTypes.Offer> = HashMap()
 
     init {
-        registerOffer(nodeParams.defaultOffer(walletParams.trampolineNode), null)
+        registerOffer(nodeParams.defaultOffer(walletParams.trampolineNode.id), null)
     }
 
     fun registerOffer(offer: OfferTypes.Offer, pathId: ByteVector32?) {
@@ -48,7 +58,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     /**
      * @return invoice requests that must be sent and the corresponding path_id that must be used in case of a timeout.
      */
-    fun requestInvoice(payOffer: PayOffer): Pair<ByteVector32, List<OnionMessage>> {
+    fun requestInvoice(payOffer: PayOffer): Triple<ByteVector32, List<OnionMessage>, OfferTypes.InvoiceRequest> {
         val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, 1, nodeParams.features.bolt12Features(), payOffer.payerKey, nodeParams.chainHash)
         val replyPathId = randomBytes32()
         pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, request)
@@ -61,13 +71,14 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             val destination = Destination(contactInfo)
             buildMessage(randomKey(), randomKey(), intermediateNodes(destination), destination, messageContent).right
         }
-        return Pair(replyPathId, invoiceRequests)
+        return Triple(replyPathId, invoiceRequests, request)
     }
 
     suspend fun checkInvoiceRequestTimeout(pathId: ByteVector32, payOffer: PayOffer) {
         if (pendingInvoiceRequests.containsKey(pathId)) {
+            val request = pendingInvoiceRequests[pathId]!!.request
             logger.warning { "paymentId:${payOffer.paymentId} pathId=$pathId invoice request timed out" }
-            eventsFlow.emit(OfferNotPaid(payOffer, OfferPaymentFailure.NoResponse))
+            eventsFlow.emit(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.NoResponse(request)))
             pendingInvoiceRequests.remove(pathId)
         }
     }
@@ -88,31 +99,28 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     private suspend fun receiveInvoiceResponse(decrypted: OnionMessages.DecryptedMessage): OnionMessageAction.PayInvoice? {
         val (payOffer, request) = pendingInvoiceRequests[decrypted.pathId]!!
         pendingInvoiceRequests.remove(decrypted.pathId)
-        return when (val invoiceTlvs = decrypted.content.records.get<OnionMessagePayloadTlv.Invoice>()?.tlvs) {
-            null -> {
-                val invoiceError = decrypted.content.records.get<OnionMessagePayloadTlv.InvoiceError>()
-                    ?.let { OfferTypes.InvoiceError.validate(it.tlvs).right }
-                    ?.let { OfferPaymentFailure.InvoiceError(request, it) }
-                logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} response did not contain an invoice: invoice_error=${invoiceError?.error?.error}" }
-                eventsFlow.emit(OfferNotPaid(payOffer, invoiceError ?: OfferPaymentFailure.InvalidResponse(request)))
+        return when (val res = Bolt12Invoice.extract(decrypted.content.records)) {
+            is Bolt12Invoice.Companion.Bolt12ParsingResult.Failure.Malformed -> {
+                logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} malformed response: invalid_tlv=${res.invalidTlvPayload}" }
+                eventsFlow.emit(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.MalformedResponse(request, res)))
                 null
             }
-            else -> when (val invoice = Bolt12Invoice.validate(invoiceTlvs)) {
-                is Left -> {
-                    logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} response contained an invalid invoice: ${invoice.value}" }
-                    eventsFlow.emit(OfferNotPaid(payOffer, OfferPaymentFailure.InvalidResponse(request)))
-                    null
-                }
-                is Right -> when (val failure = invoice.value.validateFor(request)) {
+            is Bolt12Invoice.Companion.Bolt12ParsingResult.Failure.RecipientError -> {
+                logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} response did not contain an invoice: invoice_error=${res.invoiceError.error}" }
+                eventsFlow.emit(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.ErrorFromRecipient(request, res)))
+                null
+            }
+            is Bolt12Invoice.Companion.Bolt12ParsingResult.Success -> {
+                when (val reason = res.invoice.validateFor(request)) {
                     is Left -> {
-                        logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} invoice does not match request: ${failure.value}" }
-                        eventsFlow.emit(OfferNotPaid(payOffer, OfferPaymentFailure.InvalidInvoice(request, invoice.value)))
+                        logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} invoice does not match request: ${reason.value}" }
+                        eventsFlow.emit(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.InvoiceMismatch(request, reason.value)))
                         null
                     }
                     is Right -> {
-                        logger.info { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} received valid invoice: ${invoice.value}" }
-                        eventsFlow.emit(OfferInvoiceReceived(payOffer, invoice.value))
-                        OnionMessageAction.PayInvoice(payOffer, invoice.value)
+                        logger.info { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} received valid invoice: ${res.invoice}" }
+                        eventsFlow.emit(OfferInvoiceReceived(payOffer, res.invoice))
+                        OnionMessageAction.PayInvoice(payOffer, res.invoice)
                     }
                 }
             }
