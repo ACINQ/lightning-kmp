@@ -104,7 +104,7 @@ sealed class SendPaymentResult : PeerEvent() {
     abstract val request: SendPayment
 }
 /** We couldn't obtain a valid invoice to pay the corresponding offer. */
-data class OfferNotPaid(override val request: PayOffer, val reason: OfferPaymentFailure) : SendPaymentResult()
+data class OfferNotPaid(override val request: PayOffer, val reason: Bolt12InvoiceRequestFailure) : SendPaymentResult()
 /** We couldn't pay the corresponding invoice. */
 data class PaymentNotSent(override val request: PayInvoice, val reason: OutgoingPaymentFailure) : SendPaymentResult()
 /** We successfully paid the corresponding request. */

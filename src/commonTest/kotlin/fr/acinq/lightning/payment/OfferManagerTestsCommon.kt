@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
-import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.DecryptedPacket
@@ -124,11 +123,11 @@ class OfferManagerTestsCommon : LightningTestSuite() {
 
         // Bob sends an invoice request to Alice.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
-        val (invoiceRequestPathId, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
+        val (invoiceRequestPathId, invoiceRequests, request) = bobOfferManager.requestInvoice(payOffer)
         val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
         // The invoice request times out.
         bobOfferManager.checkInvoiceRequestTimeout(invoiceRequestPathId, payOffer)
-        assertEquals(OfferNotPaid(payOffer, OfferPaymentFailure.NoResponse), bobOfferManager.eventsFlow.first())
+        assertEquals(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.NoResponse(request)), bobOfferManager.eventsFlow.first())
         // The timeout can be replayed without any side-effect.
         bobOfferManager.checkInvoiceRequestTimeout(invoiceRequestPathId, payOffer)
         // Alice sends an invoice back to Bob after the timeout.
@@ -212,6 +211,6 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertNull(bobOfferManager.receiveMessage(messageForBob, listOf(), 0))
         val event = bobOfferManager.eventsFlow.first()
         assertIs<OfferNotPaid>(event)
-        assertIs<OfferPaymentFailure.InvoiceError>(event.reason)
+        assertIs<Bolt12InvoiceRequestFailure.ErrorFromRecipient>(event.reason)
     }
 }
