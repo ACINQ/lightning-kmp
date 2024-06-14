@@ -125,6 +125,7 @@ import fr.acinq.lightning.transactions.IncomingHtlc
 import fr.acinq.lightning.transactions.OutgoingHtlc
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.wire.OfferTypes.OfferChains
 import kotlinx.serialization.*
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -673,7 +674,7 @@ object JsonSerializers {
                     o.chains.contains(Chain.Regtest.chainHash) && o.chains.size == 1 -> Chain.Regtest.name
                     else -> "unknown"
                 }.lowercase(),
-                chainHashes = o.chains.run { ifEmpty { null } },
+                chainHashes = o.records.get<OfferChains>()?.chains,
                 amount = o.amount,
                 currency = o.currency,
                 issuer = o.issuer,
