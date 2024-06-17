@@ -442,8 +442,12 @@ class Peer(
             suspend fun sendLoop() {
                 try {
                     for (msg in peerConnection.output) {
-                        // Avoids polluting the logs with pings/pongs
-                        if (msg !is Ping && msg !is Pong) logger.info { "sending $msg" }
+                        when(msg) {
+                            is Ping -> {} // Avoids polluting the logs with pings/pongs
+                            is Pong -> {}
+                            is OnionMessage -> logger.info { "sending ${msg.copy(onionRoutingPacket = msg.onionRoutingPacket.copy(payload = ByteVector.empty))} (truncated payload)" } // Not printing the payload, which can be very large
+                            else -> logger.info { "sending $msg" }
+                        }
                         val encoded = LightningMessage.encode(msg)
                         session.send(encoded) { data, flush -> socket.send(data, flush) }
                     }
