@@ -52,6 +52,24 @@ object OnionMessages {
         }
     }
 
+    fun buildRouteToRecipient(
+        blindingSecret: PrivateKey,
+        intermediateNodes: List<IntermediateNode>,
+        recipient: Destination.Recipient
+    ): RouteBlinding. BlindedRouteDetails {
+        val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, recipient.nodeId)
+        val tlvs = setOfNotNull(
+            recipient.padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) },
+            recipient.pathId?.let { RouteBlindingEncryptedDataTlv.PathId(it) }
+        )
+        val lastPayload = RouteBlindingEncryptedData(TlvStream(tlvs, recipient.customTlvs)).write().toByteVector()
+        return RouteBlinding.create(
+            blindingSecret,
+            intermediateNodes.map { it.nodeId.publicKey } + recipient.nodeId.publicKey,
+            intermediatePayloads + lastPayload
+        )
+    }
+
     fun buildRoute(
         blindingSecret: PrivateKey,
         intermediateNodes: List<IntermediateNode>,
@@ -59,17 +77,7 @@ object OnionMessages {
     ): RouteBlinding.BlindedRoute {
         return when (destination) {
             is Destination.Recipient -> {
-                val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, destination.nodeId)
-                val tlvs = setOfNotNull(
-                    destination.padding?.let { RouteBlindingEncryptedDataTlv.Padding(it) },
-                    destination.pathId?.let { RouteBlindingEncryptedDataTlv.PathId(it) }
-                )
-                val lastPayload = RouteBlindingEncryptedData(TlvStream(tlvs, destination.customTlvs)).write().toByteVector()
-                RouteBlinding.create(
-                    blindingSecret,
-                    intermediateNodes.map { it.nodeId.publicKey } + destination.nodeId.publicKey,
-                    intermediatePayloads + lastPayload
-                ).route
+                buildRouteToRecipient(blindingSecret, intermediateNodes, destination).route
             }
             is Destination.BlindedPath -> when {
                 intermediateNodes.isEmpty() -> destination.route
