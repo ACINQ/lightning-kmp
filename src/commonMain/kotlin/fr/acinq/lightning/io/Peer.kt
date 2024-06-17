@@ -352,6 +352,7 @@ class Peer(
             }
 
             val session = LightningSession(enc, dec, ck)
+            _connectionState.value = Connection.ESTABLISHED
             // TODO use atomic counter instead
             val peerConnection = PeerConnection(connectionId, Channel(UNLIMITED), logger)
             // Inform the peer about the new connection.
@@ -968,13 +969,13 @@ class Peer(
                         when (val error = Features.validateFeatureGraph(msg.features)) {
                             is Features.Companion.FeatureException -> {
                                 logger.error(error) { "feature validation error" }
-                                // TODO: disconnect peer
+                                disconnect()
                             }
                             else -> {
                                 theirInit = msg
-                                _connectionState.value = Connection.ESTABLISHED
+                                nodeParams._nodeEvents.emit(PeerConnected(remoteNodeId, msg))
                                 _channels = _channels.mapValues { entry ->
-                                    val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, theirInit!!))
+                                    val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, msg))
                                     processActions(entry.key, peerConnection, actions)
                                     state1
                                 }

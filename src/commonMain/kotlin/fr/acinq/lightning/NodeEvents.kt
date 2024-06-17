@@ -1,6 +1,7 @@
 package fr.acinq.lightning
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.channel.InteractiveTxParams
 import fr.acinq.lightning.channel.SharedFundingInput
@@ -9,11 +10,13 @@ import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
 import fr.acinq.lightning.db.IncomingPayment
 import fr.acinq.lightning.utils.sum
-import fr.acinq.lightning.wire.Node
+import fr.acinq.lightning.wire.Init
 import fr.acinq.lightning.wire.PleaseOpenChannel
 import kotlinx.coroutines.CompletableDeferred
 
 sealed interface NodeEvents
+
+data class PeerConnected(val remoteNodeId: PublicKey, val theirInit: Init) : NodeEvents
 
 sealed interface SwapInEvents : NodeEvents {
     data class Requested(val req: PleaseOpenChannel) : SwapInEvents

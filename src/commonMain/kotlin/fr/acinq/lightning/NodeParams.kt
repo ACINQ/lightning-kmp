@@ -160,7 +160,7 @@ data class NodeParams(
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
     val chainHash get() = chain.chainHash
 
-    internal val _nodeEvents = MutableSharedFlow<NodeEvents>()
+    internal val _nodeEvents = MutableSharedFlow<NodeEvents>(replay = 10)
     val nodeEvents: SharedFlow<NodeEvents> get() = _nodeEvents.asSharedFlow()
 
     init {

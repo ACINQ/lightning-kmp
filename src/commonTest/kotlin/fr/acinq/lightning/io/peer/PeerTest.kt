@@ -9,6 +9,7 @@ import fr.acinq.lightning.InvoiceDefaultRoutingFees
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.NodeUri
+import fr.acinq.lightning.PeerConnected
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.electrum.balance
@@ -27,7 +28,10 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -64,14 +68,14 @@ class PeerTest : LightningTestSuite() {
         val alice = buildPeer(this, TestConstants.Alice.nodeParams, TestConstants.Alice.walletParams)
         val bob = buildPeer(this, TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams)
 
-        // start Init for Alice
-        alice.send(MessageReceived(connectionId = 0, Init(features = TestConstants.Bob.nodeParams.features)))
-        // start Init for Bob
-        bob.send(MessageReceived(connectionId = 0, Init(features = TestConstants.Alice.nodeParams.features)))
-
-        // Wait until the Peer is ready
-        alice.expectStatus(Connection.ESTABLISHED)
-        bob.expectStatus(Connection.ESTABLISHED)
+        // Alice receives Bob's init.
+        val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
+        alice.send(MessageReceived(connectionId = 0, bobInit))
+        alice.nodeParams.nodeEvents.first { it == PeerConnected(bob.nodeParams.nodeId, bobInit) }
+        // Bob receives Alice's init.
+        val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
+        bob.send(MessageReceived(connectionId = 0, aliceInit))
+        bob.nodeParams.nodeEvents.first { it == PeerConnected(alice.nodeParams.nodeId, aliceInit) }
     }
 
     @Test
@@ -347,8 +351,6 @@ class PeerTest : LightningTestSuite() {
         // send Init from remote node
         val theirInit = Init(features = bob0.staticParams.nodeParams.features)
         peer.send(MessageReceived(connectionId = 0, theirInit))
-        // Wait until the Peer is ready
-        peer.expectStatus(Connection.ESTABLISHED)
 
         // Wait until the channels are Syncing
         val syncChannels = peer.channelsFlow
@@ -411,7 +413,6 @@ class PeerTest : LightningTestSuite() {
 
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
-        peer.expectStatus(Connection.ESTABLISHED)
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
         assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
@@ -441,7 +442,6 @@ class PeerTest : LightningTestSuite() {
 
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
-        peer.expectStatus(Connection.ESTABLISHED)
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
         assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
