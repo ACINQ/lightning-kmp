@@ -197,7 +197,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
         when (paymentPart) {
             is HtlcPart -> logger.info { "processing htlc part expiry=${paymentPart.htlc.cltvExpiry}" }
-            is PayToOpenPart -> logger.info { "processing pay-to-open part amount=${paymentPart.payToOpenRequest.amountMsat} funding=${paymentPart.payToOpenRequest.fundingSatoshis} fees=${paymentPart.payToOpenRequest.payToOpenFeeSatoshis}" }
+            is PayToOpenPart -> logger.info { "processing pay-to-open part amount=${paymentPart.payToOpenRequest.amountMsat} fees=${paymentPart.payToOpenRequest.payToOpenFeeSatoshis}" }
         }
         return when (val validationResult = validatePaymentPart(paymentPart, currentBlockHeight)) {
             is Either.Left -> validationResult.value

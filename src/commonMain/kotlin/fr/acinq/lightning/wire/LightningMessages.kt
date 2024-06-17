@@ -1600,9 +1600,7 @@ data class OnionMessage(
  * This allows us to combine multiple requests for the same payment and figure out the final fee that will be applied.
  *
  * @param chainHash chain we're on.
- * @param fundingSatoshis total capacity of the channel our peer will open to us (some of the funds may be on their side).
  * @param amountMsat payment amount covered by this new channel: we will receive push_msat = amountMsat - fees.
- * @param payToOpenMinAmountMsat minimum amount for a pay-to-open to be attempted, this should be compared to the total amount in the case of an MPP payment.
  * @param payToOpenFeeSatoshis fees that will be deducted from the amount pushed to us (this fee covers the on-chain fees our peer will pay to open the channel).
  * @param paymentHash payment hash.
  * @param expireAt after the proposal expires, our peer will fail the payment and won't open a channel to us.
@@ -1610,13 +1608,12 @@ data class OnionMessage(
  */
 data class PayToOpenRequest(
     override val chainHash: BlockHash,
-    val fundingSatoshis: Satoshi,
     val amountMsat: MilliSatoshi,
-    val payToOpenMinAmountMsat: MilliSatoshi,
     val payToOpenFeeSatoshis: Satoshi,
     val paymentHash: ByteVector32,
     val expireAt: Long,
     val finalPacket: OnionRoutingPacket,
+    val liquidity: Satoshi = 0.sat,
     val tlvStream: TlvStream<PayToOpenRequestTlv> = TlvStream.empty(),
 ) : LightningMessage, HasChainHash {
     override val type: Long get() = PayToOpenRequest.type
@@ -1625,14 +1622,15 @@ data class PayToOpenRequest(
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(chainHash.value, out)
-        LightningCodecs.writeU64(fundingSatoshis.toLong(), out)
+        LightningCodecs.writeU64(0, out) // backward compat for removed field fundingSatoshis
         LightningCodecs.writeU64(amountMsat.toLong(), out)
-        LightningCodecs.writeU64(payToOpenMinAmountMsat.toLong(), out)
+        LightningCodecs.writeU64(0, out) // backward compat for removed field payToOpenMinAmountMsat
         LightningCodecs.writeU64(payToOpenFeeSatoshis.toLong(), out)
         LightningCodecs.writeBytes(paymentHash, out)
         LightningCodecs.writeU32(expireAt.toInt(), out)
         LightningCodecs.writeU16(finalPacket.payload.size(), out)
         OnionRoutingPacketSerializer(finalPacket.payload.size()).write(finalPacket, out)
+        LightningCodecs.writeU64(liquidity.toLong(), out)
         TlvStreamSerializer(false, readers).write(tlvStream, out)
     }
 
@@ -1646,14 +1644,15 @@ data class PayToOpenRequest(
 
         override fun read(input: Input): PayToOpenRequest {
             return PayToOpenRequest(
-                chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
-                fundingSatoshis = Satoshi(LightningCodecs.u64(input)),
-                amountMsat = MilliSatoshi(LightningCodecs.u64(input)),
-                payToOpenMinAmountMsat = MilliSatoshi(LightningCodecs.u64(input)),
+                chainHash = BlockHash(LightningCodecs.bytes(input, 32))
+                    .also { LightningCodecs.u64(input) }, // ignoring removed field fundingSatoshis
+                amountMsat = MilliSatoshi(LightningCodecs.u64(input))
+                    .also { LightningCodecs.u64(input) }, // ignoring removed field payToOpenMinAmountMsat
                 payToOpenFeeSatoshis = Satoshi(LightningCodecs.u64(input)),
                 paymentHash = ByteVector32(LightningCodecs.bytes(input, 32)),
                 expireAt = LightningCodecs.u32(input).toLong(),
                 finalPacket = OnionRoutingPacketSerializer(LightningCodecs.u16(input)).read(input),
+                liquidity = Satoshi(LightningCodecs.u64(input)),
                 tlvStream = TlvStreamSerializer(false, readers).read(input),
             )
         }
