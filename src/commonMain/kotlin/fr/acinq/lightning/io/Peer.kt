@@ -442,7 +442,7 @@ class Peer(
             suspend fun sendLoop() {
                 try {
                     for (msg in peerConnection.output) {
-                        when(msg) {
+                        when (msg) {
                             is Ping -> {} // Avoids polluting the logs with pings/pongs
                             is Pong -> {}
                             is OnionMessage -> logger.info { "sending ${msg.copy(onionRoutingPacket = msg.onionRoutingPacket.copy(payload = ByteVector.empty))} (truncated payload)" } // Not printing the payload, which can be very large
