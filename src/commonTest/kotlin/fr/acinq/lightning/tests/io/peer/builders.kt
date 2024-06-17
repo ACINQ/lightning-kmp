@@ -1,10 +1,9 @@
 package fr.acinq.lightning.tests.io.peer
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.PeerConnected
 import fr.acinq.lightning.WalletParams
 import fr.acinq.lightning.blockchain.electrum.ElectrumClient
 import fr.acinq.lightning.blockchain.electrum.ElectrumWatcher
@@ -18,9 +17,8 @@ import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.*
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.tests.utils.testLoggerFactory
-import fr.acinq.lightning.utils.Connection
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
@@ -83,10 +81,12 @@ suspend fun connect(
         }
     }
 
-    // Initialize Bob with Alice's features
-    bob.send(MessageReceived(bobConnection.id, Init(features = alice.nodeParams.features.initFeatures())))
-    // Initialize Alice with Bob's features
-    alice.send(MessageReceived(aliceConnection.id, Init(features = bob.nodeParams.features.initFeatures())))
+    // Initialize Bob with Alice's features.
+    val aliceInit = Init(alice.nodeParams.features.initFeatures())
+    bob.send(MessageReceived(bobConnection.id, aliceInit))
+    // Initialize Alice with Bob's features.
+    val bobInit = Init(bob.nodeParams.features.initFeatures())
+    alice.send(MessageReceived(aliceConnection.id, bobInit))
 
     if (channelsCount > 0) {
         // When there are multiple channels, the channel_reestablish and channel_ready messages from different channels
@@ -106,8 +106,8 @@ suspend fun connect(
     }
 
     // Wait until the Peers are ready
-    alice.expectStatus(Connection.ESTABLISHED)
-    bob.expectStatus(Connection.ESTABLISHED)
+    alice.nodeParams.nodeEvents.first { it == PeerConnected(bob.nodeParams.nodeId, bobInit) }
+    bob.nodeParams.nodeEvents.first { it == PeerConnected(alice.nodeParams.nodeId, aliceInit) }
 
     // Wait until the Channels are synchronised
     alice.channelsFlow.first { it.size == channelsCount && it.values.all { state -> state is Normal } }
@@ -146,13 +146,10 @@ suspend fun CoroutineScope.newPeer(
     remotedNodeChannelState?.let { state ->
         // send Init from remote node
         val theirInit = Init(features = state.ctx.staticParams.nodeParams.features.initFeatures())
-
         peer.send(MessageReceived(connection.id, theirInit))
-        peer.expectStatus(Connection.ESTABLISHED)
 
         peer.channelsFlow.first {
-            it.values.size == peer.db.channels.listLocalChannels().size
-                    && it.values.all { channelState -> channelState is Syncing }
+            it.values.size == peer.db.channels.listLocalChannels().size && it.values.all { channelState -> channelState is Syncing }
         }
 
         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
@@ -170,8 +167,7 @@ suspend fun CoroutineScope.newPeer(
     }
 
     peer.channelsFlow.first {
-        it.values.size == peer.db.channels.listLocalChannels().size
-                && it.values.all { channelState -> channelState is Normal }
+        it.values.size == peer.db.channels.listLocalChannels().size && it.values.all { channelState -> channelState is Normal }
     }
 
     return peer
