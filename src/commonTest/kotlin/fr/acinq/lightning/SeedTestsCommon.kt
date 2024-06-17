@@ -1,10 +1,10 @@
 package fr.acinq.lightning
 
 import fr.acinq.bitcoin.MnemonicCode
-import fr.acinq.lightning.crypto.assertArrayEquals
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
 class SeedTestsCommon : LightningTestSuite() {
@@ -15,6 +15,6 @@ class SeedTestsCommon : LightningTestSuite() {
         assertEquals("jelly better achieve collect unaware mountain thought cargo oxygen act hood bridge", wordlist)
         val passphrase = "TREZOR"
         val seed = MnemonicCode.toSeed(wordlist, passphrase)
-        assertArrayEquals(Hex.decode("b5b6d0127db1a9d2226af0c3346031d77af31e918dba64287a1b44b8ebf63cdd52676f672a290aae502472cf2d602c051f3e6f18055e84e4c43897fc4e51a6ff"), seed)
+        assertContentEquals(Hex.decode("b5b6d0127db1a9d2226af0c3346031d77af31e918dba64287a1b44b8ebf63cdd52676f672a290aae502472cf2d602c051f3e6f18055e84e4c43897fc4e51a6ff"), seed)
     }
 }

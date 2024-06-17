@@ -6,15 +6,11 @@ import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.channel.Origin
-import fr.acinq.lightning.crypto.assertArrayEquals
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.secp256k1.Hex
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class OpenTlvTestsCommon : LightningTestSuite() {
 
@@ -34,7 +30,7 @@ class OpenTlvTestsCommon : LightningTestSuite() {
         testCases.forEach {
             val decoded = tlvStreamSerializer.read(it.second)
             val encoded = tlvStreamSerializer.write(decoded)
-            assertArrayEquals(it.second, encoded)
+            assertContentEquals(it.second, encoded)
             val channelType = decoded.get<ChannelTlv.ChannelTypeTlv>()?.channelType
             assertNotNull(channelType)
             assertEquals(it.first, channelType)
@@ -83,7 +79,7 @@ class OpenTlvTestsCommon : LightningTestSuite() {
         testCases.forEach {
             val decoded = tlvStreamSerializer.read(it.second)
             val encoded = tlvStreamSerializer.write(decoded)
-            assertArrayEquals(it.second, encoded)
+            assertContentEquals(it.second, encoded)
             val channelOrigin = decoded.get<ChannelTlv.OriginTlv>()?.origin
             assertNotNull(channelOrigin)
             assertEquals(it.first, channelOrigin)

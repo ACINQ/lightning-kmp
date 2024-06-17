@@ -12,7 +12,6 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.crypto.assertArrayEquals
 import fr.acinq.lightning.message.OnionMessages
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
@@ -46,7 +45,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         testCases.forEach {
             val out = ByteArrayOutput()
             LightningCodecs.writeU64(it.key.toLong(), out)
-            assertArrayEquals(it.value, out.toByteArray())
+            assertContentEquals(it.value, out.toByteArray())
             val decoded = LightningCodecs.u64(ByteArrayInput(it.value))
             assertEquals(it.key, decoded.toULong())
         }
@@ -188,7 +187,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
                 assertEquals(value, LightningCodecs.bigSize(ByteArrayInput(bytes)).toULong(), name)
                 val out = ByteArrayOutput()
                 LightningCodecs.writeBigSize(value.toLong(), out)
-                assertArrayEquals(bytes, out.toByteArray())
+                assertContentEquals(bytes, out.toByteArray())
             }
         }
     }
@@ -657,7 +656,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             assertNotNull(decoded)
             assertEquals(decoded, it.second)
             val reEncoded = LightningMessage.encode(decoded)
-            assertArrayEquals(reEncoded, it.first)
+            assertContentEquals(reEncoded, it.first)
         }
     }
 
@@ -719,7 +718,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             val decoded = LightningMessage.decode(it.key)
             assertEquals(it.value, decoded)
             val encoded = LightningMessage.encode(it.value)
-            assertArrayEquals(it.key, encoded)
+            assertContentEquals(it.key, encoded)
         }
     }
 
@@ -771,7 +770,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             assertNotNull(decoded)
             assertEquals(it.first, decoded)
             val encoded = LightningMessage.encode(decoded)
-            assertArrayEquals(it.second, encoded)
+            assertContentEquals(it.second, encoded)
         }
     }
 
@@ -791,7 +790,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             assertNotNull(decoded)
             assertEquals(it.first, decoded)
             val encoded = LightningMessage.encode(decoded)
-            assertArrayEquals(it.second, encoded)
+            assertContentEquals(it.second, encoded)
         }
     }
 
@@ -806,7 +805,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             assertNotNull(decoded)
             assertEquals(it.first, decoded)
             val encoded = LightningMessage.encode(decoded)
-            assertArrayEquals(it.second, encoded)
+            assertContentEquals(it.second, encoded)
         }
     }
 
