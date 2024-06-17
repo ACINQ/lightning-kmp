@@ -150,7 +150,16 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             else -> {
                 val amount = request.amount ?: (request.offer.amount!! * request.quantity)
                 val preimage = randomBytes32()
-                val pathId = OfferPaymentMetadata.V1(ByteVector32(decrypted.pathId), amount, preimage, request.payerId, request.payerNote, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
+                val truncatedPayerNote = request.payerNote?.let {
+                    val encoded = it.encodeToByteArray()
+                    if (encoded.size <= nodeParams.maxPayerNoteLength) {
+                        it
+                    } else {
+                        val charactersToKeep = encoded.take(nodeParams.maxPayerNoteLength - 3).toByteArray().decodeToString().length - 1
+                        it.take(charactersToKeep) + "…"
+                    }
+                }
+                val pathId = OfferPaymentMetadata.V1(ByteVector32(decrypted.pathId), amount, preimage, request.payerId, truncatedPayerNote, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
                 val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId))).write().toByteVector()
                 val paymentInfo = OfferTypes.PaymentInfo(
                     feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,

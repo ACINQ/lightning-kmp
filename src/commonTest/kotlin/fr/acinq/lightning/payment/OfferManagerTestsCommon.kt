@@ -250,4 +250,41 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val metadata = OfferPaymentMetadata.fromPathId(TestConstants.Alice.nodeParams.nodeId, pathId) as OfferPaymentMetadata.V1
         assertEquals("Thanks for all the fish", metadata.payerNote)
     }
+
+    @Test
+    fun `pay offer with long payer note`() = runSuspendTest {
+        // Alice and Bob use the same trampoline node.
+        val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams.copy(maxPayerNoteLength = 22), aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val offer = createOffer(aliceOfferManager, amount = 1000.msat)
+
+        // Bob sends an invoice request to Alice.
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), "Thanks for all the \uD83D\uDC1F", 5500.msat, offer, 20.seconds)
+        val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
+        assertTrue(invoiceRequests.size == 1)
+        val (messageForAlice, nextNodeAlice) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
+        assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Alice.nodeParams.nodeId)), nextNodeAlice)
+        // Alice sends an invoice back to Bob.
+        val invoiceResponse = aliceOfferManager.receiveMessage(messageForAlice, listOf(), 0)
+        assertIs<OnionMessageAction.SendMessage>(invoiceResponse)
+        val (messageForBob, nextNodeBob) = trampolineRelay(invoiceResponse.message, aliceTrampolineKey)
+        assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Bob.nodeParams.nodeId)), nextNodeBob)
+        val payInvoice = bobOfferManager.receiveMessage(messageForBob, listOf(), 0)
+        assertIs<OnionMessageAction.PayInvoice>(payInvoice)
+        assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
+        assertEquals(payOffer, payInvoice.payOffer)
+
+        val blindedRoute = payInvoice.invoice.blindedPaths.first().route.route
+        val (firstPayload, secondBlinding) = RouteBlinding.decryptPayload(aliceTrampolineKey, blindedRoute.blindingKey, blindedRoute.encryptedPayloads.first()).right!!
+        var blinding = secondBlinding
+        var lastPayload = firstPayload
+        for (encryptedPayload in blindedRoute.encryptedPayloads.drop(1)) {
+            val (payload, nextBlinding) = RouteBlinding.decryptPayload(TestConstants.Alice.nodeParams.nodePrivateKey, blinding, encryptedPayload).right!!
+            blinding = nextBlinding
+            lastPayload = payload
+        }
+        val pathId = RouteBlindingEncryptedData.read(lastPayload.toByteArray()).right!!.pathId!!
+        val metadata = OfferPaymentMetadata.fromPathId(TestConstants.Alice.nodeParams.nodeId, pathId) as OfferPaymentMetadata.V1
+        assertEquals("Thanks for all the…", metadata.payerNote)
+    }
 }
