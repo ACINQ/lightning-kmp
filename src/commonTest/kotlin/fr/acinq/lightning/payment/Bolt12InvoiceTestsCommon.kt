@@ -85,7 +85,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
         val offer = Offer.createNonBlindedOffer(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
-        val request = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, chain)
+        val request = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, null, chain)
         val invoice = Bolt12Invoice(
             request,
             randomBytes32(),
@@ -122,7 +122,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
         val offer = Offer.createNonBlindedOffer(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
-        val basicRequest = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, chain)
+        val basicRequest = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, null, chain)
         val requestWithUnknownTlv = basicRequest.copy(records = TlvStream(basicRequest.records.records, setOf(GenericTlv(87, ByteVector.fromHex("0404")))))
         val invoice = Bolt12Invoice(
             requestWithUnknownTlv,
@@ -143,7 +143,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
         val offer = Offer.createNonBlindedOffer(10000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
-        val request = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, chain)
+        val request = InvoiceRequest(offer, 11000.msat, 1, Features.empty, payerKey, null, chain)
         val invoice = Bolt12Invoice(
             request,
             randomBytes32(),
@@ -189,7 +189,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
         val offer = Offer.createNonBlindedOffer(15000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
-        val request = InvoiceRequest(offer, 15000.msat, 1, Features.empty, payerKey, chain)
+        val request = InvoiceRequest(offer, 15000.msat, 1, Features.empty, payerKey, null, chain)
         assertTrue(request.quantity_opt == null) // when paying for a single item, the quantity field must not be present
         val invoice = Bolt12Invoice(
             request,
@@ -271,7 +271,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val payerKey = randomKey()
         val chain = BlockHash(randomBytes32())
         val offer = Offer.createNonBlindedOffer(5000.msat, "test offer", nodeKey.publicKey(), Features.empty, chain)
-        val request = InvoiceRequest(offer, 5000.msat, 1, Features.empty, payerKey, chain)
+        val request = InvoiceRequest(offer, 5000.msat, 1, Features.empty, payerKey, null, chain)
         val invoice = Bolt12Invoice(
             request,
             randomBytes32(),
@@ -410,7 +410,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val encodedOffer = "lno1pg9k66twd9kkzmpqw35hq93pqf8l2vtlq5w87m4vqfnvtn82adk9wadfgratnp2wg7l7ha4u0gzqw"
         assertEquals(offer.toString(), encodedOffer)
         assertEquals(Offer.decode(encodedOffer).get(), offer)
-        val request = InvoiceRequest(offer, 12000000.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val request = InvoiceRequest(offer, 12000000.msat, 1, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         // Invoice request generation is not reproducible because we add randomness in the first TLV.
         val encodedRequest = "lnr1qqs289chx8swkpmwf3uzexfxr0kk9syavsjcmkuur5qgjqt60ayjdec2pdkkjmnfd4skcgr5d9cpvggzfl6nzlc9r3lkatqzvmzue6htd3tht22ql2uc2nj8hl4ld0r6qsr4qgr0u2xq4dh3kdevrf4zg6hx8a60jv0gxe0ptgyfc6xkryqqqqqqqpfq8dcmqpvzzqc773pe7cufzn08jgsys0w6xt0m0fp3u7v6tnj6weplh4ctyyvwfmcypemfjk6kryqxycnnmu2vp9tuw00eslf0grp6rf3hk6v76aynyn4lclra0fyyk2gxyf9hx73rnm775204tn8cltacw4s0fzd5c0lxm58s"
         val decodedRequest = InvoiceRequest.decode(encodedRequest).get()
@@ -448,7 +448,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val encodedOffer = "lno1pqzpktszqq9q6mtfde5k6ctvyphkven9wgtzzq7y3tyhuz0newawkdds924x6pet2aexssdrf5je2g2het9xpgw275"
         assertEquals(offer.toString(), encodedOffer)
         assertEquals(Offer.decode(encodedOffer).get(), offer)
-        val request = InvoiceRequest(offer, 456001234.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val request = InvoiceRequest(offer, 456001234.msat, 1, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         // Invoice request generation is not reproducible because we add randomness in the first TLV.
         val encodedRequest = "lnr1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh7pq2hlvh7twke5830a44wc0zlrs2kph4ghndm60ahwcznhcd0pcpl332qv5xuemksazy3zx5s63kqmqkphrn9jg4ln55pc6syrwqukejeq"
         val decodedRequest = InvoiceRequest.decode(encodedRequest).get()
@@ -495,7 +495,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val encodedOffer = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqvqcdgq2zdhkven9wgs8w6t5dqs8zatpde6xjarezggkzmrfvdj5qcnfvaeksmms9e3k7mg5qgp7s93pqvn6l4vemgezdarq3wt2kpp0u4vt74vzz8futen7ej97n93jypp57"
         assertEquals(offer.toString(), encodedOffer)
         assertEquals(Offer.decode(encodedOffer).get(), offer)
-        val request = InvoiceRequest(offer, 7200000.msat, 72, Features.empty, payerKey, Block.TestnetGenesisBlock.hash)
+        val request = InvoiceRequest(offer, 7200000.msat, 72, Features.empty, payerKey, null, Block.TestnetGenesisBlock.hash)
         // Invoice request generation is not reproducible because we add randomness in the first TLV.
         val encodedRequest = "lnr1qqs8lqvnh3kg9uj003lxlxyj8hthymgq4p9ms0ag0ryx5uw8gsuus4gzypp5jl7hlqnf2ugg7j3slkwwcwht57vhyzzwjr4dq84rxzgqqqqqqzqrqxr2qzsndanxvetjypmkjargypch2ctww35hg7gjz9skc6trv4qxy6t8wd5x7upwvdhk69qzq05pvggry7hatxw6xgn0gcytj64sgtl9tzl4tqs360z7vlkv305evv3qgd84qgzrf9la07pxj4cs3a9rplvuasawhfuewgyyay826q02xvysqqqqqpfqxmwaqptqzjzcyyp8cmgrl28nvm3wlqqheha0t570rgaszg7mzvvzvwmx9s92nmyujk0sgpef8dt57nygu3dnfhglymt6mnle6j8s28rler8wv3zygen07v4ddfplc9qs7nkdzwcelm2rs552slkpv45xxng65ne6y4dlq2764gqv"
         val decodedRequest = InvoiceRequest.decode(encodedRequest).get()

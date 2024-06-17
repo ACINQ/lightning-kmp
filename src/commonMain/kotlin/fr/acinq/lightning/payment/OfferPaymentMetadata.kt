@@ -56,6 +56,7 @@ sealed class OfferPaymentMetadata {
         override val amount: MilliSatoshi,
         override val preimage: ByteVector32,
         val payerKey: PublicKey,
+        val payerNote: String?,
         val quantity: Long,
         override val createdAtMillis: Long
     ) : OfferPaymentMetadata() {
@@ -68,17 +69,20 @@ sealed class OfferPaymentMetadata {
             LightningCodecs.writeBytes(payerKey.value, out)
             LightningCodecs.writeU64(quantity, out)
             LightningCodecs.writeU64(createdAtMillis, out)
+            payerNote?.let { LightningCodecs.writeBytes(it.encodeToByteArray(), out) }
         }
 
         companion object {
-            fun read(input: Input): V1 = V1(
-                offerId = LightningCodecs.bytes(input, 32).byteVector32(),
-                amount = LightningCodecs.u64(input).msat,
-                preimage = LightningCodecs.bytes(input, 32).byteVector32(),
-                payerKey = PublicKey(LightningCodecs.bytes(input, 33)),
-                quantity = LightningCodecs.u64(input),
-                createdAtMillis = LightningCodecs.u64(input),
-            )
+            fun read(input: Input): V1 {
+                val offerId = LightningCodecs.bytes(input, 32).byteVector32()
+                val amount = LightningCodecs.u64(input).msat
+                val preimage = LightningCodecs.bytes(input, 32).byteVector32()
+                val payerKey = PublicKey(LightningCodecs.bytes(input, 33))
+                val quantity = LightningCodecs.u64(input)
+                val createdAtMillis = LightningCodecs.u64(input)
+                val payerNote = if (input.availableBytes > 0) LightningCodecs.bytes(input, input.availableBytes).decodeToString() else null
+                return V1(offerId, amount, preimage, payerKey, payerNote, quantity, createdAtMillis)
+            }
         }
     }
 
@@ -104,11 +108,12 @@ sealed class OfferPaymentMetadata {
             val input = ByteArrayInput(pathId.toByteArray())
             when (LightningCodecs.byte(input)) {
                 1 -> {
-                    if (input.availableBytes != 185) return null
-                    val metadata = LightningCodecs.bytes(input, 121)
+                    if (input.availableBytes < 185) return null
+                    val metadataSize = input.availableBytes - 64
+                    val metadata = LightningCodecs.bytes(input, metadataSize)
                     val signature = LightningCodecs.bytes(input, 64).byteVector64()
                     // Note that the signature includes the version byte.
-                    if (!Crypto.verifySignature(Crypto.sha256(pathId.take(122)), signature, nodeId)) return null
+                    if (!Crypto.verifySignature(Crypto.sha256(pathId.take(1 + metadataSize)), signature, nodeId)) return null
                     // This call is safe since we verified that we have the right number of bytes and the signature was valid.
                     return V1.read(ByteArrayInput(metadata))
                 }

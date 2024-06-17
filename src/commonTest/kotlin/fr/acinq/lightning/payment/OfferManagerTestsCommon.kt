@@ -71,7 +71,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val offer = createOffer(aliceOfferManager, amount = 1000.msat)
 
         // Bob sends an invoice request to Alice.
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         assertTrue(invoiceRequests.size == 1)
         val (messageForAlice, nextNodeAlice) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
@@ -95,7 +95,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val offer = createOffer(aliceOfferManager)
 
         // Bob sends an invoice request to Alice.
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         assertTrue(invoiceRequests.size == 1)
         val (messageForAliceTrampoline, nextNodeAliceTrampoline) = trampolineRelay(invoiceRequests.first(), bobTrampolineKey)
@@ -122,7 +122,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val offer = createOffer(aliceOfferManager)
 
         // Bob sends an invoice request to Alice.
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
         val (invoiceRequestPathId, invoiceRequests, request) = bobOfferManager.requestInvoice(payOffer)
         val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
         // The invoice request times out.
@@ -144,7 +144,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val offer = createOffer(aliceOfferManager)
 
         // Bob sends two invoice requests to Alice.
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
         // Alice sends two invoices back to Bob.
@@ -169,7 +169,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val offer = createOffer(aliceOfferManager)
 
         // Bob sends an invalid invoice request to Alice.
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
         assertNull(aliceOfferManager.receiveMessage(messageForAlice.copy(blindingKey = randomKey().publicKey()), listOf(), 0))
@@ -183,7 +183,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val offer = createOffer(aliceOfferManager)
 
         // Bob sends an invoice request to Alice.
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 5500.msat, offer, 20.seconds)
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
         // Alice sends an invalid response back to Bob.
@@ -201,7 +201,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val offer = createOffer(aliceOfferManager, 50_000.msat)
 
         // Bob sends an invoice request to Alice that pays less than the offer amount.
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), 40_000.msat, offer, 20.seconds)
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 40_000.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
         // Alice sends an invoice error back to Bob.
@@ -212,5 +212,42 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val event = bobOfferManager.eventsFlow.first()
         assertIs<OfferNotPaid>(event)
         assertIs<Bolt12InvoiceRequestFailure.ErrorFromRecipient>(event.reason)
+    }
+
+    @Test
+    fun `pay offer with payer note`() = runSuspendTest {
+        // Alice and Bob use the same trampoline node.
+        val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val offer = createOffer(aliceOfferManager, amount = 1000.msat)
+
+        // Bob sends an invoice request to Alice.
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), "Thanks for all the fish", 5500.msat, offer, 20.seconds)
+        val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
+        assertTrue(invoiceRequests.size == 1)
+        val (messageForAlice, nextNodeAlice) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
+        assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Alice.nodeParams.nodeId)), nextNodeAlice)
+        // Alice sends an invoice back to Bob.
+        val invoiceResponse = aliceOfferManager.receiveMessage(messageForAlice, listOf(), 0)
+        assertIs<OnionMessageAction.SendMessage>(invoiceResponse)
+        val (messageForBob, nextNodeBob) = trampolineRelay(invoiceResponse.message, aliceTrampolineKey)
+        assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Bob.nodeParams.nodeId)), nextNodeBob)
+        val payInvoice = bobOfferManager.receiveMessage(messageForBob, listOf(), 0)
+        assertIs<OnionMessageAction.PayInvoice>(payInvoice)
+        assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
+        assertEquals(payOffer, payInvoice.payOffer)
+
+        val blindedRoute = payInvoice.invoice.blindedPaths.first().route.route
+        val (firstPayload, secondBlinding) = RouteBlinding.decryptPayload(aliceTrampolineKey, blindedRoute.blindingKey, blindedRoute.encryptedPayloads.first()).right!!
+        var blinding = secondBlinding
+        var lastPayload = firstPayload
+        for (encryptedPayload in blindedRoute.encryptedPayloads.drop(1)) {
+            val (payload, nextBlinding) = RouteBlinding.decryptPayload(TestConstants.Alice.nodeParams.nodePrivateKey, blinding, encryptedPayload).right!!
+            blinding = nextBlinding
+            lastPayload = payload
+        }
+        val pathId = RouteBlindingEncryptedData.read(lastPayload.toByteArray()).right!!.pathId!!
+        val metadata = OfferPaymentMetadata.fromPathId(TestConstants.Alice.nodeParams.nodeId, pathId) as OfferPaymentMetadata.V1
+        assertEquals("Thanks for all the fish", metadata.payerNote)
     }
 }

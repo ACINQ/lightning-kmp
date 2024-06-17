@@ -87,7 +87,7 @@ data class PayInvoice(override val paymentId: UUID, override val amount: MilliSa
     val paymentHash: ByteVector32 = paymentDetails.paymentHash
     val recipient: PublicKey = paymentDetails.paymentRequest.nodeId
 }
-data class PayOffer(override val paymentId: UUID, val payerKey: PrivateKey, override val amount: MilliSatoshi, val offer: OfferTypes.Offer, val fetchInvoiceTimeout: Duration, val trampolineFeesOverride: List<TrampolineFees>? = null) : SendPayment()
+data class PayOffer(override val paymentId: UUID, val payerKey: PrivateKey, val payerNote: String?, override val amount: MilliSatoshi, val offer: OfferTypes.Offer, val fetchInvoiceTimeout: Duration, val trampolineFeesOverride: List<TrampolineFees>? = null) : SendPayment()
 // @formatter:on
 
 data class PurgeExpiredPayments(val fromCreatedAt: Long, val toCreatedAt: Long) : PaymentCommand()
@@ -661,7 +661,7 @@ class Peer(
         return res.await()
     }
 
-    suspend fun payOffer(amount: MilliSatoshi, offer: OfferTypes.Offer, payerKey: PrivateKey, fetchInvoiceTimeout: Duration): SendPaymentResult {
+    suspend fun payOffer(amount: MilliSatoshi, offer: OfferTypes.Offer, payerKey: PrivateKey, payerNote: String?, fetchInvoiceTimeout: Duration): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
         this.launch {
@@ -671,7 +671,7 @@ class Peer(
                 .first()
             )
         }
-        send(PayOffer(paymentId, payerKey, amount, offer, fetchInvoiceTimeout))
+        send(PayOffer(paymentId, payerKey, payerNote, amount, offer, fetchInvoiceTimeout))
         return res.await()
     }
 

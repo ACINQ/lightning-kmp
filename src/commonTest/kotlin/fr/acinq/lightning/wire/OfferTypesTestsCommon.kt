@@ -48,7 +48,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val sellerKey = randomKey()
         val offer = Offer.createNonBlindedOffer(100_000.msat, "test offer", sellerKey.publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
-        val request = InvoiceRequest(offer, 100_000.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val request = InvoiceRequest(offer, 100_000.msat, 1, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertTrue(request.checkSignature())
     }
 
@@ -98,7 +98,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     fun `check that invoice request matches offer`() {
         val offer = Offer.createNonBlindedOffer(2500.msat, "basic offer", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
-        val request = InvoiceRequest(offer, 2500.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val request = InvoiceRequest(offer, 2500.msat, 1, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
         assertEquals(offer, request.offer)
         val biggerAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.map {
@@ -124,13 +124,13 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     fun `check that invoice request matches offer - with features`() {
         val offer = Offer.createNonBlindedOffer(2500.msat, "offer with features", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
-        val request = InvoiceRequest(offer, 2500.msat, 1, Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional), payerKey, Block.LivenetGenesisBlock.hash)
+        val request = InvoiceRequest(offer, 2500.msat, 1, Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional), payerKey, null, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
         assertEquals(offer, request.offer)
-        val withoutFeatures = InvoiceRequest(offer, 2500.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val withoutFeatures = InvoiceRequest(offer, 2500.msat, 1, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertTrue(withoutFeatures.isValid())
         assertEquals(offer, withoutFeatures.offer)
-        val otherFeatures = InvoiceRequest(offer, 2500.msat, 1, Features(Feature.BasicMultiPartPayment to FeatureSupport.Mandatory), payerKey, Block.LivenetGenesisBlock.hash)
+        val otherFeatures = InvoiceRequest(offer, 2500.msat, 1, Features(Feature.BasicMultiPartPayment to FeatureSupport.Mandatory), payerKey, null, Block.LivenetGenesisBlock.hash)
         assertFalse(otherFeatures.isValid())
         assertEquals(offer, otherFeatures.offer)
     }
@@ -139,7 +139,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     fun `check that invoice request matches offer - without amount`() {
         val offer = Offer.createNonBlindedOffer(null, "offer without amount", randomKey().publicKey(), Features.empty, Block.LivenetGenesisBlock.hash)
         val payerKey = randomKey()
-        val request = InvoiceRequest(offer, 500.msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val request = InvoiceRequest(offer, 500.msat, 1, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
         assertEquals(offer, request.offer)
         val withoutAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filterNot { it is InvoiceRequestAmount }.toSet())), payerKey)
@@ -172,10 +172,10 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val chain2 = BlockHash(randomBytes32())
         val offer = Offer(TlvStream(OfferChains(listOf(chain1, chain2)), OfferAmount(100.msat), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey())))
         val payerKey = randomKey()
-        val request1 = InvoiceRequest(offer, 100.msat, 1, Features.empty, payerKey, chain1)
+        val request1 = InvoiceRequest(offer, 100.msat, 1, Features.empty, payerKey, null, chain1)
         assertTrue(request1.isValid())
         assertEquals(offer, request1.offer)
-        val request2 = InvoiceRequest(offer, 100.msat, 1, Features.empty, payerKey, chain2)
+        val request2 = InvoiceRequest(offer, 100.msat, 1, Features.empty, payerKey, null, chain2)
         assertTrue(request2.isValid())
         assertEquals(offer, request2.offer)
         val noChain = signInvoiceRequest(request1.copy(records = TlvStream(request1.records.records.filterNot { it is InvoiceRequestChain }.toSet())), payerKey)
@@ -200,13 +200,13 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             )
         )
         val payerKey = randomKey()
-        val request = InvoiceRequest(offer, 1600.msat, 3, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val request = InvoiceRequest(offer, 1600.msat, 3, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertNotNull(request.records.get<InvoiceRequestQuantity>())
         assertTrue(request.isValid())
         assertEquals(offer, request.offer)
-        val invalidAmount = InvoiceRequest(offer, 2400.msat, 5, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val invalidAmount = InvoiceRequest(offer, 2400.msat, 5, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertFalse(invalidAmount.isValid())
-        val tooManyItems = InvoiceRequest(offer, 5500.msat, 11, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+        val tooManyItems = InvoiceRequest(offer, 5500.msat, 11, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertFalse(tooManyItems.isValid())
     }
 
