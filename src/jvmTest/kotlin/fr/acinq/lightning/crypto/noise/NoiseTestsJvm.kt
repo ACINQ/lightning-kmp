@@ -217,19 +217,18 @@ class NoiseTestsJvm : LightningTestSuite() {
 
     companion object {
         object Curve25519DHFunctions : DHFunctions {
-            val curve = CustomNamedCurves.getByName("curve25519")
 
             override fun name() = "25519"
 
             override fun generateKeyPair(priv: ByteArray): Pair<ByteArray, ByteArray> {
                 val pub = ByteArray(32)
-                //Curve25519.eval(pub, 0, priv, null)
+                Curve25519.eval(pub, 0, priv, null)
                 return Pair(pub, priv)
             }
 
             override fun dh(keyPair: Pair<ByteArray, ByteArray>, publicKey: ByteArray): ByteArray {
                 val sharedKey = ByteArray(32)
-                //Curve25519.eval(sharedKey, 0, keyPair.second, publicKey)
+                Curve25519.eval(sharedKey, 0, keyPair.second, publicKey)
                 return sharedKey
             }
 
