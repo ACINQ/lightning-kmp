@@ -155,7 +155,6 @@ data class NodeParams(
     val minFinalCltvExpiryDelta: CltvExpiryDelta,
     val maxFinalCltvExpiryDelta: CltvExpiryDelta,
     val bolt12invoiceExpiry: Duration,
-    val maxPayerNoteLength: Int,
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
@@ -234,7 +233,6 @@ data class NodeParams(
         minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
         maxFinalCltvExpiryDelta = CltvExpiryDelta(360),
         bolt12invoiceExpiry = 60.seconds,
-        maxPayerNoteLength = 300,
     )
 
     /**
