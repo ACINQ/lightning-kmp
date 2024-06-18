@@ -7,13 +7,9 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.crypto.assertArrayEquals
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.secp256k1.Hex
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFails
-import kotlin.test.assertNull
+import kotlin.test.*
 
 class TlvTestsCommon : LightningTestSuite() {
 
@@ -172,7 +168,7 @@ class TlvTestsCommon : LightningTestSuite() {
             val decoded = testTlvStreamSerializer.read(it.first)
             assertEquals(it.second, decoded)
             val encoded = testTlvStreamSerializer.write(it.second)
-            assertArrayEquals(it.first, encoded)
+            assertContentEquals(it.first, encoded)
         }
     }
 
@@ -251,7 +247,7 @@ class TlvTestsCommon : LightningTestSuite() {
             val decoded = lengthPrefixedTestTlvStreamSerializer.read(ByteArrayInput(bin))
             val out = ByteArrayOutput()
             lengthPrefixedTestTlvStreamSerializer.write(decoded, out)
-            assertArrayEquals(bin, out.toByteArray())
+            assertContentEquals(bin, out.toByteArray())
         }
     }
 
@@ -282,10 +278,10 @@ class TlvTestsCommon : LightningTestSuite() {
         val stream = TlvStream(setOf(TestTlv.TestType254(42), TestTlv.TestType1(42)), setOf(GenericTlv(13, ByteVector("2a")), GenericTlv(11, ByteVector("2b"))))
         val out1 = ByteArrayOutput()
         testTlvStreamSerializer.write(stream, out1)
-        assertArrayEquals(Hex.decode("01012a 0b012b 0d012a fd00fe02002a"), out1.toByteArray())
+        assertContentEquals(Hex.decode("01012a 0b012b 0d012a fd00fe02002a"), out1.toByteArray())
         val out2 = ByteArrayOutput()
         lengthPrefixedTestTlvStreamSerializer.write(stream, out2)
-        assertArrayEquals(Hex.decode("0f 01012a 0b012b 0d012a fd00fe02002a"), out2.toByteArray())
+        assertContentEquals(Hex.decode("0f 01012a 0b012b 0d012a fd00fe02002a"), out2.toByteArray())
     }
 
     @Test

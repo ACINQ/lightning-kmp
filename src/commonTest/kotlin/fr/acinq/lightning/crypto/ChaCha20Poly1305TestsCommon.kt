@@ -6,14 +6,14 @@ import kotlin.test.Test
 
 @ExperimentalStdlibApi
 class ChaCha20Poly1305TestsCommon : LightningTestSuite() {
-    fun assertArrayEquals(a: ByteArray, b: ByteArray) = a.contentEquals(b)
+    fun assertContentEquals(a: ByteArray, b: ByteArray) = a.contentEquals(b)
 
     @Test
     fun `poly1305 mac`() {
         val key = Hex.decode("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
         val data = "Cryptographic Forum Research Group".encodeToByteArray()
         val mac = Poly1305.mac(key, data)
-        assertArrayEquals(mac, Hex.decode("a8061dc1305136c6c22b8baf0c0127a9"))
+        assertContentEquals(mac, Hex.decode("a8061dc1305136c6c22b8baf0c0127a9"))
     }
 
     @Test
@@ -21,7 +21,7 @@ class ChaCha20Poly1305TestsCommon : LightningTestSuite() {
         val key = "this is 32-byte key for Poly1305".encodeToByteArray()
         val data = "Hello world!".encodeToByteArray()
         val mac = Poly1305.mac(key, data)
-        assertArrayEquals(mac, Hex.decode("a6f745008f81c916a20dcc74eef2b2f0"))
+        assertContentEquals(mac, Hex.decode("a6f745008f81c916a20dcc74eef2b2f0"))
     }
 
     @Test
@@ -34,14 +34,14 @@ class ChaCha20Poly1305TestsCommon : LightningTestSuite() {
         val aad = Hex.decode("50515253c0c1c2c3c4c5c6c7")
 
         val (ciphertext, mac) = ChaCha20Poly1305.encrypt(key, nonce, plaintext, aad)
-        assertArrayEquals(
+        assertContentEquals(
             ciphertext,
             Hex.decode("d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116")
         )
-        assertArrayEquals(mac, Hex.decode("1ae10b594f09e26a7e902ecbd0600691"))
+        assertContentEquals(mac, Hex.decode("1ae10b594f09e26a7e902ecbd0600691"))
 
         val check = ChaCha20Poly1305.decrypt(key, nonce, ciphertext, aad, mac)
-        assertArrayEquals(check, plaintext)
+        assertContentEquals(check, plaintext)
 
 //        assertThrows(ChaCha20Poly1305.InvalidMac::class.java) {
 //            mac[0] = 0xff.toByte()
@@ -504,7 +504,7 @@ class ChaCha20Poly1305TestsCommon : LightningTestSuite() {
         vectors.forEach { vector ->
             run {
                 val (ciphertext, mac) = ChaCha20Poly1305.encrypt(vector[2], vector[3], vector[0], vector[1])
-                assertArrayEquals(ciphertext + mac, vector[4])
+                assertContentEquals(ciphertext + mac, vector[4])
             }
         }
     }

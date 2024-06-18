@@ -7,7 +7,6 @@ import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.crypto.assertArrayEquals
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
@@ -31,7 +30,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         assertEquals(decoded, expected)
 
         val encoded = serializer.write(decoded)
-        assertArrayEquals(bin, encoded)
+        assertContentEquals(bin, encoded)
     }
 
     @Test
@@ -47,7 +46,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
             val decoded = PaymentOnion.ChannelRelayPayload.read(it.value).right!!
             assertEquals(expected, decoded)
             val encoded = decoded.write()
-            assertArrayEquals(it.value, encoded)
+            assertContentEquals(it.value, encoded)
         }
     }
 
@@ -65,7 +64,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         assertEquals(decoded.outgoingNodeId, nodeId)
 
         val encoded = expected.write()
-        assertArrayEquals(bin, encoded)
+        assertContentEquals(bin, encoded)
     }
 
     @Test
@@ -104,7 +103,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         assertEquals(decoded.invoiceRoutingInfo, routingHints)
 
         val encoded = expected.write()
-        assertArrayEquals(bin, encoded)
+        assertContentEquals(bin, encoded)
     }
 
     @Test
@@ -174,7 +173,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
             assertEquals(decoded.expiry, CltvExpiry(42))
 
             val encoded = PaymentOnion.FinalPayload.Standard(expected).write()
-            assertArrayEquals(it.value, encoded)
+            assertContentEquals(it.value, encoded)
         }
     }
 
@@ -209,7 +208,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         val bin = Hex.decode("53 02020231 04012a 08200000000000000000000000000000000000000000000000000000000000000000 ff0000000143c7a0412016c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")
 
         val encoded = PaymentOnion.FinalPayload.Standard(tlvs).write()
-        assertArrayEquals(bin, encoded)
+        assertContentEquals(bin, encoded)
         assertEquals(PaymentOnion.FinalPayload.Standard(tlvs), PaymentOnion.FinalPayload.Standard.read(bin).right)
     }
 
