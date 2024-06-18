@@ -154,7 +154,7 @@ data class NodeParams(
     val liquidityPolicy: MutableStateFlow<LiquidityPolicy>,
     val minFinalCltvExpiryDelta: CltvExpiryDelta,
     val maxFinalCltvExpiryDelta: CltvExpiryDelta,
-    val bolt12invoiceExpiry: Duration
+    val bolt12invoiceExpiry: Duration,
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
@@ -232,7 +232,7 @@ data class NodeParams(
         liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false)),
         minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
         maxFinalCltvExpiryDelta = CltvExpiryDelta(360),
-        bolt12invoiceExpiry = 60.seconds
+        bolt12invoiceExpiry = 60.seconds,
     )
 
     /**

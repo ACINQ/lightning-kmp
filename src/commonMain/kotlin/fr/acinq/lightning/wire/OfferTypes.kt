@@ -893,6 +893,7 @@ object OfferTypes {
                 quantity: Long,
                 features: Features,
                 payerKey: PrivateKey,
+                payerNote: String?,
                 chain: BlockHash,
                 additionalTlvs: Set<InvoiceRequestTlv> = setOf(),
                 customTlvs: Set<GenericTlv> = setOf()
@@ -906,6 +907,7 @@ object OfferTypes {
                     if (offer.quantityMax != null) InvoiceRequestQuantity(quantity) else null,
                     if (features != Features.empty) InvoiceRequestFeatures(features) else null,
                     InvoiceRequestPayerId(payerKey.publicKey()),
+                    payerNote?.let { InvoiceRequestPayerNote(it) },
                 ) + additionalTlvs
                 val signature = signSchnorr(
                     signatureTag,

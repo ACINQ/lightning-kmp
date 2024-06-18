@@ -176,7 +176,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
         // Create an HTLC paying an empty blinded path.
         fun createBlindedHtlc(): Pair<UpdateAddHtlc, PaymentOnion.FinalPayload.Blinded> {
-            val paymentMetadata = OfferPaymentMetadata.V1(randomBytes32(), finalAmount, paymentPreimage, randomKey().publicKey(), 1, currentTimestampMillis())
+            val paymentMetadata = OfferPaymentMetadata.V1(randomBytes32(), finalAmount, paymentPreimage, randomKey().publicKey(), null, 1, currentTimestampMillis())
             val blindedPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(paymentMetadata.toPathId(privE))))
             val blindedRoute = RouteBlinding.create(randomKey(), listOf(e), listOf(blindedPayload.write().byteVector())).route
             val finalPayload = PaymentOnion.FinalPayload.Blinded(
@@ -393,8 +393,8 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         // E uses a 1-hop blinded path from its LSP.
         val (invoice, blindedRoute) = run {
             val payerKey = randomKey()
-            val request = OfferTypes.InvoiceRequest(offer, finalAmount, 1, features, payerKey, Block.LivenetGenesisBlock.hash)
-            val paymentMetadata = OfferPaymentMetadata.V1(offer.offerId, finalAmount, paymentPreimage, payerKey.publicKey(), 1, currentTimestampMillis())
+            val request = OfferTypes.InvoiceRequest(offer, finalAmount, 1, features, payerKey, null, Block.LivenetGenesisBlock.hash)
+            val paymentMetadata = OfferPaymentMetadata.V1(offer.offerId, finalAmount, paymentPreimage, payerKey.publicKey(), null, 1, currentTimestampMillis())
             val blindedPayloads = listOf(
                 RouteBlindingEncryptedData(
                     TlvStream(
@@ -523,7 +523,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
     @Test
     fun `fail to decrypt when blinded route data is invalid`() {
-        val paymentMetadata = OfferPaymentMetadata.V1(randomBytes32(), finalAmount, paymentPreimage, randomKey().publicKey(), 1, currentTimestampMillis())
+        val paymentMetadata = OfferPaymentMetadata.V1(randomBytes32(), finalAmount, paymentPreimage, randomKey().publicKey(), null, 1, currentTimestampMillis())
         val blindedPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(paymentMetadata.toPathId(privE))))
         val blindedRoute = RouteBlinding.create(randomKey(), listOf(e), listOf(blindedPayload.write().byteVector())).route
         val payloadE = PaymentOnion.FinalPayload.Blinded(

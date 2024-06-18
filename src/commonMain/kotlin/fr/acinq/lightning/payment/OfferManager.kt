@@ -59,7 +59,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
      * @return invoice requests that must be sent and the corresponding path_id that must be used in case of a timeout.
      */
     fun requestInvoice(payOffer: PayOffer): Triple<ByteVector32, List<OnionMessage>, OfferTypes.InvoiceRequest> {
-        val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, 1, nodeParams.features.bolt12Features(), payOffer.payerKey, nodeParams.chainHash)
+        val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, 1, nodeParams.features.bolt12Features(), payOffer.payerKey, payOffer.payerNote, nodeParams.chainHash)
         val replyPathId = randomBytes32()
         pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, request)
         // We add dummy hops to the reply path: this way the receiver only learns that we're at most 3 hops away from our peer.
@@ -150,7 +150,14 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             else -> {
                 val amount = request.amount ?: (request.offer.amount!! * request.quantity)
                 val preimage = randomBytes32()
-                val pathId = OfferPaymentMetadata.V1(ByteVector32(decrypted.pathId), amount, preimage, request.payerId, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
+                val truncatedPayerNote = request.payerNote?.let {
+                    if (it.length <= 64) {
+                        it
+                    } else {
+                        it.take(63) + "…"
+                    }
+                }
+                val pathId = OfferPaymentMetadata.V1(ByteVector32(decrypted.pathId), amount, preimage, request.payerId, truncatedPayerNote, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
                 val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId))).write().toByteVector()
                 val paymentInfo = OfferTypes.PaymentInfo(
                     feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,

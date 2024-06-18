@@ -1260,7 +1260,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `reject blinded payment with amount too low`() = runSuspendTest {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
-        val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), 1, currentTimestampMillis())
+        val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), null, 1, currentTimestampMillis())
         val pathId = metadata.toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
         val amountTooLow = metadata.amount - 10_000_000.msat
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amountTooLow, amountTooLow, cltvExpiry, pathId)
@@ -1277,7 +1277,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `reject blinded payment with payment_hash mismatch`() = runSuspendTest {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
-        val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), 1, currentTimestampMillis())
+        val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), null, 1, currentTimestampMillis())
         val pathId = metadata.toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, metadata.amount, metadata.amount, cltvExpiry, pathId)
         val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, metadata.paymentHash.reversed(), finalPayload, route.blindingKey)
@@ -1357,7 +1357,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             preimage: ByteVector32 = randomBytes32(),
             payerKey: PublicKey = randomKey().publicKey()
         ): Pair<PaymentOnion.FinalPayload.Blinded, RouteBlinding.BlindedRoute> {
-            val pathId = OfferPaymentMetadata.V1(offerId, totalAmount, preimage, payerKey, quantity, currentTimestampMillis()).toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
+            val pathId = OfferPaymentMetadata.V1(offerId, totalAmount, preimage, payerKey, null, quantity, currentTimestampMillis()).toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
             val recipientData = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId)))
             val route = RouteBlinding.create(randomKey(), listOf(recipientNodeId), listOf(recipientData.write().toByteVector())).route
             val payload = PaymentOnion.FinalPayload.Blinded(

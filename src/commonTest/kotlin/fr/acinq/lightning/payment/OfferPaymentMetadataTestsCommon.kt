@@ -17,7 +17,25 @@ class OfferPaymentMetadataTestsCommon {
             amount = 50_000_000.msat,
             preimage = randomBytes32(),
             payerKey = randomKey().publicKey(),
+            payerNote = null,
             quantity = 1,
+            createdAtMillis = 0
+        )
+        assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
+        val pathId = metadata.toPathId(nodeKey)
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey.publicKey(), pathId))
+    }
+
+    @Test
+    fun `encode - decode v1 metadata with payer note`() {
+        val nodeKey = randomKey()
+        val metadata = OfferPaymentMetadata.V1(
+            offerId = randomBytes32(),
+            amount = 100_000_000.msat,
+            preimage = randomBytes32(),
+            payerKey = randomKey().publicKey(),
+            payerNote = "Thanks for all the fish",
+            quantity = 42,
             createdAtMillis = 0
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
@@ -33,6 +51,7 @@ class OfferPaymentMetadataTestsCommon {
             amount = 50_000_000.msat,
             preimage = randomBytes32(),
             payerKey = randomKey().publicKey(),
+            payerNote = null,
             quantity = 1,
             createdAtMillis = 0
         )
