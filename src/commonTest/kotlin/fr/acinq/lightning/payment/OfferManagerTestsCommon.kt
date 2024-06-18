@@ -51,7 +51,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
 
     private fun createOffer(offerManager: OfferManager, amount: MilliSatoshi? = null): OfferTypes.Offer {
         val blindingSecret = randomKey()
-        val offer = OfferTypes.Offer.createBlindedOffer(
+        val (offer, _) = OfferTypes.Offer.createBlindedOffer(
             amount,
             "Blockaccino",
             offerManager.nodeParams,

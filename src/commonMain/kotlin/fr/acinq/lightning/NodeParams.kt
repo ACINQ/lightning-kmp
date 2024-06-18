@@ -238,8 +238,9 @@ data class NodeParams(
     /**
      * We generate a default, deterministic Bolt 12 offer based on the node's seed and its trampoline node.
      * This offer will stay valid after restoring the seed on a different device.
+     * @return the default offer and the private key that will sign invoices for this offer.
      */
-    fun defaultOffer(trampolineNodeId: PublicKey): OfferTypes.Offer {
+    fun defaultOffer(trampolineNodeId: PublicKey): Pair<OfferTypes.Offer, PrivateKey> {
         // We generate a deterministic blindingSecret based on:
         //  - a custom tag indicating that this is used in the Bolt 12 context
         //  - our trampoline node, which is used as an introduction node for the offer's blinded path
