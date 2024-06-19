@@ -533,7 +533,7 @@ class Peer(
         // case where a channel permanently stays in Syncing, because it is only present locally, and the peer will
         // never send a channel_reestablish (this happens e.g. due to an error at funding). That is why we consider
         // the peer ready if "all channels are synced" OR "peer has been connected for 10s".
-        connectionState.first { it is Connection.ESTABLISHED }
+        _peerConnection.filterNotNull().first()
         val result = withTimeoutOrNull(10.seconds) {
             channelsFlow.first { it.values.all { channel -> channel !is Offline && channel !is Syncing } }
         }
@@ -947,14 +947,16 @@ class Peer(
     }
 
     // MUST ONLY BE SET BY processEvent()
-    private var peerConnection: PeerConnection? = null
+    private val _peerConnection = MutableStateFlow<PeerConnection?>(null)
+    private val peerConnection: PeerConnection?
+        get() = _peerConnection.value
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun processEvent(cmd: PeerCommand, logger: MDCLogger) {
         when (cmd) {
             is Connected -> {
                 logger.info { "new connection with id=${cmd.peerConnection.id}, sending init $ourInit" }
-                peerConnection = cmd.peerConnection
+                _peerConnection.value = cmd.peerConnection
                 peerConnection?.send(ourInit)
             }
             is MessageReceived -> {
@@ -1317,7 +1319,7 @@ class Peer(
                     null -> logger.info { "ignoring disconnected event, we're already disconnected" }
                     else -> {
                         logger.warning { "disconnecting channels from connectionId=${peerConnection?.id}" }
-                        peerConnection = null
+                        _peerConnection.value = null
                         _channels.forEach { (key, value) ->
                             val (state1, actions) = value.process(ChannelCommand.Disconnected)
                             _channels = _channels + (key to state1)
