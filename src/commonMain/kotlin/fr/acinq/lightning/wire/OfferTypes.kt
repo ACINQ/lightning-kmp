@@ -21,11 +21,15 @@ import fr.acinq.lightning.message.OnionMessages
 object OfferTypes {
     /** Data provided to reach the issuer of an offer or invoice. */
     sealed class ContactInfo {
+        abstract val nodeId: PublicKey
+
         /** If the offer or invoice issuer doesn't want to hide their identity, they can directly share their public nodeId. */
-        data class RecipientNodeId(val nodeId: PublicKey) : ContactInfo()
+        data class RecipientNodeId(override val nodeId: PublicKey) : ContactInfo()
 
         /** If the offer or invoice issuer wants to hide their identity, they instead provide blinded paths. */
-        data class BlindedPath(val route: RouteBlinding.BlindedRoute) : ContactInfo()
+        data class BlindedPath(val route: RouteBlinding.BlindedRoute) : ContactInfo() {
+            override val nodeId: PublicKey = route.blindedNodeIds.last()
+        }
     }
 
     fun writePath(path: ContactInfo.BlindedPath, out: Output) {
@@ -723,6 +727,7 @@ object OfferTypes {
         val nodeId: PublicKey? = records.get<OfferNodeId>()?.publicKey
         // A valid offer must contain a blinded path or a nodeId.
         val contactInfos: List<ContactInfo> = paths ?: listOf(ContactInfo.RecipientNodeId(nodeId!!))
+        val contactNodeIds: List<PublicKey> = contactInfos.map { it.nodeId }
 
         fun encode(): String {
             val data = tlvSerializer.write(records)
