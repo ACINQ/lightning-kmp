@@ -8,7 +8,6 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
@@ -67,125 +66,26 @@ sealed class ChannelTlv : Tlv {
     }
 
     /** Request inbound liquidity from our peer. */
-    data class RequestFunds(val amount: Satoshi, val leaseDuration: Int, val leaseExpiry: Int) : ChannelTlv() {
-        override val tag: Long get() = RequestFunds.tag
+    data class RequestFundingTlv(val request: LiquidityAds.RequestFunding) : ChannelTlv() {
+        override val tag: Long get() = RequestFundingTlv.tag
 
-        override fun write(out: Output) {
-            LightningCodecs.writeU64(amount.toLong(), out)
-            LightningCodecs.writeU16(leaseDuration, out)
-            LightningCodecs.writeU32(leaseExpiry, out)
-        }
+        override fun write(out: Output) = request.write(out)
 
-        companion object : TlvValueReader<RequestFunds> {
-            const val tag: Long = 1337
-
-            override fun read(input: Input): RequestFunds = RequestFunds(
-                amount = LightningCodecs.u64(input).sat,
-                leaseDuration = LightningCodecs.u16(input),
-                leaseExpiry = LightningCodecs.u32(input),
-            )
+        companion object : TlvValueReader<RequestFundingTlv> {
+            const val tag: Long = 1339
+            override fun read(input: Input): RequestFundingTlv = RequestFundingTlv(LiquidityAds.RequestFunding.read(input))
         }
     }
 
-    /** Liquidity rates applied to an incoming [[RequestFunds]]. */
-    data class WillFund(val sig: ByteVector64, val fundingWeight: Int, val leaseFeeProportional: Int, val leaseFeeBase: Satoshi, val maxRelayFeeProportional: Int, val maxRelayFeeBase: MilliSatoshi) : ChannelTlv() {
-        override val tag: Long get() = WillFund.tag
+    /** Accept inbound liquidity request. */
+    data class ProvideFundingTlv(val willFund: LiquidityAds.WillFund) : ChannelTlv() {
+        override val tag: Long get() = ProvideFundingTlv.tag
 
-        fun leaseRate(leaseDuration: Int): LiquidityAds.LeaseRate = LiquidityAds.LeaseRate(leaseDuration, fundingWeight, leaseFeeProportional, leaseFeeBase, maxRelayFeeProportional, maxRelayFeeBase)
+        override fun write(out: Output) = willFund.write(out)
 
-        override fun write(out: Output) {
-            LightningCodecs.writeBytes(sig, out)
-            LightningCodecs.writeU16(fundingWeight, out)
-            LightningCodecs.writeU16(leaseFeeProportional, out)
-            LightningCodecs.writeU32(leaseFeeBase.sat.toInt(), out)
-            LightningCodecs.writeU16(maxRelayFeeProportional, out)
-            LightningCodecs.writeU32(maxRelayFeeBase.msat.toInt(), out)
-        }
-
-        companion object : TlvValueReader<WillFund> {
-            const val tag: Long = 1337
-
-            override fun read(input: Input): WillFund = WillFund(
-                sig = LightningCodecs.bytes(input, 64).toByteVector64(),
-                fundingWeight = LightningCodecs.u16(input),
-                leaseFeeProportional = LightningCodecs.u16(input),
-                leaseFeeBase = LightningCodecs.u32(input).sat,
-                maxRelayFeeProportional = LightningCodecs.u16(input),
-                maxRelayFeeBase = LightningCodecs.u32(input).msat,
-            )
-        }
-    }
-
-    data class OriginTlv(val origin: Origin) : ChannelTlv() {
-        override val tag: Long get() = OriginTlv.tag
-
-        override fun write(out: Output) {
-            when (origin) {
-                is Origin.PayToOpenOrigin -> {
-                    LightningCodecs.writeU16(1, out)
-                    LightningCodecs.writeBytes(origin.paymentHash, out)
-                    LightningCodecs.writeU64(origin.miningFee.toLong(), out)
-                    LightningCodecs.writeU64(origin.serviceFee.toLong(), out)
-                    LightningCodecs.writeU64(origin.amount.toLong(), out)
-                }
-
-                is Origin.PleaseOpenChannelOrigin -> {
-                    LightningCodecs.writeU16(4, out)
-                    LightningCodecs.writeBytes(origin.requestId, out)
-                    LightningCodecs.writeU64(origin.miningFee.toLong(), out)
-                    LightningCodecs.writeU64(origin.serviceFee.toLong(), out)
-                    LightningCodecs.writeU64(origin.amount.toLong(), out)
-                }
-            }
-        }
-
-        companion object : TlvValueReader<OriginTlv> {
-            const val tag: Long = 0x47000005
-
-            override fun read(input: Input): OriginTlv {
-                val origin = when (LightningCodecs.u16(input)) {
-                    1 -> Origin.PayToOpenOrigin(
-                        paymentHash = LightningCodecs.bytes(input, 32).byteVector32(),
-                        miningFee = LightningCodecs.u64(input).sat,
-                        serviceFee = LightningCodecs.u64(input).msat,
-                        amount = LightningCodecs.u64(input).msat
-                    )
-
-                    4 -> Origin.PleaseOpenChannelOrigin(
-                        requestId = LightningCodecs.bytes(input, 32).byteVector32(),
-                        miningFee = LightningCodecs.u64(input).sat,
-                        serviceFee = LightningCodecs.u64(input).msat,
-                        amount = LightningCodecs.u64(input).msat
-                    )
-
-                    else -> error("Unsupported channel origin discriminator")
-                }
-                return OriginTlv(origin)
-            }
-        }
-    }
-
-    /** With rbfed splices we can have multiple origins*/
-    data class OriginsTlv(val origins: List<Origin>) : ChannelTlv() {
-        override val tag: Long get() = OriginsTlv.tag
-
-        override fun write(out: Output) {
-            LightningCodecs.writeU16(origins.size, out)
-            origins.forEach { OriginTlv(it).write(out) }
-        }
-
-        companion object : TlvValueReader<OriginsTlv> {
-            const val tag: Long = 0x47000009
-
-            override fun read(input: Input): OriginsTlv {
-                val size = LightningCodecs.u16(input)
-                val origins = buildList {
-                    for (i in 0 until size) {
-                        add(OriginTlv.read(input).origin)
-                    }
-                }
-                return OriginsTlv(origins)
-            }
+        companion object : TlvValueReader<ProvideFundingTlv> {
+            const val tag: Long = 1339
+            override fun read(input: Input): ProvideFundingTlv = ProvideFundingTlv(LiquidityAds.WillFund.read(input))
         }
     }
 
@@ -336,54 +236,6 @@ sealed class ClosingSignedTlv : Tlv {
         companion object : TlvValueReader<ChannelData> {
             const val tag: Long = 0x47010000
             override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
-        }
-    }
-}
-
-sealed class PleaseOpenChannelTlv : Tlv {
-    // NB: this is a temporary tlv that is only used to ensure a smooth migration to lightning-kmp for the android version of Phoenix.
-    data class GrandParents(val outpoints: List<OutPoint>) : PleaseOpenChannelTlv() {
-        override val tag: Long get() = GrandParents.tag
-        override fun write(out: Output) {
-            outpoints.forEach { outpoint ->
-                LightningCodecs.writeTxHash(outpoint.hash, out)
-                LightningCodecs.writeU64(outpoint.index, out)
-            }
-        }
-
-        companion object : TlvValueReader<GrandParents> {
-            const val tag: Long = 561
-            override fun read(input: Input): GrandParents {
-                val count = input.availableBytes / 40
-                val outpoints = (0 until count).map { OutPoint(LightningCodecs.txHash(input), LightningCodecs.u64(input)) }
-                return GrandParents(outpoints)
-            }
-        }
-    }
-}
-
-sealed class PleaseOpenChannelRejectedTlv : Tlv {
-    data class ExpectedFees(val fees: MilliSatoshi) : PleaseOpenChannelRejectedTlv() {
-        override val tag: Long get() = ExpectedFees.tag
-        override fun write(out: Output) = LightningCodecs.writeTU64(fees.toLong(), out)
-
-        companion object : TlvValueReader<ExpectedFees> {
-            const val tag: Long = 1
-            override fun read(input: Input): ExpectedFees = ExpectedFees(LightningCodecs.tu64(input).msat)
-        }
-    }
-}
-
-sealed class PayToOpenRequestTlv : Tlv {
-    /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
-    data class Blinding(val publicKey: PublicKey) : PayToOpenRequestTlv() {
-        override val tag: Long get() = Blinding.tag
-
-        override fun write(out: Output) = LightningCodecs.writeBytes(publicKey.value, out)
-
-        companion object : TlvValueReader<Blinding> {
-            const val tag: Long = 0
-            override fun read(input: Input): Blinding = Blinding(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 }
