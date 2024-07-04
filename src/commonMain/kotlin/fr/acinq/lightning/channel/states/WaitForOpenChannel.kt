@@ -48,7 +48,7 @@ data class WaitForOpenChannel(
                                 fundingRates == null -> null
                                 requestFunding == null -> null
                                 requestFunding.requestedAmount > fundingAmount -> null
-                                else -> fundingRates.validateRequest(staticParams.nodeParams.nodePrivateKey, fundingScript, open.fundingFeerate, requestFunding, isChannelCreation = true)
+                                else -> fundingRates.validateRequest(staticParams.nodeParams.nodePrivateKey, fundingScript, open.fundingFeerate, requestFunding, isChannelCreation = true, 0.msat)
                             }
                             val accept = AcceptDualFundedChannel(
                                 temporaryChannelId = open.temporaryChannelId,
@@ -91,7 +91,7 @@ data class WaitForOpenChannel(
                             val remoteFundingPubkey = open.fundingPubkey
                             val dustLimit = open.dustLimit.max(localParams.dustLimit)
                             val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, remoteFundingPubkey, open.lockTime, dustLimit, open.fundingFeerate)
-                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, walletInputs)) {
+                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, walletInputs, accept.pushAmount, open.pushAmount, null)) {
                                 is Either.Left -> {
                                     logger.error { "could not fund channel: ${fundingContributions.value}" }
                                     Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))

@@ -475,9 +475,9 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         // Bob receives these 2 HTLCs.
-        val process1 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[0].first, adds[0].second, 3), TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
+        val process1 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[0].first, adds[0].second, 3), Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
         assertTrue(process1 is IncomingPaymentHandler.ProcessAddResult.Pending)
-        val process2 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[1].first, adds[1].second, 5), TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
+        val process2 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[1].first, adds[1].second, 5), Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
         assertTrue(process2 is IncomingPaymentHandler.ProcessAddResult.Accepted)
         val fulfills = process2.actions.filterIsInstance<WrappedChannelCommand>().mapNotNull { it.channelCommand as? ChannelCommand.Htlc.Settlement.Fulfill }
         assertEquals(2, fulfills.size)

@@ -83,6 +83,8 @@ interface LightningMessage {
                 WillFailHtlc.type -> WillFailHtlc.read(stream)
                 WillFailMalformedHtlc.type -> WillFailMalformedHtlc.read(stream)
                 CancelOnTheFlyFunding.type -> CancelOnTheFlyFunding.read(stream)
+                AddFeeCredit.type -> AddFeeCredit.read(stream)
+                CurrentFeeCredit.type -> CurrentFeeCredit.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
                 DNSAddressRequest.type -> DNSAddressRequest.read(stream)
@@ -786,6 +788,7 @@ data class AcceptDualFundedChannel(
 ) : ChannelMessage, HasTemporaryChannelId {
     val channelType: ChannelType? get() = tlvStream.get<ChannelTlv.ChannelTypeTlv>()?.channelType
     val willFund: LiquidityAds.WillFund? get() = tlvStream.get<ChannelTlv.ProvideFundingTlv>()?.willFund
+    val feeCreditUsed: MilliSatoshi = tlvStream.get<ChannelTlv.FeeCreditUsedTlv>()?.amount ?: 0.msat
     val pushAmount: MilliSatoshi get() = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
 
     override val type: Long get() = AcceptDualFundedChannel.type
@@ -818,6 +821,7 @@ data class AcceptDualFundedChannel(
             ChannelTlv.ChannelTypeTlv.tag to ChannelTlv.ChannelTypeTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.ProvideFundingTlv.tag to ChannelTlv.ProvideFundingTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.FeeCreditUsedTlv.tag to ChannelTlv.FeeCreditUsedTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
 
@@ -1011,6 +1015,7 @@ data class SpliceAck(
     override val type: Long get() = SpliceAck.type
     val requireConfirmedInputs: Boolean = tlvStream.get<ChannelTlv.RequireConfirmedInputsTlv>()?.let { true } ?: false
     val willFund: LiquidityAds.WillFund? = tlvStream.get<ChannelTlv.ProvideFundingTlv>()?.willFund
+    val feeCreditUsed: MilliSatoshi = tlvStream.get<ChannelTlv.FeeCreditUsedTlv>()?.amount ?: 0.msat
     val pushAmount: MilliSatoshi = tlvStream.get<ChannelTlv.PushAmountTlv>()?.amount ?: 0.msat
 
     constructor(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi, fundingPubkey: PublicKey, willFund: LiquidityAds.WillFund?) : this(
@@ -1038,6 +1043,7 @@ data class SpliceAck(
         private val readers = mapOf(
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.ProvideFundingTlv.tag to ChannelTlv.ProvideFundingTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.FeeCreditUsedTlv.tag to ChannelTlv.FeeCreditUsedTlv.Companion as TlvValueReader<ChannelTlv>,
             ChannelTlv.PushAmountTlv.tag to ChannelTlv.PushAmountTlv.Companion as TlvValueReader<ChannelTlv>,
         )
 
@@ -1772,6 +1778,48 @@ data class CancelOnTheFlyFunding(override val channelId: ByteVector32, val payme
             channelId = LightningCodecs.bytes(input, 32).byteVector32(),
             paymentHashes = (0 until LightningCodecs.u16(input)).map { LightningCodecs.bytes(input, 32).byteVector32() },
             reason = LightningCodecs.bytes(input, LightningCodecs.u16(input)).byteVector()
+        )
+    }
+}
+
+/**
+ * This message is used to reveal the preimage of a small payment for which it isn't economical to perform an on-chain
+ * transaction. The amount of the payment will be added to our fee credit, which can be used when a future on-chain
+ * transaction is needed. This message requires the [Feature.FundingFeeCredit] feature.
+ */
+data class AddFeeCredit(override val chainHash: BlockHash, val preimage: ByteVector32) : HasChainHash, OnTheFlyFundingMessage {
+    override val type: Long = AddFeeCredit.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(chainHash.value, out)
+        LightningCodecs.writeBytes(preimage, out)
+    }
+
+    companion object : LightningMessageReader<AddFeeCredit> {
+        const val type: Long = 41045
+
+        override fun read(input: Input): AddFeeCredit = AddFeeCredit(
+            chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
+            preimage = LightningCodecs.bytes(input, 32).byteVector32()
+        )
+    }
+}
+
+/** This message contains our current fee credit: our peer is the source of truth for that value. */
+data class CurrentFeeCredit(override val chainHash: BlockHash, val amount: MilliSatoshi) : HasChainHash, OnTheFlyFundingMessage {
+    override val type: Long = CurrentFeeCredit.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(chainHash.value, out)
+        LightningCodecs.writeU64(amount.toLong(), out)
+    }
+
+    companion object : LightningMessageReader<CurrentFeeCredit> {
+        const val type: Long = 41046
+
+        override fun read(input: Input): CurrentFeeCredit = CurrentFeeCredit(
+            chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
+            amount = LightningCodecs.u64(input).msat,
         )
     }
 }

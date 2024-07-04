@@ -175,6 +175,15 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
             override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
         }
 
+        /**
+         * Payment was added to our fee credit for future on-chain operations (see [Feature.FundingFeeCredit]).
+         * We didn't really receive this amount yet, but we trust our peer to use it for future on-chain operations.
+         */
+        data class AddedToFeeCredit(override val amountReceived: MilliSatoshi) : ReceivedWith() {
+            // Adding to the fee credit doesn't cost any fees.
+            override val fees: MilliSatoshi = 0.msat
+        }
+
         sealed class OnChainIncomingPayment : ReceivedWith() {
             abstract val serviceFee: MilliSatoshi
             abstract val miningFee: Satoshi

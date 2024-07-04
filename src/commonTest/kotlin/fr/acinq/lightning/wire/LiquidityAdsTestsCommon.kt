@@ -10,6 +10,7 @@ import fr.acinq.lightning.channel.InvalidLiquidityAdsAmount
 import fr.acinq.lightning.channel.InvalidLiquidityAdsSig
 import fr.acinq.lightning.channel.MissingLiquidityAds
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,7 +34,7 @@ class LiquidityAdsTestsCommon : LightningTestSuite() {
         val request = LiquidityAds.RequestFunding.chooseRate(500_000.sat, LiquidityAds.PaymentDetails.FromChannelBalance, fundingRates)
         assertNotNull(request)
         val fundingScript = ByteVector.fromHex("00202395c9c52c02ca069f1d56a3c6124bf8b152a617328c76e6b31f83ace370c2ff")
-        val willFund = fundingRates.validateRequest(nodeKey, fundingScript, FeeratePerKw(1000.sat), request, isChannelCreation = true)?.willFund
+        val willFund = fundingRates.validateRequest(nodeKey, fundingScript, FeeratePerKw(1000.sat), request, isChannelCreation = true, 0.msat)?.willFund
         assertNotNull(willFund)
         assertEquals(fundingScript, willFund.fundingScript)
         assertEquals(fundingRate, willFund.fundingRate)
@@ -49,7 +50,7 @@ class LiquidityAdsTestsCommon : LightningTestSuite() {
             TestCase(0.sat, willFund, failure = InvalidLiquidityAdsAmount(channelId, 0.sat, 500_000.sat)),
         )
         testCases.forEach {
-            val result = request.validateRemoteFunding(nodeKey.publicKey(), channelId, fundingScript, it.remoteFundingAmount, FeeratePerKw(2500.sat), isChannelCreation = true, it.willFund)
+            val result = request.validateRemoteFunding(nodeKey.publicKey(), channelId, fundingScript, it.remoteFundingAmount, FeeratePerKw(2500.sat), isChannelCreation = true, 0.msat, it.willFund)
             assertEquals(it.failure, result.left)
         }
     }

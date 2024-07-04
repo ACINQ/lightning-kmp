@@ -415,15 +415,23 @@ object Deserialization {
         0x00 -> LiquidityAds.Purchase.Standard(
             amount = readNumber().sat,
             fees = readLiquidityFees(),
-            paymentDetails = when (val paymentDetailsDiscriminator = read()) {
-                0x00 -> LiquidityAds.PaymentDetails.FromChannelBalance
-                0x80 -> LiquidityAds.PaymentDetails.FromFutureHtlc(readCollection { readByteVector32() }.toList())
-                0x81 -> LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(readCollection { readByteVector32() }.toList())
-                0x82 -> LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(readCollection { readByteVector32() }.toList())
-                else -> error("unknown discriminator $paymentDetailsDiscriminator for class ${LiquidityAds.PaymentDetails::class}")
-            }
+            paymentDetails = readLiquidityAdsPaymentDetails()
+        )
+        0x01 -> LiquidityAds.Purchase.WithFeeCredit(
+            amount = readNumber().sat,
+            fees = readLiquidityFees(),
+            feeCreditUsed = readNumber().msat,
+            paymentDetails = readLiquidityAdsPaymentDetails()
         )
         else -> error("unknown discriminator $discriminator for class ${LiquidityAds.Purchase::class}")
+    }
+
+    private fun Input.readLiquidityAdsPaymentDetails(): LiquidityAds.PaymentDetails = when (val discriminator = read()) {
+        0x00 -> LiquidityAds.PaymentDetails.FromChannelBalance
+        0x80 -> LiquidityAds.PaymentDetails.FromFutureHtlc(readCollection { readByteVector32() }.toList())
+        0x81 -> LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(readCollection { readByteVector32() }.toList())
+        0x82 -> LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(readCollection { readByteVector32() }.toList())
+        else -> error("unknown discriminator $discriminator for class ${LiquidityAds.PaymentDetails::class}")
     }
 
     private fun Input.skipLegacyLiquidityLease() {

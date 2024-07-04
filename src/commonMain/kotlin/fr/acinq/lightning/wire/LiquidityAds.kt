@@ -10,6 +10,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.BitField
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 
 /**
@@ -187,14 +188,17 @@ object LiquidityAds {
 
     /** Sellers offer various rates and payment options. */
     data class WillFundRates(val fundingRates: List<FundingRate>, val paymentTypes: Set<PaymentType>) {
-        fun validateRequest(nodeKey: PrivateKey, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding, isChannelCreation: Boolean): WillFundPurchase? {
+        fun validateRequest(nodeKey: PrivateKey, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding, isChannelCreation: Boolean, feeCreditUsed: MilliSatoshi): WillFundPurchase? {
             val paymentTypeOk = paymentTypes.contains(request.paymentDetails.paymentType)
             val rateOk = fundingRates.contains(request.fundingRate)
             val amountOk = request.fundingRate.minAmount <= request.requestedAmount && request.requestedAmount <= request.fundingRate.maxAmount
             return when {
                 paymentTypeOk && rateOk && amountOk -> {
                     val sig = Crypto.sign(request.fundingRate.signedData(fundingScript), nodeKey)
-                    val purchase = Purchase.Standard(request.requestedAmount, request.fees(fundingFeerate, isChannelCreation), request.paymentDetails)
+                    val purchase = when (feeCreditUsed) {
+                        0.msat -> Purchase.Standard(request.requestedAmount, request.fees(fundingFeerate, isChannelCreation), request.paymentDetails)
+                        else -> Purchase.WithFeeCredit(request.requestedAmount, request.fees(fundingFeerate, isChannelCreation), feeCreditUsed, request.paymentDetails)
+                    }
                     WillFundPurchase(WillFund(request.fundingRate, fundingScript, sig), purchase)
                 }
                 else -> null
@@ -252,6 +256,7 @@ object LiquidityAds {
             remoteFundingAmount: Satoshi,
             fundingFeerate: FeeratePerKw,
             isChannelCreation: Boolean,
+            feeCreditUsed: MilliSatoshi,
             willFund: WillFund?
         ): Either<ChannelException, Purchase> {
             return when (willFund) {
@@ -266,7 +271,10 @@ object LiquidityAds {
                     else -> {
                         val purchasedAmount = requestedAmount.min(remoteFundingAmount)
                         val fees = fundingRate.fees(fundingFeerate, requestedAmount, remoteFundingAmount, isChannelCreation)
-                        Either.Right(Purchase.Standard(purchasedAmount, fees, paymentDetails))
+                        when (feeCreditUsed) {
+                            0.msat -> Either.Right(Purchase.Standard(purchasedAmount, fees, paymentDetails))
+                            else -> Either.Right(Purchase.WithFeeCredit(purchasedAmount, fees, feeCreditUsed, paymentDetails))
+                        }
                     }
                 }
             }
@@ -300,11 +308,12 @@ object LiquidityAds {
         remoteFundingAmount: Satoshi,
         fundingFeerate: FeeratePerKw,
         isChannelCreation: Boolean,
+        feeCreditUsed: MilliSatoshi,
         willFund: WillFund?,
     ): Either<ChannelException, Purchase?> {
         return when (request) {
             null -> Either.Right(null)
-            else -> request.validateRemoteFunding(remoteNodeId, channelId, fundingScript, remoteFundingAmount, fundingFeerate, isChannelCreation, willFund)
+            else -> request.validateRemoteFunding(remoteNodeId, channelId, fundingScript, remoteFundingAmount, fundingFeerate, isChannelCreation, feeCreditUsed, willFund)
         }
     }
 
@@ -315,6 +324,7 @@ object LiquidityAds {
         abstract val paymentDetails: PaymentDetails
 
         data class Standard(override val amount: Satoshi, override val fees: Fees, override val paymentDetails: PaymentDetails) : Purchase()
+        data class WithFeeCredit(override val amount: Satoshi, override val fees: Fees, val feeCreditUsed: MilliSatoshi, override val paymentDetails: PaymentDetails) : Purchase()
     }
 
     data class WillFundPurchase(val willFund: WillFund, val purchase: Purchase)

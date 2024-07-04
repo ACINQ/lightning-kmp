@@ -381,7 +381,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val fundingLease = LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat, 1_500.sat)
         val requestFunds = LiquidityAds.RequestFunding(750_000.sat, fundingLease, LiquidityAds.PaymentDetails.FromChannelBalance)
         val fundingScript = Helpers.Funding.makeFundingPubKeyScript(publicKey(1), publicKey(1))
-        val willFund = LiquidityAds.WillFundRates(listOf(fundingLease), setOf(LiquidityAds.PaymentType.FromChannelBalance)).validateRequest(nodeKey, fundingScript, FeeratePerKw(5000.sat), requestFunds, isChannelCreation = true)!!.willFund
+        val willFund = LiquidityAds.WillFundRates(listOf(fundingLease), setOf(LiquidityAds.PaymentType.FromChannelBalance)).validateRequest(nodeKey, fundingScript, FeeratePerKw(5000.sat), requestFunds, isChannelCreation = true, 0.msat)!!.willFund
         // @formatter:off
         val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000.sat, 473.sat, 100_000_000, 1.msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), publicKey(7))
         val defaultEncoded = ByteVector("0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
@@ -390,6 +390,8 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.UnsupportedChannelType(Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory))))) to (defaultEncoded + ByteVector("01021000")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector("01abcdef")), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))) to (defaultEncoded + ByteVector("000401abcdef 0103101000")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.ProvideFundingTlv(willFund))) to (defaultEncoded + ByteVector("0103101000 fd053b780007a120004c4b40044c004b00000000000005dc002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103cc57cf393f6bd534472ec08cbfbbc7268501b32f563a21cdf02a99127c4f25168249acd6509f96b2e93843c3b838ee4808c75d0a15ff71ba886fda980b8ca954f")),
+            defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.FeeCreditUsedTlv(0.msat))) to (defaultEncoded + ByteVector("0103101000 fda05200")),
+            defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.FeeCreditUsedTlv(1729.msat))) to (defaultEncoded + ByteVector("0103101000 fda0520206c1")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(1729.msat))) to (defaultEncoded + ByteVector("0103101000 fe470000070206c1")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequireConfirmedInputsTlv)) to (defaultEncoded + ByteVector("0103101000 0200")),
             defaultAccept.copy(tlvStream = TlvStream(setOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)), setOf(GenericTlv(113, ByteVector("deadbeef"))))) to (defaultEncoded + ByteVector("0103101000 7104deadbeef")),
@@ -543,6 +545,8 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             SpliceAck(channelId, 0.sat, fundingPubkey) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
             SpliceAck(channelId, (-25_000).sat, fundingPubkey) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff9e58 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
             SpliceAck(channelId, 25_000.sat, 0.msat, fundingPubkey, LiquidityAds.WillFund(fundingRate, ByteVector("deadbeef"), ByteVector64.Zeroes)) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b5a000186a0000186a00190009600000000000000000004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            SpliceAck(channelId, 25_000.sat, fundingPubkey, TlvStream(ChannelTlv.FeeCreditUsedTlv(0.msat))) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fda05200"),
+            SpliceAck(channelId, 25_000.sat, fundingPubkey, TlvStream(ChannelTlv.FeeCreditUsedTlv(1729.msat))) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fda0520206c1"),
             SpliceLocked(channelId, fundingTxId) to ByteVector("908c aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"),
             // @formatter:on
         )
@@ -838,6 +842,28 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             CancelOnTheFlyFunding(channelId, listOf(), ByteVector("deadbeef")) to Hex.decode("a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0000 0004 deadbeef"),
             CancelOnTheFlyFunding(channelId, listOf(paymentHash1), ByteVector("deadbeef")) to Hex.decode("a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0001 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 0004 deadbeef"),
             CancelOnTheFlyFunding(channelId, listOf(paymentHash1, paymentHash2), ByteVector("deadbeef")) to Hex.decode("a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0002 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb21067343213a810a0bfc54566d9be09da1484538b5d19229e928dfa8b692966a8df6785 0004 deadbeef"),
+            // @formatter:on
+        )
+        testCases.forEach {
+            val decoded = LightningMessage.decode(it.second)
+            assertNotNull(decoded)
+            assertEquals(it.first, decoded)
+            val encoded = LightningMessage.encode(decoded)
+            assertContentEquals(it.second, encoded)
+        }
+    }
+
+    @Test
+    fun `encode - decode fee credit messages`() {
+        val preimages = listOf(
+            ByteVector32("6962570ba49642729d77020821f55a492f5df092f3777e75f9740e5b6efec08f"),
+            ByteVector32("4ad834d418faf74ebf7c8a026f2767a41c3a0995c334d7d3dab47737794b0c16")
+        )
+        val testCases = listOf(
+            // @formatter:off
+            AddFeeCredit(Block.RegtestGenesisBlock.hash, preimages.first()) to Hex.decode("a055 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 6962570ba49642729d77020821f55a492f5df092f3777e75f9740e5b6efec08f"),
+            CurrentFeeCredit(Block.RegtestGenesisBlock.hash, 0.msat) to Hex.decode("a056 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 0000000000000000"),
+            CurrentFeeCredit(Block.RegtestGenesisBlock.hash, 20_000_000.msat) to Hex.decode("a056 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 0000000001312d00"),
             // @formatter:on
         )
         testCases.forEach {
