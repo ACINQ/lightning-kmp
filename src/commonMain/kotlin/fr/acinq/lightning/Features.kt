@@ -263,6 +263,13 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
+    @Serializable
+    object FundingFeeCredit : Feature() {
+        override val rfcName get() = "funding_fee_credit"
+        override val mandatory get() = 562
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
 }
 
 @Serializable
@@ -345,7 +352,8 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ChannelBackupClient,
             Feature.ChannelBackupProvider,
             Feature.ExperimentalSplice,
-            Feature.OnTheFlyFunding
+            Feature.OnTheFlyFunding,
+            Feature.FundingFeeCredit
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())
@@ -378,7 +386,8 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
             Feature.TrampolinePayment to listOf(Feature.PaymentSecret),
             Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret),
-            Feature.OnTheFlyFunding to listOf(Feature.ExperimentalSplice)
+            Feature.OnTheFlyFunding to listOf(Feature.ExperimentalSplice),
+            Feature.FundingFeeCredit to listOf(Feature.OnTheFlyFunding)
         )
 
         class FeatureException(message: String) : IllegalArgumentException(message)

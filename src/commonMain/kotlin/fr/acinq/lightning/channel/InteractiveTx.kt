@@ -98,6 +98,20 @@ data class InteractiveTxParams(
         val fundingTxIndex = (sharedInput as? SharedFundingInput.Multisig2of2)?.let { it.fundingTxIndex + 1 } ?: 0
         return Helpers.Funding.makeFundingPubKeyScript(channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubkey)
     }
+
+    fun liquidityFees(purchase: LiquidityAds.Purchase?): MilliSatoshi = purchase?.let { l ->
+        val fees = when (l) {
+            is LiquidityAds.Purchase.Standard -> l.fees.total.toMilliSatoshi()
+            is LiquidityAds.Purchase.WithFeeCredit -> l.fees.total.toMilliSatoshi() - l.feeCreditUsed
+        }
+        when (l.paymentDetails) {
+            is LiquidityAds.PaymentDetails.FromChannelBalance -> if (isInitiator) fees else -fees
+            is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> if (isInitiator) fees else -fees
+            // Fees will be paid later, from relayed HTLCs.
+            is LiquidityAds.PaymentDetails.FromFutureHtlc -> 0.msat
+            is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> 0.msat
+        }
+    } ?: 0.msat
 }
 
 sealed class InteractiveTxInput {
@@ -209,7 +223,12 @@ sealed class InteractiveTxOutput {
      */
     data class Remote(override val serialId: Long, override val amount: Satoshi, override val pubkeyScript: ByteVector) : InteractiveTxOutput(), Incoming
 
-    /** The shared output can be added by us or by our peer, depending on who initiated the protocol. */
+    /**
+     * The shared output can be added by us or by our peer, depending on who initiated the protocol.
+     *
+     * @param localAmount amount contributed by us, before applying push_amount and (optional) liquidity fees: this is different from the channel balance.
+     * @param remoteAmount amount contributed by our peer, before applying push_amount and (optional) liquidity fees: this is different from the channel balance.
+     */
     data class Shared(override val serialId: Long, override val pubkeyScript: ByteVector, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi, val htlcAmount: MilliSatoshi) : InteractiveTxOutput(), Incoming, Outgoing {
         // Note that the truncation is a no-op: the sum of balances in a channel must be a satoshi amount.
         override val amount: Satoshi = (localAmount + remoteAmount + htlcAmount).truncateToSatoshi()
@@ -246,8 +265,17 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         /**
          * @param walletInputs 2-of-2 swap-in wallet inputs.
          */
-        fun create(channelKeys: KeyManager.ChannelKeys, swapInKeys: KeyManager.SwapInOnChainKeys, params: InteractiveTxParams, walletInputs: List<WalletState.Utxo>): Either<FundingContributionFailure, FundingContributions> =
-            create(channelKeys, swapInKeys, params, null, walletInputs, listOf())
+        fun create(
+            channelKeys: KeyManager.ChannelKeys,
+            swapInKeys: KeyManager.SwapInOnChainKeys,
+            params: InteractiveTxParams,
+            walletInputs: List<WalletState.Utxo>,
+            localPushAmount: MilliSatoshi,
+            remotePushAmount: MilliSatoshi,
+            liquidityPurchase: LiquidityAds.Purchase?
+        ): Either<FundingContributionFailure, FundingContributions> {
+            return create(channelKeys, swapInKeys, params, null, walletInputs, listOf(), localPushAmount, remotePushAmount, liquidityPurchase)
+        }
 
         /**
          * @param sharedUtxo previous input shared between the two participants (e.g. previous funding output when splicing) and our corresponding balance.
@@ -262,6 +290,9 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
             sharedUtxo: Pair<SharedFundingInput, SharedFundingInputBalances>?,
             walletInputs: List<WalletState.Utxo>,
             localOutputs: List<TxOut>,
+            localPushAmount: MilliSatoshi,
+            remotePushAmount: MilliSatoshi,
+            liquidityPurchase: LiquidityAds.Purchase?,
             changePubKey: PublicKey? = null
         ): Either<FundingContributionFailure, FundingContributions> {
             walletInputs.forEach { utxo ->
@@ -277,14 +308,18 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 return Either.Left(FundingContributionFailure.NotEnoughFunding(params.localContribution, localOutputs.map { it.amount }.sum(), totalAmountIn))
             }
 
-            val nextLocalBalance = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi()
-            val nextRemoteBalance = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi()
-            if (nextLocalBalance < 0.msat || nextRemoteBalance < 0.msat) {
-                return Either.Left(FundingContributionFailure.InvalidFundingBalances(params.fundingAmount, nextLocalBalance, nextRemoteBalance))
+            val liquidityFees = params.liquidityFees(liquidityPurchase)
+            val nextLocalBalanceBeforePush = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi()
+            val nextLocalBalanceAfterPush = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi() - localPushAmount + remotePushAmount - liquidityFees
+            val nextRemoteBalanceBeforePush = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi()
+            val nextRemoteBalanceAfterPush = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi() + localPushAmount - remotePushAmount + liquidityFees
+            if (nextLocalBalanceAfterPush < 0.msat || nextRemoteBalanceAfterPush < 0.msat) {
+                return Either.Left(FundingContributionFailure.InvalidFundingBalances(params.fundingAmount, nextLocalBalanceAfterPush, nextRemoteBalanceAfterPush))
             }
 
             val fundingPubkeyScript = params.fundingPubkeyScript(channelKeys)
-            val sharedOutput = listOf(InteractiveTxOutput.Shared(0, fundingPubkeyScript, nextLocalBalance, nextRemoteBalance, sharedUtxo?.second?.toHtlcs ?: 0.msat))
+            // We use local and remote balances before amounts are pushed to allow computing the local and remote mining fees.
+            val sharedOutput = listOf(InteractiveTxOutput.Shared(0, fundingPubkeyScript, nextLocalBalanceBeforePush, nextRemoteBalanceBeforePush, sharedUtxo?.second?.toHtlcs ?: 0.msat))
             val nonChangeOutputs = localOutputs.map { o -> InteractiveTxOutput.Local.NonChange(0, o.amount, o.publicKeyScript) }
             val changeOutput = when (changePubKey) {
                 null -> listOf()
@@ -1068,16 +1103,7 @@ data class InteractiveTxSigningSession(
             val channelKeys = channelParams.localParams.channelKeys(keyManager)
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript(channelKeys) }
-            val liquidityFees = liquidityPurchase?.let { l ->
-                val fees = l.fees.total.toMilliSatoshi()
-                when (l.paymentDetails) {
-                    is LiquidityAds.PaymentDetails.FromChannelBalance -> if (fundingParams.isInitiator) fees else -fees
-                    is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> if (fundingParams.isInitiator) fees else -fees
-                    // Fees will be paid later, from relayed HTLCs.
-                    is LiquidityAds.PaymentDetails.FromFutureHtlc -> 0.msat
-                    is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> 0.msat
-                }
-            } ?: 0.msat
+            val liquidityFees = fundingParams.liquidityFees(liquidityPurchase)
             return Helpers.Funding.makeCommitTxs(
                 channelKeys,
                 channelParams.channelId,

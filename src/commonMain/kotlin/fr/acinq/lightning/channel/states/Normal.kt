@@ -405,15 +405,6 @@ data class Normal(
                                                 add(ChannelAction.Disconnect)
                                             }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
-                                        } else if (!canAffordSpliceLiquidityFees(spliceStatus.command, parentCommitment)) {
-                                            val missing = spliceStatus.command.requestRemoteFunding?.let { r -> r.fees(spliceStatus.command.feerate, isChannelCreation = false).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
-                                            logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
-                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
-                                            val actions = buildList {
-                                                add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
-                                                add(ChannelAction.Disconnect)
-                                            }
-                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
                                         } else {
                                             val spliceInit = SpliceInit(
                                                 channelId,
@@ -522,6 +513,7 @@ data class Normal(
                                 cmd.message.fundingContribution,
                                 spliceStatus.spliceInit.feerate,
                                 isChannelCreation = false,
+                                cmd.message.feeCreditUsed,
                                 cmd.message.willFund,
                             )) {
                                 is Either.Left<ChannelException> -> {
@@ -551,6 +543,9 @@ data class Normal(
                                         sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote, toHtlcs = parentCommitment.localCommit.spec.htlcs.map { it.add.amountMsat }.sum())),
                                         walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                         localOutputs = spliceStatus.command.spliceOutputs,
+                                        localPushAmount = spliceStatus.spliceInit.pushAmount,
+                                        remotePushAmount = cmd.message.pushAmount,
+                                        liquidityPurchase = liquidityPurchase.value,
                                         changePubKey = null // we don't want a change output: we're spending every funds available
                                     )) {
                                         is Either.Left -> {
@@ -852,19 +847,6 @@ data class Normal(
             is ChannelCommand.Connected -> unhandled(cmd)
             is ChannelCommand.Closing -> unhandled(cmd)
             is ChannelCommand.Init -> unhandled(cmd)
-        }
-    }
-
-    private fun canAffordSpliceLiquidityFees(splice: ChannelCommand.Commitment.Splice.Request, parentCommitment: Commitment): Boolean {
-        return when (val request = splice.requestRemoteFunding) {
-            null -> true
-            else -> when (request.paymentDetails) {
-                is LiquidityAds.PaymentDetails.FromChannelBalance -> request.fees(splice.feerate, isChannelCreation = false).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
-                is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> request.fees(splice.feerate, isChannelCreation = false).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
-                // Fees don't need to be paid during the splice, they will be deducted from relayed HTLCs.
-                is LiquidityAds.PaymentDetails.FromFutureHtlc -> true
-                is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> true
-            }
         }
     }
 

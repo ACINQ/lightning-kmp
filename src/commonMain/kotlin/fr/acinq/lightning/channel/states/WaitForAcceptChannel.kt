@@ -59,13 +59,22 @@ data class WaitForAcceptChannel(
                                 accept.fundingAmount,
                                 lastSent.fundingFeerate,
                                 isChannelCreation = true,
+                                accept.feeCreditUsed,
                                 accept.willFund
                             )) {
                                 is Either.Left -> {
                                     logger.error { "rejecting liquidity proposal: ${liquidityPurchase.value.message}" }
                                     Pair(Aborted, listOf(ChannelAction.Message.Send(Error(cmd.message.temporaryChannelId, liquidityPurchase.value.message))))
                                 }
-                                is Either.Right -> when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs)) {
+                                is Either.Right -> when (val fundingContributions = FundingContributions.create(
+                                    channelKeys,
+                                    keyManager.swapInOnChainWallet,
+                                    fundingParams,
+                                    init.walletInputs,
+                                    lastSent.pushAmount,
+                                    accept.pushAmount,
+                                    liquidityPurchase.value
+                                )) {
                                     is Either.Left -> {
                                         logger.error { "could not fund channel: ${fundingContributions.value}" }
                                         Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
