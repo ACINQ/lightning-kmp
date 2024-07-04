@@ -211,6 +211,7 @@ class Peer(
     val currentTipFlow = MutableStateFlow<Int?>(null)
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val peerFeeratesFlow = MutableStateFlow<RecommendedFeerates?>(null)
+    val feeCreditFlow = MutableStateFlow<MilliSatoshi>(0.msat)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -911,9 +912,10 @@ class Peer(
     private suspend fun processIncomingPayment(item: Either<WillAddHtlc, UpdateAddHtlc>) {
         val currentBlockHeight = currentTipFlow.filterNotNull().first()
         val currentFeerate = peerFeeratesFlow.filterNotNull().first().fundingFeerate
+        val currentFeeCredit = feeCreditFlow.value
         val result = when (item) {
-            is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight, currentFeerate)
-            is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight, currentFeerate)
+            is Either.Right -> incomingPaymentHandler.process(item.value, theirInit!!.features, currentBlockHeight, currentFeerate, currentFeeCredit)
+            is Either.Left -> incomingPaymentHandler.process(item.value, theirInit!!.features, currentBlockHeight, currentFeerate, currentFeeCredit)
         }
         when (result) {
             is IncomingPaymentHandler.ProcessAddResult.Accepted -> {
@@ -1019,6 +1021,11 @@ class Peer(
                                     state1
                                 }
                             }
+                        }
+                    }
+                    is CurrentFeeCredit -> {
+                        if (nodeParams.features.hasFeature(Feature.FundingFeeCredit)) {
+                            feeCreditFlow.value = msg.amount
                         }
                     }
                     is Ping -> {
@@ -1339,6 +1346,7 @@ class Peer(
             }
             is AddLiquidityForIncomingPayment -> {
                 val currentFeerates = peerFeeratesFlow.filterNotNull().first()
+                val currentFeeCredit = feeCreditFlow.value
                 when (val available = selectChannelForSplicing()) {
                     is SelectChannelResult.Available -> {
                         // We don't contribute any input or output, but we must pay on-chain fees for the shared input and output.
@@ -1347,7 +1355,7 @@ class Peer(
                         val spliceWeight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = listOf(), localOutputs = listOf())
                         val (fundingFeerate, localMiningFee) = client.computeSpliceCpfpFeerate(available.channel.commitments, currentFeerates.fundingFeerate, spliceWeight, logger)
                         val (targetFeerate, paymentDetails) = when {
-                            localBalance >= localMiningFee + cmd.fees(fundingFeerate).total -> {
+                            localBalance + currentFeeCredit >= localMiningFee + cmd.fees(fundingFeerate).total -> {
                                 // We have enough funds to pay the mining fee and the lease fees.
                                 // This the ideal scenario because the fees can be paid immediately with the splice transaction.
                                 Pair(fundingFeerate, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(cmd.paymentHash)))
