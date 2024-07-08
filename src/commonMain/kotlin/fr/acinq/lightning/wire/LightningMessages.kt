@@ -14,6 +14,8 @@ import fr.acinq.lightning.logging.*
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
+import io.ktor.utils.io.charsets.*
+import io.ktor.utils.io.core.*
 import kotlin.math.max
 import kotlin.math.min
 
@@ -81,6 +83,8 @@ interface LightningMessage {
                 PayToOpenResponse.type -> PayToOpenResponse.read(stream)
                 FCMToken.type -> FCMToken.read(stream)
                 UnsetFCMToken.type -> UnsetFCMToken
+                DNSAddressRequest.type -> DNSAddressRequest.read(stream)
+                DNSAddressResponse.type -> DNSAddressResponse.read(stream)
                 PhoenixAndroidLegacyInfo.type -> PhoenixAndroidLegacyInfo.read(stream)
                 PleaseOpenChannel.type -> PleaseOpenChannel.read(stream)
                 Stfu.type -> Stfu.read(stream)
@@ -1743,6 +1747,50 @@ data class PhoenixAndroidLegacyInfo(
 
         override fun read(input: Input): PhoenixAndroidLegacyInfo {
             return PhoenixAndroidLegacyInfo(LightningCodecs.byte(input) != 0)
+        }
+    }
+}
+
+data class DNSAddressRequest(val offer: OfferTypes.Offer, val languageSubtype: String) : LightningMessage {
+
+    override val type: Long get() = DNSAddressRequest.type
+
+    override fun write(out: Output) {
+        val serializedOffer = offer.encode()
+        LightningCodecs.writeU16(serializedOffer.length, out)
+        LightningCodecs.writeBytes(serializedOffer.toByteArray(charset = Charsets.UTF_8), out)
+        LightningCodecs.writeU16(languageSubtype.length, out)
+        LightningCodecs.writeBytes(languageSubtype.toByteArray(charset = Charsets.UTF_8), out)
+    }
+
+    companion object : LightningMessageReader<DNSAddressRequest> {
+        const val type: Long = 35025
+
+        override fun read(input: Input): DNSAddressRequest {
+            return DNSAddressRequest(
+                offer = OfferTypes.Offer.decode(LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()).get(),
+                languageSubtype = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
+            )
+        }
+    }
+}
+
+data class DNSAddressResponse(val address: String) : LightningMessage {
+
+    override val type: Long get() = DNSAddressResponse.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeU16(address.length, out)
+        LightningCodecs.writeBytes(address.toByteArray(charset = Charsets.UTF_8), out)
+    }
+
+    companion object : LightningMessageReader<DNSAddressResponse> {
+        const val type: Long = 35027
+
+        override fun read(input: Input): DNSAddressResponse {
+            return DNSAddressResponse(
+                address = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
+            )
         }
     }
 }

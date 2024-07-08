@@ -12,6 +12,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.blockchain.mempool.MempoolSpaceClient
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelCommand.Commitment.Splice.Response
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.noise.*
 import fr.acinq.lightning.db.*
@@ -116,6 +117,8 @@ data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
  * Useful to handle transparent migration on Phoenix Android between eclair-core and lightning-kmp.
  */
 data class PhoenixAndroidLegacyInfoEvent(val info: PhoenixAndroidLegacyInfo) : PeerEvent()
+
+data class AddressAssigned(val address: String) : PeerEvent()
 
 /**
  * The peer we establish a connection to. This object contains the TCP socket, a flow of the channels with that peer, and watches
@@ -712,6 +715,18 @@ class Peer(
         peerConnection?.send(message)
     }
 
+    suspend fun requestAddress(languageSubtag: String): String {
+        val replyTo = CompletableDeferred<String>()
+        this.launch {
+            eventsFlow
+                .filterIsInstance<AddressAssigned>()
+                .first()
+                .let { event -> replyTo.complete(event.address) }
+        }
+        peerConnection?.send(DNSAddressRequest(nodeParams.defaultOffer(walletParams.trampolineNode.id).first, languageSubtag))
+        return replyTo.await()
+    }
+
     sealed class SelectChannelResult {
         /** We have a channel that is available for payments and splicing. */
         data class Available(val channel: Normal) : SelectChannelResult()
@@ -1187,6 +1202,10 @@ class Peer(
                                 is OnionMessageAction.SendMessage -> input.send(SendOnionMessage(it.message))
                             }
                         }
+                    }
+                    is DNSAddressResponse -> {
+                        logger.info { "dns address assigned: ${msg}" }
+                        _eventsFlow.emit(AddressAssigned(msg.address))
                     }
                 }
             }
