@@ -39,7 +39,8 @@ class SwapInManager(private var reservedUtxos: Set<OutPoint>, private val logger
             logger.info { "swap-in wallet balance: deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
             val utxos = buildSet {
                 // some utxos may be used for swap-in even if they are not confirmed, for example when migrating from the legacy phoenix android app
-                addAll(availableWallet.all.filter { cmd.trustedTxs.contains(it.outPoint.txid) })
+                addAll(availableWallet.unconfirmed.filter { cmd.trustedTxs.contains(it.outPoint.txid) })
+                addAll(availableWallet.weaklyConfirmed.filter { cmd.trustedTxs.contains(it.outPoint.txid) })
                 addAll(availableWallet.deeplyConfirmed.filter { Transaction.write(it.previousTx.stripInputWitnesses()).size < 65_000 })
             }.toList()
             if (utxos.balance > 0.sat) {
