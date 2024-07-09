@@ -718,6 +718,8 @@ class Peer(
     /**
      * Request a BIP-353's compliant DNS address from our peer.
      *
+     * This will only return if there are existing channels with the peer, otherwise it will hang. This should be handled by the caller.
+     *
      * @param languageSubtag IETF BCP 47 language tag (en, fr, de, es, ...) to indicate preference for the words that make up the address
      */
     suspend fun requestAddress(languageSubtag: String): String {
