@@ -17,6 +17,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.wire.OfferTypes.Offer
 import fr.acinq.secp256k1.Hex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -873,5 +874,20 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     fun `encode and decode onion message`() {
         val onionMessage = OnionMessages.buildMessage(randomKey(), randomKey(), listOf(), OnionMessages.Destination.Recipient(EncodedNodeId(randomKey().publicKey()), null), TlvStream.empty()).right!!
         assertEquals(onionMessage, OnionMessage.read(onionMessage.write()))
+    }
+
+    @Test
+    fun `encode and decode dns address request`() {
+        val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968jys3v9kxjcm9gp3xjemndphhqtnrdak3gqqkyypsmuhrtwfzm85mht4a3vcp0yrlgua3u3m5uqpc6kf7nqjz6v70qwg"
+        val offer = Offer.decode(encoded).get()
+
+        val msg = DNSAddressRequest(Chain.Testnet.chainHash, offer, "en")
+        assertEquals(msg, LightningMessage.decode(LightningMessage.encode(msg)))
+    }
+
+    @Test
+    fun `encode and decode dns address response`() {
+        val msg = DNSAddressResponse(Chain.Testnet.chainHash, "foo@bar.baz")
+        assertEquals(msg, LightningMessage.decode(LightningMessage.encode(msg)))
     }
 }
