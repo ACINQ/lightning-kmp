@@ -715,6 +715,11 @@ class Peer(
         peerConnection?.send(message)
     }
 
+    /**
+     * Request a BIP-353's compliant DNS address from our peer.
+     *
+     * @param languageSubtag IETF BCP 47 language tag (en, fr, de, es, ...) to indicate preference for the words that make up the address
+     */
     suspend fun requestAddress(languageSubtag: String): String {
         val replyTo = CompletableDeferred<String>()
         this.launch {
@@ -723,7 +728,7 @@ class Peer(
                 .first()
                 .let { event -> replyTo.complete(event.address) }
         }
-        peerConnection?.send(DNSAddressRequest(nodeParams.defaultOffer(walletParams.trampolineNode.id).first, languageSubtag))
+        peerConnection?.send(DNSAddressRequest(nodeParams.chainHash, nodeParams.defaultOffer(walletParams.trampolineNode.id).first, languageSubtag))
         return replyTo.await()
     }
 
@@ -1204,7 +1209,7 @@ class Peer(
                         }
                     }
                     is DNSAddressResponse -> {
-                        logger.info { "dns address assigned: ${msg}" }
+                        logger.info { "bip353 dns address assigned: ${msg.address}" }
                         _eventsFlow.emit(AddressAssigned(msg.address))
                     }
                 }

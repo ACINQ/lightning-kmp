@@ -1751,16 +1751,22 @@ data class PhoenixAndroidLegacyInfo(
     }
 }
 
-data class DNSAddressRequest(val offer: OfferTypes.Offer, val languageSubtype: String) : LightningMessage {
+/**
+ * A message to request a BIP-353's compliant DNS address from our peer. The peer may not respond, e.g. if there are no channels.
+ *
+ * @param languageSubtag IETF BCP 47 language tag (en, fr, de, es, ...) to indicate preference for the words that make up the address
+ */
+data class DNSAddressRequest(override val chainHash: BlockHash, val offer: OfferTypes.Offer, val languageSubtag: String) : LightningMessage, HasChainHash {
 
     override val type: Long get() = DNSAddressRequest.type
 
     override fun write(out: Output) {
-        val serializedOffer = offer.encode()
-        LightningCodecs.writeU16(serializedOffer.length, out)
-        LightningCodecs.writeBytes(serializedOffer.toByteArray(charset = Charsets.UTF_8), out)
-        LightningCodecs.writeU16(languageSubtype.length, out)
-        LightningCodecs.writeBytes(languageSubtype.toByteArray(charset = Charsets.UTF_8), out)
+        LightningCodecs.writeBytes(chainHash.value, out)
+        val serializedOffer = OfferTypes.Offer.tlvSerializer.write(offer.records)
+        LightningCodecs.writeU16(serializedOffer.size, out)
+        LightningCodecs.writeBytes(serializedOffer, out)
+        LightningCodecs.writeU16(languageSubtag.length, out)
+        LightningCodecs.writeBytes(languageSubtag.toByteArray(charset = Charsets.UTF_8), out)
     }
 
     companion object : LightningMessageReader<DNSAddressRequest> {
@@ -1768,18 +1774,20 @@ data class DNSAddressRequest(val offer: OfferTypes.Offer, val languageSubtype: S
 
         override fun read(input: Input): DNSAddressRequest {
             return DNSAddressRequest(
+                chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
                 offer = OfferTypes.Offer.decode(LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()).get(),
-                languageSubtype = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
+                languageSubtag = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
             )
         }
     }
 }
 
-data class DNSAddressResponse(val address: String) : LightningMessage {
+data class DNSAddressResponse(override val chainHash: BlockHash, val address: String) : LightningMessage, HasChainHash {
 
     override val type: Long get() = DNSAddressResponse.type
 
     override fun write(out: Output) {
+        LightningCodecs.writeBytes(chainHash.value, out)
         LightningCodecs.writeU16(address.length, out)
         LightningCodecs.writeBytes(address.toByteArray(charset = Charsets.UTF_8), out)
     }
@@ -1789,6 +1797,7 @@ data class DNSAddressResponse(val address: String) : LightningMessage {
 
         override fun read(input: Input): DNSAddressResponse {
             return DNSAddressResponse(
+                chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
                 address = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
             )
         }
