@@ -1775,7 +1775,7 @@ data class DNSAddressRequest(override val chainHash: BlockHash, val offer: Offer
         override fun read(input: Input): DNSAddressRequest {
             return DNSAddressRequest(
                 chainHash = BlockHash(LightningCodecs.bytes(input, 32)),
-                offer = OfferTypes.Offer.decode(LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()).get(),
+                offer = OfferTypes.Offer(OfferTypes.Offer.tlvSerializer.read(LightningCodecs.bytes(input, LightningCodecs.u16(input)))),
                 languageSubtag = LightningCodecs.bytes(input, LightningCodecs.u16(input)).decodeToString()
             )
         }
