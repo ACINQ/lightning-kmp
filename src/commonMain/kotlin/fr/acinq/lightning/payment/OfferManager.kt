@@ -183,7 +183,10 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                         logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} ignoring invoice request, could not build onion message: ${invoiceMessage.value}" }
                         sendInvoiceError("failed to build onion message", decrypted.content.replyPath)
                     }
-                    is Right -> OnionMessageAction.SendMessage(invoiceMessage.value)
+                    is Right -> {
+                        logger.info { "sending BOLT 12 invoice with amount=${invoice.amount}, paymentHash=${invoice.paymentHash}, payerId=${invoice.invoiceRequest.payerId} to introduction node ${destination.route.introductionNodeId}" }
+                        OnionMessageAction.SendMessage(invoiceMessage.value)
+                    }
                 }
             }
         }

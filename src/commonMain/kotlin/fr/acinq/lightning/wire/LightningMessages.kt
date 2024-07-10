@@ -1587,6 +1587,9 @@ data class OnionMessage(
         OnionRoutingPacketSerializer(onionRoutingPacket.payload.size()).write(onionRoutingPacket, out)
     }
 
+    override fun toString(): String =
+        "OnionMessage(blindingKey=$blindingKey, onionRoutingPacket=OnionRoutingPacket(version=${onionRoutingPacket.version}, publicKey=${onionRoutingPacket.publicKey.toHex()}, payload=<${onionRoutingPacket.payload.size()} bytes>, hmac=${onionRoutingPacket.hmac.toHex()}))"
+
     companion object : LightningMessageReader<OnionMessage> {
         const val type: Long = 513
 
