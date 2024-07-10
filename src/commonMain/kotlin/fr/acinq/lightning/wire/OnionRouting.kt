@@ -12,9 +12,9 @@ import fr.acinq.lightning.utils.toByteVector32
 
 data class OnionRoutingPacket(
     val version: Int,
-     val publicKey: ByteVector,
-     val payload: ByteVector,
-     val hmac: ByteVector32
+    val publicKey: ByteVector,
+    val payload: ByteVector,
+    val hmac: ByteVector32
 ) {
     companion object {
         const val PaymentPacketLength = 1300

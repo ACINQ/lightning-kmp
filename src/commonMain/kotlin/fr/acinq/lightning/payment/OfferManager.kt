@@ -184,7 +184,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                         sendInvoiceError("failed to build onion message", decrypted.content.replyPath)
                     }
                     is Right -> {
-                        logger.info { "sending BOLT 12 invoice for ${invoice.amount} to introduction node ${destination.route.introductionNodeId}" }
+                        logger.info { "sending BOLT 12 invoice with amount=${invoice.amount}, paymentHash=${invoice.paymentHash}, payerId=${invoice.invoiceRequest.payerId} to introduction node ${destination.route.introductionNodeId}" }
                         OnionMessageAction.SendMessage(invoiceMessage.value)
                     }
                 }
