@@ -50,9 +50,7 @@ object Encryption {
         is ShuttingDown -> 3
         is WaitForFundingSigned -> 4
         is WaitForFundingConfirmed -> 5
-        is LegacyWaitForFundingConfirmed -> 5
         is WaitForChannelReady -> 6
-        is LegacyWaitForFundingLocked -> 6
         is Normal -> 7
     }
 

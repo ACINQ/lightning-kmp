@@ -25,9 +25,6 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is ChannelReestablish -> {
                     val (nextState, actions) = when (state) {
-                        is LegacyWaitForFundingConfirmed -> {
-                            Pair(state, listOf())
-                        }
                         is WaitForFundingSigned -> {
                             val actions = buildList {
                                 if (cmd.message.nextFundingTxId == state.signingSession.fundingTx.txId && cmd.message.nextLocalCommitmentNumber == 0L) {
@@ -115,13 +112,6 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                             val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
                             val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                             actions.add(ChannelAction.Message.Send(channelReady))
-                            Pair(state, actions)
-                        }
-                        is LegacyWaitForFundingLocked -> {
-                            logger.debug { "re-sending channel_ready" }
-                            val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
-                            val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
-                            val actions = listOf(ChannelAction.Message.Send(channelReady))
                             Pair(state, actions)
                         }
                         is Normal -> {
