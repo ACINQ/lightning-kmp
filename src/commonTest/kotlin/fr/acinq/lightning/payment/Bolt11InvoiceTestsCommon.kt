@@ -2,6 +2,7 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
+import fr.acinq.bitcoin.utils.Try
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -498,10 +499,12 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         assertEquals(pr1.paymentSecret, pr.paymentSecret)
 
         // An invoice without the payment secret feature should be rejected
-        assertTrue(Bolt11Invoice.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl").isFailure)
+        assertIs<Try.Failure<Throwable>>((Bolt11Invoice.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")))
+            .let { failure -> assertContains(failure.error.message ?: "", "var_onion_optin must be supported") }
 
         // An invoice that sets the payment secret feature bit must provide a payment secret.
-        assertTrue(Bolt11Invoice.read("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7").isFailure)
+        assertIs<Try.Failure<Throwable>>(Bolt11Invoice.read("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7"))
+            .let { failure -> assertContains(failure.error.message ?: "", "there must be exactly one payment secret tag") }
 
         // Invoices must use a payment secret.
         assertFails {
@@ -515,6 +518,13 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
                 Features(Feature.VariableLengthOnion to FeatureSupport.Optional, Feature.BasicMultiPartPayment to FeatureSupport.Optional)
             )
         }
+    }
+
+    @Test
+    fun `decode invoice without features`() {
+        val s = "lnbc10n1pnglwsfpp5fdcjk5vudhe2jzuz0q65dkh4gfmxnn6vexlchc6ta9f25wynp2qshp59warmg27z4nkuvhs5x3vdv998jck5ue8nge2t68dtfvm27n8kvsqxqrrssnp4qf3rsvu5xdrxnv2kgkr4hvpefx257fjw8ugupnug4ls6rf2d5w6yc2rnnz0zuymgjl3p4dvyh8dr4mp969gjrnaggx50nv5ax7wy6yflyr07ek5hdevxtz9angp3jfyfz9ram8d7gw9pr0csr6fpa8rfeu7gpgesr58"
+        val failure = assertIs<Try.Failure<Throwable>>(Bolt11Invoice.read(s))
+        assertContains(failure.error.message ?: "", "var_onion_optin must be supported")
     }
 
     @Test

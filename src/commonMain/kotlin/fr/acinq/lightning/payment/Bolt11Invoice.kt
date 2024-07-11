@@ -21,25 +21,25 @@ data class Bolt11Invoice(
     val tags: List<TaggedField>,
     val signature: ByteVector
 ) : PaymentRequest() {
-    val chain: Chain? = prefixes.entries.firstOrNull { it.value == prefix }?.key
+    val chain: Chain? get() = prefixes.entries.firstOrNull { it.value == prefix }?.key
 
-    override val paymentHash: ByteVector32 = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
+    override val paymentHash: ByteVector32 get() = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
 
-    val paymentSecret: ByteVector32 = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
+    val paymentSecret: ByteVector32 get() = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
 
-    val paymentMetadata: ByteVector? = tags.find { it is TaggedField.PaymentMetadata }?.run { (this as TaggedField.PaymentMetadata).data }
+    val paymentMetadata: ByteVector? get() = tags.find { it is TaggedField.PaymentMetadata }?.run { (this as TaggedField.PaymentMetadata).data }
 
-    val description: String? = tags.find { it is TaggedField.Description }?.run { (this as TaggedField.Description).description }
+    val description: String? get() = tags.find { it is TaggedField.Description }?.run { (this as TaggedField.Description).description }
 
-    val descriptionHash: ByteVector32? = tags.find { it is TaggedField.DescriptionHash }?.run { (this as TaggedField.DescriptionHash).hash }
+    val descriptionHash: ByteVector32? get() = tags.find { it is TaggedField.DescriptionHash }?.run { (this as TaggedField.DescriptionHash).hash }
 
-    val expirySeconds: Long? = tags.find { it is TaggedField.Expiry }?.run { (this as TaggedField.Expiry).expirySeconds }
+    val expirySeconds: Long? get() = tags.find { it is TaggedField.Expiry }?.run { (this as TaggedField.Expiry).expirySeconds }
 
-    val minFinalExpiryDelta: CltvExpiryDelta? = tags.find { it is TaggedField.MinFinalCltvExpiry }?.run { CltvExpiryDelta((this as TaggedField.MinFinalCltvExpiry).cltvExpiry.toInt()) }
+    val minFinalExpiryDelta: CltvExpiryDelta? get() = tags.find { it is TaggedField.MinFinalCltvExpiry }?.run { CltvExpiryDelta((this as TaggedField.MinFinalCltvExpiry).cltvExpiry.toInt()) }
 
     val fallbackAddress: String? = tags.find { it is TaggedField.FallbackAddress }?.run { (this as TaggedField.FallbackAddress).toAddress(prefix) }
 
-    override val features: Features = tags.find { it is TaggedField.Features }.run { Features((this as TaggedField.Features).bits) }
+    override val features: Features get() = tags.filterIsInstance<TaggedField.Features>().firstOrNull()?.run { Features(this.bits) } ?: Features.empty
 
     val routingInfo: List<TaggedField.RoutingInfo> = tags.filterIsInstance<TaggedField.RoutingInfo>()
 
@@ -55,7 +55,7 @@ data class Bolt11Invoice(
         require(description != null || descriptionHash != null) { "there must be exactly one description tag or one description hash tag" }
     }
 
-    override fun isExpired(currentTimestampSeconds: Long): Boolean = when (expirySeconds) {
+    override fun isExpired(currentTimestampSeconds: Long): Boolean = when (val expirySeconds = expirySeconds) {
         null -> timestampSeconds + DEFAULT_EXPIRY_SECONDS <= currentTimestampSeconds
         else -> timestampSeconds + expirySeconds <= currentTimestampSeconds
     }
@@ -65,14 +65,16 @@ data class Bolt11Invoice(
     private fun rawData(): List<Int5> {
         val data5 = ArrayList<Int5>()
         data5.addAll(encodeTimestamp(timestampSeconds))
-        tags.forEach {
-            val encoded = it.encode()
-            val len = encoded.size
-            data5.add(it.tag)
-            data5.add((len / 32).toByte())
-            data5.add((len.rem(32)).toByte())
-            data5.addAll(encoded)
-        }
+        tags
+            .filterNot { it is TaggedField.Features && it.bits.isEmpty() }
+            .forEach {
+                val encoded = it.encode()
+                val len = encoded.size
+                data5.add(it.tag)
+                data5.add((len / 32).toByte())
+                data5.add((len.rem(32)).toByte())
+                data5.addAll(encoded)
+            }
         return data5
     }
 
@@ -266,7 +268,7 @@ data class Bolt11Invoice(
         // converts a list of 5 bits values to a byte array
         internal fun toByteArray(int5s: List<Int5>): ByteArray {
             val allbits = int5s.flatMap { toBits(it) }
-            return allbits.windowed(8, 8, partialWindows = true){ toByte(it) }.toByteArray()
+            return allbits.windowed(8, 8, partialWindows = true) { toByte(it) }.toByteArray()
         }
     }
 
