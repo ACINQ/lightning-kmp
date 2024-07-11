@@ -1,7 +1,6 @@
 package fr.acinq.lightning.serialization.v4
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.bitcoin.utils.Either
@@ -44,12 +43,6 @@ object Serialization {
     }
 
     private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
-        is LegacyWaitForFundingConfirmed -> {
-            write(0x08); writeLegacyWaitForFundingConfirmed(o)
-        }
-        is LegacyWaitForFundingLocked -> {
-            write(0x09); writeLegacyWaitForFundingLocked(o)
-        }
         is WaitForFundingConfirmed -> {
             write(0x00); writeWaitForFundingConfirmed(o)
         }
@@ -77,23 +70,6 @@ object Serialization {
         is WaitForFundingSigned -> {
             write(0x0c); writeWaitForFundingSigned(o)
         }
-    }
-
-    private fun Output.writeLegacyWaitForFundingConfirmed(o: LegacyWaitForFundingConfirmed) = o.run {
-        writeCommitments(commitments)
-        writeNullable(fundingTx) { writeBtcObject(it) }
-        writeNumber(waitingSinceBlock)
-        writeNullable(deferred) { writeLightningMessage(it) }
-        writeEither(lastSent,
-            writeLeft = { writeLightningMessage(it) },
-            writeRight = { writeLightningMessage(it) }
-        )
-    }
-
-    private fun Output.writeLegacyWaitForFundingLocked(o: LegacyWaitForFundingLocked) = o.run {
-        writeCommitments(commitments)
-        writeNumber(shortChannelId.toLong())
-        writeLightningMessage(lastSent)
     }
 
     private fun Output.writeWaitForFundingSigned(o: WaitForFundingSigned) = o.run {
@@ -719,8 +695,6 @@ object Serialization {
     private fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
 
     private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
-
-    private fun Output.writePublicNonce(o: IndividualNonce) = write(o.toByteArray())
 
     private fun Output.writeDelimited(o: ByteArray) {
         writeNumber(o.size)

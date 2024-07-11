@@ -31,8 +31,6 @@ object Deserialization {
     }
 
     private fun Input.readPersistedChannelState(): PersistedChannelState = when (val discriminator = read()) {
-        0x08 -> readLegacyWaitForFundingConfirmed()
-        0x09 -> readLegacyWaitForFundingLocked()
         0x00 -> readWaitForFundingConfirmed()
         0x01 -> readWaitForChannelReady()
         0x02 -> readNormalLegacy()
@@ -46,23 +44,6 @@ object Deserialization {
         0x0c -> readWaitForFundingSigned()
         else -> error("unknown discriminator $discriminator for class ${PersistedChannelState::class}")
     }
-
-    private fun Input.readLegacyWaitForFundingConfirmed() = LegacyWaitForFundingConfirmed(
-        commitments = readCommitments(),
-        fundingTx = readNullable { readTransaction() },
-        waitingSinceBlock = readNumber(),
-        deferred = readNullable { readLightningMessage() as ChannelReady },
-        lastSent = readEither(
-            readLeft = { readLightningMessage() as FundingCreated },
-            readRight = { readLightningMessage() as FundingSigned }
-        )
-    )
-
-    private fun Input.readLegacyWaitForFundingLocked() = LegacyWaitForFundingLocked(
-        commitments = readCommitments(),
-        shortChannelId = ShortChannelId(readNumber()),
-        lastSent = readLightningMessage() as ChannelReady
-    )
 
     private fun Input.readWaitForFundingSigned() = WaitForFundingSigned(
         channelParams = readChannelParams(),
@@ -687,8 +668,6 @@ object Deserialization {
 
     private fun Input.readOutPoint(): OutPoint = OutPoint.read(readDelimitedByteArray())
 
-    private fun Input.readTxOut(): TxOut = TxOut.read(readDelimitedByteArray())
-
     private fun Input.readTransaction(): Transaction = Transaction.read(readDelimitedByteArray())
 
     private fun Input.readTransactionWithInputInfo(): Transactions.TransactionWithInputInfo = when (val discriminator = read()) {
@@ -729,8 +708,6 @@ object Deserialization {
     private fun Input.readPublicKey() = PublicKey(ByteArray(33).also { read(it, 0, it.size) })
 
     private fun Input.readTxId(): TxId = TxId(readByteVector32())
-
-    private fun Input.readPublicNonce() = IndividualNonce(ByteArray(66).also { read(it, 0, it.size) })
 
     private fun Input.readDelimitedByteArray(): ByteArray {
         val size = readNumber().toInt()
