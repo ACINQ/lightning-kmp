@@ -1555,8 +1555,7 @@ data class Shutdown(
     companion object : LightningMessageReader<Shutdown> {
         const val type: Long = 38
 
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(ShutdownTlv.ChannelData.tag to ShutdownTlv.ChannelData.Companion as TlvValueReader<ShutdownTlv>)
+        val readers: Map<Long, TlvValueReader<ShutdownTlv>> = mapOf()
 
         override fun read(input: Input): Shutdown {
             return Shutdown(
