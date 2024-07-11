@@ -81,7 +81,6 @@
     JsonSerializers.FundingCreatedSerializer::class,
     JsonSerializers.ChannelReadySerializer::class,
     JsonSerializers.ChannelReadyTlvShortChannelIdTlvSerializer::class,
-    JsonSerializers.ShutdownTlvChannelDataSerializer::class,
     JsonSerializers.GenericTlvSerializer::class,
     JsonSerializers.TlvStreamSerializer::class,
     JsonSerializers.ShutdownTlvSerializer::class,
@@ -157,8 +156,6 @@ object JsonSerializers {
         serializersModule = SerializersModule {
             // we need to explicitly define a [PolymorphicSerializer] for sealed classes, but not for interfaces
             fun PolymorphicModuleBuilder<ChannelStateWithCommitments>.registerChannelStateWithCommitmentsSubclasses() {
-                subclass(LegacyWaitForFundingConfirmed::class, LegacyWaitForFundingConfirmedSerializer)
-                subclass(LegacyWaitForFundingLocked::class, LegacyWaitForFundingLockedSerializer)
                 subclass(WaitForFundingConfirmed::class, WaitForFundingConfirmedSerializer)
                 subclass(WaitForChannelReady::class, WaitForChannelReadySerializer)
                 subclass(Normal::class, NormalSerializer)
@@ -205,7 +202,6 @@ object JsonSerializers {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
-                subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
             }
             // TODO The following declarations are required because serializers for [TransactionWithInputInfo]
@@ -235,12 +231,6 @@ object JsonSerializers {
 
     @Serializer(forClass = Syncing::class)
     object SyncingSerializer
-
-    @Serializer(forClass = LegacyWaitForFundingConfirmed::class)
-    object LegacyWaitForFundingConfirmedSerializer
-
-    @Serializer(forClass = LegacyWaitForFundingLocked::class)
-    object LegacyWaitForFundingLockedSerializer
 
     @Serializer(forClass = WaitForFundingSigned::class)
     object WaitForFundingSignedSerializer
@@ -530,9 +520,6 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
     object ChannelReadyTlvShortChannelIdTlvSerializer
-
-    @Serializer(forClass = ShutdownTlv.ChannelData::class)
-    object ShutdownTlvChannelDataSerializer
 
     @Serializer(forClass = ShutdownTlv::class)
     object ShutdownTlvSerializer
