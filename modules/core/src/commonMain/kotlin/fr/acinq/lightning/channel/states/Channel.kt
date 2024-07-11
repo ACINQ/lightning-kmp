@@ -248,8 +248,6 @@ sealed class ChannelState {
             is Offline -> state.run { handleLocalError(cmd, t) }
             is Syncing -> state.run { handleLocalError(cmd, t) }
             is WaitForRemotePublishFutureCommitment -> Pair(state, emptyList())
-            is LegacyWaitForFundingConfirmed -> forceClose(state)
-            is LegacyWaitForFundingLocked -> forceClose(state)
         }
     }
 
