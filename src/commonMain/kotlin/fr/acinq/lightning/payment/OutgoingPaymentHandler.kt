@@ -95,7 +95,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
     }
 
-    private fun createChildPayments(request: PayInvoice, routes: List<RouteCalculation.Route>, trampolinePayload: PaymentAttempt.TrampolinePayload): List<Triple<LightningOutgoingPayment.Part, SharedSecrets, WrappedChannelCommand>> {
+    fun createChildPayments(request: PayInvoice, routes: List<RouteCalculation.Route>, trampolinePayload: PaymentAttempt.TrampolinePayload): List<Triple<LightningOutgoingPayment.Part, SharedSecrets, WrappedChannelCommand>> {
         val logger = MDCLogger(logger, staticMdc = request.mdc())
         val childPayments = routes.map { createOutgoingPart(request, it, trampolinePayload) }
         childToParentId.putAll(childPayments.map { it.first.id to request.paymentId })
@@ -337,7 +337,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         return Triple(outgoingPayment, secrets, WrappedChannelCommand(route.channel.channelId, cmdAdd))
     }
 
-    private fun createTrampolinePayload(request: PayInvoice, fees: TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {
+    fun createTrampolinePayload(request: PayInvoice, fees: TrampolineFees, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OnionRoutingPacket> {
         // We are either directly paying our peer (the trampoline node) or a remote node via our peer (using trampoline).
         val trampolineRoute = when (request.recipient) {
             walletParams.trampolineNode.id -> listOf(
