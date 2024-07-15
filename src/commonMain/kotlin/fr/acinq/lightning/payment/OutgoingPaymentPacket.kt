@@ -85,8 +85,8 @@ object OutgoingPaymentPacket {
         var payloads = initialPayloads
         val nodes = hops.map { it.nextNodeId }
         var onion = buildOnion(nodes, payloads, invoice.paymentHash, payloadLength = null)
-        // Ensure that this onion can fit inside the outer 1300 bytes onion.
-        while (onion.packet.payload.size() > 1142) {
+        // Ensure that this onion can fit inside the outer 1300 bytes onion. The outer onion fields need ~150 bytes and we add some safety margin.
+        while (onion.packet.payload.size() > 1000) {
             payloads = payloads.map { payload -> when (payload) {
                 is PaymentOnion.RelayToNonTrampolinePayload -> payload.copy(records = payload.records.copy(records = payload.records.records.map { when (it) {
                     is OnionPaymentPayloadTlv.InvoiceRoutingInfo -> OnionPaymentPayloadTlv.InvoiceRoutingInfo(it.extraHops.dropLast(1))
@@ -112,8 +112,8 @@ object OutgoingPaymentPacket {
     fun buildTrampolineToNonTrampolinePacket(invoice: Bolt12Invoice, hop: NodeHop, finalAmount: MilliSatoshi, finalExpiry: CltvExpiry): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
         var payload = PaymentOnion.RelayToBlindedPayload.create(finalAmount, finalExpiry, invoice)
         var onion = buildOnion(listOf(hop.nodeId), listOf(payload), invoice.paymentHash, payloadLength = null)
-        // Ensure that this onion can fit inside the outer 1300 bytes onion.
-        while (onion.packet.payload.size() > 1142) {
+        // Ensure that this onion can fit inside the outer 1300 bytes onion. The outer onion fields need ~150 bytes and we add some safety margin.
+        while (onion.packet.payload.size() > 1000) {
             payload = payload.copy(records = payload.records.copy(records = payload.records.records.map { when (it) {
                 is OnionPaymentPayloadTlv.OutgoingBlindedPaths -> OnionPaymentPayloadTlv.OutgoingBlindedPaths(it.paths.dropLast(1))
                 else -> it
