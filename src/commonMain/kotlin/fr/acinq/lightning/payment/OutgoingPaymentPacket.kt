@@ -18,6 +18,7 @@ import fr.acinq.lightning.router.Hop
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.FailureMessage
+import fr.acinq.lightning.wire.OnionPaymentPayloadTlv
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import fr.acinq.lightning.wire.PaymentOnion
 
@@ -72,7 +73,7 @@ object OutgoingPaymentPacket {
         // NB: the final payload will never reach the recipient, since the next-to-last trampoline hop will convert that to a legacy payment
         // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
         val dummyFinalPayload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(finalPayload.amount, finalPayload.expiry, finalPayload.paymentSecret, null)
-        val (firstAmount, firstExpiry, payloads) = hops.drop(1).reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PaymentOnion.PerHopPayload>(dummyFinalPayload))) { triple, hop ->
+        val (firstAmount, firstExpiry, initialPayloads) = hops.drop(1).reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PaymentOnion.PerHopPayload>(dummyFinalPayload))) { triple, hop ->
             val (amount, expiry, payloads) = triple
             val payload = when (payloads.size) {
                 // The next-to-last trampoline hop must include invoice data to indicate the conversion to a legacy payment.
@@ -81,8 +82,20 @@ object OutgoingPaymentPacket {
             }
             Triple(amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, listOf(payload) + payloads)
         }
+        var payloads = initialPayloads
         val nodes = hops.map { it.nextNodeId }
-        val onion = buildOnion(nodes, payloads, invoice.paymentHash, payloadLength = null)
+        var onion = buildOnion(nodes, payloads, invoice.paymentHash, payloadLength = null)
+        // Ensure that this onion can fit inside the outer 1300 bytes onion. The outer onion fields need ~150 bytes and we add some safety margin.
+        while (onion.packet.payload.size() > 1000) {
+            payloads = payloads.map { payload -> when (payload) {
+                is PaymentOnion.RelayToNonTrampolinePayload -> payload.copy(records = payload.records.copy(records = payload.records.records.map { when (it) {
+                    is OnionPaymentPayloadTlv.InvoiceRoutingInfo -> OnionPaymentPayloadTlv.InvoiceRoutingInfo(it.extraHops.dropLast(1))
+                    else -> it
+                } }.toSet()))
+                else -> payload
+            } }
+            onion = buildOnion(nodes, payloads, invoice.paymentHash, payloadLength = null)
+        }
         return Triple(firstAmount, firstExpiry, onion)
     }
 
@@ -97,8 +110,16 @@ object OutgoingPaymentPacket {
      * @param finalExpiry cltv expiry that should be received by the final recipient.
      */
     fun buildTrampolineToNonTrampolinePacket(invoice: Bolt12Invoice, hop: NodeHop, finalAmount: MilliSatoshi, finalExpiry: CltvExpiry): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
-        val payload = PaymentOnion.RelayToBlindedPayload.create(finalAmount, finalExpiry, invoice)
-        val onion = buildOnion(listOf(hop.nodeId), listOf(payload), invoice.paymentHash, payloadLength = null)
+        var payload = PaymentOnion.RelayToBlindedPayload.create(finalAmount, finalExpiry, invoice)
+        var onion = buildOnion(listOf(hop.nodeId), listOf(payload), invoice.paymentHash, payloadLength = null)
+        // Ensure that this onion can fit inside the outer 1300 bytes onion. The outer onion fields need ~150 bytes and we add some safety margin.
+        while (onion.packet.payload.size() > 1000) {
+            payload = payload.copy(records = payload.records.copy(records = payload.records.records.map { when (it) {
+                is OnionPaymentPayloadTlv.OutgoingBlindedPaths -> OnionPaymentPayloadTlv.OutgoingBlindedPaths(it.paths.dropLast(1))
+                else -> it
+            } }.toSet()))
+            onion = buildOnion(listOf(hop.nodeId), listOf(payload), invoice.paymentHash, payloadLength = null)
+        }
         return Triple(finalAmount + hop.fee(finalAmount), finalExpiry + hop.cltvExpiryDelta, onion)
     }
 
