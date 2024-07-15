@@ -214,7 +214,7 @@ object Sphinx {
             is Either.Right -> packet.value.payload.size()
         }
 
-        require(payload.size <= packetLength - MacLength) { "packet payload cannot exceed ${packetLength - MacLength} bytes" }
+        require(payload.size <= packetLength - MacLength) { "packet payload cannot exceed ${packetLength - MacLength} bytes, is ${payload.size} bytes" }
 
         val (currentMac, currentPayload) = when (packet) {
             // Packet construction starts with an empty mac and random payload.
