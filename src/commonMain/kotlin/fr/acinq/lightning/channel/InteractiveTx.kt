@@ -1201,7 +1201,7 @@ sealed class SpliceStatus {
     data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : QuiescentSpliceStatus()
     /** We both agreed to splice and are building the splice transaction. */
     data class InProgress(
-        val replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>?,
+        val replyTo: CompletableDeferred<ChannelFundingResponse>?,
         val spliceSession: InteractiveTxSession,
         val localPushAmount: MilliSatoshi,
         val remotePushAmount: MilliSatoshi,

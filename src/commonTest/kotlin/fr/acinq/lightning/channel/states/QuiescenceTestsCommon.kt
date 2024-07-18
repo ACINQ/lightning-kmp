@@ -406,7 +406,7 @@ class QuiescenceTestsCommon : LightningTestSuite() {
         val (_, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(spliceAck))
         actionsAlice3.hasOutgoingMessage<TxAddInput>()
         withTimeout(100) {
-            assertIs<ChannelCommand.Commitment.Splice.Response.Failure.ConcurrentRemoteSplice>(cmdBob.replyTo.await())
+            assertIs<ChannelFundingResponse.Failure.ConcurrentRemoteSplice>(cmdBob.replyTo.await())
         }
     }
 
@@ -434,7 +434,7 @@ class QuiescenceTestsCommon : LightningTestSuite() {
         val (_, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(spliceAck))
         actionsBob5.hasOutgoingMessage<TxAddInput>()
         withTimeout(100) {
-            assertIs<ChannelCommand.Commitment.Splice.Response.Failure.ConcurrentRemoteSplice>(cmdAlice.replyTo.await())
+            assertIs<ChannelFundingResponse.Failure.ConcurrentRemoteSplice>(cmdAlice.replyTo.await())
         }
     }
 

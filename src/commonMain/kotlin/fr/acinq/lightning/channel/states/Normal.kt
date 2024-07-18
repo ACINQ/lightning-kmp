@@ -115,7 +115,7 @@ data class Normal(
                 }
                 else -> {
                     logger.warning { "cannot initiate splice, another splice is already in progress" }
-                    cmd.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.SpliceAlreadyInProgress)
+                    cmd.replyTo.complete(ChannelFundingResponse.Failure.SpliceAlreadyInProgress)
                     Pair(this@Normal, emptyList())
                 }
             }
@@ -370,7 +370,7 @@ data class Normal(
                                 // We could keep track of our splice attempt and merge it with the remote splice instead of cancelling it.
                                 // But this is an edge case that should rarely occur, so it's probably not worth the additional complexity.
                                 logger.warning { "our peer initiated quiescence before us, cancelling our splice attempt" }
-                                spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.ConcurrentRemoteSplice)
+                                spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.ConcurrentRemoteSplice)
                                 Pair(this@Normal.copy(spliceStatus = SpliceStatus.ReceivedStfu(cmd.message)), emptyList())
                             }
                             is SpliceStatus.InitiatorQuiescent -> {
@@ -391,7 +391,7 @@ data class Normal(
                                         }
                                         if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < parentCommitment.localChannelReserve(commitments.params).max(commitTxFees)) {
                                             logger.warning { "cannot do splice: insufficient funds" }
-                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
+                                            spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.InsufficientFunds)
                                             val actions = buildList {
                                                 add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
                                                 add(ChannelAction.Disconnect)
@@ -399,7 +399,7 @@ data class Normal(
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
                                         } else if (spliceStatus.command.spliceOut?.scriptPubKey?.let { Helpers.Closing.isValidFinalScriptPubkey(it, allowAnySegwit = true) } == false) {
                                             logger.warning { "cannot do splice: invalid splice-out script" }
-                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidSpliceOutPubKeyScript)
+                                            spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.InvalidSpliceOutPubKeyScript)
                                             val actions = buildList {
                                                 add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
                                                 add(ChannelAction.Disconnect)
@@ -420,7 +420,7 @@ data class Normal(
                                         }
                                     } else {
                                         logger.warning { "cannot initiate splice, channel not quiescent" }
-                                        spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.ChannelNotQuiescent)
+                                        spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.ChannelNotQuiescent)
                                         val actions = buildList {
                                             add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceNotQuiescent(channelId).message)))
                                             add(ChannelAction.Disconnect)
@@ -429,7 +429,7 @@ data class Normal(
                                     }
                                 } else {
                                     logger.warning { "concurrent stfu received and our peer is the channel initiator, cancelling our splice attempt" }
-                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.ConcurrentRemoteSplice)
+                                    spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.ConcurrentRemoteSplice)
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent), emptyList())
                                 }
                             }
@@ -517,7 +517,7 @@ data class Normal(
                             )) {
                                 is Either.Left<ChannelException> -> {
                                     logger.error { "rejecting liquidity proposal: ${liquidityPurchase.value.message}" }
-                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidLiquidityAds(liquidityPurchase.value))
+                                    spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.InvalidLiquidityAds(liquidityPurchase.value))
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, liquidityPurchase.value.message))))
                                 }
                                 is Either.Right<LiquidityAds.Purchase?> -> {
@@ -549,7 +549,7 @@ data class Normal(
                                     )) {
                                         is Either.Left -> {
                                             logger.error { "could not create splice contributions: ${fundingContributions.value}" }
-                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.FundingFailure(fundingContributions.value))
+                                            spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.FundingFailure(fundingContributions.value))
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                                         }
                                         is Either.Right -> {
@@ -581,7 +581,7 @@ data class Normal(
                                                 }
                                                 else -> {
                                                     logger.error { "could not start interactive-tx session: $interactiveTxAction" }
-                                                    spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.CannotStartSession)
+                                                    spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.CannotStartSession)
                                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                                                 }
                                             }
@@ -621,7 +621,7 @@ data class Normal(
                                     when (signingSession) {
                                         is Either.Left -> {
                                             logger.error(signingSession.value) { "cannot initiate interactive-tx splice signing session" }
-                                            spliceStatus.replyTo?.complete(ChannelCommand.Commitment.Splice.Response.Failure.CannotCreateCommitTx(signingSession.value))
+                                            spliceStatus.replyTo?.complete(ChannelFundingResponse.Failure.CannotCreateCommitTx(signingSession.value))
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, signingSession.value.message))))
                                         }
                                         is Either.Right -> {
@@ -631,7 +631,7 @@ data class Normal(
                                             // It is likely that we will restart before the transaction is confirmed, in which case we will lose the replyTo and the ability to notify the caller.
                                             // We should be able to resume the signing steps and complete the splice if we disconnect, so we optimistically notify the caller now.
                                             spliceStatus.replyTo?.complete(
-                                                ChannelCommand.Commitment.Splice.Response.Created(
+                                                ChannelFundingResponse.Success(
                                                     channelId = channelId,
                                                     fundingTxIndex = session.fundingTxIndex,
                                                     fundingTxId = session.fundingTx.txId,
@@ -652,7 +652,7 @@ data class Normal(
                                 }
                                 is InteractiveTxSessionAction.RemoteFailure -> {
                                     logger.warning { "interactive-tx failed: $interactiveTxAction" }
-                                    spliceStatus.replyTo?.complete(ChannelCommand.Commitment.Splice.Response.Failure.InteractiveTxSessionFailed(interactiveTxAction))
+                                    spliceStatus.replyTo?.complete(ChannelFundingResponse.Failure.InteractiveTxSessionFailed(interactiveTxAction))
                                     Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, interactiveTxAction.toString()))))
                                 }
                             }
@@ -715,7 +715,7 @@ data class Normal(
                     is TxAbort -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer rejected our splice request: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
-                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.AbortedByPeer(cmd.message.toAscii()))
                             val actions = buildList {
                                 add(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
                                 addAll(endQuiescence())
@@ -724,7 +724,7 @@ data class Normal(
                         }
                         is SpliceStatus.InProgress -> {
                             logger.info { "our peer aborted the splice attempt: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data}" }
-                            spliceStatus.replyTo?.complete(ChannelCommand.Commitment.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            spliceStatus.replyTo?.complete(ChannelFundingResponse.Failure.AbortedByPeer(cmd.message.toAscii()))
                             val actions = buildList {
                                 add(ChannelAction.Message.Send(TxAbort(channelId, SpliceAborted(channelId).message)))
                                 addAll(endQuiescence())
@@ -770,7 +770,7 @@ data class Normal(
                     is CancelOnTheFlyFunding -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
                             logger.info { "our peer rejected our on-the-fly splice request: ascii='${cmd.message.toAscii()}'" }
-                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.AbortedByPeer(cmd.message.toAscii()))
+                            spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.AbortedByPeer(cmd.message.toAscii()))
                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), endQuiescence())
                         }
                         else -> {
@@ -824,18 +824,18 @@ data class Normal(
                     is SpliceStatus.None -> SpliceStatus.None
                     is SpliceStatus.Aborted -> SpliceStatus.None
                     is SpliceStatus.Requested -> {
-                        spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.Disconnected)
+                        spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.Disconnected)
                         SpliceStatus.None
                     }
                     is SpliceStatus.InProgress -> {
-                        spliceStatus.replyTo?.complete(ChannelCommand.Commitment.Splice.Response.Failure.Disconnected)
+                        spliceStatus.replyTo?.complete(ChannelFundingResponse.Failure.Disconnected)
                         SpliceStatus.None
                     }
                     is SpliceStatus.WaitingForSigs -> spliceStatus
                     is SpliceStatus.NonInitiatorQuiescent -> SpliceStatus.None
                     is QuiescenceNegotiation.NonInitiator -> SpliceStatus.None
                     is QuiescenceNegotiation.Initiator -> {
-                        spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.Disconnected)
+                        spliceStatus.command.replyTo.complete(ChannelFundingResponse.Failure.Disconnected)
                         SpliceStatus.None
                     }
                 }

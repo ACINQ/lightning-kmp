@@ -7,6 +7,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 
 /*
  * We build the funding transaction for a new channel.
@@ -30,6 +31,7 @@ import fr.acinq.lightning.wire.*
  *         |--------------------------->|
  */
 data class WaitForFundingCreated(
+    val replyTo: CompletableDeferred<ChannelFundingResponse>,
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
     val interactiveTxSession: InteractiveTxSession,
@@ -74,10 +76,24 @@ data class WaitForFundingCreated(
                             when (signingSession) {
                                 is Either.Left -> {
                                     logger.error(signingSession.value) { "cannot initiate interactive-tx signing session" }
+                                    replyTo.complete(ChannelFundingResponse.Failure.CannotStartSession)
                                     handleLocalError(cmd, signingSession.value)
                                 }
                                 is Either.Right -> {
                                     val (session, commitSig) = signingSession.value
+                                    // We cannot guarantee that the channel creation is successful: the only way to guarantee that is to wait for on-chain confirmations.
+                                    // It is likely that we will restart before the transaction is confirmed, in which case we will lose the replyTo and the ability to notify the caller.
+                                    // We should be able to resume the signing steps and complete the funding process if we disconnect, so we optimistically notify the caller now.
+                                    replyTo.complete(
+                                        ChannelFundingResponse.Success(
+                                            channelId = channelId,
+                                            fundingTxIndex = 0,
+                                            fundingTxId = session.fundingTx.txId,
+                                            capacity = session.fundingParams.fundingAmount,
+                                            balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal,
+                                            liquidityPurchase = liquidityPurchase,
+                                        )
+                                    )
                                     val nextState = WaitForFundingSigned(
                                         channelParams,
                                         session,
@@ -98,31 +114,40 @@ data class WaitForFundingCreated(
                         }
                         is InteractiveTxSessionAction.RemoteFailure -> {
                             logger.warning { "interactive-tx failed: $interactiveTxAction" }
+                            replyTo.complete(ChannelFundingResponse.Failure.InteractiveTxSessionFailed(interactiveTxAction))
                             handleLocalError(cmd, DualFundingAborted(channelId, interactiveTxAction.toString()))
                         }
                     }
                 }
                 is CommitSig -> {
                     logger.warning { "received commit_sig too early, aborting" }
+                    replyTo.complete(ChannelFundingResponse.Failure.UnexpectedMessage(cmd.message))
                     handleLocalError(cmd, UnexpectedCommitSig(channelId))
                 }
                 is TxSignatures -> {
                     logger.warning { "received tx_signatures too early, aborting" }
+                    replyTo.complete(ChannelFundingResponse.Failure.UnexpectedMessage(cmd.message))
                     handleLocalError(cmd, UnexpectedFundingSignatures(channelId))
                 }
                 is TxInitRbf -> {
                     logger.info { "ignoring unexpected tx_init_rbf message" }
+                    replyTo.complete(ChannelFundingResponse.Failure.UnexpectedMessage(cmd.message))
                     Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
                 }
                 is TxAckRbf -> {
                     logger.info { "ignoring unexpected tx_ack_rbf message" }
+                    replyTo.complete(ChannelFundingResponse.Failure.UnexpectedMessage(cmd.message))
                     Pair(this@WaitForFundingCreated, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidRbfAttempt(channelId).message))))
                 }
                 is TxAbort -> {
                     logger.warning { "our peer aborted the dual funding flow: ascii='${cmd.message.toAscii()}' bin=${cmd.message.data.toHex()}" }
+                    replyTo.complete(ChannelFundingResponse.Failure.AbortedByPeer(cmd.message.toAscii()))
                     Pair(Aborted, listOf(ChannelAction.Message.Send(TxAbort(channelId, DualFundingAborted(channelId, "requested by peer").message))))
                 }
-                is Error -> handleRemoteError(cmd.message)
+                is Error -> {
+                    replyTo.complete(ChannelFundingResponse.Failure.AbortedByPeer(cmd.message.toAscii()))
+                    handleRemoteError(cmd.message)
+                }
                 else -> unhandled(cmd)
             }
             is ChannelCommand.Close.MutualClose -> Pair(this@WaitForFundingCreated, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
@@ -134,7 +159,10 @@ data class WaitForFundingCreated(
             is ChannelCommand.Funding -> unhandled(cmd)
             is ChannelCommand.Closing -> unhandled(cmd)
             is ChannelCommand.Connected -> unhandled(cmd)
-            is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
+            is ChannelCommand.Disconnected -> {
+                replyTo.complete(ChannelFundingResponse.Failure.Disconnected)
+                Pair(Aborted, listOf())
+            }
         }
     }
 }
