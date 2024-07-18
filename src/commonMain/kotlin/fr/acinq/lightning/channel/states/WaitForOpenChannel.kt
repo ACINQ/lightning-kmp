@@ -10,6 +10,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 
 /*
  * We are waiting for our peer to initiate a channel open.
@@ -21,6 +22,7 @@ import fr.acinq.lightning.wire.*
  *         |--------------------------->|
  */
 data class WaitForOpenChannel(
+    val replyTo: CompletableDeferred<ChannelFundingResponse>,
     val temporaryChannelId: ByteVector32,
     val fundingAmount: Satoshi,
     val pushAmount: MilliSatoshi,
@@ -94,11 +96,13 @@ data class WaitForOpenChannel(
                             when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, walletInputs, accept.pushAmount, open.pushAmount, null)) {
                                 is Either.Left -> {
                                     logger.error { "could not fund channel: ${fundingContributions.value}" }
+                                    replyTo.complete(ChannelFundingResponse.Failure.FundingFailure(fundingContributions.value))
                                     Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                 }
                                 is Either.Right -> {
                                     val interactiveTxSession = InteractiveTxSession(staticParams.remoteNodeId, channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, emptySet(), fundingContributions.value)
                                     val nextState = WaitForFundingCreated(
+                                        replyTo,
                                         // If our peer asks us to pay the commit tx fees, we accept (only used in tests, as we're otherwise always the channel opener).
                                         localParams.copy(paysCommitTxFees = open.channelFlags.nonInitiatorPaysCommitFees),
                                         remoteParams,
@@ -125,12 +129,14 @@ data class WaitForOpenChannel(
                         }
                         is Either.Left -> {
                             logger.error(res.value) { "invalid ${cmd.message::class} in state ${this::class}" }
+                            replyTo.complete(ChannelFundingResponse.Failure.InvalidChannelParameters(res.value))
                             Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, res.value.message))))
                         }
                     }
                 }
                 is Error -> {
                     logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }
+                    replyTo.complete(ChannelFundingResponse.Failure.AbortedByPeer(cmd.message.toAscii()))
                     return Pair(Aborted, listOf())
                 }
                 else -> unhandled(cmd)
@@ -138,7 +144,10 @@ data class WaitForOpenChannel(
             is ChannelCommand.Close.MutualClose -> Pair(this@WaitForOpenChannel, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(temporaryChannelId, stateName))))
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(temporaryChannelId))
             is ChannelCommand.Connected -> unhandled(cmd)
-            is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
+            is ChannelCommand.Disconnected -> {
+                replyTo.complete(ChannelFundingResponse.Failure.Disconnected)
+                Pair(Aborted, listOf())
+            }
             is ChannelCommand.Init -> unhandled(cmd)
             is ChannelCommand.Commitment -> unhandled(cmd)
             is ChannelCommand.Htlc -> unhandled(cmd)

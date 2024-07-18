@@ -64,6 +64,7 @@ data class WaitForAcceptChannel(
                             )) {
                                 is Either.Left -> {
                                     logger.error { "rejecting liquidity proposal: ${liquidityPurchase.value.message}" }
+                                    init.replyTo.complete(ChannelFundingResponse.Failure.InvalidLiquidityAds(liquidityPurchase.value))
                                     Pair(Aborted, listOf(ChannelAction.Message.Send(Error(cmd.message.temporaryChannelId, liquidityPurchase.value.message))))
                                 }
                                 is Either.Right -> when (val fundingContributions = FundingContributions.create(
@@ -77,6 +78,7 @@ data class WaitForAcceptChannel(
                                 )) {
                                     is Either.Left -> {
                                         logger.error { "could not fund channel: ${fundingContributions.value}" }
+                                        init.replyTo.complete(ChannelFundingResponse.Failure.FundingFailure(fundingContributions.value))
                                         Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
                                     }
                                     is Either.Right -> {
@@ -94,6 +96,7 @@ data class WaitForAcceptChannel(
                                         when (interactiveTxAction) {
                                             is InteractiveTxSessionAction.SendMessage -> {
                                                 val nextState = WaitForFundingCreated(
+                                                    init.replyTo,
                                                     init.localParams,
                                                     remoteParams,
                                                     interactiveTxSession,
@@ -117,6 +120,7 @@ data class WaitForAcceptChannel(
                                             }
                                             else -> {
                                                 logger.error { "could not start interactive-tx session: $interactiveTxAction" }
+                                                init.replyTo.complete(ChannelFundingResponse.Failure.CannotStartSession)
                                                 Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
                                             }
                                         }
@@ -126,6 +130,7 @@ data class WaitForAcceptChannel(
                         }
                         is Either.Left -> {
                             logger.error(res.value) { "invalid ${cmd.message::class} in state ${this::class}" }
+                            init.replyTo.complete(ChannelFundingResponse.Failure.InvalidChannelParameters(res.value))
                             return Pair(Aborted, listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId(keyManager), res.value.message))))
                         }
                     }
@@ -133,15 +138,22 @@ data class WaitForAcceptChannel(
                 is CancelOnTheFlyFunding -> {
                     // Our peer won't accept this on-the-fly funding attempt: they probably already failed the corresponding HTLCs.
                     logger.warning { "on-the-fly funding was rejected by our peer: ${cmd.message.toAscii()}" }
+                    init.replyTo.complete(ChannelFundingResponse.Failure.AbortedByPeer(cmd.message.toAscii()))
                     Pair(Aborted, listOf())
                 }
-                is Error -> handleRemoteError(cmd.message)
+                is Error -> {
+                    init.replyTo.complete(ChannelFundingResponse.Failure.AbortedByPeer(cmd.message.toAscii()))
+                    handleRemoteError(cmd.message)
+                }
                 else -> unhandled(cmd)
             }
             is ChannelCommand.Close.MutualClose -> Pair(this@WaitForAcceptChannel, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(temporaryChannelId, stateName))))
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(temporaryChannelId))
             is ChannelCommand.Connected -> unhandled(cmd)
-            is ChannelCommand.Disconnected -> Pair(Aborted, listOf())
+            is ChannelCommand.Disconnected -> {
+                init.replyTo.complete(ChannelFundingResponse.Failure.Disconnected)
+                Pair(Aborted, listOf())
+            }
             is ChannelCommand.Init -> unhandled(cmd)
             is ChannelCommand.Commitment -> unhandled(cmd)
             is ChannelCommand.Htlc -> unhandled(cmd)

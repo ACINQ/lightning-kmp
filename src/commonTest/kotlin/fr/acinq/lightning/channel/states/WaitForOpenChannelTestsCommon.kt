@@ -6,6 +6,7 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlin.test.Test
@@ -58,13 +59,14 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv OpenChannel -- missing channel type`() {
+    fun `recv OpenChannel -- missing channel type`() = runSuspendTest {
         val (_, bob, open) = TestsHelper.init()
         val open1 = open.copy(tlvStream = TlvStream.empty())
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, MissingChannelType(open.temporaryChannelId).message))
         assertIs<LNChannel<Aborted>>(bob1)
+        assertIs<ChannelFundingResponse.Failure.InvalidChannelParameters>(bob.state.replyTo.await())
     }
 
     @Test
@@ -139,18 +141,20 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Error`() {
+    fun `recv Error`() = runSuspendTest {
         val (_, bob, _) = TestsHelper.init()
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Aborted>>(bob1)
+        assertIs<ChannelFundingResponse.Failure.AbortedByPeer>(bob.state.replyTo.await())
         assertTrue(actions.isEmpty())
     }
 
     @Test
-    fun `recv Disconnected`() {
+    fun `recv Disconnected`() = runSuspendTest {
         val (_, bob, _) = TestsHelper.init()
         val (bob1, actions) = bob.process(ChannelCommand.Disconnected)
         assertIs<LNChannel<WaitForOpenChannel>>(bob1)
+        assertIs<ChannelFundingResponse.Failure.Disconnected>(bob.state.replyTo.await())
         assertTrue(actions.isEmpty())
     }
 

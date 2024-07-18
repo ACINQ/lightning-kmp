@@ -8,6 +8,7 @@ import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -67,12 +68,13 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel -- missing channel type`() {
+    fun `recv AcceptChannel -- missing channel type`() = runSuspendTest {
         val (alice, _, accept) = init()
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream.empty())))
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, MissingChannelType(accept.temporaryChannelId).message))
+        assertIs<ChannelFundingResponse.Failure.InvalidChannelParameters>(alice.state.init.replyTo.await())
     }
 
     @Test
@@ -94,26 +96,28 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel -- missing liquidity ads`() {
+    fun `recv AcceptChannel -- missing liquidity ads`() = runSuspendTest {
         val (alice, _, accept) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
         val accept1 = accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot { it is ChannelTlv.ProvideFundingTlv }.toSet()))
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept1))
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, MissingLiquidityAds(accept.temporaryChannelId).message))
+        assertIs<ChannelFundingResponse.Failure.InvalidLiquidityAds>(alice.state.init.replyTo.await())
     }
 
     @Test
-    fun `recv AcceptChannel -- invalid liquidity ads amount`() {
+    fun `recv AcceptChannel -- invalid liquidity ads amount`() = runSuspendTest {
         val (alice, _, accept) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(fundingAmount = TestConstants.bobFundingAmount - 100.sat)))
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidLiquidityAdsAmount(accept.temporaryChannelId, TestConstants.bobFundingAmount - 100.sat, TestConstants.bobFundingAmount).message))
+        assertIs<ChannelFundingResponse.Failure.InvalidLiquidityAds>(alice.state.init.replyTo.await())
     }
 
     @Test
-    fun `recv AcceptChannel -- invalid liquidity ads signature`() {
+    fun `recv AcceptChannel -- invalid liquidity ads signature`() = runSuspendTest {
         val (alice, _, accept) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
         val willFund = ChannelTlv.ProvideFundingTlv(accept.willFund!!.copy(signature = randomBytes64()))
         val accept1 = accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot { it is ChannelTlv.ProvideFundingTlv }.toSet() + willFund))
@@ -121,6 +125,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
         assertEquals(error, Error(accept.temporaryChannelId, InvalidLiquidityAdsSig(accept.temporaryChannelId).message))
+        assertIs<ChannelFundingResponse.Failure.InvalidLiquidityAds>(alice.state.init.replyTo.await())
     }
 
     @Test
@@ -179,11 +184,12 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Error`() {
+    fun `recv Error`() = runSuspendTest {
         val (alice, _, _) = init()
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Aborted>>(alice1)
         assertTrue(actions1.isEmpty())
+        assertIs<ChannelFundingResponse.Failure.AbortedByPeer>(alice.state.init.replyTo.await())
     }
 
     companion object {
