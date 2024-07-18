@@ -25,6 +25,7 @@ sealed class ChannelCommand {
     data object Disconnected : ChannelCommand()
     sealed class Init : ChannelCommand() {
         data class Initiator(
+            val replyTo: CompletableDeferred<ChannelFundingResponse>,
             val fundingAmount: Satoshi,
             val pushAmount: MilliSatoshi,
             val walletInputs: List<WalletState.Utxo>,
@@ -32,22 +33,25 @@ sealed class ChannelCommand {
             val fundingTxFeerate: FeeratePerKw,
             val localParams: LocalParams,
             val remoteInit: InitMessage,
-            val channelFlags: Byte,
+            val channelFlags: ChannelFlags,
             val channelConfig: ChannelConfig,
             val channelType: ChannelType.SupportedChannelType,
-            val channelOrigin: Origin? = null
+            val requestRemoteFunding: LiquidityAds.RequestFunding?,
+            val channelOrigin: Origin?,
         ) : Init() {
             fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = keyManager.channelKeys(localParams.fundingKeyPath).temporaryChannelId
         }
 
         data class NonInitiator(
+            val replyTo: CompletableDeferred<ChannelFundingResponse>,
             val temporaryChannelId: ByteVector32,
             val fundingAmount: Satoshi,
             val pushAmount: MilliSatoshi,
             val walletInputs: List<WalletState.Utxo>,
             val localParams: LocalParams,
             val channelConfig: ChannelConfig,
-            val remoteInit: InitMessage
+            val remoteInit: InitMessage,
+            val fundingRates: LiquidityAds.WillFundRates?
         ) : Init()
 
         data class Restore(val state: PersistedChannelState) : Init()
@@ -85,42 +89,12 @@ sealed class ChannelCommand {
         data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
         data object CheckHtlcTimeout : Commitment()
         sealed class Splice : Commitment() {
-            data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestRemoteFunding?, val feerate: FeeratePerKw, val origins: List<Origin.PayToOpenOrigin> = emptyList()) : Splice() {
+            data class Request(val replyTo: CompletableDeferred<ChannelFundingResponse>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestFunding?, val feerate: FeeratePerKw, val origins: List<Origin>) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
                 val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 
                 data class SpliceIn(val walletInputs: List<WalletState.Utxo>, val pushAmount: MilliSatoshi = 0.msat)
                 data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
-            }
-
-            sealed class Response {
-                /**
-                 * This response doesn't fully guarantee that the splice will confirm, because our peer may potentially double-spend
-                 * the splice transaction. Callers should wait for on-chain confirmations and handle double-spend events.
-                 */
-                data class Created(
-                    val channelId: ByteVector32,
-                    val fundingTxIndex: Long,
-                    val fundingTxId: TxId,
-                    val capacity: Satoshi,
-                    val balance: MilliSatoshi,
-                    val liquidityLease: LiquidityAds.Lease?,
-                ) : Response()
-
-                sealed class Failure : Response() {
-                    data object InsufficientFunds : Failure()
-                    data object InvalidSpliceOutPubKeyScript : Failure()
-                    data object SpliceAlreadyInProgress : Failure()
-                    data object ConcurrentRemoteSplice : Failure()
-                    data object ChannelNotQuiescent : Failure()
-                    data class InvalidLiquidityAds(val reason: ChannelException) : Failure()
-                    data class FundingFailure(val reason: FundingContributionFailure) : Failure()
-                    data object CannotStartSession : Failure()
-                    data class InteractiveTxSessionFailed(val reason: InteractiveTxSessionAction.RemoteFailure) : Failure()
-                    data class CannotCreateCommitTx(val reason: ChannelException) : Failure()
-                    data class AbortedByPeer(val reason: String) : Failure()
-                    data object Disconnected : Failure()
-                }
             }
         }
     }
@@ -134,4 +108,36 @@ sealed class ChannelCommand {
         data class GetHtlcInfosResponse(val revokedCommitTxId: TxId, val htlcInfos: List<ChannelAction.Storage.HtlcInfo>) : Closing()
     }
     // @formatter:on
+}
+
+sealed class ChannelFundingResponse {
+    /**
+     * This response doesn't fully guarantee that the channel transaction will confirm, because our peer may potentially double-spend it.
+     * Callers should wait for on-chain confirmations and handle double-spend events.
+     */
+    data class Success(
+        val channelId: ByteVector32,
+        val fundingTxIndex: Long,
+        val fundingTxId: TxId,
+        val capacity: Satoshi,
+        val balance: MilliSatoshi,
+        val liquidityPurchase: LiquidityAds.Purchase?,
+    ) : ChannelFundingResponse()
+
+    sealed class Failure : ChannelFundingResponse() {
+        data object InsufficientFunds : Failure()
+        data object InvalidSpliceOutPubKeyScript : ChannelFundingResponse.Failure()
+        data object SpliceAlreadyInProgress : Failure()
+        data object ConcurrentRemoteSplice : Failure()
+        data object ChannelNotQuiescent : Failure()
+        data class InvalidChannelParameters(val reason: ChannelException) : Failure()
+        data class InvalidLiquidityAds(val reason: ChannelException) : Failure()
+        data class FundingFailure(val reason: FundingContributionFailure) : Failure()
+        data object CannotStartSession : Failure()
+        data class InteractiveTxSessionFailed(val reason: InteractiveTxSessionAction.RemoteFailure) : Failure()
+        data class CannotCreateCommitTx(val reason: ChannelException) : Failure()
+        data class AbortedByPeer(val reason: String) : Failure()
+        data class UnexpectedMessage(val msg: LightningMessage) : Failure()
+        data object Disconnected : Failure()
+    }
 }

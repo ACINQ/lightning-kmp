@@ -4,7 +4,10 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
-import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelAction
+import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.channel.Helpers
+import fr.acinq.lightning.channel.LocalFundingStatus
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ChannelTlv
 import fr.acinq.lightning.wire.OpenDualFundedChannel
@@ -15,13 +18,15 @@ data object WaitForInit : ChannelState() {
         return when (cmd) {
             is ChannelCommand.Init.NonInitiator -> {
                 val nextState = WaitForOpenChannel(
+                    cmd.replyTo,
                     cmd.temporaryChannelId,
                     cmd.fundingAmount,
                     cmd.pushAmount,
                     cmd.walletInputs,
                     cmd.localParams,
                     cmd.channelConfig,
-                    cmd.remoteInit
+                    cmd.remoteInit,
+                    cmd.fundingRates,
                 )
                 Pair(nextState, listOf())
             }
@@ -50,12 +55,12 @@ data object WaitForInit : ChannelState() {
                     tlvStream = TlvStream(
                         buildSet {
                             add(ChannelTlv.ChannelTypeTlv(cmd.channelType))
+                            cmd.requestRemoteFunding?.let { add(ChannelTlv.RequestFundingTlv(it)) }
                             if (cmd.pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(cmd.pushAmount))
-                            if (cmd.channelOrigin != null) add(ChannelTlv.OriginTlv(cmd.channelOrigin))
                         }
                     )
                 )
-                val nextState = WaitForAcceptChannel(cmd, open)
+                val nextState = WaitForAcceptChannel(cmd, open, cmd.channelOrigin)
                 Pair(nextState, listOf(ChannelAction.Message.Send(open)))
             }
             is ChannelCommand.Init.Restore -> {

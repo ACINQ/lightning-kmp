@@ -5,22 +5,17 @@ import fr.acinq.bitcoin.Script.tail
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
-import fr.acinq.bitcoin.utils.getOrDefault
-import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
+import fr.acinq.bitcoin.utils.getOrDefault
 import fr.acinq.bitcoin.utils.runTrying
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.logging.*
-import fr.acinq.lightning.transactions.CommitmentSpec
-import fr.acinq.lightning.transactions.DirectedHtlc
-import fr.acinq.lightning.transactions.Scripts
-import fr.acinq.lightning.transactions.SwapInProtocol
-import fr.acinq.lightning.transactions.Transactions
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
@@ -103,6 +98,20 @@ data class InteractiveTxParams(
         val fundingTxIndex = (sharedInput as? SharedFundingInput.Multisig2of2)?.let { it.fundingTxIndex + 1 } ?: 0
         return Helpers.Funding.makeFundingPubKeyScript(channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubkey)
     }
+
+    fun liquidityFees(purchase: LiquidityAds.Purchase?): MilliSatoshi = purchase?.let { l ->
+        val fees = when (l) {
+            is LiquidityAds.Purchase.Standard -> l.fees.total.toMilliSatoshi()
+            is LiquidityAds.Purchase.WithFeeCredit -> l.fees.total.toMilliSatoshi() - l.feeCreditUsed
+        }
+        when (l.paymentDetails) {
+            is LiquidityAds.PaymentDetails.FromChannelBalance -> if (isInitiator) fees else -fees
+            is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> if (isInitiator) fees else -fees
+            // Fees will be paid later, from relayed HTLCs.
+            is LiquidityAds.PaymentDetails.FromFutureHtlc -> 0.msat
+            is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> 0.msat
+        }
+    } ?: 0.msat
 }
 
 sealed class InteractiveTxInput {
@@ -214,7 +223,12 @@ sealed class InteractiveTxOutput {
      */
     data class Remote(override val serialId: Long, override val amount: Satoshi, override val pubkeyScript: ByteVector) : InteractiveTxOutput(), Incoming
 
-    /** The shared output can be added by us or by our peer, depending on who initiated the protocol. */
+    /**
+     * The shared output can be added by us or by our peer, depending on who initiated the protocol.
+     *
+     * @param localAmount amount contributed by us, before applying push_amount and (optional) liquidity fees: this is different from the channel balance.
+     * @param remoteAmount amount contributed by our peer, before applying push_amount and (optional) liquidity fees: this is different from the channel balance.
+     */
     data class Shared(override val serialId: Long, override val pubkeyScript: ByteVector, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi, val htlcAmount: MilliSatoshi) : InteractiveTxOutput(), Incoming, Outgoing {
         // Note that the truncation is a no-op: the sum of balances in a channel must be a satoshi amount.
         override val amount: Satoshi = (localAmount + remoteAmount + htlcAmount).truncateToSatoshi()
@@ -227,7 +241,6 @@ sealed class FundingContributionFailure {
     data class InputBelowDust(val txId: TxId, val outputIndex: Int, val amount: Satoshi, val dustLimit: Satoshi) : FundingContributionFailure() { override fun toString(): String = "invalid input $txId:$outputIndex (below dust: amount=$amount, dust=$dustLimit)" }
     data class InputTxTooLarge(val tx: Transaction) : FundingContributionFailure() { override fun toString(): String = "invalid input tx ${tx.txid} (too large)" }
     data class NotEnoughFunding(val fundingAmount: Satoshi, val nonFundingAmount: Satoshi, val providedAmount: Satoshi) : FundingContributionFailure() { override fun toString(): String = "not enough funds provided (expected at least $fundingAmount + $nonFundingAmount, got $providedAmount)" }
-    data class NotEnoughFees(val currentFees: Satoshi, val expectedFees: Satoshi) : FundingContributionFailure() { override fun toString(): String = "not enough funds to pay fees (expected at least $expectedFees, got $currentFees)" }
     data class InvalidFundingBalances(val fundingAmount: Satoshi, val localBalance: MilliSatoshi, val remoteBalance: MilliSatoshi) : FundingContributionFailure() { override fun toString(): String = "invalid balances funding_amount=$fundingAmount local=$localBalance remote=$remoteBalance" }
     // @formatter:on
 }
@@ -239,14 +252,30 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
             val weight = computeWeightPaid(isInitiator, commitment, walletInputs, localOutputs)
             val fees = Transactions.weight2fee(targetFeerate, weight)
-            return walletInputs.map { it.amount }.sum() - localOutputs.map { it.amount }.sum() - fees
+            return when {
+                // When buying inbound liquidity, we may not have enough funds in our current balance to pay on-chain fees.
+                // The maximum amount we can use for on-chain fees is our current balance, which is fine because:
+                //  - this will simply result in a splice transaction with a lower feerate than expected
+                //  - liquidity fees will be paid later from future HTLCs relayed to us
+                walletInputs.isEmpty() && localOutputs.isEmpty() -> -(fees.min(commitment.localCommit.spec.toLocal.truncateToSatoshi()))
+                else -> walletInputs.map { it.amount }.sum() - localOutputs.map { it.amount }.sum() - fees
+            }
         }
 
         /**
          * @param walletInputs 2-of-2 swap-in wallet inputs.
          */
-        fun create(channelKeys: KeyManager.ChannelKeys, swapInKeys: KeyManager.SwapInOnChainKeys, params: InteractiveTxParams, walletInputs: List<WalletState.Utxo>): Either<FundingContributionFailure, FundingContributions> =
-            create(channelKeys, swapInKeys, params, null, walletInputs, listOf())
+        fun create(
+            channelKeys: KeyManager.ChannelKeys,
+            swapInKeys: KeyManager.SwapInOnChainKeys,
+            params: InteractiveTxParams,
+            walletInputs: List<WalletState.Utxo>,
+            localPushAmount: MilliSatoshi,
+            remotePushAmount: MilliSatoshi,
+            liquidityPurchase: LiquidityAds.Purchase?
+        ): Either<FundingContributionFailure, FundingContributions> {
+            return create(channelKeys, swapInKeys, params, null, walletInputs, listOf(), localPushAmount, remotePushAmount, liquidityPurchase)
+        }
 
         /**
          * @param sharedUtxo previous input shared between the two participants (e.g. previous funding output when splicing) and our corresponding balance.
@@ -261,6 +290,9 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
             sharedUtxo: Pair<SharedFundingInput, SharedFundingInputBalances>?,
             walletInputs: List<WalletState.Utxo>,
             localOutputs: List<TxOut>,
+            localPushAmount: MilliSatoshi,
+            remotePushAmount: MilliSatoshi,
+            liquidityPurchase: LiquidityAds.Purchase?,
             changePubKey: PublicKey? = null
         ): Either<FundingContributionFailure, FundingContributions> {
             walletInputs.forEach { utxo ->
@@ -276,27 +308,23 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 return Either.Left(FundingContributionFailure.NotEnoughFunding(params.localContribution, localOutputs.map { it.amount }.sum(), totalAmountIn))
             }
 
-            // We compute the fees that we should pay in the shared transaction.
+            val liquidityFees = params.liquidityFees(liquidityPurchase)
+            val nextLocalBalanceBeforePush = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi()
+            val nextLocalBalanceAfterPush = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi() - localPushAmount + remotePushAmount - liquidityFees
+            val nextRemoteBalanceBeforePush = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi()
+            val nextRemoteBalanceAfterPush = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi() + localPushAmount - remotePushAmount + liquidityFees
+            if (nextLocalBalanceAfterPush < 0.msat || nextRemoteBalanceAfterPush < 0.msat) {
+                return Either.Left(FundingContributionFailure.InvalidFundingBalances(params.fundingAmount, nextLocalBalanceAfterPush, nextRemoteBalanceAfterPush))
+            }
+
             val fundingPubkeyScript = params.fundingPubkeyScript(channelKeys)
-            val weightWithoutChange = computeWeightPaid(params.isInitiator, sharedUtxo?.first, fundingPubkeyScript, walletInputs, localOutputs)
-            val weightWithChange = computeWeightPaid(params.isInitiator, sharedUtxo?.first, fundingPubkeyScript, walletInputs, localOutputs + listOf(TxOut(0.sat, Script.pay2wpkh(Transactions.PlaceHolderPubKey))))
-            val feesWithoutChange = totalAmountIn - totalAmountOut
-            // If we're not the initiator, we don't return an error when we're unable to meet the desired feerate.
-            if (params.isInitiator && feesWithoutChange < Transactions.weight2fee(params.targetFeerate, weightWithoutChange)) {
-                return Either.Left(FundingContributionFailure.NotEnoughFees(feesWithoutChange, Transactions.weight2fee(params.targetFeerate, weightWithoutChange)))
-            }
-
-            val nextLocalBalance = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi()
-            val nextRemoteBalance = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi()
-            if (nextLocalBalance < 0.msat || nextRemoteBalance < 0.msat) {
-                return Either.Left(FundingContributionFailure.InvalidFundingBalances(params.fundingAmount, nextLocalBalance, nextRemoteBalance))
-            }
-
-            val sharedOutput = listOf(InteractiveTxOutput.Shared(0, fundingPubkeyScript, nextLocalBalance, nextRemoteBalance, sharedUtxo?.second?.toHtlcs ?: 0.msat))
+            // We use local and remote balances before amounts are pushed to allow computing the local and remote mining fees.
+            val sharedOutput = listOf(InteractiveTxOutput.Shared(0, fundingPubkeyScript, nextLocalBalanceBeforePush, nextRemoteBalanceBeforePush, sharedUtxo?.second?.toHtlcs ?: 0.msat))
             val nonChangeOutputs = localOutputs.map { o -> InteractiveTxOutput.Local.NonChange(0, o.amount, o.publicKeyScript) }
             val changeOutput = when (changePubKey) {
                 null -> listOf()
                 else -> {
+                    val weightWithChange = computeWeightPaid(params.isInitiator, sharedUtxo?.first, fundingPubkeyScript, walletInputs, localOutputs + listOf(TxOut(0.sat, Script.pay2wpkh(Transactions.PlaceHolderPubKey))))
                     val changeAmount = totalAmountIn - totalAmountOut - Transactions.weight2fee(params.targetFeerate, weightWithChange)
                     if (params.dustLimit <= changeAmount) {
                         listOf(InteractiveTxOutput.Local.Change(0, changeAmount, Script.write(Script.pay2wpkh(changePubKey)).byteVector()))
@@ -339,7 +367,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         fun Transaction.stripInputWitnesses(): Transaction = copy(txIn = txIn.map { it.updateWitness(ScriptWitness.empty) })
 
         /** Compute the weight we need to pay on-chain fees for. */
-        private fun computeWeightPaid(isInitiator: Boolean, sharedInput: SharedFundingInput?, sharedOutputScript: ByteVector, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>): Int {
+        fun computeWeightPaid(isInitiator: Boolean, sharedInput: SharedFundingInput?, sharedOutputScript: ByteVector, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>): Int {
             val walletInputsWeight = weight(walletInputs)
             val localOutputsWeight = localOutputs.sumOf { it.weight() }
             return if (isInitiator) {
@@ -673,8 +701,7 @@ data class InteractiveTxSession(
     val isComplete: Boolean = txCompleteSent != null && txCompleteReceived != null
 
     fun send(): Pair<InteractiveTxSession, InteractiveTxSessionAction> {
-        val msg = toSend.firstOrNull()
-        return when (msg) {
+        return when (val msg = toSend.firstOrNull()) {
             null -> {
                 val localSwapIns = localInputs.filterIsInstance<InteractiveTxInput.LocalSwapIn>()
                 val remoteSwapIns = remoteInputs.filterIsInstance<InteractiveTxInput.RemoteSwapIn>()
@@ -941,8 +968,10 @@ data class InteractiveTxSession(
                 return InteractiveTxSessionAction.InvalidTxFeerate(fundingParams.channelId, tx.txid, fundingParams.targetFeerate, nextFeerate)
             }
         } else {
+            // We allow the feerate to be lower than requested: when using on-the-fly liquidity, we may not be able to contribute
+            // as much as we expected, but that's fine because we instead overshoot the feerate and pays liquidity fees accordingly.
             val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
-            if (sharedTx.fees < minimumFee) {
+            if (sharedTx.fees < minimumFee * 0.5) {
                 return InteractiveTxSessionAction.InvalidTxFeerate(fundingParams.channelId, tx.txid, fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, tx.weight()))
             }
         }
@@ -987,7 +1016,6 @@ data class InteractiveTxSigningSession(
     val fundingParams: InteractiveTxParams,
     val fundingTxIndex: Long,
     val fundingTx: PartiallySignedSharedTransaction,
-    val liquidityLease: LiquidityAds.Lease?,
     val localCommit: Either<UnsignedLocalCommit, LocalCommit>,
     val remoteCommit: RemoteCommit,
 ) {
@@ -1065,7 +1093,7 @@ data class InteractiveTxSigningSession(
             sharedTx: SharedTransaction,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
-            liquidityLease: LiquidityAds.Lease?,
+            liquidityPurchase: LiquidityAds.Purchase?,
             localCommitmentIndex: Long,
             remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
@@ -1075,7 +1103,7 @@ data class InteractiveTxSigningSession(
             val channelKeys = channelParams.localParams.channelKeys(keyManager)
             val unsignedTx = sharedTx.buildUnsignedTx()
             val sharedOutputIndex = unsignedTx.txOut.indexOfFirst { it.publicKeyScript == fundingParams.fundingPubkeyScript(channelKeys) }
-            val liquidityFees = liquidityLease?.fees?.total?.toMilliSatoshi() ?: 0.msat
+            val liquidityFees = fundingParams.liquidityFees(liquidityPurchase)
             return Helpers.Funding.makeCommitTxs(
                 channelKeys,
                 channelParams.channelId,
@@ -1120,7 +1148,7 @@ data class InteractiveTxSigningSession(
                 val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx, listOf())
                 val remoteCommit = RemoteCommit(remoteCommitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
                 val signedFundingTx = sharedTx.sign(session, keyManager, fundingParams, channelParams.localParams, channelParams.remoteParams.nodeId)
-                Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, liquidityLease, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
+                Pair(InteractiveTxSigningSession(fundingParams, fundingTxIndex, signedFundingTx, Either.Left(unsignedLocalCommit), remoteCommit), commitSig)
             }
         }
 
@@ -1168,20 +1196,20 @@ sealed class SpliceStatus {
     /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
     data class ReceivedStfu(val stfu: Stfu) : QuiescenceNegotiation.NonInitiator()
     /** Our updates have been added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
-    object NonInitiatorQuiescent : QuiescentSpliceStatus()
+    data object NonInitiatorQuiescent : QuiescentSpliceStatus()
     /** We told our peer we want to splice funds in the channel. */
     data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : QuiescentSpliceStatus()
     /** We both agreed to splice and are building the splice transaction. */
     data class InProgress(
-        val replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>?,
+        val replyTo: CompletableDeferred<ChannelFundingResponse>?,
         val spliceSession: InteractiveTxSession,
         val localPushAmount: MilliSatoshi,
         val remotePushAmount: MilliSatoshi,
-        val liquidityLease: LiquidityAds.Lease?,
-        val origins: List<Origin.PayToOpenOrigin>
+        val liquidityPurchase: LiquidityAds.Purchase?,
+        val origins: List<Origin>
     ) : QuiescentSpliceStatus()
     /** The splice transaction has been negotiated, we're exchanging signatures. */
-    data class WaitingForSigs(val session: InteractiveTxSigningSession, val origins: List<Origin.PayToOpenOrigin>) : QuiescentSpliceStatus()
+    data class WaitingForSigs(val session: InteractiveTxSigningSession, val liquidityPurchase: LiquidityAds.Purchase?, val origins: List<Origin>) : QuiescentSpliceStatus()
     /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
     data object Aborted : QuiescentSpliceStatus()
 }

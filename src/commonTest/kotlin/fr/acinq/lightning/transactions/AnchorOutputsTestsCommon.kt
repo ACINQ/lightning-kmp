@@ -18,7 +18,6 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Htl
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.kodein.memory.file.FileSystem
 import org.kodein.memory.file.Path
@@ -92,7 +91,8 @@ class AnchorOutputsTestsCommon {
         val localParams = LocalParams(
             TestConstants.Alice.nodeParams.nodeId,
             KeyPath.empty,
-            546.sat, 1000000000L, 0.msat, CltvExpiryDelta(144), 1000, true,
+            546.sat, 1000000000L, 0.msat, CltvExpiryDelta(144), 1000,
+            isChannelOpener = true, paysCommitTxFees = true,
             Script.write(Script.pay2wpkh(randomKey().publicKey())).toByteVector(),
             TestConstants.Alice.nodeParams.features,
         )

@@ -191,7 +191,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             )
             val blindedHop = ChannelHop(d, blindedRoute.blindedNodeIds.last(), channelUpdateDE)
             val (amountE, expiryE, onionE) = OutgoingPaymentPacket.buildPacket(paymentMetadata.paymentHash, listOf(blindedHop), finalPayload, OnionRoutingPacket.PaymentPacketLength)
-            val add = UpdateAddHtlc(randomBytes32(), 2, amountE, paymentMetadata.paymentHash, expiryE, onionE.packet, blindedRoute.blindingKey)
+            val add = UpdateAddHtlc(randomBytes32(), 2, amountE, paymentMetadata.paymentHash, expiryE, onionE.packet, blindedRoute.blindingKey, null)
             return Pair(add, finalPayload)
         }
     }
@@ -453,7 +453,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             )
             val blindedHop = ChannelHop(d, blindedRoute.blindedNodeIds.last(), channelUpdateDE)
             val (amountE, expiryE, onionE) = OutgoingPaymentPacket.buildPacket(addD.paymentHash, listOf(blindedHop), payloadE, OnionRoutingPacket.PaymentPacketLength)
-            UpdateAddHtlc(randomBytes32(), 2, amountE, addD.paymentHash, expiryE, onionE.packet, blindingE)
+            UpdateAddHtlc(randomBytes32(), 2, amountE, addD.paymentHash, expiryE, onionE.packet, blindingE, null)
         }
 
         // E can correctly decrypt the blinded payment.
@@ -539,7 +539,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         )
         val blindedHop = ChannelHop(d, blindedRoute.blindedNodeIds.last(), channelUpdateDE)
         val (amountE, expiryE, onionE) = OutgoingPaymentPacket.buildPacket(paymentMetadata.paymentHash, listOf(blindedHop), payloadE, OnionRoutingPacket.PaymentPacketLength)
-        val addE = UpdateAddHtlc(randomBytes32(), 2, amountE, paymentMetadata.paymentHash, expiryE, onionE.packet, blindedRoute.blindingKey)
+        val addE = UpdateAddHtlc(randomBytes32(), 2, amountE, paymentMetadata.paymentHash, expiryE, onionE.packet, blindedRoute.blindingKey, null)
         val failure = IncomingPaymentPacket.decrypt(addE, privE)
         assertTrue(failure.isLeft)
         assertEquals(failure.left, InvalidOnionBlinding(hash(addE.onionRoutingPacket)))

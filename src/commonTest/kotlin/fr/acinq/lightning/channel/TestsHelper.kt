@@ -21,6 +21,7 @@ import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
@@ -149,6 +150,7 @@ object TestsHelper {
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
         alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
         bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
+        requestRemoteFunding: Satoshi? = null,
         zeroConf: Boolean = false,
         channelOrigin: Origin? = null
     ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForOpenChannel>, OpenDualFundedChannel> {
@@ -181,13 +183,14 @@ object TestsHelper {
             WaitForInit
         )
 
-        val channelFlags = 0.toByte()
-        val aliceChannelParams = TestConstants.Alice.channelParams().copy(features = aliceFeatures.initFeatures())
-        val bobChannelParams = TestConstants.Bob.channelParams().copy(features = bobFeatures.initFeatures())
+        val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = requestRemoteFunding != null)
+        val aliceChannelParams = TestConstants.Alice.channelParams(payCommitTxFees = !channelFlags.nonInitiatorPaysCommitFees).copy(features = aliceFeatures.initFeatures())
+        val bobChannelParams = TestConstants.Bob.channelParams(payCommitTxFees = channelFlags.nonInitiatorPaysCommitFees).copy(features = bobFeatures.initFeatures())
         val aliceInit = Init(aliceFeatures)
         val bobInit = Init(bobFeatures)
         val (alice1, actionsAlice1) = alice.process(
             ChannelCommand.Init.Initiator(
+                CompletableDeferred(),
                 aliceFundingAmount,
                 alicePushAmount,
                 createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
@@ -198,12 +201,26 @@ object TestsHelper {
                 channelFlags,
                 ChannelConfig.standard,
                 channelType,
-                channelOrigin
+                requestRemoteFunding?.let { LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromChannelBalance) },
+                channelOrigin,
             )
         )
         assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
+        val temporaryChannelId = aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else listOf()
-        val (bob1, _) = bob.process(ChannelCommand.Init.NonInitiator(aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit))
+        val (bob1, _) = bob.process(
+            ChannelCommand.Init.NonInitiator(
+                CompletableDeferred(),
+                temporaryChannelId,
+                bobFundingAmount,
+                bobPushAmount,
+                bobWallet,
+                bobChannelParams,
+                ChannelConfig.standard,
+                aliceInit,
+                TestConstants.fundingRates
+            )
+        )
         assertIs<LNChannel<WaitForOpenChannel>>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
@@ -218,9 +235,21 @@ object TestsHelper {
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
         alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
         bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
+        requestRemoteFunding: Satoshi? = null,
         zeroConf: Boolean = false,
     ): Triple<LNChannel<Normal>, LNChannel<Normal>, Transaction> {
-        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf)
+        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(
+            channelType,
+            aliceFeatures,
+            bobFeatures,
+            currentHeight,
+            aliceFundingAmount,
+            bobFundingAmount,
+            alicePushAmount,
+            bobPushAmount,
+            requestRemoteFunding,
+            zeroConf
+        )
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
         assertIs<LNChannel<Normal>>(alice1)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
