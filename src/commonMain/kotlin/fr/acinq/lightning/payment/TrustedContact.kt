@@ -23,7 +23,7 @@ data class TrustedContact(val offer: OfferTypes.Offer, val payerIds: List<Public
      */
     fun deterministicPayerKey(localOffer: OfferTypes.OfferAndKey): PrivateKey = localOffer.privateKey * deriveTweak(offer)
 
-    /** Return true if this payer_id matches this conact. */
+    /** Return true if this payer_id matches this contact. */
     fun isPayer(payerId: PublicKey): Boolean = payerIds.contains(payerId)
 
     /** Return true if the [invoiceRequest] comes from this contact. */
