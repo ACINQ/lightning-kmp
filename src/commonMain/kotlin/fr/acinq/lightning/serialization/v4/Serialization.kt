@@ -239,6 +239,12 @@ object Serialization {
             writeNumber(i.fundingTxIndex)
             writePublicKey(i.remoteFundingPubkey)
         }
+        is SharedFundingInput.Musig2Input -> {
+            write(0x02)
+            writeInputInfo(i.info)
+            writeNumber(i.fundingTxIndex)
+            writePublicKey(i.remoteFundingPubkey)
+        }
     }
 
     private fun Output.writeInteractiveTxParams(o: InteractiveTxParams) = o.run {
@@ -609,6 +615,9 @@ object Serialization {
             writeNullable(lastIndex) { writeNumber(it) }
         }
         writeDelimited(remoteChannelData.data.toByteArray())
+        if (o.isTaprootChannel) {
+            writeCollection(o.nextRemoteNonces) { writePublicNonce(it) }
+        }
     }
 
     private fun Output.writeDirectedHtlc(htlc: DirectedHtlc) = htlc.run {
@@ -640,10 +649,22 @@ object Serialization {
         writeNumber(toRemote.toLong())
     }
 
+    private fun Output.writeScriptTree(tree: ScriptTree): Unit = tree.run {
+        writeDelimited(this.write())
+    }
+
+    private fun Output.writeScriptTreeAndInternalKey(scriptTreeAndInternalKey: Transactions.ScriptTreeAndInternalKey): Unit = scriptTreeAndInternalKey.run {
+        writeScriptTree(scriptTree)
+        writeByteVector32(internalKey.value)
+    }
+
     private fun Output.writeInputInfo(o: Transactions.InputInfo): Unit = o.run {
         writeBtcObject(outPoint)
         writeBtcObject(txOut)
         writeDelimited(redeemScript.toByteArray())
+        if (redeemScript.isEmpty()) {
+            writeNullable(scriptTreeAndInternalKey) { writeScriptTreeAndInternalKey(it) }
+        }
     }
 
     private fun Output.writeTransactionWithInputInfo(o: Transactions.TransactionWithInputInfo) {

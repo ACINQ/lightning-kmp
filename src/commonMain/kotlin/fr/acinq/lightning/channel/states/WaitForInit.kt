@@ -52,6 +52,14 @@ data object WaitForInit : ChannelState() {
                             add(ChannelTlv.ChannelTypeTlv(cmd.channelType))
                             if (cmd.pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(cmd.pushAmount))
                             if (cmd.channelOrigin != null) add(ChannelTlv.OriginTlv(cmd.channelOrigin))
+                            if (cmd.channelType == ChannelType.SupportedChannelType.SimpleTaprootStaging) add(
+                                ChannelTlv.NextLocalNoncesTlv(
+                                    listOf(
+                                        channelKeys.verificationNonce(0, 0).second,
+                                        channelKeys.verificationNonce(0, 1).second,
+                                        )
+                                )
+                            )
                         }
                     )
                 )

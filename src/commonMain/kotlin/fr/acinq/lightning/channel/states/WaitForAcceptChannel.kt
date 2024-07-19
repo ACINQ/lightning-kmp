@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
+import fr.acinq.lightning.Feature
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
 import fr.acinq.lightning.utils.msat
@@ -52,14 +53,25 @@ data class WaitForAcceptChannel(
                             val remoteFundingPubkey = accept.fundingPubkey
                             val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
                             val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, remoteFundingPubkey, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
-                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs)) {
+                            when (val fundingContributions =
+                                FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, init.walletInputs, isTaprootChannel = channelFeatures.hasFeature(Feature.SimpleTaprootStaging))) {
                                 is Either.Left -> {
                                     logger.error { "could not fund channel: ${fundingContributions.value}" }
                                     Pair(Aborted, listOf(ChannelAction.Message.Send(Error(channelId, ChannelFundingError(channelId).message))))
                                 }
                                 is Either.Right -> {
                                     // The channel initiator always sends the first interactive-tx message.
-                                    val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(staticParams.remoteNodeId,  channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, emptySet(), fundingContributions.value).send()
+                                    val (interactiveTxSession, interactiveTxAction) = InteractiveTxSession(
+                                        staticParams.remoteNodeId,
+                                        channelKeys,
+                                        keyManager.swapInOnChainWallet,
+                                        fundingParams,
+                                        0.msat,
+                                        0.msat,
+                                        emptySet(),
+                                        fundingContributions.value,
+                                        firstRemoteNonce = cmd.message.firstRemoteNonce
+                                    ).send()
                                     when (interactiveTxAction) {
                                         is InteractiveTxSessionAction.SendMessage -> {
                                             val nextState = WaitForFundingCreated(
@@ -74,7 +86,8 @@ data class WaitForAcceptChannel(
                                                 lastSent.channelFlags,
                                                 init.channelConfig,
                                                 channelFeatures,
-                                                null
+                                                null,
+                                                cmd.message.secondRemoteNonce
                                             )
                                             val actions = listOf(
                                                 ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),

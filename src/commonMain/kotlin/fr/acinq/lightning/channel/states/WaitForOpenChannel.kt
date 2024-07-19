@@ -40,6 +40,11 @@ data class WaitForOpenChannel(
                             val channelFeatures = ChannelFeatures(channelType, localFeatures = localParams.features, remoteFeatures = remoteInit.features)
                             val minimumDepth = if (staticParams.useZeroConf) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                             val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
+                            val isTaprootChannel = when (channelType) {
+                                is ChannelType.SupportedChannelType.SimpleTaprootStaging -> true
+                                is ChannelType.SupportedChannelType.SimpleTaprootStagingZeroReserve -> true
+                                else -> false
+                            }
                             val accept = AcceptDualFundedChannel(
                                 temporaryChannelId = open.temporaryChannelId,
                                 fundingAmount = fundingAmount,
@@ -60,6 +65,14 @@ data class WaitForOpenChannel(
                                     buildSet {
                                         add(ChannelTlv.ChannelTypeTlv(channelType))
                                         if (pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(pushAmount))
+                                        if (isTaprootChannel) add(
+                                            ChannelTlv.NextLocalNoncesTlv(
+                                                listOf(
+                                                    channelKeys.verificationNonce(0, 0).second,
+                                                    channelKeys.verificationNonce(0, 1).second,
+                                                )
+                                            )
+                                        )
                                     }
                                 ),
                             )
@@ -80,13 +93,23 @@ data class WaitForOpenChannel(
                             val remoteFundingPubkey = open.fundingPubkey
                             val dustLimit = open.dustLimit.max(localParams.dustLimit)
                             val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, remoteFundingPubkey, open.lockTime, dustLimit, open.fundingFeerate)
-                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, walletInputs)) {
+                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, walletInputs, isTaprootChannel)) {
                                 is Either.Left -> {
                                     logger.error { "could not fund channel: ${fundingContributions.value}" }
                                     Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                 }
                                 is Either.Right -> {
-                                    val interactiveTxSession = InteractiveTxSession(staticParams.remoteNodeId, channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, emptySet(), fundingContributions.value)
+                                    val interactiveTxSession = InteractiveTxSession(
+                                        staticParams.remoteNodeId,
+                                        channelKeys,
+                                        keyManager.swapInOnChainWallet,
+                                        fundingParams,
+                                        0.msat,
+                                        0.msat,
+                                        emptySet(),
+                                        fundingContributions.value,
+                                        firstRemoteNonce = open.firstRemoteNonce
+                                    )
                                     val nextState = WaitForFundingCreated(
                                         localParams,
                                         remoteParams,
@@ -99,7 +122,8 @@ data class WaitForOpenChannel(
                                         open.channelFlags,
                                         channelConfig,
                                         channelFeatures,
-                                        open.origin
+                                        open.origin,
+                                        open.secondRemoteNonce
                                     )
                                     val actions = listOf(
                                         ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),
