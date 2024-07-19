@@ -709,6 +709,9 @@ object OfferTypes {
         }
     }
 
+    /** A bolt 12 offer and the private key used to sign invoices for that offer. */
+    data class OfferAndKey(val offer: Offer, val privateKey: PrivateKey)
+
     data class Offer(val records: TlvStream<OfferTlv>) {
         val chains: List<BlockHash> = records.get<OfferChains>()?.chains ?: listOf(Block.LivenetGenesisBlock.hash)
         val metadata: ByteVector? = records.get<OfferMetadata>()?.data
@@ -789,7 +792,7 @@ object OfferTypes {
                 blindingSecret: PrivateKey,
                 additionalTlvs: Set<OfferTlv> = setOf(),
                 customTlvs: Set<GenericTlv> = setOf()
-            ): Pair<Offer, PrivateKey> {
+            ): OfferAndKey {
                 if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
                 val blindedRouteDetails = OnionMessages.buildRouteToRecipient(blindingSecret, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), null))
                 val tlvs: Set<OfferTlv> = setOfNotNull(
@@ -800,7 +803,7 @@ object OfferTypes {
                     // Note that we don't include an offer_node_id since we're using a blinded path.
                     OfferPaths(listOf(ContactInfo.BlindedPath(blindedRouteDetails.route))),
                 )
-                return Pair(Offer(TlvStream(tlvs + additionalTlvs, customTlvs)), blindedRouteDetails.blindedPrivateKey(nodeParams.nodePrivateKey))
+                return OfferAndKey(Offer(TlvStream(tlvs + additionalTlvs, customTlvs)), blindedRouteDetails.blindedPrivateKey(nodeParams.nodePrivateKey))
             }
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
