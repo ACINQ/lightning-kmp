@@ -302,10 +302,11 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
+            requestRemoteFunding: Satoshi? = null,
             zeroConf: Boolean = false,
             channelOrigin: Origin? = null
         ): Fixture {
-            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, zeroConf, channelOrigin)
+            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, requestRemoteFunding, zeroConf, channelOrigin)
             val (b1, actions) = b.process(ChannelCommand.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptDualFundedChannel>()
             assertIs<LNChannel<WaitForFundingCreated>>(b1)
