@@ -9,10 +9,7 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.flatMap
-import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.*
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.Bolt12Invoice
 import fr.acinq.lightning.utils.msat
@@ -498,7 +495,7 @@ object PaymentOnion {
                 }
             }
 
-            fun create(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): RelayToNonTrampolinePayload =
+            fun create(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice, routingInfo: List<Bolt11Invoice.TaggedField.RoutingInfo>): RelayToNonTrampolinePayload =
                 RelayToNonTrampolinePayload(
                     TlvStream(
                         buildSet {
@@ -508,7 +505,7 @@ object PaymentOnion {
                             add(OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, totalAmount))
                             invoice.paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
                             add(OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features.toByteArray().toByteVector()))
-                            add(OnionPaymentPayloadTlv.InvoiceRoutingInfo(invoice.routingInfo.map { it.hints }))
+                            add(OnionPaymentPayloadTlv.InvoiceRoutingInfo(routingInfo.map { it.hints }))
                         }
                     )
                 )
@@ -538,14 +535,14 @@ object PaymentOnion {
                 }
             }
 
-            fun create(amount: MilliSatoshi, expiry: CltvExpiry, invoice: Bolt12Invoice): RelayToBlindedPayload =
+            fun create(amount: MilliSatoshi, expiry: CltvExpiry, features: Features, blindedPaths: List<Bolt12Invoice.Companion.PaymentBlindedContactInfo>): RelayToBlindedPayload =
                 RelayToBlindedPayload(
                     TlvStream(
                         setOf(
                             OnionPaymentPayloadTlv.AmountToForward(amount),
                             OnionPaymentPayloadTlv.OutgoingCltv(expiry),
-                            OnionPaymentPayloadTlv.OutgoingBlindedPaths(invoice.blindedPaths),
-                            OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features.toByteArray().toByteVector())
+                            OnionPaymentPayloadTlv.OutgoingBlindedPaths(blindedPaths),
+                            OnionPaymentPayloadTlv.InvoiceFeatures(features.toByteArray().toByteVector())
                         )
                     )
                 )
