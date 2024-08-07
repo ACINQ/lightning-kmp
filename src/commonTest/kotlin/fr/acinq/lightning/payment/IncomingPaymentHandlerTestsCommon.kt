@@ -16,8 +16,6 @@ import fr.acinq.lightning.db.IncomingPaymentsDb
 import fr.acinq.lightning.io.AddLiquidityForIncomingPayment
 import fr.acinq.lightning.io.SendOnTheFlyFundingMessage
 import fr.acinq.lightning.io.WrappedChannelCommand
-import fr.acinq.lightning.router.ChannelHop
-import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
@@ -344,15 +342,16 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
         checkDbPayment(incomingPayment, paymentHandler.db)
         val willAddHtlc = run {
-            // We simulate a trampoline-relay with a dummy channel hop between the liquidity provider and the wallet.
-            val (amount, expiry, trampolineOnion) = OutgoingPaymentPacket.buildPacket(
-                incomingPayment.paymentHash,
-                listOf(NodeHop(TestConstants.Alice.nodeParams.nodeId, TestConstants.Bob.nodeParams.nodeId, CltvExpiryDelta(144), 0.msat)),
-                makeMppPayload(defaultAmount, defaultAmount, paymentSecret),
-                null
-            )
-            assertTrue(trampolineOnion.packet.payload.size() < 500)
-            makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, PaymentOnion.FinalPayload.Standard.createTrampolinePayload(amount, amount, expiry, randomBytes32(), trampolineOnion.packet))
+            // We simulate a trampoline-relay: the trampoline node will relay the a payment onion with a dummy channel hop.
+            val trampolinePayload = makeMppPayload(defaultAmount, defaultAmount, paymentSecret)
+            val trampolineOnion = OutgoingPaymentPacket.buildOnion(
+                nodes = listOf(TestConstants.Bob.nodeParams.nodeId),
+                payloads = listOf(trampolinePayload),
+                associatedData = incomingPayment.paymentHash,
+            ).packet
+            assertTrue(trampolineOnion.payload.size() < 500)
+            val finalPayload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolinePayload.amount, trampolinePayload.totalAmount, trampolinePayload.expiry, randomBytes32(), trampolineOnion)
+            makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, finalPayload)
         }
         val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
         assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
@@ -395,15 +394,16 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (paymentHandler, incomingPayment, _) = createFixture(defaultAmount)
         checkDbPayment(incomingPayment, paymentHandler.db)
         val willAddHtlc = run {
-            // We simulate a trampoline-relay with a dummy channel hop between the liquidity provider and the wallet.
-            val (amount, expiry, trampolineOnion) = OutgoingPaymentPacket.buildPacket(
-                incomingPayment.paymentHash,
-                listOf(NodeHop(TestConstants.Alice.nodeParams.nodeId, TestConstants.Bob.nodeParams.nodeId, CltvExpiryDelta(144), 0.msat)),
-                makeMppPayload(defaultAmount, defaultAmount, randomBytes32()),
-                null
-            )
-            assertTrue(trampolineOnion.packet.payload.size() < 500)
-            makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, PaymentOnion.FinalPayload.Standard.createTrampolinePayload(amount, amount, expiry, randomBytes32(), trampolineOnion.packet))
+            // We simulate a trampoline-relay: the trampoline node will relay the a payment onion with a dummy channel hop.
+            val trampolinePayload = makeMppPayload(defaultAmount, defaultAmount, randomBytes32())
+            val trampolineOnion = OutgoingPaymentPacket.buildOnion(
+                nodes = listOf(TestConstants.Bob.nodeParams.nodeId),
+                payloads = listOf(trampolinePayload),
+                associatedData = incomingPayment.paymentHash,
+            ).packet
+            assertTrue(trampolineOnion.payload.size() < 500)
+            val finalPayload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolinePayload.amount, trampolinePayload.totalAmount, trampolinePayload.expiry, randomBytes32(), trampolineOnion)
+            makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, finalPayload)
         }
         val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
         assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
@@ -1780,27 +1780,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val defaultAmount = 150_000_000.msat
         val feeCreditFeatures = Features(Feature.ExperimentalSplice to FeatureSupport.Optional, Feature.OnTheFlyFunding to FeatureSupport.Optional, Feature.FundingFeeCredit to FeatureSupport.Optional)
 
-        private fun channelHops(destination: PublicKey): List<ChannelHop> {
-            val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
-            val dummyUpdate = ChannelUpdate(
-                signature = ByteVector64.Zeroes,
-                chainHash = BlockHash(ByteVector32.Zeroes),
-                shortChannelId = ShortChannelId(144, 0, 0),
-                timestampSeconds = 0,
-                messageFlags = 0,
-                channelFlags = 0,
-                cltvExpiryDelta = CltvExpiryDelta(144),
-                htlcMinimumMsat = 1000.msat,
-                feeBaseMsat = 1.msat,
-                feeProportionalMillionths = 10,
-                htlcMaximumMsat = null
-            )
-            val channelHop = ChannelHop(dummyKey, destination, dummyUpdate)
-            return listOf(channelHop)
-        }
-
         private fun makeCmdAddHtlc(destination: PublicKey, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload): ChannelCommand.Htlc.Add {
-            return OutgoingPaymentPacket.buildCommand(UUID.randomUUID(), paymentHash, channelHops(destination), finalPayload).first.copy(commit = true)
+            val onion = OutgoingPaymentPacket.buildOnion(listOf(destination), listOf(finalPayload), paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
+            return ChannelCommand.Htlc.Add(finalPayload.amount, paymentHash, finalPayload.expiry, onion, UUID.randomUUID(), commit = true)
         }
 
         private fun makeUpdateAddHtlc(
@@ -1816,9 +1798,9 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 null -> destination.nodeParams.nodeId
                 else -> RouteBlinding.derivePrivateKey(destination.nodeParams.nodePrivateKey, blinding).publicKey()
             }
-            val (_, _, packetAndSecrets) = OutgoingPaymentPacket.buildPacket(paymentHash, channelHops(destinationNodeId), finalPayload, OnionRoutingPacket.PaymentPacketLength)
+            val onion = OutgoingPaymentPacket.buildOnion(listOf(destinationNodeId), listOf(finalPayload), paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
             val amount = finalPayload.amount - (fundingFee?.amount ?: 0.msat)
-            return UpdateAddHtlc(channelId, id, amount, paymentHash, finalPayload.expiry, packetAndSecrets.packet, blinding, fundingFee)
+            return UpdateAddHtlc(channelId, id, amount, paymentHash, finalPayload.expiry, onion, blinding, fundingFee)
         }
 
         private fun makeWillAddHtlc(destination: IncomingPaymentHandler, paymentHash: ByteVector32, finalPayload: PaymentOnion.FinalPayload, blinding: PublicKey? = null): WillAddHtlc {
@@ -1826,8 +1808,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 null -> destination.nodeParams.nodeId
                 else -> RouteBlinding.derivePrivateKey(destination.nodeParams.nodePrivateKey, blinding).publicKey()
             }
-            val (_, _, packetAndSecrets) = OutgoingPaymentPacket.buildPacket(paymentHash, channelHops(destinationNodeId), finalPayload, OnionRoutingPacket.PaymentPacketLength)
-            return WillAddHtlc(destination.nodeParams.chainHash, randomBytes32(), finalPayload.amount, paymentHash, finalPayload.expiry, packetAndSecrets.packet, blinding)
+            val onion = OutgoingPaymentPacket.buildOnion(listOf(destinationNodeId), listOf(finalPayload), paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
+            return WillAddHtlc(destination.nodeParams.chainHash, randomBytes32(), finalPayload.amount, paymentHash, finalPayload.expiry, onion, blinding)
         }
 
         private fun makeMppPayload(
