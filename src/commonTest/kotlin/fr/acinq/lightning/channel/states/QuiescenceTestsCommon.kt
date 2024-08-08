@@ -519,7 +519,8 @@ class QuiescenceTestsCommon : LightningTestSuite() {
                 spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(createWalletWithFunds(sender.staticParams.nodeParams.keyManager, spliceIn)),
                 spliceOut = spliceOut?.let { ChannelCommand.Commitment.Splice.Request.SpliceOut(it, Script.write(Script.pay2wpkh(Lightning.randomKey().publicKey())).byteVector()) },
                 feerate = FeeratePerKw(253.sat),
-                requestRemoteFunding = null
+                requestRemoteFunding = null,
+                origins = listOf(),
             )
         }
 

@@ -656,7 +656,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         run {
             // Different amounts, both outputs untrimmed, local is the initiator:
             val spec = CommitmentSpec(setOf(), feerate, 150_000_000.msat, 250_000_000.msat)
-            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsInitiator = true, localDustLimit, 1000.sat, spec)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = true, localDustLimit, 1000.sat, spec)
             assertEquals(2, closingTx.tx.txOut.size)
             assertNotNull(closingTx.toLocalIndex)
             assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
@@ -667,7 +667,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         run {
             // Same amounts, both outputs untrimmed, local is not the initiator:
             val spec = CommitmentSpec(setOf(), feerate, 150_000_000.msat, 150_000_000.msat)
-            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsInitiator = false, localDustLimit, 1000.sat, spec)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = false, localDustLimit, 1000.sat, spec)
             assertEquals(2, closingTx.tx.txOut.size)
             assertNotNull(closingTx.toLocalIndex)
             assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
@@ -678,7 +678,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         run {
             // Their output is trimmed:
             val spec = CommitmentSpec(setOf(), feerate, 150_000_000.msat, 1_000.msat)
-            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsInitiator = false, localDustLimit, 1000.sat, spec)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = false, localDustLimit, 1000.sat, spec)
             assertEquals(1, closingTx.tx.txOut.size)
             assertNotNull(closingTx.toLocalOutput)
             assertEquals(localPubKeyScript.toByteVector(), closingTx.toLocalOutput!!.publicKeyScript)
@@ -688,14 +688,14 @@ class TransactionsTestsCommon : LightningTestSuite() {
         run {
             // Our output is trimmed:
             val spec = CommitmentSpec(setOf(), feerate, 50_000.msat, 150_000_000.msat)
-            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsInitiator = true, localDustLimit, 1000.sat, spec)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = true, localDustLimit, 1000.sat, spec)
             assertEquals(1, closingTx.tx.txOut.size)
             assertNull(closingTx.toLocalOutput)
         }
         run {
             // Both outputs are trimmed:
             val spec = CommitmentSpec(setOf(), feerate, 50_000.msat, 10_000.msat)
-            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsInitiator = true, localDustLimit, 1000.sat, spec)
+            val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = true, localDustLimit, 1000.sat, spec)
             assertTrue(closingTx.tx.txOut.isEmpty())
             assertNull(closingTx.toLocalOutput)
         }

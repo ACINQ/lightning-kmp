@@ -256,8 +256,6 @@ sealed class ChannelState {
             is Offline -> state.run { handleLocalError(cmd, t) }
             is Syncing -> state.run { handleLocalError(cmd, t) }
             is WaitForRemotePublishFutureCommitment -> Pair(state, emptyList())
-            is LegacyWaitForFundingConfirmed -> forceClose(state)
-            is LegacyWaitForFundingLocked -> forceClose(state)
         }
     }
 
@@ -341,7 +339,9 @@ sealed class PersistedChannelState : ChannelState() {
 sealed class ChannelStateWithCommitments : PersistedChannelState() {
     abstract val commitments: Commitments
     override val channelId: ByteVector32 get() = commitments.channelId
-    val isInitiator: Boolean get() = commitments.params.localParams.isInitiator
+    val isChannelOpener: Boolean get() = commitments.params.localParams.isChannelOpener
+    val paysCommitTxFees: Boolean get() = commitments.params.localParams.paysCommitTxFees
+    val paysClosingFees: Boolean get() = commitments.params.localParams.paysClosingFees
     val remoteNodeId: PublicKey get() = commitments.remoteNodeId
 
     fun ChannelContext.channelKeys(): KeyManager.ChannelKeys = commitments.params.localParams.channelKeys(keyManager)
