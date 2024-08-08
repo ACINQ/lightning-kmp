@@ -11,6 +11,7 @@ import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector32
+import fr.acinq.lightning.wire.LiquidityAds
 import fr.acinq.lightning.wire.OnionRoutingPacket
 import fr.acinq.secp256k1.Hex
 
@@ -37,6 +38,19 @@ object TestConstants {
         TrampolineFees(5.sat, 1200, CltvExpiryDelta(576))
     )
 
+    val fundingRates = LiquidityAds.WillFundRates(
+        fundingRates = listOf(
+            LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 500, 100, 0.sat),
+            LiquidityAds.FundingRate(500_000.sat, 10_000_000.sat, 750, 100, 0.sat)
+        ),
+        paymentTypes = setOf(
+            LiquidityAds.PaymentType.FromChannelBalance,
+            LiquidityAds.PaymentType.FromFutureHtlc,
+            LiquidityAds.PaymentType.FromFutureHtlcWithPreimage,
+            LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc,
+        )
+    )
+
     const val aliceSwapInServerXpub = "tpubDCvYeHUZisCMVTSfWDa1yevTf89NeF6TWxXUQwqkcmFrNvNdNvZQh1j4m4uTA4QcmPEwcrKVF8bJih1v16zDZacRr4j9MCAFQoSydKKy66q"
     const val bobSwapInServerXpub = "tpubDDt5vQap1awkyDXx1z1cP7QFKSZHDCCpbU8nSq9jy7X2grTjUVZDePexf6gc6AHtRRzkgfPW87K6EKUVV6t3Hu2hg7YkHkmMeLSfrP85x41"
 
@@ -46,7 +60,7 @@ object TestConstants {
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, Chain.Regtest, bobSwapInServerXpub)
-        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
+        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams, fundingRates)
         val nodeParams = NodeParams(
             chain = Chain.Regtest,
             loggerFactory = testLoggerFactory,
@@ -62,12 +76,15 @@ object TestConstants {
                 Feature.AnchorOutputs to FeatureSupport.Mandatory,
                 Feature.RouteBlinding to FeatureSupport.Optional,
                 Feature.DualFunding to FeatureSupport.Mandatory,
+                Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,
+                Feature.Quiescence to FeatureSupport.Mandatory,
                 Feature.ChannelType to FeatureSupport.Mandatory,
                 Feature.PaymentMetadata to FeatureSupport.Optional,
                 Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
                 Feature.WakeUpNotificationProvider to FeatureSupport.Optional,
-                Feature.PayToOpenProvider to FeatureSupport.Optional,
                 Feature.ChannelBackupProvider to FeatureSupport.Optional,
+                Feature.ExperimentalSplice to FeatureSupport.Optional,
+                Feature.OnTheFlyFunding to FeatureSupport.Optional,
             ),
             dustLimit = 1_100.sat,
             maxRemoteDustLimit = 1_500.sat,
@@ -86,7 +103,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = true)
+        fun channelParams(payCommitTxFees: Boolean): LocalParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = payCommitTxFees)
     }
 
     object Bob {
@@ -95,7 +112,7 @@ object TestConstants {
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, Chain.Regtest, aliceSwapInServerXpub)
-        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
+        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams, fundingRates)
         val nodeParams = NodeParams(
             chain = Chain.Regtest,
             loggerFactory = testLoggerFactory,
@@ -117,7 +134,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        fun channelParams(): LocalParams = LocalParams(nodeParams, isInitiator = false)
+        fun channelParams(payCommitTxFees: Boolean): LocalParams = LocalParams(nodeParams, isChannelOpener = false, payCommitTxFees = payCommitTxFees)
     }
 
 }
