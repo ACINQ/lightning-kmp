@@ -180,7 +180,7 @@ class SphinxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `create payment packet -- reference test vector`() {
-        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referencePaymentPayloads.map { it.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
+        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referencePaymentPayloads.map { it.toByteArray() }, associatedData, null, OnionRoutingPacket.PaymentPacketLength)
         val onion = packetAndSecrets.packet
         assertEquals(
             Hex.encode(OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).write(onion)),
@@ -210,7 +210,7 @@ class SphinxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `create packet with payloads filling the onion`() {
-        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, paymentPayloadsFull.map { it.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
+        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, paymentPayloadsFull.map { it.toByteArray() }, associatedData, null, OnionRoutingPacket.PaymentPacketLength)
         val onion = packetAndSecrets.packet
         assertEquals(
             Hex.encode(OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).write(onion)),
@@ -241,7 +241,7 @@ class SphinxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `create packet with single variable-size payload filling the onion`() {
-        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys.take(1), oneHopPaymentPayload.map { it.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
+        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys.take(1), oneHopPaymentPayload.map { it.toByteArray() }, associatedData, null, OnionRoutingPacket.PaymentPacketLength)
         val onion = packetAndSecrets.packet
         assertEquals(
             Hex.encode(OnionRoutingPacketSerializer(OnionRoutingPacket.PaymentPacketLength).write(onion)),
@@ -265,7 +265,7 @@ class SphinxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `create trampoline packet`() {
-        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, trampolinePayloads.map { it.toByteArray() }, associatedData, 400)
+        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, trampolinePayloads.map { it.toByteArray() }, associatedData, null, 400)
         val onion = packetAndSecrets.packet
         assertEquals(
             Hex.encode(OnionRoutingPacketSerializer(400).write(onion)),
@@ -290,7 +290,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             Hex.decode("fd2a0101234567"),
             Hex.decode("000000000000000000000000000000000000000000000000000000000000000000")
         )
-        assertFails { Sphinx.create(sessionKey, publicKeys.take(2), invalidPayloads, associatedData, OnionRoutingPacket.PaymentPacketLength) }
+        assertFails { Sphinx.create(sessionKey, publicKeys.take(2), invalidPayloads, associatedData, null, OnionRoutingPacket.PaymentPacketLength) }
     }
 
     @Test
@@ -420,7 +420,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
             // origin builds the onion packet
             val packetLength = it.first
-            val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, it.second.map { p -> p.toByteArray() }, associatedData, packetLength)
+            val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, it.second.map { p -> p.toByteArray() }, associatedData, null, packetLength)
 
             // each node parses and forwards the packet
             // node #0
@@ -475,7 +475,7 @@ class SphinxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `last node replies with a failure message -- arbitrary length`() {
-        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referencePaymentPayloads.map { p -> p.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
+        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referencePaymentPayloads.map { p -> p.toByteArray() }, associatedData, null, OnionRoutingPacket.PaymentPacketLength)
         assertEquals(packetAndSecrets.packet.payload.size(), OnionRoutingPacket.PaymentPacketLength)
         val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet).right!!
         val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket).right!!
@@ -526,7 +526,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
             // origin builds the onion packet
             val packetLength = it.first
-            val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, it.second.map { p -> p.toByteArray() }, associatedData, packetLength)
+            val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, it.second.map { p -> p.toByteArray() }, associatedData, null, packetLength)
 
             // each node parses and forwards the packet
             // node #0
@@ -553,7 +553,7 @@ class SphinxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `intermediate node replies with a failure message -- arbitrary length`() {
-        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referencePaymentPayloads.map { p -> p.toByteArray() }, associatedData, OnionRoutingPacket.PaymentPacketLength)
+        val packetAndSecrets = Sphinx.create(sessionKey, publicKeys, referencePaymentPayloads.map { p -> p.toByteArray() }, associatedData, null, OnionRoutingPacket.PaymentPacketLength)
         assertEquals(packetAndSecrets.packet.payload.size(), OnionRoutingPacket.PaymentPacketLength)
         val decrypted0 = Sphinx.peel(privKeys[0], associatedData, packetAndSecrets.packet).right!!
         val decrypted1 = Sphinx.peel(privKeys[1], associatedData, decrypted0.nextPacket).right!!

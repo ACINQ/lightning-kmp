@@ -336,26 +336,27 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     }
 
     private fun createPaymentOnion(request: PayInvoice, hop: NodeHop, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
-        return when (val paymentRequest = request.paymentDetails.paymentRequest) {
-            is Bolt11Invoice -> {
-                val minFinalExpiryDelta = paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
+        return when (val details = request.paymentDetails) {
+            is LightningOutgoingPayment.Details.Normal -> {
+                val minFinalExpiryDelta = details.paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
                 val expiry = nodeParams.paymentRecipientExpiryParams.computeFinalExpiry(currentBlockHeight, minFinalExpiryDelta)
-                val invoiceFeatures = paymentRequest.features
+                val invoiceFeatures = details.paymentRequest.features
                 if (request.recipient == walletParams.trampolineNode.id) {
                     // We are directly paying our trampoline node.
-                    OutgoingPaymentPacket.buildPacketToTrampolinePeer(paymentRequest, request.amount, expiry)
+                    OutgoingPaymentPacket.buildPacketToTrampolinePeer(details.paymentRequest, request.amount, expiry)
                 } else if (invoiceFeatures.hasFeature(Feature.TrampolinePayment)) {
-                    OutgoingPaymentPacket.buildPacketToTrampolineRecipient(paymentRequest, request.amount, expiry, hop)
+                    OutgoingPaymentPacket.buildPacketToTrampolineRecipient(details.paymentRequest, request.amount, expiry, hop)
                 } else {
-                    OutgoingPaymentPacket.buildPacketToLegacyRecipient(paymentRequest, request.amount, expiry, hop)
+                    OutgoingPaymentPacket.buildPacketToLegacyRecipient(details.paymentRequest, request.amount, expiry, hop)
                 }
             }
-            is Bolt12Invoice -> {
+            is LightningOutgoingPayment.Details.Blinded -> {
                 // The recipient already included a final cltv-expiry-delta in their invoice blinded paths.
                 val minFinalExpiryDelta = CltvExpiryDelta(0)
                 val expiry = nodeParams.paymentRecipientExpiryParams.computeFinalExpiry(currentBlockHeight, minFinalExpiryDelta)
-                OutgoingPaymentPacket.buildPacketToBlindedRecipient(paymentRequest, request.amount, expiry, hop)
+                OutgoingPaymentPacket.buildPacketToBlindedRecipient(details.paymentRequest, details.payerKey, request.amount, expiry, hop)
             }
+            is LightningOutgoingPayment.Details.SwapOut -> error("invalid lightning payment details (legacy swap out)")
         }
     }
 

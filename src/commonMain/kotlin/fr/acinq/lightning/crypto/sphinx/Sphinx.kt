@@ -239,21 +239,22 @@ object Sphinx {
     /**
      * Create an encrypted onion packet that contains payloads for all nodes in the list.
      *
-     * @param sessionKey     session key.
-     * @param publicKeys     node public keys (one per node).
-     * @param payloads       payloads (one per node).
-     * @param associatedData associated data.
-     * @param packetLength   length of the onion-encrypted payload (1300 for payment onions, variable for trampoline onions).
+     * @param sessionKey session key.
+     * @param publicKeys node public keys (one per node).
+     * @param payloads (one per node).
+     * @param associatedData (optional) associated data used in each hop's mac.
+     * @param lastPacketAssociatedDataOverride (optional) distinct associated data to use for the last hops' mac.
+     * @param packetLength length of the onion-encrypted payload (1300 for payment onions, variable for trampoline onions).
      * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
      *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
      */
-    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteArray>, associatedData: ByteVector32?, packetLength: Int): PacketAndSecrets {
+    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteArray>, associatedData: ByteVector32?, lastPacketAssociatedDataOverride: ByteVector32?, packetLength: Int): PacketAndSecrets {
         val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
         val filler = generateFiller("rho", sharedsecrets.dropLast(1), payloads.dropLast(1), packetLength)
 
         // We deterministically-derive the initial payload bytes: see https://github.com/lightningnetwork/lightning-rfc/pull/697
         val startingBytes = generateStream(generateKey("pad", sessionKey.value), packetLength)
-        val lastPacket = wrap(payloads.last(), associatedData, ephemeralPublicKeys.last(), sharedsecrets.last(), Either.Left(startingBytes.toByteVector()), filler.toByteVector())
+        val lastPacket = wrap(payloads.last(), lastPacketAssociatedDataOverride ?: associatedData, ephemeralPublicKeys.last(), sharedsecrets.last(), Either.Left(startingBytes.toByteVector()), filler.toByteVector())
 
         tailrec fun loop(hopPayloads: List<ByteArray>, ephKeys: List<PublicKey>, sharedSecrets: List<ByteVector32>, packet: OnionRoutingPacket): OnionRoutingPacket {
             return if (hopPayloads.isEmpty()) packet else {

@@ -309,7 +309,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
         assertEquals(payment.recipient, innerB.outgoingNodeId)
         assertEquals(invoice.paymentSecret, outerB.paymentSecret)
-        assertEquals(invoice.features.toByteArray().toByteVector(), outerB.invoiceFeatures)
+        assertEquals(invoice.features.toByteArray().toByteVector(), outerB.recipientFeatures)
         assertFalse(outerB.invoiceRoutingInfo.isEmpty())
         assertEquals(invoice.routingInfo.map { it.hints }, outerB.invoiceRoutingInfo)
 

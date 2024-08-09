@@ -497,6 +497,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
                     }
                 }
             }
+            is PaymentOnion.FinalPayload.TrampolineBlinded -> {
+                // This should fail when decrypting the onion: this type of payload is only allowed in trampoline onions.
+                return Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
+            }
         }
     }
 
@@ -570,6 +574,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
         private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: IncomingPayment?, currentBlockHeight: Int): ProcessAddResult.Rejected {
             val failureMsg = when (paymentPart.finalPayload) {
                 is PaymentOnion.FinalPayload.Blinded -> InvalidOnionBlinding(Sphinx.hash(paymentPart.onionPacket))
+                is PaymentOnion.FinalPayload.TrampolineBlinded -> InvalidOnionBlinding(Sphinx.hash(paymentPart.onionPacket))
                 is PaymentOnion.FinalPayload.Standard -> IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
             }
             val rejectedAction = when (paymentPart) {

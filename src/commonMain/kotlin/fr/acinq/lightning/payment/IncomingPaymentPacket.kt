@@ -1,9 +1,6 @@
 package fr.acinq.lightning.payment
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.lightning.CltvExpiry
@@ -14,6 +11,7 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.crypto.sphinx.Sphinx.hash
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
+import io.ktor.utils.io.core.*
 
 object IncomingPaymentPacket {
 
@@ -44,7 +42,7 @@ object IncomingPaymentPacket {
         val onion = add.fold({ it.finalPacket }, { it.onionRoutingPacket })
         return decryptOnion(paymentHash, onion, privateKey, blinding).flatMap { outer ->
             when (outer) {
-                is PaymentOnion.FinalPayload.Standard ->
+                is PaymentOnion.FinalPayload.Standard -> {
                     when (val trampolineOnion = outer.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()) {
                         null -> validate(htlcAmount, htlcExpiry, outer)
                         else -> {
@@ -54,25 +52,49 @@ object IncomingPaymentPacket {
                                     is PaymentOnion.FinalPayload.Standard -> validate(htlcAmount, htlcExpiry, outer, innerPayload)
                                     // Blinded trampoline paths are not supported.
                                     is PaymentOnion.FinalPayload.Blinded -> Either.Left(InvalidOnionPayload(0, 0))
+                                    is PaymentOnion.FinalPayload.TrampolineBlinded -> Either.Left(InvalidOnionPayload(0, 0))
                                 }
                             }
                         }
                     }
-                is PaymentOnion.FinalPayload.Blinded -> validate(htlcAmount, htlcExpiry, onion, outer)
+                }
+                is PaymentOnion.FinalPayload.Blinded -> {
+                    when (val trampolineOnion = outer.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()) {
+                        null -> validate(htlcAmount, htlcExpiry, onion, outer, innerPayload = null)
+                        else -> {
+                            val associatedData = when (val metadata = OfferPaymentMetadata.fromPathId(privateKey.publicKey(), outer.pathId)) {
+                                null -> paymentHash
+                                else -> {
+                                    val onionDecryptionKey = blinding?.let { RouteBlinding.derivePrivateKey(privateKey, it) } ?: privateKey
+                                    blindedTrampolineAssociatedData(paymentHash, onionDecryptionKey, metadata.payerKey)
+                                }
+                            }
+                            when (val inner = decryptOnion(associatedData, trampolineOnion.packet, privateKey, blinding)) {
+                                is Either.Left -> Either.Left(inner.value)
+                                is Either.Right -> when (val innerPayload = inner.value) {
+                                    is PaymentOnion.FinalPayload.TrampolineBlinded -> validate(htlcAmount, htlcExpiry, onion, outer, innerPayload)
+                                    is PaymentOnion.FinalPayload.Blinded -> Either.Left(InvalidOnionPayload(0, 0))
+                                    is PaymentOnion.FinalPayload.Standard -> Either.Left(InvalidOnionPayload(0, 0))
+                                }
+                            }
+                        }
+                    }
+                }
+                is PaymentOnion.FinalPayload.TrampolineBlinded -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.PaymentData.tag, 0))
             }
         }
     }
 
-    private fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, privateKey: PrivateKey, blinding: PublicKey?): Either<FailureMessage, PaymentOnion.FinalPayload> {
+    private fun decryptOnion(associatedData: ByteVector32, packet: OnionRoutingPacket, privateKey: PrivateKey, blinding: PublicKey?): Either<FailureMessage, PaymentOnion.FinalPayload> {
         val onionDecryptionKey = blinding?.let { RouteBlinding.derivePrivateKey(privateKey, it) } ?: privateKey
-        return Sphinx.peel(onionDecryptionKey, paymentHash, packet).flatMap { decrypted ->
+        return Sphinx.peel(onionDecryptionKey, associatedData, packet).flatMap { decrypted ->
             when {
                 !decrypted.isLastPacket -> Either.Left(UnknownNextPeer)
                 else -> PaymentOnion.PerHopPayload.read(decrypted.payload.toByteArray()).flatMap { tlvs ->
                     when (val encryptedRecipientData = tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>()?.data) {
                         null -> when {
-                            blinding != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
                             tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            blinding != null -> PaymentOnion.FinalPayload.TrampolineBlinded.read(decrypted.payload)
                             else -> PaymentOnion.FinalPayload.Standard.read(decrypted.payload)
                         }
                         else -> when {
@@ -97,6 +119,16 @@ object IncomingPaymentPacket {
             .flatMap { blindedTlvs -> PaymentOnion.FinalPayload.Blinded.validate(tlvs, blindedTlvs) }
     }
 
+    /**
+     * When we're using trampoline with Bolt 12, we expect the payer to include a trampoline payload.
+     * However, the trampoline node could replace it with a trampoline onion they created.
+     * To avoid that, we use a shared secret based on the [OfferTypes.InvoiceRequest] to authenticate the payload.
+     */
+    private fun blindedTrampolineAssociatedData(paymentHash: ByteVector32, onionDecryptionKey: PrivateKey, payerId: PublicKey): ByteVector32 {
+        val invReqSharedSecret = (payerId * onionDecryptionKey).value.toByteArray()
+        return Crypto.sha256("blinded_trampoline_payment".toByteArray() + paymentHash.toByteArray() + invReqSharedSecret).byteVector32()
+    }
+
     private fun validate(htlcAmount: MilliSatoshi, htlcExpiry: CltvExpiry, payload: PaymentOnion.FinalPayload.Standard): Either<FailureMessage, PaymentOnion.FinalPayload> {
         return when {
             htlcAmount < payload.amount -> Either.Left(FinalIncorrectHtlcAmount(htlcAmount))
@@ -105,15 +137,23 @@ object IncomingPaymentPacket {
         }
     }
 
-    private fun validate(htlcAmount: MilliSatoshi, htlcExpiry: CltvExpiry, onion: OnionRoutingPacket, payload: PaymentOnion.FinalPayload.Blinded): Either<FailureMessage, PaymentOnion.FinalPayload> {
+    private fun validate(
+        htlcAmount: MilliSatoshi,
+        htlcExpiry: CltvExpiry,
+        onion: OnionRoutingPacket,
+        outerPayload: PaymentOnion.FinalPayload.Blinded,
+        innerPayload: PaymentOnion.FinalPayload.TrampolineBlinded?
+    ): Either<FailureMessage, PaymentOnion.FinalPayload> {
+        val minAmount = listOfNotNull(outerPayload.amount, innerPayload?.amount).max()
+        val minExpiry = listOfNotNull(outerPayload.expiry, innerPayload?.expiry).max()
         return when {
-            payload.recipientData.paymentConstraints?.let { htlcAmount < it.minAmount } == true -> Either.Left(InvalidOnionBlinding(hash(onion)))
-            payload.recipientData.paymentConstraints?.let { it.maxCltvExpiry < htlcExpiry } == true -> Either.Left(InvalidOnionBlinding(hash(onion)))
+            outerPayload.recipientData.paymentConstraints?.let { htlcAmount < it.minAmount } == true -> Either.Left(InvalidOnionBlinding(hash(onion)))
+            outerPayload.recipientData.paymentConstraints?.let { it.maxCltvExpiry < htlcExpiry } == true -> Either.Left(InvalidOnionBlinding(hash(onion)))
             // We currently don't set the allowed_features field in our invoices.
-            !Features.areCompatible(Features.empty, payload.recipientData.allowedFeatures) -> Either.Left(InvalidOnionBlinding(hash(onion)))
-            htlcAmount < payload.amount -> Either.Left(InvalidOnionBlinding(hash(onion)))
-            htlcExpiry < payload.expiry -> Either.Left(InvalidOnionBlinding(hash(onion)))
-            else -> Either.Right(payload)
+            !Features.areCompatible(Features.empty, outerPayload.recipientData.allowedFeatures) -> Either.Left(InvalidOnionBlinding(hash(onion)))
+            htlcAmount < minAmount -> Either.Left(InvalidOnionBlinding(hash(onion)))
+            htlcExpiry < minExpiry -> Either.Left(InvalidOnionBlinding(hash(onion)))
+            else -> Either.Right(outerPayload)
         }
     }
 
