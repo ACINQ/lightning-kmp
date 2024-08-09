@@ -142,6 +142,7 @@ object OnionMessages {
             route.blindedNodes.map { it.blindedPublicKey },
             payloads,
             associatedData = null,
+            lastPacketAssociatedDataOverride = null,
             packetSize
         ).packet
         return Either.Right(OnionMessage(route.blindingKey, packet))

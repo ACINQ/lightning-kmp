@@ -28,6 +28,7 @@ sealed class OfferPaymentMetadata {
     abstract val offerId: ByteVector32
     abstract val amount: MilliSatoshi
     abstract val preimage: ByteVector32
+    abstract val payerKey: PublicKey
     abstract val createdAtMillis: Long
     val paymentHash: ByteVector32 get() = preimage.sha256()
 
@@ -55,7 +56,7 @@ sealed class OfferPaymentMetadata {
         override val offerId: ByteVector32,
         override val amount: MilliSatoshi,
         override val preimage: ByteVector32,
-        val payerKey: PublicKey,
+        override val payerKey: PublicKey,
         val payerNote: String?,
         val quantity: Long,
         override val createdAtMillis: Long

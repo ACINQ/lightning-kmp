@@ -84,6 +84,8 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val payInvoice = bobOfferManager.receiveMessage(messageForBob, listOf(), 0)
         assertIs<OnionMessageAction.PayInvoice>(payInvoice)
         assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
+        assertTrue(payInvoice.invoice.features.hasFeature(Feature.TrampolinePayment))
+        assertTrue(payInvoice.invoice.features.hasFeature(Feature.BasicMultiPartPayment))
         assertEquals(payOffer, payInvoice.payOffer)
     }
 

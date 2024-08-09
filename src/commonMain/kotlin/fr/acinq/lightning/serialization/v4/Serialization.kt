@@ -1,7 +1,6 @@
 package fr.acinq.lightning.serialization.v4
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.bitcoin.utils.Either
@@ -44,12 +43,6 @@ object Serialization {
     }
 
     private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
-        is LegacyWaitForFundingConfirmed -> {
-            write(0x08); writeLegacyWaitForFundingConfirmed(o)
-        }
-        is LegacyWaitForFundingLocked -> {
-            write(0x09); writeLegacyWaitForFundingLocked(o)
-        }
         is WaitForFundingConfirmed -> {
             write(0x00); writeWaitForFundingConfirmed(o)
         }
@@ -57,7 +50,7 @@ object Serialization {
             write(0x01); writeWaitForChannelReady(o)
         }
         is Normal -> {
-            write(0x02); writeNormal(o)
+            write(0x0b); writeNormal(o)
         }
         is ShuttingDown -> {
             write(0x03); writeShuttingDown(o)
@@ -75,25 +68,8 @@ object Serialization {
             write(0x07); writeClosed(o)
         }
         is WaitForFundingSigned -> {
-            write(0x0a); writeWaitForFundingSigned(o)
+            write(0x0c); writeWaitForFundingSigned(o)
         }
-    }
-
-    private fun Output.writeLegacyWaitForFundingConfirmed(o: LegacyWaitForFundingConfirmed) = o.run {
-        writeCommitments(commitments)
-        writeNullable(fundingTx) { writeBtcObject(it) }
-        writeNumber(waitingSinceBlock)
-        writeNullable(deferred) { writeLightningMessage(it) }
-        writeEither(lastSent,
-            writeLeft = { writeLightningMessage(it) },
-            writeRight = { writeLightningMessage(it) }
-        )
-    }
-
-    private fun Output.writeLegacyWaitForFundingLocked(o: LegacyWaitForFundingLocked) = o.run {
-        writeCommitments(commitments)
-        writeNumber(shortChannelId.toLong())
-        writeLightningMessage(lastSent)
     }
 
     private fun Output.writeWaitForFundingSigned(o: WaitForFundingSigned) = o.run {
@@ -102,6 +78,7 @@ object Serialization {
         writeNumber(localPushAmount.toLong())
         writeNumber(remotePushAmount.toLong())
         writePublicKey(remoteSecondPerCommitmentPoint)
+        writeNullable(liquidityPurchase) { writeLiquidityPurchase(it) }
         writeNullable(channelOrigin) { writeChannelOrigin(it) }
     }
 
@@ -140,14 +117,13 @@ object Serialization {
             is SpliceStatus.WaitingForSigs -> {
                 write(0x01)
                 writeInteractiveTxSigningSession(spliceStatus.session)
+                writeNullable(spliceStatus.liquidityPurchase) { writeLiquidityPurchase(it) }
                 writeCollection(spliceStatus.origins) { writeChannelOrigin(it) }
             }
             else -> {
                 write(0x00)
             }
         }
-        write(0x01)
-        writeCollection(liquidityLeases) { writeLiquidityLease(it) }
     }
 
     private fun Output.writeShuttingDown(o: ShuttingDown) = o.run {
@@ -406,53 +382,54 @@ object Serialization {
         }
     }
 
-    private fun Output.writeLiquidityLease(lease: LiquidityAds.Lease) {
-        writeNumber(lease.amount.toLong())
-        writeNumber(lease.fees.miningFee.toLong())
-        writeNumber(lease.fees.serviceFee.toLong())
-        writeByteVector64(lease.sellerSig)
-        writeNumber(lease.witness.fundingScript.size())
-        write(lease.witness.fundingScript.toByteArray())
-        writeNumber(lease.witness.leaseDuration)
-        writeNumber(lease.witness.leaseEnd)
-        writeNumber(lease.witness.maxRelayFeeProportional)
-        writeNumber(lease.witness.maxRelayFeeBase.toLong())
+    private fun Output.writeLiquidityFees(fees: LiquidityAds.Fees) {
+        writeNumber(fees.miningFee.toLong())
+        writeNumber(fees.serviceFee.toLong())
+    }
+
+    private fun Output.writeLiquidityPurchase(purchase: LiquidityAds.Purchase) {
+        when (purchase) {
+            is LiquidityAds.Purchase.Standard -> {
+                write(0x00) // discriminator
+                writeNumber(purchase.amount.toLong())
+                writeLiquidityFees(purchase.fees)
+                writeLiquidityAdsPaymentDetails(purchase.paymentDetails)
+            }
+            is LiquidityAds.Purchase.WithFeeCredit -> {
+                write(0x01) // discriminator
+                writeNumber(purchase.amount.toLong())
+                writeLiquidityFees(purchase.fees)
+                writeNumber(purchase.feeCreditUsed.toLong())
+                writeLiquidityAdsPaymentDetails(purchase.paymentDetails)
+            }
+        }
+    }
+
+    private fun Output.writeLiquidityAdsPaymentDetails(paymentDetails: LiquidityAds.PaymentDetails) {
+        when (paymentDetails) {
+            is LiquidityAds.PaymentDetails.FromChannelBalance -> write(0x00)
+            is LiquidityAds.PaymentDetails.FromFutureHtlc -> {
+                write(0x80)
+                writeCollection(paymentDetails.paymentHashes) { writeByteVector32(it) }
+            }
+            is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> {
+                write(0x81)
+                writeCollection(paymentDetails.preimages) { writeByteVector32(it) }
+            }
+            is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> {
+                write(0x82)
+                writeCollection(paymentDetails.paymentHashes) { writeByteVector32(it) }
+            }
+        }
     }
 
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
-        // The liquidity purchase field was added afterwards. For backwards-compatibility, we extend the discriminator
-        // we previously used for the local commit to insert the liquidity purchase if available.
         // Note that we don't bother removing the duplication across HTLCs in the local commit: this is a short-lived
         // state during which the channel cannot be used for payments.
-        when (liquidityLease) {
-            // Before introducing the liquidity purchase field, we serialized the local commit as an Either, with
-            // discriminators 0 and 1.
-            null -> when (localCommit) {
-                is Either.Left -> {
-                    write(0)
-                    writeUnsignedLocalCommitWithHtlcs(localCommit.value)
-                }
-                is Either.Right -> {
-                    write(1)
-                    writeLocalCommitWithHtlcs(localCommit.value)
-                }
-            }
-            else -> when (localCommit) {
-                is Either.Left -> {
-                    write(2)
-                    writeLiquidityLease(liquidityLease)
-                    writeUnsignedLocalCommitWithHtlcs(localCommit.value)
-                }
-                is Either.Right -> {
-                    write(3)
-                    writeLiquidityLease(liquidityLease)
-                    writeLocalCommitWithHtlcs(localCommit.value)
-                }
-            }
-        }
+        writeEither(localCommit, { localCommit -> writeUnsignedLocalCommitWithHtlcs(localCommit) }, { localCommit -> writeLocalCommitWithHtlcs(localCommit) })
         remoteCommit.run {
             writeNumber(index)
             writeCommitmentSpecWithHtlcs(spec)
@@ -462,19 +439,19 @@ object Serialization {
     }
 
     private fun Output.writeChannelOrigin(o: Origin) = when (o) {
-        is Origin.PayToOpenOrigin -> {
-            write(0x01)
-            writeByteVector32(o.paymentHash)
-            writeNumber(o.serviceFee.toLong())
-            writeNumber(o.miningFee.toLong())
+        is Origin.OffChainPayment -> {
+            write(0x03)
+            writeByteVector32(o.paymentPreimage)
             writeNumber(o.amount.toLong())
+            writeNumber(o.fees.miningFee.toLong())
+            writeNumber(o.fees.serviceFee.toLong())
         }
-        is Origin.PleaseOpenChannelOrigin -> {
-            write(0x02)
-            writeByteVector32(o.requestId)
-            writeNumber(o.serviceFee.toLong())
-            writeNumber(o.miningFee.toLong())
+        is Origin.OnChainWallet -> {
+            write(0x04)
+            writeCollection(o.inputs) { writeBtcObject(it) }
             writeNumber(o.amount.toLong())
+            writeNumber(o.fees.miningFee.toLong())
+            writeNumber(o.fees.serviceFee.toLong())
         }
     }
 
@@ -490,7 +467,10 @@ object Serialization {
             writeNumber(htlcMinimum.toLong())
             writeNumber(toSelfDelay.toLong())
             writeNumber(maxAcceptedHtlcs)
-            writeBoolean(isInitiator)
+            // We encode those two booleans in the same byte.
+            val isOpenerFlag = if (isChannelOpener) 1 else 0
+            val payCommitTxFeesFlag = if (paysCommitTxFees) 2 else 0
+            writeNumber(isOpenerFlag + payCommitTxFeesFlag)
             writeDelimited(defaultFinalScriptPubKey.toByteArray())
             writeDelimited(features.toByteArray())
         }
@@ -507,7 +487,10 @@ object Serialization {
             writePublicKey(htlcBasepoint)
             writeDelimited(features.toByteArray())
         }
-        writeNumber(channelFlags)
+        // We encode channel flags in the same byte.
+        val announceChannelFlag = if (channelFlags.announceChannel) 1 else 0
+        val nonInitiatorPaysCommitFeesFlag = if (channelFlags.nonInitiatorPaysCommitFees) 2 else 0
+        writeNumber(announceChannelFlag + nonInitiatorPaysCommitFeesFlag)
     }
 
     private fun Output.writeCommitmentChanges(o: CommitmentChanges) = o.run {
@@ -712,8 +695,6 @@ object Serialization {
     private fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
 
     private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
-
-    private fun Output.writePublicNonce(o: IndividualNonce) = write(o.toByteArray())
 
     private fun Output.writeDelimited(o: ByteArray) {
         writeNumber(o.size)
