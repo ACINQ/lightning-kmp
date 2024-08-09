@@ -20,10 +20,7 @@ import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.wire.FailureMessage
-import fr.acinq.lightning.wire.TrampolineExpiryTooSoon
-import fr.acinq.lightning.wire.TrampolineFeeInsufficient
-import fr.acinq.lightning.wire.UnknownNextPeer
+import fr.acinq.lightning.wire.*
 
 class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
 
@@ -168,8 +165,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         val trampolineFees = payment.request.trampolineFeesOverride ?: walletParams.trampolineFees
         val finalError = when {
             trampolineFees.size <= payment.attemptNumber + 1 -> FinalFailure.RetryExhausted
-            failure == Either.Right(UnknownNextPeer) -> FinalFailure.RecipientUnreachable
-            failure != Either.Right(TrampolineExpiryTooSoon) && failure != Either.Right(TrampolineFeeInsufficient) -> FinalFailure.UnknownError // non-retriable error
+            failure == Either.Right(UnknownNextPeer) || failure == Either.Right(UnknownNextTrampoline) -> FinalFailure.RecipientUnreachable
+            // TODO: take actual fees returned into account (rework the trampoline fees mechanism).
+            failure != Either.Right(TemporaryTrampolineFailure) && failure.right !is TrampolineFeeOrExpiryInsufficient -> FinalFailure.UnknownError // non-retriable error
             else -> null
         }
         return if (finalError != null) {

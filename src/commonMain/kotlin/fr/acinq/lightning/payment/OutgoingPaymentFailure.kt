@@ -78,13 +78,13 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
                 is Either.Right -> when (failure.value) {
                     is AmountBelowMinimum -> LightningOutgoingPayment.Part.Status.Failure.PaymentAmountTooSmall
                     is FeeInsufficient -> LightningOutgoingPayment.Part.Status.Failure.NotEnoughFees
-                    TrampolineExpiryTooSoon -> LightningOutgoingPayment.Part.Status.Failure.NotEnoughFees
-                    TrampolineFeeInsufficient -> LightningOutgoingPayment.Part.Status.Failure.NotEnoughFees
+                    is TrampolineFeeOrExpiryInsufficient -> LightningOutgoingPayment.Part.Status.Failure.NotEnoughFees
                     is FinalIncorrectCltvExpiry -> LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment
                     is FinalIncorrectHtlcAmount -> LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment
                     is IncorrectOrUnknownPaymentDetails -> LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment
                     PaymentTimeout -> LightningOutgoingPayment.Part.Status.Failure.RecipientLiquidityIssue
                     UnknownNextPeer -> LightningOutgoingPayment.Part.Status.Failure.RecipientIsOffline
+                    UnknownNextTrampoline -> LightningOutgoingPayment.Part.Status.Failure.RecipientIsOffline
                     is ExpiryTooSoon -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
                     ExpiryTooFar -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
                     is ChannelDisabled -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
@@ -92,6 +92,7 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
                     TemporaryNodeFailure -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
                     PermanentChannelFailure -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
                     PermanentNodeFailure -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
+                    TemporaryTrampolineFailure -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
                     is InvalidOnionBlinding -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
                     is InvalidOnionHmac -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
                     is InvalidOnionKey -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)

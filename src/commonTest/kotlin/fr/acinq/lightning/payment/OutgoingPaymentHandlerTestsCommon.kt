@@ -376,7 +376,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // This first attempt fails because fees are too low.
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val progress2 = outgoingPaymentHandler.processAddSettled(channelId1, createRemoteFailure(add1, attempt, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        val progress2 = outgoingPaymentHandler.processAddSettled(channelId1, createTrampolineFailure(add1, attempt, TrampolineFeeOrExpiryInsufficient(100.msat, 100, CltvExpiryDelta(48))), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
         assertIs<OutgoingPaymentHandler.Progress>(progress2)
         val (channelId2, add2) = findAddHtlcCommand(progress2)
         assertEquals(channelId1, channelId2)
@@ -451,9 +451,9 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(83_100_000.msat, add1.amount)
 
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createRemoteFailure(add1, attempt, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createTrampolineFailure(add1, attempt, TrampolineFeeOrExpiryInsufficient(100.msat, 100, CltvExpiryDelta(48))), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
         assertIs<OutgoingPaymentHandler.Failure>(fail)
-        val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(TrampolineFeeInsufficient))))
+        val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(TrampolineFeeOrExpiryInsufficient(100.msat, 100, CltvExpiryDelta(48))))))
         assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -479,15 +479,15 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(230_000.msat, add1.amount)
 
         val attempt1 = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val progress2 = outgoingPaymentHandler.processAddSettled(alice.channelId, createRemoteFailure(add1, attempt1, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        val progress2 = outgoingPaymentHandler.processAddSettled(alice.channelId, createTrampolineFailure(add1, attempt1, TrampolineFeeOrExpiryInsufficient(100.msat, 100, CltvExpiryDelta(48))), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
         assertIs<OutgoingPaymentHandler.Progress>(progress2)
         val (_, add2) = findAddHtlcCommand(progress2)
         assertEquals(240_000.msat, add2.amount)
 
         val attempt2 = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createRemoteFailure(add2, attempt2, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createTrampolineFailure(add2, attempt2, TemporaryTrampolineFailure), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
         assertIs<OutgoingPaymentHandler.Failure>(fail)
-        val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.RetryExhausted, listOf(Either.Right(TrampolineFeeInsufficient), Either.Right(TrampolineFeeInsufficient))))
+        val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.RetryExhausted, listOf(Either.Right(TrampolineFeeOrExpiryInsufficient(100.msat, 100, CltvExpiryDelta(48))), Either.Right(TemporaryTrampolineFailure))))
         assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -512,7 +512,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(50_000.msat, add.amount)
 
             val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-            val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createRemoteFailure(add, attempt, remoteFailure), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+            val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createTrampolineFailure(add, attempt, remoteFailure), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
             assertIs<OutgoingPaymentHandler.Failure>(fail)
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(userFailure, listOf(Either.Right(remoteFailure))))
             assertFailureEquals(expected, fail)
@@ -520,6 +520,28 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
         }
+    }
+
+    @Test
+    fun `recipient failure`()= runSuspendTest {
+        val (alice, _) = TestsHelper.reachNormal()
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
+        val invoice = makeInvoice(amount = null, supportsTrampoline = true)
+        val payment = PayInvoice(UUID.randomUUID(), 50_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
+
+        val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Progress>(progress)
+        val (_, add) = findAddHtlcCommand(progress)
+        assertEquals(50_000.msat, add.amount)
+
+        val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
+        val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createRecipientFailure(add, attempt, IncorrectOrUnknownPaymentDetails(50_000.msat, 0)), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Failure>(fail)
+        val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.UnknownError, listOf(Either.Right(IncorrectOrUnknownPaymentDetails(50_000.msat, 0)))))
+        assertFailureEquals(expected, fail)
+
+        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
+        assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
     }
 
     @Test
@@ -543,7 +565,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         // Step 2: the wallet restarts and payment fails.
         run {
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, db)
-            val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createRemoteFailure(add, attempt, TemporaryNodeFailure), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+            val fail = outgoingPaymentHandler.processAddSettled(alice.channelId, createTrampolineFailure(add, attempt, TemporaryNodeFailure), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
             assertIs<OutgoingPaymentHandler.Failure>(fail)
             assertEquals(attempt.request, fail.request)
             assertEquals(FinalFailure.WalletRestarted, fail.failure.reason)
@@ -618,8 +640,25 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         return ChannelAction.ProcessCmdRes.AddSettledFulfill(add.paymentId, updateAddHtlc, ChannelAction.HtlcResult.Fulfill.RemoteFulfill(UpdateFulfillHtlc(channelId, updateAddHtlc.id, preimage)))
     }
 
-    private fun createRemoteFailure(add: ChannelCommand.Htlc.Add, attempt: OutgoingPaymentHandler.PaymentAttempt, failureMessage: FailureMessage): ChannelAction.ProcessCmdRes.AddSettledFail {
-        val reason = FailurePacket.create(attempt.sharedSecrets.perHopSecrets.last().first, failureMessage)
+    private fun createTrampolineFailure(add: ChannelCommand.Htlc.Add, attempt: OutgoingPaymentHandler.PaymentAttempt, failureMessage: FailureMessage): ChannelAction.ProcessCmdRes.AddSettledFail {
+        val reason = FailurePacket.create(attempt.sharedSecrets.perHopSecrets.first().first, failureMessage)
+        val updateAddHtlc = makeUpdateAddHtlc(randomBytes32(), add)
+        return ChannelAction.ProcessCmdRes.AddSettledFail(
+            add.paymentId,
+            updateAddHtlc,
+            ChannelAction.HtlcResult.Fail.RemoteFail(UpdateFailHtlc(updateAddHtlc.channelId, updateAddHtlc.id, reason.toByteVector()))
+        )
+    }
+
+    private fun createRecipientFailure(add: ChannelCommand.Htlc.Add, attempt: OutgoingPaymentHandler.PaymentAttempt, failureMessage: FailureMessage) : ChannelAction.ProcessCmdRes.AddSettledFail {
+        // TODO: explain (1 shared secret for the outer onion, 2 shared secrets for the trampoline hop trampoline -> recipient)
+        assertEquals(3, attempt.sharedSecrets.perHopSecrets.size)
+        // The recipient encrypts the failure with its trampoline shared secret.
+        val failure = FailurePacket.create(attempt.sharedSecrets.perHopSecrets[2].first, failureMessage)
+        // The trampoline node encrypts the failure with its trampoline shared secret.
+        val intermediate = FailurePacket.wrap(failure, attempt.sharedSecrets.perHopSecrets[1].first)
+        // The trampoline node encrypts the failure with its outer shared secret.
+        val reason = FailurePacket.wrap(intermediate, attempt.sharedSecrets.perHopSecrets[0].first)
         val updateAddHtlc = makeUpdateAddHtlc(randomBytes32(), add)
         return ChannelAction.ProcessCmdRes.AddSettledFail(
             add.paymentId,

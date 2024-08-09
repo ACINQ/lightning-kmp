@@ -2,6 +2,7 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
+import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning
@@ -9,6 +10,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.PacketAndSecrets
+import fr.acinq.lightning.crypto.sphinx.SharedSecrets
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.wire.*
@@ -53,7 +55,9 @@ object OutgoingPaymentPacket {
         val trampolinePaymentSecret = Lightning.randomBytes32()
         val payload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet)
         val paymentOnion = buildOnion(listOf(hop.nodeId), listOf(payload), invoice.paymentHash, OnionRoutingPacket.PaymentPacketLength)
-        return Triple(trampolineAmount, trampolineExpiry, paymentOnion)
+        // We merge the shared secrets from each onion to allow decrypting failure onions.
+        val sharedSecrets = SharedSecrets(paymentOnion.sharedSecrets.perHopSecrets + trampolineOnion.sharedSecrets.perHopSecrets)
+        return Triple(trampolineAmount, trampolineExpiry, paymentOnion.copy(sharedSecrets = sharedSecrets))
     }
 
     /**
@@ -162,16 +166,16 @@ object OutgoingPaymentPacket {
     }
 
     fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, reason: ChannelCommand.Htlc.Settlement.Fail.Reason): Either<FailureMessage, ByteVector> {
-        // we need to decrypt the payment onion to obtain the shared secret to build the error packet
-        return when (val result = Sphinx.peel(nodeSecret, paymentHash, onion)) {
-            is Either.Right -> {
-                val encryptedReason = when (reason) {
-                    is ChannelCommand.Htlc.Settlement.Fail.Reason.Bytes -> FailurePacket.wrap(reason.bytes.toByteArray(), result.value.sharedSecret)
-                    is ChannelCommand.Htlc.Settlement.Fail.Reason.Failure -> FailurePacket.create(result.value.sharedSecret, reason.message)
-                }
-                Either.Right(ByteVector(encryptedReason))
+        return extractSharedSecrets(nodeSecret, paymentHash, onion).map { sharedSecrets ->
+            val encryptedReason = when (reason) {
+                is ChannelCommand.Htlc.Settlement.Fail.Reason.Bytes -> FailurePacket.wrap(reason.bytes.toByteArray(), sharedSecrets.first())
+                is ChannelCommand.Htlc.Settlement.Fail.Reason.Failure -> FailurePacket.create(sharedSecrets.first(), reason.message)
             }
-            is Either.Left -> Either.Left(result.value)
+            if (sharedSecrets.size == 2) {
+                ByteVector(FailurePacket.wrap(encryptedReason, sharedSecrets.last()))
+            } else {
+                ByteVector(encryptedReason)
+            }
         }
     }
 
@@ -180,6 +184,17 @@ object OutgoingPaymentPacket {
         return when (val f = buildHtlcFailure(nodeSecret, willAddHtlc.paymentHash, willAddHtlc.finalPacket, reason)) {
             is Either.Right -> WillFailHtlc(willAddHtlc.id, willAddHtlc.paymentHash, f.value)
             is Either.Left -> WillFailMalformedHtlc(willAddHtlc.id, willAddHtlc.paymentHash, Sphinx.hash(willAddHtlc.finalPacket), f.value.code)
+        }
+    }
+
+    private fun extractSharedSecrets(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket): Either<FailureMessage, List<ByteVector32>> {
+        // We decrypt the payment onion to obtain the shared secret.
+        return Sphinx.peel(nodeSecret, paymentHash, onion).flatMap { outer ->
+            // If it contains a trampoline onion, we decrypt it as well to obtain the shared secret.
+            when (val trampolineOnion = PaymentOnion.PerHopPayload.read(outer.payload.toByteArray()).map { it.get<OnionPaymentPayloadTlv.TrampolineOnion>() }.right) {
+                null -> Either.Right(listOf(outer.sharedSecret))
+                else -> Sphinx.peel(nodeSecret, paymentHash, trampolineOnion.packet).map { listOf(it.sharedSecret, outer.sharedSecret) }
+            }
         }
     }
 
