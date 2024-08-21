@@ -162,7 +162,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 val paymentInfo = OfferTypes.PaymentInfo(
                     feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
                     feeProportionalMillionths = remoteChannelUpdates.maxOfOrNull { it.feeProportionalMillionths } ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
-                    cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta,
+                    cltvExpiryDelta = (remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta) + nodeParams.minFinalCltvExpiryDelta,
                     minHtlc = remoteChannelUpdates.minOfOrNull { it.htlcMinimumMsat } ?: 1.msat,
                     maxHtlc = amount,
                     allowedFeatures = Features.empty
