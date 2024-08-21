@@ -85,6 +85,10 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertIs<OnionMessageAction.PayInvoice>(payInvoice)
         assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
         assertEquals(payOffer, payInvoice.payOffer)
+        assertEquals(1, payInvoice.invoice.blindedPaths.size)
+        val path = payInvoice.invoice.blindedPaths.first()
+        assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
+        assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
     }
 
     @Test
@@ -113,6 +117,10 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertIs<OnionMessageAction.PayInvoice>(payInvoice)
         assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
         assertEquals(payOffer, payInvoice.payOffer)
+        assertEquals(1, payInvoice.invoice.blindedPaths.size)
+        val path = payInvoice.invoice.blindedPaths.first()
+        assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
+        assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
     }
 
     @Test

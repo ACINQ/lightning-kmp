@@ -159,10 +159,15 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 }
                 val pathId = OfferPaymentMetadata.V1(ByteVector32(decrypted.pathId), amount, preimage, request.payerId, truncatedPayerNote, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
                 val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId))).write().toByteVector()
+                val cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
                 val paymentInfo = OfferTypes.PaymentInfo(
                     feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
                     feeProportionalMillionths = remoteChannelUpdates.maxOfOrNull { it.feeProportionalMillionths } ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
-                    cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta,
+                    // We include our min_final_cltv_expiry_delta in the path, but we *don't* include it in the payment_relay field
+                    // for our trampoline node (below). This ensures that we will receive payments with at least this final expiry delta.
+                    // This ensures that even when payers haven't received the latest block(s) or don't include a safety margin in the
+                    // expiry they use, we can still safely receive their payment.
+                    cltvExpiryDelta = cltvExpiryDelta + nodeParams.minFinalCltvExpiryDelta,
                     minHtlc = remoteChannelUpdates.minOfOrNull { it.htlcMinimumMsat } ?: 1.msat,
                     maxHtlc = amount,
                     allowedFeatures = Features.empty
@@ -170,7 +175,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 val remoteNodePayload = RouteBlindingEncryptedData(
                     TlvStream(
                         RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
-                        RouteBlindingEncryptedDataTlv.PaymentRelay(paymentInfo.cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
+                        RouteBlindingEncryptedDataTlv.PaymentRelay(cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
                         RouteBlindingEncryptedDataTlv.PaymentConstraints((paymentInfo.cltvExpiryDelta + nodeParams.maxFinalCltvExpiryDelta).toCltvExpiry(currentBlockHeight.toLong()), paymentInfo.minHtlc)
                     )
                 ).write().toByteVector()
