@@ -4,9 +4,12 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
-import fr.acinq.lightning.*
+import fr.acinq.lightning.EncodedNodeId
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.NodeParams
+import fr.acinq.lightning.WalletParams
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.io.OfferInvoiceReceived
 import fr.acinq.lightning.io.OfferNotPaid
@@ -18,7 +21,6 @@ import fr.acinq.lightning.message.OnionMessages.Destination
 import fr.acinq.lightning.message.OnionMessages.IntermediateNode
 import fr.acinq.lightning.message.OnionMessages.buildMessage
 import fr.acinq.lightning.utils.currentTimestampMillis
-import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -168,8 +170,10 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     // This ensures that even when payers haven't received the latest block(s) or don't include a safety margin in the
                     // expiry they use, we can still safely receive their payment.
                     cltvExpiryDelta = cltvExpiryDelta + nodeParams.minFinalCltvExpiryDelta,
-                    minHtlc = remoteChannelUpdates.minOfOrNull { it.htlcMinimumMsat } ?: 1.msat,
-                    maxHtlc = amount,
+                    // We must use the most restrictive minimum HTLC value between local and remote.
+                    minHtlc = (listOf(nodeParams.htlcMinimum) + remoteChannelUpdates.map { it.htlcMinimumMsat }).max(),
+                    // Payments are allowed to overpay at most two times the invoice amount.
+                    maxHtlc = amount * 2,
                     allowedFeatures = Features.empty
                 )
                 val remoteNodePayload = RouteBlindingEncryptedData(

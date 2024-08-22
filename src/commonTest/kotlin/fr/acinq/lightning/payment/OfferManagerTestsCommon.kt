@@ -89,6 +89,8 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val path = payInvoice.invoice.blindedPaths.first()
         assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
         assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
+        assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
+        assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
     }
 
     @Test
@@ -121,6 +123,8 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val path = payInvoice.invoice.blindedPaths.first()
         assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
         assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
+        assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
+        assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
     }
 
     @Test
