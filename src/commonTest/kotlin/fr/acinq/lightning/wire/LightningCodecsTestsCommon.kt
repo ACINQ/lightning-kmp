@@ -881,13 +881,13 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968jys3v9kxjcm9gp3xjemndphhqtnrdak3gqqkyypsmuhrtwfzm85mht4a3vcp0yrlgua3u3m5uqpc6kf7nqjz6v70qwg"
         val offer = Offer.decode(encoded).get()
 
-        val msg = DNSAddressRequest(Chain.Testnet.chainHash, offer, "en")
+        val msg = DNSAddressRequest(Chain.Testnet3.chainHash, offer, "en")
         assertEquals(msg, LightningMessage.decode(LightningMessage.encode(msg)))
     }
 
     @Test
     fun `encode and decode dns address response`() {
-        val msg = DNSAddressResponse(Chain.Testnet.chainHash, "foo@bar.baz")
+        val msg = DNSAddressResponse(Chain.Testnet3.chainHash, "foo@bar.baz")
         assertEquals(msg, LightningMessage.decode(LightningMessage.encode(msg)))
     }
 }

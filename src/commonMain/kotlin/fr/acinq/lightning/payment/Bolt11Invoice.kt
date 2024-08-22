@@ -110,7 +110,8 @@ data class Bolt11Invoice(
 
         private val prefixes = mapOf(
             Chain.Regtest to "lnbcrt",
-            Chain.Testnet to "lntb",
+            Chain.Testnet3 to "lntb",
+            Chain.Testnet4 to "lntb",
             Chain.Mainnet to "lnbc"
         )
 

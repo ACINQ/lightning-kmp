@@ -75,18 +75,17 @@ interface KeyManager {
         private val master: DeterministicWallet.ExtendedPrivateKey,
         val account: Long
     ) {
-        private val xpriv = DeterministicWallet.derivePrivateKey(master, bip84BasePath(chain) / hardened(account))
+        private val xpriv = master.derivePrivateKey(bip84BasePath(chain) / hardened(account))
 
-        val xpub: String = DeterministicWallet.encode(
-            input = DeterministicWallet.publicKey(xpriv),
+        val xpub: String = xpriv.extendedPublicKey.encode(
             prefix = when (chain) {
-                Chain.Testnet, Chain.Regtest, Chain.Signet -> DeterministicWallet.vpub
+                Chain.Testnet4, Chain.Testnet3, Chain.Regtest, Chain.Signet -> DeterministicWallet.vpub
                 Chain.Mainnet -> DeterministicWallet.zpub
             }
         )
 
         fun privateKey(addressIndex: Long): PrivateKey {
-            return DeterministicWallet.derivePrivateKey(xpriv, KeyPath.empty / 0 / addressIndex).privateKey
+            return xpriv.derivePrivateKey(KeyPath.empty / 0 / addressIndex).privateKey
         }
 
         fun pubkeyScript(addressIndex: Long): ByteVector {
@@ -102,7 +101,7 @@ interface KeyManager {
 
         companion object {
             fun bip84BasePath(chain: Chain) = when (chain) {
-                Chain.Regtest, Chain.Testnet, Chain.Signet -> KeyPath.empty / hardened(84) / hardened(1)
+                Chain.Testnet4, Chain.Testnet3, Chain.Regtest, Chain.Signet -> KeyPath.empty / hardened(84) / hardened(1)
                 Chain.Mainnet -> KeyPath.empty / hardened(84) / hardened(0)
             }
         }
@@ -121,18 +120,18 @@ interface KeyManager {
         val remoteServerPublicKey: PublicKey,
         val refundDelay: Int = DefaultSwapInParams.RefundDelay
     ) {
-        private val userExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserKeyPath(chain))
-        private val userRefundExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInUserRefundKeyPath(chain))
+        private val userExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = master.derivePrivateKey(swapInUserKeyPath(chain))
+        private val userRefundExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = master.derivePrivateKey(swapInUserRefundKeyPath(chain))
 
         val userPrivateKey: PrivateKey = userExtendedPrivateKey.privateKey
         val userPublicKey: PublicKey = userPrivateKey.publicKey()
 
-        private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, swapInLocalServerKeyPath(chain))
-        fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = DeterministicWallet.derivePrivateKey(localServerExtendedPrivateKey, perUserPath(remoteNodeId)).privateKey
+        private val localServerExtendedPrivateKey: DeterministicWallet.ExtendedPrivateKey = master.derivePrivateKey(swapInLocalServerKeyPath(chain))
+        fun localServerPrivateKey(remoteNodeId: PublicKey): PrivateKey = localServerExtendedPrivateKey.derivePrivateKey(perUserPath(remoteNodeId)).privateKey
 
         // legacy p2wsh-based swap-in protocol, with a fixed on-chain address
         val legacySwapInProtocol = SwapInProtocolLegacy(userPublicKey, remoteServerPublicKey, refundDelay)
-        val legacyDescriptor = SwapInProtocolLegacy.descriptor(chain, DeterministicWallet.publicKey(master), DeterministicWallet.publicKey(userExtendedPrivateKey), remoteServerPublicKey, refundDelay)
+        val legacyDescriptor = SwapInProtocolLegacy.descriptor(chain, master.extendedPublicKey, userExtendedPrivateKey.extendedPublicKey, remoteServerPublicKey, refundDelay)
 
         fun signSwapInputUserLegacy(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>): ByteVector64 {
             return legacySwapInProtocol.signSwapInputUser(fundingTx, index, parentTxOuts[fundingTx.txIn[index].outPoint.index.toInt()], userPrivateKey)
@@ -152,7 +151,7 @@ interface KeyManager {
          * @return the swap-in protocol that matches the input public key script
          */
         fun getSwapInProtocol(addressIndex: Int): SwapInProtocol {
-            val userRefundPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(userRefundExtendedPrivateKey, addressIndex.toLong()).privateKey
+            val userRefundPrivateKey: PrivateKey = userRefundExtendedPrivateKey.derivePrivateKey(addressIndex.toLong()).privateKey
             val userRefundPublicKey: PublicKey = userRefundPrivateKey.publicKey()
             return SwapInProtocol(userPublicKey, remoteServerPublicKey, userRefundPublicKey, refundDelay)
         }
@@ -189,7 +188,7 @@ interface KeyManager {
                             tx.updateWitness(inputIndex, legacySwapInProtocol.witnessRefund(sig))
                         }
                         else -> {
-                            val userRefundPrivateKey: PrivateKey = DeterministicWallet.derivePrivateKey(userRefundExtendedPrivateKey, addressIndex.toLong()).privateKey
+                            val userRefundPrivateKey: PrivateKey = userRefundExtendedPrivateKey.derivePrivateKey(addressIndex.toLong()).privateKey
                             val swapInProtocol = getSwapInProtocol(addressIndex)
                             val sig = swapInProtocol.signSwapInputRefund(tx, inputIndex, utxos.map { it.txOut }, userRefundPrivateKey)
                             tx.updateWitness(inputIndex, swapInProtocol.witnessRefund(sig))
@@ -237,7 +236,7 @@ interface KeyManager {
 
         companion object {
             private fun swapInKeyBasePath(chain: Chain) = when (chain) {
-                Chain.Regtest, Chain.Testnet, Chain.Signet -> KeyPath.empty / hardened(51) / hardened(0)
+                Chain.Testnet4, Chain.Testnet3, Chain.Regtest, Chain.Signet -> KeyPath.empty / hardened(51) / hardened(0)
                 Chain.Mainnet -> KeyPath.empty / hardened(52) / hardened(0)
             }
 
@@ -248,7 +247,7 @@ interface KeyManager {
             fun swapInUserRefundKeyPath(chain: Chain) = swapInKeyBasePath(chain) / hardened(2) / 0L
 
             fun encodedSwapInUserKeyPath(chain: Chain) = when (chain) {
-                Chain.Regtest, Chain.Testnet, Chain.Signet -> "51h/0h/0h"
+                Chain.Testnet4, Chain.Testnet3, Chain.Regtest, Chain.Signet -> "51h/0h/0h"
                 Chain.Mainnet -> "52h/0h/0h"
             }
 

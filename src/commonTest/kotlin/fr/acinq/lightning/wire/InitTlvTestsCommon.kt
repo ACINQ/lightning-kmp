@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 class InitTlvTestsCommon : LightningTestSuite() {
     @Test
     fun `legacy phoenix TLV`() {
-        val keyManager = LocalKeyManager(MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector(), Chain.Testnet, TestConstants.aliceSwapInServerXpub)
+        val keyManager = LocalKeyManager(MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector(), Chain.Testnet3, TestConstants.aliceSwapInServerXpub)
         val testCases = listOf(
             Pair(
                 first = keyManager.nodeKeys.legacyNodeKey.publicKey,

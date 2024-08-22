@@ -69,7 +69,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     fun `offer with amount and quantity`() {
         val offer = Offer(
             TlvStream(
-                OfferChains(listOf(Block.TestnetGenesisBlock.hash)),
+                OfferChains(listOf(Block.Testnet3GenesisBlock.hash)),
                 OfferAmount(50.msat),
                 OfferDescription("offer with quantity"),
                 OfferIssuer("alice@bigshop.com"),
@@ -162,7 +162,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val withDefaultChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records + InvoiceRequestChain(Block.LivenetGenesisBlock.hash))), payerKey)
         assertTrue(withDefaultChain.isValid())
         assertEquals(offer, withDefaultChain.offer)
-        val otherChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records + InvoiceRequestChain(Block.TestnetGenesisBlock.hash))), payerKey)
+        val otherChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records + InvoiceRequestChain(Block.Testnet3GenesisBlock.hash))), payerKey)
         assertFalse(otherChain.isValid())
     }
 

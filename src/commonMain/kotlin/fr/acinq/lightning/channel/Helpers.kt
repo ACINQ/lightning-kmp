@@ -779,7 +779,7 @@ object Helpers {
                         val sig = Transactions.sign(it, channelKeys.revocationKey.deriveForRevocation(revokedCommitPublished.remotePerCommitmentSecret))
                         val signedTx = Transactions.addSigs(it, sig)
                         // we need to make sure that the tx is indeed valid
-                        when (runTrying { Transaction.correctlySpends(signedTx.tx, listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
+                        when (runTrying { signedTx.tx.correctlySpends(listOf(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
                             is Try.Success -> signedTx
                             is Try.Failure -> null
                         }
