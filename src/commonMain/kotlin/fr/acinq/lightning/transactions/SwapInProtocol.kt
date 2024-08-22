@@ -20,7 +20,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
     // The script path contains a refund script, generated from this policy: and_v(v:pk(user),older(refundDelay)).
     // It does not depend upon the user's or server's key, just the user's refund key and the refund delay.
     private val refundScript = listOf(OP_PUSHDATA(userRefundKey.xOnly()), OP_CHECKSIGVERIFY, OP_PUSHDATA(Script.encodeNumber(refundDelay)), OP_CHECKSEQUENCEVERIFY)
-    private val scriptTree = ScriptTree.Leaf(0, refundScript)
+    private val scriptTree = ScriptTree.Leaf(refundScript)
     val pubkeyScript: List<ScriptElt> = Script.pay2tr(internalPublicKey, scriptTree)
     val serializedPubkeyScript = Script.write(pubkeyScript).byteVector()
 
@@ -46,7 +46,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
 
     fun signSwapInputRefund(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, userPrivateKey: PrivateKey): ByteVector64 {
         require(userPrivateKey.publicKey() == userRefundKey) { "refund private key does not match expected public key: are you using the user key instead of the refund key?" }
-        return Transaction.signInputTaprootScriptPath(userPrivateKey, fundingTx, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, scriptTree.hash())
+        return fundingTx.signInputTaprootScriptPath(userPrivateKey, index, parentTxOuts, SigHash.SIGHASH_DEFAULT, scriptTree.hash())
     }
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOuts: List<TxOut>, serverPrivateKey: PrivateKey, privateNonce: SecretNonce, userNonce: IndividualNonce, serverNonce: IndividualNonce): Either<Throwable, ByteVector32> {
@@ -62,7 +62,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
                 Chain.Mainnet -> DeterministicWallet.xprv
                 else -> DeterministicWallet.tprv
             }
-            val xpriv = DeterministicWallet.encode(masterRefundKey, prefix)
+            val xpriv = masterRefundKey.encode(prefix)
             val desc = "tr(${internalPubKey.value},and_v(v:pk($xpriv/*),older($refundDelay)))"
             val checksum = Descriptor.checksum(desc)
             return "$desc#$checksum"
@@ -74,7 +74,7 @@ data class SwapInProtocol(val userPublicKey: PublicKey, val serverPublicKey: Pub
                 Chain.Mainnet -> DeterministicWallet.xpub
                 else -> DeterministicWallet.tpub
             }
-            val xpub = DeterministicWallet.encode(masterRefundKey, prefix)
+            val xpub = masterRefundKey.encode(prefix)
             val desc = "tr(${internalPubKey.value},and_v(v:pk($xpub/*),older($refundDelay)))"
             val checksum = Descriptor.checksum(desc)
             return "$desc#$checksum"

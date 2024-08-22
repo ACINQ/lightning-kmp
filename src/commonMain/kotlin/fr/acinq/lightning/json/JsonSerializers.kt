@@ -673,7 +673,8 @@ object JsonSerializers {
                 chain = when {
                     o.chains.isEmpty() -> Chain.Mainnet.name
                     o.chains.contains(Chain.Mainnet.chainHash) && o.chains.size == 1 -> Chain.Mainnet.name
-                    o.chains.contains(Chain.Testnet.chainHash) && o.chains.size == 1 -> Chain.Testnet.name
+                    o.chains.contains(Chain.Testnet3.chainHash) && o.chains.size == 1 -> Chain.Testnet3.name
+                    o.chains.contains(Chain.Testnet4.chainHash) && o.chains.size == 1 -> Chain.Testnet4.name
                     o.chains.contains(Chain.Regtest.chainHash) && o.chains.size == 1 -> Chain.Regtest.name
                     else -> "unknown"
                 }.lowercase(),

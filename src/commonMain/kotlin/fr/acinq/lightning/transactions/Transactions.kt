@@ -801,7 +801,7 @@ object Transactions {
         .also { check(Scripts.der(it, SigHash.SIGHASH_ALL).size() == 72) { "Should be 72 bytes but is ${Scripts.der(it, SigHash.SIGHASH_ALL).size()} bytes" } }
 
     fun sign(tx: Transaction, inputIndex: Int, redeemScript: ByteArray, amount: Satoshi, key: PrivateKey, sigHash: Int = SigHash.SIGHASH_ALL): ByteVector64 {
-        val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, sigHash, amount, SigVersion.SIGVERSION_WITNESS_V0, key)
+        val sigDER = tx.signInput(inputIndex, redeemScript, sigHash, amount, SigVersion.SIGVERSION_WITNESS_V0, key)
         return Crypto.der2compact(sigDER)
     }
 
@@ -873,11 +873,11 @@ object Transactions {
     }
 
     fun checkSpendable(txinfo: TransactionWithInputInfo): Try<Unit> = runTrying {
-        Transaction.correctlySpends(txinfo.tx, mapOf(txinfo.tx.txIn.first().outPoint to txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        txinfo.tx.correctlySpends(mapOf(txinfo.tx.txIn.first().outPoint to txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
     fun checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey, sigHash: Int = SigHash.SIGHASH_ALL): Boolean {
-        val data = Transaction.hashForSigning(txinfo.tx, 0, txinfo.input.redeemScript.toByteArray(), sigHash, txinfo.input.txOut.amount, SigVersion.SIGVERSION_WITNESS_V0)
+        val data = txinfo.tx.hashForSigning(0, txinfo.input.redeemScript.toByteArray(), sigHash, txinfo.input.txOut.amount, SigVersion.SIGVERSION_WITNESS_V0)
         return Crypto.verifySignature(data, sig, pubKey)
     }
 }
