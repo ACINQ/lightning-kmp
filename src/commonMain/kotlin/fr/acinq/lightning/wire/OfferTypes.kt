@@ -860,6 +860,8 @@ object OfferTypes {
                     Features.areCompatible(offer.features, features) &&
                     checkSignature()
 
+        fun requestedAmount(): MilliSatoshi? = amount ?: offer.amount?.let { it * quantity }
+
         fun checkSignature(): Boolean =
             verifySchnorr(
                 signatureTag,

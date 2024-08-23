@@ -151,12 +151,10 @@ class NormalTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelCommand_Htlc_Add -- 0 msat`() {
         val (alice0, bob0) = reachNormal()
-        // Alice has a minimum set to 0 msat (which should be invalid, but may mislead Bob into relaying 0-value HTLCs which is forbidden by the spec).
-        assertEquals(0.msat, alice0.commitments.params.localParams.htlcMinimum)
         val add = defaultAdd.copy(amount = 0.msat)
         val (bob1, actions) = bob0.process(add)
         val actualError = actions.findCommandError<HtlcValueTooSmall>()
-        val expectedError = HtlcValueTooSmall(bob0.channelId, 1.msat, 0.msat)
+        val expectedError = HtlcValueTooSmall(bob0.channelId, alice0.commitments.params.localParams.htlcMinimum, 0.msat)
         assertEquals(expectedError, actualError)
         assertEquals(bob0, bob1)
     }

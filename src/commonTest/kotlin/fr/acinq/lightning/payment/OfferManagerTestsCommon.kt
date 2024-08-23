@@ -85,6 +85,12 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertIs<OnionMessageAction.PayInvoice>(payInvoice)
         assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
         assertEquals(payOffer, payInvoice.payOffer)
+        assertEquals(1, payInvoice.invoice.blindedPaths.size)
+        val path = payInvoice.invoice.blindedPaths.first()
+        assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
+        assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
+        assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
+        assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
     }
 
     @Test
@@ -113,6 +119,12 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertIs<OnionMessageAction.PayInvoice>(payInvoice)
         assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
         assertEquals(payOffer, payInvoice.payOffer)
+        assertEquals(1, payInvoice.invoice.blindedPaths.size)
+        val path = payInvoice.invoice.blindedPaths.first()
+        assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
+        assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
+        assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
+        assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
     }
 
     @Test
@@ -194,7 +206,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive invoice error`() = runSuspendTest {
+    fun `receive invoice error -- amount below offer amount`() = runSuspendTest {
         // Alice and Bob use the same trampoline node.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
@@ -202,6 +214,27 @@ class OfferManagerTestsCommon : LightningTestSuite() {
 
         // Bob sends an invoice request to Alice that pays less than the offer amount.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 40_000.msat, offer, 20.seconds)
+        val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
+        val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
+        // Alice sends an invoice error back to Bob.
+        val invoiceResponse = aliceOfferManager.receiveMessage(messageForAlice, listOf(), 0)
+        assertIs<OnionMessageAction.SendMessage>(invoiceResponse)
+        val (messageForBob, _) = trampolineRelay(invoiceResponse.message, aliceTrampolineKey)
+        assertNull(bobOfferManager.receiveMessage(messageForBob, listOf(), 0))
+        val event = bobOfferManager.eventsFlow.first()
+        assertIs<OfferNotPaid>(event)
+        assertIs<Bolt12InvoiceRequestFailure.ErrorFromRecipient>(event.reason)
+    }
+
+    @Test
+    fun `receive invoice error -- amount too low`() = runSuspendTest {
+        // Alice and Bob use the same trampoline node.
+        val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val offer = createOffer(aliceOfferManager, null)
+
+        // Bob sends an invoice request to Alice that pays less than the minimum htlc amount.
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 10.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
         // Alice sends an invoice error back to Bob.
