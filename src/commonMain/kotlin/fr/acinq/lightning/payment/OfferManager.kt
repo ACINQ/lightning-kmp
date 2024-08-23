@@ -132,6 +132,8 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     private fun receiveInvoiceRequest(decrypted: OnionMessages.DecryptedMessage, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction.SendMessage? {
         val offer = localOffers[decrypted.pathId]!!
         val request = decrypted.content.records.get<OnionMessagePayloadTlv.InvoiceRequest>()?.let { OfferTypes.InvoiceRequest.validate(it.tlvs).right }
+        // We must use the most restrictive minimum HTLC value between local and remote.
+        val minHtlc = (listOf(nodeParams.htlcMinimum) + remoteChannelUpdates.map { it.htlcMinimumMsat }).max()
         return when {
             request == null -> {
                 logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} ignoring onion message: missing or invalid invoice request" }
@@ -149,8 +151,12 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} ignoring invalid invoice request ($request)" }
                 sendInvoiceError("ignoring invalid invoice request", decrypted.content.replyPath)
             }
+            request.requestedAmount()?.let { it < minHtlc } ?: false -> {
+                logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} amount too low (amount=${request.requestedAmount()} minHtlc=$minHtlc)" }
+                sendInvoiceError("amount too low, minimum amount = $minHtlc", decrypted.content.replyPath)
+            }
             else -> {
-                val amount = request.amount ?: (request.offer.amount!! * request.quantity)
+                val amount = request.requestedAmount()!!
                 val preimage = randomBytes32()
                 val truncatedPayerNote = request.payerNote?.let {
                     if (it.length <= 64) {
@@ -170,8 +176,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     // This ensures that even when payers haven't received the latest block(s) or don't include a safety margin in the
                     // expiry they use, we can still safely receive their payment.
                     cltvExpiryDelta = cltvExpiryDelta + nodeParams.minFinalCltvExpiryDelta,
-                    // We must use the most restrictive minimum HTLC value between local and remote.
-                    minHtlc = (listOf(nodeParams.htlcMinimum) + remoteChannelUpdates.map { it.htlcMinimumMsat }).max(),
+                    minHtlc = minHtlc,
                     // Payments are allowed to overpay at most two times the invoice amount.
                     maxHtlc = amount * 2,
                     allowedFeatures = Features.empty

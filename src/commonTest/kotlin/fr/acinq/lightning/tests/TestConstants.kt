@@ -78,7 +78,7 @@ object TestConstants {
             ),
             maxHtlcValueInFlightMsat = 1_500_000_000L,
             maxAcceptedHtlcs = 100,
-            htlcMinimum = 0.msat,
+            htlcMinimum = 100.msat,
             toRemoteDelayBlocks = CltvExpiryDelta(144),
             maxToLocalDelayBlocks = CltvExpiryDelta(2048),
             feeBase = 100.msat,
