@@ -32,7 +32,7 @@ sealed class LiquidityPolicy {
                 val maxRelativeFee = amount * maxRelativeFeeBasisPoints / 10_000
                 logger.info { "liquidity policy check: amount=$amount fee=$fee maxAbsoluteFee=$maxAbsoluteFee maxRelativeFee=$maxRelativeFee policy=$this" }
                 when {
-                    fee > maxRelativeFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(maxRelativeFeeBasisPoints)
+                    amount > 0.msat && fee > maxRelativeFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(maxRelativeFeeBasisPoints)
                     fee > maxAbsoluteFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(this.maxAbsoluteFee)
                     else -> null // accept
                 }
