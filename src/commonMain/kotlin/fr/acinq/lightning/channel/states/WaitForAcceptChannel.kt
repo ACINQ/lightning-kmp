@@ -58,6 +58,7 @@ data class WaitForAcceptChannel(
                                 fundingParams.fundingPubkeyScript(channelKeys),
                                 accept.fundingAmount,
                                 lastSent.fundingFeerate,
+                                isChannelCreation = true,
                                 accept.willFund
                             )) {
                                 is Either.Left -> {

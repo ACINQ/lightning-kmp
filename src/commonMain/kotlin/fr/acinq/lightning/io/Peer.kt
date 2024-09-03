@@ -65,7 +65,7 @@ data class AddWalletInputsToChannel(val walletInputs: List<WalletState.Utxo>) : 
 data class AddLiquidityForIncomingPayment(val paymentAmount: MilliSatoshi, val requestedAmount: Satoshi, val fundingRate: LiquidityAds.FundingRate, val preimage: ByteVector32, val willAddHtlcs: List<WillAddHtlc>) : PeerCommand() {
     val paymentHash: ByteVector32 = Crypto.sha256(preimage.toByteArray()).byteVector32()
 
-    fun fees(fundingFeerate: FeeratePerKw): LiquidityAds.Fees = fundingRate.fees(fundingFeerate, requestedAmount, requestedAmount)
+    fun fees(fundingFeerate: FeeratePerKw, isChannelCreation: Boolean): LiquidityAds.Fees = fundingRate.fees(fundingFeerate, requestedAmount, requestedAmount, isChannelCreation)
 }
 
 data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, val logger: MDCLogger) {
@@ -593,7 +593,7 @@ class Peer(
                 // The mining fee below pays for the entirety of the splice transaction, including inputs and outputs from the liquidity provider.
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 // The mining fee below only covers the remote node's inputs and outputs, which are already included in the mining fee above.
-                val fundingFees = fundingRate.fees(actualFeerate, amount, amount)
+                val fundingFees = fundingRate.fees(actualFeerate, amount, amount, isChannelCreation = false)
                 Pair(actualFeerate, ChannelManagementFees(miningFee, fundingFees.serviceFee))
             }
     }
@@ -1287,7 +1287,7 @@ class Peer(
                             val dummyFundingScript = Script.write(Scripts.multiSig2of2(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey)).byteVector()
                             val localMiningFee = Transactions.weight2fee(currentFeerates.fundingFeerate, FundingContributions.computeWeightPaid(isInitiator = true, null, dummyFundingScript, cmd.walletInputs, emptyList()))
                             val localFundingAmount = cmd.totalAmount - localMiningFee
-                            val fundingFees = requestRemoteFunding.fees(currentFeerates.fundingFeerate)
+                            val fundingFees = requestRemoteFunding.fees(currentFeerates.fundingFeerate, isChannelCreation = true)
                             // We also refund the liquidity provider for some of the on-chain fees they will pay for their inputs/outputs of the transaction.
                             // This will be taken from our channel balance during the interactive-tx construction, they shouldn't be deducted from our funding amount.
                             val totalFees = ChannelManagementFees(miningFee = localMiningFee + fundingFees.miningFee, serviceFee = fundingFees.serviceFee)
@@ -1343,7 +1343,7 @@ class Peer(
                         val spliceWeight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = listOf(), localOutputs = listOf())
                         val (fundingFeerate, localMiningFee) = client.computeSpliceCpfpFeerate(available.channel.commitments, currentFeerates.fundingFeerate, spliceWeight, logger)
                         val (targetFeerate, paymentDetails) = when {
-                            localBalance >= localMiningFee + cmd.fees(fundingFeerate).total -> {
+                            localBalance >= localMiningFee + cmd.fees(fundingFeerate, isChannelCreation = false).total -> {
                                 // We have enough funds to pay the mining fee and the lease fees.
                                 // This the ideal scenario because the fees can be paid immediately with the splice transaction.
                                 Pair(fundingFeerate, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(cmd.paymentHash)))
@@ -1376,7 +1376,7 @@ class Peer(
                                 logger.warning { "cannot request on-the-fly splice: payment types not supported (${walletParams.remoteFundingRates.paymentTypes.joinToString()})" }
                             }
                             else -> {
-                                val leaseFees = cmd.fees(targetFeerate)
+                                val leaseFees = cmd.fees(targetFeerate, isChannelCreation = false)
                                 val totalFees = ChannelManagementFees(miningFee = localMiningFee.min(localBalance.truncateToSatoshi()) + leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
                                 logger.info { "requesting on-the-fly splice for paymentHash=${cmd.paymentHash} feerate=$targetFeerate fee=${totalFees.total} paymentType=${paymentDetails.paymentType}" }
                                 val spliceCommand = ChannelCommand.Commitment.Splice.Request(
@@ -1402,7 +1402,7 @@ class Peer(
                         // We only need to cover the shared output, which doesn't add too much weight, so we add 25%.
                         val fundingFeerate = currentFeerates.fundingFeerate * 1.25
                         // We don't pay any local on-chain fees, our fee is only for the liquidity lease.
-                        val leaseFees = cmd.fees(fundingFeerate)
+                        val leaseFees = cmd.fees(fundingFeerate, isChannelCreation = true)
                         val totalFees = ChannelManagementFees(miningFee = leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
                         // We cannot pay the liquidity fees from our channel balance, so we fall back to future HTLCs.
                         val paymentDetails = when {

@@ -227,25 +227,25 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             ), // network and unknown odd records
             TestCase(ByteVector("0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 02012a"), decoded = null), // network and unknown even records
             TestCase(
-                ByteVector("0000 0002088a fd053b150001000186a00007a1200226006400001388000101"),
+                ByteVector("0000 0002088a fd053b190001000186a00007a1200226006400001388000003e8000101"),
                 Init(
                     Features(ByteVector("088a")),
                     chainHashs = listOf(),
                     liquidityRates = LiquidityAds.WillFundRates(
-                        fundingRates = listOf(LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat)),
+                        fundingRates = listOf(LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat, 1_000.sat)),
                         paymentTypes = setOf(LiquidityAds.PaymentType.FromChannelBalance)
                     )
                 ),
             ), // one liquidity ads with the default payment type
             TestCase(
-                ByteVector("0000 0002088a fd053b3f0002000186a00007a12002260064000013880007a120004c4b40044c004b00000000001b080000000000000000000700000000000000000000000000000001"),
+                ByteVector("0000 0002088a fd053b470002000186a00007a1200226006400001388000003e80007a120004c4b40044c004b00000000000005dc001b080000000000000000000700000000000000000000000000000001"),
                 Init(
                     Features(ByteVector("088a")),
                     chainHashs = listOf(),
                     liquidityRates = LiquidityAds.WillFundRates(
                         fundingRates = listOf(
-                            LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat),
-                            LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat),
+                            LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat, 1_000.sat),
+                            LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat, 1_500.sat),
                         ),
                         paymentTypes = setOf(
                             LiquidityAds.PaymentType.FromChannelBalance,
@@ -313,8 +313,8 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     fun `encode - decode open_channel`() {
         val fundingRates = LiquidityAds.WillFundRates(
             fundingRates = listOf(
-                LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat),
-                LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat),
+                LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat, 1_000.sat),
+                LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat, 1_500.sat),
             ),
             paymentTypes = setOf(
                 LiquidityAds.PaymentType.FromChannelBalance,
@@ -339,9 +339,9 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))) to (defaultEncoded + ByteVector("0103101000")),
             defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(25_000.msat))) to (defaultEncoded + ByteVector("0103101000 fe470000070261a8")),
             defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequireConfirmedInputsTlv)) to (defaultEncoded + ByteVector("0103101000 0200")),
-            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromChannelBalance))) to (defaultEncoded + ByteVector("0103101000 fd053b1a00000000000b71b00007a120004c4b40044c004b000000000000")),
-            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromHtlc))) to (defaultEncoded + ByteVector("0103101000 fd053b5a000000000007a120000186a00007a1200226006400001388804080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47")),
-            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromBalanceForHtlc))) to (defaultEncoded + ByteVector("0103101000 fd053b5a000000000007a120000186a00007a1200226006400001388824080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47")),
+            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromChannelBalance))) to (defaultEncoded + ByteVector("0103101000 fd053b1e00000000000b71b00007a120004c4b40044c004b00000000000005dc0000")),
+            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromHtlc))) to (defaultEncoded + ByteVector("0103101000 fd053b5e000000000007a120000186a00007a1200226006400001388000003e8804080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47")),
+            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromBalanceForHtlc))) to (defaultEncoded + ByteVector("0103101000 fd053b5e000000000007a120000186a00007a1200226006400001388000003e8824080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47")),
             defaultOpen.copy(tlvStream = TlvStream(setOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)), setOf(GenericTlv(321, ByteVector("2a2a")), GenericTlv(325, ByteVector("02"))))) to (defaultEncoded + ByteVector("0103101000 fd0141022a2a fd01450102")),
         )
         // @formatter:on
@@ -378,10 +378,10 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     @Test
     fun `encode - decode accept_channel`() {
         val nodeKey = PrivateKey.fromHex("57ac961f1b80ebfb610037bf9c96c6333699bde42257919a53974811c34649e3")
-        val fundingLease = LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat)
+        val fundingLease = LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat, 1_500.sat)
         val requestFunds = LiquidityAds.RequestFunding(750_000.sat, fundingLease, LiquidityAds.PaymentDetails.FromChannelBalance)
         val fundingScript = Helpers.Funding.makeFundingPubKeyScript(publicKey(1), publicKey(1))
-        val willFund = LiquidityAds.WillFundRates(listOf(fundingLease), setOf(LiquidityAds.PaymentType.FromChannelBalance)).validateRequest(nodeKey, fundingScript, FeeratePerKw(5000.sat), requestFunds)!!.willFund
+        val willFund = LiquidityAds.WillFundRates(listOf(fundingLease), setOf(LiquidityAds.PaymentType.FromChannelBalance)).validateRequest(nodeKey, fundingScript, FeeratePerKw(5000.sat), requestFunds, isChannelCreation = true)!!.willFund
         // @formatter:off
         val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000.sat, 473.sat, 100_000_000, 1.msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), publicKey(7))
         val defaultEncoded = ByteVector("0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
@@ -389,7 +389,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             defaultAccept to defaultEncoded,
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.UnsupportedChannelType(Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory))))) to (defaultEncoded + ByteVector("01021000")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector("01abcdef")), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))) to (defaultEncoded + ByteVector("000401abcdef 0103101000")),
-            defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.ProvideFundingTlv(willFund))) to (defaultEncoded + ByteVector("0103101000 fd053b740007a120004c4b40044c004b00000000002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c35962783e077e3c5214ba829752be2a3994a7c5e0e9d735ef5a9dab3ce1d6dda6282c3252b20af52e58c33c0e164167fd59e19114a8a8f9eb76b33008205dcb6")),
+            defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.ProvideFundingTlv(willFund))) to (defaultEncoded + ByteVector("0103101000 fd053b780007a120004c4b40044c004b00000000000005dc002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103cc57cf393f6bd534472ec08cbfbbc7268501b32f563a21cdf02a99127c4f25168249acd6509f96b2e93843c3b838ee4808c75d0a15ff71ba886fda980b8ca954f")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(1729.msat))) to (defaultEncoded + ByteVector("0103101000 fe470000070206c1")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequireConfirmedInputsTlv)) to (defaultEncoded + ByteVector("0103101000 0200")),
             defaultAccept.copy(tlvStream = TlvStream(setOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)), setOf(GenericTlv(113, ByteVector("deadbeef"))))) to (defaultEncoded + ByteVector("0103101000 7104deadbeef")),
@@ -528,7 +528,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val channelId = ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         val fundingTxId = TxId(TxHash("24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"))
         val fundingPubkey = PublicKey(ByteVector.fromHex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"))
-        val fundingRate = LiquidityAds.FundingRate(100_000.sat, 100_000.sat, 400, 150, 0.sat)
+        val fundingRate = LiquidityAds.FundingRate(100_000.sat, 100_000.sat, 400, 150, 0.sat, 0.sat)
         val testCases = listOf(
             // @formatter:off
             Stfu(channelId, false) to ByteVector("0002 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00"),
@@ -537,12 +537,12 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             SpliceInit(channelId, 150_000.sat, 25_000_000.msat, FeeratePerKw(2500.sat), 100, fundingPubkey, null) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000249f0 000009c4 00000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe4700000704017d7840"),
             SpliceInit(channelId, 0.sat, FeeratePerKw(500.sat), 0, fundingPubkey) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 000001f4 00000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
             SpliceInit(channelId, (-50_000).sat, FeeratePerKw(500.sat), 0, fundingPubkey) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff3cb0 000001f4 00000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
-            SpliceInit(channelId, 100_000.sat, 0.msat, FeeratePerKw(2500.sat), 100, fundingPubkey, LiquidityAds.RequestFunding(100_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance)) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000186a0 000009c4 00000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b1a00000000000186a0000186a0000186a001900096000000000000"),
+            SpliceInit(channelId, 100_000.sat, 0.msat, FeeratePerKw(2500.sat), 100, fundingPubkey, LiquidityAds.RequestFunding(100_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance)) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000186a0 000009c4 00000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b1e00000000000186a0000186a0000186a00190009600000000000000000000"),
             SpliceAck(channelId, 25_000.sat, fundingPubkey) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
             SpliceAck(channelId, 40_000.sat, 10_000_000.msat, fundingPubkey, null) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000009c40 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe4700000703989680"),
             SpliceAck(channelId, 0.sat, fundingPubkey) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
             SpliceAck(channelId, (-25_000).sat, fundingPubkey) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff9e58 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
-            SpliceAck(channelId, 25_000.sat, 0.msat, fundingPubkey, LiquidityAds.WillFund(fundingRate, ByteVector("deadbeef"), ByteVector64.Zeroes)) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b56000186a0000186a001900096000000000004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            SpliceAck(channelId, 25_000.sat, 0.msat, fundingPubkey, LiquidityAds.WillFund(fundingRate, ByteVector("deadbeef"), ByteVector64.Zeroes)) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b5a000186a0000186a00190009600000000000000000004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
             SpliceLocked(channelId, fundingTxId) to ByteVector("908c aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"),
             // @formatter:on
         )
@@ -886,11 +886,11 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `decode unknown liquidity ads types`() {
-        val fundingRate = LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat)
+        val fundingRate = LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat, 0.sat)
         val testCases = mapOf(
             // @formatter:off
-            ByteVector("0001 000186a00007a1200226006400001388 0001 01") to LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalance)),
-            ByteVector("0001 000186a00007a1200226006400001388 001b 080000000000000000000000000000000008000000000000000001") to LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.Unknown(75), LiquidityAds.PaymentType.Unknown(211))),
+            ByteVector("0001 000186a00007a120022600640000138800000000 0001 01") to LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalance)),
+            ByteVector("0001 000186a00007a120022600640000138800000000 001b 080000000000000000000000000000000008000000000000000001") to LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.Unknown(75), LiquidityAds.PaymentType.Unknown(211))),
             // @formatter:on
         )
         testCases.forEach {

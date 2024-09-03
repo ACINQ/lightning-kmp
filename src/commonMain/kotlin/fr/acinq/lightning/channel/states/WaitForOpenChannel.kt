@@ -48,7 +48,7 @@ data class WaitForOpenChannel(
                                 fundingRates == null -> null
                                 requestFunding == null -> null
                                 requestFunding.requestedAmount > fundingAmount -> null
-                                else -> fundingRates.validateRequest(staticParams.nodeParams.nodePrivateKey, fundingScript, open.fundingFeerate, requestFunding)
+                                else -> fundingRates.validateRequest(staticParams.nodeParams.nodePrivateKey, fundingScript, open.fundingFeerate, requestFunding, isChannelCreation = true)
                             }
                             val accept = AcceptDualFundedChannel(
                                 temporaryChannelId = open.temporaryChannelId,

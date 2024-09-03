@@ -416,11 +416,11 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `receive will_add_htlc with a fee too high`() = runSuspendTest {
         val fundingRates = LiquidityAds.WillFundRates(
             // Note that we use a fixed liquidity fees to make testing easier.
-            fundingRates = listOf(LiquidityAds.FundingRate(0.sat, 250_000.sat, 0, 0, 5_000.sat)),
+            fundingRates = listOf(LiquidityAds.FundingRate(0.sat, 250_000.sat, 0, 0, 5_000.sat, 0.sat)),
             paymentTypes = setOf(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc, LiquidityAds.PaymentType.FromFutureHtlc),
         )
         val inboundLiquidityTarget = 100_000.sat
-        assertEquals(5_000.sat, fundingRates.fundingRates.first().fees(TestConstants.feeratePerKw, inboundLiquidityTarget, inboundLiquidityTarget).total)
+        assertEquals(5_000.sat, fundingRates.fundingRates.first().fees(TestConstants.feeratePerKw, inboundLiquidityTarget, inboundLiquidityTarget, isChannelCreation = false).total)
         val defaultPolicy = LiquidityPolicy.Auto(inboundLiquidityTarget, maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 500, skipAbsoluteFeeCheck = false)
         val testCases = listOf(
             // If payment amount is at least twice the fees, we accept the payment.
@@ -644,7 +644,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             // The splice transaction is successfully signed and stored in the DB.
             val purchase = LiquidityAds.Purchase.Standard(
                 splice.requestedAmount,
-                splice.fees(TestConstants.feeratePerKw),
+                splice.fees(TestConstants.feeratePerKw, isChannelCreation = false),
                 LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incomingPayment.paymentHash)),
             )
             val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)

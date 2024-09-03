@@ -40,14 +40,16 @@ object LiquidityAds {
      * The buyer refunds those on-chain fees for the given vbytes.
      * @param feeProportional proportional fee (expressed in basis points) based on the amount contributed by the seller.
      * @param feeBase flat fee that must be paid regardless of the amount contributed by the seller.
+     * @param channelCreationFee flat fee that must be paid when a new channel is created.
      */
-    data class FundingRate(val minAmount: Satoshi, val maxAmount: Satoshi, val fundingWeight: Int, val feeProportional: Int, val feeBase: Satoshi) {
+    data class FundingRate(val minAmount: Satoshi, val maxAmount: Satoshi, val fundingWeight: Int, val feeProportional: Int, val feeBase: Satoshi, val channelCreationFee: Satoshi) {
         /** Fees paid by the liquidity buyer. */
-        fun fees(feerate: FeeratePerKw, requestedAmount: Satoshi, contributedAmount: Satoshi): Fees {
+        fun fees(feerate: FeeratePerKw, requestedAmount: Satoshi, contributedAmount: Satoshi, isChannelCreation: Boolean): Fees {
             val onChainFees = Transactions.weight2fee(feerate, fundingWeight)
             // If the seller adds more liquidity than requested, the buyer doesn't pay for that extra liquidity.
             val proportionalFee = requestedAmount.min(contributedAmount) * feeProportional / 10_000
-            return Fees(onChainFees, feeBase + proportionalFee)
+            val flatFee = if (isChannelCreation) channelCreationFee + feeBase else feeBase
+            return Fees(onChainFees, flatFee + proportionalFee)
         }
 
         /** When liquidity is purchased, the seller provides a signature of the funding rate and funding script. */
@@ -65,6 +67,7 @@ object LiquidityAds {
             LightningCodecs.writeU16(fundingWeight, out)
             LightningCodecs.writeU16(feeProportional, out)
             LightningCodecs.writeU32(feeBase.sat.toInt(), out)
+            LightningCodecs.writeU32(channelCreationFee.sat.toInt(), out)
         }
 
         companion object {
@@ -74,6 +77,7 @@ object LiquidityAds {
                 fundingWeight = LightningCodecs.u16(input),
                 feeProportional = LightningCodecs.u16(input),
                 feeBase = LightningCodecs.u32(input).sat,
+                channelCreationFee = LightningCodecs.u32(input).sat,
             )
         }
     }
@@ -183,14 +187,14 @@ object LiquidityAds {
 
     /** Sellers offer various rates and payment options. */
     data class WillFundRates(val fundingRates: List<FundingRate>, val paymentTypes: Set<PaymentType>) {
-        fun validateRequest(nodeKey: PrivateKey, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding): WillFundPurchase? {
+        fun validateRequest(nodeKey: PrivateKey, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding, isChannelCreation: Boolean): WillFundPurchase? {
             val paymentTypeOk = paymentTypes.contains(request.paymentDetails.paymentType)
             val rateOk = fundingRates.contains(request.fundingRate)
             val amountOk = request.fundingRate.minAmount <= request.requestedAmount && request.requestedAmount <= request.fundingRate.maxAmount
             return when {
                 paymentTypeOk && rateOk && amountOk -> {
                     val sig = Crypto.sign(request.fundingRate.signedData(fundingScript), nodeKey)
-                    val purchase = Purchase.Standard(request.requestedAmount, request.fees(fundingFeerate), request.paymentDetails)
+                    val purchase = Purchase.Standard(request.requestedAmount, request.fees(fundingFeerate, isChannelCreation), request.paymentDetails)
                     WillFundPurchase(WillFund(request.fundingRate, fundingScript, sig), purchase)
                 }
                 else -> null
@@ -239,7 +243,7 @@ object LiquidityAds {
 
     /** Request inbound liquidity from a remote peer that supports liquidity ads. */
     data class RequestFunding(val requestedAmount: Satoshi, val fundingRate: FundingRate, val paymentDetails: PaymentDetails) {
-        fun fees(feerate: FeeratePerKw): Fees = fundingRate.fees(feerate, requestedAmount, requestedAmount)
+        fun fees(feerate: FeeratePerKw, isChannelCreation: Boolean): Fees = fundingRate.fees(feerate, requestedAmount, requestedAmount, isChannelCreation)
 
         fun validateRemoteFunding(
             remoteNodeId: PublicKey,
@@ -247,6 +251,7 @@ object LiquidityAds {
             fundingScript: ByteVector,
             remoteFundingAmount: Satoshi,
             fundingFeerate: FeeratePerKw,
+            isChannelCreation: Boolean,
             willFund: WillFund?
         ): Either<ChannelException, Purchase> {
             return when (willFund) {
@@ -259,7 +264,7 @@ object LiquidityAds {
                     willFund.fundingRate != fundingRate -> Either.Left(InvalidLiquidityAdsRate(channelId))
                     else -> {
                         val purchasedAmount = requestedAmount.min(remoteFundingAmount)
-                        val fees = fundingRate.fees(fundingFeerate, requestedAmount, remoteFundingAmount)
+                        val fees = fundingRate.fees(fundingFeerate, requestedAmount, remoteFundingAmount, isChannelCreation)
                         Either.Right(Purchase.Standard(purchasedAmount, fees, paymentDetails))
                     }
                 }
@@ -293,11 +298,12 @@ object LiquidityAds {
         fundingScript: ByteVector,
         remoteFundingAmount: Satoshi,
         fundingFeerate: FeeratePerKw,
+        isChannelCreation: Boolean,
         willFund: WillFund?,
     ): Either<ChannelException, Purchase?> {
         return when (request) {
             null -> Either.Right(null)
-            else -> request.validateRemoteFunding(remoteNodeId, channelId, fundingScript, remoteFundingAmount, fundingFeerate, willFund)
+            else -> request.validateRemoteFunding(remoteNodeId, channelId, fundingScript, remoteFundingAmount, fundingFeerate, isChannelCreation, willFund)
         }
     }
 
