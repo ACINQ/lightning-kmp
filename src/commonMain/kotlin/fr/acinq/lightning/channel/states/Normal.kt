@@ -406,7 +406,7 @@ data class Normal(
                                             }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
                                         } else if (!canAffordSpliceLiquidityFees(spliceStatus.command, parentCommitment)) {
-                                            val missing = spliceStatus.command.requestRemoteFunding?.let { r -> r.fees(spliceStatus.command.feerate).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
+                                            val missing = spliceStatus.command.requestRemoteFunding?.let { r -> r.fees(spliceStatus.command.feerate, isChannelCreation = false).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
                                             logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
                                             spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
                                             val actions = buildList {
@@ -521,6 +521,7 @@ data class Normal(
                                 Helpers.Funding.makeFundingPubKeyScript(spliceStatus.spliceInit.fundingPubkey, cmd.message.fundingPubkey),
                                 cmd.message.fundingContribution,
                                 spliceStatus.spliceInit.feerate,
+                                isChannelCreation = false,
                                 cmd.message.willFund,
                             )) {
                                 is Either.Left<ChannelException> -> {
@@ -858,8 +859,8 @@ data class Normal(
         return when (val request = splice.requestRemoteFunding) {
             null -> true
             else -> when (request.paymentDetails) {
-                is LiquidityAds.PaymentDetails.FromChannelBalance -> request.fees(splice.feerate).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
-                is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> request.fees(splice.feerate).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
+                is LiquidityAds.PaymentDetails.FromChannelBalance -> request.fees(splice.feerate, isChannelCreation = false).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
+                is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> request.fees(splice.feerate, isChannelCreation = false).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
                 // Fees don't need to be paid during the splice, they will be deducted from relayed HTLCs.
                 is LiquidityAds.PaymentDetails.FromFutureHtlc -> true
                 is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> true

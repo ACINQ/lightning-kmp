@@ -40,8 +40,8 @@ object TestConstants {
 
     val fundingRates = LiquidityAds.WillFundRates(
         fundingRates = listOf(
-            LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 500, 100, 0.sat),
-            LiquidityAds.FundingRate(500_000.sat, 10_000_000.sat, 750, 100, 0.sat)
+            LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 500, 100, 0.sat, 0.sat),
+            LiquidityAds.FundingRate(500_000.sat, 10_000_000.sat, 750, 100, 0.sat, 0.sat)
         ),
         paymentTypes = setOf(
             LiquidityAds.PaymentType.FromChannelBalance,

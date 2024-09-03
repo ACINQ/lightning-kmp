@@ -306,7 +306,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
                 when (val fundingRate = remoteFundingRates.findRate(requestedAmount)) {
                     null -> Either.Left(LiquidityEvents.Rejected(requestedAmount.toMilliSatoshi(), 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.NoMatchingFundingRate))
                     else -> {
-                        val fees = fundingRate.fees(currentFeerate, requestedAmount, requestedAmount).total
+                        // We don't know at that point if we'll need a channel or if we already have one.
+                        // We must use the worst case fees that applies to channel creation.
+                        val fees = fundingRate.fees(currentFeerate, requestedAmount, requestedAmount, isChannelCreation = true).total
                         val rejected = when {
                             // We only initiate on-the-fly funding if the missing amount is greater than the fees paid.
                             // Otherwise our peer may not be able to claim the funding fees from the relayed HTLCs.
