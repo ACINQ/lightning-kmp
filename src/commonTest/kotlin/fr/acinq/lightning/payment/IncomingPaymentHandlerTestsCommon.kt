@@ -674,6 +674,54 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `receive payment with funding fee -- from channel balance`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val amount = 50_000_000.msat
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(amount)
+        checkDbPayment(incomingPayment, paymentHandler.db)
+
+        // Step 1 of 2:
+        //  - Alice sends will_add_htlc to Bob
+        //  - Bob triggers an open/splice
+        val purchase = run {
+            val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, amount, paymentSecret))
+            val result = paymentHandler.process(willAddHtlc, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertEquals(1, result.actions.size)
+            val splice = result.actions.first() as AddLiquidityForIncomingPayment
+            // The splice transaction is successfully signed and stored in the DB.
+            val purchase = LiquidityAds.Purchase.Standard(
+                splice.requestedAmount,
+                splice.fees(TestConstants.feeratePerKw, isChannelCreation = false),
+                LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(incomingPayment.paymentHash)),
+            )
+            val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
+            paymentHandler.db.addOutgoingPayment(payment)
+            payment
+        }
+
+        // Step 2 of 2:
+        //  - After the splice completes, Alice sends a second HTLC to Bob without deducting the funding fee (it was paid from the channel balance)
+        //  - Bob accepts the MPP set
+        run {
+            val fundingFee = purchase.fundingFee.copy(amount = 0.msat)
+            val htlc = makeUpdateAddHtlc(7, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, amount, paymentSecret), fundingFee = fundingFee)
+            assertEquals(htlc.amountMsat, amount)
+            val result = paymentHandler.process(htlc, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+            val (expectedActions, expectedReceivedWith) = setOf(
+                // @formatter:off
+                WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(7, incomingPayment.preimage, commit = true)) to IncomingPayment.ReceivedWith.LightningPayment(amount, channelId, 7, fundingFee),
+                // @formatter:on
+            ).unzip()
+            assertEquals(expectedActions.toSet(), result.actions.toSet())
+            assertEquals(amount, result.received.amount)
+            assertEquals(expectedReceivedWith, result.received.receivedWith)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
+    }
+
+    @Test
     fun `receive payment with funding fee -- unknown transaction`() = runSuspendTest {
         val channelId = randomBytes32()
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)

@@ -259,6 +259,7 @@ object LiquidityAds {
                 // The user should retry this funding attempt without requesting inbound liquidity.
                 null -> Either.Left(MissingLiquidityAds(channelId))
                 else -> when {
+                    // Note that we use fundingRate instead of willFund.fundingRate: this way we verify that the funding rates match.
                     !Crypto.verifySignature(fundingRate.signedData(fundingScript), willFund.signature, remoteNodeId) -> Either.Left(InvalidLiquidityAdsSig(channelId))
                     remoteFundingAmount < requestedAmount -> Either.Left(InvalidLiquidityAdsAmount(channelId, remoteFundingAmount, requestedAmount))
                     willFund.fundingRate != fundingRate -> Either.Left(InvalidLiquidityAdsRate(channelId))

@@ -339,15 +339,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
                 when (val purchase = db.getInboundLiquidityPurchase(fundingTxId)?.purchase) {
                     null -> Either.Left(UnexpectedLiquidityAdsFundingFee(channelId, fundingTxId))
                     else -> {
-                        val paymentHashOk = when (val details = purchase.paymentDetails) {
-                            is LiquidityAds.PaymentDetails.FromFutureHtlc -> details.paymentHashes.contains(paymentHash)
-                            is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> details.preimages.any { Crypto.sha256(it).byteVector32() == paymentHash }
+                        val fundingFeeOk = when (val details = purchase.paymentDetails) {
+                            is LiquidityAds.PaymentDetails.FromFutureHtlc -> details.paymentHashes.contains(paymentHash) && fundingFee <= purchase.fees.total.toMilliSatoshi()
+                            is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> details.preimages.any { Crypto.sha256(it).byteVector32() == paymentHash } && fundingFee <= purchase.fees.total.toMilliSatoshi()
+                            // Fees have already been paid from our channel balance.
+                            is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> details.paymentHashes.contains(paymentHash) && fundingFee == 0.msat
                             is LiquidityAds.PaymentDetails.FromChannelBalance -> false
-                            is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> false
                         }
-                        val feeAmountOk = fundingFee <= purchase.fees.total.toMilliSatoshi()
                         when {
-                            paymentHashOk && feeAmountOk -> Either.Right(LiquidityAds.FundingFee(fundingFee, fundingTxId))
+                            fundingFeeOk -> Either.Right(LiquidityAds.FundingFee(fundingFee, fundingTxId))
                             else -> Either.Left(InvalidLiquidityAdsFundingFee(channelId, fundingTxId, paymentHash, purchase.fees.total, fundingFee))
                         }
                     }
