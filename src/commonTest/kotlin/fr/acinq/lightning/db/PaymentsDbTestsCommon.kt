@@ -57,7 +57,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertEquals(100_000.msat, received.amount)
         assertEquals(0.msat, received.fees)
         assertEquals(2, received.received!!.receivedWith.size)
-        assertEquals(57_000.msat, received.received!!.receivedWith.elementAt(0).amount)
+        assertEquals(57_000.msat, received.received!!.receivedWith.elementAt(0).amountReceived)
         assertEquals(0.msat, received.received!!.receivedWith.elementAt(0).fees)
         assertEquals(channelId1, (received.received!!.receivedWith.elementAt(0) as IncomingPayment.ReceivedWith.LightningPayment).channelId)
         assertEquals(54, (received.received!!.receivedWith.elementAt(1) as IncomingPayment.ReceivedWith.LightningPayment).htlcId)

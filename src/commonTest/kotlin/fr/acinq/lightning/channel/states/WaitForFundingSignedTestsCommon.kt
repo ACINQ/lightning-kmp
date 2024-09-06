@@ -36,7 +36,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 assertEquals(actions.size, 5)
                 actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
                 actions.findWatch<WatchConfirmed>().also { assertEquals(WatchConfirmed(state.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), it) }
-                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amount) }
+                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amountReceived) }
                 actions.has<ChannelAction.Storage.StoreState>()
                 actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
             }
@@ -59,7 +59,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
                 actions.hasOutgoingMessage<ChannelReady>().also { assertEquals(ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId), it.alias) }
                 actions.findWatch<WatchConfirmed>().also { assertEquals(state.commitments.latest.fundingTxId, it.txId) }
-                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amount) }
+                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amountReceived) }
                 actions.has<ChannelAction.Storage.StoreState>()
                 actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
             }
@@ -87,7 +87,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertEquals(TestConstants.aliceFundingAmount - purchase.fees.total, state.commitments.latest.localCommit.spec.toRemote.truncateToSatoshi())
             actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
             actions.findWatch<WatchConfirmed>().also { assertEquals(BITCOIN_FUNDING_DEPTHOK, it.event) }
-            actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals((TestConstants.bobFundingAmount + purchase.fees.total).toMilliSatoshi(), it.amount) }
+            actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals((TestConstants.bobFundingAmount + purchase.fees.total).toMilliSatoshi(), it.amountReceived) }
             actions.has<ChannelAction.Storage.StoreState>()
             actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
         }
@@ -103,7 +103,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         actionsAlice1.hasOutgoingMessage<TxSignatures>()
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         actionsAlice1.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also {
-            assertEquals(50_000_000.msat, it.amount)
+            assertEquals(50_000_000.msat, it.amountReceived)
             assertEquals(channelOrigin, it.origin)
             assertEquals(alice1.commitments.latest.fundingTxId, it.txId)
         }
@@ -123,7 +123,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         actionsAlice1.hasOutgoingMessage<TxSignatures>()
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         actionsAlice1.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also {
-            assertEquals(it.amount, 200_000_000.msat)
+            assertEquals(it.amountReceived, 200_000_000.msat)
             assertEquals(it.origin, channelOrigin)
             assertTrue(it.localInputs.isNotEmpty())
         }

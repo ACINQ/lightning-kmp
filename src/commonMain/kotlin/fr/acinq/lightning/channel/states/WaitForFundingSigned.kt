@@ -122,7 +122,7 @@ data class WaitForFundingSigned(
             // If we receive funds as part of the channel creation, we will add it to our payments db
             if (action.commitment.localCommit.spec.toLocal > 0.msat) add(
                 ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel(
-                    amount = action.commitment.localCommit.spec.toLocal,
+                    amountReceived = action.commitment.localCommit.spec.toLocal,
                     serviceFee = channelOrigin?.fees?.serviceFee?.toMilliSatoshi() ?: 0.msat,
                     miningFee = channelOrigin?.fees?.miningFee ?: action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
@@ -140,8 +140,8 @@ data class WaitForFundingSigned(
             }
             channelOrigin?.let {
                 when (it) {
-                    is Origin.OffChainPayment -> add(ChannelAction.EmitEvent(LiquidityEvents.Accepted(it.amount, it.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment)))
-                    is Origin.OnChainWallet -> add(ChannelAction.EmitEvent(SwapInEvents.Accepted(it.inputs, it.amount.truncateToSatoshi(), it.fees)))
+                    is Origin.OffChainPayment -> add(ChannelAction.EmitEvent(LiquidityEvents.Accepted(liquidityPurchase?.amount?.toMilliSatoshi() ?: 0.msat, it.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment)))
+                    is Origin.OnChainWallet -> add(ChannelAction.EmitEvent(SwapInEvents.Accepted(it.inputs, it.amountBeforeFees.truncateToSatoshi(), it.fees)))
                 }
             }
         }

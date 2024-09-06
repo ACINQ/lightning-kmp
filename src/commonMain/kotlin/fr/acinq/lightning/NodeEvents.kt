@@ -23,8 +23,8 @@ sealed interface SwapInEvents : NodeEvents {
     data class Requested(val walletInputs: List<WalletState.Utxo>) : SwapInEvents {
         val totalAmount: Satoshi = walletInputs.map { it.amount }.sum()
     }
-    data class Accepted(val inputs: Set<OutPoint>, val amount: Satoshi, val fees: ChannelManagementFees) : SwapInEvents {
-        val receivedAmount: Satoshi = amount - fees.total
+    data class Accepted(val inputs: Set<OutPoint>, val amountBeforeFees: Satoshi, val fees: ChannelManagementFees) : SwapInEvents {
+        val receivedAmount: Satoshi = amountBeforeFees - fees.total
     }
 }
 
@@ -35,7 +35,7 @@ sealed interface ChannelEvents : NodeEvents {
 }
 
 sealed interface LiquidityEvents : NodeEvents {
-    /** Amount of the liquidity event, before fees are paid. */
+    /** Amount of liquidity purchased, before fees are paid. */
     val amount: MilliSatoshi
     val fee: MilliSatoshi
     val source: Source
@@ -74,7 +74,7 @@ data object UpgradeRequired : NodeEvents
 
 sealed interface PaymentEvents : NodeEvents {
     data class PaymentReceived(val paymentHash: ByteVector32, val receivedWith: List<IncomingPayment.ReceivedWith>) : PaymentEvents {
-        val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
+        val amount: MilliSatoshi = receivedWith.map { it.amountReceived }.sum()
         val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
     }
 }

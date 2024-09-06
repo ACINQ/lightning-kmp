@@ -482,12 +482,12 @@ object Deserialization {
         }
         0x03 -> Origin.OffChainPayment(
             paymentPreimage = readByteVector32(),
-            amount = readNumber().msat,
+            amountBeforeFees = readNumber().msat,
             fees = ChannelManagementFees(miningFee = readNumber().sat, serviceFee = readNumber().sat),
         )
         0x04 -> Origin.OnChainWallet(
             inputs = readCollection { readOutPoint() }.toSet(),
-            amount = readNumber().msat,
+            amountBeforeFees = readNumber().msat,
             fees = ChannelManagementFees(miningFee = readNumber().sat, serviceFee = readNumber().sat),
         )
         else -> error("unknown discriminator $discriminator for class ${Origin::class}")

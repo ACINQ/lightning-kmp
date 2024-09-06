@@ -1267,7 +1267,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             paidInvoice.paymentHash,
             receivedWith = listOf(
                 IncomingPayment.ReceivedWith.NewChannel(
-                    amount = 15_000_000.msat,
+                    amountReceived = 15_000_000.msat,
                     serviceFee = 1_000_000.msat,
                     miningFee = 0.sat,
                     channelId = randomBytes32(),

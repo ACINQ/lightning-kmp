@@ -455,14 +455,14 @@ object Serialization {
         is Origin.OffChainPayment -> {
             write(0x03)
             writeByteVector32(o.paymentPreimage)
-            writeNumber(o.amount.toLong())
+            writeNumber(o.amountBeforeFees.toLong())
             writeNumber(o.fees.miningFee.toLong())
             writeNumber(o.fees.serviceFee.toLong())
         }
         is Origin.OnChainWallet -> {
             write(0x04)
             writeCollection(o.inputs) { writeBtcObject(it) }
-            writeNumber(o.amount.toLong())
+            writeNumber(o.amountBeforeFees.toLong())
             writeNumber(o.fees.miningFee.toLong())
             writeNumber(o.fees.serviceFee.toLong())
         }
