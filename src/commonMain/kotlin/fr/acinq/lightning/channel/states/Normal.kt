@@ -888,7 +888,7 @@ data class Normal(
             // If we received or sent funds as part of the splice, we will add a corresponding entry to our incoming/outgoing payments db
             addAll(origins.map { origin ->
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
-                    amount = origin.amount,
+                    amountReceived = origin.amountReceived(),
                     serviceFee = origin.fees.serviceFee.toMilliSatoshi(),
                     miningFee = origin.fees.miningFee,
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
@@ -899,7 +899,7 @@ data class Normal(
             // If we added some funds ourselves it's a swap-in
             if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
-                    amount = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.localFees,
+                    amountReceived = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.localFees,
                     serviceFee = 0.msat,
                     miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
@@ -927,8 +927,8 @@ data class Normal(
             }
             addAll(origins.map { origin ->
                 when (origin) {
-                    is Origin.OffChainPayment -> ChannelAction.EmitEvent(LiquidityEvents.Accepted(origin.amount, origin.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment))
-                    is Origin.OnChainWallet -> ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amount.truncateToSatoshi(), origin.fees))
+                    is Origin.OffChainPayment -> ChannelAction.EmitEvent(LiquidityEvents.Accepted(liquidityPurchase?.amount?.toMilliSatoshi() ?: 0.msat, origin.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment))
+                    is Origin.OnChainWallet -> ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees))
                 }
             })
             if (staticParams.useZeroConf) {

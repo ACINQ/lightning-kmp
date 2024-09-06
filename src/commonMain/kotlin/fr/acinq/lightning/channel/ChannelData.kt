@@ -12,6 +12,7 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.ClosingSigned
 
 /**
@@ -410,12 +411,14 @@ data class ChannelManagementFees(val miningFee: Satoshi, val serviceFee: Satoshi
 // @formatter:off
 sealed class Origin {
     /** Amount of the origin payment, before fees are paid. */
-    abstract val amount: MilliSatoshi
+    abstract val amountBeforeFees: MilliSatoshi
     /** Fees applied for the channel funding transaction. */
     abstract val fees: ChannelManagementFees
 
-    data class OnChainWallet(val inputs: Set<OutPoint>, override val amount: MilliSatoshi, override val fees: ChannelManagementFees) : Origin()
-    data class OffChainPayment(val paymentPreimage: ByteVector32, override val amount: MilliSatoshi, override val fees: ChannelManagementFees) : Origin() {
+    fun amountReceived(): MilliSatoshi = amountBeforeFees - fees.total.toMilliSatoshi()
+
+    data class OnChainWallet(val inputs: Set<OutPoint>, override val amountBeforeFees: MilliSatoshi, override val fees: ChannelManagementFees) : Origin()
+    data class OffChainPayment(val paymentPreimage: ByteVector32, override val amountBeforeFees: MilliSatoshi, override val fees: ChannelManagementFees) : Origin() {
         val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).byteVector32()
     }
 }

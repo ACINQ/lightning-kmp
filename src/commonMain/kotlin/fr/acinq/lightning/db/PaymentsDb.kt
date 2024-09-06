@@ -156,7 +156,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
     data class Received(val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
         /** Total amount received after applying the fees. */
-        val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
+        val amount: MilliSatoshi = receivedWith.map { it.amountReceived }.sum()
 
         /** Fees applied to receive this payment. */
         val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
@@ -164,13 +164,13 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
     sealed class ReceivedWith {
         /** Amount received for this part after applying the fees. This is the final amount we can use. */
-        abstract val amount: MilliSatoshi
+        abstract val amountReceived: MilliSatoshi
 
         /** Fees applied to receive this part. Is zero for Lightning payments. */
         abstract val fees: MilliSatoshi
 
         /** Payment was received via existing lightning channels. */
-        data class LightningPayment(override val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?) : ReceivedWith() {
+        data class LightningPayment(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?) : ReceivedWith() {
             // If there is no funding fee, the fees are paid by the sender for lightning payments.
             override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
         }
@@ -188,13 +188,13 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         /**
          * Payment was received via a new channel opened to us.
          *
-         * @param amount Our side of the balance of this channel when it's created. This is the amount pushed to us once the creation fees are applied.
+         * @param amountReceived Our side of the balance of this channel when it's created. This is the amount received after the creation fees are applied.
          * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
          * @param miningFee Feed paid to bitcoin miners for processing the L1 transaction.
          * @param channelId The long id of the channel created to receive this payment. May be null if the channel id is not known.
          */
         data class NewChannel(
-            override val amount: MilliSatoshi,
+            override val amountReceived: MilliSatoshi,
             override val serviceFee: MilliSatoshi,
             override val miningFee: Satoshi,
             override val channelId: ByteVector32,
@@ -204,7 +204,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         ) : OnChainIncomingPayment()
 
         data class SpliceIn(
-            override val amount: MilliSatoshi,
+            override val amountReceived: MilliSatoshi,
             override val serviceFee: MilliSatoshi,
             override val miningFee: Satoshi,
             override val channelId: ByteVector32,
