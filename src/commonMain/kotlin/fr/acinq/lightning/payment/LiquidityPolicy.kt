@@ -30,7 +30,7 @@ sealed class LiquidityPolicy {
             is Auto -> {
                 val maxAbsoluteFee = if (skipAbsoluteFeeCheck && source == LiquidityEvents.Source.OffChainPayment) Long.MAX_VALUE.msat else this.maxAbsoluteFee.toMilliSatoshi()
                 val maxRelativeFee = amount * maxRelativeFeeBasisPoints / 10_000
-                logger.info { "liquidity policy check: fee=$fee maxAbsoluteFee=$maxAbsoluteFee maxRelativeFee=$maxRelativeFee policy=$this" }
+                logger.info { "liquidity policy check: amount=$amount fee=$fee maxAbsoluteFee=$maxAbsoluteFee maxRelativeFee=$maxRelativeFee policy=$this" }
                 when {
                     fee > maxRelativeFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(maxRelativeFeeBasisPoints)
                     fee > maxAbsoluteFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(this.maxAbsoluteFee)
