@@ -98,6 +98,7 @@ sealed class ChannelCommand {
             ) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
                 val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
+                val liquidityFees: LiquidityAds.Fees? = requestRemoteFunding?.fees(feerate, isChannelCreation = false)
 
                 data class SpliceIn(val walletInputs: List<WalletState.Utxo>, val pushAmount: MilliSatoshi = 0.msat)
                 data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)

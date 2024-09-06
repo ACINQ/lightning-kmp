@@ -511,7 +511,7 @@ data class Normal(
                     }
                     is SpliceAck -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
-                            logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
+                            logger.info { "our peer accepted our splice request with remote.amount=${cmd.message.fundingContribution} remote.push=${cmd.message.pushAmount} liquidityFees=${spliceStatus.command.liquidityFees}" }
                             when (val liquidityPurchase = LiquidityAds.validateRemoteFunding(
                                 spliceStatus.command.requestRemoteFunding,
                                 remoteNodeId,
