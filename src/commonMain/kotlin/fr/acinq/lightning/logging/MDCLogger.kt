@@ -92,7 +92,10 @@ fun ChannelState.mdc(): Map<String, Any> {
             else -> {}
         }
         when(state) {
-            is ChannelStateWithCommitments -> put("commitments", "active=${state.commitments.active.map { it.fundingTxIndex }} inactive=${state.commitments.inactive.map { it.fundingTxIndex }}")
+            is ChannelStateWithCommitments -> {
+                put("commitments", "active=${state.commitments.active.map { it.fundingTxIndex }} inactive=${state.commitments.inactive.map { it.fundingTxIndex }}")
+                put("balances", "toLocal=${state.commitments.latest.localCommit.spec.toLocal} toRemote=${state.commitments.latest.localCommit.spec.toRemote} capacity=${state.commitments.latest.fundingAmount}")
+            }
             else -> {}
         }
     }
