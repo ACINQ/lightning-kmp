@@ -58,7 +58,7 @@ data class Normal(
             is ChannelCommand.Commitment.UpdateFee -> handleCommandResult(cmd, commitments.sendFee(cmd), cmd.commit)
             is ChannelCommand.Commitment.Sign -> when {
                 !commitments.changes.localHasChanges() -> {
-                    logger.warning { "no changes to sign" }
+                    logger.info { "no changes to sign" }
                     Pair(this@Normal, listOf())
                 }
                 commitments.remoteNextCommitInfo is Either.Left -> {
