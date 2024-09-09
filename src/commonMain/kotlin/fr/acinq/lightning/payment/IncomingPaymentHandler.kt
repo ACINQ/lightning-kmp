@@ -170,7 +170,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
 
     /** Main payment processing, that handles payment parts. */
     private suspend fun processPaymentPart(paymentPart: PaymentPart, remoteFeatures: Features, currentBlockHeight: Int, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?, currentFeeCredit: MilliSatoshi): ProcessAddResult {
-        val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
+        val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc() + ("feeCredit" to currentFeeCredit))
         when (paymentPart) {
             is HtlcPart -> logger.info { "processing htlc part expiry=${paymentPart.htlc.cltvExpiry}" }
             is WillAddHtlcPart -> logger.info { "processing on-the-fly funding part amount=${paymentPart.amount} expiry=${paymentPart.htlc.expiry}" }
