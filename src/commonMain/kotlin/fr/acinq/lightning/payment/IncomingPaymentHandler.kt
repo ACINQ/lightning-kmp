@@ -370,6 +370,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         // We must use the worst case fees that applies to channel creation.
                         val fees = fundingRate.fees(currentFeerate, requestedAmount, requestedAmount, isChannelCreation = true).total
                         val canAddToFeeCredit = Features.canUseFeature(nodeParams.features, remoteFeatures, Feature.FundingFeeCredit) && (willAddHtlcAmount + currentFeeCredit) <= liquidityPolicy.maxAllowedFeeCredit
+                        logger.info { "on-the-fly assessment: amount=$requestedAmount feerate=$currentFeerate fees=$fees" }
                         val rejected = when {
                             // We never reject if we can add payments to our fee credit until making an on-chain operation becomes acceptable.
                             canAddToFeeCredit -> null
