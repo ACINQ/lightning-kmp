@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
@@ -25,7 +24,6 @@ data class WaitForOpenChannel(
     val replyTo: CompletableDeferred<ChannelFundingResponse>,
     val temporaryChannelId: ByteVector32,
     val fundingAmount: Satoshi,
-    val pushAmount: MilliSatoshi,
     val walletInputs: List<WalletState.Utxo>,
     val localParams: LocalParams,
     val channelConfig: ChannelConfig,
@@ -72,7 +70,6 @@ data class WaitForOpenChannel(
                                     buildSet {
                                         add(ChannelTlv.ChannelTypeTlv(channelType))
                                         willFund?.let { add(ChannelTlv.ProvideFundingTlv(it.willFund)) }
-                                        if (pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(pushAmount))
                                     }
                                 ),
                             )
@@ -93,7 +90,7 @@ data class WaitForOpenChannel(
                             val remoteFundingPubkey = open.fundingPubkey
                             val dustLimit = open.dustLimit.max(localParams.dustLimit)
                             val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, remoteFundingPubkey, open.lockTime, dustLimit, open.fundingFeerate)
-                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, walletInputs, accept.pushAmount, open.pushAmount, null)) {
+                            when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, walletInputs, null)) {
                                 is Either.Left -> {
                                     logger.error { "could not fund channel: ${fundingContributions.value}" }
                                     replyTo.complete(ChannelFundingResponse.Failure.FundingFailure(fundingContributions.value))
@@ -107,8 +104,6 @@ data class WaitForOpenChannel(
                                         localParams.copy(paysCommitTxFees = open.channelFlags.nonInitiatorPaysCommitFees),
                                         remoteParams,
                                         interactiveTxSession,
-                                        pushAmount,
-                                        open.pushAmount,
                                         open.commitmentFeerate,
                                         open.firstPerCommitmentPoint,
                                         open.secondPerCommitmentPoint,

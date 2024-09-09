@@ -38,8 +38,6 @@ import kotlin.math.absoluteValue
 data class WaitForFundingSigned(
     val channelParams: ChannelParams,
     val signingSession: InteractiveTxSigningSession,
-    val localPushAmount: MilliSatoshi,
-    val remotePushAmount: MilliSatoshi,
     val remoteSecondPerCommitmentPoint: PublicKey,
     val liquidityPurchase: LiquidityAds.Purchase?,
     val channelOrigin: Origin?,
@@ -163,8 +161,6 @@ data class WaitForFundingSigned(
             logger.info { "will wait for $fundingMinDepth confirmations" }
             val nextState = WaitForFundingConfirmed(
                 commitments,
-                localPushAmount,
-                remotePushAmount,
                 currentBlockHeight.toLong(),
                 null,
                 RbfStatus.None

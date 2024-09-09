@@ -120,7 +120,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
-        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)
@@ -180,7 +180,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
-        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)
@@ -486,8 +486,8 @@ class PeerTest : LightningTestSuite() {
     @Test
     fun `payment between two nodes -- with disconnection`() = runSuspendTest {
         // We create two channels between Alice and Bob to ensure that the payment is split in two parts.
-        val (aliceChan1, bobChan1) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 100_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
-        val (aliceChan2, bobChan2) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 100_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val (aliceChan1, bobChan1) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 100_000.sat)
+        val (aliceChan2, bobChan2) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 100_000.sat)
         val nodeParams = Pair(aliceChan1.staticParams.nodeParams, bobChan1.staticParams.nodeParams)
         val walletParams = Pair(
             // Alice must declare Bob as her trampoline node to enable direct payments.

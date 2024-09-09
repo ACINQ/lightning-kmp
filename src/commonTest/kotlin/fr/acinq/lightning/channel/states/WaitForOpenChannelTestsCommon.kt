@@ -7,8 +7,11 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.wire.AcceptDualFundedChannel
+import fr.acinq.lightning.wire.ChannelTlv
+import fr.acinq.lightning.wire.Error
+import fr.acinq.lightning.wire.TlvStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -19,7 +22,6 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv OpenChannel -- without wumbo`() {
         val (_, bob, open) = TestsHelper.init(aliceFeatures = TestConstants.Alice.nodeParams.features.remove(Feature.Wumbo))
-        assertEquals(open.pushAmount, TestConstants.alicePushAmount)
         assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
@@ -34,7 +36,6 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv OpenChannel -- wumbo`() {
         val (_, bob, open) = TestsHelper.init(aliceFundingAmount = 20_000_000.sat)
-        assertEquals(open.pushAmount, TestConstants.alicePushAmount)
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
@@ -97,16 +98,6 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
         assertEquals(error, Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, Channel.MAX_ACCEPTED_HTLCS + 1, Channel.MAX_ACCEPTED_HTLCS).message))
-        assertIs<LNChannel<Aborted>>(bob1)
-    }
-
-    @Test
-    fun `recv OpenChannel -- invalid push_amount`() {
-        val (_, bob, open) = TestsHelper.init(aliceFundingAmount = TestConstants.aliceFundingAmount, alicePushAmount = TestConstants.aliceFundingAmount.toMilliSatoshi() + 1.msat)
-        assertEquals(open.pushAmount, TestConstants.aliceFundingAmount.toMilliSatoshi() + 1.msat)
-        val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
-        val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, open.fundingAmount.toMilliSatoshi() + 1.msat, open.fundingAmount.toMilliSatoshi()).message))
         assertIs<LNChannel<Aborted>>(bob1)
     }
 
