@@ -460,7 +460,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `insufficient funds when retrying with higher fees`() = runSuspendTest {
-        val (alice, _) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, alicePushAmount = 0.msat, bobFundingAmount = 0.sat, bobPushAmount = 0.msat)
+        val (alice, _) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 0.sat)
         assertTrue(83_500_000.msat < alice.commitments.availableBalanceForSend())
         assertTrue(alice.commitments.availableBalanceForSend() < 84_000_000.msat)
         val walletParams = defaultWalletParams.copy(

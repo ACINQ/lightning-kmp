@@ -100,19 +100,6 @@ sealed class ChannelTlv : Tlv {
             override fun read(input: Input): FeeCreditUsedTlv = FeeCreditUsedTlv(LightningCodecs.tu64(input).msat)
         }
     }
-
-    /** Amount that will be offered by the initiator of a dual-funded channel to the non-initiator. */
-    data class PushAmountTlv(val amount: MilliSatoshi) : ChannelTlv() {
-        override val tag: Long get() = PushAmountTlv.tag
-
-        override fun write(out: Output) = LightningCodecs.writeTU64(amount.toLong(), out)
-
-        companion object : TlvValueReader<PushAmountTlv> {
-            const val tag: Long = 0x47000007
-
-            override fun read(input: Input): PushAmountTlv = PushAmountTlv(LightningCodecs.tu64(input).msat)
-        }
-    }
 }
 
 sealed class ChannelReadyTlv : Tlv {

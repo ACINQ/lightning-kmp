@@ -21,7 +21,6 @@ data object WaitForInit : ChannelState() {
                     cmd.replyTo,
                     cmd.temporaryChannelId,
                     cmd.fundingAmount,
-                    cmd.pushAmount,
                     cmd.walletInputs,
                     cmd.localParams,
                     cmd.channelConfig,
@@ -56,7 +55,6 @@ data object WaitForInit : ChannelState() {
                         buildSet {
                             add(ChannelTlv.ChannelTypeTlv(cmd.channelType))
                             cmd.requestRemoteFunding?.let { add(ChannelTlv.RequestFundingTlv(it)) }
-                            if (cmd.pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(cmd.pushAmount))
                         }
                     )
                 )
