@@ -247,7 +247,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertIs<AddLiquidityForIncomingPayment>(addLiquidity)
         assertEquals(incomingPayment.preimage, addLiquidity.preimage)
         assertEquals(defaultAmount, addLiquidity.paymentAmount)
-        assertTrue(defaultAmount < addLiquidity.requestedAmount)
+        assertEquals(defaultAmount, addLiquidity.requestedAmount.toMilliSatoshi())
         assertEquals(TestConstants.fundingRates.fundingRates.first(), addLiquidity.fundingRate)
         assertEquals(listOf(willAddHtlc), addLiquidity.willAddHtlcs)
         // We don't update the payments DB: we're waiting to receive HTLCs after the open/splice.
@@ -359,7 +359,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertIs<AddLiquidityForIncomingPayment>(addLiquidity)
         assertEquals(incomingPayment.preimage, addLiquidity.preimage)
         assertEquals(defaultAmount, addLiquidity.paymentAmount)
-        assertTrue(defaultAmount < addLiquidity.requestedAmount)
+        assertEquals(defaultAmount, addLiquidity.requestedAmount.toMilliSatoshi())
         assertEquals(TestConstants.fundingRates.fundingRates.first(), addLiquidity.fundingRate)
         assertNull(paymentHandler.db.getIncomingPayment(incomingPayment.paymentHash)?.received)
     }
@@ -464,7 +464,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `receive multipart payment with a mix of HTLC and will_add_htlc`() = runSuspendTest {
         val channelId = randomBytes32()
-        val (amount1, amount2) = listOf(50_000_000.msat, 60_000_000.msat)
+        val (amount1, amount2) = listOf(50_000_000.msat, 100_000_000.msat)
         val totalAmount = amount1 + amount2
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
         checkDbPayment(incomingPayment, paymentHandler.db)
@@ -489,7 +489,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(1, result.actions.size)
             val addLiquidity = result.actions.first() as AddLiquidityForIncomingPayment
             assertEquals(incomingPayment.preimage, addLiquidity.preimage)
-            assertEquals(amount2.truncateToSatoshi() + LiquidityPolicy.minInboundLiquidityTarget, addLiquidity.requestedAmount)
+            assertEquals(amount2.truncateToSatoshi(), addLiquidity.requestedAmount)
             assertEquals(totalAmount, addLiquidity.paymentAmount)
             assertNull(paymentHandler.db.getIncomingPayment(incomingPayment.paymentHash)?.received)
         }
@@ -617,7 +617,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `receive multipart payment with funding fee`() = runSuspendTest {
         val channelId = randomBytes32()
-        val (amount1, amount2) = listOf(50_000_000.msat, 60_000_000.msat)
+        val (amount1, amount2) = listOf(50_000_000.msat, 100_000_000.msat)
         val totalAmount = amount1 + amount2
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
         checkDbPayment(incomingPayment, paymentHandler.db)
@@ -676,7 +676,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `receive payment with funding fee -- from channel balance`() = runSuspendTest {
         val channelId = randomBytes32()
-        val amount = 50_000_000.msat
+        val amount = 100_000_000.msat
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(amount)
         checkDbPayment(incomingPayment, paymentHandler.db)
 
@@ -743,7 +743,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // We have a matching transaction in our DB.
         val purchase = LiquidityAds.Purchase.Standard(
-            defaultAmount.truncateToSatoshi() + LiquidityPolicy.minInboundLiquidityTarget,
+            defaultAmount.truncateToSatoshi(),
             LiquidityAds.Fees(2000.sat, 3000.sat),
             LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incomingPayment.paymentHash)),
         )
@@ -779,7 +779,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // We have a matching transaction in our DB, but we paid the fees from our channel balance already.
         val purchase = LiquidityAds.Purchase.Standard(
-            defaultAmount.truncateToSatoshi() + LiquidityPolicy.minInboundLiquidityTarget,
+            defaultAmount.truncateToSatoshi(),
             LiquidityAds.Fees(2000.sat, 3000.sat),
             LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(incomingPayment.paymentHash)),
         )
@@ -801,7 +801,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // We have a matching transaction in our DB, but the fees must be paid with a different payment_hash.
         val purchase = LiquidityAds.Purchase.Standard(
-            defaultAmount.truncateToSatoshi() + LiquidityPolicy.minInboundLiquidityTarget,
+            defaultAmount.truncateToSatoshi(),
             LiquidityAds.Fees(2000.sat, 3000.sat),
             LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(randomBytes32())),
         )
@@ -1436,7 +1436,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // We have a matching transaction in our DB, but the fees must be paid with a different payment_hash.
         val purchase = LiquidityAds.Purchase.Standard(
-            defaultAmount.truncateToSatoshi() + LiquidityPolicy.minInboundLiquidityTarget,
+            defaultAmount.truncateToSatoshi(),
             LiquidityAds.Fees(2000.sat, 3000.sat),
             LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(listOf(preimage)),
         )

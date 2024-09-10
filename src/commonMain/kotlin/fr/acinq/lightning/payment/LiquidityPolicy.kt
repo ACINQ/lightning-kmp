@@ -38,12 +38,4 @@ sealed class LiquidityPolicy {
             }
         }?.let { reason -> LiquidityEvents.Rejected(amount, fee, source, reason) }
     }
-
-    companion object {
-        /**
-         * We usually need our peer to contribute to channel funding, because they must have enough funds to pay the commitment fees.
-         * When we don't have an inbound liquidity target set, we use the following default amount.
-         */
-        val minInboundLiquidityTarget: Satoshi = 100_000.sat
-    }
 }

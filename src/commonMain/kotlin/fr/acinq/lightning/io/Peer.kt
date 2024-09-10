@@ -1272,9 +1272,11 @@ class Peer(
                         val currentFeerates = peerFeeratesFlow.filterNotNull().first()
                         val requestRemoteFunding = run {
                             // We need our peer to contribute, because they must have enough funds to pay the commitment fees.
+                            // That means they will add at least one input to the funding transaction, and pay the corresponding mining fees.
+                            // We always request a liquidity purchase, even for a dummy amount, which ensures that we refund their mining fees.
                             val inboundLiquidityTarget = when (val policy = nodeParams.liquidityPolicy.first()) {
-                                is LiquidityPolicy.Disable -> LiquidityPolicy.minInboundLiquidityTarget
-                                is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
+                                is LiquidityPolicy.Disable -> 1.sat
+                                is LiquidityPolicy.Auto -> policy.inboundLiquidityTarget ?: 1.sat
                             }
                             // We assume that the liquidity policy is correctly configured to match a funding lease offered by our peer.
                             val fundingRate = walletParams.remoteFundingRates.findRate(inboundLiquidityTarget)!!
