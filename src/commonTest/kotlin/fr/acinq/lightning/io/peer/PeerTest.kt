@@ -222,7 +222,7 @@ class PeerTest : LightningTestSuite() {
     @Test
     fun `swap funds into a channel`() = runSuspendTest {
         val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
-        nodeParams.second.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 20_000.sat, maxRelativeFeeBasisPoints = 1000, skipAbsoluteFeeCheck = false))
+        nodeParams.second.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = 100_000.sat, maxAbsoluteFee = 20_000.sat, maxRelativeFeeBasisPoints = 1000, skipAbsoluteFeeCheck = false))
         val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
         val (_, bob, _, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 

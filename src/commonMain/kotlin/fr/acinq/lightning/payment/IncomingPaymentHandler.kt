@@ -298,9 +298,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
         return when (val liquidityPolicy = nodeParams.liquidityPolicy.value) {
             is LiquidityPolicy.Disable -> Either.Left(LiquidityEvents.Rejected(willAddHtlcAmount, 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.PolicySetToDisabled))
             is LiquidityPolicy.Auto -> {
-                // Whenever we receive on-the-fly funding, we take this opportunity to purchase inbound liquidity.
+                // Whenever we receive on-the-fly funding, we take this opportunity to purchase inbound liquidity, if configured.
                 // This reduces the frequency of on-chain funding and thus the overall on-chain fees paid.
-                val additionalInboundLiquidity = liquidityPolicy.inboundLiquidityTarget ?: LiquidityPolicy.minInboundLiquidityTarget
+                val additionalInboundLiquidity = liquidityPolicy.inboundLiquidityTarget ?: 0.sat
                 // We must round up to the nearest satoshi value instead of rounding down.
                 val requestedAmount = (willAddHtlcAmount + 999.msat).truncateToSatoshi() + additionalInboundLiquidity
                 when (val fundingRate = remoteFundingRates.findRate(requestedAmount)) {
