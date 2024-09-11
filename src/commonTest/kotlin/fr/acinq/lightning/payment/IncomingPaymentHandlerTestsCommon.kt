@@ -258,7 +258,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `receive will_add_htlc -- rounding without liquidity purchase`() = runSuspendTest {
         val paymentAmount = 555_555_555.msat
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(paymentAmount)
-        paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = 0.sat, maxAbsoluteFee = 10_000.sat, maxRelativeFeeBasisPoints = 500, skipAbsoluteFeeCheck = false))
+        paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = 0.sat, maxAbsoluteFee = 10_000.sat, maxRelativeFeeBasisPoints = 500, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 0.msat))
         checkDbPayment(incomingPayment, paymentHandler.db)
         val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(paymentAmount, paymentAmount, paymentSecret))
         val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
@@ -421,12 +421,12 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val inboundLiquidityTarget = 100_000.sat
         assertEquals(5_000.sat, fundingRates.fundingRates.first().fees(TestConstants.feeratePerKw, inboundLiquidityTarget, inboundLiquidityTarget, isChannelCreation = false).total)
-        val defaultPolicy = LiquidityPolicy.Auto(inboundLiquidityTarget, maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 500, skipAbsoluteFeeCheck = false)
+        val defaultPolicy = LiquidityPolicy.Auto(inboundLiquidityTarget, maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 500, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 0.msat)
         val testCases = listOf(
             // If payment amount is at least twice the fees, we accept the payment.
             Triple(defaultPolicy, 10_000_000.msat, null),
             // If payment is too close to the fee, we reject the payment.
-            Triple(defaultPolicy, 9_999_999.msat, LiquidityEvents.Rejected.Reason.MissingOffChainAmountTooLow(9_999_999.msat)),
+            Triple(defaultPolicy, 9_999_999.msat, LiquidityEvents.Rejected.Reason.MissingOffChainAmountTooLow(9_999_999.msat, 0.msat)),
             // If our peer doesn't advertise funding rates for the payment amount, we reject the payment.
             Triple(defaultPolicy, 200_000_000.msat, LiquidityEvents.Rejected.Reason.NoMatchingFundingRate),
             // If fee is above our liquidity policy maximum fee, we reject the payment.
@@ -537,7 +537,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         //  - Bob fails everything because the funding fee is too high
         run {
             val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret))
-            paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(null, 100.sat, 100, skipAbsoluteFeeCheck = false))
+            paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(null, 100.sat, 100, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 0.msat))
             val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
             assertEquals(2, result.actions.size)
@@ -582,7 +582,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `receive multipart payment with a mix of HTLC and will_add_htlc -- too many parts`() = runSuspendTest {
         val channelId = randomBytes32()
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams.copy(maxAcceptedHtlcs = 5), InMemoryPaymentsDb())
-        paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 10_000.sat, maxRelativeFeeBasisPoints = 1000, skipAbsoluteFeeCheck = false))
+        paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 10_000.sat, maxRelativeFeeBasisPoints = 1000, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 0.msat))
         val partialAmount = 25_000_000.msat
         val totalAmount = partialAmount * 6
         val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, totalAmount)
@@ -617,7 +617,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
     fun `receive will_add_htlc added to fee credit`() = runSuspendTest {
-        val policy = LiquidityPolicy.Auto(inboundLiquidityTarget = 100_000.sat, maxAbsoluteFee = 500.sat, maxRelativeFeeBasisPoints = 1000, skipAbsoluteFeeCheck = false)
+        val policy = LiquidityPolicy.Auto(inboundLiquidityTarget = 100_000.sat, maxAbsoluteFee = 500.sat, maxRelativeFeeBasisPoints = 1000, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 50_000_000.msat)
         val totalAmount = 2500.msat
         val testCases = listOf(
             // We don't have any fee credit: we add the payment to our credit regardless of liquidity fees.
@@ -657,7 +657,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val channelId = randomBytes32()
         val (amount1, amount2) = listOf(10_000.msat, 5_000.msat)
         val totalAmount = amount1 + amount2
-        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 50.sat, 100, skipAbsoluteFeeCheck = false))
+        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 50.sat, 100, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 6_000.msat))
 
         // Step 1 of 2:
         //  - Alice sends a normal HTLC to Bob first
@@ -690,11 +690,61 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `receive multipart payment with a mix of HTLC and will_add_htlc above max_allowed_fee_credit`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val currentFeeCredit = 3_000_000.msat
+        val maxAllowedFeeCredit = 6_000_000.msat
+        val (amount1, amount2, amount3) = listOf(15_000_000.msat, 2_400_000.msat, 2_600_000.msat)
+        val totalAmount = amount1 + amount2 + amount3
+        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 5_000.sat, 500, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit))
+
+        // Step 1 of 2:
+        //  - Alice sends a normal HTLC to Bob first
+        //  - Bob doesn't accept the MPP set yet
+        run {
+            val htlc = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret))
+            val result = paymentHandler.process(htlc, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertTrue(result.actions.isEmpty())
+        }
+
+        // Step 2 of 3:
+        //  - Alice sends will_add_htlc to Bob
+        //  - Bob doesn't accept the MPP set yet
+        run {
+            val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret))
+            val result = paymentHandler.process(willAddHtlc, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertTrue(result.actions.isEmpty())
+        }
+
+        // Step 3 of 3:
+        //  - Alice sends will_add_htlc to Bob
+        //  - Bob accepts the MPP set
+        run {
+            val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount3, totalAmount, paymentSecret))
+            // The current fee credit combined with the will_add_htlc amount can cover the liquidity fees.
+            // The current fee credit cannot cover the fees alone.
+            val expectedFees = TestConstants.fundingRates.findRate(105_000.sat)!!.fees(TestConstants.feeratePerKw, 105_000.sat, 105_000.sat, isChannelCreation = true)
+            assertTrue(3_500.sat <= expectedFees.total && expectedFees.total <= 4_000.sat)
+            val result = paymentHandler.process(willAddHtlc, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertEquals(1, result.actions.size)
+            val addLiquidity = result.actions.first()
+            assertIs<AddLiquidityForIncomingPayment>(addLiquidity)
+            assertEquals(totalAmount, addLiquidity.paymentAmount)
+            assertEquals(105_000.sat, addLiquidity.requestedAmount)
+            // We don't update the payments DB: we're waiting to receive HTLCs after the open/splice.
+            assertNull(paymentHandler.db.getIncomingPayment(incomingPayment.paymentHash)?.received)
+        }
+    }
+
+    @Test
     fun `receive will_add_htlc with enough fee credit`() = runSuspendTest {
         // This tiny HTLC wouldn't be accepted if we didn't have enough fee credit.
         val totalAmount = 500.msat
         val currentFeeCredit = 20_000_000.msat
-        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 5000.sat, 1000, skipAbsoluteFeeCheck = false))
+        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 5000.sat, 1000, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 21_000_000.msat))
         val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(totalAmount, totalAmount, paymentSecret))
         val result = paymentHandler.process(willAddHtlc, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit)
         assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
@@ -709,7 +759,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `receive will_add_htlc until fee credit threshold is reached`() = runSuspendTest {
-        val policy = LiquidityPolicy.Auto(100_000.sat, 10_000.sat, 1000, skipAbsoluteFeeCheck = false)
+        val policy = LiquidityPolicy.Auto(100_000.sat, 10_000.sat, 1000, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 10_000_000.msat)
 
         // Step 1 of 2:
         //  - Alice sends will_add_htlc to Bob
@@ -750,20 +800,34 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive will_add_htlc larger than fee credit threshold`() = runSuspendTest {
+    fun `receive will_add_htlc larger than liquidity fees`() = runSuspendTest {
         // Large payments shouldn't be added to fee credit.
-        val totalAmount = 20_000_000.msat
-        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 5000.sat, 1000, skipAbsoluteFeeCheck = false))
+        val totalAmount = 10_000_000.msat
+        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 5000.sat, 1000, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 15_000_000.msat))
         val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(totalAmount, totalAmount, paymentSecret))
-        val result = paymentHandler.process(willAddHtlc, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit = 100.msat)
+        val result = paymentHandler.process(willAddHtlc, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit = 0.msat)
         assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
         assertEquals(1, result.actions.size)
         val addLiquidity = result.actions.first()
         assertIs<AddLiquidityForIncomingPayment>(addLiquidity)
         assertEquals(totalAmount, addLiquidity.paymentAmount)
-        assertEquals(120_000.sat, addLiquidity.requestedAmount)
+        assertEquals(110_000.sat, addLiquidity.requestedAmount)
         // We don't update the payments DB: we're waiting to receive HTLCs after the open/splice.
         assertNull(paymentHandler.db.getIncomingPayment(incomingPayment.paymentHash)?.received)
+    }
+
+    @Test
+    fun `receive will_add_htlc larger than max_allowed_fee_credit but lower than liquidity fees`() = runSuspendTest {
+        val totalAmount = 4_500_000.msat
+        val currentFeeCredit = 2_500_000.msat
+        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 5000.sat, 1000, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 5_000_000.msat))
+        val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(totalAmount, totalAmount, paymentSecret))
+        val result = paymentHandler.process(willAddHtlc, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit)
+        assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+        assertEquals(1, result.actions.size)
+        val willFailHtlc = result.actions.filterIsInstance<SendOnTheFlyFundingMessage>().firstOrNull()?.message
+        assertIs<WillFailHtlc>(willFailHtlc)
+        assertEquals(willAddHtlc.id, willFailHtlc.id)
     }
 
     @Test
@@ -1821,7 +1885,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         private suspend fun createFixture(invoiceAmount: MilliSatoshi?): Triple<IncomingPaymentHandler, IncomingPayment, ByteVector32> {
             val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
             // We use a liquidity policy that accepts payment values used by default in this test file.
-            paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 500, skipAbsoluteFeeCheck = false))
+            paymentHandler.nodeParams.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 5_000.sat, maxRelativeFeeBasisPoints = 500, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 0.msat))
             val (incomingPayment, paymentSecret) = makeIncomingPayment(paymentHandler, invoiceAmount)
             return Triple(paymentHandler, incomingPayment, paymentSecret)
         }
