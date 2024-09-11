@@ -50,7 +50,7 @@ sealed interface LiquidityEvents : NodeEvents {
             }
             data object ChannelFundingInProgress : Reason()
             data object NoMatchingFundingRate : Reason()
-            data class MissingOffChainAmountTooLow(val missingOffChainAmount: MilliSatoshi) : Reason()
+            data class MissingOffChainAmountTooLow(val missingOffChainAmount: MilliSatoshi, val currentFeeCredit: MilliSatoshi) : Reason()
             data class TooManyParts(val parts: Int) : Reason()
         }
     }

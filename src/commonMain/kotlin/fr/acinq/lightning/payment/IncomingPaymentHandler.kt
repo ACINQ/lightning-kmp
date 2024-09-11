@@ -232,7 +232,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                     nodeParams._nodeEvents.emit(LiquidityEvents.Rejected(payment.amountReceived, 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.TooManyParts(payment.parts.size)))
                                     rejectPayment(payment, incomingPayment, TemporaryNodeFailure)
                                 }
-                                willAddHtlcParts.isNotEmpty() -> when (val result = validateOnTheFlyFundingRate(willAddHtlcParts.map { it.amount }.sum(), remoteFeatures, currentFeerate, remoteFundingRates)) {
+                                willAddHtlcParts.isNotEmpty() -> when (val result = validateOnTheFlyFundingRate(willAddHtlcParts.map { it.amount }.sum(), remoteFeatures, currentFeeCredit, currentFeerate, remoteFundingRates)) {
                                     is Either.Left -> {
                                         logger.warning { "rejecting on-the-fly funding: reason=${result.value.reason}" }
                                         nodeParams._nodeEvents.emit(result.value)
@@ -241,13 +241,17 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                     is Either.Right -> {
                                         val (requestedAmount, fundingRate) = result.value
                                         val addToFeeCredit = run {
-                                            val featureOk = nodeParams.features.hasFeature(Feature.FundingFeeCredit) && remoteFeatures.hasFeature(Feature.FundingFeeCredit)
+                                            val featureOk = Features.canUseFeature(nodeParams.features, remoteFeatures, Feature.FundingFeeCredit)
                                             // We may need to use a higher feerate than the current value depending on whether this is a new channel or not,
-                                            // and whether we have enough balance. We keep adding to our fee credit until we haven't reached the worst case
-                                            // scenario in terms of fees we need to pay, otherwise we may not have enough to actually pay the liquidity fees.
-                                            val feerateThreshold = currentFeerate * AddLiquidityForIncomingPayment.SpliceWithNoBalanceFeerateRatio
-                                            val feeCreditThreshold = fundingRate.fees(feerateThreshold, requestedAmount, requestedAmount, isChannelCreation = true).total
-                                            val amountBelowThreshold = (payment.amountReceived + currentFeeCredit).truncateToSatoshi() < feeCreditThreshold
+                                            // and whether we have enough balance. We keep adding to our fee credit until we reach the worst case scenario
+                                            // in terms of fees we need to pay, otherwise we may not have enough to actually pay the liquidity fees.
+                                            val maxFeerate = currentFeerate * AddLiquidityForIncomingPayment.SpliceWithNoBalanceFeerateRatio
+                                            val maxLiquidityFees = fundingRate.fees(maxFeerate, requestedAmount, requestedAmount, isChannelCreation = true).total.toMilliSatoshi()
+                                            val feeCreditThreshold = when (val policy = nodeParams.liquidityPolicy.value) {
+                                                LiquidityPolicy.Disable -> maxLiquidityFees
+                                                is LiquidityPolicy.Auto -> maxLiquidityFees.min(policy.maxAllowedFeeCredit)
+                                            }
+                                            val amountBelowThreshold = (willAddHtlcParts.map { it.amount }.sum() + currentFeeCredit) <= feeCreditThreshold
                                             featureOk && amountBelowThreshold
                                         }
                                         when {
@@ -340,7 +344,13 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         return ProcessAddResult.Rejected(actions, incomingPayment)
     }
 
-    private fun validateOnTheFlyFundingRate(willAddHtlcAmount: MilliSatoshi, remoteFeatures: Features, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?): Either<LiquidityEvents.Rejected, Pair<Satoshi, LiquidityAds.FundingRate>> {
+    private fun validateOnTheFlyFundingRate(
+        willAddHtlcAmount: MilliSatoshi,
+        remoteFeatures: Features,
+        currentFeeCredit: MilliSatoshi,
+        currentFeerate: FeeratePerKw,
+        remoteFundingRates: LiquidityAds.WillFundRates?
+    ): Either<LiquidityEvents.Rejected, Pair<Satoshi, LiquidityAds.FundingRate>> {
         return when (val liquidityPolicy = nodeParams.liquidityPolicy.value) {
             is LiquidityPolicy.Disable -> Either.Left(LiquidityEvents.Rejected(willAddHtlcAmount, 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.PolicySetToDisabled))
             is LiquidityPolicy.Auto -> {
@@ -355,17 +365,17 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         // We don't know at that point if we'll need a channel or if we already have one.
                         // We must use the worst case fees that applies to channel creation.
                         val fees = fundingRate.fees(currentFeerate, requestedAmount, requestedAmount, isChannelCreation = true).total
+                        val canAddToFeeCredit = Features.canUseFeature(nodeParams.features, remoteFeatures, Feature.FundingFeeCredit) && (willAddHtlcAmount + currentFeeCredit) <= liquidityPolicy.maxAllowedFeeCredit
                         val rejected = when {
-                            // We never reject if we can use the fee credit feature.
-                            // We instead add payments to our fee credit until making an on-chain operation becomes acceptable.
-                            nodeParams.features.hasFeature(Feature.FundingFeeCredit) && remoteFeatures.hasFeature(Feature.FundingFeeCredit) -> null
+                            // We never reject if we can add payments to our fee credit until making an on-chain operation becomes acceptable.
+                            canAddToFeeCredit -> null
                             // We only initiate on-the-fly funding if the missing amount is greater than the fees paid.
                             // Otherwise our peer may not be able to claim the funding fees from the relayed HTLCs.
-                            willAddHtlcAmount < fees * 2 -> LiquidityEvents.Rejected(
+                            (willAddHtlcAmount + currentFeeCredit) < fees * 2 -> LiquidityEvents.Rejected(
                                 requestedAmount.toMilliSatoshi(),
                                 fees.toMilliSatoshi(),
                                 LiquidityEvents.Source.OffChainPayment,
-                                LiquidityEvents.Rejected.Reason.MissingOffChainAmountTooLow(willAddHtlcAmount)
+                                LiquidityEvents.Rejected.Reason.MissingOffChainAmountTooLow(willAddHtlcAmount, currentFeeCredit)
                             )
                             else -> liquidityPolicy.maybeReject(requestedAmount.toMilliSatoshi(), fees.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment, logger)
                         }

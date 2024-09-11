@@ -19,8 +19,9 @@ sealed class LiquidityPolicy {
      * @param maxAbsoluteFee max absolute fee
      * @param maxRelativeFeeBasisPoints max relative fee (all included: service fee and mining fee) (1_000 bips = 10 %)
      * @param skipAbsoluteFeeCheck only applies for off-chain payments, being more lax may make sense when the sender doesn't retry payments
+     * @param maxAllowedFeeCredit maximum amount that can be added to fee credit (see [fr.acinq.lightning.Feature.FundingFeeCredit])
      */
-    data class Auto(val inboundLiquidityTarget: Satoshi?, val maxAbsoluteFee: Satoshi, val maxRelativeFeeBasisPoints: Int, val skipAbsoluteFeeCheck: Boolean) : LiquidityPolicy()
+    data class Auto(val inboundLiquidityTarget: Satoshi?, val maxAbsoluteFee: Satoshi, val maxRelativeFeeBasisPoints: Int, val skipAbsoluteFeeCheck: Boolean, val maxAllowedFeeCredit: MilliSatoshi) : LiquidityPolicy()
 
     /** Make a decision for a particular liquidity event. */
     fun maybeReject(amount: MilliSatoshi, fee: MilliSatoshi, source: LiquidityEvents.Source, logger: MDCLogger): LiquidityEvents.Rejected? {
