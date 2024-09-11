@@ -643,6 +643,7 @@ class Peer(
                     spliceIn = null,
                     spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, scriptPubKey),
                     requestRemoteFunding = null,
+                    currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
                 )
@@ -662,6 +663,7 @@ class Peer(
                     spliceIn = null,
                     spliceOut = null,
                     requestRemoteFunding = null,
+                    currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
                 )
@@ -680,6 +682,7 @@ class Peer(
                     spliceIn = null,
                     spliceOut = null,
                     requestRemoteFunding = LiquidityAds.RequestFunding(amount, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance),
+                    currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
                 )
@@ -1285,6 +1288,7 @@ class Peer(
                                     spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(cmd.walletInputs),
                                     spliceOut = null,
                                     requestRemoteFunding = null,
+                                    currentFeeCredit = feeCreditFlow.value,
                                     feerate = feerate,
                                     origins = listOf(Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), ChannelManagementFees(fee, 0.sat)))
                                 )
@@ -1425,6 +1429,7 @@ class Peer(
                                     spliceIn = null,
                                     spliceOut = null,
                                     requestRemoteFunding = LiquidityAds.RequestFunding(cmd.requestedAmount, cmd.fundingRate, paymentDetails),
+                                    currentFeeCredit = currentFeeCredit,
                                     feerate = targetFeerate,
                                     origins = listOf(Origin.OffChainPayment(cmd.preimage, cmd.paymentAmount, totalFees))
                                 )

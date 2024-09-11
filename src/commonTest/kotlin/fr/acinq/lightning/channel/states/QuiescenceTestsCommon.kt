@@ -520,6 +520,7 @@ class QuiescenceTestsCommon : LightningTestSuite() {
                 spliceOut = spliceOut?.let { ChannelCommand.Commitment.Splice.Request.SpliceOut(it, Script.write(Script.pay2wpkh(Lightning.randomKey().publicKey())).byteVector()) },
                 feerate = FeeratePerKw(253.sat),
                 requestRemoteFunding = null,
+                currentFeeCredit = 0.msat,
                 origins = listOf(),
             )
         }

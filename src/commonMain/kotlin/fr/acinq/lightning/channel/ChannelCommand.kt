@@ -87,7 +87,15 @@ sealed class ChannelCommand {
         data class UpdateFee(val feerate: FeeratePerKw, val commit: Boolean = false) : Commitment(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
         data object CheckHtlcTimeout : Commitment()
         sealed class Splice : Commitment() {
-            data class Request(val replyTo: CompletableDeferred<Response>, val spliceIn: SpliceIn?, val spliceOut: SpliceOut?, val requestRemoteFunding: LiquidityAds.RequestFunding?, val feerate: FeeratePerKw, val origins: List<Origin>) : Splice() {
+            data class Request(
+                val replyTo: CompletableDeferred<Response>,
+                val spliceIn: SpliceIn?,
+                val spliceOut: SpliceOut?,
+                val requestRemoteFunding: LiquidityAds.RequestFunding?,
+                val currentFeeCredit: MilliSatoshi,
+                val feerate: FeeratePerKw,
+                val origins: List<Origin>
+            ) : Splice() {
                 val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
                 val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
 
@@ -110,7 +118,7 @@ sealed class ChannelCommand {
                 ) : Response()
 
                 sealed class Failure : Response() {
-                    data object InsufficientFunds : Failure()
+                    data class InsufficientFunds(val balanceAfterFees: MilliSatoshi, val liquidityFees: MilliSatoshi, val currentFeeCredit: MilliSatoshi) : Failure()
                     data object InvalidSpliceOutPubKeyScript : Failure()
                     data object SpliceAlreadyInProgress : Failure()
                     data object ConcurrentRemoteSplice : Failure()
