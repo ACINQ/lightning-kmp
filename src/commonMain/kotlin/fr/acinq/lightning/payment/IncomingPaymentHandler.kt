@@ -42,7 +42,7 @@ data class WillAddHtlcPart(val htlc: WillAddHtlc, override val finalPayload: Pay
     override fun toString(): String = "future-htlc(id=${htlc.id},amount=${htlc.amount})"
 }
 
-class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, private val remoteFundingRates: LiquidityAds.WillFundRates) {
+class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
 
     sealed class ProcessAddResult {
         abstract val actions: List<PeerCommand>
@@ -150,22 +150,26 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
     }
 
     /** Process an incoming htlc. Before calling this, the htlc must be committed and ack-ed by both peers. */
-    suspend fun process(htlc: UpdateAddHtlc, currentBlockHeight: Int, currentFeerate: FeeratePerKw): ProcessAddResult = process(Either.Right(htlc), currentBlockHeight, currentFeerate)
+    suspend fun process(htlc: UpdateAddHtlc, currentBlockHeight: Int, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?): ProcessAddResult {
+        return process(Either.Right(htlc), currentBlockHeight, currentFeerate, remoteFundingRates)
+    }
 
     /** Process an incoming on-the-fly funding request. */
-    suspend fun process(htlc: WillAddHtlc, currentBlockHeight: Int, currentFeerate: FeeratePerKw): ProcessAddResult = process(Either.Left(htlc), currentBlockHeight, currentFeerate)
+    suspend fun process(htlc: WillAddHtlc, currentBlockHeight: Int, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?): ProcessAddResult {
+        return process(Either.Left(htlc), currentBlockHeight, currentFeerate, remoteFundingRates)
+    }
 
-    private suspend fun process(htlc: Either<WillAddHtlc, UpdateAddHtlc>, currentBlockHeight: Int, currentFeerate: FeeratePerKw): ProcessAddResult {
+    private suspend fun process(htlc: Either<WillAddHtlc, UpdateAddHtlc>, currentBlockHeight: Int, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?): ProcessAddResult {
         // There are several checks we could perform *before* decrypting the onion.
         // But we need to carefully handle which error message is returned to prevent information leakage, so we always peel the onion first.
         return when (val res = toPaymentPart(privateKey, htlc)) {
             is Either.Left -> res.value
-            is Either.Right -> processPaymentPart(res.value, currentBlockHeight, currentFeerate)
+            is Either.Right -> processPaymentPart(res.value, currentBlockHeight, currentFeerate, remoteFundingRates)
         }
     }
 
     /** Main payment processing, that handles payment parts. */
-    private suspend fun processPaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int, currentFeerate: FeeratePerKw): ProcessAddResult {
+    private suspend fun processPaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?): ProcessAddResult {
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
         when (paymentPart) {
             is HtlcPart -> logger.info { "processing htlc part expiry=${paymentPart.htlc.cltvExpiry}" }
@@ -228,7 +232,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
                                     nodeParams._nodeEvents.emit(LiquidityEvents.Rejected(payment.amountReceived, 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.TooManyParts(payment.parts.size)))
                                     rejectPayment(payment, incomingPayment, TemporaryNodeFailure)
                                 }
-                                willAddHtlcParts.isNotEmpty() -> when (val result = validateOnTheFlyFundingRate(willAddHtlcParts.map { it.amount }.sum(), currentFeerate)) {
+                                willAddHtlcParts.isNotEmpty() -> when (val result = validateOnTheFlyFundingRate(willAddHtlcParts.map { it.amount }.sum(), currentFeerate, remoteFundingRates)) {
                                     is Either.Left -> {
                                         logger.warning { "rejecting on-the-fly funding: reason=${result.value.reason}" }
                                         nodeParams._nodeEvents.emit(result.value)
@@ -294,7 +298,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
         return ProcessAddResult.Rejected(actions, incomingPayment)
     }
 
-    private fun validateOnTheFlyFundingRate(willAddHtlcAmount: MilliSatoshi, currentFeerate: FeeratePerKw): Either<LiquidityEvents.Rejected, Pair<Satoshi, LiquidityAds.FundingRate>> {
+    private fun validateOnTheFlyFundingRate(willAddHtlcAmount: MilliSatoshi, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?): Either<LiquidityEvents.Rejected, Pair<Satoshi, LiquidityAds.FundingRate>> {
         return when (val liquidityPolicy = nodeParams.liquidityPolicy.value) {
             is LiquidityPolicy.Disable -> Either.Left(LiquidityEvents.Rejected(willAddHtlcAmount, 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.PolicySetToDisabled))
             is LiquidityPolicy.Auto -> {
@@ -303,7 +307,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb, pri
                 val additionalInboundLiquidity = liquidityPolicy.inboundLiquidityTarget ?: 0.sat
                 // We must round up to the nearest satoshi value instead of rounding down.
                 val requestedAmount = (willAddHtlcAmount + 999.msat).truncateToSatoshi() + additionalInboundLiquidity
-                when (val fundingRate = remoteFundingRates.findRate(requestedAmount)) {
+                when (val fundingRate = remoteFundingRates?.findRate(requestedAmount)) {
                     null -> Either.Left(LiquidityEvents.Rejected(requestedAmount.toMilliSatoshi(), 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.NoMatchingFundingRate))
                     else -> {
                         // We don't know at that point if we'll need a channel or if we already have one.

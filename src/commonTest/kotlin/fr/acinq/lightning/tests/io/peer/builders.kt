@@ -19,6 +19,7 @@ import fr.acinq.lightning.channel.states.Syncing
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
@@ -80,10 +81,10 @@ suspend fun connect(
     }
 
     // Initialize Bob with Alice's features.
-    val aliceInit = Init(alice.nodeParams.features.initFeatures())
+    val aliceInit = Init(alice.nodeParams.features.initFeatures(), listOf(Block.RegtestGenesisBlock.hash.value), TestConstants.fundingRates)
     bob.send(MessageReceived(bobConnection.id, aliceInit))
     // Initialize Alice with Bob's features.
-    val bobInit = Init(bob.nodeParams.features.initFeatures())
+    val bobInit = Init(bob.nodeParams.features.initFeatures(), listOf(Block.RegtestGenesisBlock.hash.value), TestConstants.fundingRates)
     alice.send(MessageReceived(aliceConnection.id, bobInit))
 
     // Initialize Alice and Bob's current feerates.

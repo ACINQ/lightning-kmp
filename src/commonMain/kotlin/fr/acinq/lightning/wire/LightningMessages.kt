@@ -191,8 +191,7 @@ interface OnTheFlyFundingMessage : LightningMessage
 
 data class Init(val features: Features, val tlvs: TlvStream<InitTlv> = TlvStream.empty()) : SetupMessage {
     val networks = tlvs.get<InitTlv.Networks>()?.chainHashes ?: listOf()
-    val liquidityRates = tlvs.get<InitTlv.OptionWillFund>()?.rates?.fundingRates ?: listOf()
-    val liquidityPaymentTypes = tlvs.get<InitTlv.OptionWillFund>()?.rates?.paymentTypes ?: setOf()
+    val liquidityRates = tlvs.get<InitTlv.OptionWillFund>()?.rates
 
     constructor(features: Features, chainHashs: List<ByteVector32>, liquidityRates: LiquidityAds.WillFundRates?) : this(
         features,

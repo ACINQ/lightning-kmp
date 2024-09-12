@@ -60,7 +60,7 @@ object TestConstants {
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, Chain.Regtest, bobSwapInServerXpub)
-        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams, fundingRates)
+        val walletParams = WalletParams(NodeUri(Bob.keyManager.nodeKeys.nodeKey.publicKey, "bob.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
         val nodeParams = NodeParams(
             chain = Chain.Regtest,
             loggerFactory = testLoggerFactory,
@@ -112,7 +112,7 @@ object TestConstants {
         private val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector32()
 
         val keyManager = LocalKeyManager(seed, Chain.Regtest, aliceSwapInServerXpub)
-        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams, fundingRates)
+        val walletParams = WalletParams(NodeUri(Alice.keyManager.nodeKeys.nodeKey.publicKey, "alice.com", 9735), trampolineFees, InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)), swapInParams)
         val nodeParams = NodeParams(
             chain = Chain.Regtest,
             loggerFactory = testLoggerFactory,

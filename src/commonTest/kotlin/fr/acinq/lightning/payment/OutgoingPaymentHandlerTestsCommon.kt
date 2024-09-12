@@ -31,7 +31,6 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         TestConstants.trampolineFees,
         InvoiceDefaultRoutingFees(1_000.msat, 100, CltvExpiryDelta(144)),
         TestConstants.swapInParams,
-        TestConstants.fundingRates,
     )
 
     @Test
@@ -456,7 +455,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
         // The invoice comes from Bob, our direct peer (and trampoline node).
         val preimage = randomBytes32()
-        val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb(), TestConstants.fundingRates)
+        val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, Either.Left("phoenix to phoenix"), listOf())
         val payment = PayInvoice(UUID.randomUUID(), 300_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
@@ -476,9 +475,9 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
 
         // Bob receives these 2 HTLCs.
-        val process1 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[0].first, adds[0].second, 3), TestConstants.defaultBlockHeight, TestConstants.feeratePerKw)
+        val process1 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[0].first, adds[0].second, 3), TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
         assertTrue(process1 is IncomingPaymentHandler.ProcessAddResult.Pending)
-        val process2 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[1].first, adds[1].second, 5), TestConstants.defaultBlockHeight, TestConstants.feeratePerKw)
+        val process2 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[1].first, adds[1].second, 5), TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
         assertTrue(process2 is IncomingPaymentHandler.ProcessAddResult.Accepted)
         val fulfills = process2.actions.filterIsInstance<WrappedChannelCommand>().mapNotNull { it.channelCommand as? ChannelCommand.Htlc.Settlement.Fulfill }
         assertEquals(2, fulfills.size)
