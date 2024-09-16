@@ -244,7 +244,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     ChannelAction.Message.Send(state.localShutdown),
                                     ChannelAction.Message.Send(closingSigned)
                                 )
-                                return Pair(nextState, actions)
+                                Pair(nextState, actions)
                             } else {
                                 // we start a new round of negotiation
                                 val closingTxProposed1 = if (state.closingTxProposed.last().isEmpty()) state.closingTxProposed else state.closingTxProposed + listOf(listOf())
@@ -253,7 +253,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     ChannelAction.Storage.StoreState(nextState),
                                     ChannelAction.Message.Send(state.localShutdown)
                                 )
-                                return Pair(nextState, actions)
+                                Pair(nextState, actions)
                             }
                         is Closing, is Closed, is WaitForRemotePublishFutureCommitment -> unhandled(cmd)
                     }
