@@ -304,7 +304,7 @@ tasks.withType<AbstractTestTask> {
 // Those tests use TLS sockets which are not supported on Linux and MacOS
 tasks
     .filterIsInstance<KotlinNativeTest>()
-    .filter { it.name == "macosX64Test" || it.name == "linuxX64Test" }
+    .filter { it.name == "macosX64Test" || it.name == "macosArm64Test" || it.name == "linuxX64Test" }
     .map {
         it.filter.excludeTestsMatching("*IntegrationTest")
         it.filter.excludeTestsMatching("*ElectrumClientTest")
