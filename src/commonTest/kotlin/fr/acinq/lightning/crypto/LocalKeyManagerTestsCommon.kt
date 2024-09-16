@@ -167,7 +167,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         // reference data was generated from electrum 4.1.5
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "").toByteVector()
-        val keyManager = LocalKeyManager(seed, Chain.Testnet, TestConstants.aliceSwapInServerXpub)
+        val keyManager = LocalKeyManager(seed, Chain.Testnet3, TestConstants.aliceSwapInServerXpub)
         assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 0L).toBase58(Base58.Prefix.SecretKeyTestnet), "cTGhosGriPpuGA586jemcuH9pE9spwUmneMBmYYzrQEbY92DJrbo")
         assertEquals(keyManager.finalOnChainWallet.privateKey(addressIndex = 1L).toBase58(Base58.Prefix.SecretKeyTestnet), "cQFUndrpAyMaE3HAsjMCXiT94MzfsABCREat1x7Qe3Mtq9KihD4V")
         assertEquals(keyManager.finalOnChainWallet.xpub, "vpub5Y6cjg78GGuNLsaPhmYsiw4gYX3HoQiRBiSwDaBXKUafCt9bNwWQiitDk5VZ5BVxYnQdwoTyXSs2JHRPAgjAvtbBrf8ZhDYe2jWAqvZVnsc")
@@ -218,7 +218,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val chain = Chain.Regtest
         val userPublicKey = PrivateKey.fromHex("0101010101010101010101010101010101010101010101010101010101010101").publicKey()
         val remoteServerPublicKey = PrivateKey.fromHex("0202020202020202020202020202020202020202020202020202020202020202").publicKey()
-        val userRefundExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, KeyManager.SwapInOnChainKeys.swapInUserRefundKeyPath(chain))
+        val userRefundExtendedPrivateKey = master.derivePrivateKey(KeyManager.SwapInOnChainKeys.swapInUserRefundKeyPath(chain))
         val refundDelay = 2590
         assertEquals(
             "tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tprv8hWm2EfcAbMerYoXeHA9w6faUqXdiQeWfSxxWpzh3Yc1FAjB2vv1sbBNY1dX3HraotvBAEeY2hzz1X4vc3SC516K1ebBvLYrkA6LstQdbNX/*),older(2590)))#90ftphf9",
@@ -226,11 +226,11 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         )
         assertEquals(
             "tr(1fc559d9c96c5953895d3150e64ebf3dd696a0b08e758650b48ff6251d7e60d1,and_v(v:pk(tpubDECoAehrJy3Kk1qKXvpkLWKh3s3ZsjqREkZjoM2zTpQQ5eywfKjc45oEi8GMq1mpWxM2kg79Lp5DzznQKGRE15btY327vgLcLbfZLrgAWrv/*),older(2590)))#xmhrglc6",
-            SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, DeterministicWallet.publicKey(userRefundExtendedPrivateKey))
+            SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey.extendedPublicKey)
         )
     }
 
     companion object {
-        val dummyExtendedPubkey = DeterministicWallet.publicKey(DeterministicWallet.generate(ByteVector("deadbeef")))
+        val dummyExtendedPubkey = DeterministicWallet.generate(ByteVector("deadbeef")).extendedPublicKey
     }
 }

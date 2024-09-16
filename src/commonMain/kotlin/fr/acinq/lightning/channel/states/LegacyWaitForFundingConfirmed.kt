@@ -39,7 +39,7 @@ data class LegacyWaitForFundingConfirmed(
                 when (cmd.watch) {
                     is WatchEventConfirmed -> {
                         val result = runTrying {
-                            Transaction.correctlySpends(commitments.latest.localCommit.publishableTxs.commitTx.tx, listOf(cmd.watch.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+                            commitments.latest.localCommit.publishableTxs.commitTx.tx.correctlySpends(listOf(cmd.watch.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
                         }
                         if (result is Try.Failure) {
                             logger.error { "funding tx verification failed: ${result.error}" }

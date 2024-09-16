@@ -534,7 +534,7 @@ data class PartiallySignedSharedTransaction(override val tx: SharedTransaction, 
             }
         }
         val fullySignedTx = FullySignedSharedTransaction(tx, localSigs, remoteSigs, sharedSigs)
-        return when (runTrying { Transaction.correctlySpends(fullySignedTx.signedTx, tx.spentOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
+        return when (runTrying { fullySignedTx.signedTx.correctlySpends(tx.spentOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }) {
             is Try.Success -> fullySignedTx
             is Try.Failure -> null
         }

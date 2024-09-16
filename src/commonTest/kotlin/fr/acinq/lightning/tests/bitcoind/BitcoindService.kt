@@ -88,17 +88,16 @@ object BitcoindService {
                 lockTime = 0
             )
 
-            val sig = Transaction.signInput(
-                tmp,
+            val sig = tmp.signInput(
                 0,
                 Script.pay2pkh(publicKey),
-                SigHash.SIGHASH_ALL,
+                SIGHASH_ALL,
                 tx.txOut[outputIndex].amount,
                 SigVersion.SIGVERSION_WITNESS_V0,
                 privateKey
             ).byteVector()
             val signedTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, publicKey.value)))
-            Transaction.correctlySpends(signedTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            signedTx.correctlySpends(listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             signedTx
         }
 
@@ -111,17 +110,16 @@ object BitcoindService {
                 lockTime = 0
             )
 
-            val sig = Transaction.signInput(
-                tmp,
+            val sig = tmp.signInput(
                 0,
                 Script.pay2pkh(publicKey),
-                SigHash.SIGHASH_ALL,
+                SIGHASH_ALL,
                 tx1.txOut.first().amount,
                 SigVersion.SIGVERSION_WITNESS_V0,
                 privateKey
             ).byteVector()
             val signedTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, publicKey.value)))
-            Transaction.correctlySpends(signedTx, listOf(tx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            signedTx.correctlySpends(listOf(tx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             signedTx
         }
 
@@ -151,17 +149,16 @@ object BitcoindService {
                 lockTime = 200
             )
 
-            val sig = Transaction.signInput(
-                tmp,
+            val sig = tmp.signInput(
                 0,
                 Script.pay2pkh(publicKey),
-                SigHash.SIGHASH_ALL,
+                SIGHASH_ALL,
                 tx.txOut[outputIndex].amount,
                 SigVersion.SIGVERSION_WITNESS_V0,
                 privateKey
             ).byteVector()
             val signedTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, publicKey.value)))
-            Transaction.correctlySpends(signedTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            signedTx.correctlySpends(listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             signedTx
         }
 
@@ -180,17 +177,16 @@ object BitcoindService {
                 lockTime = 175
             )
 
-            val sig = Transaction.signInput(
-                tmp,
+            val sig = tmp.signInput(
                 0,
                 Script.pay2pkh(publicKey),
-                SigHash.SIGHASH_ALL,
+                SIGHASH_ALL,
                 tx1.txOut.first().amount,
                 SigVersion.SIGVERSION_WITNESS_V0,
                 privateKey
             ).byteVector()
             val signedTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, publicKey.value)))
-            Transaction.correctlySpends(signedTx, listOf(tx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            signedTx.correctlySpends(listOf(tx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             signedTx
         }
 
@@ -217,8 +213,7 @@ object BitcoindService {
             lockTime = lockTime
         )
 
-        val sig = Transaction.signInput(
-            unsigned,
+        val sig = unsigned.signInput(
             0,
             Script.pay2pkh(publicKey),
             SIGHASH_ALL,
@@ -228,7 +223,7 @@ object BitcoindService {
         ).toByteVector()
 
         val signedTx = unsigned.updateWitness(0, ScriptWitness(listOf(sig, publicKey.value)))
-        Transaction.correctlySpends(signedTx, listOf(parentTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        signedTx.correctlySpends(listOf(parentTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         return signedTx
     }
 }
