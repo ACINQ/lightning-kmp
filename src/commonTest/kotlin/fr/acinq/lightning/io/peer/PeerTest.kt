@@ -4,25 +4,22 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.InvoiceDefaultRoutingFees
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.NodeUri
-import fr.acinq.lightning.PeerConnected
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
-import fr.acinq.lightning.blockchain.electrum.balance
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.ChannelFlags
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.channel.LNChannel
-import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.channel.TestsHelper
 import fr.acinq.lightning.channel.TestsHelper.createWallet
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.io.*
+import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.*
@@ -31,8 +28,8 @@ import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.test.*
@@ -59,7 +56,7 @@ class PeerTest : LightningTestSuite() {
         randomKey().publicKey(),
         randomKey().publicKey(),
         randomKey().publicKey(),
-        0.toByte(),
+        ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
         TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
     )
 
@@ -123,7 +120,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
-        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)
@@ -183,7 +180,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
-        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        alice.send(OpenChannel(250_000.sat, 50_000_000.msat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)
@@ -225,106 +222,43 @@ class PeerTest : LightningTestSuite() {
     @Test
     fun `swap funds into a channel`() = runSuspendTest {
         val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
+        nodeParams.second.liquidityPolicy.emit(LiquidityPolicy.Auto(inboundLiquidityTarget = 100_000.sat, maxAbsoluteFee = 20_000.sat, maxRelativeFeeBasisPoints = 1000, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 0.msat))
         val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
-        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+        val (_, bob, _, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
-        val requestId = randomBytes32()
-        val walletBob = createWallet(nodeParams.second.keyManager, 260_000.sat).second
-        val internalRequestBob = RequestChannelOpen(requestId, walletBob)
-        bob.send(internalRequestBob)
-        val request = bob2alice.expect<PleaseOpenChannel>()
-        assertEquals(request.localFundingAmount, 260_000.sat)
+        val walletBob = createWallet(nodeParams.second.keyManager, 500_000.sat).second
+        bob.send(AddWalletInputsToChannel(walletBob))
 
-        val miningFee = 500.sat
-        val serviceFee = 1_000.sat.toMilliSatoshi()
-        val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
-        val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
-        alice.send(openAlice)
-        val open = alice2bob.expect<OpenDualFundedChannel>().copy(
-            tlvStream = TlvStream(
-                ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, miningFee, openAlice.pushAmount))
-            )
-        )
-        bob.forward(open)
-        val accept = bob2alice.expect<AcceptDualFundedChannel>()
-        assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
-        val fundingFee = walletBob.balance - accept.fundingAmount
-        assertEquals(accept.pushAmount, serviceFee + miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi())
-        alice.forward(accept)
-
-        val txAddInputAlice = alice2bob.expect<TxAddInput>()
-        bob.forward(txAddInputAlice)
-        val txAddInputBob = bob2alice.expect<TxAddInput>()
-        alice.forward(txAddInputBob)
-        val txAddOutput = alice2bob.expect<TxAddOutput>()
-        bob.forward(txAddOutput)
-        val txCompleteBob = bob2alice.expect<TxComplete>()
-        alice.forward(txCompleteBob)
-        val txCompleteAlice = alice2bob.expect<TxComplete>()
-        bob.forward(txCompleteAlice)
-        val commitSigBob = bob2alice.expect<CommitSig>()
-        alice.forward(commitSigBob)
-        val commitSigAlice = alice2bob.expect<CommitSig>()
-        bob.forward(commitSigAlice)
-        val txSigsAlice = alice2bob.expect<TxSignatures>()
-        bob.forward(txSigsAlice)
-        val txSigsBob = bob2alice.expect<TxSignatures>()
-        alice.forward(txSigsBob)
-        val (_, aliceState) = alice.expectState<WaitForFundingConfirmed>()
-        assertEquals(aliceState.commitments.latest.localCommit.spec.toLocal, openAlice.fundingAmount.toMilliSatoshi() + serviceFee + miningFee.toMilliSatoshi() - fundingFee.toMilliSatoshi())
-        val (_, bobState) = bob.expectState<WaitForFundingConfirmed>()
-        // Bob has to deduce from its balance:
-        //  - the fees for the channel open (10 000 sat)
-        //  - the miner fees for his input(s) in the funding transaction
-        assertEquals(bobState.commitments.latest.localCommit.spec.toLocal, walletBob.balance.toMilliSatoshi() - serviceFee - miningFee.toMilliSatoshi())
+        val open = bob2alice.expect<OpenDualFundedChannel>()
+        assertTrue(open.fundingAmount < 500_000.sat) // we pay the mining fees
+        assertTrue(open.channelFlags.nonInitiatorPaysCommitFees)
+        assertEquals(open.requestFunding?.requestedAmount, 100_000.sat) // we always request funds from the remote, because we ask them to pay the commit tx fees
+        assertEquals(open.channelType, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        // We cannot test the rest of the flow as lightning-kmp doesn't implement the LSP side that responds to the liquidity ads request.
     }
 
     @Test
     fun `reject swap-in -- fee too high`() = runSuspendTest {
         val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
         val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
-        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
+        val (_, bob) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
-        val requestId = randomBytes32()
-        val walletBob = createWallet(nodeParams.second.keyManager, 260_000.sat).second
-        val internalRequestBob = RequestChannelOpen(requestId, walletBob)
-        bob.send(internalRequestBob)
-        val request = bob2alice.expect<PleaseOpenChannel>()
-        assertEquals(request.localFundingAmount, 260_000.sat)
-        val fundingFee = 100.sat
-        val serviceFee = request.localFundingAmount.toMilliSatoshi() * 0.02 // 2% fee is too high
-        val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
-        val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
-        alice.send(openAlice)
-        val open = alice2bob.expect<OpenDualFundedChannel>().copy(
-            tlvStream = TlvStream(
-                ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, serviceFee, fundingFee, openAlice.pushAmount))
-            )
+        // Bob's liquidity policy is too restrictive.
+        val bobPolicy = LiquidityPolicy.Auto(
+            inboundLiquidityTarget = 500_000.sat,
+            maxAbsoluteFee = 100.sat,
+            maxRelativeFeeBasisPoints = 10,
+            skipAbsoluteFeeCheck = false,
+            maxAllowedFeeCredit = 0.msat,
         )
-        bob.forward(open)
-        bob2alice.expect<Error>()
-    }
+        nodeParams.second.liquidityPolicy.emit(bobPolicy)
+        val walletBob = createWallet(nodeParams.second.keyManager, 1_000_000.sat).second
+        bob.send(AddWalletInputsToChannel(walletBob))
 
-    @Test
-    fun `reject swap-in -- no associated channel request`() = runSuspendTest {
-        val nodeParams = Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams)
-        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
-        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
-
-        val requestId = randomBytes32()
-        val walletAlice = createWallet(nodeParams.first.keyManager, 50_000.sat).second
-        val openAlice = OpenChannel(40_000.sat, 0.msat, walletAlice, FeeratePerKw(3500.sat), FeeratePerKw(2500.sat), 0, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
-        alice.send(openAlice)
-        val open = alice2bob.expect<OpenDualFundedChannel>().copy(
-            tlvStream = TlvStream(
-                ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve),
-                ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(requestId, 50.sat.toMilliSatoshi(), 100.sat, openAlice.pushAmount))
-            )
-        )
-        bob.forward(open)
-        bob2alice.expect<Error>()
+        val rejected = bob.nodeParams.nodeEvents.filterIsInstance<LiquidityEvents.Rejected>().first()
+        assertEquals(1_500_000_000.msat, rejected.amount)
+        assertEquals(LiquidityEvents.Source.OnChainWallet, rejected.source)
+        assertEquals(LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(maxRelativeFeeBasisPoints = 10), rejected.reason)
     }
 
     @Test
@@ -551,101 +485,52 @@ class PeerTest : LightningTestSuite() {
 
     @Test
     fun `payment between two nodes -- with disconnection`() = runSuspendTest {
-        // We create two channels between Alice and Bob to ensure that the payment is split in two parts.
-        val (aliceChan1, bobChan1) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 100_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
-        val (aliceChan2, bobChan2) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 100_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
-        val nodeParams = Pair(aliceChan1.staticParams.nodeParams, bobChan1.staticParams.nodeParams)
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
         val walletParams = Pair(
             // Alice must declare Bob as her trampoline node to enable direct payments.
-            TestConstants.Alice.walletParams.copy(trampolineNode = NodeUri(nodeParams.second.nodeId, "bob.com", 9735)),
+            TestConstants.Alice.walletParams.copy(trampolineNode = NodeUri(bob0.staticParams.nodeParams.nodeId, "bob.com", 9735)),
             TestConstants.Bob.walletParams
         )
-        // Bob sends a multipart payment to Alice.
-        val (alice, bob, alice2bob1, bob2alice1) = newPeers(this, nodeParams, walletParams, listOf(aliceChan1 to bobChan1, aliceChan2 to bobChan2), automateMessaging = false)
+        val (alice, bob, alice2bob1, bob2alice1) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
         val invoice = alice.createInvoice(randomBytes32(), 150_000_000.msat, Either.Left("test invoice"), null)
         bob.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, LightningOutgoingPayment.Details.Normal(invoice)))
 
-        // Bob sends one HTLC on each channel.
-        val htlcs = listOf(
-            bob2alice1.expect<UpdateAddHtlc>(),
-            bob2alice1.expect<UpdateAddHtlc>(),
-        )
-        assertEquals(2, htlcs.map { it.channelId }.toSet().size)
-        val commitSigsBob = listOf(
-            bob2alice1.expect<CommitSig>(),
-            bob2alice1.expect<CommitSig>(),
-        )
+        // Bob sends an HTLC to Alice.
+        alice.forward(bob2alice1.expect<UpdateAddHtlc>())
+        alice.forward(bob2alice1.expect<CommitSig>())
 
-        // We cross-sign the HTLC on the first channel.
-        run {
-            val htlc = htlcs.find { it.channelId == aliceChan1.channelId }
-            assertNotNull(htlc)
-            alice.forward(htlc)
-            val commitSigBob = commitSigsBob.find { it.channelId == aliceChan1.channelId }
-            assertNotNull(commitSigBob)
-            alice.forward(commitSigBob)
-            bob.forward(alice2bob1.expect<RevokeAndAck>())
-            bob.forward(alice2bob1.expect<CommitSig>())
-            alice.forward(bob2alice1.expect<RevokeAndAck>())
-        }
-        // We start cross-signing the HTLC on the second channel.
-        run {
-            val htlc = htlcs.find { it.channelId == aliceChan2.channelId }
-            assertNotNull(htlc)
-            alice.forward(htlc)
-            val commitSigBob = commitSigsBob.find { it.channelId == aliceChan2.channelId }
-            assertNotNull(commitSigBob)
-            alice.forward(commitSigBob)
-            bob.forward(alice2bob1.expect<RevokeAndAck>())
-            bob.forward(alice2bob1.expect<CommitSig>())
-            bob2alice1.expect<RevokeAndAck>() // Alice doesn't receive Bob's revocation.
-        }
+        // We start cross-signing the HTLC.
+        bob.forward(alice2bob1.expect<RevokeAndAck>())
+        bob.forward(alice2bob1.expect<CommitSig>())
+        bob2alice1.expect<RevokeAndAck>() // Alice doesn't receive Bob's revocation.
 
-        // We disconnect before Alice receives Bob's revocation on the second channel.
+        // We disconnect before Alice receives Bob's revocation.
         alice.disconnect()
         alice.send(Disconnected)
         bob.disconnect()
         bob.send(Disconnected)
 
         // On reconnection, Bob retransmits its revocation.
-        val (_, _, alice2bob2, bob2alice2) = connect(this, connectionId = 1, alice, bob, channelsCount = 2, expectChannelReady = false, automateMessaging = false)
+        val (_, _, alice2bob2, bob2alice2) = connect(this, connectionId = 1, alice, bob, channelsCount = 1, expectChannelReady = false, automateMessaging = false)
         alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
 
         // Alice has now received the complete payment and fulfills it.
-        val fulfills = listOf(
-            alice2bob2.expect<UpdateFulfillHtlc>(),
-            alice2bob2.expect<UpdateFulfillHtlc>(),
-        )
-        val commitSigsAlice = listOf(
-            alice2bob2.expect<CommitSig>(),
-            alice2bob2.expect<CommitSig>(),
-        )
+        bob.forward(alice2bob2.expect<UpdateFulfillHtlc>(), connectionId = 1)
+        bob.forward(alice2bob2.expect<CommitSig>(), connectionId = 1)
+        alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
+        bob2alice2.expect<CommitSig>() // Alice doesn't receive Bob's signature.
 
-        // We fulfill the first HTLC.
-        run {
-            val fulfill = fulfills.find { it.channelId == aliceChan1.channelId }
-            assertNotNull(fulfill)
-            bob.forward(fulfill, connectionId = 1)
-            val commitSigAlice = commitSigsAlice.find { it.channelId == aliceChan1.channelId }
-            assertNotNull(commitSigAlice)
-            bob.forward(commitSigAlice, connectionId = 1)
-            alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
-            alice.forward(bob2alice2.expect<CommitSig>(), connectionId = 1)
-            bob.forward(alice2bob2.expect<RevokeAndAck>(), connectionId = 1)
-        }
+        // We disconnect before Alice receives Bob's signature.
+        alice.disconnect()
+        alice.send(Disconnected)
+        bob.disconnect()
+        bob.send(Disconnected)
 
-        // We fulfill the second HTLC.
-        run {
-            val fulfill = fulfills.find { it.channelId == aliceChan2.channelId }
-            assertNotNull(fulfill)
-            bob.forward(fulfill, connectionId = 1)
-            val commitSigAlice = commitSigsAlice.find { it.channelId == aliceChan2.channelId }
-            assertNotNull(commitSigAlice)
-            bob.forward(commitSigAlice, connectionId = 1)
-            alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
-            alice.forward(bob2alice2.expect<CommitSig>(), connectionId = 1)
-            bob.forward(alice2bob2.expect<RevokeAndAck>(), connectionId = 1)
-        }
+        // On reconnection, Bob retransmits its signature.
+        val (_, _, alice2bob3, bob2alice3) = connect(this, connectionId = 2, alice, bob, channelsCount = 1, expectChannelReady = false, automateMessaging = false)
+        alice.forward(bob2alice3.expect<CommitSig>(), connectionId = 2)
+        bob.forward(alice2bob3.expect<RevokeAndAck>(), connectionId = 2)
 
         assertEquals(invoice.amount, alice.db.payments.getIncomingPayment(invoice.paymentHash)?.received?.amount)
     }

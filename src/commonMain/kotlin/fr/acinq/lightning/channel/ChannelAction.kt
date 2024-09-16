@@ -1,14 +1,15 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.NodeEvents
 import fr.acinq.lightning.blockchain.Watch
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 
 /** Channel Actions (outputs produced by the state machine). */
@@ -78,8 +79,8 @@ sealed class ChannelAction {
             abstract val origin: Origin?
             abstract val txId: TxId
             abstract val localInputs: Set<OutPoint>
-            data class ViaNewChannel(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
-            data class ViaSpliceIn(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin.PayToOpenOrigin?) : StoreIncomingPayment()
+            data class ViaNewChannel(val amountReceived: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
+            data class ViaSpliceIn(val amountReceived: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
         }
         /** Payment sent through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {
@@ -87,7 +88,7 @@ sealed class ChannelAction {
             abstract val txId: TxId
             data class ViaSpliceOut(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: TxId) : StoreOutgoingPayment()
             data class ViaSpliceCpfp(override val miningFees: Satoshi, override val txId: TxId) : StoreOutgoingPayment()
-            data class ViaInboundLiquidityRequest(override val txId: TxId, override val miningFees: Satoshi, val lease: LiquidityAds.Lease) : StoreOutgoingPayment()
+            data class ViaInboundLiquidityRequest(override val txId: TxId, override val miningFees: Satoshi, val purchase: LiquidityAds.Purchase) : StoreOutgoingPayment()
             data class ViaClose(val amount: Satoshi, override val miningFees: Satoshi, val address: String, override val txId: TxId, val isSentToDefaultAddress: Boolean, val closingType: ChannelClosingType) : StoreOutgoingPayment()
         }
         data class SetLocked(val txId: TxId) : Storage()
@@ -128,8 +129,8 @@ sealed class ChannelAction {
         }
     }
 
-    data class EmitEvent(val event: ChannelEvents) : ChannelAction()
+    data class EmitEvent(val event: NodeEvents) : ChannelAction()
 
-    object Disconnect : ChannelAction()
+    data object Disconnect : ChannelAction()
     // @formatter:on
 }

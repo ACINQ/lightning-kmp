@@ -25,15 +25,6 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `generate the same legacy node id from the same seed`() {
-        // if this test breaks it means that we will generate a different legacy node id from
-        // the same seed, which could be a problem during migration from legacy to kmp
-        val seed = MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "").byteVector()
-        val keyManager = LocalKeyManager(seed, Chain.Regtest, TestConstants.aliceSwapInServerXpub)
-        assertEquals(keyManager.nodeKeys.legacyNodeKey.publicKey, PublicKey.fromHex("0388a99397c5a599c4c56ea2b9f938bd2893744a590af7c1f05c9c3ee822c13fdc"))
-    }
-
-    @Test
     fun `generate channel keys`() {
         val seed = ByteVector("aeb3e9b5642cd4523e9e09164047f60adb413633549c3c6189192921311894d501")
         val keyManager = LocalKeyManager(seed, Chain.Regtest, TestConstants.aliceSwapInServerXpub)
@@ -87,7 +78,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val keyManager = LocalKeyManager(seed, Chain.Regtest, TestConstants.aliceSwapInServerXpub)
         val fundingKeyPath = makeFundingKeyPath(ByteVector("be4fa97c62b9f88437a3be577b31eb48f2165c7bc252194a15ff92d995778cfb"), isInitiator = true)
 
-        val localParams = TestConstants.Alice.channelParams().copy(fundingKeyPath = fundingKeyPath)
+        val localParams = TestConstants.Alice.channelParams(payCommitTxFees = true).copy(fundingKeyPath = fundingKeyPath)
         val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
 
         assertEquals(channelKeys.fundingPubKey(0), PrivateKey.fromHex("730c0f99408dbfbff00146acf84183ce539fabeeb22c143212f459d71374f715").publicKey())
@@ -104,7 +95,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val keyManager = LocalKeyManager(seed, Chain.Regtest, TestConstants.aliceSwapInServerXpub)
         val fundingKeyPath = makeFundingKeyPath(ByteVector("06535806c1aa73971ec4877a5e2e684fa636136c073810f190b63eefc58ca488"), isInitiator = false)
 
-        val localParams = TestConstants.Alice.channelParams().copy(fundingKeyPath = fundingKeyPath)
+        val localParams = TestConstants.Alice.channelParams(payCommitTxFees = true).copy(fundingKeyPath = fundingKeyPath)
         val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
 
         assertEquals(channelKeys.fundingPubKey(0), PrivateKey.fromHex("cd85f39fad742e5c742eeab16f5f1acaa9d9c48977767c7daa4708a47b7222ec").publicKey())
@@ -121,7 +112,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val keyManager = LocalKeyManager(seed, Chain.Mainnet, DeterministicWallet.encode(dummyExtendedPubkey, testnet = false))
         val fundingKeyPath = makeFundingKeyPath(ByteVector("ec1c41cd6be2b6e4ef46c1107f6c51fbb2066d7e1f7720bde4715af233ae1322"), isInitiator = true)
 
-        val localParams = TestConstants.Alice.channelParams().copy(fundingKeyPath = fundingKeyPath)
+        val localParams = TestConstants.Alice.channelParams(payCommitTxFees = true).copy(fundingKeyPath = fundingKeyPath)
         val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
 
         assertEquals(channelKeys.fundingPubKey(0), PrivateKey.fromHex("b3b3f1af2ef961ee7aa62451a93a1fd57ea126c81008e5d95ced822cca30da6e").publicKey())
@@ -138,7 +129,7 @@ class LocalKeyManagerTestsCommon : LightningTestSuite() {
         val keyManager = LocalKeyManager(seed, Chain.Mainnet, DeterministicWallet.encode(dummyExtendedPubkey, testnet = false))
         val fundingKeyPath = makeFundingKeyPath(ByteVector("2b4f045be5303d53f9d3a84a1e70c12251168dc29f300cf9cece0ec85cd8182b"), isInitiator = false)
 
-        val localParams = TestConstants.Alice.channelParams().copy(fundingKeyPath = fundingKeyPath)
+        val localParams = TestConstants.Alice.channelParams(payCommitTxFees = true).copy(fundingKeyPath = fundingKeyPath)
         val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
 
         assertEquals(channelKeys.fundingPubKey(0), PrivateKey.fromHex("033880995016c275e725da625e4a78ea8c3215ab8ea54145fa3124bbb2e4a3d4").publicKey())
