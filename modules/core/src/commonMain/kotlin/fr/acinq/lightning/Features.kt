@@ -155,6 +155,13 @@ sealed class Feature {
     }
 
     @Serializable
+    object TrampolinePayment : Feature() {
+        override val rfcName get() = "trampoline_routing"
+        override val mandatory get() = 56
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
+    }
+
+    @Serializable
     object SimpleClose : Feature() {
         override val rfcName get() = "option_simple_close"
         override val mandatory get() = 60
@@ -192,15 +199,6 @@ sealed class Feature {
         override val rfcName get() = "wake_up_notification_provider"
         override val mandatory get() = 134
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
-    }
-
-    // The version of trampoline enabled by this feature bit does not match the latest spec PR: once the spec is accepted,
-    // we will introduce a new version of trampoline that will work in parallel to this one, until we can safely deprecate it.
-    @Serializable
-    object ExperimentalTrampolinePayment : Feature() {
-        override val rfcName get() = "trampoline_payment_experimental"
-        override val mandatory get() = 148
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
     }
 
     @Serializable
@@ -294,9 +292,9 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ProvideStorage,
             Feature.ChannelType,
             Feature.PaymentMetadata,
+            Feature.TrampolinePayment,
             Feature.SimpleClose,
             Feature.Splicing,
-            Feature.ExperimentalTrampolinePayment,
             Feature.ZeroReserveChannels,
             Feature.WakeUpNotificationClient,
             Feature.WakeUpNotificationProvider,
@@ -334,7 +332,6 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment to listOf(Feature.PaymentSecret),
             Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
             Feature.SimpleClose to listOf(Feature.ShutdownAnySegwit),
-            Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret),
             Feature.FundingFeeCredit to listOf(Feature.OnTheFlyFunding)
         )
 
