@@ -43,8 +43,7 @@
                         "trusted_swap_in_client": "Optional",
                         "channel_backup_client": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "remoteParams": {
@@ -78,16 +77,14 @@
                         "channel_backup_provider": "Optional",
                         "trampoline_payment_experimental": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "channelFlags": 0
         },
         "changes": {
             "localChanges": {
-                "proposed": [
-                ],
+                "proposed": [],
                 "signed": [
                     {
                         "type": "fr.acinq.lightning.wire.UpdateFulfillHtlc",
@@ -96,16 +93,12 @@
                         "paymentPreimage": "2afc28d3ad7a8a83426769f6765edbcd9e320335a2e4200df95f54f22472fe3d"
                     }
                 ],
-                "acked": [
-                ]
+                "acked": []
             },
             "remoteChanges": {
-                "proposed": [
-                ],
-                "acked": [
-                ],
-                "signed": [
-                ]
+                "proposed": [],
+                "acked": [],
+                "signed": []
             },
             "localNextHtlcId": 0,
             "remoteNextHtlcId": 2
@@ -142,8 +135,7 @@
                                 "onionRoutingPacket": "<redacted>"
                             }
                         ],
-                        "htlcsOut": [
-                        ],
+                        "htlcsOut": [],
                         "feerate": 5000,
                         "toLocal": 200000000,
                         "toRemote": 300000000
@@ -203,8 +195,7 @@
                 "remoteCommit": {
                     "index": 1,
                     "spec": {
-                        "htlcsIn": [
-                        ],
+                        "htlcsIn": [],
                         "htlcsOut": [
                             {
                                 "channelId": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd",
@@ -241,8 +232,7 @@
                     "commit": {
                         "index": 2,
                         "spec": {
-                            "htlcsIn": [
-                            ],
+                            "htlcsIn": [],
                             "htlcsOut": [
                                 {
                                     "channelId": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd",
@@ -263,10 +253,8 @@
                 }
             }
         ],
-        "inactive": [
-        ],
-        "payments": {
-        },
+        "inactive": [],
+        "payments": {},
         "remoteNextCommitInfo": {
             "left": {
                 "sentAfterLocalCommitIndex": 1
