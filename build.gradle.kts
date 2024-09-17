@@ -237,7 +237,11 @@ afterEvaluate {
             compileTaskProvider.get().enabled = false
             tasks[processResourcesTaskName].enabled = false
         }
-        binaries.all { linkTask.enabled = false }
+        binaries.all {
+            linkTaskProvider {
+                enabled = false
+            }
+        }
 
         mavenPublication {
             val publicationToDisable = this
