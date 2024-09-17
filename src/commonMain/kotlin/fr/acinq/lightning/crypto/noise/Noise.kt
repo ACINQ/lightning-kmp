@@ -24,7 +24,7 @@ interface CipherFunctions {
 
     // Decrypts ciphertext using a cipher key k of 32 bytes, an 8-byte unsigned integer nonce n, and associated data ad.
     // Returns the plaintext, unless authentication fails, in which case an error is signaled to the caller.
-    fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertext: ByteArray): ByteArray
+    fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray
 }
 
 /**

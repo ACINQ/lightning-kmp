@@ -5,7 +5,7 @@ import fr.acinq.lightning.crypto.ChaCha20Poly1305
 expect object Chacha20Poly1305CipherFunctions : CipherFunctions {
     override fun name(): String
     override fun encrypt(k: ByteArray, n: Long, ad: ByteArray, plaintext: ByteArray): ByteArray
-    override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertext: ByteArray): ByteArray
+    override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray
 }
 
 /**
@@ -25,9 +25,9 @@ object Chacha20Poly1305CipherFunctionsDefault : CipherFunctions {
     }
 
     // Decrypts ciphertext using a cipher key k of 32 bytes, an 8-byte unsigned integer nonce n, and associated data ad.
-    override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertext: ByteArray): ByteArray {
-        val ciphertextMinusMac = ciphertext.dropLast(16).toByteArray()
-        val mac = ciphertext.takeLast(16).toByteArray()
-        return ChaCha20Poly1305.decrypt(k, nonce(n), ciphertextMinusMac, ad, mac)
+    override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray {
+        val ciphertext = ciphertextAndMac.dropLast(16).toByteArray()
+        val mac = ciphertextAndMac.takeLast(16).toByteArray()
+        return ChaCha20Poly1305.decrypt(k, nonce(n), ciphertext, ad, mac)
     }
 }
