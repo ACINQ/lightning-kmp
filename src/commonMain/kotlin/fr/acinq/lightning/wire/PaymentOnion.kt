@@ -399,6 +399,21 @@ object PaymentOnion {
                         else -> Either.Right(Blinded(records, blindedRecords))
                     }
                 }
+
+                fun create(amount: MilliSatoshi, expiry: CltvExpiry, encryptedData: ByteVector, blinding: PublicKey?): Blinded {
+                    val tlvs = TlvStream(
+                        setOfNotNull(
+                            OnionPaymentPayloadTlv.AmountToForward(amount),
+                            OnionPaymentPayloadTlv.OutgoingCltv(expiry),
+                            OnionPaymentPayloadTlv.TotalAmount(amount),
+                            OnionPaymentPayloadTlv.EncryptedRecipientData(encryptedData),
+                            blinding?.let { OnionPaymentPayloadTlv.BlindingPoint(it) },
+                        )
+                    )
+                    // We're creating a payload for an outgoing payment: we don't have access to the decrypted data, so we create an unused dummy one.
+                    val dummyPathId = ByteVector.fromHex("deadbeef")
+                    return Blinded(tlvs, RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(dummyPathId))))
+                }
             }
         }
     }
