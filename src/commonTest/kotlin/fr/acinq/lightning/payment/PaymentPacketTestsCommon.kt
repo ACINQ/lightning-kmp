@@ -8,8 +8,10 @@ import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.states.Channel
 import fr.acinq.lightning.crypto.RouteBlinding
+import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.PacketAndSecrets
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.crypto.sphinx.Sphinx.hash
@@ -792,7 +794,9 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             val paymentSecret = ByteVector32("d1818c04937ace92037fc46e57bafbfc7ec09521bf49ff1564b10832633c2a93")
             val payloadDave = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(150_150_500.msat, 150_150_500.msat, CltvExpiry(800_036), paymentSecret, trampolineOnionForDave)
             assertContentEquals(
-                Hex.decode("fd0255 020408f31d64 04030c3524 0824d1818c04937ace92037fc46e57bafbfc7ec09521bf49ff1564b10832633c2a9308f31d64 14fd02200003868a4ec9883bc8332dcd63bafc80086fe046bf2795c070445381f98f5b4678efc8c102fee084102c1ffb91cae87bbbdce3ef59e68af26deae97af39879713b71df2c31e56acbddf7cc8f85214162785839e981a3abb51749d7cab6e09956a7e384fa658323e144293c7328f6f9097705b05eed2f11107cafdf4f6f6de7a53512e192276386c83f91809462f8f2737b8729d35ce145999770edae36808757db3aa3e77dbd8dc517fb0437e2660b16ef728fbcadf7d7f3cb4395924d1bb50a14ce8ba68635e73a7fa3d55f2a9fa796635a8a1dc6c1a3b72c491d4b1fd5fe642e6decb93d28223e79e4a69ffe71bc6e595b949e4071a2ffa65bd9099d6af7bf7f26065f032969ce33b78195cc741e2c97f801311368aee7e75159de00f6dc2b0b2b2e77c583ce8fe4ae61b774491dfefacc2aa3dfb99d6d00689a344def2086405caa2e2dc2126dc7b47750f3393f492c8b5c96bcd609e1c56a2d713ec9f6c0618a33ddfb20f2f3cbe355424292de47b6374bc012390a433e02f31cfa8a9817bf6a5597ac42b063e1cf3aaf6666b5d420600c8fc8ce689678bd802ac3815f9aaf6a48d0d3a7f940f621bd74d3e738b40c4c67f5b54b258e57d15584cf84ee2ad61c8a1fabb0e035fdb67f92f54f14797fd20bddee25d3a1ea9982757778c311f77dba90013d37780535acc4ef2281ebabf1736cb188fe7f08dc861d61a4135f295d85eb02e3a8f0015c6bcd206c7b5162f0696c1d69a06e42918dbe8fd9affb"),
+                Hex.decode(
+                    "fd0255 020408f31d64 04030c3524 0824d1818c04937ace92037fc46e57bafbfc7ec09521bf49ff1564b10832633c2a9308f31d64 14fd02200003868a4ec9883bc8332dcd63bafc80086fe046bf2795c070445381f98f5b4678efc8c102fee084102c1ffb91cae87bbbdce3ef59e68af26deae97af39879713b71df2c31e56acbddf7cc8f85214162785839e981a3abb51749d7cab6e09956a7e384fa658323e144293c7328f6f9097705b05eed2f11107cafdf4f6f6de7a53512e192276386c83f91809462f8f2737b8729d35ce145999770edae36808757db3aa3e77dbd8dc517fb0437e2660b16ef728fbcadf7d7f3cb4395924d1bb50a14ce8ba68635e73a7fa3d55f2a9fa796635a8a1dc6c1a3b72c491d4b1fd5fe642e6decb93d28223e79e4a69ffe71bc6e595b949e4071a2ffa65bd9099d6af7bf7f26065f032969ce33b78195cc741e2c97f801311368aee7e75159de00f6dc2b0b2b2e77c583ce8fe4ae61b774491dfefacc2aa3dfb99d6d00689a344def2086405caa2e2dc2126dc7b47750f3393f492c8b5c96bcd609e1c56a2d713ec9f6c0618a33ddfb20f2f3cbe355424292de47b6374bc012390a433e02f31cfa8a9817bf6a5597ac42b063e1cf3aaf6666b5d420600c8fc8ce689678bd802ac3815f9aaf6a48d0d3a7f940f621bd74d3e738b40c4c67f5b54b258e57d15584cf84ee2ad61c8a1fabb0e035fdb67f92f54f14797fd20bddee25d3a1ea9982757778c311f77dba90013d37780535acc4ef2281ebabf1736cb188fe7f08dc861d61a4135f295d85eb02e3a8f0015c6bcd206c7b5162f0696c1d69a06e42918dbe8fd9affb"
+                ),
                 payloadDave.write(),
             )
             OutgoingPaymentPacket.buildOnion(sessionKey, listOf(dave), listOf(payloadDave), paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
@@ -834,7 +838,9 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
                 )
             )
             assertContentEquals(
-                Hex.decode("fd0278 020408f0d180 04030c3500 08241221f15a9dece128347dac673d6171be13b3d92c9c77ff581506507045a1d2e808f0d180 0c2102c952268f1501cf108839f4f5d0fbb41a97de778a6ead8caf161c569bd4df1ad7 14fd022000038da50a45c30a086668ad1c34a23c11ee94bf0b4e7b8b8b184b7914645aef9e1ecf8f95df787c87965210644a84d1da8baf1731a02d0a292ae9c6e685a36e0e1679a8e0c38c27de47014966aaacfea446571ddaf7afcff7c3517e7bf57f87388720a1f226cc9ba1f670396435163a6872d39d2460adafdefb355bc5a89d51e62d427aac45e40b18d2b34587ca19753a8a0a7d704e38c190034b0c5b253bd566e20845a22e81d2d6a74071dfdfefe6fceb555f3d52a7f7d6b99e8e74a6cf4893f7374b473e28e62c9d99fc386ed220dd0ecc50274883d9f6a63e4aabdc1d6604827367dd3b3ddf233c2a8a7d577bf75736ca77c5d7d43f85db51c7cc6e33513225428e525ac0c22f6ef6c509e4ebbe4074f1fb726a8fd1e8643893e9fa38ae1eb6fd761e7fb12db8d3f20b5b26483b3fb92e6eb9fabd647870ddc39d61de48bdc39ce26eedf2f4d8da60adc13876844ddda3cc902792a8bd113980011279cddc625b9bcda8b0cc91cacaa4061d565a0b6e5daecf21ef3ce1be4d195c28ddc7337754e1d58908c4d8ffb45d0fbe936b83beb9851b88e57026c80e3e6d7b5b984785b4dd67498f86a9afcfc0548837b87ce07ef524696b68dc5a42312588dd051ea608f46dec1613c558e11d64e32c5cfd6b0e1c93691c724b257033d93dc7fffebca7f494d2b6391492985eac16d6919dcf60f1ab49e6ae216c90776b48ace0404128313220af7b6e546d1b89ab356cab83059301ae2d3a0eff524a610649c8"),
+                Hex.decode(
+                    "fd0278 020408f0d180 04030c3500 08241221f15a9dece128347dac673d6171be13b3d92c9c77ff581506507045a1d2e808f0d180 0c2102c952268f1501cf108839f4f5d0fbb41a97de778a6ead8caf161c569bd4df1ad7 14fd022000038da50a45c30a086668ad1c34a23c11ee94bf0b4e7b8b8b184b7914645aef9e1ecf8f95df787c87965210644a84d1da8baf1731a02d0a292ae9c6e685a36e0e1679a8e0c38c27de47014966aaacfea446571ddaf7afcff7c3517e7bf57f87388720a1f226cc9ba1f670396435163a6872d39d2460adafdefb355bc5a89d51e62d427aac45e40b18d2b34587ca19753a8a0a7d704e38c190034b0c5b253bd566e20845a22e81d2d6a74071dfdfefe6fceb555f3d52a7f7d6b99e8e74a6cf4893f7374b473e28e62c9d99fc386ed220dd0ecc50274883d9f6a63e4aabdc1d6604827367dd3b3ddf233c2a8a7d577bf75736ca77c5d7d43f85db51c7cc6e33513225428e525ac0c22f6ef6c509e4ebbe4074f1fb726a8fd1e8643893e9fa38ae1eb6fd761e7fb12db8d3f20b5b26483b3fb92e6eb9fabd647870ddc39d61de48bdc39ce26eedf2f4d8da60adc13876844ddda3cc902792a8bd113980011279cddc625b9bcda8b0cc91cacaa4061d565a0b6e5daecf21ef3ce1be4d195c28ddc7337754e1d58908c4d8ffb45d0fbe936b83beb9851b88e57026c80e3e6d7b5b984785b4dd67498f86a9afcfc0548837b87ce07ef524696b68dc5a42312588dd051ea608f46dec1613c558e11d64e32c5cfd6b0e1c93691c724b257033d93dc7fffebca7f494d2b6391492985eac16d6919dcf60f1ab49e6ae216c90776b48ace0404128313220af7b6e546d1b89ab356cab83059301ae2d3a0eff524a610649c8"
+                ),
                 payloadEve.write(),
             )
             OutgoingPaymentPacket.buildOnion(sessionKey, listOf(eve), listOf(payloadEve), paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
@@ -1036,5 +1042,90 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertTrue(innerB.invoiceRoutingInfo.size < routingHints.size)
         innerB.invoiceRoutingInfo.forEach { assertTrue(routingHints.contains(it)) }
     }
+
+    @Test
+    fun `build htlc failure onion -- trampoline recipient`() {
+        val (bob, carol) = listOf(randomKey(), randomKey())
+        val invoice = run {
+            val features = Features(
+                Feature.VariableLengthOnion to FeatureSupport.Mandatory,
+                Feature.PaymentSecret to FeatureSupport.Mandatory,
+                Feature.BasicMultiPartPayment to FeatureSupport.Optional,
+                Feature.TrampolinePayment to FeatureSupport.Optional,
+            )
+            Bolt11Invoice.create(Chain.Regtest, 50_000_000.msat, randomBytes32(), carol, Either.Left("test"), CltvExpiryDelta(18), features)
+        }
+        // Alice creates a trampoline payment for Carol, using Bob as trampoline node.
+        val packetForBob = run {
+            val hop = NodeHop(bob.publicKey(), carol.publicKey(), CltvExpiryDelta(50), 2_500.msat)
+            OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, 50_000_000.msat, CltvExpiry(500_000), hop).third
+        }
+        // Bob relays the payment to Carol.
+        val packetForCarol = run {
+            val add = UpdateAddHtlc(randomBytes32(), 3, 50_002_500.msat, invoice.paymentHash, CltvExpiry(500_050), packetForBob.packet)
+            val (_, _, trampolineOnionForCarol) = decryptRelayToTrampoline(add, bob)
+            val payloadForCarol = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(50_000_000.msat, 50_000_000.msat, CltvExpiry(500_000), randomBytes32(), trampolineOnionForCarol)
+            OutgoingPaymentPacket.buildOnion(listOf(carol.publicKey()), listOf(payloadForCarol), invoice.paymentHash, OnionRoutingPacket.PaymentPacketLength)
+        }
+        // Carol returns an encrypted failure for this payment.
+        val failure = IncorrectOrUnknownPaymentDetails(50_000_000.msat, 500_000)
+        val errorForBob = OutgoingPaymentPacket.buildHtlcFailure(carol, invoice.paymentHash, packetForCarol.packet, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(failure)).right!!
+        // Bob peels the error and relays it to Alice.
+        val errorForAlice = run {
+            // Bob cannot fully decrypt Carol's error.
+            assertTrue(FailurePacket.decrypt(errorForBob.toByteArray(), packetForCarol.sharedSecrets.perHopSecrets).isFailure)
+            // Bob peels the error coming from Carol and re-wraps it for Alice.
+            val peeled = FailurePacket.wrap(errorForBob.toByteArray(), packetForCarol.sharedSecrets.perHopSecrets.first().first).toByteVector()
+            OutgoingPaymentPacket.buildHtlcFailure(bob, invoice.paymentHash, packetForBob.packet, ChannelCommand.Htlc.Settlement.Fail.Reason.Bytes(peeled)).right!!
+        }
+        // Alice decrypts the error and its origin.
+        val received = FailurePacket.decrypt(errorForAlice.toByteArray(), packetForBob.outerSharedSecrets.perHopSecrets + packetForBob.innerSharedSecrets.perHopSecrets)
+        assertTrue(received.isSuccess)
+        assertEquals(carol.publicKey(), received.get().originNode)
+        assertEquals(failure, received.get().failureMessage)
+    }
+
+    @Test
+    fun `build htlc failure onion -- non-trampoline recipient`() {
+        val (bob, carol) = listOf(randomKey(), randomKey())
+        val invoice = run {
+            val features = Features(
+                Feature.VariableLengthOnion to FeatureSupport.Mandatory,
+                Feature.PaymentSecret to FeatureSupport.Mandatory,
+                Feature.BasicMultiPartPayment to FeatureSupport.Optional,
+            )
+            Bolt11Invoice.create(Chain.Regtest, 50_000_000.msat, randomBytes32(), carol, Either.Left("test"), CltvExpiryDelta(18), features)
+        }
+        // Alice creates a trampoline payment for Carol, using Bob as trampoline node.
+        val packetForBob = run {
+            val hop = NodeHop(bob.publicKey(), carol.publicKey(), CltvExpiryDelta(50), 2_500.msat)
+            OutgoingPaymentPacket.buildPacketToLegacyRecipient(invoice, 50_000_000.msat, CltvExpiry(500_000), hop).third
+        }
+        // Bob relays the payment to Carol.
+        val packetForCarol = run {
+            val add = UpdateAddHtlc(randomBytes32(), 3, 50_002_500.msat, invoice.paymentHash, CltvExpiry(500_050), packetForBob.packet)
+            val (_, payload) = decryptRelayToLegacy(add, bob)
+            val payloadForCarol = PaymentOnion.FinalPayload.Standard.createMultiPartPayload(payload.amountToForward, payload.amountToForward, payload.outgoingCltv, payload.paymentSecret, payload.paymentMetadata)
+            OutgoingPaymentPacket.buildOnion(listOf(carol.publicKey()), listOf(payloadForCarol), invoice.paymentHash, OnionRoutingPacket.PaymentPacketLength)
+        }
+        // Carol returns an encrypted failure for this payment.
+        val errorForBob = OutgoingPaymentPacket.buildHtlcFailure(carol, invoice.paymentHash, packetForCarol.packet, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(TemporaryNodeFailure)).right!!
+        // Bob peels the error and relays a trampoline error to Alice.
+        val errorForAlice = run {
+            // Bob can decrypt the error coming from Carol.
+            val decrypted = FailurePacket.decrypt(errorForBob.toByteArray(), packetForCarol.sharedSecrets.perHopSecrets)
+            assertTrue(decrypted.isSuccess)
+            assertEquals(TemporaryNodeFailure, decrypted.get().failureMessage)
+            assertEquals(carol.publicKey(), decrypted.get().originNode)
+            // Bob sends a trampoline error back to Alice.
+            OutgoingPaymentPacket.buildHtlcFailure(bob, invoice.paymentHash, packetForBob.packet, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(TemporaryTrampolineFailure)).right!!
+        }
+        // Alice decrypts the error and its origin.
+        val received = FailurePacket.decrypt(errorForAlice.toByteArray(), packetForBob.outerSharedSecrets.perHopSecrets + packetForBob.innerSharedSecrets.perHopSecrets)
+        assertTrue(received.isSuccess)
+        assertEquals(bob.publicKey(), received.get().originNode)
+        assertEquals(TemporaryTrampolineFailure, received.get().failureMessage)
+    }
+
 }
 

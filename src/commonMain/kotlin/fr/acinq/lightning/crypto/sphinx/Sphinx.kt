@@ -10,7 +10,9 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.crypto.ChaCha20
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.toByteVector32
+import fr.acinq.lightning.utils.xor
 import fr.acinq.lightning.wire.*
 import fr.acinq.secp256k1.Hex
 
@@ -343,27 +345,22 @@ object FailurePacket {
      * it was sent by the corresponding node.
      * Note that malicious nodes in the route may have altered the packet, triggering a decryption failure.
      *
-     * @param packet        failure packet.
+     * @param packet failure packet.
      * @param sharedSecrets nodes shared secrets.
-     * @return Success(secret, failure message) if the origin of the packet could be identified and the packet
-     *         decrypted, Failure otherwise.
+     * @return the decrypted failure message and the failing node if the packet can be decrypted.
      */
-    fun decrypt(packet: ByteArray, sharedSecrets: SharedSecrets): Try<DecryptedFailurePacket> {
-        fun loop(packet: ByteArray, secrets: List<Pair<ByteVector32, PublicKey>>): Try<DecryptedFailurePacket> {
-            return if (secrets.isEmpty()) {
-                val ex = IllegalArgumentException("couldn't parse error packet=$packet with sharedSecrets=$secrets")
-                Try.Failure(ex)
-            } else {
-                val (secret, pubkey) = secrets.first()
-                val packet1 = wrap(packet, secret)
-                val um = Sphinx.generateKey("um", secret)
-                when (val error = decode(packet1, um)) {
-                    is Try.Failure -> loop(packet1, secrets.tail())
-                    is Try.Success -> Try.Success(DecryptedFailurePacket(pubkey, error.result))
-                }
+    fun decrypt(packet: ByteArray, sharedSecrets: List<Pair<ByteVector32, PublicKey>>): Try<DecryptedFailurePacket> {
+        return if (sharedSecrets.isEmpty()) {
+            val ex = IllegalArgumentException("couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
+            Try.Failure(ex)
+        } else {
+            val (secret, pubkey) = sharedSecrets.first()
+            val packet1 = wrap(packet, secret)
+            val um = Sphinx.generateKey("um", secret)
+            when (val error = decode(packet1, um)) {
+                is Try.Failure -> decrypt(packet1, sharedSecrets.tail())
+                is Try.Success -> Try.Success(DecryptedFailurePacket(pubkey, error.result))
             }
         }
-
-        return loop(packet, sharedSecrets.perHopSecrets)
     }
 }

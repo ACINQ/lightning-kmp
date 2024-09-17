@@ -378,17 +378,17 @@ class SphinxTestsCommon : LightningTestSuite() {
 
         val packet1 = FailurePacket.create(sharedSecrets.first(), expected.failureMessage)
         assertEquals(292, packet1.size)
-        val decrypted1 = FailurePacket.decrypt(packet1, SharedSecrets(listOf(Pair(sharedSecrets[0], publicKeys[0]))))
+        val decrypted1 = FailurePacket.decrypt(packet1, listOf(Pair(sharedSecrets[0], publicKeys[0])))
         assertEquals(expected, decrypted1.get())
 
         val packet2 = FailurePacket.wrap(packet1, sharedSecrets[1])
         assertEquals(292, packet2.size)
-        val decrypted2 = FailurePacket.decrypt(packet2, SharedSecrets(listOf(1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) }))
+        val decrypted2 = FailurePacket.decrypt(packet2, listOf(1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })
         assertEquals(expected, decrypted2.get())
 
         val packet3 = FailurePacket.wrap(packet2, sharedSecrets[2])
         assertEquals(292, packet3.size)
-        val decrypted3 = FailurePacket.decrypt(packet3, SharedSecrets(listOf(2, 1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) }))
+        val decrypted3 = FailurePacket.decrypt(packet3, listOf(2, 1, 0).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })
         assertEquals(expected, decrypted3.get())
     }
 
@@ -406,7 +406,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             ),
             sharedSecrets[2]
         )
-        assertTrue(FailurePacket.decrypt(packet, SharedSecrets(listOf(0, 2, 1).map { i -> Pair(sharedSecrets[i], publicKeys[i]) })).isFailure)
+        assertTrue(FailurePacket.decrypt(packet, listOf(0, 2, 1).map { i -> Pair(sharedSecrets[i], publicKeys[i]) }).isFailure)
     }
 
     @Test
@@ -468,7 +468,7 @@ class SphinxTestsCommon : LightningTestSuite() {
                 "9c5add3963fc7f6ed7f148623c84134b5647e1306419dbe2174e523fa9e2fbed3a06a19f899145610741c83ad40b7712aefaddec8c6baf7325d92ea4ca4d1df8bce517f7e54554608bf2bd8071a4f52a7a2f7ffbb1413edad81eeea5785aa9d990f2865dc23b4bc3c301a94eec4eabebca66be5cf638f693ec256aec514620cc28ee4a94bd9565bc4d4962b9d3641d4278fb319ed2b84de5b665f307a2db0f7fbb757366067d88c50f7e829138fde4f78d39b5b5802f1b92a8a820865af5cc79f9f30bc3f461c66af95d13e5e1f0381c184572a91dee1c849048a647a1158cf884064deddbf1b0b88dfe2f791428d0ba0f6fb2f04e14081f69165ae66d9297c118f0907705c9c4954a199bae0bb96fad763d690e7daa6cfda59ba7f2c8d11448b604d12d"
             )
             // origin parses error packet and can see that it comes from node #4
-            val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets)
+            val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets.perHopSecrets)
             assertEquals(DecryptedFailurePacket(publicKeys[4], TemporaryNodeFailure), decrypted.get())
         }
     }
@@ -511,7 +511,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             "751c187d145e5498306824f193c6bf9ed4a974fa85b3cc5d32d549ce494c1e7b3a06a19f8a9145610741c83ad40b7712aefaddec8c6baf7325d92ea4ca4d1df8bce517f7e54554608bf2bd8071a4f52a7a2f7ffbb1413edad81eeea5785aa9d990f2865dc23b4bc3c301a94eec4eabebca66be5cf638f693ec256aec514620cc28ee4a94bd9565bc4d4962b9d3641d4278fb319ed2b84de5b665f307a2db0f7fbb757366067d88c50f7e829138fde4f78d39b5b5802f1b92a8a820865af5cc79f9f30bc3f461c66af95d13e5e1f0381c184572a91dee1c849048a647a1158cf884064deddbf1b0b88dfe2f791428d0ba0f6fb2f04e14081f69165ae66d9297c118f0907705c9c4954a199bae0bb96fad763d690e7daa6cfda59ba7f2c8d11448b604d12dc942b5cf1db059d3e73d63967e464b5d5cfd4052de195387de93535e88a2e618e15a7c521d67ce2cc836c49118f205c99f18570504504221e337a29e2716fb28671b2bb91e38ef5e18aaf32c6c02f2fb690358872a1ed28166172631a82c2568d23238017188ebbd48944a147f6cdb3690d5f88e51371cb70adf1fa02afe4ed8b581afc8bcc5104922843a55d52acde09bc9d2b71a663e178788280f3c3eae127d21b0b95777976b3eb17be40a702c244d0e5f833ff49dae6403ff44b131e66df8b88e33ab0a58e379f2c34bf5113c66b9ea8241fc7aa2b1fa53cf4ed3cdd91d407730c66fb039ef3a36d4050dde37d34e80bcfe02a48a6b14ae28227b1627b5ad07608a7763a531f2ffc96dff850e8c583461831b19feffc783bc1beab6301f647e9617d14c92c4b1d63f5147ccda56a35df8ca4806b8884c4aa3c3cc6a174fdc2232404822569c01aba686c1df5eecc059ba97e9688c8b16b70f0d24eacfdba15db1c71f72af1b2af85bd168f0b0800483f115eeccd9b02adf03bdd4a88eab03e43ce342877af2b61f9d3d85497cd1c6b96674f3d4f07f635bb26add1e36835e321d70263b1c04234e222124dad30ffb9f2a138e3ef453442df1af7e566890aedee568093aa922dd62db188aa8361c55503f8e2c2e6ba93de744b55c15260f15ec8e69bb01048ca1fa7bbbd26975bde80930a5b95054688a0ea73af0353cc84b997626a987cc06a517e18f91e02908829d4f4efc011b9867bd9bfe04c5f94e4b9261d30cc39982eb7b250f12aee2a4cce0484ff34eebba89bc6e35bd48d3968e4ca2d77527212017e202141900152f2fd8af0ac3aa456aae13276a13b9b9492a9a636e18244654b3245f07b20eb76b8e1cea8c55e5427f08a63a16b0a633af67c8e48ef8e53519041c9138176eb14b8782c6c2ee76146b8490b97978ee73cd0104e12f483be5a4af414404618e9f6633c55dda6f22252cb793d3d16fae4f0e1431434e7acc8fa2c009d4f6e345ade172313d558a4e61b4377e31b8ed4e28f7cd13a7fe3f72a409bc3bdabfe0ba47a6d861e21f64d2fac706dab18b3e546df4"
         )
         // origin parses error packet and can see that it comes from node #4
-        val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets)
+        val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets.perHopSecrets)
         assertEquals(DecryptedFailurePacket(publicKeys[4], TemporaryNodeFailure), decrypted.get())
     }
 
@@ -546,7 +546,7 @@ class SphinxTestsCommon : LightningTestSuite() {
             val error0 = FailurePacket.wrap(error1, decrypted0.sharedSecret)
 
             // origin parses error packet and can see that it comes from node #2
-            val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets)
+            val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets.perHopSecrets)
             assertEquals(DecryptedFailurePacket(publicKeys[2], InvalidRealm), decrypted.get())
         }
     }
@@ -577,7 +577,7 @@ class SphinxTestsCommon : LightningTestSuite() {
         )
 
         // origin parses error packet and can see that it comes from node #2
-        val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets)
+        val decrypted = FailurePacket.decrypt(error0, packetAndSecrets.sharedSecrets.perHopSecrets)
         assertEquals(DecryptedFailurePacket(publicKeys[2], InvalidRealm), decrypted.get())
     }
 
