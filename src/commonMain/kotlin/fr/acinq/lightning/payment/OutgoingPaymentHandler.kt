@@ -7,8 +7,6 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
-import fr.acinq.lightning.crypto.sphinx.PacketAndSecrets
-import fr.acinq.lightning.crypto.sphinx.SharedSecrets
 import fr.acinq.lightning.db.HopDesc
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPaymentsDb
@@ -20,10 +18,7 @@ import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.wire.FailureMessage
-import fr.acinq.lightning.wire.TrampolineExpiryTooSoon
-import fr.acinq.lightning.wire.TrampolineFeeInsufficient
-import fr.acinq.lightning.wire.UnknownNextPeer
+import fr.acinq.lightning.wire.*
 
 class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
 
@@ -51,14 +46,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
      * @param request payment request containing the total amount to send.
      * @param attemptNumber number of failed previous payment attempts.
      * @param pending pending outgoing payment.
-     * @param sharedSecrets payment onion shared secrets, used to decrypt failures.
+     * @param outgoing payment packet containing the shared secrets used to decrypt failures.
      * @param failures previous payment failures.
      */
     data class PaymentAttempt(
         val request: PayInvoice,
         val attemptNumber: Int,
         val pending: LightningOutgoingPayment.Part,
-        val sharedSecrets: SharedSecrets,
+        val outgoing: OutgoingPacket,
         val failures: List<Either<ChannelException, FailureMessage>>
     ) {
         val fees: MilliSatoshi = pending.amount - request.amount
@@ -99,8 +94,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             }
             is Either.Right -> {
                 val hop = NodeHop(walletParams.trampolineNode.id, request.recipient, trampolineFees.cltvExpiryDelta, trampolineFees.calculateFees(request.amount))
-                val (childPayment, sharedSecrets, cmd) = createOutgoingPayment(request, result.value, hop, currentBlockHeight)
-                val payment = PaymentAttempt(request, 0, childPayment, sharedSecrets, listOf())
+                val (childPayment, packet, cmd) = createOutgoingPayment(request, result.value, hop, currentBlockHeight)
+                val payment = PaymentAttempt(request, 0, childPayment, packet, listOf())
                 db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails, listOf(childPayment), LightningOutgoingPayment.Status.Pending))
                 pending[request.paymentId] = payment
                 Progress(request, payment.fees, listOf(cmd))
@@ -137,8 +132,10 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             return null
         }
 
+        // We try decrypting with the payment onion hops first, and then iterate over the trampoline hops if necessary.
+        val sharedSecrets = payment.outgoing.outerSharedSecrets.perHopSecrets + payment.outgoing.innerSharedSecrets.perHopSecrets
         val failure = when (event.result) {
-            is ChannelAction.HtlcResult.Fail.RemoteFail -> when (val decrypted = FailurePacket.decrypt(event.result.fail.reason.toByteArray(), payment.sharedSecrets)) {
+            is ChannelAction.HtlcResult.Fail.RemoteFail -> when (val decrypted = FailurePacket.decrypt(event.result.fail.reason.toByteArray(), sharedSecrets)) {
                 is Try.Failure -> {
                     logger.warning { "could not decrypt failure packet: ${decrypted.error.message}" }
                     Either.Left(CannotDecryptFailure(channelId, decrypted.error.message ?: "unknown"))
@@ -168,8 +165,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         val trampolineFees = payment.request.trampolineFeesOverride ?: walletParams.trampolineFees
         val finalError = when {
             trampolineFees.size <= payment.attemptNumber + 1 -> FinalFailure.RetryExhausted
-            failure == Either.Right(UnknownNextPeer) -> FinalFailure.RecipientUnreachable
-            failure != Either.Right(TrampolineExpiryTooSoon) && failure != Either.Right(TrampolineFeeInsufficient) -> FinalFailure.UnknownError // non-retriable error
+            failure == Either.Right(UnknownNextPeer) || failure == Either.Right(UnknownNextTrampoline) -> FinalFailure.RecipientUnreachable
+            failure.right is IncorrectOrUnknownPaymentDetails || failure.right is FinalIncorrectCltvExpiry || failure.right is FinalIncorrectHtlcAmount -> FinalFailure.RecipientRejectedPayment
+            failure != Either.Right(TemporaryTrampolineFailure) && failure.right !is TrampolineFeeOrExpiryInsufficient && failure != Either.Right(PaymentTimeout) -> FinalFailure.UnknownError // non-retriable error
             else -> null
         }
         return if (finalError != null) {
@@ -177,8 +175,15 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             removeFromState(payment.request.paymentId)
             Failure(payment.request, OutgoingPaymentFailure(finalError, payment.failures + failure))
         } else {
-            // The trampoline node is asking us to retry the payment with more fees or a larger expiry delta.
-            val nextFees = trampolineFees[payment.attemptNumber + 1]
+            val nextFees = when (val f = failure.right) {
+                is TrampolineFeeOrExpiryInsufficient -> {
+                    // The trampoline node is asking us to retry the payment with more fees or a larger expiry delta.
+                    val requestedFee = Lightning.nodeFee(f.feeBase, f.feeProportionalMillionths.toLong(), payment.request.amount)
+                    val nextFees = trampolineFees.drop(payment.attemptNumber + 1).firstOrNull { it.calculateFees(payment.request.amount) >= requestedFee } ?: trampolineFees[payment.attemptNumber + 1]
+                    nextFees.copy(cltvExpiryDelta = maxOf(nextFees.cltvExpiryDelta, f.expiryDelta))
+                }
+                else -> trampolineFees[payment.attemptNumber + 1]
+            }
             logger.info { "retrying payment with higher fees (base=${nextFees.feeBase}, proportional=${nextFees.feeProportional})..." }
             val trampolineAmount = payment.request.amount + nextFees.calculateFees(payment.request.amount)
             when (val result = selectChannel(trampolineAmount, channels)) {
@@ -190,13 +195,13 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 }
                 is Either.Right -> {
                     val hop = NodeHop(walletParams.trampolineNode.id, payment.request.recipient, nextFees.cltvExpiryDelta, nextFees.calculateFees(payment.request.amount))
-                    val (childPayment, sharedSecrets, cmd) = createOutgoingPayment(payment.request, result.value, hop, currentBlockHeight)
+                    val (childPayment, packet, cmd) = createOutgoingPayment(payment.request, result.value, hop, currentBlockHeight)
                     db.addOutgoingLightningParts(payment.request.paymentId, listOf(childPayment))
                     val payment1 = PaymentAttempt(
                         request = payment.request,
                         attemptNumber = payment.attemptNumber + 1,
                         pending = childPayment,
-                        sharedSecrets = sharedSecrets,
+                        outgoing = packet,
                         failures = payment.failures + failure
                     )
                     pending[payment1.request.paymentId] = payment1
@@ -319,7 +324,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
     }
 
-    private fun createOutgoingPayment(request: PayInvoice, channel: Normal, hop: NodeHop, currentBlockHeight: Int): Triple<LightningOutgoingPayment.Part, SharedSecrets, WrappedChannelCommand> {
+    private fun createOutgoingPayment(request: PayInvoice, channel: Normal, hop: NodeHop, currentBlockHeight: Int): Triple<LightningOutgoingPayment.Part, OutgoingPacket, WrappedChannelCommand> {
         val logger = MDCLogger(logger, staticMdc = request.mdc())
         val childId = UUID.randomUUID()
         childToParentId[childId] = request.paymentId
@@ -332,10 +337,10 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         )
         logger.info { "sending $amount to channel ${channel.shortChannelId}" }
         val add = ChannelCommand.Htlc.Add(amount, request.paymentHash, expiry, onion.packet, paymentId = childId, commit = true)
-        return Triple(outgoingPayment, onion.sharedSecrets, WrappedChannelCommand(channel.channelId, add))
+        return Triple(outgoingPayment, onion, WrappedChannelCommand(channel.channelId, add))
     }
 
-    private fun createPaymentOnion(request: PayInvoice, hop: NodeHop, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
+    private fun createPaymentOnion(request: PayInvoice, hop: NodeHop, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, OutgoingPacket> {
         return when (val paymentRequest = request.paymentDetails.paymentRequest) {
             is Bolt11Invoice -> {
                 val minFinalExpiryDelta = paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
