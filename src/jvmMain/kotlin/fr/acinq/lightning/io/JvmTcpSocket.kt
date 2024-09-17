@@ -159,7 +159,7 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
 }
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
-    override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
+    actual override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         val logger = loggerFactory.newLogger(this::class)
         return withContext(Dispatchers.IO) {
             try {

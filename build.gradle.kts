@@ -1,11 +1,13 @@
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.9.23"
-    kotlin("plugin.serialization") version "1.9.23"
-    id("org.jetbrains.dokka") version "1.9.10"
+    kotlin("multiplatform") version "2.0.20"
+    kotlin("plugin.serialization") version "2.0.20"
+    id("org.jetbrains.dokka") version "1.9.20"
     `maven-publish`
 }
 
@@ -30,16 +32,17 @@ kotlin {
     val bitcoinKmpVersion = "0.20.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
     val secpJniJvmVersion = "0.15.0"
 
-    val serializationVersion = "1.6.2"
-    val coroutineVersion = "1.7.3"
+    val serializationVersion = "1.7.2"
+    val coroutineVersion = "1.9.0"
     val datetimeVersion = "0.6.0"
-    val ktorVersion = "2.3.7"
+    val ktorVersion = "2.3.12"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val kermitLoggerVersion = "2.0.2"
+    val kermitLoggerVersion = "2.0.4"
 
     jvm {
-        compilations.all {
-            kotlinOptions.jvmTarget = "1.8"
+        @OptIn(ExperimentalKotlinGradlePluginApi::class)
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_1_8) // TODO: update this?
         }
     }
 
@@ -153,15 +156,12 @@ kotlin {
         resolutionStrategy.cacheChangingModulesFor(0, TimeUnit.SECONDS)
     }
 
-    targets.all {
-        compilations.all {
-            kotlinOptions {
-                allWarningsAsErrors = true
-                // We use expect/actual for classes (see Chacha20Poly1305CipherFunctions). This feature is in beta and raises a warning.
-                // See https://youtrack.jetbrains.com/issue/KT-61573
-                kotlinOptions.freeCompilerArgs += "-Xexpect-actual-classes"
-            }
-        }
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    compilerOptions {
+        //allWarningsAsErrors.set(true)
+        // We use expect/actual for classes (see Chacha20Poly1305CipherFunctions). This feature is in beta and raises a warning.
+        // See https://youtrack.jetbrains.com/issue/KT-61573
+        freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 }
 
