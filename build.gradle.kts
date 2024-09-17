@@ -322,10 +322,3 @@ tasks
     .map {
         it.filter.excludeTestsMatching("*MempoolSpace*Test")
     }
-
-// Make NS_FORMAT_ARGUMENT(1) a no-op
-// This fixes an issue when building PhoenixCrypto using XCode 13
-// More on this: https://youtrack.jetbrains.com/issue/KT-48807#focus=Comments-27-5210791.0-0
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.CInteropProcess::class.java) {
-    settings.compilerOpts("-DNS_FORMAT_ARGUMENT(A)=")
-}
