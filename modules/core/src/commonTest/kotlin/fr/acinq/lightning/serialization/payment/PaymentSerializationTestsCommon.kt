@@ -41,7 +41,7 @@ class PaymentSerializationTestsCommon {
                             Feature.VariableLengthOnion to FeatureSupport.Mandatory,
                             Feature.PaymentSecret to FeatureSupport.Mandatory,
                             Feature.BasicMultiPartPayment to FeatureSupport.Optional,
-                            Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional
+                            Feature.TrampolinePayment to FeatureSupport.Optional
                         )
                     ),
                     parts = emptyList(),
@@ -63,7 +63,7 @@ class PaymentSerializationTestsCommon {
                             Feature.VariableLengthOnion to FeatureSupport.Mandatory,
                             Feature.PaymentSecret to FeatureSupport.Mandatory,
                             Feature.BasicMultiPartPayment to FeatureSupport.Optional,
-                            Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional
+                            Feature.TrampolinePayment to FeatureSupport.Optional
                         )
                     ),
                     parts = listOf(
@@ -184,7 +184,7 @@ class PaymentSerializationTestsCommon {
                                 Feature.VariableLengthOnion to FeatureSupport.Mandatory,
                                 Feature.PaymentSecret to FeatureSupport.Mandatory,
                                 Feature.BasicMultiPartPayment to FeatureSupport.Optional,
-                                Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional
+                                Feature.TrampolinePayment to FeatureSupport.Optional
                             )
                         )
                     ),
