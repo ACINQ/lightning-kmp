@@ -16,6 +16,12 @@ brew install libtool
 brew install gmp
 ```
 
+For Linux, our tests use ktor-client which depends on [ktor-client-curl-linuxx64](https://mvnrepository.com/artifact/io.ktor/ktor-client-curl-linuxx64) so you should install:
+
+```sh
+apt install libcurl4-openssh-dev
+```
+
 ## Build
 
 You should start by cloning the repository locally:
