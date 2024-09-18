@@ -42,8 +42,7 @@
                         "trusted_swap_in_provider": "Optional",
                         "channel_backup_provider": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "remoteParams": {
@@ -77,8 +76,7 @@
                         "channel_backup_client": "Optional",
                         "trampoline_payment_experimental": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "channelFlags": {
@@ -88,20 +86,14 @@
         },
         "changes": {
             "localChanges": {
-                "proposed": [
-                ],
-                "signed": [
-                ],
-                "acked": [
-                ]
+                "proposed": [],
+                "signed": [],
+                "acked": []
             },
             "remoteChanges": {
-                "proposed": [
-                ],
-                "acked": [
-                ],
-                "signed": [
-                ]
+                "proposed": [],
+                "acked": [],
+                "signed": []
             },
             "localNextHtlcId": 2,
             "remoteNextHtlcId": 0
@@ -120,8 +112,7 @@
                 "localCommit": {
                     "index": 1,
                     "spec": {
-                        "htlcsIn": [
-                        ],
+                        "htlcsIn": [],
                         "htlcsOut": [
                             {
                                 "channelId": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd",
@@ -215,8 +206,7 @@
                                 "onionRoutingPacket": "<redacted>"
                             }
                         ],
-                        "htlcsOut": [
-                        ],
+                        "htlcsOut": [],
                         "feerate": 5000,
                         "toLocal": 200000000,
                         "toRemote": 300000000
@@ -227,8 +217,7 @@
                 "nextRemoteCommit": null
             }
         ],
-        "inactive": [
-        ],
+        "inactive": [],
         "payments": {
             "0": "28f366cb-6c14-4100-a33e-b85b809ed38a",
             "1": "c6dca627-db1e-47d7-b7a5-abe70d276099"

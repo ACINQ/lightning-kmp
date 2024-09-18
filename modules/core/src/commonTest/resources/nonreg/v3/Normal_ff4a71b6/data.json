@@ -42,8 +42,7 @@
                         "trusted_swap_in_provider": "Optional",
                         "channel_backup_provider": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "remoteParams": {
@@ -77,8 +76,7 @@
                         "channel_backup_client": "Optional",
                         "trampoline_payment_experimental": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "channelFlags": {
@@ -88,18 +86,13 @@
         },
         "changes": {
             "localChanges": {
-                "proposed": [
-                ],
-                "signed": [
-                ],
-                "acked": [
-                ]
+                "proposed": [],
+                "signed": [],
+                "acked": []
             },
             "remoteChanges": {
-                "proposed": [
-                ],
-                "acked": [
-                ],
+                "proposed": [],
+                "acked": [],
                 "signed": [
                     {
                         "type": "fr.acinq.lightning.wire.UpdateAddHtlc",
@@ -267,8 +260,7 @@
                                 "onionRoutingPacket": "<redacted>"
                             }
                         ],
-                        "htlcsOut": [
-                        ],
+                        "htlcsOut": [],
                         "feerate": 5000,
                         "toLocal": 200000000,
                         "toRemote": 790910000
@@ -336,8 +328,7 @@
                 }
             }
         ],
-        "inactive": [
-        ],
+        "inactive": [],
         "payments": {
             "0": "7e780474-04b9-41db-94b9-7ef99349408f",
             "1": "683c4687-c4b7-4cb1-ac82-6808f57f4409"

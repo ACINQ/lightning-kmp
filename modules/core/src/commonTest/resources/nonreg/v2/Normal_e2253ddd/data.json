@@ -44,8 +44,7 @@
                         "trusted_swap_in_provider": "Optional",
                         "channel_backup_provider": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "remoteParams": {
@@ -79,8 +78,7 @@
                         "channel_backup_client": "Optional",
                         "trampoline_payment_experimental": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "channelFlags": {
@@ -90,16 +88,12 @@
         },
         "changes": {
             "localChanges": {
-                "proposed": [
-                ],
-                "signed": [
-                ],
-                "acked": [
-                ]
+                "proposed": [],
+                "signed": [],
+                "acked": []
             },
             "remoteChanges": {
-                "proposed": [
-                ],
+                "proposed": [],
                 "acked": [
                     {
                         "type": "fr.acinq.lightning.wire.UpdateAddHtlc",
@@ -129,8 +123,7 @@
                         "onionRoutingPacket": "<redacted>"
                     }
                 ],
-                "signed": [
-                ]
+                "signed": []
             },
             "localNextHtlcId": 4,
             "remoteNextHtlcId": 3
@@ -318,8 +311,7 @@
                                 "onionRoutingPacket": "<redacted>"
                             }
                         ],
-                        "htlcsOut": [
-                        ],
+                        "htlcsOut": [],
                         "feerate": 5000,
                         "toLocal": 200000000,
                         "toRemote": 740500000
@@ -330,8 +322,7 @@
                 "nextRemoteCommit": null
             }
         ],
-        "inactive": [
-        ],
+        "inactive": [],
         "payments": {
             "0": "fc04440c-9db0-4d12-98bc-ab3197ddd10a",
             "1": "cc5751b1-6c0a-4828-a26c-6a6e57fd4eaa",

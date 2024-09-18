@@ -42,8 +42,7 @@
                         "trusted_swap_in_provider": "Optional",
                         "channel_backup_provider": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "remoteParams": {
@@ -77,8 +76,7 @@
                         "channel_backup_client": "Optional",
                         "trampoline_payment_experimental": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "channelFlags": {
@@ -96,18 +94,13 @@
                         "paymentPreimage": "470394f1ea93ed652ed8fba12c00dcfe8212c4fd3295f7413f7a927e002ea4eb"
                     }
                 ],
-                "signed": [
-                ],
-                "acked": [
-                ]
+                "signed": [],
+                "acked": []
             },
             "remoteChanges": {
-                "proposed": [
-                ],
-                "acked": [
-                ],
-                "signed": [
-                ]
+                "proposed": [],
+                "acked": [],
+                "signed": []
             },
             "localNextHtlcId": 1,
             "remoteNextHtlcId": 1
@@ -234,8 +227,7 @@
                 "nextRemoteCommit": null
             }
         ],
-        "inactive": [
-        ],
+        "inactive": [],
         "payments": {
             "0": "a63c8f54-772a-4912-9b2a-055f7f64ce56"
         },

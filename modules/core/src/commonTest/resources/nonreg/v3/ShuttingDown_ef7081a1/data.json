@@ -42,8 +42,7 @@
                         "trusted_swap_in_provider": "Optional",
                         "channel_backup_provider": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "remoteParams": {
@@ -77,8 +76,7 @@
                         "channel_backup_client": "Optional",
                         "trampoline_payment_experimental": "Optional"
                     },
-                    "unknown": [
-                    ]
+                    "unknown": []
                 }
             },
             "channelFlags": {
@@ -88,8 +86,7 @@
         },
         "changes": {
             "localChanges": {
-                "proposed": [
-                ],
+                "proposed": [],
                 "signed": [
                     {
                         "type": "fr.acinq.lightning.wire.UpdateAddHtlc",
@@ -101,16 +98,12 @@
                         "onionRoutingPacket": "<redacted>"
                     }
                 ],
-                "acked": [
-                ]
+                "acked": []
             },
             "remoteChanges": {
-                "proposed": [
-                ],
-                "acked": [
-                ],
-                "signed": [
-                ]
+                "proposed": [],
+                "acked": [],
+                "signed": []
             },
             "localNextHtlcId": 2,
             "remoteNextHtlcId": 0
@@ -129,8 +122,7 @@
                 "localCommit": {
                     "index": 1,
                     "spec": {
-                        "htlcsIn": [
-                        ],
+                        "htlcsIn": [],
                         "htlcsOut": [
                             {
                                 "channelId": "2f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd",
@@ -191,8 +183,7 @@
                                 "onionRoutingPacket": "<redacted>"
                             }
                         ],
-                        "htlcsOut": [
-                        ],
+                        "htlcsOut": [],
                         "feerate": 5000,
                         "toLocal": 200000000,
                         "toRemote": 775000000
@@ -230,8 +221,7 @@
                                     "onionRoutingPacket": "<redacted>"
                                 }
                             ],
-                            "htlcsOut": [
-                            ],
+                            "htlcsOut": [],
                             "feerate": 5000,
                             "toLocal": 200000000,
                             "toRemote": 740000000
@@ -242,8 +232,7 @@
                 }
             }
         ],
-        "inactive": [
-        ],
+        "inactive": [],
         "payments": {
             "0": "87833a1a-fec1-47cd-a68b-3ebfbb2330ce",
             "1": "7c68b0d3-68a7-425a-8601-37d35d4bd2f1"
