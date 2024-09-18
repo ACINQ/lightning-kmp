@@ -1,5 +1,6 @@
 package fr.acinq.lightning.io
 
+import fr.acinq.lightning.io.TcpSocket.TLS
 import fr.acinq.lightning.logging.LoggerFactory
 
 interface TcpSocket {
@@ -65,6 +66,8 @@ suspend fun TcpSocket.send(bytes: ByteArray, flush: Boolean = true) = send(bytes
 suspend fun TcpSocket.receiveFully(buffer: ByteArray) = receiveFully(buffer, 0, buffer.size)
 suspend fun TcpSocket.receiveAvailable(buffer: ByteArray) = receiveAvailable(buffer, 0, buffer.size)
 
-internal expect object PlatformSocketBuilder : TcpSocket.Builder
+internal expect object PlatformSocketBuilder : TcpSocket.Builder {
+    override suspend fun connect(host: String, port: Int, tls: TLS, loggerFactory: LoggerFactory): TcpSocket
+}
 
 suspend fun TcpSocket.receiveFully(size: Int): ByteArray = ByteArray(size).also { receiveFully(it) }
