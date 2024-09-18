@@ -248,8 +248,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         client.stop()
     }
 
-    @Ignore
-    @Test
+    //@Test
     fun `perf test generator`() = runSuspendTest(timeout = 45.seconds) {
         val client = connectToMainnetServer()
         val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger)
