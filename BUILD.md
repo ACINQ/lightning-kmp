@@ -16,7 +16,7 @@ brew install libtool
 brew install gmp
 ```
 
-Our tests use the ktor-client which [depend on libcurl](https://ktor.io/docs/client-engines.html#curl). On Linux, you need to install the `libcurl4-gnutls-dev` package:
+Our tests use the ktor-client which [depends on libcurl](https://ktor.io/docs/client-engines.html#curl). On Linux, you need to install the `libcurl4-gnutls-dev` package:
 
 ```sh
 sudo apt-get install libcurl4-gnutls-dev
