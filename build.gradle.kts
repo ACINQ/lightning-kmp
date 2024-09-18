@@ -32,7 +32,7 @@ kotlin {
     val bitcoinKmpVersion = "0.20.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
     val secpJniJvmVersion = "0.15.0"
 
-    val serializationVersion = "1.7.2"
+    val serializationVersion = "1.7.1"
     val coroutineVersion = "1.9.0"
     val datetimeVersion = "0.6.0"
     val ktorVersion = "2.3.12"
