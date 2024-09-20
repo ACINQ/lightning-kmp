@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
 import fr.acinq.lightning.db.IncomingPayment
+import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.Init
 import fr.acinq.lightning.wire.LiquidityAds
@@ -50,7 +51,7 @@ sealed interface LiquidityEvents : NodeEvents {
             data class TooManyParts(val parts: Int) : Reason()
         }
     }
-    data class Purchased(val purchase: LiquidityAds.Purchase) : PaymentEvents
+    data class Purchased(val purchase: LiquidityAds.Purchase) : LiquidityEvents
 }
 
 /** This is useful on iOS to ask the OS for time to finish some sensitive tasks. */
@@ -73,4 +74,5 @@ sealed interface PaymentEvents : NodeEvents {
         val amount: MilliSatoshi = receivedWith.map { it.amountReceived }.sum()
         val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
     }
+    data class PaymentSent(val payment: OutgoingPayment) : PaymentEvents
 }
