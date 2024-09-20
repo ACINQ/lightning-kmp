@@ -290,7 +290,6 @@ val dockerTestEnv by tasks.creating(Exec::class) {
 }
 
 val dockerCleanup by tasks.creating(Exec::class) {
-    println("Cleaning up dockers...")
     workingDir = projectDir.resolve("docker-local-test")
     commandLine("bash", "env.sh", "elx-stop", "btc-stop", "remove")
 }
