@@ -913,13 +913,11 @@ data class Normal(
                 // and what we refunded the remote peer for some of their inputs and outputs via the lease.
                 val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + purchase.fees.miningFee
                 add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, purchase = purchase))
+                add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
             }
-            addAll(origins.map { origin ->
-                when (origin) {
-                    is Origin.OffChainPayment -> ChannelAction.EmitEvent(LiquidityEvents.Accepted(liquidityPurchase?.amount?.toMilliSatoshi() ?: 0.msat, origin.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment))
-                    is Origin.OnChainWallet -> ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees))
-                }
-            })
+            origins.filterIsInstance<Origin.OnChainWallet>().forEach { origin ->
+                add(ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees)))
+            }
             if (staticParams.useZeroConf) {
                 logger.info { "channel is using 0-conf, sending splice_locked right away" }
                 val spliceLocked = SpliceLocked(channelId, action.fundingTx.txId)

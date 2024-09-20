@@ -99,7 +99,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         val (alice, _, _, commitSigBob) = init(aliceFundingAmount = 0.sat, alicePushAmount = 0.msat, bobPushAmount = 50_000_000.msat, channelOrigin = channelOrigin)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
         assertIs<WaitForFundingConfirmed>(alice1.state)
-        assertEquals(actionsAlice1.size, 6)
+        assertEquals(5, actionsAlice1.size)
         actionsAlice1.hasOutgoingMessage<TxSignatures>()
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         actionsAlice1.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also {
@@ -110,7 +110,6 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         actionsAlice1.hasWatch<WatchConfirmed>()
         val events = actionsAlice1.filterIsInstance<ChannelAction.EmitEvent>().map { it.event }
         assertTrue(events.any { it is ChannelEvents.Created })
-        assertTrue(events.any { it is LiquidityEvents.Accepted })
     }
 
     @Test
@@ -194,7 +193,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertTrue(actionsAlice1.isEmpty())
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(txSigsBob))
             assertIs<WaitForFundingConfirmed>(alice2.state)
-            assertEquals(7, actionsAlice2.size)
+            assertEquals(8, actionsAlice2.size)
             assertTrue(actionsAlice2.hasOutgoingMessage<TxSignatures>().channelData.isEmpty())
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
             val watchConfirmedAlice = actionsAlice2.findWatch<WatchConfirmed>()
