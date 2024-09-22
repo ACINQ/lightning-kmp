@@ -13,10 +13,10 @@ class InMemoryPaymentsDb : PaymentsDb {
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
     override suspend fun setLocked(txId: TxId) {}
 
-    override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long): IncomingPayment {
+    override suspend fun addIncomingPayment(id: UUID, preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long): IncomingPayment {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
         require(!incoming.contains(paymentHash)) { "an incoming payment for $paymentHash already exists" }
-        val incomingPayment = IncomingPayment(preimage, origin, null, createdAt)
+        val incomingPayment = IncomingPayment(id, preimage, origin, null, createdAt)
         incoming[paymentHash] = incomingPayment
         return incomingPayment
     }

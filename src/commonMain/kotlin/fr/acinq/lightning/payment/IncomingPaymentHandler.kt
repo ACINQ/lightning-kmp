@@ -19,6 +19,7 @@ import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.UUID.Companion.randomUUID
 import fr.acinq.lightning.wire.*
 
 sealed class PaymentPart {
@@ -104,7 +105,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             timestampSeconds
         )
         logger.info(mapOf("paymentHash" to paymentHash)) { "generated payment request ${pr.write()}" }
-        db.addIncomingPayment(paymentPreimage, IncomingPayment.Origin.Invoice(pr))
+        db.addIncomingPayment(randomUUID(), paymentPreimage, IncomingPayment.Origin.Invoice(pr))
         return pr
     }
 
@@ -149,6 +150,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
             else -> {
                 // this is a swap, there was no pre-existing invoice, we need to create a fake one
                 val incomingPayment = db.addIncomingPayment(
+                    id = randomUUID(),
                     preimage = randomBytes32(), // not used, placeholder
                     origin = IncomingPayment.Origin.OnChain(action.txId, action.localInputs)
                 )
@@ -309,7 +311,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                             if (incomingPayment.origin is IncomingPayment.Origin.Offer) {
                                 // We didn't store the Bolt 12 invoice in our DB when receiving the invoice_request (to protect against DoS).
                                 // We need to create the DB entry now otherwise the payment won't be recorded.
-                                db.addIncomingPayment(incomingPayment.preimage, incomingPayment.origin)
+            db.addIncomingPayment(randomUUID(), incomingPayment.preimage, incomingPayment.origin)
                             }
                             db.receivePayment(paymentPart.paymentHash, received.receivedWith)
                             nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(paymentPart.paymentHash, received.receivedWith))
@@ -388,7 +390,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: IncomingPayment
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
                     }
                     else -> {
-                        val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash) ?: IncomingPayment(metadata.preimage, IncomingPayment.Origin.Offer(metadata), null)
+                        val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash) ?: IncomingPayment(randomUUID(), metadata.preimage, IncomingPayment.Origin.Offer(metadata), null)
                         when {
                             incomingPayment.origin !is IncomingPayment.Origin.Offer -> {
                                 logger.warning { "unsupported payment type: ${incomingPayment.origin::class}" }

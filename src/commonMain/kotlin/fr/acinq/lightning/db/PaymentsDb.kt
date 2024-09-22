@@ -32,7 +32,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
-    suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long = currentTimestampMillis()): IncomingPayment
+    suspend fun addIncomingPayment(id: UUID, preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long = currentTimestampMillis()): IncomingPayment
 
     /** Get information about an incoming payment (paid or not) for the given payment hash, if any. */
     suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
@@ -91,6 +91,8 @@ interface OutgoingPaymentsDb {
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
+    abstract val id: UUID
+
     /** Absolute time in milliseconds since UNIX epoch when the payment was created. */
     abstract val createdAt: Long
 
@@ -117,7 +119,7 @@ sealed class WalletPayment {
  * @param received funds received for this payment, null if no funds have been received yet.
  * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
  */
-data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, override val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
+data class IncomingPayment(override val id: UUID, val preimage: ByteVector32, val origin: Origin, val received: Received?, override val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
 
@@ -218,9 +220,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     fun isExpired(): Boolean = origin is Origin.Invoice && origin.paymentRequest.isExpired()
 }
 
-sealed class OutgoingPayment : WalletPayment() {
-    abstract val id: UUID
-}
+sealed class OutgoingPayment : WalletPayment()
 
 /**
  * An outgoing payment sent by this node.

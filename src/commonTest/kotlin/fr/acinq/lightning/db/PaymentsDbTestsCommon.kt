@@ -13,6 +13,8 @@ import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.UUID.Companion.randomUUID
+import fr.acinq.lightning.wire.LiquidityAds
 import kotlin.test.*
 
 class PaymentsDbTestsCommon : LightningTestSuite() {
@@ -22,9 +24,10 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val (db, preimage, pr) = createFixture()
         assertNull(db.getIncomingPayment(pr.paymentHash))
 
+        val id = randomUUID()
         val channelId = randomBytes32()
-        val incoming = IncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), null, 100)
-        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 100)
+        val incoming = IncomingPayment(id, preimage, IncomingPayment.Origin.Invoice(pr), null, 100)
+        db.addIncomingPayment(id, preimage, IncomingPayment.Origin.Invoice(pr), 100)
         val pending = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(pending)
         assertEquals(incoming, pending)
@@ -61,9 +64,10 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val (db, preimage, pr) = createFixture()
         assertNull(db.getIncomingPayment(pr.paymentHash))
 
+        val id = randomUUID()
         val (channelId1, channelId2, channelId3) = listOf(randomBytes32(), randomBytes32(), randomBytes32())
-        val incoming = IncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), null, 200)
-        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
+        val incoming = IncomingPayment(id, preimage, IncomingPayment.Origin.Invoice(pr), null, 200)
+        db.addIncomingPayment(id, preimage, IncomingPayment.Origin.Invoice(pr), 200)
         val pending = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(pending)
         assertEquals(incoming, pending)
@@ -90,9 +94,10 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     @Test
     fun `receiving several payments on the same payment hash is additive`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
+        val id = randomUUID()
         val channelId = randomBytes32()
 
-        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
+        db.addIncomingPayment(id, preimage, IncomingPayment.Origin.Invoice(pr), 200)
         db.receivePayment(
             pr.paymentHash, listOf(
                 IncomingPayment.ReceivedWith.LightningPayment(
@@ -140,7 +145,8 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     @Test
     fun `received total amount accounts for the fee`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
-        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr), 200)
+        val id = randomUUID()
+        db.addIncomingPayment(id, preimage, IncomingPayment.Origin.Invoice(pr), 200)
         db.receivePayment(
             pr.paymentHash, listOf(
                 IncomingPayment.ReceivedWith.NewChannel(
@@ -163,15 +169,15 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     @Test
     fun `reject duplicate payment hash`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
-        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr))
-        assertFails { db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr)) }
+        db.addIncomingPayment(randomUUID(), preimage, IncomingPayment.Origin.Invoice(pr))
+        assertFails { db.addIncomingPayment(randomUUID(), preimage, IncomingPayment.Origin.Invoice(pr)) }
     }
 
     @Test
     fun `set expired invoices`() = runSuspendTest {
         val (db, preimage, _) = createFixture()
         val pr = createExpiredInvoice(preimage)
-        db.addIncomingPayment(preimage, IncomingPayment.Origin.Invoice(pr))
+        db.addIncomingPayment(randomUUID(), preimage, IncomingPayment.Origin.Invoice(pr))
 
         val expired = db.getIncomingPayment(pr.paymentHash)
         assertNotNull(expired)
