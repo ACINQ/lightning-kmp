@@ -247,12 +247,16 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                             // in terms of fees we need to pay, otherwise we may not have enough to actually pay the liquidity fees.
                                             val maxFeerate = currentFeerate * AddLiquidityForIncomingPayment.SpliceWithNoBalanceFeerateRatio
                                             val maxLiquidityFees = fundingRate.fees(maxFeerate, requestedAmount, requestedAmount, isChannelCreation = true).total.toMilliSatoshi()
-                                            val feeCreditThreshold = when (val policy = nodeParams.liquidityPolicy.value) {
-                                                LiquidityPolicy.Disable -> maxLiquidityFees
-                                                is LiquidityPolicy.Auto -> maxLiquidityFees.min(policy.maxAllowedFeeCredit)
+                                            val maxFeeCredit = when (val policy = nodeParams.liquidityPolicy.value) {
+                                                LiquidityPolicy.Disable -> 0.msat
+                                                is LiquidityPolicy.Auto -> policy.maxAllowedFeeCredit
                                             }
-                                            val amountBelowThreshold = (willAddHtlcParts.map { it.amount }.sum() + currentFeeCredit) <= feeCreditThreshold
-                                            featureOk && amountBelowThreshold
+                                            val nextFeeCredit = willAddHtlcParts.map { it.amount }.sum() + currentFeeCredit
+                                            val cannotCoverLiquidityFees = nextFeeCredit <= maxLiquidityFees
+                                            val isBelowMaxFeeCredit = nextFeeCredit <= maxFeeCredit
+                                            val assessment = featureOk && cannotCoverLiquidityFees && isBelowMaxFeeCredit
+                                            logger.info { "fee credit assessment: result=$assessment featureOk=$featureOk cannotCoverLiquidityFees=$cannotCoverLiquidityFees isBelowMaxFeeCredit=$isBelowMaxFeeCredit (nextFeeCredit=$nextFeeCredit, maxLiquidityFees=$maxLiquidityFees, maxFeeCredit=$maxFeeCredit)" }
+                                            assessment
                                         }
                                         when {
                                             addToFeeCredit -> {
