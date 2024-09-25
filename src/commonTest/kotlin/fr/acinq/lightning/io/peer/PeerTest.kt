@@ -581,7 +581,7 @@ class PeerTest : LightningTestSuite() {
             bob.forward(alice2bob2.expect<RevokeAndAck>(), connectionId = 1)
         }
 
-        assertEquals(invoice.amount, alice.db.payments.getIncomingPayment(invoice.paymentHash)?.received?.amount)
+        assertEquals(invoice.amount, alice.db.payments.getLightningIncomingPayment(invoice.paymentHash)?.received?.amount)
     }
 
     @Test
