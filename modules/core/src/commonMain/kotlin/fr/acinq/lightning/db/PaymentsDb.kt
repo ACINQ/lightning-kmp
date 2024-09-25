@@ -91,6 +91,8 @@ interface OutgoingPaymentsDb {
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
+    abstract val id: UUID
+
     /** Absolute time in milliseconds since UNIX epoch when the payment was created. */
     abstract val createdAt: Long
 
@@ -120,6 +122,8 @@ sealed class WalletPayment {
 data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, override val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
 
     val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
+
+    override val id: UUID = UUID.fromBytes(paymentHash.toByteArray().copyOf(16))
 
     /**
      * This timestamp will be defined when the payment is final and usable for spending:
@@ -228,9 +232,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
     fun isExpired(): Boolean = origin is Origin.Invoice && origin.paymentRequest.isExpired()
 }
 
-sealed class OutgoingPayment : WalletPayment() {
-    abstract val id: UUID
-}
+sealed class OutgoingPayment : WalletPayment()
 
 /**
  * An outgoing payment sent by this node.
