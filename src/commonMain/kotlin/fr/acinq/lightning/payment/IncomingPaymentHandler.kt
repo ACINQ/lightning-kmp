@@ -7,8 +7,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.sphinx.Sphinx
-import fr.acinq.lightning.db.IncomingPayment
-import fr.acinq.lightning.db.PaymentsDb
+import fr.acinq.lightning.db.*
 import fr.acinq.lightning.io.AddLiquidityForIncomingPayment
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.SendOnTheFlyFundingMessage
@@ -48,9 +47,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
     sealed class ProcessAddResult {
         abstract val actions: List<PeerCommand>
 
-        data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : ProcessAddResult()
-        data class Rejected(override val actions: List<PeerCommand>, val incomingPayment: IncomingPayment?) : ProcessAddResult()
-        data class Pending(val incomingPayment: IncomingPayment, val pendingPayment: PendingPayment, override val actions: List<PeerCommand> = listOf()) : ProcessAddResult()
+        data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: LightningIncomingPayment, val received: LightningIncomingPayment.Received) : ProcessAddResult()
+        data class Rejected(override val actions: List<PeerCommand>, val incomingPayment: LightningIncomingPayment?) : ProcessAddResult()
+        data class Pending(val incomingPayment: LightningIncomingPayment, val pendingPayment: PendingPayment, override val actions: List<PeerCommand> = listOf()) : ProcessAddResult()
     }
 
     /**
@@ -101,53 +100,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             timestampSeconds
         )
         logger.info(mapOf("paymentHash" to paymentHash)) { "generated payment request ${pr.write()}" }
-        db.addIncomingPayment(paymentPreimage, IncomingPayment.Origin.Invoice(pr))
+        val incomingPayment = Bolt11IncomingPayment(paymentPreimage, pr, received = null)
+        db.addIncomingPayment(incomingPayment)
         return pr
-    }
-
-    /** Save the "received-with" details of an incoming on-chain amount. */
-    suspend fun process(channelId: ByteVector32, action: ChannelAction.Storage.StoreIncomingPayment) {
-        val receivedWith = when (action) {
-            is ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel ->
-                IncomingPayment.ReceivedWith.NewChannel(
-                    amountReceived = action.amountReceived,
-                    serviceFee = action.serviceFee,
-                    miningFee = action.miningFee,
-                    channelId = channelId,
-                    txId = action.txId,
-                    confirmedAt = null,
-                    lockedAt = null,
-                )
-            is ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn ->
-                IncomingPayment.ReceivedWith.SpliceIn(
-                    amountReceived = action.amountReceived,
-                    serviceFee = action.serviceFee,
-                    miningFee = action.miningFee,
-                    channelId = channelId,
-                    txId = action.txId,
-                    confirmedAt = null,
-                    lockedAt = null,
-                )
-        }
-        when (action.origin) {
-            is Origin.OnChainWallet -> {
-                // this is a swap, there was no pre-existing invoice, we need to create a fake one
-                val incomingPayment = db.addIncomingPayment(
-                    preimage = randomBytes32(), // not used, placeholder
-                    origin = IncomingPayment.Origin.OnChain(action.txId, action.localInputs)
-                )
-                db.receivePayment(
-                    paymentHash = incomingPayment.paymentHash,
-                    receivedWith = listOf(receivedWith)
-                )
-                nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(incomingPayment.paymentHash, listOf(receivedWith)))
-            }
-            is Origin.OffChainPayment -> {
-                // There is nothing to do, since we haven't been paid anything in the funding/splice transaction.
-                // We will receive HTLCs later for the payment that triggered the on-the-fly funding transaction.
-            }
-            null -> {}
-        }
     }
 
     /** Process an incoming htlc. Before calling this, the htlc must be committed and ack-ed by both peers. */
@@ -194,7 +149,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             is Either.Left -> validationResult.value
             is Either.Right -> {
                 val incomingPayment = validationResult.value
-                if (incomingPayment.received != null) {
+                val received = incomingPayment.received
+                if (received != null) {
                     return when (paymentPart) {
                         is HtlcPart -> {
                             // The invoice for this payment hash has already been paid. Two possible scenarios:
@@ -206,11 +162,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                             //
                             // 2) This is a new htlc. This can happen when a sender pays an already paid invoice. In that case the
                             //    htlc can be safely rejected.
-                            val htlcsMapInDb = incomingPayment.received.receivedWith.filterIsInstance<IncomingPayment.ReceivedWith.LightningPayment>().map { it.channelId to it.htlcId }
+                            val htlcsMapInDb = received.receivedWith.filterIsInstance<LightningIncomingPayment.ReceivedWith.LightningPayment>().map { it.channelId to it.htlcId }
                             if (htlcsMapInDb.contains(paymentPart.htlc.channelId to paymentPart.htlc.id)) {
                                 logger.info { "accepting local replay of htlc=${paymentPart.htlc.id} on channel=${paymentPart.htlc.channelId}" }
-                                val action = WrappedChannelCommand(paymentPart.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(paymentPart.htlc.id, incomingPayment.preimage, true))
-                                ProcessAddResult.Accepted(listOf(action), incomingPayment, incomingPayment.received)
+                                val action = WrappedChannelCommand(paymentPart.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(paymentPart.htlc.id, incomingPayment.paymentPreimage, true))
+                                ProcessAddResult.Accepted(listOf(action), incomingPayment, received)
                             } else {
                                 logger.info { "rejecting htlc part for an invoice that has already been paid" }
                                 val action = actionForFailureMessage(IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong()), paymentPart.htlc)
@@ -277,13 +233,13 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                             addToFeeCredit -> {
                                                 logger.info { "adding on-the-fly funding to fee credit (amount=${willAddHtlcParts.map { it.amount }.sum()})" }
                                                 val receivedWith = buildList {
-                                                    htlcParts.forEach { add(IncomingPayment.ReceivedWith.LightningPayment(it.amount, it.htlc.channelId, it.htlc.id, it.htlc.fundingFee)) }
-                                                    willAddHtlcParts.forEach { add(IncomingPayment.ReceivedWith.AddedToFeeCredit(it.amount)) }
+                                                    htlcParts.forEach { add(LightningIncomingPayment.ReceivedWith.LightningPayment(it.amount, it.htlc.channelId, it.htlc.id, it.htlc.fundingFee)) }
+                                                    willAddHtlcParts.forEach { add(LightningIncomingPayment.ReceivedWith.AddedToFeeCredit(it.amount)) }
                                                 }
                                                 val actions = buildList {
                                                     // We send a single add_fee_credit for the will_add_htlc set.
-                                                    add(SendOnTheFlyFundingMessage(AddFeeCredit(nodeParams.chainHash, incomingPayment.preimage)))
-                                                    htlcParts.forEach { add(WrappedChannelCommand(it.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(it.htlc.id, incomingPayment.preimage, true))) }
+                                                    add(SendOnTheFlyFundingMessage(AddFeeCredit(nodeParams.chainHash, incomingPayment.paymentPreimage)))
+                                                    htlcParts.forEach { add(WrappedChannelCommand(it.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(it.htlc.id, incomingPayment.paymentPreimage, true))) }
                                                 }
                                                 acceptPayment(incomingPayment, receivedWith, actions)
                                             }
@@ -298,7 +254,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                                         rejectPayment(payment, incomingPayment, TemporaryNodeFailure)
                                                     }
                                                     else -> {
-                                                        val actions = listOf(AddLiquidityForIncomingPayment(payment.amountReceived, requestedAmount, fundingRate, incomingPayment.preimage, willAddHtlcParts.map { it.htlc }))
+                                                        val actions = listOf(AddLiquidityForIncomingPayment(payment.amountReceived, requestedAmount, fundingRate, incomingPayment.paymentPreimage, willAddHtlcParts.map { it.htlc }))
                                                         val paymentOnlyHtlcs = payment.copy(
                                                             // We need to splice before receiving the remaining HTLC parts.
                                                             // We extend the duration of the MPP timeout to give more time for funding to complete.
@@ -324,9 +280,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                         rejectPayment(payment, incomingPayment, failure)
                                     }
                                     is Either.Right -> {
-                                        val receivedWith = htlcParts.map { part -> IncomingPayment.ReceivedWith.LightningPayment(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
+                                        val receivedWith = htlcParts.map { part -> LightningIncomingPayment.ReceivedWith.LightningPayment(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
                                         val actions = htlcParts.map { part ->
-                                            val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.preimage, true)
+                                            val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.paymentPreimage, true)
                                             WrappedChannelCommand(part.htlc.channelId, cmd)
                                         }
                                         acceptPayment(incomingPayment, receivedWith, actions)
@@ -340,20 +296,24 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
     }
 
-    private suspend fun acceptPayment(incomingPayment: IncomingPayment, receivedWith: List<IncomingPayment.ReceivedWith>, actions: List<PeerCommand>): ProcessAddResult.Accepted {
+    private suspend fun acceptPayment(incomingPayment: LightningIncomingPayment, receivedWith: List<LightningIncomingPayment.ReceivedWith>, actions: List<PeerCommand>): ProcessAddResult.Accepted {
         pending.remove(incomingPayment.paymentHash)
-        if (incomingPayment.origin is IncomingPayment.Origin.Offer) {
+        if (incomingPayment is Bolt12IncomingPayment) {
             // We didn't store the Bolt 12 invoice in our DB when receiving the invoice_request (to protect against DoS).
             // We need to create the DB entry now otherwise the payment won't be recorded.
-            db.addIncomingPayment(incomingPayment.preimage, incomingPayment.origin)
+            db.addIncomingPayment(incomingPayment)
         }
-        db.receivePayment(incomingPayment.paymentHash, receivedWith)
-        nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(incomingPayment.paymentHash, receivedWith))
-        val received = IncomingPayment.Received(receivedWith)
-        return ProcessAddResult.Accepted(actions, incomingPayment.copy(received = received), received)
+        db.receiveLightningPayment(incomingPayment.paymentHash, receivedWith)
+        val received = LightningIncomingPayment.Received(receivedWith)
+        val incomingPayment1 = when (incomingPayment) {
+            is Bolt11IncomingPayment -> incomingPayment.copy(received = received)
+            is Bolt12IncomingPayment -> incomingPayment.copy(received = received)
+        }
+        nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(incomingPayment1))
+        return ProcessAddResult.Accepted(actions, incomingPayment1, received)
     }
 
-    private fun rejectPayment(payment: PendingPayment, incomingPayment: IncomingPayment, failure: FailureMessage): ProcessAddResult.Rejected {
+    private fun rejectPayment(payment: PendingPayment, incomingPayment: LightningIncomingPayment, failure: FailureMessage): ProcessAddResult.Rejected {
         pending.remove(incomingPayment.paymentHash)
         val actions = payment.parts.map { part ->
             when (part) {
@@ -438,11 +398,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
     }
 
-    private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult.Rejected, IncomingPayment> {
+    private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult.Rejected, LightningIncomingPayment> {
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
         when (val finalPayload = paymentPart.finalPayload) {
             is PaymentOnion.FinalPayload.Standard -> {
-                val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash)
+                val incomingPayment = db.getLightningIncomingPayment(paymentPart.paymentHash)
                 return when {
                     incomingPayment == null -> {
                         logger.warning { "payment for which we don't have a preimage" }
@@ -454,11 +414,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         logger.warning { "the invoice is expired" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
-                    incomingPayment.origin !is IncomingPayment.Origin.Invoice -> {
-                        logger.warning { "unsupported payment type: ${incomingPayment.origin::class}" }
+                    incomingPayment !is Bolt11IncomingPayment -> {
+                        logger.warning { "unsupported payment type: ${incomingPayment::class}" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
-                    incomingPayment.origin.paymentRequest.paymentSecret != finalPayload.paymentSecret -> {
+                    incomingPayment.paymentRequest.paymentSecret != finalPayload.paymentSecret -> {
                         // BOLT 04:
                         // - if the payment_secret doesn't match the expected value for that payment_hash,
                         //   or the payment_secret is required and is not present:
@@ -471,15 +431,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         logger.warning { "payment with invalid paymentSecret (${finalPayload.paymentSecret})" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
-                    incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount < incomingPayment.origin.paymentRequest.amount -> {
+                    incomingPayment.paymentRequest.amount != null && paymentPart.totalAmount < incomingPayment.paymentRequest.amount -> {
                         // BOLT 04:
                         // - if the amount paid is less than the amount expected:
                         //   - MUST fail the HTLC.
                         //   - MUST return an incorrect_or_unknown_payment_details error.
-                        logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
+                        logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.paymentRequest.amount}" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
-                    incomingPayment.origin.paymentRequest.amount != null && paymentPart.totalAmount > incomingPayment.origin.paymentRequest.amount * 2 -> {
+                    incomingPayment.paymentRequest.amount != null && paymentPart.totalAmount > incomingPayment.paymentRequest.amount * 2 -> {
                         // BOLT 04:
                         // - if the amount paid is more than twice the amount expected:
                         //   - SHOULD fail the HTLC.
@@ -487,11 +447,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         //
                         //   Note: this allows the origin node to reduce information leakage by altering
                         //   the amount while not allowing for accidental gross overpayment.
-                        logger.warning { "invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
+                        logger.warning { "invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.paymentRequest.amount}" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
-                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight) -> {
-                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight)}" }
+                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment, currentBlockHeight) -> {
+                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment, currentBlockHeight)}" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
                     else -> Either.Right(incomingPayment)
@@ -505,10 +465,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
                     }
                     else -> {
-                        val incomingPayment = db.getIncomingPayment(paymentPart.paymentHash) ?: IncomingPayment(metadata.preimage, IncomingPayment.Origin.Offer(metadata), null)
+                        val incomingPayment = db.getLightningIncomingPayment(paymentPart.paymentHash) ?: Bolt12IncomingPayment(metadata.preimage, metadata, received = null)
                         when {
-                            incomingPayment.origin !is IncomingPayment.Origin.Offer -> {
-                                logger.warning { "unsupported payment type: ${incomingPayment.origin::class}" }
+                            incomingPayment !is Bolt12IncomingPayment -> {
+                                logger.warning { "unsupported payment type: ${incomingPayment::class}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
                             paymentPart.paymentHash != metadata.paymentHash -> {
@@ -519,8 +479,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                 logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${metadata.amount}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
-                            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight) -> {
-                                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight)}" }
+                            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment, currentBlockHeight) -> {
+                                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment, currentBlockHeight)}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
                             metadata.createdAtMillis + nodeParams.bolt12InvoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
@@ -568,9 +528,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
      * @return number of invoices purged
      */
     suspend fun purgeExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): Int {
-        return db.listExpiredPayments(fromCreatedAt, toCreatedAt).count {
+        return db.listLightningExpiredPayments(fromCreatedAt, toCreatedAt).count {
             logger.info { "purging unpaid expired payment for paymentHash=${it.paymentHash} from DB" }
-            db.removeIncomingPayment(it.paymentHash)
+            db.removeLightningIncomingPayment(it.paymentHash)
         }
     }
 
@@ -602,7 +562,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             }
         }
 
-        private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: IncomingPayment?, currentBlockHeight: Int): ProcessAddResult.Rejected {
+        private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: LightningIncomingPayment?, currentBlockHeight: Int): ProcessAddResult.Rejected {
             val failureMsg = when (paymentPart.finalPayload) {
                 is PaymentOnion.FinalPayload.Blinded -> InvalidOnionBlinding(Sphinx.hash(paymentPart.onionPacket))
                 is PaymentOnion.FinalPayload.Standard -> IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
@@ -627,10 +587,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             return SendOnTheFlyFundingMessage(msg)
         }
 
-        private fun minFinalCltvExpiry(nodeParams: NodeParams, paymentPart: PaymentPart, origin: IncomingPayment.Origin, currentBlockHeight: Int): CltvExpiry {
-            val minFinalExpiryDelta = when (origin) {
-                is IncomingPayment.Origin.Invoice -> origin.paymentRequest.minFinalExpiryDelta ?: Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA
-                else -> nodeParams.minFinalCltvExpiryDelta
+        private fun minFinalCltvExpiry(nodeParams: NodeParams, paymentPart: PaymentPart, incomingPayment: LightningIncomingPayment, currentBlockHeight: Int): CltvExpiry {
+            val minFinalExpiryDelta = when (incomingPayment) {
+                is Bolt11IncomingPayment -> incomingPayment.paymentRequest.minFinalExpiryDelta ?: Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA
+                is Bolt12IncomingPayment -> nodeParams.minFinalCltvExpiryDelta
             }
             return when {
                 paymentPart is HtlcPart && paymentPart.htlc.usesOnTheFlyFunding -> {
