@@ -2,8 +2,11 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.*
+import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
@@ -820,6 +823,27 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv CommitSig -- multiple htlcs in both directions -- non-initiator pays commit fees`() {
+        val (alice0, bob0) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
+        assertFalse(alice0.commitments.params.localParams.paysCommitTxFees)
+        assertTrue(bob0.commitments.params.localParams.paysCommitTxFees)
+        val (nodes1, _, _) = addHtlc(75_000_000.msat, alice0, bob0)
+        val (alice1, bob1) = nodes1
+        val (nodes2, _, _) = addHtlc(500_000.msat, alice1, bob1)
+        val (alice2, bob2) = nodes2
+        val (nodes3, _, _) = addHtlc(10_000_000.msat, bob2, alice2)
+        val (bob3, alice3) = nodes3
+        val (nodes4, _, _) = addHtlc(100_000.msat, bob3, alice3)
+        val (bob4, alice4) = nodes4
+        val (alice5, bob5) = crossSign(alice4, bob4)
+        assertEquals(2, alice5.commitments.latest.localCommit.publishableTxs.htlcTxsAndSigs.size)
+        assertEquals(2, bob5.commitments.latest.localCommit.publishableTxs.htlcTxsAndSigs.size)
+        // Alice opened the channel, but Bob is paying the commitment fees.
+        assertEquals(alice5.commitments.latest.localCommit.spec.toLocal - alice5.commitments.latest.localChannelReserve.toMilliSatoshi(), alice5.commitments.availableBalanceForSend())
+        assertTrue(bob5.commitments.availableBalanceForSend() < bob5.commitments.latest.localCommit.spec.toLocal - bob5.commitments.latest.localChannelReserve.toMilliSatoshi())
+    }
+
+    @Test
     fun `recv CommitSig -- only fee update`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, actions1) = alice0.process(ChannelCommand.Commitment.UpdateFee(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat), false))
@@ -1423,6 +1447,22 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv UpdateFee -- non-initiator pays commit fees`() {
+        val (alice, bob) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
+        val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(7_500.sat))
+        run {
+            val (alice1, _) = alice.process(ChannelCommand.MessageReceived(fee))
+            assertIs<LNChannel<Normal>>(alice1)
+            assertTrue(alice1.commitments.changes.remoteChanges.proposed.contains(fee))
+        }
+        run {
+            val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(fee))
+            assertIs<LNChannel<Closing>>(bob1)
+            actions1.findOutgoingMessage<Error>().also { assertEquals(NonInitiatorCannotSendUpdateFee(alice.channelId).message, it.toAscii()) }
+        }
+    }
+
+    @Test
     fun `recv UpdateFee -- 2 in a row`() {
         val (_, bob) = reachNormal()
         val fee1 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(7_500.sat))
@@ -1527,7 +1567,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Close_MutualClose -- with unsupported native segwit script`() {
-        val (alice, _) = reachNormal()
+        val (alice, _) = reachNormal(aliceFeatures = TestConstants.Alice.nodeParams.features.remove(Feature.ShutdownAnySegwit))
         assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(ByteVector("51050102030405"), null))
         assertIs<LNChannel<Normal>>(alice1)
@@ -1536,10 +1576,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Close_MutualClose -- with native segwit script`() {
-        val (alice, _) = reachNormal(
-            aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
-            bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
-        )
+        val (alice, _) = reachNormal()
         assertNull(alice.state.localShutdown)
         val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(ByteVector("51050102030405"), null))
         actions1.hasOutgoingMessage<Shutdown>()
@@ -1687,7 +1724,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Shutdown -- with unsupported native segwit script`() {
-        val (_, bob) = reachNormal()
+        val (_, bob) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ShutdownAnySegwit))
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
         assertIs<LNChannel<Closing>>(bob1)
         actions1.hasOutgoingMessage<Error>()
@@ -1697,10 +1734,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Shutdown -- with native segwit script`() {
-        val (_, bob) = reachNormal(
-            aliceFeatures = TestConstants.Alice.nodeParams.features.copy(TestConstants.Alice.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
-            bobFeatures = TestConstants.Bob.nodeParams.features.copy(TestConstants.Bob.nodeParams.features.activated + (Feature.ShutdownAnySegwit to FeatureSupport.Optional)),
-        )
+        val (_, bob) = reachNormal()
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Shutdown(bob.channelId, ByteVector("51050102030405"))))
         assertIs<LNChannel<Negotiating>>(bob1)
         actions1.hasOutgoingMessage<Shutdown>()

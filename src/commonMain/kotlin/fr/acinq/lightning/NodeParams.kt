@@ -12,6 +12,7 @@ import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
+import fr.acinq.lightning.wire.LiquidityAds
 import fr.acinq.lightning.wire.OfferTypes
 import io.ktor.utils.io.charsets.*
 import io.ktor.utils.io.core.*
@@ -172,6 +173,8 @@ data class NodeParams(
         require(!features.hasFeature(Feature.ZeroConfChannels)) { "${Feature.ZeroConfChannels.rfcName} has been deprecated: use the zeroConfPeers whitelist instead" }
         require(!features.hasFeature(Feature.TrustedSwapInClient)) { "${Feature.TrustedSwapInClient.rfcName} has been deprecated" }
         require(!features.hasFeature(Feature.TrustedSwapInProvider)) { "${Feature.TrustedSwapInProvider.rfcName} has been deprecated" }
+        require(!features.hasFeature(Feature.PayToOpenClient)) { "${Feature.PayToOpenClient.rfcName} has been deprecated" }
+        require(!features.hasFeature(Feature.PayToOpenProvider)) { "${Feature.PayToOpenProvider.rfcName} has been deprecated" }
         Features.validateFeatureGraph(features)
     }
 
@@ -193,15 +196,15 @@ data class NodeParams(
             Feature.RouteBlinding to FeatureSupport.Optional,
             Feature.DualFunding to FeatureSupport.Mandatory,
             Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,
+            Feature.Quiescence to FeatureSupport.Mandatory,
             Feature.ChannelType to FeatureSupport.Mandatory,
             Feature.PaymentMetadata to FeatureSupport.Optional,
             Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
             Feature.ZeroReserveChannels to FeatureSupport.Optional,
             Feature.WakeUpNotificationClient to FeatureSupport.Optional,
-            Feature.PayToOpenClient to FeatureSupport.Optional,
             Feature.ChannelBackupClient to FeatureSupport.Optional,
             Feature.ExperimentalSplice to FeatureSupport.Optional,
-            Feature.Quiescence to FeatureSupport.Mandatory
+            Feature.OnTheFlyFunding to FeatureSupport.Optional,
         ),
         dustLimit = 546.sat,
         maxRemoteDustLimit = 600.sat,
@@ -229,7 +232,7 @@ data class NodeParams(
         maxPaymentAttempts = 5,
         zeroConfPeers = emptySet(),
         paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
-        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false)),
+        liquidityPolicy = MutableStateFlow<LiquidityPolicy>(LiquidityPolicy.Auto(inboundLiquidityTarget = null, maxAbsoluteFee = 2_000.sat, maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false)),
         minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
         maxFinalCltvExpiryDelta = CltvExpiryDelta(360),
         bolt12invoiceExpiry = 60.seconds,

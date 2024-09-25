@@ -127,6 +127,13 @@ sealed class Feature {
     }
 
     @Serializable
+    object Quiescence : Feature() {
+        override val rfcName get() = "option_quiescence"
+        override val mandatory get() = 34
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
+    @Serializable
     object ChannelType : Feature() {
         override val rfcName get() = "option_channel_type"
         override val mandatory get() = 44
@@ -185,7 +192,7 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
-    /** This feature bit should be activated when a node accepts on-the-fly channel creation. */
+    /** DEPRECATED: this feature bit was used for the legacy pay-to-open protocol. */
     @Serializable
     object PayToOpenClient : Feature() {
         override val rfcName get() = "pay_to_open_client"
@@ -193,7 +200,7 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
     }
 
-    /** This feature bit should be activated when a node supports opening channels on-the-fly when liquidity is missing to receive a payment. */
+    /** DEPRECATED: this feature bit was used for the legacy pay-to-open protocol. */
     @Serializable
     object PayToOpenProvider : Feature() {
         override val rfcName get() = "pay_to_open_provider"
@@ -250,9 +257,9 @@ sealed class Feature {
     }
 
     @Serializable
-    object Quiescence : Feature() {
-        override val rfcName get() = "option_quiescence"
-        override val mandatory get() = 34
+    object OnTheFlyFunding : Feature() {
+        override val rfcName get() = "on_the_fly_funding"
+        override val mandatory get() = 560
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
@@ -322,6 +329,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.RouteBlinding,
             Feature.ShutdownAnySegwit,
             Feature.DualFunding,
+            Feature.Quiescence,
             Feature.ChannelType,
             Feature.PaymentMetadata,
             Feature.TrampolinePayment,
@@ -337,7 +345,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ChannelBackupClient,
             Feature.ChannelBackupProvider,
             Feature.ExperimentalSplice,
-            Feature.Quiescence
+            Feature.OnTheFlyFunding
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())
@@ -369,7 +377,8 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment to listOf(Feature.PaymentSecret),
             Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
             Feature.TrampolinePayment to listOf(Feature.PaymentSecret),
-            Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret)
+            Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret),
+            Feature.OnTheFlyFunding to listOf(Feature.ExperimentalSplice)
         )
 
         class FeatureException(message: String) : IllegalArgumentException(message)

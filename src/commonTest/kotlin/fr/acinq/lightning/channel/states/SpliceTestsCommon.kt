@@ -1,7 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Lightning
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.WalletState
@@ -189,11 +189,14 @@ class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `splice to purchase inbound liquidity`() {
         val (alice, bob) = reachNormal()
-        val leaseRate = LiquidityAds.LeaseRate(0, 250, 250 /* 2.5% */, 10.sat, 200, 100.msat)
-        val liquidityRequest = LiquidityAds.RequestRemoteFunding(200_000.sat, alice.currentBlockHeight, leaseRate)
-        val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+        val fundingRates = LiquidityAds.WillFundRates(
+            fundingRates = listOf(LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 0, 250 /* 2.5% */, 0.sat, 1000.sat)),
+            paymentTypes = setOf(LiquidityAds.PaymentType.FromChannelBalance),
+        )
+        val liquidityRequest = LiquidityAds.RequestFunding(200_000.sat, fundingRates.findRate(200_000.sat)!!, LiquidityAds.PaymentDetails.FromChannelBalance)
+        val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
         val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
-        assertEquals(spliceInit.requestFunds, liquidityRequest.requestFunds)
+        assertEquals(spliceInit.requestFunding, liquidityRequest)
         // Alice's contribution is negative: she needs to pay on-chain fees for the splice.
         assertTrue(spliceInit.fundingContribution < 0.sat)
         // We haven't implemented the seller side, so we mock it.
@@ -202,18 +205,19 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertNull(defaultSpliceAck.willFund)
         val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey)
         run {
-            val willFund = leaseRate.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
+            val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false)?.willFund
+            assertNotNull(willFund)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.InProgress>(alice2.state.spliceStatus)
             actionsAlice2.hasOutgoingMessage<TxAddInput>()
         }
         run {
-            // Bob proposes different fees from what Alice expects.
-            val bobLiquidityRates = leaseRate.copy(leaseFeeProportional = 500 /* 5% */)
-            val willFund = bobLiquidityRates.signLease(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, spliceInit.requestFunds!!)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
+            // Bob uses a different funding script than what Alice expects.
+            val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, ByteVector("deadbeef"), cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false)?.willFund
+            assertNotNull(willFund)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -221,7 +225,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         }
         run {
             // Bob doesn't fund the splice.
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.fundingAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund = null)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -233,30 +237,82 @@ class SpliceTestsCommon : LightningTestSuite() {
     @OptIn(ExperimentalCoroutinesApi::class)
     fun `splice to purchase inbound liquidity -- not enough funds`() {
         val (alice, bob) = reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 10_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
-        val leaseRate = LiquidityAds.LeaseRate(0, 0, 100 /* 5% */, 1.sat, 200, 100.msat)
+        val fundingRate = LiquidityAds.FundingRate(100_000.sat, 10_000_000.sat, 0, 100 /* 1% */, 1.sat, 1000.sat)
         run {
-            val liquidityRequest = LiquidityAds.RequestRemoteFunding(1_000_000.sat, bob.currentBlockHeight, leaseRate)
-            assertEquals(10_001.sat, liquidityRequest.rate.fees(FeeratePerKw(1000.sat), liquidityRequest.fundingAmount, liquidityRequest.fundingAmount).total)
-            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+            val liquidityRequest = LiquidityAds.RequestFunding(1_000_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance)
+            assertEquals(10_001.sat, liquidityRequest.fees(FeeratePerKw(1000.sat), isChannelCreation = false).total)
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
             val (bob1, actionsBob1) = bob.process(cmd)
             val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
             val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
             val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
             val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
-            assertTrue(actionsBob2.isEmpty())
+            assertEquals(2, actionsBob2.size)
+            actionsBob2.hasOutgoingMessage<Warning>()
+            actionsBob2.has<ChannelAction.Disconnect>()
             assertTrue(cmd.replyTo.isCompleted)
             assertEquals(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds, cmd.replyTo.getCompleted())
         }
         run {
-            val liquidityRequest = LiquidityAds.RequestRemoteFunding(1_000_000.sat, bob.currentBlockHeight, leaseRate.copy(leaseFeeBase = 0.sat))
-            assertEquals(10_000.sat, liquidityRequest.rate.fees(FeeratePerKw(1000.sat), liquidityRequest.fundingAmount, liquidityRequest.fundingAmount).total)
-            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat))
+            val liquidityRequest = LiquidityAds.RequestFunding(1_000_000.sat, fundingRate.copy(feeBase = 0.sat), LiquidityAds.PaymentDetails.FromChannelBalance)
+            assertEquals(10_000.sat, liquidityRequest.fees(FeeratePerKw(1000.sat), isChannelCreation = false).total)
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
             val (bob1, actionsBob1) = bob.process(cmd)
             val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
             val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
             val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
             val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
-            actionsBob2.hasOutgoingMessage<SpliceInit>()
+            actionsBob2.hasOutgoingMessage<SpliceInit>().also { assertEquals(liquidityRequest, it.requestFunding) }
+        }
+        run {
+            // When we don't  have enough funds in our channel balance, fees can be paid via future HTLCs.
+            val liquidityRequest = LiquidityAds.RequestFunding(1_000_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(randomBytes32())))
+            assertEquals(10_001.sat, liquidityRequest.fees(FeeratePerKw(1000.sat), isChannelCreation = false).total)
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, liquidityRequest, FeeratePerKw(1000.sat), listOf())
+            val (bob1, actionsBob1) = bob.process(cmd)
+            val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
+            val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
+            val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
+            val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
+            actionsBob2.hasOutgoingMessage<SpliceInit>().also { assertEquals(liquidityRequest, it.requestFunding) }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `splice to purchase inbound liquidity -- not enough funds but on-the-fly funding`() {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 0.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val fundingRate = LiquidityAds.FundingRate(0.sat, 500_000.sat, 0, 50, 0.sat, 1000.sat)
+        val origin = Origin.OffChainPayment(randomBytes32(), 25_000_000.msat, ChannelManagementFees(0.sat, 500.sat))
+        run {
+            // We don't have enough funds to pay fees from our channel balance.
+            val fundingRequest = LiquidityAds.RequestFunding(100_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(origin.paymentHash)))
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, fundingRequest, FeeratePerKw(1000.sat), listOf(origin))
+            val (bob1, actionsBob1) = bob.process(cmd)
+            val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
+            val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
+            val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
+            val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
+            assertEquals(2, actionsBob2.size)
+            actionsBob2.hasOutgoingMessage<Warning>()
+            actionsBob2.has<ChannelAction.Disconnect>()
+            assertTrue(cmd.replyTo.isCompleted)
+            assertEquals(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds, cmd.replyTo.getCompleted())
+        }
+        run {
+            // We can use future HTLCs to pay fees for the liquidity we're purchasing.
+            val fundingRequest = LiquidityAds.RequestFunding(100_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(origin.paymentHash)))
+            val cmd = ChannelCommand.Commitment.Splice.Request(CompletableDeferred(), null, null, fundingRequest, FeeratePerKw(1000.sat), listOf(origin))
+            val (bob1, actionsBob1) = bob.process(cmd)
+            val bobStfu = actionsBob1.findOutgoingMessage<Stfu>()
+            val (_, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(bobStfu))
+            val aliceStfu = actionsAlice1.findOutgoingMessage<Stfu>()
+            val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
+            assertEquals(actionsBob2.size, 1)
+            actionsBob2.findOutgoingMessage<SpliceInit>().also {
+                assertEquals(0.sat, it.fundingContribution)
+                assertEquals(fundingRequest, it.requestFunding)
+            }
         }
     }
 
@@ -272,6 +328,17 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(alice2.state.spliceStatus, SpliceStatus.None)
         assertEquals(actionsAlice2.size, 1)
         actionsAlice2.hasOutgoingMessage<TxAbort>()
+    }
+
+    @Test
+    fun `reject splice_init -- cancel on-the-fly funding`() {
+        val cmd = createSpliceOutRequest(50_000.sat)
+        val (alice, bob) = reachNormal()
+        val (alice1, _, _) = reachQuiescent(cmd, alice, bob)
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(CancelOnTheFlyFunding(alice.channelId, listOf(randomBytes32()), "cancelling on-the-fly funding")))
+        assertIs<Normal>(alice2.state)
+        assertEquals(alice2.state.spliceStatus, SpliceStatus.None)
+        assertTrue(actionsAlice2.isEmpty())
     }
 
     @Test
@@ -1284,7 +1351,8 @@ class SpliceTestsCommon : LightningTestSuite() {
             spliceIn = null,
             spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
             requestRemoteFunding = null,
-            feerate = spliceFeerate
+            feerate = spliceFeerate,
+            origins = listOf(),
         )
 
         private fun spliceOut(alice: LNChannel<Normal>, bob: LNChannel<Normal>, amount: Satoshi): Pair<LNChannel<Normal>, LNChannel<Normal>> {
@@ -1329,7 +1397,8 @@ class SpliceTestsCommon : LightningTestSuite() {
                 spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(createWalletWithFunds(alice.staticParams.nodeParams.keyManager, amounts)),
                 spliceOut = null,
                 requestRemoteFunding = null,
-                feerate = spliceFeerate
+                feerate = spliceFeerate,
+                origins = listOf(),
             )
             // Negotiate a splice transaction where Alice is the only contributor.
             val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
@@ -1366,7 +1435,8 @@ class SpliceTestsCommon : LightningTestSuite() {
                 spliceIn = null,
                 spliceOut = null,
                 requestRemoteFunding = null,
-                feerate = spliceFeerate
+                feerate = spliceFeerate,
+                origins = listOf(),
             )
             // Negotiate a splice transaction with no contribution.
             val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
@@ -1399,7 +1469,8 @@ class SpliceTestsCommon : LightningTestSuite() {
                 spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(createWalletWithFunds(alice.staticParams.nodeParams.keyManager, inAmounts)),
                 spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(outAmount, Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
                 feerate = spliceFeerate,
-                requestRemoteFunding = null
+                requestRemoteFunding = null,
+                origins = listOf(),
             )
             val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(spliceInit))
@@ -1509,7 +1580,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         private fun createWalletWithFunds(keyManager: KeyManager, amounts: List<Satoshi>): List<WalletState.Utxo> {
             val script = keyManager.swapInOnChainWallet.legacySwapInProtocol.pubkeyScript
             return amounts.map { amount ->
-                val txIn = listOf(TxIn(OutPoint(TxId(Lightning.randomBytes32()), 2), 0))
+                val txIn = listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0))
                 val txOut = listOf(TxOut(amount, script), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))
                 val parentTx = Transaction(2, txIn, txOut, 0)
                 WalletState.Utxo(parentTx.txid, 0, 42, parentTx, WalletState.AddressMeta.Single)

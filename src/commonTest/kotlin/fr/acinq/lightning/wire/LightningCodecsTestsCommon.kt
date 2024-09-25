@@ -9,10 +9,12 @@ import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelFlags
+import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.channel.Helpers
 import fr.acinq.lightning.message.OnionMessages
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -214,10 +216,10 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             ), // unknown odd records
             TestCase(ByteVector("0000 0002088a 03012a04022aa2"), decoded = null), // unknown even records
             TestCase(ByteVector("0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101"), decoded = null), // invalid tlv stream
-            TestCase(ByteVector("0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101"), Init(Features(ByteVector("088a")), listOf(chainHash1), listOf())), // single network
+            TestCase(ByteVector("0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101"), Init(Features(ByteVector("088a")), listOf(chainHash1), null)), // single network
             TestCase(
                 ByteVector("0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202"),
-                Init(Features(ByteVector("088a")), listOf(chainHash1, chainHash2), listOf())
+                Init(Features(ByteVector("088a")), listOf(chainHash1, chainHash2), null)
             ), // multiple networks
             TestCase(
                 ByteVector("0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 03012a"),
@@ -225,17 +227,36 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             ), // network and unknown odd records
             TestCase(ByteVector("0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 02012a"), decoded = null), // network and unknown even records
             TestCase(
-                ByteVector("0000 0002088a fd05391007d001f4003200000000025800000000"),
-                Init(Features(ByteVector("088a")), chainHashs = listOf(), liquidityRates = listOf(LiquidityAds.LeaseRate(2000, 500, 50, 0.sat, 600, 0.msat))),
-            ), // one liquidity ads
-            TestCase(
-                ByteVector("0000 0002088a fd05392003f0019000c8000061a80064000186a00fc001f401f4000027100096000249f0"),
+                ByteVector("0000 0002088a fd053b190001000186a00007a1200226006400001388000003e8000101"),
                 Init(
                     Features(ByteVector("088a")),
                     chainHashs = listOf(),
-                    liquidityRates = listOf(LiquidityAds.LeaseRate(1008, 400, 200, 25_000.sat, 100, 100_000.msat), LiquidityAds.LeaseRate(4032, 500, 500, 10_000.sat, 150, 150_000.msat))
+                    liquidityRates = LiquidityAds.WillFundRates(
+                        fundingRates = listOf(LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat, 1_000.sat)),
+                        paymentTypes = setOf(LiquidityAds.PaymentType.FromChannelBalance)
+                    )
                 ),
-            ), // two liquidity ads
+            ), // one liquidity ads with the default payment type
+            TestCase(
+                ByteVector("0000 0002088a fd053b470002000186a00007a1200226006400001388000003e80007a120004c4b40044c004b00000000000005dc001b080000000000000000000700000000000000000000000000000001"),
+                Init(
+                    Features(ByteVector("088a")),
+                    chainHashs = listOf(),
+                    liquidityRates = LiquidityAds.WillFundRates(
+                        fundingRates = listOf(
+                            LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat, 1_000.sat),
+                            LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat, 1_500.sat),
+                        ),
+                        paymentTypes = setOf(
+                            LiquidityAds.PaymentType.FromChannelBalance,
+                            LiquidityAds.PaymentType.FromFutureHtlc,
+                            LiquidityAds.PaymentType.FromFutureHtlcWithPreimage,
+                            LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc,
+                            LiquidityAds.PaymentType.Unknown(211)
+                        )
+                    )
+                ),
+            ), // two liquidity ads with multiple payment types
         )
 
         for (testCase in testCases) {
@@ -290,18 +311,59 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode - decode open_channel`() {
+        val fundingRates = LiquidityAds.WillFundRates(
+            fundingRates = listOf(
+                LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat, 1_000.sat),
+                LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat, 1_500.sat),
+            ),
+            paymentTypes = setOf(
+                LiquidityAds.PaymentType.FromChannelBalance,
+                LiquidityAds.PaymentType.FromFutureHtlc,
+                LiquidityAds.PaymentType.FromFutureHtlcWithPreimage,
+                LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc,
+                LiquidityAds.PaymentType.Unknown(211)
+            )
+        )
+        val requestFundsFromChannelBalance = LiquidityAds.RequestFunding.chooseRate(750_000.sat, LiquidityAds.PaymentDetails.FromChannelBalance, fundingRates)!!
+        val paymentHashes = listOf(
+            ByteVector32.fromValidHex("80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734"),
+            ByteVector32.fromValidHex("d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"),
+        )
+        val requestFundsFromHtlc = LiquidityAds.RequestFunding.chooseRate(500_000.sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHashes), fundingRates)!!
+        val requestFundsFromBalanceForHtlc = LiquidityAds.RequestFunding.chooseRate(500_000.sat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(paymentHashes), fundingRates)!!
         // @formatter:off
-        val defaultOpen = OpenDualFundedChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.One, FeeratePerKw(5000.sat), FeeratePerKw(4000.sat), 250_000.sat, 500.sat, 50_000, 15.msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), publicKey(7), 1.toByte())
-        val defaultEncoded = ByteVector("0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f 01")
+        val defaultOpen = OpenDualFundedChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.One, FeeratePerKw(5000.sat), FeeratePerKw(4000.sat), 250_000.sat, 500.sat, 50_000, 15.msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), publicKey(7), ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false))
+        val defaultEncoded = ByteVector("0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f 00")
         val testCases = listOf(
             defaultOpen to defaultEncoded,
             defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))) to (defaultEncoded + ByteVector("0103101000")),
             defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(25_000.msat))) to (defaultEncoded + ByteVector("0103101000 fe470000070261a8")),
             defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequireConfirmedInputsTlv)) to (defaultEncoded + ByteVector("0103101000 0200")),
-            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFunds(50_000.sat, 2500, 500_000))) to (defaultEncoded + ByteVector("0103101000 fd05390e000000000000c35009c40007a120")),
+            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromChannelBalance))) to (defaultEncoded + ByteVector("0103101000 fd053b1e00000000000b71b00007a120004c4b40044c004b00000000000005dc0000")),
+            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromHtlc))) to (defaultEncoded + ByteVector("0103101000 fd053b5e000000000007a120000186a00007a1200226006400001388000003e8804080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47")),
+            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequestFundingTlv(requestFundsFromBalanceForHtlc))) to (defaultEncoded + ByteVector("0103101000 fd053b5e000000000007a120000186a00007a1200226006400001388000003e8824080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47")),
             defaultOpen.copy(tlvStream = TlvStream(setOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)), setOf(GenericTlv(321, ByteVector("2a2a")), GenericTlv(325, ByteVector("02"))))) to (defaultEncoded + ByteVector("0103101000 fd0141022a2a fd01450102")),
-            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.OriginTlv(Origin.PayToOpenOrigin(ByteVector32.fromValidHex("187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281"), 1_000_000.msat, 1234.sat, 200_000_000.msat)))) to (defaultEncoded + ByteVector("fe47000005 3a 0001 187bf923f7f11ef732b73c417eb5a57cd4667b20a6f130ff505cd7ad3ab87281 00000000000004d2 00000000000f4240 000000000bebc200")),
-            defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.OriginTlv(Origin.PleaseOpenChannelOrigin(ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 1_234_567.msat, 321.sat, 1_111_000.msat)))) to (defaultEncoded + ByteVector("fe47000005 3a 0004 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 0000000000000141 000000000012d687 000000000010f3d8")),
+        )
+        // @formatter:on
+        testCases.forEach { (open, bin) ->
+            val decoded = LightningMessage.decode(bin.toByteArray())
+            assertNotNull(decoded)
+            assertEquals(decoded, open)
+            val encoded = LightningMessage.encode(open)
+            assertEquals(encoded.byteVector(), bin)
+        }
+    }
+
+    @Test
+    fun `encode - decode open_channel flags`() {
+        // @formatter:off
+        val defaultOpen = OpenDualFundedChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.One, FeeratePerKw(5000.sat), FeeratePerKw(4000.sat), 250_000.sat, 500.sat, 50_000, 15.msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), publicKey(7), ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false))
+        val defaultEncodedWithoutFlags = ByteVector("0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
+        val testCases = listOf(
+            defaultOpen to (defaultEncodedWithoutFlags + ByteVector("00")),
+            defaultOpen.copy(channelFlags = ChannelFlags(announceChannel = true, nonInitiatorPaysCommitFees = false)) to (defaultEncodedWithoutFlags + ByteVector("01")),
+            defaultOpen.copy(channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)) to (defaultEncodedWithoutFlags + ByteVector("02")),
+            defaultOpen.copy(channelFlags = ChannelFlags(announceChannel = true, nonInitiatorPaysCommitFees = true)) to (defaultEncodedWithoutFlags + ByteVector("03")),
         )
         // @formatter:on
         testCases.forEach { (open, bin) ->
@@ -315,6 +377,11 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
 
     @Test
     fun `encode - decode accept_channel`() {
+        val nodeKey = PrivateKey.fromHex("57ac961f1b80ebfb610037bf9c96c6333699bde42257919a53974811c34649e3")
+        val fundingLease = LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat, 1_500.sat)
+        val requestFunds = LiquidityAds.RequestFunding(750_000.sat, fundingLease, LiquidityAds.PaymentDetails.FromChannelBalance)
+        val fundingScript = Helpers.Funding.makeFundingPubKeyScript(publicKey(1), publicKey(1))
+        val willFund = LiquidityAds.WillFundRates(listOf(fundingLease), setOf(LiquidityAds.PaymentType.FromChannelBalance)).validateRequest(nodeKey, fundingScript, FeeratePerKw(5000.sat), requestFunds, isChannelCreation = true)!!.willFund
         // @formatter:off
         val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000.sat, 473.sat, 100_000_000, 1.msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), publicKey(7))
         val defaultEncoded = ByteVector("0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
@@ -322,7 +389,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             defaultAccept to defaultEncoded,
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.UnsupportedChannelType(Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory))))) to (defaultEncoded + ByteVector("01021000")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector("01abcdef")), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))) to (defaultEncoded + ByteVector("000401abcdef 0103101000")),
-            defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.WillFund(ByteVector64.Zeroes, 750, 150, 250.sat, 100, 5.msat))) to (defaultEncoded + ByteVector("0103101000 fd05394e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002ee0096000000fa006400000005")),
+            defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.ProvideFundingTlv(willFund))) to (defaultEncoded + ByteVector("0103101000 fd053b780007a120004c4b40044c004b00000000000005dc002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103cc57cf393f6bd534472ec08cbfbbc7268501b32f563a21cdf02a99127c4f25168249acd6509f96b2e93843c3b838ee4808c75d0a15ff71ba886fda980b8ca954f")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.PushAmountTlv(1729.msat))) to (defaultEncoded + ByteVector("0103101000 fe470000070206c1")),
             defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs), ChannelTlv.RequireConfirmedInputsTlv)) to (defaultEncoded + ByteVector("0103101000 0200")),
             defaultAccept.copy(tlvStream = TlvStream(setOf(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs)), setOf(GenericTlv(113, ByteVector("deadbeef"))))) to (defaultEncoded + ByteVector("0103101000 7104deadbeef")),
@@ -461,6 +528,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val channelId = ByteVector32("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         val fundingTxId = TxId(TxHash("24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"))
         val fundingPubkey = PublicKey(ByteVector.fromHex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"))
+        val fundingRate = LiquidityAds.FundingRate(100_000.sat, 100_000.sat, 400, 150, 0.sat, 0.sat)
         val testCases = listOf(
             // @formatter:off
             Stfu(channelId, false) to ByteVector("0002 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00"),
@@ -469,12 +537,12 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             SpliceInit(channelId, 150_000.sat, 25_000_000.msat, FeeratePerKw(2500.sat), 100, fundingPubkey, null) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000249f0 000009c4 00000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe4700000704017d7840"),
             SpliceInit(channelId, 0.sat, FeeratePerKw(500.sat), 0, fundingPubkey) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 000001f4 00000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
             SpliceInit(channelId, (-50_000).sat, FeeratePerKw(500.sat), 0, fundingPubkey) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff3cb0 000001f4 00000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
-            SpliceInit(channelId, 100_000.sat, 0.msat, FeeratePerKw(2500.sat), 100, fundingPubkey, ChannelTlv.RequestFunds(100_000.sat, 4000, 850_000)) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000186a0 000009c4 00000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd05390e00000000000186a00fa0000cf850"),
+            SpliceInit(channelId, 100_000.sat, 0.msat, FeeratePerKw(2500.sat), 100, fundingPubkey, LiquidityAds.RequestFunding(100_000.sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance)) to ByteVector("9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000186a0 000009c4 00000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b1e00000000000186a0000186a0000186a00190009600000000000000000000"),
             SpliceAck(channelId, 25_000.sat, fundingPubkey) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
             SpliceAck(channelId, 40_000.sat, 10_000_000.msat, fundingPubkey, null) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000009c40 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe4700000703989680"),
             SpliceAck(channelId, 0.sat, fundingPubkey) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
             SpliceAck(channelId, (-25_000).sat, fundingPubkey) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff9e58 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
-            SpliceAck(channelId, 25_000.sat, 0.msat, fundingPubkey, ChannelTlv.WillFund(ByteVector64.Zeroes, 750, 150, 250.sat, 100, 0.msat)) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd05394e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002ee0096000000fa006400000000"),
+            SpliceAck(channelId, 25_000.sat, 0.msat, fundingPubkey, LiquidityAds.WillFund(fundingRate, ByteVector("deadbeef"), ByteVector64.Zeroes)) to ByteVector("908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b5a000186a0000186a00190009600000000000000000004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
             SpliceLocked(channelId, fundingTxId) to ByteVector("908c aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"),
             // @formatter:on
         )
@@ -531,8 +599,9 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     @Test
     fun `decode channel_update with htlc_maximum_msat`() {
         // this was generated by c-lightning
-        val encoded =
-            ByteVector("010258fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf1792306226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f0005a100000200005bc75919010100060000000000000001000000010000000a000000003a699d00")
+        val encoded = ByteVector(
+            "010258fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf1792306226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f0005a100000200005bc75919010100060000000000000001000000010000000a000000003a699d00"
+        )
         val decoded = LightningMessage.decode(encoded.toByteArray())
         val expected = ChannelUpdate(
             ByteVector64("58fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf17923"),
@@ -752,40 +821,25 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `encode - decode pay-to-open messages`() {
-        val onionPacket = OnionRoutingPacket(0, ByteVector("0209be9bd1016d73fc1f611c6f8fdccd99ffb0885594e96156a268ee9afd35559c"), ByteVector("0102030405"), ByteVector32("e0a0d5be2ca6faafa03880258e4af33a0d15aa950ab738c88566a471bf3bb14f"))
-        val blinding = PublicKey.fromHex("033da8b63fd839472b49935127072039e65d8f99d4603f14d79cdf74b59f895721")
-        val preimage = ByteVector32("339770785632e71fe1f4b48b8b90d14af94a2a3a2c70af66f2156ed8a150f795")
+    fun `encode - decode on-the-fly funding messages`() {
+        val channelId = ByteVector32("c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c")
+        val paymentId = ByteVector32("3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503")
+        val blinding = PublicKey.fromHex("0296d5c32655a5eaa8be086479d7bcff967b6e9ca8319b69565747ae16ff20fad6")
+        val paymentHash1 = ByteVector32("80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734")
+        val paymentHash2 = ByteVector32("3213a810a0bfc54566d9be09da1484538b5d19229e928dfa8b692966a8df6785")
+        val fundingFee = LiquidityAds.FundingFee(5_000_100.msat, TxId(TxHash("24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566")))
         val testCases = listOf(
             // @formatter:off
-            PayToOpenRequest(Block.LivenetGenesisBlock.hash, 5_000.msat, 10.sat, preimage.sha256(), 100, onionPacket, 1_000_000.sat) to Hex.decode("88cd 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 0000000000000000 0000000000001388 0000000000000000 000000000000000a e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 00000064 0005 000209be9bd1016d73fc1f611c6f8fdccd99ffb0885594e96156a268ee9afd35559c0102030405e0a0d5be2ca6faafa03880258e4af33a0d15aa950ab738c88566a471bf3bb14f 00000000000f4240"),
-            PayToOpenRequest(Block.LivenetGenesisBlock.hash, 5_000.msat, 10.sat, preimage.sha256(), 100, onionPacket, 0.sat, TlvStream(PayToOpenRequestTlv.Blinding(blinding))) to Hex.decode("88cd 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 0000000000000000 0000000000001388 0000000000000000 000000000000000a e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 00000064 0005 000209be9bd1016d73fc1f611c6f8fdccd99ffb0885594e96156a268ee9afd35559c0102030405e0a0d5be2ca6faafa03880258e4af33a0d15aa950ab738c88566a471bf3bb14f 0000000000000000 0021033da8b63fd839472b49935127072039e65d8f99d4603f14d79cdf74b59f895721"),
-            PayToOpenResponse(Block.LivenetGenesisBlock.hash, preimage.sha256(), PayToOpenResponse.Result.Success(preimage)) to Hex.decode("88bb 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 339770785632e71fe1f4b48b8b90d14af94a2a3a2c70af66f2156ed8a150f795"),
-            PayToOpenResponse(Block.LivenetGenesisBlock.hash, preimage.sha256(), PayToOpenResponse.Result.Failure(null)) to Hex.decode("88bb 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 0000000000000000000000000000000000000000000000000000000000000000"),
-            PayToOpenResponse(Block.LivenetGenesisBlock.hash, preimage.sha256(), PayToOpenResponse.Result.Failure(ByteVector("deadbeef"))) to Hex.decode("88bb 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 e7e2ae1540f63627007acc816c8b978b8344265b581840d5feec7ff0a85bbf0b 0000000000000000000000000000000000000000000000000000000000000000 0004deadbeef"),
+            UpdateAddHtlc(channelId, 7, 75_000_000.msat, paymentHash1, CltvExpiry(840_000), TestConstants.emptyOnionPacket, blinding = null, fundingFee = fundingFee) to Hex.decode("0080 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0000000000000007 00000000047868c0 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 000cd140 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 fda0512800000000004c4ba424e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"),
+            WillAddHtlc(Block.RegtestGenesisBlock.hash, paymentId, 50_000_000.msat, paymentHash1, CltvExpiry(840_000), TestConstants.emptyOnionPacket, blinding = null) to Hex.decode("a051 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503 0000000002faf080 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 000cd140 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+            WillAddHtlc(Block.RegtestGenesisBlock.hash, paymentId, 50_000_000.msat, paymentHash1, CltvExpiry(840_000), TestConstants.emptyOnionPacket, blinding) to Hex.decode("a051 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503 0000000002faf080 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 000cd140 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 00210296d5c32655a5eaa8be086479d7bcff967b6e9ca8319b69565747ae16ff20fad6"),
+            WillFailHtlc(paymentId, paymentHash1, ByteVector("deadbeef")) to Hex.decode("a052 3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 0004 deadbeef"),
+            WillFailMalformedHtlc(paymentId, paymentHash1, ByteVector32("9d60e5791eee0799ce7b00009f56f56c6b988f6129b6a88494cce2cf2fa8b319"), 49157) to Hex.decode("a053 3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 9d60e5791eee0799ce7b00009f56f56c6b988f6129b6a88494cce2cf2fa8b319 c005"),
+            CancelOnTheFlyFunding(channelId, listOf(), ByteVector("deadbeef")) to Hex.decode("a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0000 0004 deadbeef"),
+            CancelOnTheFlyFunding(channelId, listOf(paymentHash1), ByteVector("deadbeef")) to Hex.decode("a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0001 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 0004 deadbeef"),
+            CancelOnTheFlyFunding(channelId, listOf(paymentHash1, paymentHash2), ByteVector("deadbeef")) to Hex.decode("a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0002 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb21067343213a810a0bfc54566d9be09da1484538b5d19229e928dfa8b692966a8df6785 0004 deadbeef"),
             // @formatter:on
         )
-
-        testCases.forEach {
-            val decoded = LightningMessage.decode(it.second)
-            assertNotNull(decoded)
-            assertEquals(it.first, decoded)
-            val encoded = LightningMessage.encode(decoded)
-            assertContentEquals(it.second, encoded)
-        }
-    }
-
-    @Test
-    fun `encode - decode please-open-channel messages`() {
-        val testCases = listOf(
-            // @formatter:off
-            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710"),
-            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000, TlvStream(PleaseOpenChannelTlv.GrandParents(listOf()))) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710 fd023100"),
-            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000, TlvStream(PleaseOpenChannelTlv.GrandParents(listOf(OutPoint(TxHash("d0556c8cc004933f40b9ca5e87e18cb549298fb02d7e64b0c0ee95303485145a"), 5))))) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710 fd023128d0556c8cc004933f40b9ca5e87e18cb549298fb02d7e64b0c0ee95303485145a0000000000000005"),
-            PleaseOpenChannel(Block.RegtestGenesisBlock.hash, ByteVector32("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"), 123_456.sat, 2, 522_000, TlvStream(PleaseOpenChannelTlv.GrandParents(listOf(OutPoint(TxHash("572b045edb5f0e3ff667e914e368273b11a874fae56a735b332b54048b7978c2"), 0), OutPoint(TxHash("cd6ac843158a1c317021de1323cdd2071f0f59744f79b298a8a45fda2dd7989f"), 1105))))) to Hex.decode("8ca1 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25 000000000001e240 0002 0007f710 fd023150572b045edb5f0e3ff667e914e368273b11a874fae56a735b332b54048b7978c20000000000000000cd6ac843158a1c317021de1323cdd2071f0f59744f79b298a8a45fda2dd7989f0000000000000451"),
-            // @formatter:on
-        )
-
         testCases.forEach {
             val decoded = LightningMessage.decode(it.second)
             assertNotNull(decoded)
@@ -811,54 +865,51 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `validate liquidity ads lease`() {
-        // The following lease has been signed by eclair.
-        val channelId = randomBytes32()
-        val remoteNodeId = PublicKey.fromHex("024dd1d24f950df788c124fe855d5a48c632d5fb6e59cf95f7ea6bee2ad47e5bc8")
-        val fundingScript = ByteVector.fromHex("00202395c9c52c02ca069f1d56a3c6124bf8b152a617328c76e6b31f83ace370c2ff")
-        val remoteWillFund = ChannelTlv.WillFund(
-            sig = ByteVector64("a1b9850389d21b49e074f183e6e1e2d0416e47b4c031843f4cf6f02f68e44ebd5f6ad1baee0b49098c517ac1f04fee6c58335e64ed45f5b0e4ce4b8546cbba09"),
-            fundingWeight = 500,
-            leaseFeeProportional = 100,
-            leaseFeeBase = 10.sat,
-            maxRelayFeeProportional = 250,
-            maxRelayFeeBase = 2000.msat,
-        )
-        assertEquals(remoteWillFund.leaseRate(0).fees(FeeratePerKw(FeeratePerByte(5.sat)), 500_000.sat, 500_000.sat).total, 5635.sat)
-        assertEquals(remoteWillFund.leaseRate(0).fees(FeeratePerKw(FeeratePerByte(5.sat)), 500_000.sat, 600_000.sat).total, 5635.sat)
-        assertEquals(remoteWillFund.leaseRate(0).fees(FeeratePerKw(FeeratePerByte(5.sat)), 500_000.sat, 400_000.sat).total, 4635.sat)
-
-        data class TestCase(val remoteFundingAmount: Satoshi, val feerate: FeeratePerKw, val willFund: ChannelTlv.WillFund?, val failure: ChannelException?)
-
+    fun `encode - decode recommended feerates messages`() {
+        val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(FeeratePerKw(5000.sat), FeeratePerKw(15_000.sat))
+        val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(FeeratePerKw(253.sat), FeeratePerKw(2_000.sat))
         val testCases = listOf(
-            TestCase(500_000.sat, FeeratePerKw(FeeratePerByte(5.sat)), remoteWillFund, failure = null),
-            TestCase(500_000.sat, FeeratePerKw(FeeratePerByte(5.sat)), willFund = null, failure = MissingLiquidityAds(channelId)),
-            TestCase(500_000.sat, FeeratePerKw(FeeratePerByte(5.sat)), remoteWillFund.copy(sig = randomBytes64()), failure = InvalidLiquidityAdsSig(channelId)),
-            TestCase(0.sat, FeeratePerKw(FeeratePerByte(5.sat)), remoteWillFund, failure = InvalidLiquidityAdsAmount(channelId, 0.sat, 500_000.sat)),
+            // @formatter:off
+            RecommendedFeerates(Block.Testnet3GenesisBlock.hash, FeeratePerKw(2500.sat), FeeratePerKw(2500.sat)) to Hex.decode("99f1 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 000009c4 000009c4"),
+            RecommendedFeerates(Block.Testnet3GenesisBlock.hash, FeeratePerKw(5000.sat), FeeratePerKw(253.sat)) to Hex.decode("99f1 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 00001388 000000fd"),
+            RecommendedFeerates(Block.Testnet3GenesisBlock.hash, FeeratePerKw(10_000.sat), FeeratePerKw(1000.sat), TlvStream(fundingRange, commitmentRange)) to Hex.decode("99f1 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 00002710 000003e8 01080000138800003a98 0308000000fd000007d0"),
+            // @formatter:on
         )
         testCases.forEach {
-            val request = LiquidityAds.RequestRemoteFunding(500_000.sat, leaseStart = 820_000, rate = remoteWillFund.leaseRate(leaseDuration = 0))
-            val result = request.validateLease(remoteNodeId, channelId, fundingScript, it.remoteFundingAmount, it.feerate, it.willFund)
-            assertEquals(result.left, it.failure)
+            val decoded = LightningMessage.decode(it.second)
+            assertNotNull(decoded)
+            assertEquals(it.first, decoded)
+            val encoded = LightningMessage.encode(decoded)
+            assertContentEquals(it.second, encoded)
         }
+    }
 
+    @Test
+    fun `decode unknown liquidity ads types`() {
+        val fundingRate = LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 550, 100, 5_000.sat, 0.sat)
+        val testCases = mapOf(
+            // @formatter:off
+            ByteVector("0001 000186a00007a120022600640000138800000000 0001 01") to LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalance)),
+            ByteVector("0001 000186a00007a120022600640000138800000000 001b 080000000000000000000000000000000008000000000000000001") to LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.Unknown(75), LiquidityAds.PaymentType.Unknown(211))),
+            // @formatter:on
+        )
+        testCases.forEach {
+            val decoded = LiquidityAds.WillFundRates.read(ByteArrayInput(it.key.toByteArray()))
+            assertEquals(it.value, decoded)
+        }
     }
 
     @Test
     fun `encoded node id`() {
         val testCases = mapOf(
-            ByteVector.fromHex("00 0d950b0001c80000") to
-                    EncodedNodeId.ShortChannelIdDir(isNode1 = true, ShortChannelId(890123, 456, 0)),
-            ByteVector.fromHex("01 0c0a14000d800005") to
-                    EncodedNodeId.ShortChannelIdDir(isNode1 = false, ShortChannelId(789012, 3456, 5)),
-            ByteVector.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73") to
-                    EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
-            ByteVector.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922") to
-                    EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
-            ByteVector.fromHex("042d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73") to
-                    EncodedNodeId.WithPublicKey.Wallet(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
-            ByteVector.fromHex("05ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922") to
-                    EncodedNodeId.WithPublicKey.Wallet(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+            // @formatter:off
+            ByteVector.fromHex("00 0d950b0001c80000") to EncodedNodeId.ShortChannelIdDir(isNode1 = true, ShortChannelId(890123, 456, 0)),
+            ByteVector.fromHex("01 0c0a14000d800005") to EncodedNodeId.ShortChannelIdDir(isNode1 = false, ShortChannelId(789012, 3456, 5)),
+            ByteVector.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73") to EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+            ByteVector.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922") to EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+            ByteVector.fromHex("042d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73") to EncodedNodeId.WithPublicKey.Wallet(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+            ByteVector.fromHex("05ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922") to EncodedNodeId.WithPublicKey.Wallet(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+            // @formatter:on
         )
 
         for (testCase in testCases) {

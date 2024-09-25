@@ -258,8 +258,8 @@ object Helpers {
             val localSpec = CommitmentSpec(localHtlcs, commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
             val remoteSpec = CommitmentSpec(localHtlcs.map{ it.opposite() }.toSet(), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
-            if (!localParams.isInitiator) {
-                // They initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
+            if (!localParams.paysCommitTxFees) {
+                // They are responsible for paying the commitment transaction fee: we need to make sure they can afford it!
                 // Note that the reserve may not be always be met: we could be using dual funding with a large funding amount on
                 // our side and a small funding amount on their side. But we shouldn't care as long as they can pay the fees for
                 // the commitment transaction.
@@ -324,7 +324,7 @@ object Helpers {
 
         private fun firstClosingFee(commitment: FullCommitment, localScriptPubkey: ByteArray, remoteScriptPubkey: ByteArray, requestedFeerate: ClosingFeerates): ClosingFees {
             // this is just to estimate the weight which depends on the size of the pubkey scripts
-            val dummyClosingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, Satoshi(0), Satoshi(0), commitment.localCommit.spec)
+            val dummyClosingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.paysClosingFees, 0.sat, 0.sat, commitment.localCommit.spec)
             val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitment.remoteFundingPubkey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
             return requestedFeerate.computeFees(closingWeight)
         }
@@ -356,7 +356,7 @@ object Helpers {
             require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit)) { "invalid localScriptPubkey" }
             require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit)) { "invalid remoteScriptPubkey" }
             val dustLimit = commitment.params.localParams.dustLimit.max(commitment.params.remoteParams.dustLimit)
-            val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.isInitiator, dustLimit, closingFees.preferred, commitment.localCommit.spec)
+            val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.params.localParams.paysClosingFees, dustLimit, closingFees.preferred, commitment.localCommit.spec)
             val localClosingSig = Transactions.sign(closingTx, channelKeys.fundingKey(commitment.fundingTxIndex))
             val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
             return Pair(closingTx, closingSigned)
@@ -510,7 +510,7 @@ object Helpers {
             val outputs = makeCommitTxOutputs(
                 commitment.remoteFundingPubkey,
                 channelKeys.fundingPubKey(commitment.fundingTxIndex),
-                !localParams.isInitiator,
+                !localParams.paysCommitTxFees,
                 remoteParams.dustLimit,
                 remoteRevocationPubkey,
                 localParams.toSelfDelay,
@@ -624,7 +624,7 @@ object Helpers {
             val obscuredTxNumber = Transactions.decodeTxNumber(sequence, tx.lockTime)
             val localPaymentPoint = channelKeys.paymentBasepoint
             // this tx has been published by remote, so we need to invert local/remote params
-            val commitmentNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isInitiator, params.remoteParams.paymentBasepoint, localPaymentPoint)
+            val commitmentNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isChannelOpener, params.remoteParams.paymentBasepoint, localPaymentPoint)
             if (commitmentNumber > 0xffffffffffffL) {
                 // txNumber must be lesser than 48 bits long
                 return null

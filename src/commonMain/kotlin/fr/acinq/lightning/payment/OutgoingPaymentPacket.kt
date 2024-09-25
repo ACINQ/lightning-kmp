@@ -17,10 +17,7 @@ import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.router.Hop
 import fr.acinq.lightning.router.NodeHop
 import fr.acinq.lightning.utils.UUID
-import fr.acinq.lightning.wire.FailureMessage
-import fr.acinq.lightning.wire.OnionPaymentPayloadTlv
-import fr.acinq.lightning.wire.OnionRoutingPacket
-import fr.acinq.lightning.wire.PaymentOnion
+import fr.acinq.lightning.wire.*
 
 object OutgoingPaymentPacket {
 
@@ -162,6 +159,14 @@ object OutgoingPaymentPacket {
                 Either.Right(ByteVector(encryptedReason))
             }
             is Either.Left -> Either.Left(result.value)
+        }
+    }
+
+    fun buildWillAddHtlcFailure(nodeSecret: PrivateKey, willAddHtlc: WillAddHtlc, failure: FailureMessage): OnTheFlyFundingMessage {
+        val reason = ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(failure)
+        return when (val f = buildHtlcFailure(nodeSecret, willAddHtlc.paymentHash, willAddHtlc.finalPacket, reason)) {
+            is Either.Right -> WillFailHtlc(willAddHtlc.id, willAddHtlc.paymentHash, f.value)
+            is Either.Left -> WillFailMalformedHtlc(willAddHtlc.id, willAddHtlc.paymentHash, Sphinx.hash(willAddHtlc.finalPacket), f.value.code)
         }
     }
 

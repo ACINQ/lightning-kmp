@@ -41,10 +41,6 @@ interface IncomingPaymentsDb {
      * Mark an incoming payment as received (paid).
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      *
-     * With pay-to-open, there is a delay before we receive the parts, and we may not receive any parts at all if the pay-to-open
-     * was cancelled due to a disconnection. That is why the payment should not be considered received (and not be displayed to
-     * the user) if there are no parts.
-     *
      * This method is additive:
      * - receivedWith set is appended to the existing set in database.
      * - receivedAt must be updated in database.
@@ -66,6 +62,9 @@ interface OutgoingPaymentsDb {
 
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getLightningOutgoingPayment(id: UUID): LightningOutgoingPayment?
+
+    /** Get information about a liquidity purchase (for which the funding transaction has been signed). */
+    suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment?
 
     /** Mark an outgoing payment as completed over Lightning. */
     suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
@@ -157,7 +156,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
     data class Received(val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
         /** Total amount received after applying the fees. */
-        val amount: MilliSatoshi = receivedWith.map { it.amount }.sum()
+        val amount: MilliSatoshi = receivedWith.map { it.amountReceived }.sum()
 
         /** Fees applied to receive this payment. */
         val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
@@ -165,14 +164,15 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
 
     sealed class ReceivedWith {
         /** Amount received for this part after applying the fees. This is the final amount we can use. */
-        abstract val amount: MilliSatoshi
+        abstract val amountReceived: MilliSatoshi
 
         /** Fees applied to receive this part. Is zero for Lightning payments. */
         abstract val fees: MilliSatoshi
 
         /** Payment was received via existing lightning channels. */
-        data class LightningPayment(override val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : ReceivedWith() {
-            override val fees: MilliSatoshi = 0.msat // with Lightning, the fee is paid by the sender
+        data class LightningPayment(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?) : ReceivedWith() {
+            // If there is no funding fee, the fees are paid by the sender for lightning payments.
+            override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
         }
 
         sealed class OnChainIncomingPayment : ReceivedWith() {
@@ -188,13 +188,13 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         /**
          * Payment was received via a new channel opened to us.
          *
-         * @param amount Our side of the balance of this channel when it's created. This is the amount pushed to us once the creation fees are applied.
+         * @param amountReceived Our side of the balance of this channel when it's created. This is the amount received after the creation fees are applied.
          * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
          * @param miningFee Feed paid to bitcoin miners for processing the L1 transaction.
          * @param channelId The long id of the channel created to receive this payment. May be null if the channel id is not known.
          */
         data class NewChannel(
-            override val amount: MilliSatoshi,
+            override val amountReceived: MilliSatoshi,
             override val serviceFee: MilliSatoshi,
             override val miningFee: Satoshi,
             override val channelId: ByteVector32,
@@ -204,7 +204,7 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
         ) : OnChainIncomingPayment()
 
         data class SpliceIn(
-            override val amount: MilliSatoshi,
+            override val amountReceived: MilliSatoshi,
             override val serviceFee: MilliSatoshi,
             override val miningFee: Satoshi,
             override val channelId: ByteVector32,
@@ -418,14 +418,15 @@ data class InboundLiquidityOutgoingPayment(
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val miningFees: Satoshi,
-    val lease: LiquidityAds.Lease,
+    val purchase: LiquidityAds.Purchase,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val fees: MilliSatoshi = (miningFees + lease.fees.serviceFee).toMilliSatoshi()
+    override val fees: MilliSatoshi = (miningFees + purchase.fees.serviceFee).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
     override val completedAt: Long? = lockedAt
+    val fundingFee: LiquidityAds.FundingFee = LiquidityAds.FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
 }
 
 enum class ChannelClosingType {

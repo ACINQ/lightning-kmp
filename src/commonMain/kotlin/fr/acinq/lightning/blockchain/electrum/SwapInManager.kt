@@ -2,21 +2,18 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.OutPoint
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.TxId
-import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.channel.FundingContributions.Companion.stripInputWitnesses
 import fr.acinq.lightning.channel.LocalFundingStatus
 import fr.acinq.lightning.channel.RbfStatus
-import fr.acinq.lightning.channel.SignedSharedTransaction
 import fr.acinq.lightning.channel.SpliceStatus
 import fr.acinq.lightning.channel.states.*
-import fr.acinq.lightning.io.RequestChannelOpen
+import fr.acinq.lightning.io.AddWalletInputsToChannel
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.utils.sat
 
 internal sealed class SwapInCommand {
-    data class TrySwapIn(val currentBlockHeight: Int, val wallet: WalletState, val swapInParams: SwapInParams, val trustedTxs: Set<TxId>) : SwapInCommand()
+    data class TrySwapIn(val currentBlockHeight: Int, val wallet: WalletState, val swapInParams: SwapInParams) : SwapInCommand()
     data class UnlockWalletInputs(val inputs: Set<OutPoint>) : SwapInCommand()
 }
 
@@ -33,20 +30,15 @@ internal sealed class SwapInCommand {
 class SwapInManager(private var reservedUtxos: Set<OutPoint>, private val logger: MDCLogger) {
     constructor(bootChannels: List<PersistedChannelState>, logger: MDCLogger) : this(reservedWalletInputs(bootChannels), logger)
 
-    internal fun process(cmd: SwapInCommand): RequestChannelOpen? = when (cmd) {
+    internal fun process(cmd: SwapInCommand): AddWalletInputsToChannel? = when (cmd) {
         is SwapInCommand.TrySwapIn -> {
             val availableWallet = cmd.wallet.withoutReservedUtxos(reservedUtxos).withConfirmations(cmd.currentBlockHeight, cmd.swapInParams)
             logger.info { "swap-in wallet balance: deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
-            val utxos = buildSet {
-                // some utxos may be used for swap-in even if they are not confirmed, for example when migrating from the legacy phoenix android app
-                addAll(availableWallet.unconfirmed.filter { cmd.trustedTxs.contains(it.outPoint.txid) })
-                addAll(availableWallet.weaklyConfirmed.filter { cmd.trustedTxs.contains(it.outPoint.txid) })
-                addAll(availableWallet.deeplyConfirmed.filter { Transaction.write(it.previousTx.stripInputWitnesses()).size < 65_000 })
-            }.toList()
+            val utxos = availableWallet.deeplyConfirmed.filter { Transaction.write(it.previousTx.stripInputWitnesses()).size < 65_000 }
             if (utxos.balance > 0.sat) {
                 logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
                 reservedUtxos = reservedUtxos.union(utxos.map { it.outPoint })
-                RequestChannelOpen(Lightning.randomBytes32(), utxos)
+                AddWalletInputsToChannel(utxos)
             } else {
                 null
             }

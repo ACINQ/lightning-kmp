@@ -38,9 +38,10 @@ data class WaitForFundingCreated(
     val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val remoteSecondPerCommitmentPoint: PublicKey,
-    val channelFlags: Byte,
+    val channelFlags: ChannelFlags,
     val channelConfig: ChannelConfig,
     val channelFeatures: ChannelFeatures,
+    val liquidityPurchase: LiquidityAds.Purchase?,
     val channelOrigin: Origin?
 ) : ChannelState() {
     val channelId: ByteVector32 = interactiveTxSession.fundingParams.channelId
@@ -63,7 +64,7 @@ data class WaitForFundingCreated(
                                 interactiveTxAction.sharedTx,
                                 localPushAmount,
                                 remotePushAmount,
-                                liquidityLease = null,
+                                liquidityPurchase,
                                 localCommitmentIndex = 0,
                                 remoteCommitmentIndex = 0,
                                 commitTxFeerate,
@@ -83,6 +84,7 @@ data class WaitForFundingCreated(
                                         localPushAmount,
                                         remotePushAmount,
                                         remoteSecondPerCommitmentPoint,
+                                        liquidityPurchase,
                                         channelOrigin
                                     )
                                     val actions = buildList {

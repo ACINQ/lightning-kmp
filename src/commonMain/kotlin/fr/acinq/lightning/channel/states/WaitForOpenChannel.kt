@@ -27,7 +27,8 @@ data class WaitForOpenChannel(
     val walletInputs: List<WalletState.Utxo>,
     val localParams: LocalParams,
     val channelConfig: ChannelConfig,
-    val remoteInit: Init
+    val remoteInit: Init,
+    val fundingRates: LiquidityAds.WillFundRates?
 ) : ChannelState() {
     override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {
@@ -40,6 +41,15 @@ data class WaitForOpenChannel(
                             val channelFeatures = ChannelFeatures(channelType, localFeatures = localParams.features, remoteFeatures = remoteInit.features)
                             val minimumDepth = if (staticParams.useZeroConf) 0 else Helpers.minDepthForFunding(staticParams.nodeParams, open.fundingAmount)
                             val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
+                            val localFundingPubkey = channelKeys.fundingPubKey(0)
+                            val fundingScript = Helpers.Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey)
+                            val requestFunding = open.requestFunding
+                            val willFund = when {
+                                fundingRates == null -> null
+                                requestFunding == null -> null
+                                requestFunding.requestedAmount > fundingAmount -> null
+                                else -> fundingRates.validateRequest(staticParams.nodeParams.nodePrivateKey, fundingScript, open.fundingFeerate, requestFunding, isChannelCreation = true)
+                            }
                             val accept = AcceptDualFundedChannel(
                                 temporaryChannelId = open.temporaryChannelId,
                                 fundingAmount = fundingAmount,
@@ -49,7 +59,7 @@ data class WaitForOpenChannel(
                                 minimumDepth = minimumDepth.toLong(),
                                 toSelfDelay = localParams.toSelfDelay,
                                 maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-                                fundingPubkey = channelKeys.fundingPubKey(0),
+                                fundingPubkey = localFundingPubkey,
                                 revocationBasepoint = channelKeys.revocationBasepoint,
                                 paymentBasepoint = channelKeys.paymentBasepoint,
                                 delayedPaymentBasepoint = channelKeys.delayedPaymentBasepoint,
@@ -59,6 +69,7 @@ data class WaitForOpenChannel(
                                 tlvStream = TlvStream(
                                     buildSet {
                                         add(ChannelTlv.ChannelTypeTlv(channelType))
+                                        willFund?.let { add(ChannelTlv.ProvideFundingTlv(it.willFund)) }
                                         if (pushAmount > 0.msat) add(ChannelTlv.PushAmountTlv(pushAmount))
                                     }
                                 ),
@@ -88,7 +99,8 @@ data class WaitForOpenChannel(
                                 is Either.Right -> {
                                     val interactiveTxSession = InteractiveTxSession(staticParams.remoteNodeId, channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, emptySet(), fundingContributions.value)
                                     val nextState = WaitForFundingCreated(
-                                        localParams,
+                                        // If our peer asks us to pay the commit tx fees, we accept (only used in tests, as we're otherwise always the channel opener).
+                                        localParams.copy(paysCommitTxFees = open.channelFlags.nonInitiatorPaysCommitFees),
                                         remoteParams,
                                         interactiveTxSession,
                                         pushAmount,
@@ -99,7 +111,8 @@ data class WaitForOpenChannel(
                                         open.channelFlags,
                                         channelConfig,
                                         channelFeatures,
-                                        open.origin
+                                        willFund?.purchase,
+                                        channelOrigin = null,
                                     )
                                     val actions = listOf(
                                         ChannelAction.ChannelId.IdAssigned(staticParams.remoteNodeId, temporaryChannelId, channelId),

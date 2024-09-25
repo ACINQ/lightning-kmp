@@ -398,6 +398,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
             bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
+            requestRemoteFunding: Satoshi? = null,
         ): Fixture {
             val (alice, commitAlice, bob, commitBob, walletAlice) = WaitForFundingSignedTestsCommon.init(
                 channelType,
@@ -408,6 +409,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 bobFundingAmount,
                 alicePushAmount,
                 bobPushAmount,
+                requestRemoteFunding,
                 zeroConf = false
             )
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitBob))
