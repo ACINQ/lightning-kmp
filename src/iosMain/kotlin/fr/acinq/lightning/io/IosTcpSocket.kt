@@ -130,7 +130,7 @@ class IosTcpSocket @OptIn(ExperimentalForeignApi::class) constructor(private val
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
 
     @OptIn(ExperimentalUnsignedTypes::class, ExperimentalForeignApi::class)
-    actual override suspend fun connect(
+    override suspend fun connect(
         host: String,
         port: Int,
         tls: TcpSocket.TLS,
