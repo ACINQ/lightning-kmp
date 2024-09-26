@@ -164,7 +164,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         actionsAlice3.findOutgoingMessage<TxAbort>()
         runBlocking {
             val response = cmd.replyTo.await()
-            assertIs<ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds>(response)
+            assertIs<ChannelFundingResponse.Failure.InsufficientFunds>(response)
         }
     }
 
@@ -260,7 +260,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             actionsBob2.hasOutgoingMessage<TxAbort>()
             runBlocking {
                 val response = cmd.replyTo.await()
-                assertIs<ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds>(response)
+                assertIs<ChannelFundingResponse.Failure.InsufficientFunds>(response)
                 assertEquals(10_000_000.msat, response.liquidityFees)
             }
             val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(TxAbort(bob.channelId, SpliceAborted(bob.channelId).message)))
@@ -332,7 +332,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             actionsBob2.hasOutgoingMessage<TxAbort>()
             runBlocking {
                 val response = cmd.replyTo.await()
-                assertIs<ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds>(response)
+                assertIs<ChannelFundingResponse.Failure.InsufficientFunds>(response)
                 assertEquals(500_000.msat, response.liquidityFees)
                 assertEquals(currentFeeCredit, response.currentFeeCredit)
             }
@@ -1570,9 +1570,9 @@ class SpliceTestsCommon : LightningTestSuite() {
             return exchangeSpliceSigs(alice1, commitSigAlice, bob1, commitSigBob)
         }
 
-        private fun checkCommandResponse(replyTo: CompletableDeferred<ChannelCommand.Commitment.Splice.Response>, parentCommitment: Commitment, spliceInit: SpliceInit): TxId = runBlocking {
+        private fun checkCommandResponse(replyTo: CompletableDeferred<ChannelFundingResponse>, parentCommitment: Commitment, spliceInit: SpliceInit): TxId = runBlocking {
             val response = replyTo.await()
-            assertIs<ChannelCommand.Commitment.Splice.Response.Created>(response)
+            assertIs<ChannelFundingResponse.Success>(response)
             assertEquals(response.capacity, parentCommitment.fundingAmount + spliceInit.fundingContribution)
             assertEquals(response.balance, parentCommitment.localCommit.spec.toLocal + spliceInit.fundingContribution.toMilliSatoshi() - spliceInit.pushAmount)
             assertEquals(response.fundingTxIndex, parentCommitment.fundingTxIndex + 1)

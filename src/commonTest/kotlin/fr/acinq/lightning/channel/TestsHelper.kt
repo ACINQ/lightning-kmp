@@ -21,6 +21,7 @@ import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
@@ -189,6 +190,7 @@ object TestsHelper {
         val bobInit = Init(bobFeatures)
         val (alice1, actionsAlice1) = alice.process(
             ChannelCommand.Init.Initiator(
+                CompletableDeferred(),
                 aliceFundingAmount,
                 alicePushAmount,
                 createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
@@ -206,7 +208,19 @@ object TestsHelper {
         assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
         val temporaryChannelId = aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else listOf()
-        val (bob1, _) = bob.process(ChannelCommand.Init.NonInitiator(temporaryChannelId, bobFundingAmount, bobPushAmount, bobWallet, bobChannelParams, ChannelConfig.standard, aliceInit, TestConstants.fundingRates))
+        val (bob1, _) = bob.process(
+            ChannelCommand.Init.NonInitiator(
+                CompletableDeferred(),
+                temporaryChannelId,
+                bobFundingAmount,
+                bobPushAmount,
+                bobWallet,
+                bobChannelParams,
+                ChannelConfig.standard,
+                aliceInit,
+                TestConstants.fundingRates
+            )
+        )
         assertIs<LNChannel<WaitForOpenChannel>>(bob1)
         val open = actionsAlice1.findOutgoingMessage<OpenDualFundedChannel>()
         return Triple(alice1, bob1, open)
@@ -224,7 +238,18 @@ object TestsHelper {
         requestRemoteFunding: Satoshi? = null,
         zeroConf: Boolean = false,
     ): Triple<LNChannel<Normal>, LNChannel<Normal>, Transaction> {
-        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, requestRemoteFunding, zeroConf)
+        val (alice, channelReadyAlice, bob, channelReadyBob) = WaitForChannelReadyTestsCommon.init(
+            channelType,
+            aliceFeatures,
+            bobFeatures,
+            currentHeight,
+            aliceFundingAmount,
+            bobFundingAmount,
+            alicePushAmount,
+            bobPushAmount,
+            requestRemoteFunding,
+            zeroConf
+        )
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
         assertIs<LNChannel<Normal>>(alice1)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()

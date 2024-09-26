@@ -18,6 +18,7 @@ data object WaitForInit : ChannelState() {
         return when (cmd) {
             is ChannelCommand.Init.NonInitiator -> {
                 val nextState = WaitForOpenChannel(
+                    cmd.replyTo,
                     cmd.temporaryChannelId,
                     cmd.fundingAmount,
                     cmd.pushAmount,

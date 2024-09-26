@@ -11,6 +11,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
@@ -38,7 +39,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `complete interactive-tx protocol`() {
+    fun `complete interactive-tx protocol`() = runSuspendTest {
         val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         // Alice ---- tx_add_input ----> Bob
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
@@ -63,6 +64,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         assertIs<WaitForFundingSigned>(bob3.state)
         assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertIs<ChannelFundingResponse.Success>(alice.state.replyTo.await()).also { assertEquals(0, it.fundingTxIndex) }
+        assertIs<ChannelFundingResponse.Success>(bob.state.replyTo.await()).also { assertEquals(0, it.fundingTxIndex) }
         verifyCommits(alice2.state.signingSession, bob3.state.signingSession, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount, TestConstants.alicePushAmount)
     }
 
@@ -148,7 +151,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `complete interactive-tx protocol -- initiator can't pay fees`() {
+    fun `complete interactive-tx protocol -- initiator can't pay fees`() = runSuspendTest {
         val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, aliceFundingAmount = 1_000_100.sat, bobFundingAmount = 0.sat, alicePushAmount = 1_000_000.sat.toMilliSatoshi())
         // Alice ---- tx_add_input ----> Bob
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
@@ -163,6 +166,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
         actionsBob3.hasOutgoingMessage<Error>()
         assertIs<Aborted>(bob3.state)
+        assertIs<ChannelFundingResponse.Failure.CannotStartSession>(bob.state.replyTo.await())
     }
 
     @Test
@@ -265,11 +269,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Error`() {
+    fun `recv Error`() = runSuspendTest {
         val (_, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<Aborted>(bob1.state)
         assertTrue(actions1.isEmpty())
+        assertIs<ChannelFundingResponse.Failure.AbortedByPeer>(bob.state.replyTo.await())
     }
 
     @Test
@@ -281,13 +286,14 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Disconnected`() {
+    fun `recv Disconnected`() = runSuspendTest {
         val (_, bob, txAddInput) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(txAddInput))
         assertIs<WaitForFundingCreated>(bob1.state)
         val (bob2, actions2) = bob1.process(ChannelCommand.Disconnected)
         assertIs<Aborted>(bob2.state)
         assertTrue(actions2.isEmpty())
+        assertIs<ChannelFundingResponse.Failure.Disconnected>(bob.state.replyTo.await())
     }
 
     companion object {

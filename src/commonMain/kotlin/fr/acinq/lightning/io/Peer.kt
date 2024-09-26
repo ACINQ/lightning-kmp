@@ -629,11 +629,11 @@ class Peer(
     }
 
     /**
-     * Do a splice out using any suitable channel
-     * @return  [ChannelCommand.Commitment.Splice.Response] if a splice was attempted, or {null} if no suitable
-     *          channel was found
+     * Do a splice out using any suitable channel.
+     *
+     * @return [ChannelFundingResponse] if a splice was attempted, or {null} if no suitable channel was found
      */
-    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelCommand.Commitment.Splice.Response? {
+    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelFundingResponse? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() > amount }
@@ -652,7 +652,7 @@ class Peer(
             }
     }
 
-    suspend fun spliceCpfp(channelId: ByteVector32, feerate: FeeratePerKw): ChannelCommand.Commitment.Splice.Response? {
+    suspend fun spliceCpfp(channelId: ByteVector32, feerate: FeeratePerKw): ChannelFundingResponse? {
         return channels.values
             .filterIsInstance<Normal>()
             .find { it.channelId == channelId }
@@ -672,7 +672,7 @@ class Peer(
             }
     }
 
-    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, fundingRate: LiquidityAds.FundingRate): ChannelCommand.Commitment.Splice.Response? {
+    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, fundingRate: LiquidityAds.FundingRate): ChannelFundingResponse? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
@@ -1078,7 +1078,18 @@ class Peer(
                             val localParams = LocalParams(nodeParams, isChannelOpener = false, payCommitTxFees = msg.channelFlags.nonInitiatorPaysCommitFees)
                             val state = WaitForInit
                             val channelConfig = ChannelConfig.standard
-                            val (state1, actions1) = state.process(ChannelCommand.Init.NonInitiator(msg.temporaryChannelId, 0.sat, 0.msat, listOf(), localParams, channelConfig, theirInit!!, fundingRates = null))
+                            val initCommand = ChannelCommand.Init.NonInitiator(
+                                replyTo = CompletableDeferred(),
+                                temporaryChannelId = msg.temporaryChannelId,
+                                fundingAmount = 0.sat,
+                                pushAmount = 0.msat,
+                                walletInputs = listOf(),
+                                localParams = localParams,
+                                channelConfig = channelConfig,
+                                remoteInit = theirInit!!,
+                                fundingRates = null
+                            )
+                            val (state1, actions1) = state.process(initCommand)
                             val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
                             _channels = _channels + (msg.temporaryChannelId to state2)
                             processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2)
@@ -1250,16 +1261,17 @@ class Peer(
                 val state = WaitForInit
                 val (state1, actions1) = state.process(
                     ChannelCommand.Init.Initiator(
-                        cmd.fundingAmount,
-                        cmd.pushAmount,
-                        cmd.walletInputs,
-                        cmd.commitTxFeerate,
-                        cmd.fundingTxFeerate,
-                        localParams,
-                        theirInit!!,
-                        ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
-                        ChannelConfig.standard,
-                        cmd.channelType,
+                        replyTo = CompletableDeferred(),
+                        fundingAmount = cmd.fundingAmount,
+                        pushAmount = cmd.pushAmount,
+                        walletInputs = cmd.walletInputs,
+                        commitTxFeerate = cmd.commitTxFeerate,
+                        fundingTxFeerate = cmd.fundingTxFeerate,
+                        localParams = localParams,
+                        remoteInit = theirInit!!,
+                        channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
+                        channelConfig = ChannelConfig.standard,
+                        channelType = cmd.channelType,
                         requestRemoteFunding = null,
                         channelOrigin = null,
                     )
@@ -1294,7 +1306,7 @@ class Peer(
                                 )
                                 // If the splice fails, we immediately unlock the utxos to reuse them in the next attempt.
                                 spliceCommand.replyTo.invokeOnCompletion { ex ->
-                                    if (ex == null && spliceCommand.replyTo.getCompleted() is ChannelCommand.Commitment.Splice.Response.Failure) {
+                                    if (ex == null && spliceCommand.replyTo.getCompleted() is ChannelFundingResponse.Failure) {
                                         swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                                     }
                                 }
@@ -1353,22 +1365,28 @@ class Peer(
                                             // We ask our peer to pay the commit tx fees.
                                             val localParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
                                             val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
-                                            val (state, actions) = WaitForInit.process(
-                                                ChannelCommand.Init.Initiator(
-                                                    fundingAmount = localFundingAmount,
-                                                    pushAmount = 0.msat,
-                                                    walletInputs = cmd.walletInputs,
-                                                    commitTxFeerate = currentFeerates.commitmentFeerate,
-                                                    fundingTxFeerate = currentFeerates.fundingFeerate,
-                                                    localParams = localParams,
-                                                    remoteInit = theirInit!!,
-                                                    channelFlags = channelFlags,
-                                                    channelConfig = ChannelConfig.standard,
-                                                    channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
-                                                    requestRemoteFunding = requestRemoteFunding,
-                                                    channelOrigin = Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), fees),
-                                                )
+                                            val initCommand = ChannelCommand.Init.Initiator(
+                                                replyTo = CompletableDeferred(),
+                                                fundingAmount = localFundingAmount,
+                                                pushAmount = 0.msat,
+                                                walletInputs = cmd.walletInputs,
+                                                commitTxFeerate = currentFeerates.commitmentFeerate,
+                                                fundingTxFeerate = currentFeerates.fundingFeerate,
+                                                localParams = localParams,
+                                                remoteInit = theirInit!!,
+                                                channelFlags = channelFlags,
+                                                channelConfig = ChannelConfig.standard,
+                                                channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+                                                requestRemoteFunding = requestRemoteFunding,
+                                                channelOrigin = Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), fees),
                                             )
+                                            // If the channel creation fails, we immediately unlock the utxos to reuse them in the next attempt.
+                                            initCommand.replyTo.invokeOnCompletion { ex ->
+                                                if (ex == null && initCommand.replyTo.getCompleted() is ChannelFundingResponse.Failure) {
+                                                    swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
+                                                }
+                                            }
+                                            val (state, actions) = WaitForInit.process(initCommand)
                                             val msg = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                                             _channels = _channels + (msg.temporaryChannelId to state)
                                             processActions(msg.temporaryChannelId, peerConnection, actions)
@@ -1465,6 +1483,7 @@ class Peer(
                                 logger.info { "requesting on-the-fly channel for paymentHash=${cmd.paymentHash} feerate=$fundingFeerate fee=${totalFees.total} paymentType=${paymentDetails.paymentType}" }
                                 val (state, actions) = WaitForInit.process(
                                     ChannelCommand.Init.Initiator(
+                                        replyTo = CompletableDeferred(),
                                         fundingAmount = 0.sat, // we don't have funds to contribute
                                         pushAmount = 0.msat,
                                         walletInputs = listOf(),
