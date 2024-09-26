@@ -89,6 +89,18 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
+    /** Fee credit that will be used for the given on-the-fly funding operation. */
+    data class FeeCreditUsedTlv(val amount: MilliSatoshi) : ChannelTlv() {
+        override val tag: Long get() = FeeCreditUsedTlv.tag
+
+        override fun write(out: Output) = LightningCodecs.writeTU64(amount.toLong(), out)
+
+        companion object : TlvValueReader<FeeCreditUsedTlv> {
+            const val tag: Long = 41042
+            override fun read(input: Input): FeeCreditUsedTlv = FeeCreditUsedTlv(LightningCodecs.tu64(input).msat)
+        }
+    }
+
     /** Amount that will be offered by the initiator of a dual-funded channel to the non-initiator. */
     data class PushAmountTlv(val amount: MilliSatoshi) : ChannelTlv() {
         override val tag: Long get() = PushAmountTlv.tag

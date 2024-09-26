@@ -785,7 +785,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val fundingParams = InteractiveTxParams(randomBytes32(), true, 150_000.sat, 50_000.sat, pubKey, 0, 660.sat, FeeratePerKw(2500.sat))
         run {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(293.sat, Script.pay2wpkh(pubKey))), 0)
-            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx.txid, 0, 0, previousTx, WalletState.AddressMeta.Single))).left
+            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx.txid, 0, 0, previousTx, WalletState.AddressMeta.Single)), 0.msat, 0.msat, null).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.InputBelowDust>(result)
         }
@@ -793,15 +793,58 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val txIn = (1..1000).map { TxIn(OutPoint(TxId(randomBytes32()), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(pubKey, Transactions.PlaceHolderSig)) }
             val txOut = (1..1000).map { i -> TxOut(1000.sat * i, Script.pay2wpkh(pubKey)) }
             val previousTx = Transaction(2, txIn, txOut, 0)
-            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx.txid, 53, 0, previousTx, WalletState.AddressMeta.Single))).left
+            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx.txid, 53, 0, previousTx, WalletState.AddressMeta.Single)), 0.msat, 0.msat, null).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.InputTxTooLarge>(result)
         }
         run {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(80_000.sat, Script.pay2wpkh(pubKey)), TxOut(60_000.sat, Script.pay2wpkh(pubKey))), 0)
-            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx.txid, 0, 0, previousTx, WalletState.AddressMeta.Single), WalletState.Utxo(previousTx.txid, 1, 0, previousTx, WalletState.AddressMeta.Single))).left
+            val walletInputs = listOf(
+                WalletState.Utxo(previousTx.txid, 0, 0, previousTx, WalletState.AddressMeta.Single),
+                WalletState.Utxo(previousTx.txid, 1, 0, previousTx, WalletState.AddressMeta.Single),
+            )
+            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, walletInputs, 0.msat, 0.msat, null).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.NotEnoughFunding>(result)
+        }
+    }
+
+    @Test
+    fun `cannot pay liquidity ads fees`() {
+        val channelKeys = TestConstants.Alice.keyManager.run { channelKeys(newFundingKeyPath(isInitiator = true)) }
+        val swapInKeys = TestConstants.Alice.keyManager.swapInOnChainWallet
+        val walletKey = randomKey().publicKey()
+        val fundingParams = InteractiveTxParams(randomBytes32(), true, 0.sat, 250_000.sat, walletKey, 0, 660.sat, FeeratePerKw(2500.sat))
+        val fees = LiquidityAds.Fees(3000.sat, 2000.sat)
+        val paymentDetails = LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(randomBytes32()))
+        run {
+            // If we don't contribute any funds, we cannot pay the liquidity lease.
+            val purchase = LiquidityAds.Purchase.Standard(100_000.sat, fees, paymentDetails)
+            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(), 0.msat, 0.msat, purchase).left
+            assertNotNull(result)
+            assertIs<FundingContributionFailure.InvalidFundingBalances>(result)
+        }
+        run {
+            // If our peer pushes enough funds on our side to pay liquidity fees, we're fine.
+            val purchase = LiquidityAds.Purchase.Standard(100_000.sat, fees, paymentDetails)
+            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(), 0.msat, 10_000_000.msat, purchase).right
+            assertNotNull(result)
+            assertTrue(result.inputs.isEmpty())
+            assertEquals(1, result.outputs.size)
+            val sharedOutput = result.outputs.first()
+            assertIs<InteractiveTxOutput.Shared>(sharedOutput)
+            assertEquals(fundingParams.fundingAmount, sharedOutput.amount)
+        }
+        run {
+            // If we have enough fee credit to pay liquidity fees, we're fine.
+            val purchase = LiquidityAds.Purchase.WithFeeCredit(100_000.sat, fees, 5_000_000.msat, paymentDetails)
+            val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(), 0.msat, 0.msat, purchase).right
+            assertNotNull(result)
+            assertTrue(result.inputs.isEmpty())
+            assertEquals(1, result.outputs.size)
+            val sharedOutput = result.outputs.first()
+            assertIs<InteractiveTxOutput.Shared>(sharedOutput)
+            assertEquals(fundingParams.fundingAmount, sharedOutput.amount)
         }
     }
 
@@ -1275,10 +1318,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingAmountA, fundingAmountB, fundingPubkeyB, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingAmountB, fundingAmountA, fundingPubkeyA, lockTime, dustLimit, targetFeerate)
             val walletA = createWallet(swapInKeysA, utxosA, legacyUtxosA)
-            val contributionsA = FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, null, walletA, listOf(), randomKey().publicKey())
+            val contributionsA = FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, null, walletA, listOf(), 0.msat, 0.msat, null, randomKey().publicKey())
             assertNotNull(contributionsA.right)
             val walletB = createWallet(swapInKeysB, utxosB, legacyUtxosB)
-            val contributionsB = FundingContributions.create(channelKeysB, swapInKeysB, fundingParamsB, null, walletB, listOf(), randomKey().publicKey())
+            val contributionsB = FundingContributions.create(channelKeysB, swapInKeysB, fundingParamsB, null, walletB, listOf(), 0.msat, 0.msat, null, randomKey().publicKey())
             assertNotNull(contributionsB.right)
             return Fixture(channelId, TestConstants.Alice.keyManager, channelKeysA, localParamsA, fundingParamsA, contributionsA.right!!, TestConstants.Bob.keyManager, channelKeysB, localParamsB, fundingParamsB, contributionsB.right!!)
         }
@@ -1311,7 +1354,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val sharedInputA = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, channelKeysB.fundingPubKey(fundingTxIndex))
             val nextFundingPubkeyB = channelKeysB.fundingPubKey(fundingTxIndex + 1)
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingContributionA, fundingContributionB, sharedInputA, nextFundingPubkeyB, outputsA, lockTime, dustLimit, targetFeerate)
-            return FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, Pair(sharedInputA, SharedFundingInputBalances(balanceA, balanceB, 0.msat)), listOf(), outputsA, randomKey().publicKey())
+            return FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, Pair(sharedInputA, SharedFundingInputBalances(balanceA, balanceB, 0.msat)), listOf(), outputsA, 0.msat, 0.msat, null, randomKey().publicKey())
         }
 
         private fun createSpliceFixture(
@@ -1350,10 +1393,10 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingContributionA, fundingContributionB, sharedInputA, nextFundingPubkeyB, outputsA, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingContributionB, fundingContributionA, sharedInputB, nextFundingPubkeyA, outputsB, lockTime, dustLimit, targetFeerate)
             val walletA = createWallet(swapInKeysA, utxosA)
-            val contributionsA = FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, Pair(sharedInputA, SharedFundingInputBalances(balanceA, balanceB, 0.msat)), walletA, outputsA, randomKey().publicKey())
+            val contributionsA = FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, Pair(sharedInputA, SharedFundingInputBalances(balanceA, balanceB, 0.msat)), walletA, outputsA, 0.msat, 0.msat, null, randomKey().publicKey())
             assertNotNull(contributionsA.right)
             val walletB = createWallet(swapInKeysB, utxosB)
-            val contributionsB = FundingContributions.create(channelKeysB, swapInKeysB, fundingParamsB, Pair(sharedInputB, SharedFundingInputBalances(balanceB, balanceA, 0.msat)), walletB, outputsB, randomKey().publicKey())
+            val contributionsB = FundingContributions.create(channelKeysB, swapInKeysB, fundingParamsB, Pair(sharedInputB, SharedFundingInputBalances(balanceB, balanceA, 0.msat)), walletB, outputsB, 0.msat, 0.msat, null, randomKey().publicKey())
             assertNotNull(contributionsB.right)
             return Fixture(channelId, TestConstants.Alice.keyManager, channelKeysA, localParamsA, fundingParamsA, contributionsA.right!!, TestConstants.Bob.keyManager, channelKeysB, localParamsB, fundingParamsB, contributionsB.right!!)
         }

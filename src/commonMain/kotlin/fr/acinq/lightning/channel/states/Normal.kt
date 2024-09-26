@@ -389,31 +389,29 @@ data class Normal(
                                             paysCommitTxFees -> Transactions.commitTxFee(commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec)
                                             else -> 0.sat
                                         }
-                                        if (parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() < parentCommitment.localChannelReserve(commitments.params).max(commitTxFees)) {
-                                            logger.warning { "cannot do splice: insufficient funds" }
-                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
-                                            val actions = buildList {
-                                                add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
-                                                add(ChannelAction.Disconnect)
+                                        val liquidityFees = when (val requestRemoteFunding = spliceStatus.command.requestRemoteFunding) {
+                                            null -> 0.msat
+                                            else -> when (requestRemoteFunding.paymentDetails.paymentType) {
+                                                LiquidityAds.PaymentType.FromChannelBalance -> requestRemoteFunding.fees(spliceStatus.command.feerate, isChannelCreation = false).total.toMilliSatoshi()
+                                                LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc -> requestRemoteFunding.fees(spliceStatus.command.feerate, isChannelCreation = false).total.toMilliSatoshi()
+                                                // Liquidity fees will be deducted from future HTLCs instead of being paid immediately.
+                                                LiquidityAds.PaymentType.FromFutureHtlc -> 0.msat
+                                                LiquidityAds.PaymentType.FromFutureHtlcWithPreimage -> 0.msat
+                                                is LiquidityAds.PaymentType.Unknown -> 0.msat
                                             }
-                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                                        }
+                                        val liquidityFeesOwed = (liquidityFees - spliceStatus.command.currentFeeCredit).max(0.msat)
+                                        val balanceAfterFees = parentCommitment.localCommit.spec.toLocal + fundingContribution.toMilliSatoshi() - liquidityFeesOwed
+                                        if (balanceAfterFees < parentCommitment.localChannelReserve(commitments.params).max(commitTxFees)) {
+                                            logger.warning { "cannot do splice: insufficient funds (balanceAfterFees=$balanceAfterFees, liquidityFees=$liquidityFees, feeCredit=${spliceStatus.command.currentFeeCredit})" }
+                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds(balanceAfterFees, liquidityFees, spliceStatus.command.currentFeeCredit))
+                                            val action = listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceRequest(channelId).message)))
+                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), action)
                                         } else if (spliceStatus.command.spliceOut?.scriptPubKey?.let { Helpers.Closing.isValidFinalScriptPubkey(it, allowAnySegwit = true) } == false) {
                                             logger.warning { "cannot do splice: invalid splice-out script" }
                                             spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InvalidSpliceOutPubKeyScript)
-                                            val actions = buildList {
-                                                add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
-                                                add(ChannelAction.Disconnect)
-                                            }
-                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
-                                        } else if (!canAffordSpliceLiquidityFees(spliceStatus.command, parentCommitment)) {
-                                            val missing = spliceStatus.command.requestRemoteFunding?.let { r -> r.fees(spliceStatus.command.feerate, isChannelCreation = false).total - parentCommitment.localCommit.spec.toLocal.truncateToSatoshi() }
-                                            logger.warning { "cannot do splice: balance is too low to pay for inbound liquidity (missing=$missing)" }
-                                            spliceStatus.command.replyTo.complete(ChannelCommand.Commitment.Splice.Response.Failure.InsufficientFunds)
-                                            val actions = buildList {
-                                                add(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceRequest(channelId).message)))
-                                                add(ChannelAction.Disconnect)
-                                            }
-                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.None), actions)
+                                            val action = listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceRequest(channelId).message)))
+                                            Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), action)
                                         } else {
                                             val spliceInit = SpliceInit(
                                                 channelId,
@@ -522,6 +520,7 @@ data class Normal(
                                 cmd.message.fundingContribution,
                                 spliceStatus.spliceInit.feerate,
                                 isChannelCreation = false,
+                                cmd.message.feeCreditUsed,
                                 cmd.message.willFund,
                             )) {
                                 is Either.Left<ChannelException> -> {
@@ -551,6 +550,9 @@ data class Normal(
                                         sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote, toHtlcs = parentCommitment.localCommit.spec.htlcs.map { it.add.amountMsat }.sum())),
                                         walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                         localOutputs = spliceStatus.command.spliceOutputs,
+                                        localPushAmount = spliceStatus.spliceInit.pushAmount,
+                                        remotePushAmount = cmd.message.pushAmount,
+                                        liquidityPurchase = liquidityPurchase.value,
                                         changePubKey = null // we don't want a change output: we're spending every funds available
                                     )) {
                                         is Either.Left -> {
@@ -852,19 +854,6 @@ data class Normal(
             is ChannelCommand.Connected -> unhandled(cmd)
             is ChannelCommand.Closing -> unhandled(cmd)
             is ChannelCommand.Init -> unhandled(cmd)
-        }
-    }
-
-    private fun canAffordSpliceLiquidityFees(splice: ChannelCommand.Commitment.Splice.Request, parentCommitment: Commitment): Boolean {
-        return when (val request = splice.requestRemoteFunding) {
-            null -> true
-            else -> when (request.paymentDetails) {
-                is LiquidityAds.PaymentDetails.FromChannelBalance -> request.fees(splice.feerate, isChannelCreation = false).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
-                is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> request.fees(splice.feerate, isChannelCreation = false).total <= parentCommitment.localCommit.spec.toLocal.truncateToSatoshi()
-                // Fees don't need to be paid during the splice, they will be deducted from relayed HTLCs.
-                is LiquidityAds.PaymentDetails.FromFutureHtlc -> true
-                is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> true
-            }
         }
     }
 

@@ -66,6 +66,34 @@ data class AddLiquidityForIncomingPayment(val paymentAmount: MilliSatoshi, val r
     val paymentHash: ByteVector32 = Crypto.sha256(preimage.toByteArray()).byteVector32()
 
     fun fees(fundingFeerate: FeeratePerKw, isChannelCreation: Boolean): LiquidityAds.Fees = fundingRate.fees(fundingFeerate, requestedAmount, requestedAmount, isChannelCreation)
+
+    companion object {
+        /**
+         * When we open a new channel without contributing any input, we won't be able to pay on-chain fees for our
+         * weight of the funding transaction. If we don't do anything, the resulting transaction will thus have a
+         * lower feerate than requested and may not confirm.
+         *
+         * To avoid that, we ask our peer to target a higher feerate than the one we actually want. They will pay
+         * more mining fees to satisfy that feerate, while we won't pay any mining fees. We should be paying for the
+         * shared output, which doesn't add too much weight, so we add 25%. This is hacky but should result in an
+         * effective feerate that is somewhat close to the initial feerate we wanted. Note that we will pay liquidity
+         * fees based on this inflated feerate, which will refund our peer for this hack.
+         */
+        const val ChannelOpenFeerateRatio = 1.25
+
+        /**
+         * When our balance is low, we won't be able to pay the mining fees for our weight of the splice transaction.
+         * If we don't do anything, the resulting transaction will thus have a lower feerate than requested and may
+         * not confirm.
+         *
+         * To avoid that, we ask our peer to target a higher feerate than the one we actually want. They will pay more
+         * mining fees to satisfy that feerate, while we'll pay whatever we can from our current balance. We should be
+         * paying for the shared input and shared output, which is a lot of weight, so we add 50%. This is hacky but
+         * should result in an effective feerate that is somewhat close to the initial feerate we wanted. Note that we
+         * will pay liquidity fees based on the inflated feerate, which will refund our peer for this hack.
+         */
+        const val SpliceWithNoBalanceFeerateRatio = 1.5
+    }
 }
 
 data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, val logger: MDCLogger) {
@@ -212,6 +240,7 @@ class Peer(
     val onChainFeeratesFlow = MutableStateFlow<OnChainFeerates?>(null)
     val peerFeeratesFlow = MutableStateFlow<RecommendedFeerates?>(null)
     val remoteFundingRates = MutableStateFlow<LiquidityAds.WillFundRates?>(null)
+    val feeCreditFlow = MutableStateFlow<MilliSatoshi>(0.msat)
 
     private val _channelLogger = nodeParams.loggerFactory.newLogger(ChannelState::class)
     private suspend fun ChannelState.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -614,6 +643,7 @@ class Peer(
                     spliceIn = null,
                     spliceOut = ChannelCommand.Commitment.Splice.Request.SpliceOut(amount, scriptPubKey),
                     requestRemoteFunding = null,
+                    currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
                 )
@@ -633,6 +663,7 @@ class Peer(
                     spliceIn = null,
                     spliceOut = null,
                     requestRemoteFunding = null,
+                    currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
                 )
@@ -651,6 +682,7 @@ class Peer(
                     spliceIn = null,
                     spliceOut = null,
                     requestRemoteFunding = LiquidityAds.RequestFunding(amount, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance),
+                    currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
                 )
@@ -905,9 +937,10 @@ class Peer(
     private suspend fun processIncomingPayment(item: Either<WillAddHtlc, UpdateAddHtlc>) {
         val currentBlockHeight = currentTipFlow.filterNotNull().first()
         val currentFeerate = peerFeeratesFlow.filterNotNull().first().fundingFeerate
+        val currentFeeCredit = feeCreditFlow.value
         val result = when (item) {
-            is Either.Right -> incomingPaymentHandler.process(item.value, currentBlockHeight, currentFeerate, remoteFundingRates.value)
-            is Either.Left -> incomingPaymentHandler.process(item.value, currentBlockHeight, currentFeerate, remoteFundingRates.value)
+            is Either.Right -> incomingPaymentHandler.process(item.value, theirInit!!.features, currentBlockHeight, currentFeerate, remoteFundingRates.value, currentFeeCredit)
+            is Either.Left -> incomingPaymentHandler.process(item.value, theirInit!!.features, currentBlockHeight, currentFeerate, remoteFundingRates.value, currentFeeCredit)
         }
         when (result) {
             is IncomingPaymentHandler.ProcessAddResult.Accepted -> {
@@ -1018,6 +1051,11 @@ class Peer(
                     }
                     is RecommendedFeerates -> {
                         peerFeeratesFlow.value = msg
+                    }
+                    is CurrentFeeCredit -> {
+                        if (nodeParams.features.hasFeature(Feature.FundingFeeCredit)) {
+                            feeCreditFlow.value = msg.amount
+                        }
                     }
                     is Ping -> {
                         val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
@@ -1250,6 +1288,7 @@ class Peer(
                                     spliceIn = ChannelCommand.Commitment.Splice.Request.SpliceIn(cmd.walletInputs),
                                     spliceOut = null,
                                     requestRemoteFunding = null,
+                                    currentFeeCredit = feeCreditFlow.value,
                                     feerate = feerate,
                                     origins = listOf(Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), ChannelManagementFees(fee, 0.sat)))
                                 )
@@ -1345,6 +1384,7 @@ class Peer(
             is AddLiquidityForIncomingPayment -> {
                 val currentFeerates = peerFeeratesFlow.filterNotNull().first()
                 val paymentTypes = remoteFundingRates.value?.paymentTypes ?: setOf()
+                val currentFeeCredit = feeCreditFlow.value
                 when (val available = selectChannelForSplicing()) {
                     is SelectChannelResult.Available -> {
                         // We don't contribute any input or output, but we must pay on-chain fees for the shared input and output.
@@ -1353,7 +1393,7 @@ class Peer(
                         val spliceWeight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = listOf(), localOutputs = listOf())
                         val (fundingFeerate, localMiningFee) = client.computeSpliceCpfpFeerate(available.channel.commitments, currentFeerates.fundingFeerate, spliceWeight, logger)
                         val (targetFeerate, paymentDetails) = when {
-                            localBalance >= localMiningFee + cmd.fees(fundingFeerate, isChannelCreation = false).total -> {
+                            localBalance + currentFeeCredit >= localMiningFee + cmd.fees(fundingFeerate, isChannelCreation = false).total -> {
                                 // We have enough funds to pay the mining fee and the lease fees.
                                 // This the ideal scenario because the fees can be paid immediately with the splice transaction.
                                 Pair(fundingFeerate, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(cmd.paymentHash)))
@@ -1362,13 +1402,8 @@ class Peer(
                                 val targetFeerate = when {
                                     localBalance >= localMiningFee * 0.75 -> fundingFeerate
                                     // Our current balance is too low to pay the mining fees for our weight of the splice transaction.
-                                    // If we don't do anything, the resulting transaction will thus have a lower feerate than requested and may not confirm.
-                                    // To avoid that, we ask our peer to target a higher feerate than the one we actually want.
-                                    // They will pay more mining fees to satisfy that feerate, while we'll pay whatever we can from our current balance.
-                                    // We should be paying for the shared input and shared output, which is a lot of weight, so we add 50%.
-                                    // This is hacky but should result in an effective feerate that is somewhat close to the initial feerate we wanted.
-                                    // Note that we will pay liquidity fees based on the target feerate, which will refund our peer for this hack.
-                                    else -> fundingFeerate * 1.5
+                                    // We target a higher feerate so that the effective feerate isn't too low compared to our target.
+                                    else -> fundingFeerate * AddLiquidityForIncomingPayment.SpliceWithNoBalanceFeerateRatio
                                 }
                                 // We cannot pay the liquidity fees from our channel balance, so we fall back to future HTLCs.
                                 val paymentDetails = when {
@@ -1394,6 +1429,7 @@ class Peer(
                                     spliceIn = null,
                                     spliceOut = null,
                                     requestRemoteFunding = LiquidityAds.RequestFunding(cmd.requestedAmount, cmd.fundingRate, paymentDetails),
+                                    currentFeeCredit = currentFeeCredit,
                                     feerate = targetFeerate,
                                     origins = listOf(Origin.OffChainPayment(cmd.preimage, cmd.paymentAmount, totalFees))
                                 )
@@ -1409,8 +1445,7 @@ class Peer(
                         val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
                         // Since we don't have inputs to contribute, we're unable to pay on-chain fees for the shared output.
                         // We target a higher feerate so that the effective feerate isn't too low compared to our target.
-                        // We only need to cover the shared output, which doesn't add too much weight, so we add 25%.
-                        val fundingFeerate = currentFeerates.fundingFeerate * 1.25
+                        val fundingFeerate = currentFeerates.fundingFeerate * AddLiquidityForIncomingPayment.ChannelOpenFeerateRatio
                         // We don't pay any local on-chain fees, our fee is only for the liquidity lease.
                         val leaseFees = cmd.fees(fundingFeerate, isChannelCreation = true)
                         val totalFees = ChannelManagementFees(miningFee = leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
