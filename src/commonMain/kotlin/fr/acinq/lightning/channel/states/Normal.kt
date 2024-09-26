@@ -58,7 +58,7 @@ data class Normal(
             is ChannelCommand.Commitment.UpdateFee -> handleCommandResult(cmd, commitments.sendFee(cmd), cmd.commit)
             is ChannelCommand.Commitment.Sign -> when {
                 !commitments.changes.localHasChanges() -> {
-                    logger.warning { "no changes to sign" }
+                    logger.info { "no changes to sign" }
                     Pair(this@Normal, listOf())
                 }
                 commitments.remoteNextCommitInfo is Either.Left -> {
@@ -511,7 +511,7 @@ data class Normal(
                     }
                     is SpliceAck -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
-                            logger.info { "our peer accepted our splice request and will contribute ${cmd.message.fundingContribution} to the funding transaction" }
+                            logger.info { "our peer accepted our splice request with remote.amount=${cmd.message.fundingContribution} remote.push=${cmd.message.pushAmount} liquidityFees=${spliceStatus.command.liquidityFees}" }
                             when (val liquidityPurchase = LiquidityAds.validateRemoteFunding(
                                 spliceStatus.command.requestRemoteFunding,
                                 remoteNodeId,

@@ -1441,7 +1441,7 @@ class Peer(
                             else -> {
                                 val leaseFees = cmd.fees(targetFeerate, isChannelCreation = false)
                                 val totalFees = ChannelManagementFees(miningFee = localMiningFee.min(localBalance.truncateToSatoshi()) + leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
-                                logger.info { "requesting on-the-fly splice for paymentHash=${cmd.paymentHash} feerate=$targetFeerate fee=${totalFees.total} paymentType=${paymentDetails.paymentType}" }
+                                logger.info { "requesting on-the-fly splice for paymentHash=${cmd.paymentHash} requestedAmount=${cmd.requestedAmount} feerate=$targetFeerate fee=${totalFees.total} paymentType=${paymentDetails.paymentType}" }
                                 val spliceCommand = ChannelCommand.Commitment.Splice.Request(
                                     replyTo = CompletableDeferred(),
                                     spliceIn = null,
