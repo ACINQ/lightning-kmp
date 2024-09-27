@@ -460,6 +460,10 @@ data class InboundLiquidityOutgoingPayment(
         is LiquidityAds.PaymentType.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = purchase.fees.miningFee, serviceFee = purchase.fees.serviceFee)
         is LiquidityAds.PaymentType.Unknown -> TODO()
     }
+    val feeCreditUsed = when (purchase) {
+        is LiquidityAds.Purchase.WithFeeCredit -> purchase.feeCreditUsed
+        else -> 0.msat
+    }
 }
 
 enum class ChannelClosingType {
