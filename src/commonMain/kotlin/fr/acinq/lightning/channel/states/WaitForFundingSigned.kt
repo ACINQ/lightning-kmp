@@ -136,13 +136,11 @@ data class WaitForFundingSigned(
                     // and what we refunded the remote peer for some of their inputs and outputs via the lease.
                     val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + purchase.fees.miningFee
                     add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, purchase = purchase))
+                    add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
                 }
             }
-            channelOrigin?.let {
-                when (it) {
-                    is Origin.OffChainPayment -> add(ChannelAction.EmitEvent(LiquidityEvents.Accepted(liquidityPurchase?.amount?.toMilliSatoshi() ?: 0.msat, it.fees.total.toMilliSatoshi(), LiquidityEvents.Source.OffChainPayment)))
-                    is Origin.OnChainWallet -> add(ChannelAction.EmitEvent(SwapInEvents.Accepted(it.inputs, it.amountBeforeFees.truncateToSatoshi(), it.fees)))
-                }
+            listOfNotNull(channelOrigin).filterIsInstance<Origin.OnChainWallet>().forEach { origin ->
+                add(ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees)))
             }
         }
         return if (staticParams.useZeroConf) {

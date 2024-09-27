@@ -910,6 +910,7 @@ class Peer(
                                 )
                             }
                         }
+                        nodeParams._nodeEvents.emit(PaymentEvents.PaymentSent(payment))
                         db.payments.addOutgoingPayment(payment)
                     }
                     is ChannelAction.Storage.SetLocked -> {

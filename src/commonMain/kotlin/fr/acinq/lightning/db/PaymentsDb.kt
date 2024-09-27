@@ -432,7 +432,8 @@ data class InboundLiquidityOutgoingPayment(
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val fees: MilliSatoshi = (miningFees + purchase.fees.serviceFee).toMilliSatoshi()
+    val serviceFees: Satoshi = purchase.fees.serviceFee
+    override val fees: MilliSatoshi = (miningFees + serviceFees).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
     override val completedAt: Long? = lockedAt
     val fundingFee: LiquidityAds.FundingFee = LiquidityAds.FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
