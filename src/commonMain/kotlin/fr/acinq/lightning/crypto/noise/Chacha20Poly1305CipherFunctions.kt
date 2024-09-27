@@ -2,18 +2,14 @@ package fr.acinq.lightning.crypto.noise
 
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 
-expect object Chacha20Poly1305CipherFunctions : CipherFunctions {
-    override fun name(): String
-    override fun encrypt(k: ByteArray, n: Long, ad: ByteArray, plaintext: ByteArray): ByteArray
-    override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray
-}
+expect object Chacha20Poly1305CipherFunctions : CipherFunctions
 
 /**
- * Default implementation for [Chacha20Poly1305CipherFunctions]. Can be used by modules by
+ * Default implementation for [[Chacha20Poly1305CipherFunctions]]. Can be used by modules by
  * defining a type alias.
  */
 object Chacha20Poly1305CipherFunctionsDefault : CipherFunctions {
-    override fun name(): String = "ChaChaPoly"
+    override fun name() = "ChaChaPoly"
 
     // as specified in BOLT #8
     fun nonce(n: Long): ByteArray = ByteArray(4) + ChaCha20Poly1305.write64(n)
@@ -25,6 +21,7 @@ object Chacha20Poly1305CipherFunctionsDefault : CipherFunctions {
     }
 
     // Decrypts ciphertext using a cipher key k of 32 bytes, an 8-byte unsigned integer nonce n, and associated data ad.
+    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun decrypt(k: ByteArray, n: Long, ad: ByteArray, ciphertextAndMac: ByteArray): ByteArray {
         val ciphertext = ciphertextAndMac.dropLast(16).toByteArray()
         val mac = ciphertextAndMac.takeLast(16).toByteArray()

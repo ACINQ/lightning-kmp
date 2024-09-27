@@ -1,13 +1,11 @@
-import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "2.0.20"
-    kotlin("plugin.serialization") version "2.0.20"
-    id("org.jetbrains.dokka") version "1.9.20"
+    kotlin("multiplatform") version "1.9.23"
+    kotlin("plugin.serialization") version "1.9.23"
+    id("org.jetbrains.dokka") version "1.9.10"
     `maven-publish`
 }
 
@@ -32,17 +30,16 @@ kotlin {
     val bitcoinKmpVersion = "0.20.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
     val secpJniJvmVersion = "0.15.0"
 
-    val serializationVersion = "1.7.1"
-    val coroutineVersion = "1.9.0"
+    val serializationVersion = "1.6.2"
+    val coroutineVersion = "1.7.3"
     val datetimeVersion = "0.6.0"
-    val ktorVersion = "2.3.12"
+    val ktorVersion = "2.3.7"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val kermitLoggerVersion = "2.0.4"
+    val kermitLoggerVersion = "2.0.2"
 
     jvm {
-        @OptIn(ExperimentalKotlinGradlePluginApi::class)
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_1_8) // TODO: update this?
+        compilations.all {
+            kotlinOptions.jvmTarget = "1.8"
         }
     }
 
@@ -156,12 +153,15 @@ kotlin {
         resolutionStrategy.cacheChangingModulesFor(0, TimeUnit.SECONDS)
     }
 
-    @OptIn(ExperimentalKotlinGradlePluginApi::class)
-    compilerOptions {
-        allWarningsAsErrors.set(true)
-        // We use expect/actual for classes (see Chacha20Poly1305CipherFunctions). This feature is in beta and raises a warning.
-        // See https://youtrack.jetbrains.com/issue/KT-61573
-        freeCompilerArgs.add("-Xexpect-actual-classes")
+    targets.all {
+        compilations.all {
+            kotlinOptions {
+                allWarningsAsErrors = true
+                // We use expect/actual for classes (see Chacha20Poly1305CipherFunctions). This feature is in beta and raises a warning.
+                // See https://youtrack.jetbrains.com/issue/KT-61573
+                kotlinOptions.freeCompilerArgs += "-Xexpect-actual-classes"
+            }
+        }
     }
 }
 
@@ -237,11 +237,7 @@ afterEvaluate {
             compileTaskProvider.get().enabled = false
             tasks[processResourcesTaskName].enabled = false
         }
-        binaries.all {
-            linkTaskProvider {
-                enabled = false
-            }
-        }
+        binaries.all { linkTask.enabled = false }
 
         mavenPublication {
             val publicationToDisable = this
@@ -321,3 +317,10 @@ tasks
     .map {
         it.filter.excludeTestsMatching("*MempoolSpace*Test")
     }
+
+// Make NS_FORMAT_ARGUMENT(1) a no-op
+// This fixes an issue when building PhoenixCrypto using XCode 13
+// More on this: https://youtrack.jetbrains.com/issue/KT-48807#focus=Comments-27-5210791.0-0
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.CInteropProcess::class.java) {
+    settings.compilerOpts("-DNS_FORMAT_ARGUMENT(A)=")
+}

@@ -43,7 +43,8 @@
                         "channel_backup_client": "Optional",
                         "option_shutdown_anysegwit": "Optional"
                     },
-                    "unknown": []
+                    "unknown": [
+                    ]
                 }
             },
             "remoteParams": {
@@ -78,7 +79,8 @@
                         "channel_backup_provider": "Optional",
                         "trampoline_payment_experimental": "Optional"
                     },
-                    "unknown": []
+                    "unknown": [
+                    ]
                 }
             },
             "channelFlags": {
@@ -88,14 +90,20 @@
         },
         "changes": {
             "localChanges": {
-                "proposed": [],
-                "signed": [],
-                "acked": []
+                "proposed": [
+                ],
+                "signed": [
+                ],
+                "acked": [
+                ]
             },
             "remoteChanges": {
-                "proposed": [],
-                "acked": [],
-                "signed": []
+                "proposed": [
+                ],
+                "acked": [
+                ],
+                "signed": [
+                ]
             },
             "localNextHtlcId": 0,
             "remoteNextHtlcId": 0
@@ -114,8 +122,10 @@
                 "localCommit": {
                     "index": 0,
                     "spec": {
-                        "htlcsIn": [],
-                        "htlcsOut": [],
+                        "htlcsIn": [
+                        ],
+                        "htlcsOut": [
+                        ],
                         "feerate": 5000,
                         "toLocal": 200000000,
                         "toRemote": 800000000
@@ -132,14 +142,17 @@
                             },
                             "tx": "020000000001012f7c825b61cbbf0e685aef20f8923a8cd28943346e59301b629cc89b4e27cdbd000000000000b77080044a0100000000000022002046672803839d10e21d43eafb532bc37cd21bd97dec7f9b50d45380cd1cce69654a01000000000000220020bbd7f17366848d8f624c28438128ce4dc8c72ea21deb0ccf25bee110920da032400d03000000000022002031dbc67ef6930d0825de6c23bd311eb93d40430d543c0555aa0f15b7aaab0cbc781c0c0000000000220020958bb43c9e6d1b985001c2f4dc38d286d7fde78bb04d7ec5a5ae44d8ebf0c40c040047304402201991b61ae8ef7bf6bd03f6f965552294e7941fce3fc91a024094cbd9b3464dd202206068ef64671e59b5825408e58462613a6ad0edfc7aa23853aea36187298c493901483045022100cca233f9a14605a7adab49f959c5b42260a55156282cbc802397fc934d5e537c02203504b82653044526706d76d3ddf0f083ea77a16f6cc13c93add344069a55cb940147522102b6eaf304d966a6df90f3b3df7af7be6b1625854bbc096cb8b3507b2a37c2bf9c210385cfd7d8850e4cb8fcbed57310911218e5d5e1fd34f92ef5d9db14d56418caa452aede99dc20"
                         },
-                        "htlcTxsAndSigs": []
+                        "htlcTxsAndSigs": [
+                        ]
                     }
                 },
                 "remoteCommit": {
                     "index": 0,
                     "spec": {
-                        "htlcsIn": [],
-                        "htlcsOut": [],
+                        "htlcsIn": [
+                        ],
+                        "htlcsOut": [
+                        ],
                         "feerate": 5000,
                         "toLocal": 800000000,
                         "toRemote": 200000000
@@ -150,8 +163,10 @@
                 "nextRemoteCommit": null
             }
         ],
-        "inactive": [],
-        "payments": {},
+        "inactive": [
+        ],
+        "payments": {
+        },
         "remoteNextCommitInfo": {
             "left": null,
             "right": "0234ea3e3929ca115acc645d07c40eada7a98d86017614c3fa466d7e19760917e4"
@@ -167,7 +182,8 @@
         "scriptPubKey": "51050102030405"
     },
     "closingTxProposed": [
-        []
+        [
+        ]
     ],
     "bestUnpublishedClosingTx": null,
     "closingFeerates": null
