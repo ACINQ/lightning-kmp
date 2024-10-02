@@ -3,6 +3,7 @@ package fr.acinq.lightning.db
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.channel.ChannelManagementFees
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.LiquidityAds
@@ -437,6 +438,32 @@ data class InboundLiquidityOutgoingPayment(
     override val amount: MilliSatoshi = fees
     override val completedAt: Long? = lockedAt
     val fundingFee: LiquidityAds.FundingFee = LiquidityAds.FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
+    /**
+     * Even in the "from future htlc" case the mining fee corresponding to the previous channel output
+     * will be paid immediately from the channel balance, except if there is no channel.
+     *
+     * In the "from future htlc case", this inbound liquidity purchase is going to be followed by one or several [IncomingPayment.ReceivedWith.LightningPayment]
+     * with a non-null [LiquidityAds.FundingFee] where [LiquidityAds.FundingFee.fundingTxId] matches this [InboundLiquidityOutgoingPayment.txId].
+     * The sum of [LiquidityAds.FundingFee.amount] will match [InboundLiquidityOutgoingPayment.feePaidFromFutureHtlc].
+     */
+    val feePaidFromChannelBalance = when (purchase.paymentDetails.paymentType) {
+        is LiquidityAds.PaymentType.FromChannelBalance -> ChannelManagementFees(miningFee = miningFees, serviceFee = purchase.fees.serviceFee)
+        is LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc -> ChannelManagementFees(miningFee = miningFees, serviceFee = purchase.fees.serviceFee)
+        is LiquidityAds.PaymentType.FromFutureHtlc -> ChannelManagementFees(miningFee = miningFees - purchase.fees.miningFee, serviceFee = 0.sat)
+        is LiquidityAds.PaymentType.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = miningFees - purchase.fees.miningFee, serviceFee = 0.sat)
+        is LiquidityAds.PaymentType.Unknown -> TODO()
+    }
+    val feePaidFromFutureHtlc = when (purchase.paymentDetails.paymentType) {
+        is LiquidityAds.PaymentType.FromChannelBalance -> ChannelManagementFees(miningFee = 0.sat, serviceFee = 0.sat)
+        is LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc -> ChannelManagementFees(miningFee = 0.sat, serviceFee = 0.sat)
+        is LiquidityAds.PaymentType.FromFutureHtlc -> ChannelManagementFees(miningFee = purchase.fees.miningFee, serviceFee = purchase.fees.serviceFee)
+        is LiquidityAds.PaymentType.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = purchase.fees.miningFee, serviceFee = purchase.fees.serviceFee)
+        is LiquidityAds.PaymentType.Unknown -> TODO()
+    }
+    val feeCreditUsed = when (purchase) {
+        is LiquidityAds.Purchase.WithFeeCredit -> purchase.feeCreditUsed
+        else -> 0.msat
+    }
 }
 
 enum class ChannelClosingType {
