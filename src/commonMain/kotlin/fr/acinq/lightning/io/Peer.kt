@@ -386,10 +386,10 @@ class Peer(
                         { b -> socket.send(b) }
                     )
                 }
-            } catch (ex: TcpSocket.IOException) {
+            } catch (ex: Throwable) {
                 logger.warning(ex) { "Noise handshake: ${ex.message}: " }
                 socket.close()
-                _connectionState.value = Connection.CLOSED(ex)
+                _connectionState.value = Connection.CLOSED(ex as? TcpSocket.IOException)
                 return false
             }
 
@@ -474,9 +474,9 @@ class Peer(
                         }
                     }
                     closeSocket(null)
-                } catch (ex: TcpSocket.IOException) {
+                } catch (ex: Throwable) {
                     logger.warning { "TCP receive: ${ex.message}" }
-                    closeSocket(ex)
+                    closeSocket(ex as? TcpSocket.IOException)
                 } finally {
                     peerConnection.output.close()
                 }
@@ -494,9 +494,9 @@ class Peer(
                         val encoded = LightningMessage.encode(msg)
                         session.send(encoded) { data, flush -> socket.send(data, flush) }
                     }
-                } catch (ex: TcpSocket.IOException) {
+                } catch (ex: Throwable) {
                     logger.warning { "TCP send: ${ex.message}" }
-                    closeSocket(ex)
+                    closeSocket(ex as? TcpSocket.IOException)
                 } finally {
                     peerConnection.output.close()
                 }
