@@ -43,7 +43,6 @@ data class WaitForFundingSigned(
     val remoteSecondPerCommitmentPoint: PublicKey,
     val liquidityPurchase: LiquidityAds.Purchase?,
     val channelOrigin: Origin?,
-    val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) : PersistedChannelState() {
     override val channelId: ByteVector32 = channelParams.channelId
 
@@ -55,8 +54,8 @@ data class WaitForFundingSigned(
                     when (action) {
                         is InteractiveTxSigningSessionAction.AbortFundingAttempt -> handleLocalError(cmd, action.reason)
                         // No need to store their commit_sig, they will re-send it if we disconnect.
-                        InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingSigned.copy(signingSession = signingSession1, remoteChannelData = cmd.message.channelData), listOf())
-                        is InteractiveTxSigningSessionAction.SendTxSigs -> sendTxSigs(action, cmd.message.channelData)
+                        InteractiveTxSigningSessionAction.WaitForTxSigs -> Pair(this@WaitForFundingSigned.copy(signingSession = signingSession1), listOf())
+                        is InteractiveTxSigningSessionAction.SendTxSigs -> sendTxSigs(action)
                     }
                 }
                 is TxSignatures -> {
@@ -67,7 +66,7 @@ data class WaitForFundingSigned(
                         }
                         is Either.Right -> {
                             val action: InteractiveTxSigningSessionAction.SendTxSigs = res.value
-                            sendTxSigs(action, cmd.message.channelData)
+                            sendTxSigs(action)
                         }
                     }
                 }
@@ -100,7 +99,7 @@ data class WaitForFundingSigned(
         }
     }
 
-    private fun ChannelContext.sendTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<ChannelState, List<ChannelAction>> {
+    private fun ChannelContext.sendTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs): Pair<ChannelState, List<ChannelAction>> {
         logger.info { "funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
         val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
@@ -113,7 +112,6 @@ data class WaitForFundingSigned(
             payments = mapOf(),
             remoteNextCommitInfo = Either.Right(remoteSecondPerCommitmentPoint),
             remotePerCommitmentSecrets = ShaChain.init,
-            remoteChannelData = remoteChannelData
         )
         val commonActions = buildList {
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }

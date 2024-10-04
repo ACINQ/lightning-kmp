@@ -45,7 +45,6 @@ object Serialization {
         polymorphic(Tlv::class) {
             subclass(ChannelReadyTlvShortChannelIdTlvSerializer)
             subclass(ClosingSignedTlvFeeRangeSerializer)
-            subclass(ShutdownTlvChannelDataSerializer)
             subclass(GenericTlvSerializer)
         }
     }

@@ -643,8 +643,8 @@ object Deserialization {
             }.toMap(),
             lastIndex = readNullable { readNumber() }
         )
-        val remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
-        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
+        readDelimitedByteArray() // Ignored remote channel data
+        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets)
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {

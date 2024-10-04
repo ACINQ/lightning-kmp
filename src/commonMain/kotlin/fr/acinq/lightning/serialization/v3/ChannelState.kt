@@ -138,9 +138,6 @@ object ChannelReadyTlvShortChannelIdTlvSerializer
 @Serializer(forClass = ClosingSignedTlv.FeeRange::class)
 object ClosingSignedTlvFeeRangeSerializer
 
-@Serializer(forClass = ShutdownTlv.ChannelData::class)
-object ShutdownTlvChannelDataSerializer
-
 @Serializer(forClass = ShutdownTlv::class)
 object ShutdownTlvSerializer
 
@@ -396,7 +393,6 @@ internal data class Commitments(
     val commitInput: Transactions.InputInfo,
     val remotePerCommitmentSecrets: ShaChain,
     val channelId: ByteVector32,
-    val remoteChannelData: EncryptedChannelData = EncryptedChannelData.empty
 ) {
     fun export() = fr.acinq.lightning.channel.Commitments(
         fr.acinq.lightning.channel.ChannelParams(
@@ -438,7 +434,6 @@ internal data class Commitments(
         payments,
         remoteNextCommitInfo.transform({ x -> fr.acinq.lightning.channel.WaitingForRevocation(x.sentAfterLocalCommitIndex) }, { y -> y }),
         remotePerCommitmentSecrets,
-        remoteChannelData
     )
 }
 

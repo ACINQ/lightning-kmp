@@ -109,7 +109,6 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             assertIs<LNChannel<Normal>>(alice3)
             assertIs<LNChannel<Normal>>(bob3)
             val (_, commitSig0, _, commitSig1) = SpliceTestsCommon.spliceInAndOutWithoutSigs(alice3, bob3, listOf(50_000.sat), 50_000.sat)
-            assertFalse(commitSig1.channelData.isEmpty())
 
             val bina = LightningMessage.encode(commitSig0)
             val binb = LightningMessage.encode(commitSig1)

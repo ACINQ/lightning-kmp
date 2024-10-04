@@ -202,7 +202,6 @@ data class NodeParams(
             Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
             Feature.ZeroReserveChannels to FeatureSupport.Optional,
             Feature.WakeUpNotificationClient to FeatureSupport.Optional,
-            Feature.ChannelBackupClient to FeatureSupport.Optional,
             Feature.ExperimentalSplice to FeatureSupport.Optional,
             Feature.OnTheFlyFunding to FeatureSupport.Optional,
             Feature.FundingFeeCredit to FeatureSupport.Optional,

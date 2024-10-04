@@ -224,22 +224,6 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
-    /** This feature bit should be activated when a node wants to send channel backups to their peers. */
-    @Serializable
-    object ChannelBackupClient : Feature() {
-        override val rfcName get() = "channel_backup_client"
-        override val mandatory get() = 144
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
-    }
-
-    /** This feature bit should be activated when a node stores channel backups for their peers. */
-    @Serializable
-    object ChannelBackupProvider : Feature() {
-        override val rfcName get() = "channel_backup_provider"
-        override val mandatory get() = 146
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
-    }
-
     // The version of trampoline enabled by this feature bit does not match the latest spec PR: once the spec is accepted,
     // we will introduce a new version of trampoline that will work in parallel to this one, until we can safely deprecate it.
     @Serializable
@@ -349,8 +333,6 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.PayToOpenProvider,
             Feature.TrustedSwapInClient,
             Feature.TrustedSwapInProvider,
-            Feature.ChannelBackupClient,
-            Feature.ChannelBackupProvider,
             Feature.ExperimentalSplice,
             Feature.OnTheFlyFunding,
             Feature.FundingFeeCredit

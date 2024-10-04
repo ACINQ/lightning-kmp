@@ -350,7 +350,7 @@ class SyncingTestsCommon : LightningTestSuite() {
     companion object {
         fun init(): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             // NB: we disable channel backups to ensure Bob sends his channel_reestablish on reconnection.
-            val (alice, bob, _) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
+            val (alice, bob, _) = reachNormal()
             return Pair(alice, bob)
         }
 
@@ -390,7 +390,6 @@ class SyncingTestsCommon : LightningTestSuite() {
 
             val aliceInit = Init(alice1.commitments.params.localParams.features)
             val bobInit = Init(bob1.commitments.params.localParams.features)
-            assertFalse(bob1.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
 
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
             assertIs<LNChannel<Syncing>>(alice2)

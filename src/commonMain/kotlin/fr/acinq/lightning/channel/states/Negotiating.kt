@@ -89,7 +89,6 @@ data class Negotiating(
                                                     closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
                                                 )
                                                 val nextState = this@Negotiating.copy(
-                                                    commitments = commitments.copy(remoteChannelData = cmd.message.channelData),
                                                     closingTxProposed = closingProposed1,
                                                     bestUnpublishedClosingTx = signedClosingTx
                                                 )
@@ -127,7 +126,6 @@ data class Negotiating(
                                                         closingTxProposed.last() + listOf(ClosingTxProposed(closingTx, closingSigned))
                                                     )
                                                     val nextState = this@Negotiating.copy(
-                                                        commitments = commitments.copy(remoteChannelData = cmd.message.channelData),
                                                         closingTxProposed = closingProposed1,
                                                         bestUnpublishedClosingTx = signedClosingTx
                                                     )

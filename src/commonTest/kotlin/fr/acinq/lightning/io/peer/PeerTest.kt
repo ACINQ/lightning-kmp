@@ -304,7 +304,7 @@ class PeerTest : LightningTestSuite() {
             nextRemoteRevocationNumber = commitments.remoteCommitIndex,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-        ).withChannelData(commitments.remoteChannelData)
+        )
 
         peer.send(MessageReceived(connectionId = 0, channelReestablish))
 
@@ -348,7 +348,6 @@ class PeerTest : LightningTestSuite() {
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
-        assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
 
         // Wait until the channels are Syncing
@@ -377,7 +376,6 @@ class PeerTest : LightningTestSuite() {
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
-        assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
 
         // Wait until the channels are Syncing

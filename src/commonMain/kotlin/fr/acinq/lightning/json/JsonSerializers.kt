@@ -81,7 +81,6 @@
     JsonSerializers.ChannelReadySerializer::class,
     JsonSerializers.ChannelReadyTlvShortChannelIdTlvSerializer::class,
     JsonSerializers.ClosingSignedTlvFeeRangeSerializer::class,
-    JsonSerializers.ShutdownTlvChannelDataSerializer::class,
     JsonSerializers.GenericTlvSerializer::class,
     JsonSerializers.TlvStreamSerializer::class,
     JsonSerializers.ShutdownTlvSerializer::class,
@@ -207,7 +206,6 @@ object JsonSerializers {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
-                subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
                 subclass(UpdateAddHtlcTlv.Blinding::class, UpdateAddHtlcTlvBlindingSerializer)
             }
@@ -526,9 +524,6 @@ object JsonSerializers {
 
     @Serializer(forClass = ClosingSignedTlv.FeeRange::class)
     object ClosingSignedTlvFeeRangeSerializer
-
-    @Serializer(forClass = ShutdownTlv.ChannelData::class)
-    object ShutdownTlvChannelDataSerializer
 
     @Serializer(forClass = ShutdownTlv::class)
     object ShutdownTlvSerializer

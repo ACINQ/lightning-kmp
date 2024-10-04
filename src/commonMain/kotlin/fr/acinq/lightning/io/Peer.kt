@@ -269,6 +269,8 @@ class Peer(
 
     private val offerManager = OfferManager(nodeParams, walletParams, _eventsFlow, logger)
 
+    private var peerStorageData: ByteVector? = null
+
     init {
         logger.info { "initializing peer" }
         launch {
@@ -1096,14 +1098,18 @@ class Peer(
                             processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2)
                         }
                     }
+                    is PeerStorageRetrieval -> {
+                        peerStorageData = msg.data
+                    }
                     is ChannelReestablish -> {
                         val local: ChannelState? = _channels[msg.channelId]
-                        val backup: DeserializationResult? = msg.channelData.takeIf { !it.isEmpty() }?.let { channelData ->
-                            PersistedChannelState
-                                .from(nodeParams.nodePrivateKey, channelData)
-                                .onFailure { logger.warning(it) { "unreadable backup" } }
-                                .getOrNull()
-                        }
+                        val backup: DeserializationResult? = null
+                        //peerStorageData.takeIf { !it.isEmpty() }?.let { channelData ->
+                        //    PersistedChannelState
+                        //        .from(nodeParams.nodePrivateKey, channelData)
+                        //        .onFailure { logger.warning(it) { "unreadable backup" } }
+                        //        .getOrNull()
+                        //}
 
                         suspend fun recoverChannel(recovered: PersistedChannelState) {
                             db.channels.addOrUpdateChannel(recovered)
