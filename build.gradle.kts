@@ -2,9 +2,20 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
+buildscript {
+    dependencies {
+        classpath("app.cash.sqldelight:gradle-plugin:2.0.1")
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
 plugins {
     kotlin("multiplatform") version "1.9.23"
     kotlin("plugin.serialization") version "1.9.23"
+    id("app.cash.sqldelight") version "2.0.1"
     id("org.jetbrains.dokka") version "1.9.10"
     `maven-publish`
 }
@@ -36,6 +47,7 @@ kotlin {
     val ktorVersion = "2.3.7"
     fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
     val kermitLoggerVersion = "2.0.2"
+    val sqlDelightVersion = "2.0.1"
 
     jvm {
         compilations.all {
@@ -120,6 +132,7 @@ kotlin {
                 implementation("org.bouncycastle:bcprov-jdk15on:1.64")
                 implementation("ch.qos.logback:logback-classic:1.2.3")
                 implementation("org.xerial:sqlite-jdbc:3.32.3.3")
+                implementation("app.cash.sqldelight:sqlite-driver:$sqlDelightVersion")
             }
         }
 
@@ -323,4 +336,15 @@ tasks
 // More on this: https://youtrack.jetbrains.com/issue/KT-48807#focus=Comments-27-5210791.0-0
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.CInteropProcess::class.java) {
     settings.compilerOpts("-DNS_FORMAT_ARGUMENT(A)=")
+}
+
+// only used in tests
+sqldelight {
+    databases {
+        create("SqlitePaymentsDb") {
+            this.
+            packageName.set("fr.acinq.lightning.db.sqlite")
+            srcDirs.from("src/commonTest/sqldelight/paymentsdb")
+        }
+    }
 }

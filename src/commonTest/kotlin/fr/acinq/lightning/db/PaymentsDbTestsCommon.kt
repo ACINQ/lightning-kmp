@@ -5,6 +5,11 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.db.sqldelight.adapters.JsonColumnAdapter
+import fr.acinq.lightning.db.sqldelight.types.LiquidityAds.Purchase.Companion.asDb
+import fr.acinq.lightning.db.sqlite.OutLiquidityQueries
+import fr.acinq.lightning.db.sqlite.Out_liquidity
+import fr.acinq.lightning.db.sqlite.createSqlDriver
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -14,6 +19,20 @@ import fr.acinq.lightning.wire.LiquidityAds
 import kotlin.test.*
 
 class PaymentsDbTestsCommon : LightningTestSuite() {
+
+    @Test
+    fun `sqldelight test`() = runSuspendTest {
+        val driver = createSqlDriver()
+        val queries = OutLiquidityQueries(driver, Out_liquidity.Adapter(JsonColumnAdapter()))
+        val txid = randomBytes32()
+        queries.insert("foobar", 42, randomBytes32().toByteArray(), txid.toByteArray(), "unknown", "unknown",
+            LiquidityAds.Purchase.Standard(456.sat, LiquidityAds.Fees(400.sat, 56.sat), LiquidityAds.PaymentDetails.FromChannelBalance).asDb(),
+            123456,
+            null,
+            null
+        )
+        println(queries.getByTxId(txid.toByteArray()).executeAsOne())
+    }
 
     @Test
     fun `receive incoming lightning payment with 1 htlc`() = runSuspendTest {

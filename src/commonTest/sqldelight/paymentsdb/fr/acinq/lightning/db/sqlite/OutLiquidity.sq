@@ -1,0 +1,45 @@
+import fr.acinq.lightning.db.sqldelight.types.LiquidityAds;
+
+-- Stores in a flat row payments standing for an inbound liquidity request (which are done through a splice).
+-- The purchase data are stored in a complex column, as a json-encoded blob. See InboundLiquidityLeaseType file.
+--
+-- Note that these purchase data used to be called "lease" in the old on-the-fly channel mechanism, that's why the
+-- colum uses that name, it's a legacy artifact. They now map to a "LiquidityAds.Purchase" object.
+CREATE TABLE out_liquidity (
+    id TEXT NOT NULL PRIMARY KEY,
+    mining_fees_sat INTEGER NOT NULL,
+    channel_id BLOB NOT NULL,
+    tx_id BLOB NOT NULL,
+    purchase_type TEXT NOT NULL,
+    payment_details_type TEXT NOT NULL,
+    purchase_json TEXT AS LiquidityAds.Purchase NOT NULL,
+    created_at INTEGER NOT NULL,
+    confirmed_at INTEGER DEFAULT NULL,
+    locked_at INTEGER DEFAULT NULL
+);
+
+CREATE INDEX out_liquidity_tx_id_idx ON out_liquidity(tx_id);
+
+insert:
+INSERT INTO out_liquidity (
+    id, mining_fees_sat, channel_id, tx_id, purchase_type, payment_details_type, purchase_json, created_at, confirmed_at, locked_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+setConfirmed:
+UPDATE out_liquidity SET confirmed_at=? WHERE id=?;
+
+setLocked:
+UPDATE out_liquidity SET locked_at=? WHERE id=?;
+
+get:
+SELECT *
+FROM out_liquidity
+WHERE id=?;
+
+getByTxId:
+SELECT *
+FROM out_liquidity
+WHERE tx_id=?;
+
+delete:
+DELETE FROM out_liquidity WHERE id=?;
