@@ -119,26 +119,27 @@ data class WaitForFundingSigned(
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
+            // If we purchased liquidity as part of the channel creation, we will add it to our payments db
+            liquidityPurchase?.let { purchase ->
+                if (channelParams.localParams.isChannelOpener) {
+                    // We only count fees corresponding to the liquidity purchase (i.e. their inputs).
+                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase))
+                    add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
+                }
+            }
             // If we receive funds as part of the channel creation, we will add it to our payments db
             if (action.commitment.localCommit.spec.toLocal > 0.msat) add(
+                // We only count the mining fees corresponding to the inputs and outputs we paid for in the interactive-tx transaction
+                // (i.e. our wallet inputs and the shared output).
                 ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel(
                     amountReceived = action.commitment.localCommit.spec.toLocal,
-                    serviceFee = channelOrigin?.fees?.serviceFee?.toMilliSatoshi() ?: 0.msat,
-                    miningFee = channelOrigin?.fees?.miningFee ?: action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
+                    serviceFee = 0.msat,
+                    miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
                     txId = action.fundingTx.txId,
                     origin = channelOrigin
                 )
             )
-            liquidityPurchase?.let { purchase ->
-                if (channelParams.localParams.isChannelOpener) {
-                    // The actual mining fees contain the inputs and outputs we paid for in the interactive-tx transaction,
-                    // and what we refunded the remote peer for some of their inputs and outputs via the lease.
-                    val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + purchase.fees.miningFee
-                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, purchase = purchase))
-                    add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
-                }
-            }
             listOfNotNull(channelOrigin).filterIsInstance<Origin.OnChainWallet>().forEach { origin ->
                 add(ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees)))
             }

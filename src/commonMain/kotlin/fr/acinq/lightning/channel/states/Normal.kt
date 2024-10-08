@@ -874,18 +874,14 @@ data class Normal(
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
-            // If we received or sent funds as part of the splice, we will add a corresponding entry to our incoming/outgoing payments db
-            addAll(origins.map { origin ->
-                ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
-                    amountReceived = origin.amountReceived(),
-                    serviceFee = origin.fees.serviceFee.toMilliSatoshi(),
-                    miningFee = origin.fees.miningFee,
-                    localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
-                    txId = action.fundingTx.txId,
-                    origin = origin
-                )
-            })
-            // If we added some funds ourselves it's a swap-in
+            // If we purchased liquidity as part of the channel creation, we will add it to our payments db
+            liquidityPurchase?.let { purchase ->
+                // We only count fees corresponding to the liquidity purchase (i.e. their inputs).
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase))
+                add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
+            }
+            // NB: the following assume that there can't be a splice-in and a splice-out simultaneously, because we attribute
+            // all local mining fees to both.
             if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
                     amountReceived = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.localFees,
@@ -893,7 +889,7 @@ data class Normal(
                     miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
                     txId = action.fundingTx.txId,
-                    origin = null
+                    origin = origins.filterIsInstance<Origin.OnChainWallet>().firstOrNull()
                 )
             )
             addAll(action.fundingTx.fundingParams.localOutputs.map { txOut ->
@@ -907,13 +903,6 @@ data class Normal(
             // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp
             if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {
                 add(ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(), txId = action.fundingTx.txId))
-            }
-            liquidityPurchase?.let { purchase ->
-                // The actual mining fees contain the inputs and outputs we paid for in the interactive-tx transaction,
-                // and what we refunded the remote peer for some of their inputs and outputs via the lease.
-                val miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + purchase.fees.miningFee
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFees = miningFees, purchase = purchase))
-                add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
             }
             origins.filterIsInstance<Origin.OnChainWallet>().forEach { origin ->
                 add(ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees)))

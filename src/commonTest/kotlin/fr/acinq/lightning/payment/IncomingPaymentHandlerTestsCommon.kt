@@ -863,7 +863,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 splice.fees(TestConstants.feeratePerKw, isChannelCreation = false),
                 LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incomingPayment.paymentHash)),
             )
-            val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
+            val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), purchase, 0, null, null)
             paymentHandler.db.addOutgoingPayment(payment)
             payment
         }
@@ -911,7 +911,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 splice.fees(TestConstants.feeratePerKw, isChannelCreation = false),
                 LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(incomingPayment.paymentHash)),
             )
-            val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
+            val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), purchase, 0, null, null)
             paymentHandler.db.addOutgoingPayment(payment)
             payment
         }
@@ -963,7 +963,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             LiquidityAds.Fees(2000.sat, 3000.sat),
             LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incomingPayment.paymentHash)),
         )
-        val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
+        val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
 
         run {
@@ -999,7 +999,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             LiquidityAds.Fees(2000.sat, 3000.sat),
             LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(incomingPayment.paymentHash)),
         )
-        val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
+        val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
 
         val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paymentSecret), fundingFee = payment.fundingFee)
@@ -1022,7 +1022,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             250_000.msat,
             LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(randomBytes32())),
         )
-        val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
+        val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
 
         val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paymentSecret), fundingFee = payment.fundingFee)
@@ -1658,7 +1658,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             500.msat,
             LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(listOf(preimage)),
         )
-        val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
+        val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
 
         val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
