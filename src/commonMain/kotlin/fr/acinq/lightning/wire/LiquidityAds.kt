@@ -324,6 +324,7 @@ object LiquidityAds {
         abstract val paymentDetails: PaymentDetails
 
         data class Standard(override val amount: Satoshi, override val fees: Fees, override val paymentDetails: PaymentDetails) : Purchase()
+        /** The liquidity purchase was paid (partially or entirely) using [fr.acinq.lightning.Feature.FundingFeeCredit]. */
         data class WithFeeCredit(override val amount: Satoshi, override val fees: Fees, val feeCreditUsed: MilliSatoshi, override val paymentDetails: PaymentDetails) : Purchase()
     }
 
