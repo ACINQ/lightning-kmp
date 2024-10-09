@@ -10,7 +10,7 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.toMilliSatoshi
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.math.absoluteValue
 
@@ -125,7 +125,7 @@ data class WaitForFundingSigned(
                     // We only count the mining fees that we must refund to our peer as part of the liquidity purchase.
                     // If we're also contributing to the funding transaction, the mining fees we pay for our inputs and
                     // outputs will be recorded in the ViaNewChannel incoming payment entry below.
-                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase))
+                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, localMiningFees = 0.sat, purchase = purchase))
                     add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
                 }
             }

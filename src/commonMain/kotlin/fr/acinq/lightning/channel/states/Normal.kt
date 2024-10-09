@@ -884,16 +884,8 @@ data class Normal(
                 val isPurchaseOnly = action.fundingTx.sharedTx.tx.let {
                     action.fundingTx.fundingParams.isInitiator && it.localInputs.isEmpty() && it.localOutputs.isEmpty() && it.remoteInputs.isNotEmpty()
                 }
-                if (isPurchaseOnly) {
-                    val localMiningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi()
-                    val purchase1 = when (purchase) {
-                        is LiquidityAds.Purchase.Standard -> purchase.copy(fees = purchase.fees.copy(miningFee = purchase.fees.miningFee + localMiningFees))
-                        is LiquidityAds.Purchase.WithFeeCredit -> purchase.copy(fees = purchase.fees.copy(miningFee = purchase.fees.miningFee + localMiningFees))
-                    }
-                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase1))
-                } else {
-                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase))
-                }
+                val localMiningFees = if (isPurchaseOnly) action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() else 0.sat
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, localMiningFees = localMiningFees, purchase = purchase))
                 add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
             }
             // NB: the following assumes that there can't be a splice-in and a splice-out simultaneously,
