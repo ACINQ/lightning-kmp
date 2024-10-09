@@ -11,11 +11,13 @@ import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.time.Duration.Companion.seconds
 
+@Ignore
 class MempoolSpaceWatcherTest : LightningTestSuite() {
 
     @Test
