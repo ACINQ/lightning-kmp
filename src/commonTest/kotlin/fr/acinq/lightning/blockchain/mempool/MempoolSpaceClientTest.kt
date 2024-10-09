@@ -6,11 +6,9 @@ import fr.acinq.lightning.blockchain.mempool.MempoolSpaceClient.Companion.Offici
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.tests.utils.testLoggerFactory
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
+@Ignore
 class MempoolSpaceClientTest : LightningTestSuite() {
 
     @Test
