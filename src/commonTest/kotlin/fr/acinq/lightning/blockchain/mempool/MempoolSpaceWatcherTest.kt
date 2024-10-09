@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.*
-import fr.acinq.lightning.blockchain.mempool.MempoolSpaceClient.Companion.OfficialMempoolTestnet
+import fr.acinq.lightning.blockchain.mempool.MempoolSpaceClient.Companion.OfficialMempoolTestnet4
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.tests.utils.testLoggerFactory
@@ -17,12 +17,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.time.Duration.Companion.seconds
 
-@Ignore
 class MempoolSpaceWatcherTest : LightningTestSuite() {
 
     @Test
     fun `watch-spent on a transaction`() = runSuspendTest {
-        val client = MempoolSpaceClient(mempoolUrl = OfficialMempoolTestnet, testLoggerFactory)
+        val client = MempoolSpaceClient(mempoolUrl = OfficialMempoolTestnet4, testLoggerFactory)
         val watcher = MempoolSpaceWatcher(client, scope = this, testLoggerFactory)
 
         val notifications = watcher.openWatchNotificationsFlow()
@@ -45,7 +44,7 @@ class MempoolSpaceWatcherTest : LightningTestSuite() {
 
     @Test
     fun `watch-confirmed on a transaction`() = runSuspendTest {
-        val client = MempoolSpaceClient(mempoolUrl = OfficialMempoolTestnet, testLoggerFactory)
+        val client = MempoolSpaceClient(mempoolUrl = OfficialMempoolTestnet4, testLoggerFactory)
         val watcher = MempoolSpaceWatcher(client, scope = this, testLoggerFactory)
 
         val notifications = watcher.openWatchNotificationsFlow()
