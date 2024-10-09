@@ -28,14 +28,14 @@ class MempoolSpaceWatcherTest : LightningTestSuite() {
 
         val watch = WatchSpent(
             channelId = randomBytes32(),
-            txId = TxId("b97167ea09da62daaa1d3198460fc4c204a553cb3e5c80ab48f5b75a870f15c5"),
-            outputIndex = 0,
+            txId = TxId("002f3246fa012ded792050f4a834e2eccdd772e1c7dc3a6a88cd6acdcbb9a2b2"),
+            outputIndex = 1,
             publicKeyScript = ByteVector.empty,
             event = BITCOIN_FUNDING_SPENT
         )
         watcher.watch(watch)
         val event = assertIs<WatchEventSpent>(notifications.first())
-        assertEquals(TxId("5693d68997abfacb65cc7e6019e8ed2edb3f9f2260ae8d221e8726b8fe870ae0"), event.tx.txid)
+        assertEquals(TxId("8bce727fe08fbb79f02682f71d0b1f33a79039cd7a70623a51945bf2dc86d77c"), event.tx.txid)
         // Right after checking whether the watched utxo is spent, a 2nd call is made by the watcher
         // to find out whether the spending tx is confirmed, and the watch can be cleaned up. We give
         // some time for that call to complete, in order to prevent a coroutine cancellation stack trace.
@@ -51,13 +51,13 @@ class MempoolSpaceWatcherTest : LightningTestSuite() {
 
         val watch = WatchConfirmed(
             channelId = randomBytes32(),
-            txId = TxId("5693d68997abfacb65cc7e6019e8ed2edb3f9f2260ae8d221e8726b8fe870ae0"),
+            txId = TxId("8bce727fe08fbb79f02682f71d0b1f33a79039cd7a70623a51945bf2dc86d77c"),
             publicKeyScript = ByteVector.empty,
             event = BITCOIN_FUNDING_DEPTHOK,
             minDepth = 5
         )
         watcher.watch(watch)
         val event = assertIs<WatchEventConfirmed>(notifications.first())
-        assertEquals(TxId("5693d68997abfacb65cc7e6019e8ed2edb3f9f2260ae8d221e8726b8fe870ae0"), event.tx.txid)
+        assertEquals(TxId("8bce727fe08fbb79f02682f71d0b1f33a79039cd7a70623a51945bf2dc86d77c"), event.tx.txid)
     }
 }
