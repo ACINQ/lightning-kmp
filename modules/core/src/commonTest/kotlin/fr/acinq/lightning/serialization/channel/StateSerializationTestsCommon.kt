@@ -7,14 +7,12 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
-import fr.acinq.lightning.channel.states.SpliceTestsCommon
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.value
 import fr.acinq.lightning.wire.EncryptedChannelData
-import fr.acinq.lightning.wire.LightningMessage
+import fr.acinq.lightning.wire.EncryptedPeerStorage
 import fr.acinq.secp256k1.Hex
 import kotlin.math.max
 import kotlin.test.*
@@ -91,7 +89,6 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     @Test
     fun `maximum number of HTLCs that is safe to use`() {
         val (alice, bob) = TestsHelper.reachNormal()
-        assertTrue(bob.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
 
         tailrec fun addHtlcs(sender: LNChannel<Normal>, receiver: LNChannel<Normal>, amount: MilliSatoshi, count: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> = if (count == 0) Pair(sender, receiver) else {
             val (p, _) = TestsHelper.addHtlc(amount, sender, receiver)
@@ -101,24 +98,18 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             addHtlcs(alice1, bob1, amount, count - 1)
         }
 
-        fun commitSigSize(maxIncoming: Int, maxOutgoing: Int): Int {
+        fun peerStorageSize(maxIncoming: Int, maxOutgoing: Int): Int {
             val (alice1, bob1) = addHtlcs(alice, bob, MilliSatoshi(6000_000), maxOutgoing)
             val (bob2, alice2) = addHtlcs(bob1, alice1, MilliSatoshi(6000_000), maxIncoming)
             val (alice3, bob3) = crossSign(alice2, bob2)
 
-            assertIs<LNChannel<Normal>>(alice3)
-            assertIs<LNChannel<Normal>>(bob3)
-            val (_, commitSig0, _, commitSig1) = SpliceTestsCommon.spliceInAndOutWithoutSigs(alice3, bob3, listOf(50_000.sat), 50_000.sat)
-            assertFalse(commitSig1.channelData.isEmpty())
-
-            val bina = LightningMessage.encode(commitSig0)
-            val binb = LightningMessage.encode(commitSig1)
-            return max(bina.size, binb.size)
+            val bina = EncryptedPeerStorage.from(randomKey(), listOf(alice3.state)).data
+            val binb = EncryptedPeerStorage.from(randomKey(), listOf(bob3.state)).data
+            return max(bina.size(), binb.size())
         }
 
-        // with 5 incoming payments and 5 outgoing payments, we can still add our encrypted backup to commig_sig messages
-        // and stay below the 65k limit for a future channel_reestablish message of unknown size
-        assertTrue(commitSigSize(5, 5) < 60_000)
+        // with 15 incoming payments and 15 outgoing payments, our encrypted backup stays below the 65k limit for peer storage
+        assertTrue(peerStorageSize(15, 15) <= 65_531)
     }
 
     @Test

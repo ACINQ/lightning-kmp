@@ -21,6 +21,7 @@ import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.router.Announcements
+import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -305,7 +306,7 @@ class PeerTest : LightningTestSuite() {
             nextRemoteRevocationNumber = commitments.remoteCommitIndex,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-        ).withChannelData(commitments.remoteChannelData)
+        )
 
         peer.send(MessageReceived(connectionId = 0, channelReestablish))
 
@@ -338,6 +339,8 @@ class PeerTest : LightningTestSuite() {
         val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, bob0, alice0)
         val (bob1, alice1) = TestsHelper.crossSign(nodes.first, nodes.second)
 
+        val backup = EncryptedPeerStorage.from(TestConstants.Bob.nodeParams.nodePrivateKey, listOf(bob1.state))
+
         val peer = buildPeer(
             this,
             bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
@@ -348,8 +351,8 @@ class PeerTest : LightningTestSuite() {
 
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
+        peer.send(MessageReceived(connectionId = 0, PeerStorageRetrieval(backup)))
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
-        assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
 
         // Wait until the channels are Syncing
@@ -367,6 +370,8 @@ class PeerTest : LightningTestSuite() {
         val (nodes, _, htlc) = TestsHelper.addHtlc(50_000_000.msat, bob0, alice0)
         val (bob1, alice1) = TestsHelper.crossSign(nodes.first, nodes.second)
 
+        val backup = EncryptedPeerStorage.from(TestConstants.Bob.nodeParams.nodePrivateKey, listOf(bob1.state))
+
         val peer = buildPeer(
             this,
             bob0.staticParams.nodeParams.copy(checkHtlcTimeoutAfterStartupDelay = 5.seconds),
@@ -377,8 +382,8 @@ class PeerTest : LightningTestSuite() {
 
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
+        peer.send(MessageReceived(connectionId = 0, PeerStorageRetrieval(backup)))
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
-        assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
 
         // Wait until the channels are Syncing

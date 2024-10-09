@@ -1,7 +1,6 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
@@ -39,11 +38,11 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                     }
                     is ChannelStateWithCommitments -> {
                         logger.info { "syncing ${state::class}" }
-                        val sendChannelReestablish = !staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient)
+                        val sendChannelReestablish = !staticParams.nodeParams.usePeerStorage
                         val actions = buildList {
                             if (!sendChannelReestablish) {
                                 // We wait for them to go first, which lets us restore from the latest backup if we've lost data.
-                                logger.info { "waiting for their channel_reestablish message" }
+                                logger.info { "waiting for their peer_storage_retrieval and channel_reestablish message" }
                             } else {
                                 val channelReestablish = state.run { createChannelReestablish() }
                                 add(ChannelAction.Message.Send(channelReestablish))

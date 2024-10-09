@@ -56,6 +56,13 @@ object Serialization {
         return out.toByteArray()
     }
 
+    fun serializePeerStorage(states: List<PersistedChannelState>): ByteArray {
+        val out = ByteArrayOutput()
+        out.write(VERSION_MAGIC)
+        out.writeCollection(states) { out.writePersistedChannelState(it) }
+        return out.toByteArray()
+    }
+
     private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
         is LegacyWaitForFundingConfirmed -> {
             write(0x08); writeLegacyWaitForFundingConfirmed(o)
@@ -584,7 +591,7 @@ object Serialization {
             }
             writeNullable(lastIndex) { writeNumber(it) }
         }
-        writeDelimited(remoteChannelData.data.toByteArray())
+        writeNumber(0) // ignored legacy remoteChannelData
     }
 
     private fun Output.writeDirectedHtlc(htlc: DirectedHtlc) = htlc.run {
