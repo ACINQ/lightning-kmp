@@ -119,21 +119,23 @@ data class WaitForFundingSigned(
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
-            // If we purchased liquidity as part of the channel creation, we will add it to our payments db
+            // If we purchased liquidity as part of the channel creation, we will add it to our payments db.
             liquidityPurchase?.let { purchase ->
                 if (channelParams.localParams.isChannelOpener) {
-                    // We only count fees corresponding to the liquidity purchase (i.e. their inputs).
+                    // We only count the mining fees that we must refund to our peer as part of the liquidity purchase.
+                    // If we're also contributing to the funding transaction, the mining fees we pay for our inputs and
+                    // outputs will be recorded in the ViaNewChannel incoming payment entry below.
                     add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase))
                     add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
                 }
             }
-            // If we receive funds as part of the channel creation, we will add it to our payments db
+            // If we receive funds as part of the channel creation, we will add it to our payments db.
             if (action.commitment.localCommit.spec.toLocal > 0.msat) add(
-                // We only count the mining fees corresponding to the inputs and outputs we paid for in the interactive-tx transaction
-                // (i.e. our wallet inputs and the shared output).
                 ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel(
                     amountReceived = action.commitment.localCommit.spec.toLocal,
                     serviceFee = 0.msat,
+                    // We only count the mining fees we're paying for our inputs and outputs.
+                    // The mining fees for the remote inputs and outputs are paid by the remote node.
                     miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
                     localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
                     txId = action.fundingTx.txId,

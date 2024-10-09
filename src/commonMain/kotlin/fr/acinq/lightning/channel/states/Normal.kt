@@ -874,14 +874,30 @@ data class Normal(
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
-            // If we purchased liquidity as part of the channel creation, we will add it to our payments db
+            // If we purchased liquidity as part of the splice, we will add it to our payments db.
             liquidityPurchase?.let { purchase ->
-                // We only count fees corresponding to the liquidity purchase (i.e. their inputs).
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase))
+                // If we are purchasing liquidity without any other operation (splice-in, splice-out or splice-cpfp),
+                // we must include the mining fees we're paying for the shared input and shared output.
+                // Otherwise, we only count the mining fees that we must refund to our peer as part of the liquidity
+                // purchase: the mining fees we pay for our inputs/outputs and the shared input/output will be recorded
+                // in the dedicated splice entry below.
+                val isPurchaseOnly = action.fundingTx.sharedTx.tx.let {
+                    action.fundingTx.fundingParams.isInitiator && it.localInputs.isEmpty() && it.localOutputs.isEmpty() && it.remoteInputs.isNotEmpty()
+                }
+                if (isPurchaseOnly) {
+                    val localMiningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi()
+                    val purchase1 = when (purchase) {
+                        is LiquidityAds.Purchase.Standard -> purchase.copy(fees = purchase.fees.copy(miningFee = purchase.fees.miningFee + localMiningFees))
+                        is LiquidityAds.Purchase.WithFeeCredit -> purchase.copy(fees = purchase.fees.copy(miningFee = purchase.fees.miningFee + localMiningFees))
+                    }
+                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase1))
+                } else {
+                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, purchase = purchase))
+                }
                 add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
             }
-            // NB: the following assume that there can't be a splice-in and a splice-out simultaneously, because we attribute
-            // all local mining fees to both.
+            // NB: the following assumes that there can't be a splice-in and a splice-out simultaneously,
+            // or more than one splice-out, because we attribute all local mining fees to each payment entry.
             if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) add(
                 ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn(
                     amountReceived = action.fundingTx.sharedTx.tx.localInputs.map { i -> i.txOut.amount }.sum().toMilliSatoshi() - action.fundingTx.sharedTx.tx.localFees,
@@ -900,7 +916,7 @@ data class Normal(
                     txId = action.fundingTx.txId
                 )
             })
-            // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp
+            // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp.
             if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {
                 add(ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(), txId = action.fundingTx.txId))
             }
