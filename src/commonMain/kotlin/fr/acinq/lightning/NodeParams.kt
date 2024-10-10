@@ -239,6 +239,7 @@ data class NodeParams(
                 maxAbsoluteFee = 2_000.sat,
                 maxRelativeFeeBasisPoints = 3_000 /* 3000 = 30 % */,
                 skipAbsoluteFeeCheck = false,
+                considerOnlyMiningFeeForAbsoluteFeeCheck = false,
                 maxAllowedFeeCredit = 0.msat
             )
         ),
