@@ -1289,7 +1289,7 @@ class Peer(
                         val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
                         val (feerate, fee) = client.computeSpliceCpfpFeerate(available.channel.commitments, targetFeerate, spliceWeight = weight, logger)
                         logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
-                        when (val rejected = nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), fee.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)) {
+                        when (val rejected = nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), ChannelManagementFees(miningFee = fee, serviceFee = 0.sat), LiquidityEvents.Source.OnChainWallet, logger)) {
                             is LiquidityEvents.Rejected -> {
                                 logger.info { "rejecting splice: reason=${rejected.reason}" }
                                 nodeParams._nodeEvents.emit(rejected)
@@ -1356,7 +1356,7 @@ class Peer(
                                     swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                                 } else {
                                     val totalAmount = cmd.walletInputs.balance.toMilliSatoshi() + requestRemoteFunding.requestedAmount.toMilliSatoshi()
-                                    when (val rejected = nodeParams.liquidityPolicy.first().maybeReject(totalAmount, fees.total.toMilliSatoshi(), LiquidityEvents.Source.OnChainWallet, logger)) {
+                                    when (val rejected = nodeParams.liquidityPolicy.first().maybeReject(totalAmount, fees, LiquidityEvents.Source.OnChainWallet, logger)) {
                                         is LiquidityEvents.Rejected -> {
                                             logger.info { "rejecting channel open: reason=${rejected.reason}" }
                                             nodeParams._nodeEvents.emit(rejected)

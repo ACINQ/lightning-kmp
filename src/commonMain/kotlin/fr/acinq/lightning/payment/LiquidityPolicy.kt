@@ -3,6 +3,7 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.channel.ChannelManagementFees
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -24,7 +25,7 @@ sealed class LiquidityPolicy {
     data class Auto(val inboundLiquidityTarget: Satoshi?, val maxAbsoluteFee: Satoshi, val maxRelativeFeeBasisPoints: Int, val skipAbsoluteFeeCheck: Boolean, val maxAllowedFeeCredit: MilliSatoshi) : LiquidityPolicy()
 
     /** Make a decision for a particular liquidity event. */
-    fun maybeReject(amount: MilliSatoshi, fee: MilliSatoshi, source: LiquidityEvents.Source, logger: MDCLogger): LiquidityEvents.Rejected? {
+    fun maybeReject(amount: MilliSatoshi, fee: ChannelManagementFees, source: LiquidityEvents.Source, logger: MDCLogger): LiquidityEvents.Rejected? {
         return when (this) {
             is Disable -> LiquidityEvents.Rejected.Reason.PolicySetToDisabled
             is Auto -> {
@@ -32,11 +33,11 @@ sealed class LiquidityPolicy {
                 val maxRelativeFee = amount * maxRelativeFeeBasisPoints / 10_000
                 logger.info { "liquidity policy check: amount=$amount liquidityTarget=${inboundLiquidityTarget ?: 0.sat} fee=$fee maxAbsoluteFee=$maxAbsoluteFee maxRelativeFee=$maxRelativeFee policy=$this" }
                 when {
-                    fee > maxRelativeFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(maxRelativeFeeBasisPoints)
-                    fee > maxAbsoluteFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(this.maxAbsoluteFee)
+                    fee.total.toMilliSatoshi() > maxRelativeFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(maxRelativeFeeBasisPoints)
+                    fee.total.toMilliSatoshi() > maxAbsoluteFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(this.maxAbsoluteFee)
                     else -> null // accept
                 }
             }
-        }?.let { reason -> LiquidityEvents.Rejected(amount, fee, source, reason) }
+        }?.let { reason -> LiquidityEvents.Rejected(amount, fee.total.toMilliSatoshi(), source, reason) }
     }
 }
