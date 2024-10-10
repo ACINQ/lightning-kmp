@@ -20,9 +20,10 @@ sealed class LiquidityPolicy {
      * @param maxAbsoluteFee max absolute fee
      * @param maxRelativeFeeBasisPoints max relative fee (all included: service fee and mining fee) (1_000 bips = 10 %)
      * @param skipAbsoluteFeeCheck only applies for off-chain payments, being more lax may make sense when the sender doesn't retry payments
+     * @param considerOnlyMiningFeeForAbsoluteFeeCheck only consider the mining fee for the absolute fee check. This makes sense in `inboundLiquidityTarget` is used, and the funding rate predictable
      * @param maxAllowedFeeCredit maximum amount that can be added to fee credit (see [fr.acinq.lightning.Feature.FundingFeeCredit])
      */
-    data class Auto(val inboundLiquidityTarget: Satoshi?, val maxAbsoluteFee: Satoshi, val maxRelativeFeeBasisPoints: Int, val skipAbsoluteFeeCheck: Boolean, val maxAllowedFeeCredit: MilliSatoshi) : LiquidityPolicy()
+    data class Auto(val inboundLiquidityTarget: Satoshi?, val maxAbsoluteFee: Satoshi, val maxRelativeFeeBasisPoints: Int, val skipAbsoluteFeeCheck: Boolean, val maxAllowedFeeCredit: MilliSatoshi, val considerOnlyMiningFeeForAbsoluteFeeCheck: Boolean = false) : LiquidityPolicy()
 
     /** Make a decision for a particular liquidity event. */
     fun maybeReject(amount: MilliSatoshi, fee: ChannelManagementFees, source: LiquidityEvents.Source, logger: MDCLogger): LiquidityEvents.Rejected? {
@@ -34,7 +35,8 @@ sealed class LiquidityPolicy {
                 logger.info { "liquidity policy check: amount=$amount liquidityTarget=${inboundLiquidityTarget ?: 0.sat} fee=$fee maxAbsoluteFee=$maxAbsoluteFee maxRelativeFee=$maxRelativeFee policy=$this" }
                 when {
                     fee.total.toMilliSatoshi() > maxRelativeFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverRelativeFee(maxRelativeFeeBasisPoints)
-                    fee.total.toMilliSatoshi() > maxAbsoluteFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(this.maxAbsoluteFee)
+                    considerOnlyMiningFeeForAbsoluteFeeCheck && fee.miningFee.toMilliSatoshi() > maxAbsoluteFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(this.maxAbsoluteFee)
+                    !considerOnlyMiningFeeForAbsoluteFeeCheck && fee.total.toMilliSatoshi() > maxAbsoluteFee -> LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(this.maxAbsoluteFee)
                     else -> null // accept
                 }
             }

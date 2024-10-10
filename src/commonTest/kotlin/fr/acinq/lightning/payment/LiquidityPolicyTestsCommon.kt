@@ -46,4 +46,16 @@ class LiquidityPolicyTestsCommon : LightningTestSuite() {
             actual = policy.maybeReject(amount = 4_000_000.msat, fee = ChannelManagementFees(miningFee = 2_000.sat, serviceFee = 0.sat), source = LiquidityEvents.Source.OnChainWallet, logger)?.reason
         )
     }
+
+    @Test
+    fun `policy rejection mining fee check`() {
+        val policy = LiquidityPolicy.Auto(maxAbsoluteFee = 1_000.sat, maxRelativeFeeBasisPoints = 5_000 /* 3000 = 30 % */, skipAbsoluteFeeCheck = false, inboundLiquidityTarget = null, maxAllowedFeeCredit = 0.msat, considerOnlyMiningFeeForAbsoluteFeeCheck = true)
+        // total fee is over absolute, but mining fee is below and we only consider the mining fee
+        assertNull(policy.maybeReject(amount = 10_000_000.msat, fee = ChannelManagementFees(miningFee = 900.sat, serviceFee = 2_000.sat), source = LiquidityEvents.Source.OnChainWallet, logger))
+        // the mining fee is over absolute
+        assertEquals(
+            expected = LiquidityEvents.Rejected.Reason.TooExpensive.OverAbsoluteFee(policy.maxAbsoluteFee),
+            actual = policy.maybeReject(amount = 10_000_000.msat, fee = ChannelManagementFees(miningFee = 2_000.sat, serviceFee = 0.sat), source = LiquidityEvents.Source.OnChainWallet, logger)?.reason
+        )
+    }
 }
