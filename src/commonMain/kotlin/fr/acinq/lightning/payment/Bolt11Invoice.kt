@@ -105,7 +105,7 @@ data class Bolt11Invoice(
     }
 
     companion object {
-        const val DEFAULT_EXPIRY_SECONDS = 24 * 3600 // 1 day
+        const val DEFAULT_EXPIRY_SECONDS = 3600 // default value from Bolt 11
         val DEFAULT_MIN_FINAL_EXPIRY_DELTA = CltvExpiryDelta(18) // default value from Bolt 11
 
         private val prefixes = mapOf(

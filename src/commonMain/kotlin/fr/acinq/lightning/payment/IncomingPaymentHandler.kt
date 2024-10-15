@@ -17,6 +17,7 @@ import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlin.time.Duration
 
 sealed class PaymentPart {
     abstract val amount: MilliSatoshi
@@ -79,7 +80,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         amount: MilliSatoshi?,
         description: Either<String, ByteVector32>,
         extraHops: List<List<Bolt11Invoice.TaggedField.ExtraHop>>,
-        expirySeconds: Long? = null,
+        expiry: Duration? = null,
         timestampSeconds: Long = currentTimestampSeconds()
     ): Bolt11Invoice {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
@@ -95,7 +96,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             randomBytes32(),
             // We always include a payment metadata in our invoices, which lets us test whether senders support it
             ByteVector("2a"),
-            expirySeconds,
+            expiry?.inWholeSeconds,
             extraHops,
             timestampSeconds
         )
@@ -522,7 +523,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                 logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight)}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
-                            metadata.createdAtMillis + nodeParams.bolt12invoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
+                            metadata.createdAtMillis + nodeParams.bolt12InvoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
                                 logger.warning { "the invoice is expired" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }

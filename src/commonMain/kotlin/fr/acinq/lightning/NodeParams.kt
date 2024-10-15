@@ -107,6 +107,8 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param minFinalCltvExpiryDelta cltv-expiry-delta that we require when receiving a payment.
  * @param fulfillSafetyBeforeTimeoutBlocks number of blocks necessary to react to a malicious peer that doesn't acknowledge and sign our HTLC preimages.
  * @param checkHtlcTimeoutAfterStartupDelay delay before we check for timed out HTLCs in our channels after a wallet restart.
+ * @param bolt11InvoiceExpiry duration for which bolt11 invoices that we create are valid.
+ * @param bolt12InvoiceExpiry duration for which bolt12 invoices that we create are valid.
  * @param htlcMinimum minimum accepted HTLC value.
  * @param toRemoteDelayBlocks number of blocks our peer will have to wait before they get their main output back in case they force-close a channel.
  * @param maxToLocalDelayBlocks maximum number of blocks we will have to wait before we get our main output back in case we force-close a channel.
@@ -121,7 +123,6 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
  * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
- * @param bolt12invoiceExpiry duration for which bolt12 invoices that we create are valid.
  */
 data class NodeParams(
     val loggerFactory: LoggerFactory,
@@ -138,6 +139,8 @@ data class NodeParams(
     val fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
     val checkHtlcTimeoutAfterStartupDelay: Duration,
     val checkHtlcTimeoutInterval: Duration,
+    val bolt11InvoiceExpiry: Duration,
+    val bolt12InvoiceExpiry: Duration,
     val htlcMinimum: MilliSatoshi,
     val toRemoteDelayBlocks: CltvExpiryDelta,
     val maxToLocalDelayBlocks: CltvExpiryDelta,
@@ -152,7 +155,6 @@ data class NodeParams(
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
     val liquidityPolicy: MutableStateFlow<LiquidityPolicy>,
-    val bolt12invoiceExpiry: Duration,
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
@@ -224,6 +226,8 @@ data class NodeParams(
         fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(12),
         checkHtlcTimeoutAfterStartupDelay = 30.seconds,
         checkHtlcTimeoutInterval = 10.seconds,
+        bolt11InvoiceExpiry = 24.hours,
+        bolt12InvoiceExpiry = 24.hours,
         htlcMinimum = 1000.msat,
         minDepthBlocks = 3,
         toRemoteDelayBlocks = CltvExpiryDelta(2016),
@@ -247,7 +251,6 @@ data class NodeParams(
                 maxAllowedFeeCredit = 0.msat
             )
         ),
-        bolt12invoiceExpiry = 24.hours,
     )
 
     /**

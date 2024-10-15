@@ -182,7 +182,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     allowedFeatures = Features.empty
                 )
                 // We assume 10 minutes between each block to convert the invoice expiry to a CLTV expiry for the blinded path.
-                val pathExpiry = (paymentInfo.cltvExpiryDelta + (nodeParams.bolt12invoiceExpiry.inWholeMinutes.toInt() / 10)).toCltvExpiry(currentBlockHeight.toLong())
+                val pathExpiry = (paymentInfo.cltvExpiryDelta + (nodeParams.bolt12InvoiceExpiry.inWholeMinutes.toInt() / 10)).toCltvExpiry(currentBlockHeight.toLong())
                 val remoteNodePayload = RouteBlindingEncryptedData(
                     TlvStream(
                         RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
@@ -192,7 +192,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 ).write().toByteVector()
                 val blindedRoute = RouteBlinding.create(randomKey(), listOf(remoteNodeId, nodeParams.nodeId), listOf(remoteNodePayload, recipientPayload)).route
                 val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
-                val invoice = Bolt12Invoice(request, preimage, decrypted.blindedPrivateKey, nodeParams.bolt12invoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
+                val invoice = Bolt12Invoice(request, preimage, decrypted.blindedPrivateKey, nodeParams.bolt12InvoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
                 val destination = Destination.BlindedPath(decrypted.content.replyPath)
                 when (val invoiceMessage = buildMessage(randomKey(), randomKey(), intermediateNodes(destination), destination, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)))) {
                     is Left -> {
