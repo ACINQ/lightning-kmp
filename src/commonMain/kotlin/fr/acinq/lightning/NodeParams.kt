@@ -80,8 +80,11 @@ data class WalletParams(
 /**
  * When sending a payment, if the expiry used for the last node is very close to the current block height,
  * it lets intermediate nodes figure out their position in the route. To protect against this, a random
- * delta between min and max will be added to the current block height, which makes it look like there
- * are more hops after the final node.
+ * number of blocks between min and max will be added to the current block height, before the `minFinalExpiryDelta`
+ * requested by the recipient, which makes it look like there are more hops after the final node.
+ *
+ * The overall cltv expiry delta for an outgoing trampoline payment will thus be:
+ * `cltvExpiryDelta` =  `random(min, max)` + `minFinalExpiryDelta` + `TrampolineFees.cltvExpiryDelta`
  */
 data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpiryDelta) {
     fun computeFinalExpiry(currentBlockHeight: Int, minFinalExpiryDelta: CltvExpiryDelta): CltvExpiry {
