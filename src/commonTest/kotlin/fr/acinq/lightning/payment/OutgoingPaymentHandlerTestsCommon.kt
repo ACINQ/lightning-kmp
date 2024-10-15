@@ -470,7 +470,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertIs<PaymentOnion.FinalPayload.Standard>(payloadB)
             assertEquals(add.amount, payloadB.amount)
             assertEquals(300_000.msat, payloadB.totalAmount)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + TestConstants.Alice.nodeParams.minFinalCltvExpiryDelta, payloadB.expiry)
+            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + TestConstants.Alice.nodeParams.finalCltvExpiryParams.min, payloadB.expiry)
             assertEquals(invoice.paymentSecret, payloadB.paymentSecret)
         }
 

@@ -88,7 +88,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertEquals(1, payInvoice.invoice.blindedPaths.size)
         val path = payInvoice.invoice.blindedPaths.first()
         assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
-        assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
+        assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.finalCltvExpiryParams.min, path.paymentInfo.cltvExpiryDelta)
         assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
         assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
     }
@@ -122,7 +122,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertEquals(1, payInvoice.invoice.blindedPaths.size)
         val path = payInvoice.invoice.blindedPaths.first()
         assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
-        assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
+        assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.finalCltvExpiryParams.min, path.paymentInfo.cltvExpiryDelta)
         assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
         assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
     }

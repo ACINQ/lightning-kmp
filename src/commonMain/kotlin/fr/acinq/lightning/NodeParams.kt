@@ -94,6 +94,21 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
 }
 
 /**
+ * When receiving a payment, if the expiry used for the incoming HTLC is too close to the current block height,
+ * we may not have time to get a HTLC-success tx confirmed before our counterparty can publish their HTLC-timeout.
+ *
+ * @param fulfillSafetyBeforeTimeout number of blocks necessary to react to a malicious peer that doesn't acknowledge and sign our HTLC preimages.
+ * @param min minimum value required from senders (must be greater than `fulfillSafetyBeforeTimeout`)
+ * @param max maximum value required from senders
+ */
+data class FinalCltvExpiryParams(val fulfillSafetyBeforeTimeout: CltvExpiryDelta, val min: CltvExpiryDelta, val max: CltvExpiryDelta) {
+    init {
+        // Verify expiry parameters are consistent with each other.
+        require((fulfillSafetyBeforeTimeout * 2) < min) { "min_final_expiry_delta must be at least twice as long as fulfill_safety_before_timeout_blocks" }
+    }
+}
+
+/**
  * @param loggerFactory factory for creating [Logger] objects sharing the same configuration.
  * @param chain bitcoin chain we're interested in.
  * @param keyManager derive private keys and secrets from your seed.
@@ -103,10 +118,11 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param onChainFeeConf on-chain feerates that will be applied to various transactions.
  * @param maxHtlcValueInFlightMsat cap on the total value of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
  * @param maxAcceptedHtlcs cap on the number of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
- * @param expiryDeltaBlocks cltv-expiry-delta used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
- * @param fulfillSafetyBeforeTimeoutBlocks number of blocks necessary to react to a malicious peer that doesn't acknowledge and sign our HTLC preimages.
+ * @param expiryDeltaBlocks cltv expiry delta used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
+ * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
+ * @param finalCltvExpiryParams configure the expiry delta that we require when receiving payments.
  * @param checkHtlcTimeoutAfterStartupDelay delay before we check for timed out HTLCs in our channels after a wallet restart.
- * @param htlcMinimum minimum accepted htlc value.
+ * @param htlcMinimum minimum accepted HTLC value.
  * @param toRemoteDelayBlocks number of blocks our peer will have to wait before they get their main output back in case they force-close a channel.
  * @param maxToLocalDelayBlocks maximum number of blocks we will have to wait before we get our main output back in case we force-close a channel.
  * @param minDepthBlocks minimum depth of a transaction before we consider it safely confirmed.
@@ -115,14 +131,11 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param pingInterval delay between ping messages.
  * @param initialRandomReconnectDelay delay before which we reconnect to our peers (will be randomized based on this value).
  * @param maxReconnectInterval maximum delay between reconnection attempts.
- * @param mppAggregationWindow amount of time we will wait to receive all parts of a multi-part payment.
+ * @param mppAggregationWindow amount of time we will wait to receive all parts of a multipart payment.
  * @param maxPaymentAttempts maximum number of retries when attempting an outgoing payment.
- * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
  * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
- * @param minFinalCltvExpiryDelta cltv-expiry-delta that we require when receiving a payment.
- * @param maxFinalCltvExpiryDelta maximum cltv-expiry-delta that we accept when receiving a payment.
- * @param bolt12invoiceExpiry duration for which bolt12 invoices that we create are valid.
+ * @param bolt12InvoiceExpiry duration for which bolt12 invoices that we create are valid.
  */
 data class NodeParams(
     val loggerFactory: LoggerFactory,
@@ -135,7 +148,8 @@ data class NodeParams(
     val maxHtlcValueInFlightMsat: Long,
     val maxAcceptedHtlcs: Int,
     val expiryDeltaBlocks: CltvExpiryDelta,
-    val fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
+    val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
+    val finalCltvExpiryParams: FinalCltvExpiryParams,
     val checkHtlcTimeoutAfterStartupDelay: Duration,
     val checkHtlcTimeoutInterval: Duration,
     val htlcMinimum: MilliSatoshi,
@@ -149,12 +163,9 @@ data class NodeParams(
     val maxReconnectInterval: Duration,
     val mppAggregationWindow: Duration,
     val maxPaymentAttempts: Int,
-    val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
     val liquidityPolicy: MutableStateFlow<LiquidityPolicy>,
-    val minFinalCltvExpiryDelta: CltvExpiryDelta,
-    val maxFinalCltvExpiryDelta: CltvExpiryDelta,
-    val bolt12invoiceExpiry: Duration,
+    val bolt12InvoiceExpiry: Duration,
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
@@ -176,8 +187,6 @@ data class NodeParams(
         require(!features.hasFeature(Feature.PayToOpenClient)) { "${Feature.PayToOpenClient.rfcName} has been deprecated" }
         require(!features.hasFeature(Feature.PayToOpenProvider)) { "${Feature.PayToOpenProvider.rfcName} has been deprecated" }
         Features.validateFeatureGraph(features)
-        // Verify expiry parameters are consistent with each other.
-        require((fulfillSafetyBeforeTimeoutBlocks * 2) < minFinalCltvExpiryDelta) { "min_final_expiry_delta must be at least twice as long as fulfill_safety_before_timeout_blocks" }
     }
 
     /**
@@ -219,7 +228,15 @@ data class NodeParams(
         maxHtlcValueInFlightMsat = 20_000_000_000L,
         maxAcceptedHtlcs = 6,
         expiryDeltaBlocks = CltvExpiryDelta(144),
-        fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(12),
+        paymentRecipientExpiryParams = RecipientCltvExpiryParams(min = CltvExpiryDelta(72), max = CltvExpiryDelta(144)),
+        // We use a long expiry delta here for a few reasons:
+        //  - we want to ensure we're able to get HTLC-success txs confirmed if our peer ignores our preimage
+        //  - we may be offline for a while, so we want our peer to be able to hold HTLCs and forward them when we come back online
+        finalCltvExpiryParams = FinalCltvExpiryParams(
+            fulfillSafetyBeforeTimeout = CltvExpiryDelta(12),
+            min = CltvExpiryDelta(144),
+            max = CltvExpiryDelta(360)
+        ),
         checkHtlcTimeoutAfterStartupDelay = 30.seconds,
         checkHtlcTimeoutInterval = 10.seconds,
         htlcMinimum = 1000.msat,
@@ -234,7 +251,6 @@ data class NodeParams(
         mppAggregationWindow = 60.seconds,
         maxPaymentAttempts = 5,
         zeroConfPeers = emptySet(),
-        paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(72), CltvExpiryDelta(144)),
         liquidityPolicy = MutableStateFlow<LiquidityPolicy>(
             LiquidityPolicy.Auto(
                 inboundLiquidityTarget = null,
@@ -245,12 +261,7 @@ data class NodeParams(
                 maxAllowedFeeCredit = 0.msat
             )
         ),
-        // We use a long expiry delta here for a few reasons:
-        //  - we want to ensure we're able to get HTLC-success txs confirmed if our peer ignores our preimage
-        //  - we may be offline for a while, so we want our peer to be able to hold HTLCs and forward them when we come back online
-        minFinalCltvExpiryDelta = CltvExpiryDelta(144),
-        maxFinalCltvExpiryDelta = CltvExpiryDelta(360),
-        bolt12invoiceExpiry = 24.hours,
+        bolt12InvoiceExpiry = 24.hours,
     )
 
     /**

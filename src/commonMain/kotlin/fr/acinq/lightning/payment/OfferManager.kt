@@ -175,7 +175,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     // for our trampoline node (below). This ensures that we will receive payments with at least this final expiry delta.
                     // This ensures that even when payers haven't received the latest block(s) or don't include a safety margin in the
                     // expiry they use, we can still safely receive their payment.
-                    cltvExpiryDelta = cltvExpiryDelta + nodeParams.minFinalCltvExpiryDelta,
+                    cltvExpiryDelta = cltvExpiryDelta + nodeParams.finalCltvExpiryParams.min,
                     minHtlc = minHtlc,
                     // Payments are allowed to overpay at most two times the invoice amount.
                     maxHtlc = amount * 2,
@@ -185,12 +185,12 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     TlvStream(
                         RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
                         RouteBlindingEncryptedDataTlv.PaymentRelay(cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
-                        RouteBlindingEncryptedDataTlv.PaymentConstraints((paymentInfo.cltvExpiryDelta + nodeParams.maxFinalCltvExpiryDelta).toCltvExpiry(currentBlockHeight.toLong()), paymentInfo.minHtlc)
+                        RouteBlindingEncryptedDataTlv.PaymentConstraints((paymentInfo.cltvExpiryDelta + nodeParams.finalCltvExpiryParams.max).toCltvExpiry(currentBlockHeight.toLong()), paymentInfo.minHtlc)
                     )
                 ).write().toByteVector()
                 val blindedRoute = RouteBlinding.create(randomKey(), listOf(remoteNodeId, nodeParams.nodeId), listOf(remoteNodePayload, recipientPayload)).route
                 val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
-                val invoice = Bolt12Invoice(request, preimage, decrypted.blindedPrivateKey, nodeParams.bolt12invoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
+                val invoice = Bolt12Invoice(request, preimage, decrypted.blindedPrivateKey, nodeParams.bolt12InvoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
                 val destination = Destination.BlindedPath(decrypted.content.replyPath)
                 when (val invoiceMessage = buildMessage(randomKey(), randomKey(), intermediateNodes(destination), destination, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)))) {
                     is Left -> {

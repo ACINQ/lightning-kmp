@@ -1569,7 +1569,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
         val preimage = randomBytes32()
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val cltvExpiry = TestConstants.Bob.nodeParams.finalCltvExpiryParams.min.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
         val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey)
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
@@ -1593,7 +1593,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val totalAmount = amount1 + amount2
         val preimage = randomBytes32()
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val cltvExpiry = TestConstants.Bob.nodeParams.finalCltvExpiryParams.min.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
 
         // Step 1 of 2:
         // - Alice sends first multipart htlc to Bob
@@ -1633,7 +1633,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (paymentHandler, _, _) = createFixture(defaultAmount)
         val preimage = randomBytes32()
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val cltvExpiry = TestConstants.Bob.nodeParams.finalCltvExpiryParams.min.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
         val willAddHtlc = makeWillAddHtlc(paymentHandler, paymentHash, finalPayload, route.blindingKey)
         val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
@@ -1668,15 +1668,15 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // We may thus be closer to the min_final_expiry_delta, but we've committed to accepting this HTLC already.
         // As long as the expiry is greater than twice our fulfill_safety_before_timeout, we will accept it.
         run {
-            val cltvExpiry = TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+            val cltvExpiry = TestConstants.Bob.nodeParams.finalCltvExpiryParams.fulfillSafetyBeforeTimeout.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
             val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
             val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
             val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
         }
         run {
-            assertTrue((TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2) < TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta)
-            val cltvExpiry = (TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2).toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+            assertTrue((TestConstants.Bob.nodeParams.finalCltvExpiryParams.fulfillSafetyBeforeTimeout * 2) < TestConstants.Bob.nodeParams.finalCltvExpiryParams.min)
+            val cltvExpiry = (TestConstants.Bob.nodeParams.finalCltvExpiryParams.fulfillSafetyBeforeTimeout * 2).toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
             val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
             val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
             val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
@@ -1694,7 +1694,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `reject blinded payment for Bolt11 invoice`() = runSuspendTest {
         val (paymentHandler, incomingPayment, _) = createFixture(defaultAmount)
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val cltvExpiry = TestConstants.Bob.nodeParams.finalCltvExpiryParams.min.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val (blindedPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = incomingPayment.preimage)
         val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, incomingPayment.paymentHash, blindedPayload, route.blindingKey)
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
@@ -1713,7 +1713,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val totalAmount = amount1 + amount2
         val preimage = randomBytes32()
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val cltvExpiry = TestConstants.Bob.nodeParams.finalCltvExpiryParams.min.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
 
         // Step 1 of 2:
         // - Alice sends first blinded multipart htlc to Bob
@@ -1742,7 +1742,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `reject blinded payment with amount too low`() = runSuspendTest {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val cltvExpiry = TestConstants.Bob.nodeParams.finalCltvExpiryParams.min.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), null, 1, currentTimestampMillis())
         val pathId = metadata.toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
         val amountTooLow = metadata.amount - 10_000_000.msat
@@ -1759,7 +1759,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `reject blinded payment with payment_hash mismatch`() = runSuspendTest {
         val paymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+        val cltvExpiry = TestConstants.Bob.nodeParams.finalCltvExpiryParams.min.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), null, 1, currentTimestampMillis())
         val pathId = metadata.toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, metadata.amount, metadata.amount, cltvExpiry, pathId)

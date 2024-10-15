@@ -609,7 +609,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     internal suspend fun ChannelContext.checkHtlcTimeout(): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         logger.info { "checking htlcs timeout at blockHeight=${currentBlockHeight}" }
         val timedOutOutgoing = commitments.timedOutOutgoingHtlcs(currentBlockHeight.toLong())
-        val almostTimedOutIncoming = commitments.almostTimedOutIncomingHtlcs(currentBlockHeight.toLong(), staticParams.nodeParams.fulfillSafetyBeforeTimeoutBlocks)
+        val almostTimedOutIncoming = commitments.almostTimedOutIncomingHtlcs(currentBlockHeight.toLong(), staticParams.nodeParams.finalCltvExpiryParams.fulfillSafetyBeforeTimeout)
         val channelEx: ChannelException? = when {
             timedOutOutgoing.isNotEmpty() -> HtlcsTimedOutDownstream(channelId, timedOutOutgoing)
             almostTimedOutIncoming.isNotEmpty() -> FulfilledHtlcsWillTimeout(channelId, almostTimedOutIncoming)
