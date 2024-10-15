@@ -27,6 +27,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlin.test.*
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 
 class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
@@ -1189,7 +1191,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             payee = paymentHandler,
             amount = defaultAmount,
             timestamp = currentTimestampSeconds() - 3600 - 60, // over one hour ago
-            expirySeconds = 3600 // one hour expiration
+            expiry = 1.hours
         )
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(10_000.msat, defaultAmount, paymentSecret))
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
@@ -1521,14 +1523,14 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // create incoming payment that has expired and not been paid
         val expiredInvoice = paymentHandler.createInvoice(
-            randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expirySeconds = 3600,
+            randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expiry = 1.hours,
             timestampSeconds = 1
         )
 
         // create incoming payment that has expired and been paid
         delay(100.milliseconds)
         val paidInvoice = paymentHandler.createInvoice(
-            defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expirySeconds = 3600,
+            defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expiry = 1.hours,
             timestampSeconds = 100
         )
         paymentHandler.db.receivePayment(
@@ -1549,7 +1551,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // create unexpired payment
         delay(100.milliseconds)
-        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("unexpired"), listOf(), expirySeconds = 3600)
+        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("unexpired"), listOf(), expiry = 1.hours)
 
         val unexpiredPayment = paymentHandler.db.getIncomingPayment(unexpiredInvoice.paymentHash)!!
         val paidPayment = paymentHandler.db.getIncomingPayment(paidInvoice.paymentHash)!!
@@ -1883,8 +1885,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             return Pair(payload, route)
         }
 
-        private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
-            val paymentRequest = payee.createInvoice(defaultPreimage, amount, Either.Left("unit test"), listOf(), expirySeconds, timestamp)
+        private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expiry: Duration? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
+            val paymentRequest = payee.createInvoice(defaultPreimage, amount, Either.Left("unit test"), listOf(), expiry, timestamp)
             assertNotNull(paymentRequest.paymentMetadata)
             return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret)
         }

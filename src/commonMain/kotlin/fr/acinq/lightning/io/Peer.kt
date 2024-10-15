@@ -719,7 +719,7 @@ class Peer(
         return res.await()
     }
 
-    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expirySeconds: Long? = null): Bolt11Invoice {
+    suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expiry: Duration? = null): Bolt11Invoice {
         // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all
         // channels to maximize the likelihood of success on the first payment attempt
         val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
@@ -741,7 +741,7 @@ class Peer(
                 )
             )
         )
-        return incomingPaymentHandler.createInvoice(paymentPreimage, amount, description, extraHops, expirySeconds)
+        return incomingPaymentHandler.createInvoice(paymentPreimage, amount, description, extraHops, expiry ?: nodeParams.bolt11InvoiceExpiry)
     }
 
     // The (node_id, fcm_token) tuple only needs to be registered once.
