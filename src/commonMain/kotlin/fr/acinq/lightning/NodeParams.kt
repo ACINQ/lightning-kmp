@@ -7,12 +7,10 @@ import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.logging.LoggerFactory
-import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
-import fr.acinq.lightning.wire.LiquidityAds
 import fr.acinq.lightning.wire.OfferTypes
 import io.ktor.utils.io.charsets.*
 import io.ktor.utils.io.core.*
@@ -21,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -217,7 +216,7 @@ data class NodeParams(
         maxHtlcValueInFlightMsat = 20_000_000_000L,
         maxAcceptedHtlcs = 6,
         expiryDeltaBlocks = CltvExpiryDelta(144),
-        fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
+        fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(12),
         checkHtlcTimeoutAfterStartupDelay = 30.seconds,
         checkHtlcTimeoutInterval = 10.seconds,
         htlcMinimum = 1000.msat,
@@ -232,7 +231,7 @@ data class NodeParams(
         mppAggregationWindow = 60.seconds,
         maxPaymentAttempts = 5,
         zeroConfPeers = emptySet(),
-        paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(75), CltvExpiryDelta(200)),
+        paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(72), CltvExpiryDelta(144)),
         liquidityPolicy = MutableStateFlow<LiquidityPolicy>(
             LiquidityPolicy.Auto(
                 inboundLiquidityTarget = null,
@@ -243,9 +242,12 @@ data class NodeParams(
                 maxAllowedFeeCredit = 0.msat
             )
         ),
-        minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
+        // We use a long expiry delta here for a few reasons:
+        //  - we want to ensure we're able to get HTLC-success txs confirmed if our peer ignores our preimage
+        //  - we may be offline for a while, so we want our peer to be able to hold HTLCs and forward them when we come back online
+        minFinalCltvExpiryDelta = CltvExpiryDelta(144),
         maxFinalCltvExpiryDelta = CltvExpiryDelta(360),
-        bolt12invoiceExpiry = 60.seconds,
+        bolt12invoiceExpiry = 24.hours,
     )
 
     /**
