@@ -923,7 +923,10 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val fundingFee = purchase.fundingFee.copy(amount = 0.msat)
             val htlc = makeUpdateAddHtlc(7, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, amount, paymentSecret), fundingFee = fundingFee)
             assertEquals(htlc.amountMsat, amount)
-            val result = paymentHandler.process(htlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            // Before relaying the payment, we have created an on-chain transaction, which took some time.
+            // We are now closer to the min_final_expiry_delta, but we've committed to accepting this HTLC already.
+            val currentBlockHeight = TestConstants.defaultBlockHeight + 24
+            val result = paymentHandler.process(htlc, Features.empty, currentBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
             val (expectedActions, expectedReceivedWith) = setOf(
                 // @formatter:off
@@ -1661,18 +1664,31 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
 
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
-        val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
-        val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
-        val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
-        assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
-        val fulfill = ChannelCommand.Htlc.Settlement.Fulfill(add.id, preimage, commit = true)
-        assertEquals(setOf(WrappedChannelCommand(add.channelId, fulfill)), result.actions.toSet())
-        assertEquals(result.incomingPayment.received, result.received)
-        assertEquals(defaultAmount - payment.fundingFee.amount, result.received.amount)
-        val receivedWith = IncomingPayment.ReceivedWith.LightningPayment(defaultAmount - payment.fundingFee.amount, add.channelId, 0, payment.fundingFee)
-        assertEquals(listOf(receivedWith), result.received.receivedWith)
-        checkDbPayment(result.incomingPayment, paymentHandler.db)
+        // Before relaying the payment, we must create an on-chain transaction, which may take some time.
+        // We may thus be closer to the min_final_expiry_delta, but we've committed to accepting this HTLC already.
+        // As long as the expiry is greater than twice our fulfill_safety_before_timeout, we will accept it.
+        run {
+            val cltvExpiry = TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+            val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
+            val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
+            val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+        }
+        run {
+            assertTrue((TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2) < TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta)
+            val cltvExpiry = (TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2).toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+            val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
+            val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
+            val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+            val fulfill = ChannelCommand.Htlc.Settlement.Fulfill(add.id, preimage, commit = true)
+            assertEquals(setOf(WrappedChannelCommand(add.channelId, fulfill)), result.actions.toSet())
+            assertEquals(result.incomingPayment.received, result.received)
+            assertEquals(defaultAmount - payment.fundingFee.amount, result.received.amount)
+            val receivedWith = IncomingPayment.ReceivedWith.LightningPayment(defaultAmount - payment.fundingFee.amount, add.channelId, 0, payment.fundingFee)
+            assertEquals(listOf(receivedWith), result.received.receivedWith)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
     }
 
     @Test
