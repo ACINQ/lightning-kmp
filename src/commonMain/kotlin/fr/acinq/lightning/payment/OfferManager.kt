@@ -181,11 +181,13 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     maxHtlc = amount * 2,
                     allowedFeatures = Features.empty
                 )
+                // We assume 10 minutes between each block to convert the invoice expiry to a CLTV expiry for the blinded path.
+                val pathExpiry = (paymentInfo.cltvExpiryDelta + (nodeParams.bolt12invoiceExpiry.inWholeMinutes.toInt() / 10)).toCltvExpiry(currentBlockHeight.toLong())
                 val remoteNodePayload = RouteBlindingEncryptedData(
                     TlvStream(
                         RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
                         RouteBlindingEncryptedDataTlv.PaymentRelay(cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
-                        RouteBlindingEncryptedDataTlv.PaymentConstraints((paymentInfo.cltvExpiryDelta + nodeParams.maxFinalCltvExpiryDelta).toCltvExpiry(currentBlockHeight.toLong()), paymentInfo.minHtlc)
+                        RouteBlindingEncryptedDataTlv.PaymentConstraints(pathExpiry, paymentInfo.minHtlc)
                     )
                 ).write().toByteVector()
                 val blindedRoute = RouteBlinding.create(randomKey(), listOf(remoteNodeId, nodeParams.nodeId), listOf(remoteNodePayload, recipientPayload)).route
