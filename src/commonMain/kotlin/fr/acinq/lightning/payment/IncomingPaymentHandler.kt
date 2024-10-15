@@ -159,7 +159,14 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         return process(Either.Left(htlc), remoteFeatures, currentBlockHeight, currentFeerate, remoteFundingRates, currentFeeCredit)
     }
 
-    private suspend fun process(htlc: Either<WillAddHtlc, UpdateAddHtlc>, remoteFeatures: Features, currentBlockHeight: Int, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?, currentFeeCredit: MilliSatoshi): ProcessAddResult {
+    private suspend fun process(
+        htlc: Either<WillAddHtlc, UpdateAddHtlc>,
+        remoteFeatures: Features,
+        currentBlockHeight: Int,
+        currentFeerate: FeeratePerKw,
+        remoteFundingRates: LiquidityAds.WillFundRates?,
+        currentFeeCredit: MilliSatoshi
+    ): ProcessAddResult {
         // There are several checks we could perform *before* decrypting the onion.
         // But we need to carefully handle which error message is returned to prevent information leakage, so we always peel the onion first.
         return when (val res = toPaymentPart(privateKey, htlc)) {
@@ -169,7 +176,14 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
     }
 
     /** Main payment processing, that handles payment parts. */
-    private suspend fun processPaymentPart(paymentPart: PaymentPart, remoteFeatures: Features, currentBlockHeight: Int, currentFeerate: FeeratePerKw, remoteFundingRates: LiquidityAds.WillFundRates?, currentFeeCredit: MilliSatoshi): ProcessAddResult {
+    private suspend fun processPaymentPart(
+        paymentPart: PaymentPart,
+        remoteFeatures: Features,
+        currentBlockHeight: Int,
+        currentFeerate: FeeratePerKw,
+        remoteFundingRates: LiquidityAds.WillFundRates?,
+        currentFeeCredit: MilliSatoshi
+    ): ProcessAddResult {
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc() + ("feeCredit" to currentFeeCredit))
         when (paymentPart) {
             is HtlcPart -> logger.info { "processing htlc part expiry=${paymentPart.htlc.cltvExpiry}" }
@@ -475,8 +489,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         logger.warning { "invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
-                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight) -> {
-                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(incomingPayment.origin.paymentRequest, currentBlockHeight)}" }
+                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, incomingPayment.origin, currentBlockHeight) -> {
+                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, incomingPayment.origin, currentBlockHeight)}" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
                     else -> Either.Right(incomingPayment)
@@ -504,8 +518,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                 logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${metadata.amount}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
-                            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong()) -> {
-                                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())}" }
+                            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, incomingPayment.origin, currentBlockHeight) -> {
+                                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, incomingPayment.origin, currentBlockHeight)}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
                             metadata.createdAtMillis + nodeParams.bolt12invoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
@@ -612,9 +626,12 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             return SendOnTheFlyFundingMessage(msg)
         }
 
-        private fun minFinalCltvExpiry(paymentRequest: Bolt11Invoice, currentBlockHeight: Int): CltvExpiry {
-            val minFinalCltvExpiryDelta = paymentRequest.minFinalExpiryDelta ?: Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA
-            return minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+        private fun minFinalCltvExpiry(nodeParams: NodeParams, origin: IncomingPayment.Origin, currentBlockHeight: Int): CltvExpiry {
+            val minFinalExpiryDelta = when (origin) {
+                is IncomingPayment.Origin.Invoice -> origin.paymentRequest.minFinalExpiryDelta ?: Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA
+                else -> nodeParams.minFinalCltvExpiryDelta
+            }
+            return minFinalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
         }
     }
 
