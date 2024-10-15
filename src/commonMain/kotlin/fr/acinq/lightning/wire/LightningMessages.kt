@@ -1095,6 +1095,7 @@ data class UpdateAddHtlc(
 
     val blinding: PublicKey? = tlvStream.get<UpdateAddHtlcTlv.Blinding>()?.publicKey
     val fundingFee: LiquidityAds.FundingFee? = tlvStream.get<UpdateAddHtlcTlv.FundingFeeTlv>()?.fee
+    val usesOnTheFlyFunding: Boolean = fundingFee != null
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)

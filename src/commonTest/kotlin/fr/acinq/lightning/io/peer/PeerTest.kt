@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.test.*
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 class PeerTest : LightningTestSuite() {
@@ -396,7 +397,7 @@ class PeerTest : LightningTestSuite() {
         val bob = newPeer(nodeParams, walletParams)
 
         run {
-            val invoice = bob.createInvoice(randomBytes32(), 1.msat, Either.Left("A description: \uD83D\uDE2C"), 3600L * 3)
+            val invoice = bob.createInvoice(randomBytes32(), 1.msat, Either.Left("A description: \uD83D\uDE2C"), 3.hours)
             assertEquals(1.msat, invoice.amount)
             assertEquals(3600L * 3, invoice.expirySeconds)
             assertEquals("A description: \uD83D\uDE2C", invoice.description)

@@ -27,6 +27,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlin.test.*
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 
 class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
@@ -923,7 +925,10 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             val fundingFee = purchase.fundingFee.copy(amount = 0.msat)
             val htlc = makeUpdateAddHtlc(7, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, amount, paymentSecret), fundingFee = fundingFee)
             assertEquals(htlc.amountMsat, amount)
-            val result = paymentHandler.process(htlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            // Before relaying the payment, we have created an on-chain transaction, which took some time.
+            // We are now closer to the min_final_expiry_delta, but we've committed to accepting this HTLC already.
+            val currentBlockHeight = TestConstants.defaultBlockHeight + 24
+            val result = paymentHandler.process(htlc, Features.empty, currentBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
             val (expectedActions, expectedReceivedWith) = setOf(
                 // @formatter:off
@@ -1186,7 +1191,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             payee = paymentHandler,
             amount = defaultAmount,
             timestamp = currentTimestampSeconds() - 3600 - 60, // over one hour ago
-            expirySeconds = 3600 // one hour expiration
+            expiry = 1.hours
         )
         val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, incomingPayment.paymentHash, makeMppPayload(10_000.msat, defaultAmount, paymentSecret))
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
@@ -1518,14 +1523,14 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // create incoming payment that has expired and not been paid
         val expiredInvoice = paymentHandler.createInvoice(
-            randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expirySeconds = 3600,
+            randomBytes32(), defaultAmount, Either.Left("expired"), listOf(), expiry = 1.hours,
             timestampSeconds = 1
         )
 
         // create incoming payment that has expired and been paid
         delay(100.milliseconds)
         val paidInvoice = paymentHandler.createInvoice(
-            defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expirySeconds = 3600,
+            defaultPreimage, defaultAmount, Either.Left("paid"), listOf(), expiry = 1.hours,
             timestampSeconds = 100
         )
         paymentHandler.db.receivePayment(
@@ -1546,7 +1551,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         // create unexpired payment
         delay(100.milliseconds)
-        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("unexpired"), listOf(), expirySeconds = 3600)
+        val unexpiredInvoice = paymentHandler.createInvoice(randomBytes32(), defaultAmount, Either.Left("unexpired"), listOf(), expiry = 1.hours)
 
         val unexpiredPayment = paymentHandler.db.getIncomingPayment(unexpiredInvoice.paymentHash)!!
         val paidPayment = paymentHandler.db.getIncomingPayment(paidInvoice.paymentHash)!!
@@ -1661,18 +1666,31 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val payment = InboundLiquidityOutgoingPayment(UUID.randomUUID(), channelId, TxId(randomBytes32()), 500.sat, purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
 
-        val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
-        val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
-        val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
-        val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
-        assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
-        val fulfill = ChannelCommand.Htlc.Settlement.Fulfill(add.id, preimage, commit = true)
-        assertEquals(setOf(WrappedChannelCommand(add.channelId, fulfill)), result.actions.toSet())
-        assertEquals(result.incomingPayment.received, result.received)
-        assertEquals(defaultAmount - payment.fundingFee.amount, result.received.amount)
-        val receivedWith = IncomingPayment.ReceivedWith.LightningPayment(defaultAmount - payment.fundingFee.amount, add.channelId, 0, payment.fundingFee)
-        assertEquals(listOf(receivedWith), result.received.receivedWith)
-        checkDbPayment(result.incomingPayment, paymentHandler.db)
+        // Before relaying the payment, we must create an on-chain transaction, which may take some time.
+        // We may thus be closer to the min_final_expiry_delta, but we've committed to accepting this HTLC already.
+        // As long as the expiry is greater than twice our fulfill_safety_before_timeout, we will accept it.
+        run {
+            val cltvExpiry = TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+            val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
+            val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
+            val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+        }
+        run {
+            assertTrue((TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2) < TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta)
+            val cltvExpiry = (TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2).toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
+            val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
+            val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
+            val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+            val fulfill = ChannelCommand.Htlc.Settlement.Fulfill(add.id, preimage, commit = true)
+            assertEquals(setOf(WrappedChannelCommand(add.channelId, fulfill)), result.actions.toSet())
+            assertEquals(result.incomingPayment.received, result.received)
+            assertEquals(defaultAmount - payment.fundingFee.amount, result.received.amount)
+            val receivedWith = IncomingPayment.ReceivedWith.LightningPayment(defaultAmount - payment.fundingFee.amount, add.channelId, 0, payment.fundingFee)
+            assertEquals(listOf(receivedWith), result.received.receivedWith)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
     }
 
     @Test
@@ -1867,8 +1885,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             return Pair(payload, route)
         }
 
-        private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expirySeconds: Long? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
-            val paymentRequest = payee.createInvoice(defaultPreimage, amount, Either.Left("unit test"), listOf(), expirySeconds, timestamp)
+        private suspend fun makeIncomingPayment(payee: IncomingPaymentHandler, amount: MilliSatoshi?, expiry: Duration? = null, timestamp: Long = currentTimestampSeconds()): Pair<IncomingPayment, ByteVector32> {
+            val paymentRequest = payee.createInvoice(defaultPreimage, amount, Either.Left("unit test"), listOf(), expiry, timestamp)
             assertNotNull(paymentRequest.paymentMetadata)
             return Pair(payee.db.getIncomingPayment(paymentRequest.paymentHash)!!, paymentRequest.paymentSecret)
         }

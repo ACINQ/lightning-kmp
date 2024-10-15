@@ -40,7 +40,9 @@ data class CltvExpiryDelta(private val underlying: Int) : Comparable<CltvExpiryD
     operator fun plus(other: Int): CltvExpiryDelta = CltvExpiryDelta(underlying + other)
     operator fun plus(other: CltvExpiryDelta): CltvExpiryDelta = CltvExpiryDelta(underlying + other.underlying)
     operator fun minus(other: CltvExpiryDelta): CltvExpiryDelta = CltvExpiryDelta(underlying - other.underlying)
+    operator fun times(m: Int): CltvExpiryDelta = CltvExpiryDelta(underlying * m)
     override fun compareTo(other: CltvExpiryDelta): Int = underlying.compareTo(other.underlying)
+    fun min(other: CltvExpiryDelta): CltvExpiryDelta = if (this < other) this else other
     fun toInt(): Int = underlying
     fun toLong(): Long = underlying.toLong()
     override fun toString(): String = "CltvExpiryDelta($underlying)"
