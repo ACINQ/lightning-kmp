@@ -489,8 +489,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         logger.warning { "invalid amount (overpayment): ${paymentPart.totalAmount}, expected: ${incomingPayment.origin.paymentRequest.amount}" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
-                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, incomingPayment.origin, currentBlockHeight) -> {
-                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, incomingPayment.origin, currentBlockHeight)}" }
+                    paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight) -> {
+                        logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight)}" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
                     else -> Either.Right(incomingPayment)
@@ -518,8 +518,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                 logger.warning { "invalid amount (underpayment): ${paymentPart.totalAmount}, expected: ${metadata.amount}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
-                            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, incomingPayment.origin, currentBlockHeight) -> {
-                                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, incomingPayment.origin, currentBlockHeight)}" }
+                            paymentPart is HtlcPart && paymentPart.htlc.cltvExpiry < minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight) -> {
+                                logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment.origin, currentBlockHeight)}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
                             metadata.createdAtMillis + nodeParams.bolt12invoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
@@ -626,12 +626,23 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             return SendOnTheFlyFundingMessage(msg)
         }
 
-        private fun minFinalCltvExpiry(nodeParams: NodeParams, origin: IncomingPayment.Origin, currentBlockHeight: Int): CltvExpiry {
+        private fun minFinalCltvExpiry(nodeParams: NodeParams, paymentPart: PaymentPart, origin: IncomingPayment.Origin, currentBlockHeight: Int): CltvExpiry {
             val minFinalExpiryDelta = when (origin) {
                 is IncomingPayment.Origin.Invoice -> origin.paymentRequest.minFinalExpiryDelta ?: Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA
                 else -> nodeParams.minFinalCltvExpiryDelta
             }
-            return minFinalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+            return when {
+                paymentPart is HtlcPart && paymentPart.htlc.usesOnTheFlyFunding -> {
+                    // This HTLC is using on-the-fly funding, so it may have been forwarded with a delay
+                    // because an on-chain transaction was required.
+                    // If the expiry is now below our min_final_expiry_delta, we sill want to accept this
+                    // HTLC if we can do so safely, because we need to pay funding fees by fulfilling it.
+                    // As long as we have time to publish a force-close, it is safe to accept the HTLC.
+                    val overrideFinalExpiryDelta = minFinalExpiryDelta.min(nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2)
+                    overrideFinalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+                }
+                else -> minFinalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+            }
         }
     }
 

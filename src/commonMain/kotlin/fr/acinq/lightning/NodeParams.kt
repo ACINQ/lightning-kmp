@@ -164,6 +164,7 @@ data class NodeParams(
     val nodeEvents: SharedFlow<NodeEvents> get() = _nodeEvents.asSharedFlow()
 
     init {
+        // Verify required features are set and obsolete features aren't set.
         require(features.hasFeature(Feature.VariableLengthOnion, FeatureSupport.Mandatory)) { "${Feature.VariableLengthOnion.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)) { "${Feature.PaymentSecret.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.ChannelType, FeatureSupport.Mandatory)) { "${Feature.ChannelType.rfcName} should be mandatory" }
@@ -175,6 +176,8 @@ data class NodeParams(
         require(!features.hasFeature(Feature.PayToOpenClient)) { "${Feature.PayToOpenClient.rfcName} has been deprecated" }
         require(!features.hasFeature(Feature.PayToOpenProvider)) { "${Feature.PayToOpenProvider.rfcName} has been deprecated" }
         Features.validateFeatureGraph(features)
+        // Verify expiry parameters are consistent with each other.
+        require((fulfillSafetyBeforeTimeoutBlocks * 2) < minFinalCltvExpiryDelta) { "min_final_expiry_delta must be at least twice as long as fulfill_safety_before_timeout_blocks" }
     }
 
     /**
