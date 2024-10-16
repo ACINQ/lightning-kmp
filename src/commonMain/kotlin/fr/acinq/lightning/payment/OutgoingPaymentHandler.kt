@@ -41,12 +41,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     data class Success(val request: PayInvoice, val payment: LightningOutgoingPayment, val preimage: ByteVector32) : ProcessFailureResult, ProcessFulfillResult
 
     private val logger = nodeParams.loggerFactory.newLogger(this::class)
-    private val childToParentId = mutableMapOf<UUID, UUID>()
+    // Each outgoing HTLC will have its own ID, because its status will be recorded in the payments DB.
+    // Since we automatically retry on failure, we may have multiple child attempts for each payment.
+    private val childToPaymentId = mutableMapOf<UUID, UUID>()
     private val pending = mutableMapOf<UUID, PaymentAttempt>()
 
     /**
      * While a payment is in progress, we wait for the outgoing HTLC to settle.
-     * When we receive a failure, we retry with a different channel or fees.
+     * When we receive a failure, we may retry with a different fee or expiry.
      *
      * @param request payment request containing the total amount to send.
      * @param attemptNumber number of failed previous payment attempts.
@@ -65,9 +67,9 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     }
 
     // NB: this function should only be used in tests.
-    fun getPendingPayment(parentId: UUID): PaymentAttempt? = pending[parentId]
+    fun getPendingPayment(paymentId: UUID): PaymentAttempt? = pending[paymentId]
 
-    private fun getPaymentAttempt(childId: UUID): PaymentAttempt? = childToParentId[childId]?.let { pending[it] }
+    private fun getPaymentAttempt(childId: UUID): PaymentAttempt? = childToPaymentId[childId]?.let { pending[it] }
 
     suspend fun sendPayment(request: PayInvoice, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): SendPaymentResult {
         val logger = MDCLogger(logger, staticMdc = request.mdc())
@@ -291,8 +293,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     }
 
     private fun removeFromState(paymentId: UUID) {
-        val children = childToParentId.filterValues { it == paymentId }.keys
-        children.forEach { childToParentId.remove(it) }
+        val children = childToPaymentId.filterValues { it == paymentId }.keys
+        children.forEach { childToPaymentId.remove(it) }
         pending.remove(paymentId)
     }
 
@@ -322,7 +324,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
     private fun createOutgoingPayment(request: PayInvoice, channel: Normal, hop: NodeHop, currentBlockHeight: Int): Triple<LightningOutgoingPayment.Part, SharedSecrets, WrappedChannelCommand> {
         val logger = MDCLogger(logger, staticMdc = request.mdc())
         val childId = UUID.randomUUID()
-        childToParentId[childId] = request.paymentId
+        childToPaymentId[childId] = request.paymentId
         val (amount, expiry, onion) = createPaymentOnion(request, hop, currentBlockHeight)
         val outgoingPayment = LightningOutgoingPayment.Part(
             id = childId,
