@@ -36,7 +36,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 assertEquals(actions.size, 5)
                 actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
                 actions.findWatch<WatchConfirmed>().also { assertEquals(WatchConfirmed(state.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), it) }
-                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amountReceived) }
+                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi(), it.amountReceived) }
                 actions.has<ChannelAction.Storage.StoreState>()
                 actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
             }
@@ -59,7 +59,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
                 actions.hasOutgoingMessage<ChannelReady>().also { assertEquals(ShortChannelId.peerId(bob.staticParams.nodeParams.nodeId), it.alias) }
                 actions.findWatch<WatchConfirmed>().also { assertEquals(state.commitments.latest.fundingTxId, it.txId) }
-                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount - TestConstants.bobPushAmount, it.amountReceived) }
+                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi(), it.amountReceived) }
                 actions.has<ChannelAction.Storage.StoreState>()
                 actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
             }
@@ -68,7 +68,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig -- liquidity ads`() {
-        val (alice, commitSigAlice, bob, commitSigBob) = init(requestRemoteFunding = TestConstants.bobFundingAmount, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val (alice, commitSigAlice, bob, commitSigBob) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
         val purchase = alice.process(ChannelCommand.MessageReceived(commitSigBob)).let { (state, actions) ->
             assertIs<WaitForFundingSigned>(state.state)
             assertTrue(actions.isEmpty())
@@ -94,28 +94,9 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv CommitSig -- with channel origin -- off-chain payment`() {
-        val channelOrigin = Origin.OffChainPayment(randomBytes32(), 50_000_000.msat, ChannelManagementFees(500.sat, 1_000.sat))
-        val (alice, _, _, commitSigBob) = init(aliceFundingAmount = 0.sat, alicePushAmount = 0.msat, bobPushAmount = 50_000_000.msat, channelOrigin = channelOrigin)
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
-        assertIs<WaitForFundingConfirmed>(alice1.state)
-        assertEquals(5, actionsAlice1.size)
-        actionsAlice1.hasOutgoingMessage<TxSignatures>()
-        actionsAlice1.has<ChannelAction.Storage.StoreState>()
-        actionsAlice1.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also {
-            assertEquals(50_000_000.msat, it.amountReceived)
-            assertEquals(channelOrigin, it.origin)
-            assertEquals(alice1.commitments.latest.fundingTxId, it.txId)
-        }
-        actionsAlice1.hasWatch<WatchConfirmed>()
-        val events = actionsAlice1.filterIsInstance<ChannelAction.EmitEvent>().map { it.event }
-        assertTrue(events.any { it is ChannelEvents.Created })
-    }
-
-    @Test
     fun `recv CommitSig -- with channel origin -- dual-swap-in`() {
         val channelOrigin = Origin.OnChainWallet(setOf(), 200_000_000.msat, ChannelManagementFees(750.sat, 0.sat))
-        val (alice, _, _, commitSigBob) = init(aliceFundingAmount = 200_000.sat, alicePushAmount = 0.msat, bobFundingAmount = 500_000.sat, channelOrigin = channelOrigin)
+        val (alice, _, _, commitSigBob) = init(aliceFundingAmount = 200_000.sat, bobFundingAmount = 500_000.sat, channelOrigin = channelOrigin)
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
         assertIs<WaitForFundingConfirmed>(alice1.state)
         assertEquals(actionsAlice1.size, 6)
@@ -180,7 +161,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- liquidity ads`() {
-        val (alice, commitSigAlice, bob, commitSigBob) = init(requestRemoteFunding = TestConstants.bobFundingAmount, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val (alice, commitSigAlice, bob, commitSigBob) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
         val commitInput = alice.state.signingSession.commitInput
         val txSigsBob = run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
@@ -348,8 +329,6 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
-            bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             requestRemoteFunding: Satoshi? = null,
             zeroConf: Boolean = false,
             channelOrigin: Origin? = null
@@ -361,8 +340,6 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 currentHeight,
                 aliceFundingAmount,
                 bobFundingAmount,
-                alicePushAmount,
-                bobPushAmount,
                 requestRemoteFunding,
                 zeroConf,
                 channelOrigin

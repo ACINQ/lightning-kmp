@@ -1,7 +1,6 @@
 package fr.acinq.lightning.serialization.v4
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.bitcoin.utils.Either
@@ -50,9 +49,6 @@ object Serialization {
         is LegacyWaitForFundingLocked -> {
             write(0x09); writeLegacyWaitForFundingLocked(o)
         }
-        is WaitForFundingConfirmed -> {
-            write(0x00); writeWaitForFundingConfirmed(o)
-        }
         is WaitForChannelReady -> {
             write(0x01); writeWaitForChannelReady(o)
         }
@@ -75,7 +71,10 @@ object Serialization {
             write(0x07); writeClosed(o)
         }
         is WaitForFundingSigned -> {
-            write(0x0c); writeWaitForFundingSigned(o)
+            write(0x0d); writeWaitForFundingSigned(o)
+        }
+        is WaitForFundingConfirmed -> {
+            write(0x0e); writeWaitForFundingConfirmed(o)
         }
     }
 
@@ -99,8 +98,6 @@ object Serialization {
     private fun Output.writeWaitForFundingSigned(o: WaitForFundingSigned) = o.run {
         writeChannelParams(channelParams)
         writeInteractiveTxSigningSession(signingSession)
-        writeNumber(localPushAmount.toLong())
-        writeNumber(remotePushAmount.toLong())
         writePublicKey(remoteSecondPerCommitmentPoint)
         writeNullable(liquidityPurchase) { writeLiquidityPurchase(it) }
         writeNullable(channelOrigin) { writeChannelOrigin(it) }
@@ -108,8 +105,6 @@ object Serialization {
 
     private fun Output.writeWaitForFundingConfirmed(o: WaitForFundingConfirmed) = o.run {
         writeCommitments(commitments)
-        writeNumber(localPushAmount.toLong())
-        writeNumber(remotePushAmount.toLong())
         writeNumber(waitingSinceBlock)
         writeNullable(deferred) { writeLightningMessage(it) }
         when (rbfStatus) {
@@ -719,8 +714,6 @@ object Serialization {
     private fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
 
     private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
-
-    private fun Output.writePublicNonce(o: IndividualNonce) = write(o.toByteArray())
 
     private fun Output.writeDelimited(o: ByteArray) {
         writeNumber(o.size)

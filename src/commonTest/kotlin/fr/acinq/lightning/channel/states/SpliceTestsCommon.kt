@@ -13,6 +13,7 @@ import fr.acinq.lightning.channel.TestsHelper.fulfillHtlc
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.TestsHelper.useAlternativeCommitSig
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.incomings
@@ -134,8 +135,8 @@ class SpliceTestsCommon : LightningTestSuite() {
             val revBob2 = actionsBob7.findOutgoingMessage<RevokeAndAck>()
             val (alice7, _) = alice6.process(ChannelCommand.MessageReceived(revBob2))
             assertIs<LNChannel<Normal>>(alice7)
-            assertEquals(785_000_000.msat, alice7.commitments.latest.localCommit.spec.toLocal)
-            assertEquals(190_000_000.msat, alice7.commitments.latest.localCommit.spec.toRemote)
+            assertEquals(835_000_000.msat, alice7.commitments.latest.localCommit.spec.toLocal)
+            assertEquals(140_000_000.msat, alice7.commitments.latest.localCommit.spec.toRemote)
             assertEquals(1, alice7.commitments.localCommitIndex)
             assertEquals(2, alice7.commitments.remoteCommitIndex)
             assertEquals(2, bob7.commitments.localCommitIndex)
@@ -154,7 +155,7 @@ class SpliceTestsCommon : LightningTestSuite() {
     fun `splice funds out -- would go below reserve`() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1, _) = setupHtlcs(alice, bob)
-        val cmd = createSpliceOutRequest(760_000.sat)
+        val cmd = createSpliceOutRequest(810_000.sat)
         val (alice2, actionsAlice2) = alice1.process(cmd)
 
         val aliceStfu = actionsAlice2.findOutgoingMessage<Stfu>()
@@ -181,8 +182,8 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (alice4, bob4) = fulfillHtlc(0, preimage, alice3, bob3)
         val (_, alice5) = crossSign(bob4, alice4, commitmentsCount = 4)
         val fee3 = spliceFee(alice5, capacity = 1_000_000.sat - fee1 - fee2)
-        assertEquals(alice5.state.commitments.latest.localCommit.spec.toLocal, 800_000_000.msat - (fee1 + fee2 + fee3).toMilliSatoshi() - 15_000_000.msat)
-        assertEquals(alice5.state.commitments.latest.localCommit.spec.toRemote, 200_000_000.msat + 15_000_000.msat)
+        assertEquals(alice5.state.commitments.latest.localCommit.spec.toLocal, TestConstants.aliceFundingAmount.toMilliSatoshi() - (fee1 + fee2 + fee3).toMilliSatoshi() - 15_000_000.msat)
+        assertEquals(alice5.state.commitments.latest.localCommit.spec.toRemote, TestConstants.bobFundingAmount.toMilliSatoshi() + 15_000_000.msat)
     }
 
     @Test
@@ -206,7 +207,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         run {
             val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)?.willFund
             assertNotNull(willFund)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.InProgress>(alice2.state.spliceStatus)
@@ -225,7 +226,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             // Bob uses a different funding script than what Alice expects.
             val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, ByteVector("deadbeef"), cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)?.willFund
             assertNotNull(willFund)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -233,7 +234,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         }
         run {
             // Bob doesn't fund the splice.
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, 0.msat, defaultSpliceAck.fundingPubkey, willFund = null)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -243,7 +244,7 @@ class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice to purchase inbound liquidity -- not enough funds`() {
-        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 100_000.sat, bobFundingAmount = 10_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 100_000.sat, bobFundingAmount = 10_000.sat)
         val fundingRate = LiquidityAds.FundingRate(100_000.sat, 10_000_000.sat, 0, 100 /* 1% */, 0.sat, 1000.sat)
         val fundingRates = LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.FromFutureHtlc))
         run {
@@ -313,7 +314,7 @@ class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice to purchase inbound liquidity -- not enough funds but on-the-fly funding`() {
-        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 0.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 0.sat)
         val fundingRate = LiquidityAds.FundingRate(0.sat, 500_000.sat, 0, 50, 0.sat, 1000.sat)
         val fundingRates = LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc, LiquidityAds.PaymentType.FromFutureHtlc))
         val origin = Origin.OffChainPayment(randomBytes32(), 25_000_000.msat, ChannelManagementFees(0.sat, 500.sat))
@@ -1574,7 +1575,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             val response = replyTo.await()
             assertIs<ChannelFundingResponse.Success>(response)
             assertEquals(response.capacity, parentCommitment.fundingAmount + spliceInit.fundingContribution)
-            assertEquals(response.balance, parentCommitment.localCommit.spec.toLocal + spliceInit.fundingContribution.toMilliSatoshi() - spliceInit.pushAmount)
+            assertEquals(response.balance, parentCommitment.localCommit.spec.toLocal + spliceInit.fundingContribution.toMilliSatoshi())
             assertEquals(response.fundingTxIndex, parentCommitment.fundingTxIndex + 1)
             response.fundingTxId
         }
@@ -1853,8 +1854,8 @@ class SpliceTestsCommon : LightningTestSuite() {
 
             assertIs<Normal>(alice5.state)
             assertEquals(1_000_000.sat, alice5.state.commitments.latest.fundingAmount)
-            assertEquals(770_000_000.msat, alice5.state.commitments.latest.localCommit.spec.toLocal)
-            assertEquals(165_000_000.msat, alice5.state.commitments.latest.localCommit.spec.toRemote)
+            assertEquals(820_000_000.msat, alice5.state.commitments.latest.localCommit.spec.toLocal)
+            assertEquals(115_000_000.msat, alice5.state.commitments.latest.localCommit.spec.toRemote)
 
             val aliceToBob = listOf(Pair(preimage1, add1), Pair(preimage2, add2))
             val bobToAlice = listOf(Pair(preimage3, add3), Pair(preimage4, add4))
