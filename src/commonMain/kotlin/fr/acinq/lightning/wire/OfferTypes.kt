@@ -648,19 +648,27 @@ object OfferTypes {
         }
     }
 
+    private fun isOfferTlv(tlv: GenericTlv): Boolean {
+        // Offer TLVs are in the range [1, 79] or [1000000000, 1999999999].
+        return tlv.tag in 1..79 || tlv.tag in 1000000000..1999999999
+    }
+
+    private fun isInvoiceRequestTlv(tlv: GenericTlv): Boolean {
+        // Offer TLVs are in the range [0, 159] or [1000000000, 2999999999].
+        return tlv.tag in 0..159 || tlv.tag in 1000000000..2999999999
+    }
+
     fun filterOfferFields(tlvs: TlvStream<InvoiceRequestTlv>): TlvStream<OfferTlv> {
-        // Offer TLVs are in the range (0, 80).
         return TlvStream(
             tlvs.records.filterIsInstance<OfferTlv>().toSet(),
-            tlvs.unknown.filter { it.tag < 80 }.toSet()
+            tlvs.unknown.filter { isOfferTlv(it) }.toSet()
         )
     }
 
     fun filterInvoiceRequestFields(tlvs: TlvStream<InvoiceTlv>): TlvStream<InvoiceRequestTlv> {
-        // Invoice request TLVs are in the range [0, 160): invoice request metadata (tag 0), offer TLVs, and additional invoice request TLVs in the range [80, 160).
         return TlvStream(
             tlvs.records.filterIsInstance<InvoiceRequestTlv>().toSet(),
-            tlvs.unknown.filter { it.tag < 160 }.toSet()
+            tlvs.unknown.filter { isInvoiceRequestTlv(it) }.toSet()
         )
     }
 
@@ -806,7 +814,7 @@ object OfferTypes {
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
                 if (records.get<OfferDescription>() == null && records.get<OfferAmount>() != null) return Left(MissingRequiredTlv(10))
                 if (records.get<OfferNodeId>() == null && records.get<OfferPaths>() == null) return Left(MissingRequiredTlv(22))
-                if (records.unknown.any { it.tag >= 80 }) return Left(ForbiddenTlv(records.unknown.find { it.tag >= 80 }!!.tag))
+                if (records.unknown.any { !isOfferTlv(it) }) return Left(ForbiddenTlv(records.unknown.find { !isOfferTlv(it) }!!.tag))
                 return Right(Offer(records))
             }
 
@@ -932,7 +940,7 @@ object OfferTypes {
                 if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0L))
                 if (records.get<InvoiceRequestPayerId>() == null) return Left(MissingRequiredTlv(88))
                 if (records.get<Signature>() == null) return Left(MissingRequiredTlv(240))
-                if (records.unknown.any { it.tag >= 160 }) return Left(ForbiddenTlv(records.unknown.find { it.tag >= 160 }!!.tag))
+                if (records.unknown.any { !isInvoiceRequestTlv(it) }) return Left(ForbiddenTlv(records.unknown.find { !isInvoiceRequestTlv(it) }!!.tag))
                 return Right(InvoiceRequest(records))
             }
 
