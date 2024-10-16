@@ -36,8 +36,20 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `splice funds out -- simple taproot channels`() {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
+        spliceOut(alice, bob, 50_000.sat)
+    }
+
+    @Test
     fun `splice funds in`() {
         val (alice, bob) = reachNormal()
+        spliceIn(alice, bob, listOf(50_000.sat))
+    }
+
+    @Test
+    fun `splice funds in -- simple taproot channels`() {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
         spliceIn(alice, bob, listOf(50_000.sat))
     }
 
@@ -94,6 +106,12 @@ class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `splice funds in -- non-initiator`() {
         val (alice, bob) = reachNormal()
+        spliceIn(bob, alice, listOf(50_000.sat))
+    }
+
+    @Test
+    fun `splice funds in -- non-initiator -- simple taproot channels`() {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
         spliceIn(bob, alice, listOf(50_000.sat))
     }
 
@@ -187,6 +205,7 @@ class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice to purchase inbound liquidity`() {
+        val isTaprootChannel = false
         val (alice, bob) = reachNormal()
         val fundingRates = LiquidityAds.WillFundRates(
             fundingRates = listOf(LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 0, 250 /* 2.5% */, 0.sat, 1000.sat)),
@@ -202,7 +221,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(spliceInit))
         val defaultSpliceAck = actionsBob2.findOutgoingMessage<SpliceAck>()
         assertNull(defaultSpliceAck.willFund)
-        val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey)
+        val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey, isTaprootChannel)
         run {
             val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)?.willFund
             assertNotNull(willFund)
@@ -282,7 +301,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             val spliceAck = actionsAlice2.hasOutgoingMessage<SpliceAck>()
             // We don't implement the liquidity provider side, so we must fake it.
             assertNull(spliceAck.willFund)
-            val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey)
+            val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, isTaprootChannel = false)
             val willFund = fundingRates.validateRequest(alice.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)!!.willFund
             val (_, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(spliceAck.copy(fundingContribution = liquidityRequest.requestedAmount, tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))))
             assertEquals(1, actionsBob3.size)
@@ -303,7 +322,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             val spliceAck = actionsAlice2.hasOutgoingMessage<SpliceAck>()
             // We don't implement the liquidity provider side, so we must fake it.
             assertNull(spliceAck.willFund)
-            val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey)
+            val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, isTaprootChannel = false)
             val willFund = fundingRates.validateRequest(alice.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)!!.willFund
             val (_, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(spliceAck.copy(fundingContribution = liquidityRequest.requestedAmount, tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))))
             assertEquals(1, actionsBob3.size)
@@ -369,7 +388,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             val spliceAck = actionsAlice2.hasOutgoingMessage<SpliceAck>()
             // We don't implement the liquidity provider side, so we must fake it.
             assertNull(spliceAck.willFund)
-            val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey)
+            val fundingScript = Helpers.Funding.makeFundingPubKeyScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, isTaprootChannel = false)
             val willFund = fundingRates.validateRequest(alice.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)!!.willFund
             val (_, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(spliceAck.copy(fundingContribution = fundingRequest.requestedAmount, tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))))
             actionsBob3.hasOutgoingMessage<TxAddInput>()
@@ -595,6 +614,38 @@ class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `use channel before splice_locked -- zero-conf`() {
         val (alice, bob) = reachNormal(zeroConf = true)
+        val (alice1, bob1) = spliceOut(alice, bob, 50_000.sat)
+        assertEquals(alice1.commitments.active.size, 2)
+        assertEquals(bob1.commitments.active.size, 2)
+        val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
+
+        val (nodes2, preimage, htlc) = addHtlc(15_000_000.msat, alice1, bob1)
+        val (alice3, bob3) = crossSign(nodes2.first, nodes2.second, commitmentsCount = 2)
+
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.txid)))
+        actionsAlice4.has<ChannelAction.Storage.StoreState>()
+        assertEquals(alice4.commitments.active.size, 1)
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(SpliceLocked(bob.channelId, spliceTx.txid)))
+        actionsBob4.has<ChannelAction.Storage.StoreState>()
+        assertEquals(bob4.commitments.active.size, 1)
+
+        val (alice5, bob5) = fulfillHtlc(htlc.id, preimage, alice4, bob4)
+        assertIs<LNChannel<Normal>>(alice5)
+        assertIs<LNChannel<Normal>>(bob5)
+        val (bob6, alice6) = crossSign(bob5, alice5, commitmentsCount = 1)
+        listOf(bob6, alice6).forEach { node ->
+            assertEquals(node.commitments.active.size, 1)
+            assertEquals(node.commitments.inactive.size, 1)
+            assertEquals(node.commitments.active.first().localCommit.index, node.commitments.inactive.first().localCommit.index + 1)
+            assertEquals(node.commitments.active.first().remoteCommit.index, node.commitments.inactive.first().remoteCommit.index + 1)
+            assertTrue(node.commitments.active.first().localCommit.spec.htlcs.isEmpty())
+            assertTrue(node.commitments.inactive.first().localCommit.spec.htlcs.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun `use channel before splice_locked -- zero-conf -- simple taproot channels`() {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging, zeroConf = true)
         val (alice1, bob1) = spliceOut(alice, bob, 50_000.sat)
         assertEquals(alice1.commitments.active.size, 2)
         assertEquals(bob1.commitments.active.size, 2)
