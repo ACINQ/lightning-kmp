@@ -221,26 +221,12 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 logger.debug { "could not send HTLC (wallet restart): ${failure.fold({ it.message }, { it.message })}" }
                 val status = LightningOutgoingPayment.Part.Status.Failed(OutgoingPaymentFailure.convertFailure(failure))
                 db.completeOutgoingLightningPart(partId, status.failure)
-                when (payment.details) {
-                    is LightningOutgoingPayment.Details.Normal -> {
-                        val request = PayInvoice(payment.id, payment.recipientAmount, payment.details)
-                        val remainingParts = payment.parts.filter { it.id != partId && it.status !is LightningOutgoingPayment.Part.Status.Failed }
-                        if (remainingParts.isEmpty()) {
-                            logger.warning { "payment failed: ${FinalFailure.WalletRestarted}" }
-                            db.completeOutgoingPaymentOffchain(payment.id, FinalFailure.WalletRestarted)
-                            removeFromState(payment.id)
-                            val failures = payment.parts.map { it.status }.filterIsInstance<LightningOutgoingPayment.Part.Status.Failed>() + status
-                            Failure(request, OutgoingPaymentFailure(FinalFailure.WalletRestarted, failures))
-                        } else {
-                            logger.warning { "some payment parts haven't been failed after restart: ${remainingParts.map { it.id }.joinToString(", ")}" }
-                            null
-                        }
-                    }
-                    else -> {
-                        logger.debug { "cannot recreate payment request from db data with details=${payment.details}" }
-                        null
-                    }
-                }
+                logger.warning { "payment failed: ${FinalFailure.WalletRestarted}" }
+                val request = PayInvoice(payment.id, payment.recipientAmount, payment.details)
+                db.completeOutgoingPaymentOffchain(payment.id, FinalFailure.WalletRestarted)
+                removeFromState(payment.id)
+                val failures = payment.parts.map { it.status }.filterIsInstance<LightningOutgoingPayment.Part.Status.Failed>() + status
+                Failure(request, OutgoingPaymentFailure(FinalFailure.WalletRestarted, failures))
             }
         }
     }
@@ -274,22 +260,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             else -> {
                 val logger = MDCLogger(logger, staticMdc = mapOf("childPaymentId" to partId) + payment.mdc())
                 db.completeOutgoingLightningPart(partId, preimage)
-                when (payment.details) {
-                    is LightningOutgoingPayment.Details.Normal -> {
-                        logger.info { "payment successfully sent (wallet restart)" }
-                        val request = PayInvoice(payment.id, payment.recipientAmount, payment.details)
-                        db.completeOutgoingPaymentOffchain(payment.id, preimage)
-                        removeFromState(payment.id)
-                        // NB: we reload the payment to ensure all parts status are updated
-                        // this payment cannot be null
-                        val succeeded = db.getLightningOutgoingPayment(payment.id)!!
-                        Success(request, succeeded, preimage)
-                    }
-                    else -> {
-                        logger.warning { "cannot recreate send-payment-request fulfill from db data with details=${payment.details}" }
-                        null
-                    }
-                }
+                logger.info { "payment successfully sent (wallet restart)" }
+                val request = PayInvoice(payment.id, payment.recipientAmount, payment.details)
+                db.completeOutgoingPaymentOffchain(payment.id, preimage)
+                removeFromState(payment.id)
+                // NB: we reload the payment to ensure all parts status are updated
+                // this payment cannot be null
+                val succeeded = db.getLightningOutgoingPayment(payment.id)!!
+                Success(request, succeeded, preimage)
             }
         }
     }
