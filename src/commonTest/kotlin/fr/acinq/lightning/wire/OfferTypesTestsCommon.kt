@@ -10,6 +10,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.payment.Bolt12Invoice
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.testLoggerFactory
@@ -521,5 +522,22 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         assertEquals(key.publicKey(), path.route.blindedNodeIds.last())
         val expectedOffer = Offer.decode("lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0qf70a6j2x2akrhazctejaaqr8y4qtzjtjzmfesay6mzr3s789uryuqsr8dpgfgxuk56vh7cl89769zdpdrkqwtypzhu2t8ehp73dqeeq65lsqvlx5pj8mw2kz54p4f6ct66stdfxz0df8nqq7svjjdjn2dv8sz28y7z07yg3vqyfyy8ywevqc8kzp36lhd5cqwlpkg8vdcqsfvz89axkmv5sgdysmwn95tpsct6mdercmz8jh2r82qqscrf6uc3tse5gw5sv5xjdfw8f6c").get()
         assertEquals(expectedOffer, offer)
+    }
+
+    @Test
+    fun `experimental TLVs range`() {
+        val trampolineNode = PublicKey.fromHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")
+        val nodeParams = TestConstants.Alice.nodeParams.copy(chain = Chain.Mainnet)
+        val (defaultOffer, key) = nodeParams.defaultOffer(trampolineNode)
+        val offerWithUnknownTlvs = Offer.validate(TlvStream(defaultOffer.records.records, setOf(GenericTlv(53, ByteVector.fromHex("b46af6")), GenericTlv(1000759647, ByteVector.fromHex("41dec6"))))).right!!
+        assertTrue(Offer.validate(TlvStream(defaultOffer.records.records, setOf(GenericTlv(127, ByteVector.fromHex("cd58"))))).isLeft)
+        assertTrue(Offer.validate(TlvStream(defaultOffer.records.records, setOf(GenericTlv(2045259641, ByteVector.fromHex("e84ad9"))))).isLeft)
+        val request = InvoiceRequest(offerWithUnknownTlvs, 5500.msat, 1, Features.empty, randomKey(), null, Block.LivenetGenesisBlock.hash)
+        assertEquals(request.offer, offerWithUnknownTlvs)
+        val requestWithUnknownTlvs = InvoiceRequest.validate(TlvStream(request.records.records, setOf(GenericTlv(127, ByteVector.fromHex("cd58")), GenericTlv(2045259645, ByteVector.fromHex("e84ad9"))))).right!!
+        assertTrue(InvoiceRequest.validate(TlvStream(request.records.records, setOf(GenericTlv(197, ByteVector.fromHex("cd58"))))).isLeft)
+        assertTrue(InvoiceRequest.validate(TlvStream(request.records.records, setOf(GenericTlv(3975455643, ByteVector.fromHex("e84ad9"))))).isLeft)
+        val invoice = Bolt12Invoice(requestWithUnknownTlvs, randomBytes32(), key, 300, Features.empty, listOf())
+        assertEquals(removeSignature(invoice.invoiceRequest.records), removeSignature(requestWithUnknownTlvs.records))
     }
 }
