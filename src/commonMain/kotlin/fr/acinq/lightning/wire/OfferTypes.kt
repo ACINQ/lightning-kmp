@@ -654,7 +654,7 @@ object OfferTypes {
     }
 
     private fun isInvoiceRequestTlv(tlv: GenericTlv): Boolean {
-        // Offer TLVs are in the range [0, 159] or [1000000000, 2999999999].
+        // Invoice request TLVs are in the range [0, 159] or [1000000000, 2999999999].
         return tlv.tag in 0..159 || tlv.tag in 1000000000..2999999999
     }
 
