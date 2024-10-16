@@ -819,7 +819,7 @@ class Peer(
                     }
                     is ChannelAction.ProcessCmdRes.AddSettledFail -> {
                         val currentTip = currentTipFlow.filterNotNull().first()
-                        when (val result = outgoingPaymentHandler.processAddSettled(actualChannelId, action, _channels, currentTip)) {
+                        when (val result = outgoingPaymentHandler.processAddSettledFailed(actualChannelId, action, _channels, currentTip)) {
                             is OutgoingPaymentHandler.Progress -> {
                                 _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                                 result.actions.forEach { input.send(it) }
@@ -827,13 +827,13 @@ class Peer(
 
                             is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
                             is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
-                            null -> logger.debug { "non-final error, more partial payments are still pending: ${action.result}" }
+                            null -> logger.debug { "non-final error, another payment attempt (retry) is still pending: ${action.result}" }
                         }
                     }
                     is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
-                        when (val result = outgoingPaymentHandler.processAddSettled(action)) {
+                        when (val result = outgoingPaymentHandler.processAddSettledFulfilled(action)) {
                             is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
-                            null -> logger.debug { "unknown payment" }
+                            null -> logger.error { "unknown payment fulfilled: this should never happen" }
                         }
                     }
                     is ChannelAction.Storage.StoreState -> {

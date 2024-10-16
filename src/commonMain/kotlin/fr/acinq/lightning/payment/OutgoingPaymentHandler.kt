@@ -130,12 +130,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         return Failure(payment.request, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, payment.failures + Either.Left(event.error)))
     }
 
-    suspend fun processAddSettled(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddSettledFail, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): ProcessFailureResult? {
+    suspend fun processAddSettledFailed(channelId: ByteVector32, event: ChannelAction.ProcessCmdRes.AddSettledFail, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): ProcessFailureResult? {
         val payment = getPaymentAttempt(event.paymentId) ?: return processPostRestartFailure(event.paymentId, Either.Left(CannotDecryptFailure(channelId, "restarted")))
         val logger = MDCLogger(logger, staticMdc = mapOf("channelId" to channelId, "childPaymentId" to event.paymentId) + payment.request.mdc())
 
         if (payment.pending.id != event.paymentId) {
             logger.warning { "ignoring HTLC that does not match latest payment part (${event.paymentId} != ${payment.pending.id})" }
+            // This case may happen when we receive AddSettledFailed again for the previous attempt.
+            // This can happen if we disconnect and re-process the update_fail_htlc message on reconnection.
             return null
         }
 
@@ -243,13 +245,13 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
     }
 
-    suspend fun processAddSettled(event: ChannelAction.ProcessCmdRes.AddSettledFulfill): Success? {
+    suspend fun processAddSettledFulfilled(event: ChannelAction.ProcessCmdRes.AddSettledFulfill): Success? {
         val preimage = event.result.paymentPreimage
         val payment = getPaymentAttempt(event.paymentId) ?: return processPostRestartFulfill(event.paymentId, preimage)
         val logger = MDCLogger(logger, staticMdc = mapOf("childPaymentId" to event.paymentId) + payment.request.mdc())
 
         if (payment.pending.id != event.paymentId) {
-            logger.warning { "ignoring HTLC that does not match latest payment part (${event.paymentId} != ${payment.pending.id})" }
+            logger.error { "fulfilled HTLC that does not match latest payment part, this should never happen (${event.paymentId} != ${payment.pending.id})" }
             return null
         }
 
