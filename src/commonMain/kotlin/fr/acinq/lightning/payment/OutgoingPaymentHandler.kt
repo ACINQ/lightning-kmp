@@ -27,7 +27,7 @@ import fr.acinq.lightning.wire.UnknownNextPeer
 
 class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: WalletParams, val db: OutgoingPaymentsDb) {
 
-    interface SendPaymentResult: ProcessFailureResult
+    interface SendPaymentResult
     interface ProcessFailureResult
     interface ProcessFulfillResult
 
@@ -71,8 +71,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
 
     private fun getPaymentAttempt(childId: UUID): PaymentAttempt? = childToPaymentId[childId]?.let { pending[it] }
 
-    private suspend fun sendPaymentInternal(request: PayInvoice, failures: List<Either<ChannelException, FailureMessage>>, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): SendPaymentResult {
-        val logger = MDCLogger(logger, staticMdc = request.mdc())
+    private suspend fun sendPaymentInternal(request: PayInvoice, failures: List<Either<ChannelException, FailureMessage>>, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int, logger: MDCLogger): Either<Failure, Progress> {
         val attemptNumber = failures.size
         val trampolineFees = (request.trampolineFeesOverride ?: walletParams.trampolineFees)[attemptNumber]
         logger.info { "trying payment with fee_base=${trampolineFees.feeBase}, fee_proportional=${trampolineFees.feeProportional}" }
@@ -85,7 +84,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 }
                 db.completeOutgoingPaymentOffchain(request.paymentId, result.value)
                 removeFromState(request.paymentId)
-                Failure(request, OutgoingPaymentFailure(result.value, failures))
+                Either.Left(Failure(request, OutgoingPaymentFailure(result.value, failures)))
             }
             is Either.Right -> {
                 val hop = NodeHop(walletParams.trampolineNode.id, request.recipient, trampolineFees.cltvExpiryDelta, trampolineFees.calculateFees(request.amount))
@@ -96,8 +95,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                     db.addOutgoingLightningParts(request.paymentId, listOf(childPayment))
                 }
                 val payment = PaymentAttempt(request, attemptNumber, childPayment, sharedSecrets, failures)
-                pending[payment.request.paymentId] = payment
-                Progress(payment.request, payment.fees, listOf(cmd))
+                pending[request.paymentId] = payment
+                Either.Right(Progress(request, payment.fees, listOf(cmd)))
             }
         }
     }
@@ -121,7 +120,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             logger.error { "invoice has already been paid" }
             return Failure(request, FinalFailure.AlreadyPaid.toPaymentFailure())
         }
-        return sendPaymentInternal(request, listOf(), channels, currentBlockHeight)
+        return sendPaymentInternal(request, listOf(), channels, currentBlockHeight, logger).fold({ it }, { it })
     }
 
     /**
@@ -196,7 +195,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             Failure(payment.request, OutgoingPaymentFailure(finalError, payment.failures + failure))
         } else {
             // The trampoline node is asking us to retry the payment with more fees or a larger expiry delta.
-            sendPaymentInternal(payment.request, payment.failures + failure, channels, currentBlockHeight)
+            sendPaymentInternal(payment.request, payment.failures + failure, channels, currentBlockHeight, logger).fold({ it }, { it })
         }
     }
 
