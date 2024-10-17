@@ -9,6 +9,7 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.LightningCodecs
+import fr.acinq.lightning.wire.OfferTypes
 import kotlin.experimental.and
 import kotlin.experimental.or
 
@@ -42,8 +43,19 @@ sealed class OfferPaymentMetadata {
         when (this) {
             is V1 -> this.write(out)
             is V2 -> this.write(out)
+            is V3 -> this.write(out)
         }
         return out.toByteArray().byteVector()
+    }
+
+    private fun encodeWithoutVersion(): ByteArray {
+        val out = ByteArrayOutput()
+        when (this) {
+            is V1 -> this.write(out)
+            is V2 -> this.write(out)
+            is V3 -> this.write(out)
+        }
+        return out.toByteArray()
     }
 
     /** Encode into a path_id that must be included in the [Bolt12Invoice]'s blinded path. */
@@ -55,22 +67,15 @@ sealed class OfferPaymentMetadata {
         }
         is V2 -> {
             // We only encrypt what comes after the version byte.
-            val encoded = run {
-                val out = ByteArrayOutput()
-                this.write(out)
-                out.toByteArray()
-            }
-            val (encrypted, mac) = run {
-                val paymentHash = Crypto.sha256(this.preimage).byteVector32()
-                val metadataKey = V2.deriveKey(nodeKey, paymentHash)
-                val nonce = paymentHash.take(12).toByteArray()
-                ChaCha20Poly1305.encrypt(metadataKey.value.toByteArray(), nonce, encoded, paymentHash.toByteArray())
-            }
-            val out = ByteArrayOutput()
-            out.write(2) // version
-            out.write(encrypted)
-            out.write(mac)
-            out.toByteArray().byteVector()
+            val encoded = encodeWithoutVersion()
+            val metadataKey = V2.deriveKey(nodeKey, paymentHash)
+            encrypt(encoded, version, metadataKey, paymentHash)
+        }
+        is V3 -> {
+            // We only encrypt what comes after the version byte.
+            val encoded = encodeWithoutVersion()
+            val metadataKey = V3.deriveKey(nodeKey, paymentHash)
+            encrypt(encoded, version, metadataKey, paymentHash)
         }
     }
 
@@ -187,6 +192,100 @@ sealed class OfferPaymentMetadata {
         }
     }
 
+    /** In this version, we encrypt the payment metadata with a key derived from our seed. */
+    data class V3(
+        override val offerId: ByteVector32,
+        override val amount: MilliSatoshi,
+        override val preimage: ByteVector32,
+        override val createdAtSeconds: Long,
+        override val relativeExpirySeconds: Long?,
+        val description: String?,
+        val payerKey: PublicKey?,
+        val payerNote: String?,
+        val quantity: Long?,
+        val contactSecret: ByteVector32?,
+        val payerOffer: OfferTypes.Offer?,
+        val payerAddress: ContactAddress?,
+    ) : OfferPaymentMetadata() {
+        override val version: Byte get() = 3
+
+        fun write(out: Output) {
+            LightningCodecs.writeBytes(offerId, out)
+            LightningCodecs.writeBigSize(amount.toLong(), out)
+            LightningCodecs.writeBytes(preimage, out)
+            LightningCodecs.writeBigSize(createdAtSeconds, out)
+
+            // We use bit flags to track which nullable fields are provided.
+            var flags = 0
+            if (relativeExpirySeconds != null) flags = flags or 0b00001
+            if (payerKey != null) flags = flags or 0b00010
+            if (quantity != null) flags = flags or 0b00100
+            if (description != null) flags = flags or 0b01000
+            if (payerNote != null) flags = flags or 0b10000
+            if (contactSecret != null) flags = flags or 0b100000
+            if (payerOffer != null) flags = flags or 0b1000000
+            if (payerAddress != null) flags = flags or 0b10000000
+            LightningCodecs.writeByte(flags, out)
+
+            relativeExpirySeconds?.let { LightningCodecs.writeBigSize(it, out) }
+            payerKey?.let { LightningCodecs.writeBytes(it.value, out) }
+            quantity?.let { LightningCodecs.writeBigSize(it, out) }
+            description?.let {
+                val encodedDescription = it.encodeToByteArray()
+                LightningCodecs.writeBigSize(encodedDescription.size.toLong(), out)
+                LightningCodecs.writeBytes(encodedDescription, out)
+            }
+            payerNote?.let {
+                val encodedPayerNote = it.encodeToByteArray()
+                LightningCodecs.writeBigSize(encodedPayerNote.size.toLong(), out)
+                LightningCodecs.writeBytes(encodedPayerNote, out)
+            }
+            contactSecret?.let { LightningCodecs.writeBytes(it, out) }
+            payerOffer?.let { LightningCodecs.writeBytes(OfferTypes.Offer.tlvSerializer.write(it.records), out) }
+            payerAddress?.let { LightningCodecs.writeBytes(it.toString().encodeToByteArray(), out) }
+        }
+
+        companion object {
+            fun read(input: Input): V3 {
+                val offerId = LightningCodecs.bytes(input, 32).byteVector32()
+                val amount = LightningCodecs.bigSize(input).msat
+                val preimage = LightningCodecs.bytes(input, 32).byteVector32()
+                val createdAtSeconds = LightningCodecs.bigSize(input)
+                // Bit flags indicate which fields are provided.
+                val flags = LightningCodecs.byte(input)
+                val hasRelativeExpiry = (flags and 0b00001) != 0
+                val hasPayerKey = (flags and 0b00010) != 0
+                val hasQuantity = (flags and 0b00100) != 0
+                val hasDescription = (flags and 0b01000) != 0
+                val hasPayerNote = (flags and 0b10000) != 0
+                val hasContactSecret = (flags and 0b100000) != 0
+                val hasPayerOffer = (flags and 0b1000000) != 0
+                val hasPayerAddress = (flags and 0b10000000) != 0
+                // We can now read nullable fields.
+                val relativeExpirySeconds = if (hasRelativeExpiry) LightningCodecs.bigSize(input) else null
+                val payerKey = if (hasPayerKey) PublicKey(LightningCodecs.bytes(input, 33)) else null
+                val quantity = if (hasQuantity) LightningCodecs.bigSize(input) else null
+                val description = when {
+                    hasDescription -> LightningCodecs.bytes(input, LightningCodecs.bigSize(input).toInt()).decodeToString()
+                    else -> null
+                }
+                val payerNote = when {
+                    hasPayerNote -> LightningCodecs.bytes(input, LightningCodecs.bigSize(input).toInt()).decodeToString()
+                    else -> null
+                }
+                val contactSecret = if (hasContactSecret) LightningCodecs.bytes(input, 32).byteVector32() else null
+                val payerOffer = if (hasPayerOffer) OfferTypes.Offer(OfferTypes.Offer.tlvSerializer.read(input)) else null
+                val payerAddress = if (hasPayerAddress) ContactAddress.fromString(LightningCodecs.bytes(input, input.availableBytes).decodeToString()) else null
+                return V3(offerId, amount, preimage, createdAtSeconds, relativeExpirySeconds, description, payerKey, payerNote, quantity, contactSecret, payerOffer, payerAddress)
+            }
+
+            fun deriveKey(nodeKey: PrivateKey, paymentHash: ByteVector32): PrivateKey {
+                val tweak = Crypto.sha256("offer_payment_metadata_v3".encodeToByteArray() + paymentHash.toByteArray() + nodeKey.value.toByteArray())
+                return nodeKey * PrivateKey(tweak)
+            }
+        }
+    }
+
     companion object {
         /**
          * Decode an [OfferPaymentMetadata] encoded using [encode] (e.g. from our payments DB).
@@ -197,8 +296,29 @@ sealed class OfferPaymentMetadata {
             return when (val version = LightningCodecs.byte(input)) {
                 1 -> V1.read(input)
                 2 -> V2.read(input)
+                3 -> V3.read(input)
                 else -> throw IllegalArgumentException("unknown offer payment metadata version: $version")
             }
+        }
+
+        private fun encrypt(encoded: ByteArray, version: Byte, metadataKey: PrivateKey, paymentHash: ByteVector32): ByteVector {
+            val (encrypted, mac) = run {
+                val nonce = paymentHash.take(12).toByteArray()
+                ChaCha20Poly1305.encrypt(metadataKey.value.toByteArray(), nonce, encoded, paymentHash.toByteArray())
+            }
+            val out = ByteArrayOutput()
+            out.write(version.toInt())
+            out.write(encrypted)
+            out.write(mac)
+            return out.toByteArray().byteVector()
+        }
+
+        private fun decrypt(input: ByteArrayInput, metadataKey: PrivateKey, paymentHash: ByteVector32): ByteArray {
+            val nonce = paymentHash.take(12).toByteArray()
+            val encryptedSize = input.availableBytes - 16
+            val encrypted = LightningCodecs.bytes(input, encryptedSize)
+            val mac = LightningCodecs.bytes(input, 16)
+            return ChaCha20Poly1305.decrypt(metadataKey.value.toByteArray(), nonce, encrypted, paymentHash.toByteArray(), mac)
         }
 
         /**
@@ -219,18 +339,17 @@ sealed class OfferPaymentMetadata {
                     // This call is safe since we verified that we have the right number of bytes and the signature was valid.
                     V1.read(ByteArrayInput(metadata))
                 }
-                2 -> {
-                    val metadataKey = V2.deriveKey(nodeKey, paymentHash)
-                    val nonce = paymentHash.take(12).toByteArray()
-                    val encryptedSize = input.availableBytes - 16
-                    try {
-                        val encrypted = LightningCodecs.bytes(input, encryptedSize)
-                        val mac = LightningCodecs.bytes(input, 16)
-                        val decrypted = ChaCha20Poly1305.decrypt(metadataKey.value.toByteArray(), nonce, encrypted, paymentHash.toByteArray(), mac)
-                        V2.read(ByteArrayInput(decrypted))
-                    } catch (_: Throwable) {
-                        null
-                    }
+                2 -> try {
+                    val decrypted = decrypt(input, V2.deriveKey(nodeKey, paymentHash), paymentHash)
+                    V2.read(ByteArrayInput(decrypted))
+                } catch (_: Throwable) {
+                    null
+                }
+                3 -> try {
+                    val decrypted = decrypt(input, V3.deriveKey(nodeKey, paymentHash), paymentHash)
+                    V3.read(ByteArrayInput(decrypted))
+                } catch (_: Throwable) {
+                    null
                 }
                 else -> null
             }
