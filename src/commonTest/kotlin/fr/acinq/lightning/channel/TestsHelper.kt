@@ -14,7 +14,6 @@ import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
-import fr.acinq.lightning.router.ChannelHop
 import fr.acinq.lightning.serialization.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.testLoggerFactory
@@ -429,16 +428,11 @@ object TestsHelper {
     }
 
     fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = randomBytes32(), paymentId: UUID = UUID.randomUUID()): Pair<ByteVector32, ChannelCommand.Htlc.Add> {
-        val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()
+        val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-        val dummyKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101")).publicKey()
-        val dummyUpdate = ChannelUpdate(ByteVector64.Zeroes, BlockHash(ByteVector32.Zeroes), ShortChannelId(144, 0, 0), 0, 0, 0, CltvExpiryDelta(1), 0.msat, 0.msat, 0, null)
-        val cmd = OutgoingPaymentPacket.buildCommand(
-            paymentId,
-            paymentHash,
-            listOf(ChannelHop(dummyKey, destination, dummyUpdate)),
-            PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), null)
-        ).first.copy(commit = false)
+        val payload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), null)
+        val onion = OutgoingPaymentPacket.buildOnion(listOf(destination), listOf(payload), paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
+        val cmd = ChannelCommand.Htlc.Add(amount, paymentHash, expiry, onion, paymentId, commit = false)
         return Pair(paymentPreimage, cmd)
     }
 
