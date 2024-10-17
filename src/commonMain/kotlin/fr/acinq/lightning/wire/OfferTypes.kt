@@ -262,21 +262,21 @@ object OfferTypes {
     }
 
     /**
-     * Public key of the offer creator.
+     * Public key of the offer issuer.
      * If `OfferPaths` is present, they must be used to retrieve an invoice even if this public key corresponds to a node id in the public network.
      * If `OfferPaths` is not present, this public key must correspond to a node id in the public network that needs to be contacted to retrieve an invoice.
      */
-    data class OfferNodeId(val publicKey: PublicKey) : OfferTlv() {
-        override val tag: Long get() = OfferNodeId.tag
+    data class OfferIssuerId(val publicKey: PublicKey) : OfferTlv() {
+        override val tag: Long get() = OfferIssuerId.tag
 
         override fun write(out: Output) {
             LightningCodecs.writeBytes(publicKey.value, out)
         }
 
-        companion object : TlvValueReader<OfferNodeId> {
+        companion object : TlvValueReader<OfferIssuerId> {
             const val tag: Long = 22
-            override fun read(input: Input): OfferNodeId {
-                return OfferNodeId(PublicKey(LightningCodecs.bytes(input, input.availableBytes)))
+            override fun read(input: Input): OfferIssuerId {
+                return OfferIssuerId(PublicKey(LightningCodecs.bytes(input, input.availableBytes)))
             }
         }
     }
@@ -732,10 +732,10 @@ object OfferTypes {
         val paths: List<ContactInfo.BlindedPath>? = records.get<OfferPaths>()?.paths
         val issuer: String? = records.get<OfferIssuer>()?.issuer
         val quantityMax: Long? = records.get<OfferQuantityMax>()?.max?.let { if (it == 0L) Long.MAX_VALUE else it }
-        val nodeId: PublicKey? = records.get<OfferNodeId>()?.publicKey
-        // A valid offer must contain a blinded path or a nodeId.
-        val contactInfos: List<ContactInfo> = paths ?: listOf(ContactInfo.RecipientNodeId(nodeId!!))
-        val contactNodeIds: List<PublicKey> = contactInfos.map { it.nodeId }
+        val issuerId: PublicKey? = records.get<OfferIssuerId>()?.publicKey
+        // A valid offer must contain a blinded path or an issuerId (and may contain both).
+        // When both are provided, the blinded paths should be tried first.
+        val contactInfos: List<ContactInfo> = paths ?: listOf(ContactInfo.RecipientNodeId(issuerId!!))
 
         fun encode(): String {
             val data = tlvSerializer.write(records)
@@ -773,7 +773,7 @@ object OfferTypes {
                     amount?.let { OfferAmount(it) },
                     description?.let { OfferDescription(it) },
                     features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it) else null },
-                    OfferNodeId(nodeId)
+                    OfferIssuerId(nodeId)
                 )
                 return Offer(TlvStream(tlvs + additionalTlvs, customTlvs))
             }
@@ -813,7 +813,7 @@ object OfferTypes {
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
                 if (records.get<OfferDescription>() == null && records.get<OfferAmount>() != null) return Left(MissingRequiredTlv(10))
-                if (records.get<OfferNodeId>() == null && records.get<OfferPaths>() == null) return Left(MissingRequiredTlv(22))
+                if (records.get<OfferIssuerId>() == null && records.get<OfferPaths>() == null) return Left(MissingRequiredTlv(22))
                 if (records.unknown.any { !isOfferTlv(it) }) return Left(ForbiddenTlv(records.unknown.find { !isOfferTlv(it) }!!.tag))
                 return Right(Offer(records))
             }
@@ -830,7 +830,7 @@ object OfferTypes {
                     OfferPaths.tag to OfferPaths as TlvValueReader<OfferTlv>,
                     OfferIssuer.tag to OfferIssuer as TlvValueReader<OfferTlv>,
                     OfferQuantityMax.tag to OfferQuantityMax as TlvValueReader<OfferTlv>,
-                    OfferNodeId.tag to OfferNodeId as TlvValueReader<OfferTlv>,
+                    OfferIssuerId.tag to OfferIssuerId as TlvValueReader<OfferTlv>,
                 )
             )
 
@@ -958,7 +958,7 @@ object OfferTypes {
                     OfferPaths.tag to OfferPaths as TlvValueReader<InvoiceRequestTlv>,
                     OfferIssuer.tag to OfferIssuer as TlvValueReader<InvoiceRequestTlv>,
                     OfferQuantityMax.tag to OfferQuantityMax as TlvValueReader<InvoiceRequestTlv>,
-                    OfferNodeId.tag to OfferNodeId as TlvValueReader<InvoiceRequestTlv>,
+                    OfferIssuerId.tag to OfferIssuerId as TlvValueReader<InvoiceRequestTlv>,
                     // Invoice request part
                     InvoiceRequestChain.tag to InvoiceRequestChain as TlvValueReader<InvoiceRequestTlv>,
                     InvoiceRequestAmount.tag to InvoiceRequestAmount as TlvValueReader<InvoiceRequestTlv>,
@@ -998,7 +998,7 @@ object OfferTypes {
                 OfferPaths.tag to OfferPaths as TlvValueReader<InvoiceTlv>,
                 OfferIssuer.tag to OfferIssuer as TlvValueReader<InvoiceTlv>,
                 OfferQuantityMax.tag to OfferQuantityMax as TlvValueReader<InvoiceTlv>,
-                OfferNodeId.tag to OfferNodeId as TlvValueReader<InvoiceTlv>,
+                OfferIssuerId.tag to OfferIssuerId as TlvValueReader<InvoiceTlv>,
                 InvoiceRequestChain.tag to InvoiceRequestChain as TlvValueReader<InvoiceTlv>,
                 InvoiceRequestAmount.tag to InvoiceRequestAmount as TlvValueReader<InvoiceTlv>,
                 InvoiceRequestFeatures.tag to InvoiceRequestFeatures as TlvValueReader<InvoiceTlv>,

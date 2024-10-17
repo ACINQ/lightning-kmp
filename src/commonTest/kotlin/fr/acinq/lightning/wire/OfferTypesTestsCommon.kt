@@ -29,7 +29,7 @@ import fr.acinq.lightning.wire.OfferTypes.OfferAmount
 import fr.acinq.lightning.wire.OfferTypes.OfferChains
 import fr.acinq.lightning.wire.OfferTypes.OfferDescription
 import fr.acinq.lightning.wire.OfferTypes.OfferIssuer
-import fr.acinq.lightning.wire.OfferTypes.OfferNodeId
+import fr.acinq.lightning.wire.OfferTypes.OfferIssuerId
 import fr.acinq.lightning.wire.OfferTypes.OfferQuantityMax
 import fr.acinq.lightning.wire.OfferTypes.Signature
 import fr.acinq.lightning.wire.OfferTypes.readPath
@@ -55,13 +55,13 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `minimal offer`() {
-        val tlvs = setOf(OfferNodeId(nodeId))
+        val tlvs = setOf(OfferIssuerId(nodeId))
         val offer = Offer(TlvStream(tlvs))
         val encoded = "lno1zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe"
         assertEquals(offer, Offer.decode(encoded).get())
         assertNull(offer.amount)
         assertNull(offer.description)
-        assertEquals(nodeId, offer.nodeId)
+        assertEquals(nodeId, offer.issuerId)
         // We can't create an empty offer.
         assertTrue(Offer.validate(TlvStream.empty()).isLeft)
     }
@@ -75,14 +75,14 @@ class OfferTypesTestsCommon : LightningTestSuite() {
                 OfferDescription("offer with quantity"),
                 OfferIssuer("alice@bigshop.com"),
                 OfferQuantityMax(0),
-                OfferNodeId(nodeId)
+                OfferIssuerId(nodeId)
             )
         )
         val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968jys3v9kxjcm9gp3xjemndphhqtnrdak3gqqkyypsmuhrtwfzm85mht4a3vcp0yrlgua3u3m5uqpc6kf7nqjz6v70qwg"
         assertEquals(offer, Offer.decode(encoded).get())
         assertEquals(50.msat, offer.amount)
         assertEquals("offer with quantity", offer.description)
-        assertEquals(nodeId, offer.nodeId)
+        assertEquals(nodeId, offer.issuerId)
         assertEquals("alice@bigshop.com", offer.issuer)
         assertEquals(Long.MAX_VALUE, offer.quantityMax)
     }
@@ -149,7 +149,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check that invoice request matches offer - without chain`() {
-        val offer = Offer(TlvStream(OfferAmount(100.msat), OfferDescription("offer without chains"), OfferNodeId(randomKey().publicKey())))
+        val offer = Offer(TlvStream(OfferAmount(100.msat), OfferDescription("offer without chains"), OfferIssuerId(randomKey().publicKey())))
         val payerKey = randomKey()
         val tlvs: Set<InvoiceRequestTlv> = offer.records.records + setOf(
             InvoiceRequestMetadata(ByteVector.fromHex("012345")),
@@ -171,7 +171,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     fun `check that invoice request matches offer - with chains`() {
         val chain1 = BlockHash(randomBytes32())
         val chain2 = BlockHash(randomBytes32())
-        val offer = Offer(TlvStream(OfferChains(listOf(chain1, chain2)), OfferAmount(100.msat), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey())))
+        val offer = Offer(TlvStream(OfferChains(listOf(chain1, chain2)), OfferAmount(100.msat), OfferDescription("offer with chains"), OfferIssuerId(randomKey().publicKey())))
         val payerKey = randomKey()
         val request1 = InvoiceRequest(offer, 100.msat, 1, Features.empty, payerKey, null, chain1)
         assertTrue(request1.isValid())
@@ -196,7 +196,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             TlvStream(
                 OfferAmount(500.msat),
                 OfferDescription("offer for multiple items"),
-                OfferNodeId(randomKey().publicKey()),
+                OfferIssuerId(randomKey().publicKey()),
                 OfferQuantityMax(10),
             )
         )
@@ -216,7 +216,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val payerKey = PrivateKey.fromHex("527d410ec920b626ece685e8af9abc976a48dbf2fe698c1b35d90a1c5fa2fbca")
         val tlvsWithoutSignature = setOf(
             InvoiceRequestMetadata(ByteVector.fromHex("abcdef")),
-            OfferNodeId(nodeId),
+            OfferIssuerId(nodeId),
             InvoiceRequestPayerId(payerKey.publicKey()),
         )
         val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvsWithoutSignature)), payerKey)
@@ -226,7 +226,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         assertEquals(invoiceRequest, InvoiceRequest.decode(encoded).get())
         assertNull(invoiceRequest.offer.amount)
         assertNull(invoiceRequest.offer.description)
-        assertEquals(nodeId, invoiceRequest.offer.nodeId)
+        assertEquals(nodeId, invoiceRequest.offer.issuerId)
         assertEquals(ByteVector.fromHex("abcdef"), invoiceRequest.metadata)
         assertEquals(payerKey.publicKey(), invoiceRequest.payerId)
         // Removing any TLV from the minimal invoice request makes it invalid.
@@ -514,7 +514,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         assertNull(offer.description)
         assertEquals(Features.empty, offer.features) // the offer shouldn't have any feature to guarantee stability
         assertNull(offer.expirySeconds)
-        assertNull(offer.nodeId) // the offer should not leak our node_id
+        assertNull(offer.issuerId) // the offer should not leak our node_id
         assertEquals(1, offer.contactInfos.size)
         val path = offer.contactInfos.first()
         assertIs<BlindedPath>(path)

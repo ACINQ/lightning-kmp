@@ -37,7 +37,7 @@ import fr.acinq.lightning.wire.OfferTypes.OfferChains
 import fr.acinq.lightning.wire.OfferTypes.OfferDescription
 import fr.acinq.lightning.wire.OfferTypes.OfferFeatures
 import fr.acinq.lightning.wire.OfferTypes.OfferIssuer
-import fr.acinq.lightning.wire.OfferTypes.OfferNodeId
+import fr.acinq.lightning.wire.OfferTypes.OfferIssuerId
 import fr.acinq.lightning.wire.OfferTypes.OfferQuantityMax
 import fr.acinq.lightning.wire.OfferTypes.PaymentInfo
 import fr.acinq.lightning.wire.OfferTypes.Signature
@@ -173,7 +173,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val otherNodeKey = randomKey()
         val withOtherNodeId = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map {
             when (it) {
-                is OfferNodeId -> OfferNodeId(otherNodeKey.publicKey())
+                is OfferIssuerId -> OfferIssuerId(otherNodeKey.publicKey())
                 else -> it
             }
         }.toSet())), nodeKey)
@@ -236,7 +236,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val tlvs = setOf(
             InvoiceRequestMetadata(ByteVector.fromHex("010203040506")),
             OfferDescription("offer description"),
-            OfferNodeId(nodeKey.publicKey()),
+            OfferIssuerId(nodeKey.publicKey()),
             InvoiceRequestAmount(15000.msat),
             InvoiceRequestPayerId(payerKey.publicKey()),
             InvoiceRequestPayerNote("I am Batman"),
@@ -306,7 +306,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val nodeKey = randomKey()
         val tlvs = setOf(
             InvoiceRequestMetadata(ByteVector.fromHex("012345")),
-            OfferNodeId(nodeKey.publicKey()),
+            OfferIssuerId(nodeKey.publicKey()),
             InvoiceRequestPayerId(randomKey().publicKey()),
             InvoicePaths(listOf(createPaymentBlindedRoute(randomKey().publicKey()).route)),
             InvoiceBlindedPay(listOf(PaymentInfo(0.msat, 0, CltvExpiryDelta(0), 0.msat, 765432.msat, Features.empty))),
@@ -360,7 +360,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
                 OfferDescription(description),
                 OfferFeatures(Features.empty),
                 OfferIssuer(issuer),
-                OfferNodeId(nodeKey.publicKey()),
+                OfferIssuerId(nodeKey.publicKey()),
                 InvoiceRequestChain(chain),
                 InvoiceRequestAmount(amount),
                 InvoiceRequestQuantity(quantity),
@@ -489,7 +489,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
                 OfferDescription("offer with quantity"),
                 OfferIssuer("alice@bigshop.com"),
                 OfferQuantityMax(1000),
-                OfferNodeId(nodeKey.publicKey())
+                OfferIssuerId(nodeKey.publicKey())
             )
         )
         val encodedOffer = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqvqcdgq2zdhkven9wgs8w6t5dqs8zatpde6xjarezggkzmrfvdj5qcnfvaeksmms9e3k7mg5qgp7s93pqvn6l4vemgezdarq3wt2kpp0u4vt74vzz8futen7ej97n93jypp57"
