@@ -459,7 +459,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         // E can correctly decrypt the blinded payment.
         val payloadE = IncomingPaymentPacket.decrypt(addE, privE).right!!
         assertIs<PaymentOnion.FinalPayload.Blinded>(payloadE)
-        val paymentMetadata = OfferPaymentMetadata.fromPathId(e, payloadE.pathId)
+        val paymentMetadata = OfferPaymentMetadata.fromPathId(privE, payloadE.pathId, addE.paymentHash)
         assertNotNull(paymentMetadata)
         assertEquals(offer.offerId, paymentMetadata.offerId)
         assertEquals(paymentMetadata.paymentHash, invoice.paymentHash)
