@@ -666,7 +666,7 @@ object JsonSerializers {
         val description: String?,
         val metadata: ByteVector?,
         val expirySeconds: Long?,
-        val nodeId: PublicKey?,
+        val issuerId: PublicKey?,
         val path: List<RouteBlinding.BlindedRoute>?,
         val features: Features?,
         val unknownTlvs: List<GenericTlv>?
@@ -690,7 +690,7 @@ object JsonSerializers {
                 description = o.description,
                 metadata = o.metadata,
                 expirySeconds = o.expirySeconds,
-                nodeId = o.nodeId,
+                issuerId = o.issuerId,
                 path = o.paths?.map { it.route }?.run { ifEmpty { null } },
                 features = o.features.let { if (it == Features.empty) null else it },
                 unknownTlvs = o.records.unknown.toList().run { ifEmpty { null } }

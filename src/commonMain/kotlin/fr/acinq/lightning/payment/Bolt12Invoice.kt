@@ -52,7 +52,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
 
     // It is assumed that the request is valid for this offer.
     fun validateFor(request: InvoiceRequest): Either<String, Unit> {
-        val offerNodeIds = invoiceRequest.offer.nodeId?.let { listOf(it) } ?: invoiceRequest.offer.paths!!.map { it.route.blindedNodeIds.last() }
+        val offerNodeIds = invoiceRequest.offer.issuerId?.let { listOf(it) } ?: invoiceRequest.offer.paths!!.map { it.route.blindedNodeIds.last() }
         return if (invoiceRequest.unsigned() != request.unsigned()) {
             Either.Left("Invoice does not match request")
         } else if (!offerNodeIds.contains(nodeId)) {
