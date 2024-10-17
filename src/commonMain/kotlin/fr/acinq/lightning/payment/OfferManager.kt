@@ -4,12 +4,9 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
-import fr.acinq.lightning.EncodedNodeId
-import fr.acinq.lightning.Features
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.WalletParams
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.io.OfferInvoiceReceived
 import fr.acinq.lightning.io.OfferNotPaid
@@ -181,8 +178,12 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     maxHtlc = amount * 2,
                     allowedFeatures = Features.empty
                 )
-                // We assume 10 minutes between each block to convert the invoice expiry to a CLTV expiry for the blinded path.
-                val pathExpiry = (paymentInfo.cltvExpiryDelta + (nodeParams.bolt12InvoiceExpiry.inWholeMinutes.toInt() / 10)).toCltvExpiry(currentBlockHeight.toLong())
+                // Once the invoice expires, the blinded path shouldn't be usable anymore.
+                // We assume 10 minutes between each block to convert the invoice expiry to a cltv_expiry_delta.
+                // When paying the invoice, payers may add any number of blocks to the current block height to protect recipient privacy.
+                // We assume that they won't add more than 720 blocks, which is reasonable because adding a large delta increases the risk
+                // that intermediate nodes reject the payment because they don't want their funds potentially locked for a long duration.
+                val pathExpiry = (paymentInfo.cltvExpiryDelta + CltvExpiryDelta(720) + (nodeParams.bolt12InvoiceExpiry.inWholeMinutes.toInt() / 10)).toCltvExpiry(currentBlockHeight.toLong())
                 val remoteNodePayload = RouteBlindingEncryptedData(
                     TlvStream(
                         RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),

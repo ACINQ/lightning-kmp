@@ -71,17 +71,18 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val offer = createOffer(aliceOfferManager, amount = 1000.msat)
 
         // Bob sends an invoice request to Alice.
+        val currentBlockHeight = 0
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         assertTrue(invoiceRequests.size == 1)
         val (messageForAlice, nextNodeAlice) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
         assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Alice.nodeParams.nodeId)), nextNodeAlice)
         // Alice sends an invoice back to Bob.
-        val invoiceResponse = aliceOfferManager.receiveMessage(messageForAlice, listOf(), 0)
+        val invoiceResponse = aliceOfferManager.receiveMessage(messageForAlice, listOf(), currentBlockHeight)
         assertIs<OnionMessageAction.SendMessage>(invoiceResponse)
         val (messageForBob, nextNodeBob) = trampolineRelay(invoiceResponse.message, aliceTrampolineKey)
         assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Bob.nodeParams.nodeId)), nextNodeBob)
-        val payInvoice = bobOfferManager.receiveMessage(messageForBob, listOf(), 0)
+        val payInvoice = bobOfferManager.receiveMessage(messageForBob, listOf(), currentBlockHeight)
         assertIs<OnionMessageAction.PayInvoice>(payInvoice)
         assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
         assertEquals(payOffer, payInvoice.payOffer)
@@ -91,6 +92,10 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
         assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
         assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
+        // The blinded path expires long after the invoice expiry to allow senders to add their own expiry delta.
+        val (alicePayload, _) = RouteBlinding.decryptPayload(aliceTrampolineKey, path.route.route.blindingKey, path.route.route.encryptedPayloads.first()).right!!
+        val paymentConstraints = RouteBlindingEncryptedData.read(alicePayload.toByteArray()).right!!.paymentConstraints!!
+        assertTrue(paymentConstraints.maxCltvExpiry > CltvExpiryDelta(720).toCltvExpiry(currentBlockHeight.toLong()))
     }
 
     @Test
