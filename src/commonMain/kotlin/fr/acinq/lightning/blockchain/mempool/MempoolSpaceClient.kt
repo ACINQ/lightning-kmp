@@ -115,7 +115,8 @@ class MempoolSpaceClient(val mempoolUrl: Url, loggerFactory: LoggerFactory) : IC
 
     companion object {
         val OfficialMempoolMainnet = Url("https://mempool.space")
-        val OfficialMempoolTestnet = Url("https://mempool.space/testnet/")
+        val OfficialMempoolTestnet3 = Url("https://mempool.space/testnet/")
+        val OfficialMempoolTestnet4 = Url("https://mempool.space/testnet4/")
     }
 }
 
