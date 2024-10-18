@@ -5,14 +5,12 @@ import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
@@ -208,17 +206,6 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv TxInitRbf -- invalid push amount`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
-        val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(alice.state.channelId, 0, TestConstants.feeratePerKw * 1.25, TestConstants.alicePushAmount.truncateToSatoshi() - 1.sat)))
-        assertEquals(actions1.size, 1)
-        assertEquals(actions1.hasOutgoingMessage<TxAbort>().toAscii(), InvalidPushAmount(alice.state.channelId, TestConstants.alicePushAmount, TestConstants.alicePushAmount - 1000.msat).message)
-        val (bob2, actions2) = bob1.process(ChannelCommand.MessageReceived(TxAbort(alice.state.channelId, "acking tx_abort")))
-        assertEquals(bob2, bob)
-        assertTrue(actions2.isEmpty())
-    }
-
-    @Test
     fun `recv TxInitRbf -- failed rbf attempt`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(TxInitRbf(alice.state.channelId, 0, TestConstants.feeratePerKw * 1.25, alice.state.latestFundingTx.fundingParams.localContribution)))
@@ -254,7 +241,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelReady -- no remote contribution`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         val channelReadyAlice = ChannelReady(alice.state.channelId, randomKey().publicKey())
         val channelReadyBob = ChannelReady(bob.state.channelId, randomKey().publicKey())
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
@@ -396,8 +383,6 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
-            bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             requestRemoteFunding: Satoshi? = null,
         ): Fixture {
             val (alice, commitAlice, bob, commitBob, walletAlice) = WaitForFundingSignedTestsCommon.init(
@@ -407,8 +392,6 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
                 currentHeight,
                 aliceFundingAmount,
                 bobFundingAmount,
-                alicePushAmount,
-                bobPushAmount,
                 requestRemoteFunding,
                 zeroConf = false
             )

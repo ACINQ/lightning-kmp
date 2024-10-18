@@ -72,7 +72,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Htlc_Add -- zero-reserve`() {
-        val (_, bob0) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat, alicePushAmount = 0.msat)
+        val (_, bob0) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat)
         assertEquals(bob0.commitments.availableBalanceForSend(), 10_000_000.msat)
         val add = defaultAdd.copy(amount = 10_000_000.msat, paymentHash = randomBytes32())
 
@@ -86,7 +86,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Htlc_Add -- zero-conf -- zero-reserve`() {
-        val (_, bob0) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat, alicePushAmount = 0.msat, zeroConf = true)
+        val (_, bob0) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat, zeroConf = true)
         assertEquals(bob0.commitments.availableBalanceForSend(), 10_000_000.msat)
         val add = defaultAdd.copy(amount = 10_000_000.msat, paymentHash = randomBytes32())
 
@@ -164,7 +164,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Htlc_Add -- increasing balance but still below reserve`() {
-        val (alice0, bob0) = reachNormal(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice0, bob0) = reachNormal(bobFundingAmount = 0.sat)
         assertFalse(alice0.commitments.params.channelFeatures.hasFeature(Feature.ZeroReserveChannels))
         assertFalse(bob0.commitments.params.channelFeatures.hasFeature(Feature.ZeroReserveChannels))
         assertEquals(0.msat, bob0.commitments.availableBalanceForSend())
@@ -186,7 +186,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val add = defaultAdd.copy(amount = Int.MAX_VALUE.msat)
         val (alice1, actions) = alice0.process(add)
         val actualError = actions.findCommandError<InsufficientFunds>()
-        val expectError = InsufficientFunds(alice0.channelId, amount = Int.MAX_VALUE.msat, missing = 1_372_823.sat, reserve = 10_000.sat, fees = 7_140.sat)
+        val expectError = InsufficientFunds(alice0.channelId, amount = Int.MAX_VALUE.msat, missing = 1_322_823.sat, reserve = 10_000.sat, fees = 7_140.sat)
         assertEquals(expectError, actualError)
         assertEquals(alice0, alice1)
     }
@@ -204,8 +204,8 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Htlc_Add -- commit tx fee greater than remote initiator balance`() {
-        val (alice0, bob0) = reachNormal()
-        val (alice1, bob1) = addHtlc(774_660_000.msat, alice0, bob0).first
+        val (alice0, bob0) = reachNormal(bobFundingAmount = 200_000.sat)
+        val (alice1, bob1) = addHtlc(824_160_000.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
         assertEquals(0.msat, alice2.state.commitments.availableBalanceForSend())
 
@@ -248,7 +248,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice2.hasOutgoingMessage<UpdateAddHtlc>()
         val (_, actionsAlice3) = alice2.process(defaultAdd.copy(amount = 500_000_000.msat))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
-        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 328_780.sat, reserve = 10_000.sat, fees = 8_860.sat)
+        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 278_780.sat, reserve = 10_000.sat, fees = 8_860.sat)
         assertEquals(expectError, actualError)
     }
 
@@ -259,7 +259,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
         val (alice2, actionsAlice2) = alice1.process(defaultAdd.copy(amount = 200_000_000.msat))
         actionsAlice2.hasOutgoingMessage<UpdateAddHtlc>()
-        val (alice3, actionsAlice3) = alice2.process(defaultAdd.copy(amount = 71_120_000.msat))
+        val (alice3, actionsAlice3) = alice2.process(defaultAdd.copy(amount = 121_120_000.msat))
         actionsAlice3.hasOutgoingMessage<UpdateAddHtlc>()
         val (_, actionsAlice4) = alice3.process(defaultAdd.copy(amount = 1_000_000.msat))
         val actualError = actionsAlice4.findCommandError<InsufficientFunds>()
@@ -271,11 +271,11 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv ChannelCommand_Htlc_Add -- over their max in-flight htlc value`() {
         val bob0 = run {
             val (_, bob) = reachNormal()
-            bob.copy(state = bob.state.copy(commitments = bob.commitments.copy(params = bob.commitments.params.copy(remoteParams = bob.commitments.params.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))))
+            bob.copy(state = bob.state.copy(commitments = bob.commitments.copy(params = bob.commitments.params.copy(remoteParams = bob.commitments.params.remoteParams.copy(maxHtlcValueInFlightMsat = 100_000_000)))))
         }
-        val (_, actions) = bob0.process(defaultAdd.copy(amount = 151_000_000.msat))
+        val (_, actions) = bob0.process(defaultAdd.copy(amount = 101_000_000.msat))
         val actualError = actions.findCommandError<HtlcValueTooHighInFlight>()
-        val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
+        val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 100_000_000UL, actual = 101_000_000.msat)
         assertEquals(expectedError, actualError)
     }
 
@@ -295,13 +295,13 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv ChannelCommand_Htlc_Add -- over max in-flight htlc value with duplicate amounts`() {
         val bob0 = run {
             val (_, bob) = reachNormal()
-            bob.copy(state = bob.state.copy(commitments = bob.commitments.copy(params = bob.commitments.params.copy(remoteParams = bob.commitments.params.remoteParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))))
+            bob.copy(state = bob.state.copy(commitments = bob.commitments.copy(params = bob.commitments.params.copy(remoteParams = bob.commitments.params.remoteParams.copy(maxHtlcValueInFlightMsat = 100_000_000)))))
         }
-        val (bob1, actionsBob1) = bob0.process(defaultAdd.copy(amount = 75_500_000.msat))
+        val (bob1, actionsBob1) = bob0.process(defaultAdd.copy(amount = 50_500_000.msat))
         actionsBob1.hasOutgoingMessage<UpdateAddHtlc>()
-        val (_, actionsBob2) = bob1.process(defaultAdd.copy(amount = 75_500_000.msat))
+        val (_, actionsBob2) = bob1.process(defaultAdd.copy(amount = 50_500_000.msat))
         val actualError = actionsBob2.findCommandError<HtlcValueTooHighInFlight>()
-        val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 150_000_000UL, actual = 151_000_000.msat)
+        val expectedError = HtlcValueTooHighInFlight(bob0.channelId, maximum = 100_000_000UL, actual = 101_000_000.msat)
         assertEquals(expectedError, actualError)
     }
 
@@ -361,7 +361,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val failAdd = defaultAdd.copy(amount = alice0.commitments.latest.fundingAmount.toMilliSatoshi() * 2 / 3)
         val (_, actionsAlice3) = alice2.process(failAdd)
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
-        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 560_393.sat, 10_000.sat, 8_000.sat)
+        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 510_393.sat, 10_000.sat, 8_000.sat)
         assertEquals(expectedError, actualError)
     }
 
@@ -411,7 +411,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv UpdateAddHtlc -- zero-reserve`() {
-        val (alice0, _) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat, alicePushAmount = 0.msat)
+        val (alice0, _) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat)
         assertEquals(alice0.commitments.availableBalanceForReceive(), 10_000_000.msat)
         val add = UpdateAddHtlc(alice0.channelId, 0, 10_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(add))
@@ -422,28 +422,13 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv UpdateAddHtlc -- zero-conf -- zero-reserve`() {
-        val (alice0, _) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat, alicePushAmount = 0.msat, zeroConf = true)
+        val (alice0, _) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat, zeroConf = true)
         assertEquals(alice0.commitments.availableBalanceForReceive(), 10_000_000.msat)
         val add = UpdateAddHtlc(alice0.channelId, 0, 10_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(add))
         assertIs<LNChannel<Normal>>(alice1)
         assertTrue(actions1.isEmpty())
         assertEquals(alice1.commitments.changes.remoteChanges.proposed, listOf(add))
-    }
-
-    @Test
-    fun `recv UpdateAddHtlc -- zero-conf -- zero-reserve -- initiator`() {
-        val (alice0, bob0) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 10_000_000.sat, bobFundingAmount = 5_000_000.sat, alicePushAmount = 9_800_000_000.msat, zeroConf = true)
-        assertEquals(alice0.commitments.latest.fundingAmount, 15_000_000.sat)
-        assertEquals(alice0.commitments.latest.localCommit.spec.toLocal, 200_000_000.msat)
-        // If we applied the default 1% reserve, Alice's balance couldn't go below 150 000 sats.
-        // Alice still needs to pay the commit tx fees, so she cannot spend her entire balance.
-        val (nodes1, r, htlc) = addHtlc(160_000_000.msat, alice0, bob0)
-        val (alice2, bob2) = crossSign(nodes1.first, nodes1.second)
-        val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
-        val (bob4, alice4) = crossSign(bob3, alice3)
-        assertEquals(alice4.commitments.latest.localCommit.spec.toLocal, 40_000_000.msat)
-        assertEquals(bob4.commitments.latest.localCommit.spec.toRemote, 40_000_000.msat)
     }
 
     @Test
@@ -475,7 +460,7 @@ class NormalTestsCommon : LightningTestSuite() {
     @Test
     fun `recv UpdateAddHtlc -- insufficient funds`() {
         val (_, bob0) = reachNormal()
-        val add = UpdateAddHtlc(bob0.channelId, 0, 800_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
+        val add = UpdateAddHtlc(bob0.channelId, 0, 850_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (bob1, actions1) = bob0.process(ChannelCommand.MessageReceived(add))
         assertIs<LNChannel<Closing>>(bob1)
         val error = actions1.hasOutgoingMessage<Error>()
@@ -495,20 +480,20 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob4, actions4) = bob3.process(ChannelCommand.MessageReceived(add.copy(id = 3, amountMsat = 800_000_000.msat)))
         assertIs<LNChannel<Closing>>(bob4)
         val error = actions4.hasOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), InsufficientFunds(bob0.channelId, 800_000_000.msat, 64_720.sat, 10_000.sat, 9_720.sat).message)
+        assertEquals(error.toAscii(), InsufficientFunds(bob0.channelId, 800_000_000.msat, 14_720.sat, 10_000.sat, 9_720.sat).message)
     }
 
     @Test
     fun `recv UpdateAddHtlc -- over max in-flight htlc value`() {
         val alice0 = run {
             val (alice, _) = reachNormal()
-            alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(params = alice.commitments.params.copy(localParams = alice.commitments.params.localParams.copy(maxHtlcValueInFlightMsat = 150_000_000)))))
+            alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(params = alice.commitments.params.copy(localParams = alice.commitments.params.localParams.copy(maxHtlcValueInFlightMsat = 100_000_000)))))
         }
-        val add = UpdateAddHtlc(alice0.channelId, 0, 151_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
+        val add = UpdateAddHtlc(alice0.channelId, 0, 101_000_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(alice0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
         val (alice1, actions1) = alice0.process(ChannelCommand.MessageReceived(add))
         assertIs<LNChannel<Closing>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), HtlcValueTooHighInFlight(alice0.channelId, 150_000_000UL, 151_000_000.msat).message)
+        assertEquals(error.toAscii(), HtlcValueTooHighInFlight(alice0.channelId, 100_000_000UL, 101_000_000.msat).message)
     }
 
     @Test
@@ -717,7 +702,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelCommand_Sign -- going above reserve`() {
-        val (alice0, bob0) = reachNormal(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice0, bob0) = reachNormal(bobFundingAmount = 0.sat)
         assertEquals(0.msat, bob0.commitments.availableBalanceForSend())
         val (nodes1, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes1
@@ -1874,7 +1859,7 @@ class NormalTestsCommon : LightningTestSuite() {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-        assertEquals(829_710.sat, amountClaimed)
+        assertEquals(879_710.sat, amountClaimed)
 
         val rcp = aliceClosing.state.remoteCommitPublished!!
         val watchConfirmed = actions.findWatches<WatchConfirmed>()
@@ -1944,7 +1929,7 @@ class NormalTestsCommon : LightningTestSuite() {
             claimHtlcTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-        assertEquals(833_440.sat, amountClaimed)
+        assertEquals(883_440.sat, amountClaimed)
 
         val rcp = aliceClosing.state.nextRemoteCommitPublished!!
         val watchConfirmed = actions9.findWatches<WatchConfirmed>()
@@ -2032,8 +2017,8 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(htlcInputs + mainPenaltyTx.txIn.first().outPoint, actions2.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet())
 
         // two main outputs are 760 000 and 200 000 (minus fees)
-        assertEquals(748_070.sat, mainOutputTx.txOut[0].amount)
-        assertEquals(197_580.sat, mainPenaltyTx.txOut[0].amount)
+        assertEquals(798_070.sat, mainOutputTx.txOut[0].amount)
+        assertEquals(147_580.sat, mainPenaltyTx.txOut[0].amount)
         assertEquals(7_255.sat, htlcPenaltyTxs[0].txOut[0].amount)
         assertEquals(7_255.sat, htlcPenaltyTxs[1].txOut[0].amount)
         assertEquals(7_255.sat, htlcPenaltyTxs[2].txOut[0].amount)
@@ -2257,7 +2242,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `receive Error -- nothing at stake`() {
-        val (_, bob0) = reachNormal(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (_, bob0) = reachNormal(bobFundingAmount = 0.sat)
         val bobCommitTx = bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (bob1, actions) = bob0.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }

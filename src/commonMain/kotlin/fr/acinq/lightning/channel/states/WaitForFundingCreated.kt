@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.wire.*
@@ -35,8 +34,6 @@ data class WaitForFundingCreated(
     val localParams: LocalParams,
     val remoteParams: RemoteParams,
     val interactiveTxSession: InteractiveTxSession,
-    val localPushAmount: MilliSatoshi,
-    val remotePushAmount: MilliSatoshi,
     val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
     val remoteSecondPerCommitmentPoint: PublicKey,
@@ -64,8 +61,6 @@ data class WaitForFundingCreated(
                                 interactiveTxSession.fundingParams,
                                 fundingTxIndex = 0,
                                 interactiveTxAction.sharedTx,
-                                localPushAmount,
-                                remotePushAmount,
                                 liquidityPurchase,
                                 localCommitmentIndex = 0,
                                 remoteCommitmentIndex = 0,
@@ -97,8 +92,6 @@ data class WaitForFundingCreated(
                                     val nextState = WaitForFundingSigned(
                                         channelParams,
                                         session,
-                                        localPushAmount,
-                                        remotePushAmount,
                                         remoteSecondPerCommitmentPoint,
                                         liquidityPurchase,
                                         channelOrigin

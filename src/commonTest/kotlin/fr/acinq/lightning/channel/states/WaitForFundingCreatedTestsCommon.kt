@@ -66,7 +66,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
         assertIs<ChannelFundingResponse.Success>(alice.state.replyTo.await()).also { assertEquals(0, it.fundingTxIndex) }
         assertIs<ChannelFundingResponse.Success>(bob.state.replyTo.await()).also { assertEquals(0, it.fundingTxIndex) }
-        verifyCommits(alice2.state.signingSession, bob3.state.signingSession, TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount, TestConstants.alicePushAmount)
+        verifyCommits(alice2.state.signingSession, bob3.state.signingSession, TestConstants.aliceFundingAmount.toMilliSatoshi(), 0.msat)
     }
 
     @Test
@@ -94,15 +94,15 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         verifyCommits(
             alice2.state.signingSession,
             bob3.state.signingSession,
-            TestConstants.aliceFundingAmount.toMilliSatoshi() - TestConstants.alicePushAmount,
-            TestConstants.bobFundingAmount.toMilliSatoshi() + TestConstants.alicePushAmount
+            TestConstants.aliceFundingAmount.toMilliSatoshi(),
+            TestConstants.bobFundingAmount.toMilliSatoshi()
         )
     }
 
     @Test
     fun `complete interactive-tx protocol -- with large non-initiator contributions`() {
         // Alice's funding amount is below the channel reserve: this is ok as long as she can pay the commit tx fees.
-        val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, aliceFundingAmount = 10_000.sat, bobFundingAmount = 1_500_000.sat, alicePushAmount = 0.msat, bobPushAmount = 0.msat)
+        val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, aliceFundingAmount = 10_000.sat, bobFundingAmount = 1_500_000.sat)
         // Alice ---- tx_add_input ----> Bob
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
         // Alice <--- tx_add_input ----- Bob
@@ -127,7 +127,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `complete interactive-tx protocol -- zero conf -- zero reserve`() {
-        val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, alicePushAmount = 0.msat, zeroConf = true)
+        val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
         // Alice ---- tx_add_input ----> Bob
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
         // Alice <--- tx_add_input ----- Bob
@@ -151,27 +151,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `complete interactive-tx protocol -- initiator can't pay fees`() = runSuspendTest {
-        val (alice, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, aliceFundingAmount = 1_000_100.sat, bobFundingAmount = 0.sat, alicePushAmount = 1_000_000.sat.toMilliSatoshi())
-        // Alice ---- tx_add_input ----> Bob
-        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
-        // Alice <--- tx_complete ----- Bob
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxComplete>()))
-        // Alice ---- tx_add_output ----> Bob
-        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
-        // Alice <--- tx_complete ----- Bob
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<TxComplete>()))
-        assertIs<WaitForFundingSigned>(alice2.state)
-        // Alice ---- tx_complete ----> Bob
-        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<TxComplete>()))
-        actionsBob3.hasOutgoingMessage<Error>()
-        assertIs<Aborted>(bob3.state)
-        assertIs<ChannelFundingResponse.Failure.CannotStartSession>(bob.state.replyTo.await())
-    }
-
-    @Test
     fun `recv invalid interactive-tx message`() {
-        val (_, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (_, bob, inputAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         run {
             // Invalid serial_id.
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice.copy(serialId = 1)))
@@ -189,7 +170,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(CommitSig(alice.channelId, ByteVector64.Zeroes, listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedCommitSig(alice.channelId).message)
@@ -204,7 +185,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxSignatures(alice.channelId, TxId(randomBytes32()), listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedFundingSignatures(alice.channelId).message)
@@ -219,7 +200,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxAbort`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxAbort(alice.channelId, "changed my mind")))
             assertEquals(actionsAlice1.size, 1)
@@ -236,7 +217,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxInitRbf`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxInitRbf(alice.channelId, 0, FeeratePerKw(7500.sat))))
             assertEquals(actionsAlice1.size, 1)
@@ -253,7 +234,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxAckRbf`() {
-        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         run {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(TxAckRbf(alice.channelId)))
             assertEquals(actionsAlice1.size, 1)
@@ -306,13 +287,11 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
-            bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             requestRemoteFunding: Satoshi? = null,
             zeroConf: Boolean = false,
             channelOrigin: Origin? = null
         ): Fixture {
-            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, requestRemoteFunding, zeroConf, channelOrigin)
+            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, requestRemoteFunding, zeroConf, channelOrigin)
             val (b1, actions) = b.process(ChannelCommand.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptDualFundedChannel>()
             assertIs<LNChannel<WaitForFundingCreated>>(b1)

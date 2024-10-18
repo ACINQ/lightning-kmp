@@ -10,7 +10,6 @@ import fr.acinq.lightning.channel.states.ClosingFeerates
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.UUID
-import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.LightningMessage
 import fr.acinq.lightning.wire.LiquidityAds
@@ -27,7 +26,6 @@ sealed class ChannelCommand {
         data class Initiator(
             val replyTo: CompletableDeferred<ChannelFundingResponse>,
             val fundingAmount: Satoshi,
-            val pushAmount: MilliSatoshi,
             val walletInputs: List<WalletState.Utxo>,
             val commitTxFeerate: FeeratePerKw,
             val fundingTxFeerate: FeeratePerKw,
@@ -46,7 +44,6 @@ sealed class ChannelCommand {
             val replyTo: CompletableDeferred<ChannelFundingResponse>,
             val temporaryChannelId: ByteVector32,
             val fundingAmount: Satoshi,
-            val pushAmount: MilliSatoshi,
             val walletInputs: List<WalletState.Utxo>,
             val localParams: LocalParams,
             val channelConfig: ChannelConfig,
@@ -98,11 +95,10 @@ sealed class ChannelCommand {
                 val feerate: FeeratePerKw,
                 val origins: List<Origin>
             ) : Splice() {
-                val pushAmount: MilliSatoshi = spliceIn?.pushAmount ?: 0.msat
                 val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
                 val liquidityFees: LiquidityAds.Fees? = requestRemoteFunding?.fees(feerate, isChannelCreation = false)
 
-                data class SpliceIn(val walletInputs: List<WalletState.Utxo>, val pushAmount: MilliSatoshi = 0.msat)
+                data class SpliceIn(val walletInputs: List<WalletState.Utxo>)
                 data class SpliceOut(val amount: Satoshi, val scriptPubKey: ByteVector)
             }
         }

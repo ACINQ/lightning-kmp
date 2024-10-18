@@ -270,11 +270,9 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
             swapInKeys: KeyManager.SwapInOnChainKeys,
             params: InteractiveTxParams,
             walletInputs: List<WalletState.Utxo>,
-            localPushAmount: MilliSatoshi,
-            remotePushAmount: MilliSatoshi,
             liquidityPurchase: LiquidityAds.Purchase?
         ): Either<FundingContributionFailure, FundingContributions> {
-            return create(channelKeys, swapInKeys, params, null, walletInputs, listOf(), localPushAmount, remotePushAmount, liquidityPurchase)
+            return create(channelKeys, swapInKeys, params, null, walletInputs, listOf(), liquidityPurchase)
         }
 
         /**
@@ -290,8 +288,6 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
             sharedUtxo: Pair<SharedFundingInput, SharedFundingInputBalances>?,
             walletInputs: List<WalletState.Utxo>,
             localOutputs: List<TxOut>,
-            localPushAmount: MilliSatoshi,
-            remotePushAmount: MilliSatoshi,
             liquidityPurchase: LiquidityAds.Purchase?,
             changePubKey: PublicKey? = null
         ): Either<FundingContributionFailure, FundingContributions> {
@@ -310,9 +306,9 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
 
             val liquidityFees = params.liquidityFees(liquidityPurchase)
             val nextLocalBalanceBeforePush = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi()
-            val nextLocalBalanceAfterPush = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi() - localPushAmount + remotePushAmount - liquidityFees
+            val nextLocalBalanceAfterPush = (sharedUtxo?.second?.toLocal ?: 0.msat) + params.localContribution.toMilliSatoshi() - liquidityFees
             val nextRemoteBalanceBeforePush = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi()
-            val nextRemoteBalanceAfterPush = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi() + localPushAmount - remotePushAmount + liquidityFees
+            val nextRemoteBalanceAfterPush = (sharedUtxo?.second?.toRemote ?: 0.msat) + params.remoteContribution.toMilliSatoshi() + liquidityFees
             if (nextLocalBalanceAfterPush < 0.msat || nextRemoteBalanceAfterPush < 0.msat) {
                 return Either.Left(FundingContributionFailure.InvalidFundingBalances(params.fundingAmount, nextLocalBalanceAfterPush, nextRemoteBalanceAfterPush))
             }
@@ -1091,8 +1087,6 @@ data class InteractiveTxSigningSession(
             fundingParams: InteractiveTxParams,
             fundingTxIndex: Long,
             sharedTx: SharedTransaction,
-            localPushAmount: MilliSatoshi,
-            remotePushAmount: MilliSatoshi,
             liquidityPurchase: LiquidityAds.Purchase?,
             localCommitmentIndex: Long,
             remoteCommitmentIndex: Long,
@@ -1109,8 +1103,8 @@ data class InteractiveTxSigningSession(
                 channelParams.channelId,
                 channelParams.localParams, channelParams.remoteParams,
                 fundingAmount = sharedTx.sharedOutput.amount,
-                toLocal = sharedTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFees,
-                toRemote = sharedTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount + liquidityFees,
+                toLocal = sharedTx.sharedOutput.localAmount - liquidityFees,
+                toRemote = sharedTx.sharedOutput.remoteAmount + liquidityFees,
                 localHtlcs = localHtlcs,
                 localCommitmentIndex = localCommitmentIndex,
                 remoteCommitmentIndex = remoteCommitmentIndex,
@@ -1203,8 +1197,6 @@ sealed class SpliceStatus {
     data class InProgress(
         val replyTo: CompletableDeferred<ChannelFundingResponse>?,
         val spliceSession: InteractiveTxSession,
-        val localPushAmount: MilliSatoshi,
-        val remotePushAmount: MilliSatoshi,
         val liquidityPurchase: LiquidityAds.Purchase?,
         val origins: List<Origin>
     ) : QuiescentSpliceStatus()

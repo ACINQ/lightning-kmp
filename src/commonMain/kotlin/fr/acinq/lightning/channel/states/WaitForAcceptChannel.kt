@@ -72,8 +72,6 @@ data class WaitForAcceptChannel(
                                     keyManager.swapInOnChainWallet,
                                     fundingParams,
                                     init.walletInputs,
-                                    lastSent.pushAmount,
-                                    accept.pushAmount,
                                     liquidityPurchase.value
                                 )) {
                                     is Either.Left -> {
@@ -100,8 +98,6 @@ data class WaitForAcceptChannel(
                                                     init.localParams,
                                                     remoteParams,
                                                     interactiveTxSession,
-                                                    lastSent.pushAmount,
-                                                    accept.pushAmount,
                                                     lastSent.commitmentFeerate,
                                                     accept.firstPerCommitmentPoint,
                                                     accept.secondPerCommitmentPoint,
