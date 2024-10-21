@@ -1,13 +1,14 @@
 package fr.acinq.lightning.payment
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Chain
+import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.Offline
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.Sphinx
@@ -15,11 +16,9 @@ import fr.acinq.lightning.db.InMemoryPaymentsDb
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.PayInvoice
-import fr.acinq.lightning.io.WrappedChannelCommand
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
@@ -57,10 +56,25 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             Feature.RouteBlinding to FeatureSupport.Optional,
         )
         // The following invoice requires payment_metadata.
-        val invoice1 =
-            Bolt11InvoiceTestsCommon.createInvoiceUnsafe(features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory, Feature.PaymentMetadata to FeatureSupport.Mandatory))
+        val invoice1 = run {
+            val unsupportedFeatures = Features(
+                Feature.VariableLengthOnion to FeatureSupport.Mandatory,
+                Feature.PaymentSecret to FeatureSupport.Mandatory,
+                Feature.PaymentMetadata to FeatureSupport.Mandatory
+            )
+            Bolt11InvoiceTestsCommon.createInvoiceUnsafe(features = unsupportedFeatures)
+        }
         // The following invoice requires unknown feature bit 188.
-        val invoice2 = Bolt11InvoiceTestsCommon.createInvoiceUnsafe(features = Features(mapOf(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory), setOf(UnknownFeature(188))))
+        val invoice2 = run {
+            val unsupportedFeatures = Features(
+                mapOf(
+                    Feature.VariableLengthOnion to FeatureSupport.Mandatory,
+                    Feature.PaymentSecret to FeatureSupport.Mandatory
+                ),
+                setOf(UnknownFeature(188))
+            )
+            Bolt11InvoiceTestsCommon.createInvoiceUnsafe(features = unsupportedFeatures)
+        }
         for (invoice in listOf(invoice1, invoice2)) {
             val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams.copy(features = features), defaultWalletParams, InMemoryPaymentsDb())
             val payment = PayInvoice(UUID.randomUUID(), 15_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
@@ -111,16 +125,16 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
     @Test
     fun `invoice already paid`() = runSuspendTest {
-        val channels = makeChannels()
+        val (alice, _) = TestsHelper.reachNormal()
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = 100_000.msat, supportsTrampoline = true)
         val payment = PayInvoice(UUID.randomUUID(), 100_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val (channelId, add) = filterAddHtlcCommands(result).first()
-        outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId, add, randomBytes32())) as OutgoingPaymentHandler.Success
+        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val (channelId, add) = findAddHtlcCommand(result)
+        outgoingPaymentHandler.processAddSettledFulfilled(createRemoteFulfill(channelId, add, randomBytes32())) as OutgoingPaymentHandler.Success
 
         val duplicatePayment = payment.copy(paymentId = UUID.randomUUID())
-        val error = outgoingPaymentHandler.sendPayment(duplicatePayment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+        val error = outgoingPaymentHandler.sendPayment(duplicatePayment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
         assertEquals(error.failure.reason, FinalFailure.AlreadyPaid)
     }
 
@@ -134,14 +148,13 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             // Send payment 1 of 2: this should work because we're still under the maxAcceptedHtlcs.
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = PayInvoice(UUID.randomUUID(), 100_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-            val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
-            assertTrue { result is OutgoingPaymentHandler.Progress }
+            val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
+            assertIs<OutgoingPaymentHandler.Progress>(progress)
+            assertEquals(1, progress.actions.size)
 
-            val progress = result as OutgoingPaymentHandler.Progress
-            assertEquals(1, result.actions.size)
-            val processResult = alice.processSameState(progress.actions.first().channelCommand)
-            assertTrue { processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty() }
-            alice = processResult.first
+            val (alice1, actions1) = alice.processSameState(progress.actions.first().channelCommand)
+            assertTrue(actions1.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty())
+            alice = alice1
             assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
             val dbPayment = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
@@ -154,21 +167,18 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             // Send payment 2 of 2: this should exceed the configured maxAcceptedHtlcs.
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = PayInvoice(UUID.randomUUID(), 50_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-            val result1 = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
-            assertTrue { result1 is OutgoingPaymentHandler.Progress }
+            val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
+            assertIs<OutgoingPaymentHandler.Progress>(progress)
+            assertEquals(1, progress.actions.size)
 
-            val progress = result1 as OutgoingPaymentHandler.Progress
-            assertEquals(1, result1.actions.size)
             val cmdAdd = progress.actions.first().channelCommand
-            val processResult = alice.processSameState(cmdAdd)
-            alice = processResult.first
-
-            val addFailure = processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().firstOrNull()
+            val (_, actions1) = alice.processSameState(cmdAdd)
+            val addFailure = actions1.filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().firstOrNull()
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
-            val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice.state))
+            val failure = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure)
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(TooManyAcceptedHtlcs(alice.channelId, 1)))))
-            assertFailureEquals(result2 as OutgoingPaymentHandler.Failure, expected)
+            assertFailureEquals(failure as OutgoingPaymentHandler.Failure, expected)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
@@ -179,22 +189,22 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     fun `channel restrictions -- maxHtlcValueInFlight`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
         val maxHtlcValueInFlightMsat = 150_000L
-        alice =
-            alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(params = alice.commitments.params.copy(remoteParams = alice.commitments.params.remoteParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat)))))
+        alice = alice.copy(
+            state = alice.state.copy(commitments = alice.commitments.copy(params = alice.commitments.params.copy(remoteParams = alice.commitments.params.remoteParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat))))
+        )
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
             // Send payment 1 of 2: this should work because we're still under the maxHtlcValueInFlightMsat.
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = PayInvoice(UUID.randomUUID(), 100_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-            val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
-            assertTrue { result is OutgoingPaymentHandler.Progress }
+            val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
+            assertIs<OutgoingPaymentHandler.Progress>(progress)
+            assertEquals(1, progress.actions.size)
 
-            val progress = result as OutgoingPaymentHandler.Progress
-            assertEquals(1, result.actions.size)
-            val processResult = alice.processSameState(progress.actions.first().channelCommand)
-            assertTrue { processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty() }
-            alice = processResult.first
+            val (alice1, actions1) = alice.processSameState(progress.actions.first().channelCommand)
+            assertTrue(actions1.filterIsInstance<ChannelAction.ProcessCmdRes>().isEmpty())
+            alice = alice1
             assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
 
             val dbPayment = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
@@ -207,21 +217,18 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             // Send payment 2 of 2: this should exceed the configured maxHtlcValueInFlightMsat.
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = PayInvoice(UUID.randomUUID(), 100_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-            val result1 = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
-            assertTrue { result1 is OutgoingPaymentHandler.Progress }
+            val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
+            assertIs<OutgoingPaymentHandler.Progress>(progress)
+            assertEquals(1, progress.actions.size)
 
-            val progress = result1 as OutgoingPaymentHandler.Progress
-            assertEquals(1, result1.actions.size)
             val cmdAdd = progress.actions.first().channelCommand
-            val processResult = alice.processSameState(cmdAdd)
-            alice = processResult.first
-
-            val addFailure = processResult.second.filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().firstOrNull()
+            val (_, actions1) = alice.processSameState(cmdAdd)
+            val addFailure = actions1.filterIsInstance<ChannelAction.ProcessCmdRes.AddFailed>().firstOrNull()
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
-            val result2 = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure, mapOf(alice.channelId to alice.state))
+            val failure = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure)
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat)))))
-            assertFailureEquals(result2 as OutgoingPaymentHandler.Failure, expected)
+            assertFailureEquals(failure as OutgoingPaymentHandler.Failure, expected)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
@@ -229,7 +236,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `successful first attempt -- single part`() = runSuspendTest {
+    fun `successful first attempt`() = runSuspendTest {
         val recipientKey = randomKey()
         val invoice = makeInvoice(amount = 195_000.msat, supportsTrampoline = true, privKey = recipientKey)
         val payment = PayInvoice(UUID.randomUUID(), 200_000.msat, LightningOutgoingPayment.Details.Normal(invoice)) // we slightly overpay the invoice amount
@@ -237,7 +244,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `successful first attempt -- single part + backwards-compatibility trampoline bit`() = runSuspendTest {
+    fun `successful first attempt -- backwards-compatibility trampoline bit`() = runSuspendTest {
         val recipientKey = randomKey()
         val invoice = run {
             // Invoices generated by older versions of wallets based on lightning-kmp will generate invoices with the following feature bits.
@@ -262,19 +269,17 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     private suspend fun testSinglePartTrampolinePayment(payment: PayInvoice, invoice: Bolt11Invoice, recipientKey: PrivateKey) {
-        val channels = makeChannels()
+        val (alice, _) = TestsHelper.reachNormal()
         val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(3.sat, 10_000, CltvExpiryDelta(144))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, walletParams, InMemoryPaymentsDb())
 
-        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds = filterAddHtlcCommands(result)
-        assertEquals(1, adds.size)
-        val (channelId, add) = adds.first()
+        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val (channelId, add) = findAddHtlcCommand(result)
         assertEquals(205_000.msat, add.amount)
         assertEquals(payment.paymentHash, add.paymentHash)
 
         // The trampoline node should receive the right forwarding information.
-        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
+        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptRelayToTrampoline(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
         assertEquals(205_000.msat, outerB.amount)
         assertEquals(205_000.msat, outerB.totalAmount)
         assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(144) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
@@ -291,7 +296,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(invoice.paymentSecret, payloadC.paymentSecret)
 
         val preimage = randomBytes32()
-        val success = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId, add, preimage)) as OutgoingPaymentHandler.Success
+        val success = outgoingPaymentHandler.processAddSettledFulfilled(createRemoteFulfill(channelId, add, preimage)) as OutgoingPaymentHandler.Success
         assertEquals(preimage, success.preimage)
         assertEquals(5_000.msat, success.payment.fees)
         assertEquals(200_000.msat, success.payment.recipientAmount)
@@ -310,65 +315,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `successful first attempt -- multiple parts`() = runSuspendTest {
-        val channels = makeChannels()
-        val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, walletParams, InMemoryPaymentsDb())
-        val recipientKey = randomKey()
-        val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = recipientKey)
-        val payment = PayInvoice(UUID.randomUUID(), 300_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-
-        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds = filterAddHtlcCommands(result)
-        assertEquals(2, adds.size)
-        assertEquals(310_000.msat, adds.map { it.second.amount }.sum())
-        adds.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
-
-        adds.forEach { (channelId, add) ->
-            // The trampoline node should receive the right forwarding information.
-            val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
-            assertEquals(add.amount, outerB.amount)
-            assertEquals(310_000.msat, outerB.totalAmount)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(144) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
-            assertEquals(300_000.msat, innerB.amountToForward)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
-            assertEquals(payment.recipient, innerB.outgoingNodeId)
-
-            // The recipient should receive the right amount and expiry.
-            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
-            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
-            assertEquals(300_000.msat, payloadC.amount)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
-            assertEquals(payloadC.amount, payloadC.totalAmount)
-            assertEquals(invoice.paymentSecret, payloadC.paymentSecret)
-        }
-
-        val preimage = randomBytes32()
-        val (channelId1, add1) = adds[0]
-        val fulfill1 = createRemoteFulfill(channelId1, add1, preimage)
-        val success1 = outgoingPaymentHandler.processAddSettled(fulfill1)
-        assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
-        val (channelId2, add2) = adds[1]
-        val fulfill2 = ChannelAction.ProcessCmdRes.AddSettledFulfill(add2.paymentId, makeUpdateAddHtlc(channelId2, add2), ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage))
-        val success2 = outgoingPaymentHandler.processAddSettled(fulfill2) as OutgoingPaymentHandler.Success
-        assertEquals(preimage, success2.preimage)
-        assertEquals(10_000.msat, success2.payment.fees)
-        assertEquals(300_000.msat, success2.payment.recipientAmount)
-        assertEquals(invoice.nodeId, success2.payment.recipient)
-        assertEquals(invoice.paymentHash, success2.payment.paymentHash)
-        assertEquals(invoice, (success2.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
-        assertEquals(preimage, (success2.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
-        assertEquals(2, success2.payment.parts.size)
-        assertEquals(310_000.msat, success2.payment.parts.map { it.amount }.sum())
-        assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as LightningOutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
-
-        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 300_000.msat, fees = 10_000.msat, partsCount = 2)
-    }
-
-    @Test
-    fun `successful first attempt -- multiple parts + legacy recipient`() = runSuspendTest {
-        val channels = makeChannels()
+    fun `successful first attempt -- legacy recipient`() = runSuspendTest {
+        val (alice, _) = TestsHelper.reachNormal()
         val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(10.sat, 0, CltvExpiryDelta(144))))
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, walletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
@@ -376,51 +324,46 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val invoice = makeInvoice(amount = null, supportsTrampoline = false, privKey = recipientKey, extraHops = extraHops)
         val payment = PayInvoice(UUID.randomUUID(), 300_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
-        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds = filterAddHtlcCommands(result)
-        assertEquals(2, adds.size)
-        assertEquals(310_000.msat, adds.map { it.second.amount }.sum())
-        adds.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
-
-        adds.forEach { (channelId, add) ->
-            // The trampoline node should receive the right forwarding information.
-            val (outerB, innerB, _) = PaymentPacketTestsCommon.decryptRelayToNonTrampolinePayload(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
-            assertEquals(add.amount, outerB.amount)
-            assertEquals(310_000.msat, outerB.totalAmount)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(144) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
-            assertEquals(300_000.msat, innerB.amountToForward)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
-            assertEquals(payment.recipient, innerB.outgoingNodeId)
-            assertEquals(invoice.paymentSecret, innerB.paymentSecret)
-            assertEquals(invoice.features.toByteArray().toByteVector(), innerB.invoiceFeatures)
-            assertFalse(innerB.invoiceRoutingInfo.isEmpty())
-            assertEquals(invoice.routingInfo.map { it.hints }, innerB.invoiceRoutingInfo)
-        }
+        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val (channelId, add) = findAddHtlcCommand(result)
+        assertEquals(310_000.msat, add.amount)
+        assertEquals(payment.paymentHash, add.paymentHash)
+        // The trampoline node should receive the right forwarding information.
+        val (outerB, innerB) = PaymentPacketTestsCommon.decryptRelayToLegacy(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
+        assertEquals(add.amount, outerB.amount)
+        assertEquals(310_000.msat, outerB.totalAmount)
+        assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(144) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
+        assertEquals(300_000.msat, innerB.amountToForward)
+        assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
+        assertEquals(payment.recipient, innerB.outgoingNodeId)
+        assertEquals(invoice.paymentSecret, innerB.paymentSecret)
+        assertEquals(invoice.features.toByteArray().toByteVector(), innerB.invoiceFeatures)
+        assertFalse(innerB.invoiceRoutingInfo.isEmpty())
+        assertEquals(invoice.routingInfo.map { it.hints }, innerB.invoiceRoutingInfo)
 
         val preimage = randomBytes32()
-        val (channelId1, add1) = adds[0]
-        val success1 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId1, add1, preimage))
-        assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
-        val (channelId2, add2) = adds[1]
-        val success2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(channelId2, add2, preimage)) as OutgoingPaymentHandler.Success
-        assertEquals(preimage, success2.preimage)
-        assertEquals(10_000.msat, success2.payment.fees)
-        assertEquals(300_000.msat, success2.payment.recipientAmount)
-        assertEquals(invoice.nodeId, success2.payment.recipient)
-        assertEquals(invoice.paymentHash, success2.payment.paymentHash)
-        assertEquals(invoice, (success2.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
-        assertEquals(preimage, (success2.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
-        assertEquals(2, success2.payment.parts.size)
-        assertEquals(310_000.msat, success2.payment.parts.map { it.amount }.sum())
-        assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as LightningOutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
+        val success = outgoingPaymentHandler.processAddSettledFulfilled(createRemoteFulfill(channelId, add, preimage))
+        assertNotNull(success)
+        assertEquals(preimage, success.preimage)
+        assertEquals(10_000.msat, success.payment.fees)
+        assertEquals(300_000.msat, success.payment.recipientAmount)
+        assertEquals(invoice.nodeId, success.payment.recipient)
+        assertEquals(invoice.paymentHash, success.payment.paymentHash)
+        assertEquals(invoice, (success.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
+        assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
+        assertEquals(1, success.payment.parts.size)
+        assertEquals(310_000.msat, success.payment.parts.first().amount)
+        val status = success.payment.parts.first().status
+        assertIs<LightningOutgoingPayment.Part.Status.Succeeded>(status)
+        assertEquals(preimage, status.preimage)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 300_000.msat, fees = 10_000.msat, partsCount = 2)
+        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 300_000.msat, fees = 10_000.msat, partsCount = 1)
     }
 
     @Test
     fun `successful first attempt -- random final expiry`() = runSuspendTest {
-        val channels = makeChannels()
+        val (alice, _) = TestsHelper.reachNormal()
         val walletParams = defaultWalletParams.copy(trampolineFees = listOf(TrampolineFees(25.sat, 0, CltvExpiryDelta(48))))
         val recipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(144), CltvExpiryDelta(288))
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams.copy(paymentRecipientExpiryParams = recipientExpiryParams), walletParams, InMemoryPaymentsDb())
@@ -428,230 +371,126 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = recipientKey)
         val payment = PayInvoice(UUID.randomUUID(), 300_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
-        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds = filterAddHtlcCommands(result)
-        assertEquals(2, adds.size)
+        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        val (channelId, add) = findAddHtlcCommand(result)
+        // The trampoline node should receive the right forwarding information.
+        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptRelayToTrampoline(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
+        assertEquals(add.amount, outerB.amount)
+        val minFinalExpiry = CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA + recipientExpiryParams.min
+        assertTrue(minFinalExpiry + CltvExpiryDelta(48) <= outerB.expiry)
+        assertTrue(minFinalExpiry <= innerB.outgoingCltv)
 
-        adds.forEach { (channelId, add) ->
-            // The trampoline node should receive the right forwarding information.
-            val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
-            assertEquals(add.amount, outerB.amount)
-            val minFinalExpiry = CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA + recipientExpiryParams.min
-            assertTrue(minFinalExpiry + CltvExpiryDelta(48) <= outerB.expiry)
-            assertTrue(minFinalExpiry <= innerB.outgoingCltv)
-
-            // The recipient should receive the right amount and expiry.
-            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
-            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
-            assertEquals(300_000.msat, payloadC.amount)
-            assertTrue(minFinalExpiry <= payloadC.expiry)
-            assertEquals(innerB.outgoingCltv, payloadC.expiry)
-        }
-    }
-
-    @Test
-    fun `successful first attempt -- multiple parts + recipient is our peer`() = runSuspendTest {
-        val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        // The invoice comes from Bob, our direct peer (and trampoline node).
-        val preimage = randomBytes32()
-        val incomingPaymentHandler = IncomingPaymentHandler(TestConstants.Bob.nodeParams, InMemoryPaymentsDb())
-        val invoice = incomingPaymentHandler.createInvoice(preimage, amount = null, Either.Left("phoenix to phoenix"), listOf())
-        val payment = PayInvoice(UUID.randomUUID(), 300_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-
-        val result = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds = filterAddHtlcCommands(result)
-        assertEquals(2, adds.size)
-        assertEquals(300_000.msat, adds.map { it.second.amount }.sum())
-        adds.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
-        adds.forEach { (channelId, add) ->
-            // Bob should receive the right final information.
-            val payloadB = IncomingPaymentPacket.decrypt(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey).right!!
-            assertIs<PaymentOnion.FinalPayload.Standard>(payloadB)
-            assertEquals(add.amount, payloadB.amount)
-            assertEquals(300_000.msat, payloadB.totalAmount)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + TestConstants.Alice.nodeParams.minFinalCltvExpiryDelta, payloadB.expiry)
-            assertEquals(invoice.paymentSecret, payloadB.paymentSecret)
-        }
-
-        // Bob receives these 2 HTLCs.
-        val process1 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[0].first, adds[0].second, 3), Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
-        assertTrue(process1 is IncomingPaymentHandler.ProcessAddResult.Pending)
-        val process2 = incomingPaymentHandler.process(makeUpdateAddHtlc(adds[1].first, adds[1].second, 5), Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
-        assertTrue(process2 is IncomingPaymentHandler.ProcessAddResult.Accepted)
-        val fulfills = process2.actions.filterIsInstance<WrappedChannelCommand>().mapNotNull { it.channelCommand as? ChannelCommand.Htlc.Settlement.Fulfill }
-        assertEquals(2, fulfills.size)
-
-        // Alice receives the fulfill for these 2 HTLCs.
-        val (channelId1, add1) = adds[0]
-        val fulfill1 = createRemoteFulfill(channelId1, add1, preimage)
-        val success1 = outgoingPaymentHandler.processAddSettled(fulfill1)
-        assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
-        val (channelId2, add2) = adds[1]
-        val fulfill2 = ChannelAction.ProcessCmdRes.AddSettledFulfill(add2.paymentId, makeUpdateAddHtlc(channelId2, add2), ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage))
-        val success2 = outgoingPaymentHandler.processAddSettled(fulfill2) as OutgoingPaymentHandler.Success
-        assertEquals(preimage, success2.preimage)
-        assertEquals(0.msat, success2.payment.fees)
-        assertEquals(300_000.msat, success2.payment.recipientAmount)
-        assertEquals(TestConstants.Bob.nodeParams.nodeId, success2.payment.recipient)
-        assertEquals(invoice.paymentHash, success2.payment.paymentHash)
-        assertEquals(invoice, (success2.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
-        assertEquals(preimage, (success2.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
-        assertEquals(2, success2.payment.parts.size)
-        assertEquals(300_000.msat, success2.payment.parts.map { it.amount }.sum())
-        assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as LightningOutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
-
-        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 300_000.msat, fees = 0.msat, partsCount = 2)
+        // The recipient should receive the right amount and expiry.
+        val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
+        val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
+        assertEquals(300_000.msat, payloadC.amount)
+        assertTrue(minFinalExpiry <= payloadC.expiry)
+        assertEquals(innerB.outgoingCltv, payloadC.expiry)
     }
 
     @Test
     fun `successful second attempt`() = runSuspendTest {
-        val channels = makeChannels()
+        val (alice, _) = TestsHelper.reachNormal()
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
         val recipientKey = randomKey()
         val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = recipientKey)
         val payment = PayInvoice(UUID.randomUUID(), 300_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
-        val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds1 = filterAddHtlcCommands(progress1)
-        assertEquals(2, adds1.size)
-        assertEquals(300_000.msat, adds1.map { it.second.amount }.sum())
+        val progress1 = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Progress>(progress1)
+        val (channelId1, add1) = findAddHtlcCommand(progress1)
+        assertEquals(alice.channelId, channelId1)
+        assertEquals(300_000.msat, add1.amount)
 
         // This first attempt fails because fees are too low.
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val fail1 = outgoingPaymentHandler.processAddSettled(adds1[0].first, createRemoteFailure(adds1[0].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight)
-        assertNull(fail1)
-        val progress2 = outgoingPaymentHandler.processAddSettled(adds1[1].first, createRemoteFailure(adds1[1].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds2 = filterAddHtlcCommands(progress2)
-        assertEquals(2, adds2.size)
-        assertEquals(301_030.msat, adds2.map { it.second.amount }.sum())
-        adds2.forEach { assertEquals(payment.paymentHash, it.second.paymentHash) }
-        adds2.forEach { (channelId, add) ->
-            // The trampoline node should receive the right forwarding information.
-            val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptNodeRelay(makeUpdateAddHtlc(channelId, add), TestConstants.Bob.nodeParams.nodePrivateKey)
-            assertEquals(add.amount, outerB.amount)
-            assertEquals(301_030.msat, outerB.totalAmount)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(576) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
-            assertEquals(300_000.msat, innerB.amountToForward)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
-            assertEquals(payment.recipient, innerB.outgoingNodeId)
+        val progress2 = outgoingPaymentHandler.processAddSettledFailed(channelId1, createRemoteFailure(add1, attempt, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Progress>(progress2)
+        val (channelId2, add2) = findAddHtlcCommand(progress2)
+        assertEquals(channelId1, channelId2)
+        assertEquals(301_030.msat, add2.amount)
+        assertEquals(payment.paymentHash, add2.paymentHash)
+        // The trampoline node should receive the right forwarding information.
+        val (outerB, innerB, packetC) = PaymentPacketTestsCommon.decryptRelayToTrampoline(makeUpdateAddHtlc(channelId2, add2), TestConstants.Bob.nodeParams.nodePrivateKey)
+        assertEquals(add2.amount, outerB.amount)
+        assertEquals(301_030.msat, outerB.totalAmount)
+        assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + CltvExpiryDelta(576) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, outerB.expiry)
+        assertEquals(300_000.msat, innerB.amountToForward)
+        assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, innerB.outgoingCltv)
+        assertEquals(payment.recipient, innerB.outgoingNodeId)
 
-            // The recipient should receive the right amount and expiry.
-            val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
-            val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
-            assertEquals(300_000.msat, payloadC.amount)
-            assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
-            assertEquals(payloadC.amount, payloadC.totalAmount)
-            assertEquals(invoice.paymentSecret, payloadC.paymentSecret)
-        }
+        // The recipient should receive the right amount and expiry.
+        val payloadBytesC = Sphinx.peel(recipientKey, payment.paymentHash, packetC).right!!
+        val payloadC = PaymentOnion.FinalPayload.Standard.read(payloadBytesC.payload).right!!
+        assertEquals(300_000.msat, payloadC.amount)
+        assertEquals(CltvExpiry(TestConstants.defaultBlockHeight.toLong()) + Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA, payloadC.expiry)
+        assertEquals(payloadC.amount, payloadC.totalAmount)
+        assertEquals(invoice.paymentSecret, payloadC.paymentSecret)
 
         val dbPayment1 = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
         assertNotNull(dbPayment1)
-        assertTrue(dbPayment1.status is LightningOutgoingPayment.Status.Pending)
-        assertEquals(2, dbPayment1.parts.filter { it.status is LightningOutgoingPayment.Part.Status.Failed }.size)
-        assertEquals(2, dbPayment1.parts.filter { it.status is LightningOutgoingPayment.Part.Status.Pending }.size)
+        assertIs<LightningOutgoingPayment.Status.Pending>(dbPayment1.status)
+        assertEquals(1, dbPayment1.parts.filter { it.status is LightningOutgoingPayment.Part.Status.Failed }.size)
+        assertEquals(1, dbPayment1.parts.filter { it.status is LightningOutgoingPayment.Part.Status.Pending }.size)
 
         // The second attempt succeeds.
         val preimage = randomBytes32()
-        val success1 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds2[0].first, adds2[0].second, preimage))
-        assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
-        assertNotNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        val success2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds2[1].first, adds2[1].second, preimage)) as OutgoingPaymentHandler.Success
-        assertEquals(preimage, success2.preimage)
-        assertEquals(1_030.msat, success2.payment.fees)
-        assertEquals(300_000.msat, success2.payment.recipientAmount)
-        assertEquals(invoice.nodeId, success2.payment.recipient)
-        assertEquals(invoice.paymentHash, success2.payment.paymentHash)
-        assertEquals(invoice, (success2.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
-        assertEquals(preimage, (success2.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
-        assertEquals(2, success2.payment.parts.size)
-        assertEquals(301_030.msat, success2.payment.parts.map { it.amount }.sum())
-        assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as LightningOutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
+        val success = outgoingPaymentHandler.processAddSettledFulfilled(createRemoteFulfill(channelId2, add2, preimage))
+        assertIs<OutgoingPaymentHandler.Success>(success)
+        assertEquals(preimage, success.preimage)
+        assertEquals(1_030.msat, success.payment.fees)
+        assertEquals(300_000.msat, success.payment.recipientAmount)
+        assertEquals(invoice.nodeId, success.payment.recipient)
+        assertEquals(invoice.paymentHash, success.payment.paymentHash)
+        assertEquals(invoice, (success.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
+        assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
+        assertEquals(1, success.payment.parts.size)
+        assertEquals(301_030.msat, success.payment.parts.first().amount)
+        val status = success.payment.parts.first().status
+        assertIs<LightningOutgoingPayment.Part.Status.Succeeded>(status)
+        assertEquals(preimage, status.preimage)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         val dbPayment2 = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
         assertNotNull(dbPayment2)
-        assertTrue(dbPayment2.status is LightningOutgoingPayment.Status.Completed.Succeeded.OffChain)
-        assertEquals(2, dbPayment2.parts.size)
+        assertIs<LightningOutgoingPayment.Status.Completed.Succeeded.OffChain>(dbPayment2.status)
+        assertEquals(1, dbPayment2.parts.size)
         assertTrue(dbPayment2.parts.all { it.status is LightningOutgoingPayment.Part.Status.Succeeded })
     }
 
     @Test
-    fun `successful second attempt -- recipient is our peer`() = runSuspendTest {
-        val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        // The invoice comes from Bob, our direct peer (and trampoline node).
-        val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = TestConstants.Bob.nodeParams.nodePrivateKey)
-        val payment = PayInvoice(UUID.randomUUID(), 300_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-
-        val result1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds1 = filterAddHtlcCommands(result1)
-        assertEquals(2, adds1.size)
-
-        // The first attempt fails because of a local channel error.
-        val result2 = outgoingPaymentHandler.processAddFailed(adds1[1].first, ChannelAction.ProcessCmdRes.AddFailed(adds1[1].second, TooManyAcceptedHtlcs(adds1[1].first, 10), null), channels) as OutgoingPaymentHandler.Progress
-        val adds2 = filterAddHtlcCommands(result2)
-        assertEquals(1, adds2.size)
-
-        // The other HTLCs succeed.
-        val preimage = randomBytes32()
-        val (channelId1, add1) = adds1[0]
-        val fulfill1 = createRemoteFulfill(channelId1, add1, preimage)
-        val success1 = outgoingPaymentHandler.processAddSettled(fulfill1)
-        assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), success1)
-
-        val (channelId2, add2) = adds2[0]
-        val fulfill2 = createRemoteFulfill(channelId2, add2, preimage)
-        val success2 = outgoingPaymentHandler.processAddSettled(fulfill2) as OutgoingPaymentHandler.Success
-        assertEquals(preimage, success2.preimage)
-        assertEquals(0.msat, success2.payment.fees)
-        assertEquals(300_000.msat, success2.payment.recipientAmount)
-        assertEquals(TestConstants.Bob.nodeParams.nodeId, success2.payment.recipient)
-        assertEquals(invoice.paymentHash, success2.payment.paymentHash)
-        assertEquals(invoice, (success2.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
-        assertEquals(preimage, (success2.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
-        assertEquals(2, success2.payment.parts.size)
-        assertEquals(300_000.msat, success2.payment.parts.map { it.amount }.sum())
-        assertEquals(setOf(preimage), success2.payment.parts.map { (it.status as LightningOutgoingPayment.Part.Status.Succeeded).preimage }.toSet())
-
-        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 300_000.msat, fees = 0.msat, partsCount = 2)
-    }
-
-    @Test
     fun `insufficient funds when retrying with higher fees`() = runSuspendTest {
-        val channels = makeChannels()
+        val (alice, _) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, alicePushAmount = 0.msat, bobFundingAmount = 0.sat, bobPushAmount = 0.msat)
+        assertTrue(83_500_000.msat < alice.commitments.availableBalanceForSend())
+        assertTrue(alice.commitments.availableBalanceForSend() < 84_000_000.msat)
         val walletParams = defaultWalletParams.copy(
             trampolineFees = listOf(
-                TrampolineFees(10.sat, 0, CltvExpiryDelta(144)),
                 TrampolineFees(100.sat, 0, CltvExpiryDelta(144)),
+                TrampolineFees(1000.sat, 0, CltvExpiryDelta(144)),
             )
         )
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, walletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
-        val payment = PayInvoice(UUID.randomUUID(), 650_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
+        val payment = PayInvoice(UUID.randomUUID(), 83_000_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
-        val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds1 = filterAddHtlcCommands(progress1)
-        assertEquals(4, adds1.size)
-        assertEquals(660_000.msat, adds1.map { it.second.amount }.sum())
+        val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Progress>(progress)
+        val (_, add1) = findAddHtlcCommand(progress)
+        assertEquals(83_100_000.msat, add1.amount)
 
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        assertNull(outgoingPaymentHandler.processAddSettled(adds1[0].first, createRemoteFailure(adds1[0].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
-        assertNull(outgoingPaymentHandler.processAddSettled(adds1[1].first, createRemoteFailure(adds1[1].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
-        assertNull(outgoingPaymentHandler.processAddSettled(adds1[2].first, createRemoteFailure(adds1[2].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight))
-        val fail = outgoingPaymentHandler.processAddSettled(adds1[3].first, createRemoteFailure(adds1[3].second, attempt, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+        val fail = outgoingPaymentHandler.processAddSettledFailed(alice.channelId, createRemoteFailure(add1, attempt, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Failure>(fail)
         val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.InsufficientBalance, listOf(Either.Right(TrampolineFeeInsufficient))))
         assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 4)
+        assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 1)
     }
 
     @Test
     fun `retries exhausted`() = runSuspendTest {
-        val channels = makeChannels()
+        val (alice, _) = TestsHelper.reachNormal()
         val walletParams = defaultWalletParams.copy(
             trampolineFees = listOf(
                 TrampolineFees(10.sat, 0, CltvExpiryDelta(144)),
@@ -662,20 +501,21 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
         val payment = PayInvoice(UUID.randomUUID(), 220_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
-        val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds1 = filterAddHtlcCommands(progress1)
-        assertEquals(1, adds1.size)
-        assertEquals(230_000.msat, adds1.map { it.second.amount }.sum())
+        val progress1 = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Progress>(progress1)
+        val (_, add1) = findAddHtlcCommand(progress1)
+        assertEquals(230_000.msat, add1.amount)
 
         val attempt1 = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val progress2 = outgoingPaymentHandler.processAddSettled(adds1[0].first, createRemoteFailure(adds1[0].second, attempt1, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds2 = filterAddHtlcCommands(progress2)
-        assertEquals(1, adds2.size)
-        assertEquals(240_000.msat, adds2.map { it.second.amount }.sum())
+        val progress2 = outgoingPaymentHandler.processAddSettledFailed(alice.channelId, createRemoteFailure(add1, attempt1, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Progress>(progress2)
+        val (_, add2) = findAddHtlcCommand(progress2)
+        assertEquals(240_000.msat, add2.amount)
 
         val attempt2 = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val fail = outgoingPaymentHandler.processAddSettled(adds2[0].first, createRemoteFailure(adds2[0].second, attempt2, TrampolineFeeInsufficient), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
-        val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.RetryExhausted, listOf(Either.Right(TrampolineFeeInsufficient))))
+        val fail = outgoingPaymentHandler.processAddSettledFailed(alice.channelId, createRemoteFailure(add2, attempt2, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Failure>(fail)
+        val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.RetryExhausted, listOf(Either.Right(TrampolineFeeInsufficient), Either.Right(TrampolineFeeInsufficient))))
         assertFailureEquals(expected, fail)
 
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
@@ -689,18 +529,19 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             Pair(IncorrectOrUnknownPaymentDetails(50_000.msat, TestConstants.defaultBlockHeight.toLong()), FinalFailure.UnknownError)
         )
         fatalFailures.forEach { (remoteFailure, userFailure) ->
-            val channels = makeChannels()
+            val (alice, _) = TestsHelper.reachNormal()
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = PayInvoice(UUID.randomUUID(), 50_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
-            val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-            val adds = filterAddHtlcCommands(progress)
-            assertEquals(1, adds.size)
-            assertEquals(50_000.msat, adds.map { it.second.amount }.sum())
+            val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+            assertIs<OutgoingPaymentHandler.Progress>(progress)
+            val (_, add) = findAddHtlcCommand(progress)
+            assertEquals(50_000.msat, add.amount)
 
             val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-            val fail = outgoingPaymentHandler.processAddSettled(adds[0].first, createRemoteFailure(adds[0].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+            val fail = outgoingPaymentHandler.processAddSettledFailed(alice.channelId, createRemoteFailure(add, attempt, remoteFailure), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+            assertIs<OutgoingPaymentHandler.Failure>(fail)
             val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(userFailure, listOf(Either.Right(remoteFailure))))
             assertFailureEquals(expected, fail)
 
@@ -709,212 +550,74 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
     }
 
-    private suspend fun testLocalChannelFailures(invoice: Bolt11Invoice) {
-        val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        val payment = PayInvoice(UUID.randomUUID(), 5_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-
-        var progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        assertEquals(1, progress.actions.size)
-        assertEquals(5_000.msat, filterAddHtlcCommands(progress).map { it.second.amount }.sum())
-
-        // Channels fail, so we retry with different channels, without raising the fees.
-        val localFailures = listOf(
-            { channelId: ByteVector32 -> TooManyAcceptedHtlcs(channelId, 15) },
-            { channelId: ByteVector32 -> InsufficientFunds(channelId, 5_000.msat, 1.sat, 20.sat, 1.sat) },
-            { channelId: ByteVector32 -> HtlcValueTooHighInFlight(channelId, 150_000U, 155_000.msat) },
-            { channelId: ByteVector32 -> ForbiddenDuringSplice(channelId, "update-add-htlc") }
-        )
-        localFailures.forEach { localFailure ->
-            val (channelId, add) = filterAddHtlcCommands(progress).first()
-            progress = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, localFailure(channelId), null), channels) as OutgoingPaymentHandler.Progress
-            assertEquals(5_000.msat, add.amount)
-        }
-
-        // The last channel fails: we don't have any channels available to retry.
-        val (channelId, add) = filterAddHtlcCommands(progress).first()
-        val fail = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, TooManyAcceptedHtlcs(channelId, 15), null), channels) as OutgoingPaymentHandler.Failure
-        assertEquals(FinalFailure.InsufficientBalance, fail.failure.reason)
-        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentFailed(outgoingPaymentHandler.db, payment.paymentId, 5)
-    }
-
-    @Test
-    fun `local channel failures`() = runSuspendTest {
-        testLocalChannelFailures(makeInvoice(amount = null, supportsTrampoline = true))
-    }
-
-    @Test
-    fun `local channel failures -- recipient is our peer`() = runSuspendTest {
-        // The invoice comes from Bob, our direct peer (and trampoline node).
-        testLocalChannelFailures(makeInvoice(amount = null, supportsTrampoline = true, privKey = TestConstants.Bob.nodeParams.nodePrivateKey))
-    }
-
-    @Test
-    fun `local channel failure followed by success`() = runSuspendTest {
-        val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        val invoice = makeInvoice(amount = null, supportsTrampoline = true)
-        val payment = PayInvoice(UUID.randomUUID(), 5_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-
-        val progress1 = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        assertEquals(1, progress1.actions.size)
-        assertEquals(5_000.msat, filterAddHtlcCommands(progress1).map { it.second.amount }.sum())
-
-        // This first payment fails:
-        val (channelId, add) = filterAddHtlcCommands(progress1).first()
-        val progress2 = outgoingPaymentHandler.processAddFailed(channelId, ChannelAction.ProcessCmdRes.AddFailed(add, TooManyAcceptedHtlcs(channelId, 1), null), channels) as OutgoingPaymentHandler.Progress
-        assertEquals(1, progress2.actions.size)
-        val adds = filterAddHtlcCommands(progress2)
-        assertEquals(5_000.msat, adds.map { it.second.amount }.sum())
-
-        // This second attempt succeeds:
-        val preimage = randomBytes32()
-        val success = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[0].first, adds[0].second, preimage)) as OutgoingPaymentHandler.Success
-        assertEquals(0.msat, success.payment.fees)
-        assertEquals(5_000.msat, success.payment.recipientAmount)
-        assertEquals(preimage, success.preimage)
-
-        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 5_000.msat, fees = 0.msat, partsCount = 1)
-    }
-
-    @Test
-    fun `partial failure then fulfill -- spec violation`() = runSuspendTest {
-        val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        val invoice = makeInvoice(amount = null, supportsTrampoline = true)
-        val payment = PayInvoice(UUID.randomUUID(), 310_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-
-        val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds = filterAddHtlcCommands(progress)
-        assertEquals(2, adds.size)
-        assertEquals(310_000.msat, adds.map { it.second.amount }.sum())
-
-        val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val remoteFailure = IncorrectOrUnknownPaymentDetails(310_000.msat, TestConstants.defaultBlockHeight.toLong())
-        assertNull(outgoingPaymentHandler.processAddSettled(adds[0].first, createRemoteFailure(adds[0].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight))
-
-        // The recipient released the preimage without receiving the full payment amount.
-        // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
-        val preimage = randomBytes32()
-        val success = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[1].first, adds[1].second, preimage)) as OutgoingPaymentHandler.Success
-        assertEquals(preimage, success.preimage)
-        assertEquals((-250_000).msat, success.payment.fees) // since we paid much less than the expected amount, it results in negative fees
-
-        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 310_000.msat, fees = (-250_000).msat, partsCount = 1)
-    }
-
-    @Test
-    fun `partial fulfill then failure -- spec violation`() = runSuspendTest {
-        val channels = makeChannels()
-        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
-        val invoice = makeInvoice(amount = null, supportsTrampoline = true)
-        val payment = PayInvoice(UUID.randomUUID(), 310_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
-
-        val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-        val adds = filterAddHtlcCommands(progress)
-        assertEquals(2, adds.size)
-        assertEquals(310_000.msat, adds.map { it.second.amount }.sum())
-
-        val preimage = randomBytes32()
-        val expected = OutgoingPaymentHandler.PreimageReceived(payment, preimage)
-        val result = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[0].first, adds[0].second, preimage))
-        assertEquals(expected, result)
-
-        // The recipient released the preimage without receiving the full payment amount.
-        // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
-        val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-        val remoteFailure = IncorrectOrUnknownPaymentDetails(310_000.msat, TestConstants.defaultBlockHeight.toLong())
-        val success = outgoingPaymentHandler.processAddSettled(adds[1].first, createRemoteFailure(adds[1].second, attempt, remoteFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Success
-        assertEquals(preimage, success.preimage)
-        assertEquals((-60_000).msat, success.payment.fees) // since we paid much less than the expected amount, it results in negative fees
-
-        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
-        assertDbPaymentSucceeded(outgoingPaymentHandler.db, payment.paymentId, amount = 310_000.msat, fees = (-60_000).msat, partsCount = 1)
-    }
-
     @Test
     fun `failure after a wallet restart`() = runSuspendTest {
-        val channels = makeChannels()
+        val (alice, _) = TestsHelper.reachNormal()
         val db = InMemoryPaymentsDb()
 
         // Step 1: a payment attempt is made.
-        val (adds, attempt) = run {
+        val (add, attempt) = run {
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, db)
             val invoice = makeInvoice(amount = null, supportsTrampoline = true)
             val payment = PayInvoice(UUID.randomUUID(), 550_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
-            val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+            val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+            assertIs<OutgoingPaymentHandler.Progress>(progress)
             val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
-            val adds = filterAddHtlcCommands(progress)
-            assertEquals(3, adds.size)
-            Pair(adds, attempt)
+            val (_, add) = findAddHtlcCommand(progress)
+            Pair(add, attempt)
         }
 
         // Step 2: the wallet restarts and payment fails.
         run {
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, db)
-            assertNull(outgoingPaymentHandler.processAddFailed(adds[0].first, ChannelAction.ProcessCmdRes.AddFailed(adds[0].second, ChannelUnavailable(adds[0].first), null), channels))
-            assertNull(outgoingPaymentHandler.processAddSettled(adds[1].first, createRemoteFailure(adds[1].second, attempt, TemporaryNodeFailure), channels, TestConstants.defaultBlockHeight))
-            val result = outgoingPaymentHandler.processAddSettled(adds[2].first, createRemoteFailure(adds[2].second, attempt, PermanentNodeFailure), channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
-            val failures: List<Either<ChannelException, FailureMessage>> = listOf(
-                Either.Left(ChannelUnavailable(adds[0].first)),
-                // Since we've lost the shared secrets, we can't decrypt remote failures.
-                Either.Right(UnknownFailureMessage(0)),
-                Either.Right(UnknownFailureMessage(0))
-            )
-            assertFailureEquals(OutgoingPaymentHandler.Failure(attempt.request, OutgoingPaymentFailure(FinalFailure.WalletRestarted, failures)), result)
+            val fail = outgoingPaymentHandler.processAddSettledFailed(alice.channelId, createRemoteFailure(add, attempt, TemporaryNodeFailure), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+            assertIs<OutgoingPaymentHandler.Failure>(fail)
+            assertEquals(attempt.request, fail.request)
+            assertEquals(FinalFailure.WalletRestarted, fail.failure.reason)
+            assertEquals(1, fail.failure.failures.size)
+            // Since we haven't stored the shared secrets, we can't decrypt remote failure.
+            assertIs<LightningOutgoingPayment.Part.Status.Failure.Uninterpretable>(fail.failure.failures.first().failure)
         }
     }
 
     @Test
     fun `success after a wallet restart`() = runSuspendTest {
-        val channels = makeChannels()
+        val (alice, _) = TestsHelper.reachNormal()
         val preimage = randomBytes32()
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
         val payment = PayInvoice(UUID.randomUUID(), 550_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
         val db = InMemoryPaymentsDb()
 
         // Step 1: a payment attempt is made.
-        val adds = run {
+        val add = run {
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, db)
-            val progress = outgoingPaymentHandler.sendPayment(payment, channels, TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
-            val adds = filterAddHtlcCommands(progress)
-            assertEquals(3, adds.size)
-            // A first part is fulfilled before the wallet restarts.
-            val result = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[0].first, adds[0].second, preimage))
-            assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), result)
-            adds
+            val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+            assertIs<OutgoingPaymentHandler.Progress>(progress)
+            findAddHtlcCommand(progress).second
         }
 
         // Step 2: the wallet restarts and payment succeeds.
         run {
             val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, db)
-            val result1 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[1].first, adds[1].second, preimage))
-            assertEquals(OutgoingPaymentHandler.PreimageReceived(payment, preimage), result1)
-            val result2 = outgoingPaymentHandler.processAddSettled(createRemoteFulfill(adds[2].first, adds[2].second, preimage)) as OutgoingPaymentHandler.Success
-            assertEquals(preimage, result2.preimage)
-            assertEquals(3, result2.payment.parts.size)
-            assertEquals(payment, PayInvoice(result2.payment.id, result2.payment.recipientAmount, result2.payment.details as LightningOutgoingPayment.Details.Normal))
-            assertEquals(preimage, (result2.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
+            val success = outgoingPaymentHandler.processAddSettledFulfilled(createRemoteFulfill(alice.channelId, add, preimage))
+            assertIs<OutgoingPaymentHandler.Success>(success)
+            assertEquals(preimage, success.preimage)
+            assertEquals(1, success.payment.parts.size)
+            assertEquals(payment, success.request)
+            assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
         }
     }
 
     private fun makeInvoice(amount: MilliSatoshi?, supportsTrampoline: Boolean, privKey: PrivateKey = randomKey(), extraHops: List<List<Bolt11Invoice.TaggedField.ExtraHop>> = listOf()): Bolt11Invoice {
         val paymentPreimage: ByteVector32 = randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
-
-        val invoiceFeatures = mutableMapOf(
-            Feature.VariableLengthOnion to FeatureSupport.Optional,
-            Feature.PaymentSecret to FeatureSupport.Mandatory,
-            Feature.BasicMultiPartPayment to FeatureSupport.Optional
-        )
-        if (supportsTrampoline) {
-            invoiceFeatures[Feature.ExperimentalTrampolinePayment] = FeatureSupport.Optional
+        val invoiceFeatures: Map<Feature, FeatureSupport> = buildMap {
+            put(Feature.VariableLengthOnion, FeatureSupport.Optional)
+            put(Feature.PaymentSecret, FeatureSupport.Mandatory)
+            put(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
+            if (supportsTrampoline) put(Feature.ExperimentalTrampolinePayment, FeatureSupport.Optional)
         }
-
         return Bolt11Invoice.create(
             chain = Chain.Mainnet,
             amount = amount,
@@ -922,50 +625,21 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             privateKey = privKey,
             description = Either.Left("unit test"),
             minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
-            features = Features(invoiceFeatures.toMap()),
+            features = Features(invoiceFeatures),
             extraHops = extraHops
         )
     }
 
-    private fun makeChannels(): Map<ByteVector32, Normal> {
-        val (alice, _) = TestsHelper.reachNormal()
-        val reserve = alice.commitments.latest.localChannelReserve
-        val channelDetails = listOf(
-            Pair(ShortChannelId(1), 250_000.msat),
-            Pair(ShortChannelId(2), 150_000.msat),
-            Pair(ShortChannelId(3), 0.msat),
-            Pair(ShortChannelId(4), 10_000.msat),
-            Pair(ShortChannelId(5), 200_000.msat),
-            Pair(ShortChannelId(6), 100_000.msat),
-        )
-        return channelDetails.associate {
-            val channelId = randomBytes32()
-            val channel = alice.state.copy(
-                shortChannelId = it.first,
-                commitments = alice.commitments.copy(
-                    params = alice.commitments.params.copy(channelId = channelId),
-                    active = alice.commitments.active.map { commitment ->
-                        commitment.copy(remoteCommit = commitment.remoteCommit.copy(spec = CommitmentSpec(setOf(), FeeratePerKw(0.sat), 50_000.msat, (it.second + ((Commitments.ANCHOR_AMOUNT * 2) + reserve).toMilliSatoshi()))))
-                    }
-                )
-            )
-            channelId to channel
-        }
-    }
-
-    private fun filterAddHtlcCommands(progress: OutgoingPaymentHandler.Progress): List<Pair<ByteVector32, ChannelCommand.Htlc.Add>> {
-        val addCommands = mutableListOf<Pair<ByteVector32, ChannelCommand.Htlc.Add>>()
-        for (action in progress.actions) {
-            val addCommand = action.channelCommand as? ChannelCommand.Htlc.Add
-            if (addCommand != null) {
-                addCommands.add(Pair(action.channelId, addCommand))
+    private fun findAddHtlcCommand(progress: OutgoingPaymentHandler.Progress): Pair<ByteVector32, ChannelCommand.Htlc.Add> {
+        return progress.actions.firstNotNullOf {
+            when (val cmd = it.channelCommand) {
+                is ChannelCommand.Htlc.Add -> Pair(it.channelId, cmd)
+                else -> null
             }
         }
-        return addCommands.toList()
     }
 
-    private fun makeUpdateAddHtlc(channelId: ByteVector32, cmd: ChannelCommand.Htlc.Add, htlcId: Long = 0): UpdateAddHtlc =
-        UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
+    private fun makeUpdateAddHtlc(channelId: ByteVector32, cmd: ChannelCommand.Htlc.Add, htlcId: Long = 0): UpdateAddHtlc = UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
 
     private fun createRemoteFulfill(channelId: ByteVector32, add: ChannelCommand.Htlc.Add, preimage: ByteVector32): ChannelAction.ProcessCmdRes.AddSettledFulfill {
         val updateAddHtlc = makeUpdateAddHtlc(channelId, add)
@@ -973,8 +647,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     private fun createRemoteFailure(add: ChannelCommand.Htlc.Add, attempt: OutgoingPaymentHandler.PaymentAttempt, failureMessage: FailureMessage): ChannelAction.ProcessCmdRes.AddSettledFail {
-        val sharedSecrets = attempt.pending.getValue(add.paymentId).second
-        val reason = FailurePacket.create(sharedSecrets.perHopSecrets.last().first, failureMessage)
+        val reason = FailurePacket.create(attempt.sharedSecrets.perHopSecrets.last().first, failureMessage)
         val updateAddHtlc = makeUpdateAddHtlc(randomBytes32(), add)
         return ChannelAction.ProcessCmdRes.AddSettledFail(
             add.paymentId,
