@@ -66,6 +66,14 @@ object Deserialization {
         lastSent = readLightningMessage() as ChannelReady
     )
 
+    private fun Input.readWaitForFundingSigned() = WaitForFundingSigned(
+        channelParams = readChannelParams(),
+        signingSession = readInteractiveTxSigningSession(),
+        remoteSecondPerCommitmentPoint = readPublicKey(),
+        liquidityPurchase = readNullable { readLiquidityPurchase() },
+        channelOrigin = readNullable { readChannelOrigin() }
+    )
+
     private fun Input.readWaitForFundingSignedWithPushAmount(): WaitForFundingSigned {
         val channelParams = readChannelParams()
         val signingSession = readInteractiveTxSigningSession()
@@ -77,14 +85,6 @@ object Deserialization {
         val channelOrigin = readNullable { readChannelOrigin() }
         return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase, channelOrigin)
     }
-
-    private fun Input.readWaitForFundingSigned() = WaitForFundingSigned(
-        channelParams = readChannelParams(),
-        signingSession = readInteractiveTxSigningSession(),
-        remoteSecondPerCommitmentPoint = readPublicKey(),
-        liquidityPurchase = readNullable { readLiquidityPurchase() },
-        channelOrigin = readNullable { readChannelOrigin() }
-    )
 
     private fun Input.readWaitForFundingSignedLegacy(): WaitForFundingSigned {
         val channelParams = readChannelParams()
