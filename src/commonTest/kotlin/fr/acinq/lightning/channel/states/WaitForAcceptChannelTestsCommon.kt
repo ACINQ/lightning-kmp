@@ -3,15 +3,16 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Chain
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.lightning.*
+import fr.acinq.lightning.ChannelEvents
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Feature
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
@@ -140,16 +141,6 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv AcceptChannel -- invalid push_amount`() {
-        val (alice, _, accept) = init(bobFundingAmount = TestConstants.bobFundingAmount, bobPushAmount = TestConstants.bobFundingAmount.toMilliSatoshi() + 1.msat)
-        assertEquals(accept.pushAmount, TestConstants.bobFundingAmount.toMilliSatoshi() + 1.msat)
-        val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(accept))
-        val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, InvalidPushAmount(accept.temporaryChannelId, accept.fundingAmount.toMilliSatoshi() + 1.msat, accept.fundingAmount.toMilliSatoshi()).message))
-        assertIs<LNChannel<Aborted>>(alice1)
-    }
-
-    @Test
     fun `recv AcceptChannel -- dust limit too low`() {
         val (alice, _, accept) = init()
         // we don't want their dust limit to be below 354
@@ -200,14 +191,11 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-            alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
-            bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
             requestRemoteFunding: Satoshi? = null,
             zeroConf: Boolean = false,
         ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForFundingCreated>, AcceptDualFundedChannel> {
-            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, alicePushAmount, bobPushAmount, requestRemoteFunding, zeroConf)
+            val (alice, bob, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, currentHeight, aliceFundingAmount, bobFundingAmount, requestRemoteFunding, zeroConf)
             assertEquals(open.fundingAmount, aliceFundingAmount)
-            assertEquals(open.pushAmount, alicePushAmount)
             assertEquals(open.channelType, channelType)
             requestRemoteFunding?.let {
                 assertTrue(open.channelFlags.nonInitiatorPaysCommitFees)
@@ -218,7 +206,6 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
             val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
             assertEquals(open.temporaryChannelId, accept.temporaryChannelId)
             assertEquals(accept.fundingAmount, bobFundingAmount)
-            assertEquals(accept.pushAmount, bobPushAmount)
             assertEquals(accept.channelType, channelType)
             when (zeroConf) {
                 true -> assertEquals(0, accept.minimumDepth)

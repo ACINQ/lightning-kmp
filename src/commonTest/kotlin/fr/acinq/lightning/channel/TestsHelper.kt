@@ -147,8 +147,6 @@ object TestsHelper {
         currentHeight: Int = TestConstants.defaultBlockHeight,
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-        alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
-        bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         requestRemoteFunding: Satoshi? = null,
         zeroConf: Boolean = false,
         channelOrigin: Origin? = null
@@ -191,7 +189,6 @@ object TestsHelper {
             ChannelCommand.Init.Initiator(
                 CompletableDeferred(),
                 aliceFundingAmount,
-                alicePushAmount,
                 createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
                 FeeratePerKw.CommitmentFeerate,
                 TestConstants.feeratePerKw,
@@ -200,7 +197,12 @@ object TestsHelper {
                 channelFlags,
                 ChannelConfig.standard,
                 channelType,
-                requestRemoteFunding?.let { LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromChannelBalance) },
+                requestRemoteFunding?.let {
+                    when (channelOrigin) {
+                        is Origin.OffChainPayment -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(channelOrigin.paymentHash)))
+                        else -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromChannelBalance)
+                    }
+                },
                 channelOrigin,
             )
         )
@@ -212,7 +214,6 @@ object TestsHelper {
                 CompletableDeferred(),
                 temporaryChannelId,
                 bobFundingAmount,
-                bobPushAmount,
                 bobWallet,
                 bobChannelParams,
                 ChannelConfig.standard,
@@ -232,8 +233,6 @@ object TestsHelper {
         currentHeight: Int = TestConstants.defaultBlockHeight,
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
         bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
-        alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount,
-        bobPushAmount: MilliSatoshi = TestConstants.bobPushAmount,
         requestRemoteFunding: Satoshi? = null,
         zeroConf: Boolean = false,
     ): Triple<LNChannel<Normal>, LNChannel<Normal>, Transaction> {
@@ -244,8 +243,6 @@ object TestsHelper {
             currentHeight,
             aliceFundingAmount,
             bobFundingAmount,
-            alicePushAmount,
-            bobPushAmount,
             requestRemoteFunding,
             zeroConf
         )

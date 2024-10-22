@@ -419,10 +419,9 @@ data class Normal(
                                                 lockTime = currentBlockHeight.toLong(),
                                                 feerate = spliceStatus.command.feerate,
                                                 fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
-                                                pushAmount = spliceStatus.command.pushAmount,
                                                 requestFunding = spliceStatus.command.requestRemoteFunding,
                                             )
-                                            logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution} local.push=${spliceInit.pushAmount}" }
+                                            logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution}" }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(spliceStatus.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
                                         }
                                     } else {
@@ -453,12 +452,11 @@ data class Normal(
                         }
                         is SpliceStatus.NonInitiatorQuiescent ->
                             if (commitments.isQuiescent()) {
-                                logger.info { "accepting splice with remote.amount=${cmd.message.fundingContribution} remote.push=${cmd.message.pushAmount}" }
+                                logger.info { "accepting splice with remote.amount=${cmd.message.fundingContribution}" }
                                 val parentCommitment = commitments.active.first()
                                 val spliceAck = SpliceAck(
                                     channelId,
                                     fundingContribution = 0.sat, // only remote contributes to the splice
-                                    pushAmount = 0.msat,
                                     fundingPubkey = channelKeys().fundingPubKey(parentCommitment.fundingTxIndex + 1),
                                     willFund = null,
                                 )
@@ -489,8 +487,6 @@ data class Normal(
                                     spliceStatus = SpliceStatus.InProgress(
                                         replyTo = null,
                                         session,
-                                        localPushAmount = 0.msat,
-                                        remotePushAmount = cmd.message.pushAmount,
                                         liquidityPurchase = null,
                                         origins = listOf()
                                     )
@@ -511,7 +507,7 @@ data class Normal(
                     }
                     is SpliceAck -> when (spliceStatus) {
                         is SpliceStatus.Requested -> {
-                            logger.info { "our peer accepted our splice request with remote.amount=${cmd.message.fundingContribution} remote.push=${cmd.message.pushAmount} liquidityFees=${spliceStatus.command.liquidityFees}" }
+                            logger.info { "our peer accepted our splice request with remote.amount=${cmd.message.fundingContribution} liquidityFees=${spliceStatus.command.liquidityFees}" }
                             when (val liquidityPurchase = LiquidityAds.validateRemoteFunding(
                                 spliceStatus.command.requestRemoteFunding,
                                 remoteNodeId,
@@ -550,8 +546,6 @@ data class Normal(
                                         sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote, toHtlcs = parentCommitment.localCommit.spec.htlcs.map { it.add.amountMsat }.sum())),
                                         walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                         localOutputs = spliceStatus.command.spliceOutputs,
-                                        localPushAmount = spliceStatus.spliceInit.pushAmount,
-                                        remotePushAmount = cmd.message.pushAmount,
                                         liquidityPurchase = liquidityPurchase.value,
                                         changePubKey = null // we don't want a change output: we're spending every funds available
                                     )) {
@@ -579,8 +573,6 @@ data class Normal(
                                                         spliceStatus = SpliceStatus.InProgress(
                                                             replyTo = spliceStatus.command.replyTo,
                                                             interactiveTxSession,
-                                                            localPushAmount = spliceStatus.spliceInit.pushAmount,
-                                                            remotePushAmount = cmd.message.pushAmount,
                                                             liquidityPurchase = liquidityPurchase.value,
                                                             origins = spliceStatus.command.origins,
                                                         )
@@ -617,8 +609,6 @@ data class Normal(
                                         spliceStatus.spliceSession.fundingParams,
                                         fundingTxIndex = parentCommitment.fundingTxIndex + 1,
                                         interactiveTxAction.sharedTx,
-                                        localPushAmount = spliceStatus.localPushAmount,
-                                        remotePushAmount = spliceStatus.remotePushAmount,
                                         liquidityPurchase = spliceStatus.liquidityPurchase,
                                         localCommitmentIndex = parentCommitment.localCommit.index,
                                         remoteCommitmentIndex = parentCommitment.remoteCommit.index,

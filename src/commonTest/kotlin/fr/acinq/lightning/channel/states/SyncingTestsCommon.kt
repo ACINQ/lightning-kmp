@@ -266,7 +266,7 @@ class SyncingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK`() {
-        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs, alicePushAmount = 0.msat)
+        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         val (alice1, bob1, _) = disconnectWithBackup(alice, bob)
         assertIs<WaitForFundingConfirmed>(alice1.state.state)

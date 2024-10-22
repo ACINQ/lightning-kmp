@@ -72,11 +72,6 @@ object Helpers {
             return Either.Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
         }
 
-        // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
-        if (open.pushAmount > open.fundingAmount) {
-            return Either.Left(InvalidPushAmount(open.temporaryChannelId, open.pushAmount, open.fundingAmount.toMilliSatoshi()))
-        }
-
         // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
         if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) {
             return Either.Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks))
@@ -120,10 +115,6 @@ object Helpers {
 
         if (accept.fundingAmount < 0.sat) {
             return Either.Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount))
-        }
-
-        if (accept.pushAmount > accept.fundingAmount) {
-            return Either.Left(InvalidPushAmount(accept.temporaryChannelId, accept.pushAmount, accept.fundingAmount.toMilliSatoshi()))
         }
 
         if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) {

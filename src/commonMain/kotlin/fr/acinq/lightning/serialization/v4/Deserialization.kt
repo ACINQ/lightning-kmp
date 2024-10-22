@@ -33,7 +33,7 @@ object Deserialization {
     private fun Input.readPersistedChannelState(): PersistedChannelState = when (val discriminator = read()) {
         0x08 -> readLegacyWaitForFundingConfirmed()
         0x09 -> readLegacyWaitForFundingLocked()
-        0x00 -> readWaitForFundingConfirmed()
+        0x00 -> readWaitForFundingConfirmedWithPushAmount()
         0x01 -> readWaitForChannelReady()
         0x02 -> readNormalLegacy()
         0x03 -> readShuttingDown()
@@ -43,7 +43,9 @@ object Deserialization {
         0x07 -> readClosed()
         0x0a -> readWaitForFundingSignedLegacy()
         0x0b -> readNormal()
-        0x0c -> readWaitForFundingSigned()
+        0x0c -> readWaitForFundingSignedWithPushAmount()
+        0x0d -> readWaitForFundingSigned()
+        0x0e -> readWaitForFundingConfirmed()
         else -> error("unknown discriminator $discriminator for class ${PersistedChannelState::class}")
     }
 
@@ -67,27 +69,51 @@ object Deserialization {
     private fun Input.readWaitForFundingSigned() = WaitForFundingSigned(
         channelParams = readChannelParams(),
         signingSession = readInteractiveTxSigningSession(),
-        localPushAmount = readNumber().msat,
-        remotePushAmount = readNumber().msat,
         remoteSecondPerCommitmentPoint = readPublicKey(),
         liquidityPurchase = readNullable { readLiquidityPurchase() },
         channelOrigin = readNullable { readChannelOrigin() }
     )
 
-    private fun Input.readWaitForFundingSignedLegacy() = WaitForFundingSigned(
-        channelParams = readChannelParams(),
-        signingSession = readInteractiveTxSigningSession(),
-        localPushAmount = readNumber().msat,
-        remotePushAmount = readNumber().msat,
-        remoteSecondPerCommitmentPoint = readPublicKey(),
-        liquidityPurchase = null,
-        channelOrigin = readNullable { readChannelOrigin() }
-    )
+    private fun Input.readWaitForFundingSignedWithPushAmount(): WaitForFundingSigned {
+        val channelParams = readChannelParams()
+        val signingSession = readInteractiveTxSigningSession()
+        // We previously included a local_push_amount and a remote_push_amount.
+        readNumber()
+        readNumber()
+        val remoteSecondPerCommitmentPoint = readPublicKey()
+        val liquidityPurchase = readNullable { readLiquidityPurchase() }
+        val channelOrigin = readNullable { readChannelOrigin() }
+        return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase, channelOrigin)
+    }
+
+    private fun Input.readWaitForFundingSignedLegacy(): WaitForFundingSigned {
+        val channelParams = readChannelParams()
+        val signingSession = readInteractiveTxSigningSession()
+        // We previously included a local_push_amount and a remote_push_amount.
+        readNumber()
+        readNumber()
+        val remoteSecondPerCommitmentPoint = readPublicKey()
+        val channelOrigin = readNullable { readChannelOrigin() }
+        return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase = null, channelOrigin)
+    }
+
+    private fun Input.readWaitForFundingConfirmedWithPushAmount(): WaitForFundingConfirmed {
+        val commitments = readCommitments()
+        // We previously included a local_push_amount and a remote_push_amount.
+        readNumber()
+        readNumber()
+        val waitingSinceBlock = readNumber()
+        val deferred = readNullable { readLightningMessage() as ChannelReady }
+        val rbfStatus = when (val discriminator = read()) {
+            0x00 -> RbfStatus.None
+            0x01 -> RbfStatus.WaitingForSigs(readInteractiveTxSigningSession())
+            else -> error("unknown discriminator $discriminator for class ${RbfStatus::class}")
+        }
+        return WaitForFundingConfirmed(commitments, waitingSinceBlock, deferred, rbfStatus)
+    }
 
     private fun Input.readWaitForFundingConfirmed() = WaitForFundingConfirmed(
         commitments = readCommitments(),
-        localPushAmount = readNumber().msat,
-        remotePushAmount = readNumber().msat,
         waitingSinceBlock = readNumber(),
         deferred = readNullable { readLightningMessage() as ChannelReady },
         rbfStatus = when (val discriminator = read()) {

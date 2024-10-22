@@ -41,7 +41,6 @@ sealed class PeerCommand
 /** Open a channel, consuming all the spendable utxos in the wallet state provided. */
 data class OpenChannel(
     val fundingAmount: Satoshi,
-    val pushAmount: MilliSatoshi,
     val walletInputs: List<WalletState.Utxo>,
     val commitTxFeerate: FeeratePerKw,
     val fundingTxFeerate: FeeratePerKw,
@@ -1077,7 +1076,6 @@ class Peer(
                                 replyTo = CompletableDeferred(),
                                 temporaryChannelId = msg.temporaryChannelId,
                                 fundingAmount = 0.sat,
-                                pushAmount = 0.msat,
                                 walletInputs = listOf(),
                                 localParams = localParams,
                                 channelConfig = channelConfig,
@@ -1258,7 +1256,6 @@ class Peer(
                     ChannelCommand.Init.Initiator(
                         replyTo = CompletableDeferred(),
                         fundingAmount = cmd.fundingAmount,
-                        pushAmount = cmd.pushAmount,
                         walletInputs = cmd.walletInputs,
                         commitTxFeerate = cmd.commitTxFeerate,
                         fundingTxFeerate = cmd.fundingTxFeerate,
@@ -1363,7 +1360,6 @@ class Peer(
                                             val initCommand = ChannelCommand.Init.Initiator(
                                                 replyTo = CompletableDeferred(),
                                                 fundingAmount = localFundingAmount,
-                                                pushAmount = 0.msat,
                                                 walletInputs = cmd.walletInputs,
                                                 commitTxFeerate = currentFeerates.commitmentFeerate,
                                                 fundingTxFeerate = currentFeerates.fundingFeerate,
@@ -1480,7 +1476,6 @@ class Peer(
                                     ChannelCommand.Init.Initiator(
                                         replyTo = CompletableDeferred(),
                                         fundingAmount = 0.sat, // we don't have funds to contribute
-                                        pushAmount = 0.msat,
                                         walletInputs = listOf(),
                                         commitTxFeerate = currentFeerates.commitmentFeerate,
                                         fundingTxFeerate = fundingFeerate,

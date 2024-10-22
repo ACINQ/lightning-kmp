@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
@@ -148,7 +147,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingSigned -- theirCloseFee == ourCloseFee -- non-initiator pays commit fees`() {
-        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 200_000.sat, alicePushAmount = 0.msat, requestRemoteFunding = TestConstants.bobFundingAmount)
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 200_000.sat, requestRemoteFunding = TestConstants.bobFundingAmount)
         assertFalse(alice.commitments.params.localParams.paysCommitTxFees)
         assertTrue(bob.commitments.params.localParams.paysCommitTxFees)
         // Alice sends all of her balance to Bob.
@@ -235,7 +234,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingSigned -- nothing at stake`() {
-        val (alice, bob) = reachNormal(bobFundingAmount = 0.sat, alicePushAmount = 0.msat)
+        val (alice, bob) = reachNormal(bobFundingAmount = 0.sat)
         val alice1 = alice.updateFeerate(FeeratePerKw(5_000.sat))
         val bob1 = bob.updateFeerate(FeeratePerKw(10_000.sat))
 
@@ -480,11 +479,8 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        fun init(
-            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
-            alicePushAmount: MilliSatoshi = TestConstants.alicePushAmount
-        ): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
-            val (alice, bob) = reachNormal(channelType = channelType, alicePushAmount = alicePushAmount)
+        fun init(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, ClosingSigned> {
+            val (alice, bob) = reachNormal(channelType = channelType)
             return mutualCloseAlice(alice, bob)
         }
 
