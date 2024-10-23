@@ -162,7 +162,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                             //
                             // 2) This is a new htlc. This can happen when a sender pays an already paid invoice. In that case the
                             //    htlc can be safely rejected.
-                            val htlcsMapInDb = received.receivedWith.filterIsInstance<LightningIncomingPayment.ReceivedWith.LightningPayment>().map { it.channelId to it.htlcId }
+                            val htlcsMapInDb = received.parts.filterIsInstance<LightningIncomingPayment.Received.Part.Htlc>().map { it.channelId to it.htlcId }
                             if (htlcsMapInDb.contains(paymentPart.htlc.channelId to paymentPart.htlc.id)) {
                                 logger.info { "accepting local replay of htlc=${paymentPart.htlc.id} on channel=${paymentPart.htlc.channelId}" }
                                 val action = WrappedChannelCommand(paymentPart.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(paymentPart.htlc.id, incomingPayment.paymentPreimage, true))
@@ -232,16 +232,16 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                         when {
                                             addToFeeCredit -> {
                                                 logger.info { "adding on-the-fly funding to fee credit (amount=${willAddHtlcParts.map { it.amount }.sum()})" }
-                                                val receivedWith = buildList {
-                                                    htlcParts.forEach { add(LightningIncomingPayment.ReceivedWith.LightningPayment(it.amount, it.htlc.channelId, it.htlc.id, it.htlc.fundingFee)) }
-                                                    willAddHtlcParts.forEach { add(LightningIncomingPayment.ReceivedWith.AddedToFeeCredit(it.amount)) }
+                                                val parts = buildList {
+                                                    htlcParts.forEach { add(LightningIncomingPayment.Received.Part.Htlc(it.amount, it.htlc.channelId, it.htlc.id, it.htlc.fundingFee)) }
+                                                    willAddHtlcParts.forEach { add(LightningIncomingPayment.Received.Part.FeeCredit(it.amount)) }
                                                 }
                                                 val actions = buildList {
                                                     // We send a single add_fee_credit for the will_add_htlc set.
                                                     add(SendOnTheFlyFundingMessage(AddFeeCredit(nodeParams.chainHash, incomingPayment.paymentPreimage)))
                                                     htlcParts.forEach { add(WrappedChannelCommand(it.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(it.htlc.id, incomingPayment.paymentPreimage, true))) }
                                                 }
-                                                acceptPayment(incomingPayment, receivedWith, actions)
+                                                acceptPayment(incomingPayment, parts, actions)
                                             }
                                             else -> {
                                                 // We're not adding to our fee credit, so we need to check our liquidity policy.
@@ -280,12 +280,12 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                         rejectPayment(payment, incomingPayment, failure)
                                     }
                                     is Either.Right -> {
-                                        val receivedWith = htlcParts.map { part -> LightningIncomingPayment.ReceivedWith.LightningPayment(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
+                                        val parts = htlcParts.map { part -> LightningIncomingPayment.Received.Part.Htlc(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
                                         val actions = htlcParts.map { part ->
                                             val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.paymentPreimage, true)
                                             WrappedChannelCommand(part.htlc.channelId, cmd)
                                         }
-                                        acceptPayment(incomingPayment, receivedWith, actions)
+                                        acceptPayment(incomingPayment, parts, actions)
                                     }
                                 }
                             }
@@ -296,15 +296,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
     }
 
-    private suspend fun acceptPayment(incomingPayment: LightningIncomingPayment, receivedWith: List<LightningIncomingPayment.ReceivedWith>, actions: List<PeerCommand>): ProcessAddResult.Accepted {
+    private suspend fun acceptPayment(incomingPayment: LightningIncomingPayment, parts: List<LightningIncomingPayment.Received.Part>, actions: List<PeerCommand>): ProcessAddResult.Accepted {
         pending.remove(incomingPayment.paymentHash)
         if (incomingPayment is Bolt12IncomingPayment) {
             // We didn't store the Bolt 12 invoice in our DB when receiving the invoice_request (to protect against DoS).
             // We need to create the DB entry now otherwise the payment won't be recorded.
             db.addIncomingPayment(incomingPayment)
         }
-        db.receiveLightningPayment(incomingPayment.paymentHash, receivedWith)
-        val received = LightningIncomingPayment.Received(receivedWith)
+        db.receiveLightningPayment(incomingPayment.paymentHash, parts)
+        val received = LightningIncomingPayment.Received(parts)
         val incomingPayment1 = when (incomingPayment) {
             is Bolt11IncomingPayment -> incomingPayment.copy(received = received)
             is Bolt12IncomingPayment -> incomingPayment.copy(received = received)

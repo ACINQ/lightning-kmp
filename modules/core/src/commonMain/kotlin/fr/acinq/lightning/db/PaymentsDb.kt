@@ -43,12 +43,12 @@ interface IncomingPaymentsDb {
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      *
      * This method is additive:
-     * - receivedWith set is appended to the existing set in database.
+     * - parts list is appended to the existing list in database.
      * - receivedAt must be updated in database.
      *
-     * @param receivedWith Is a set containing the payment parts holding the incoming amount.
+     * @param parts Is a list containing the payment parts holding the incoming amount.
      */
-    suspend fun receiveLightningPayment(paymentHash: ByteVector32, receivedWith: List<LightningIncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
+    suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Received.Part>, receivedAt: Long = currentTimestampMillis())
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listLightningExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<LightningIncomingPayment>
@@ -148,34 +148,34 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
     override val amountReceived: MilliSatoshi get() = received?.amount ?: 0.msat
 
-    data class Received(val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
+    data class Received(val parts: List<Part>, val receivedAt: Long = currentTimestampMillis()) {
         /** Total amount received after applying the fees. */
-        val amount: MilliSatoshi = receivedWith.map { it.amountReceived }.sum()
+        val amount: MilliSatoshi = parts.map { it.amountReceived }.sum()
 
         /** Fees applied to receive this payment. */
-        val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
-    }
+        val fees: MilliSatoshi = parts.map { it.fees }.sum()
 
-    sealed class ReceivedWith {
-        /** Amount received for this part after applying the fees. This is the final amount we can use. */
-        abstract val amountReceived: MilliSatoshi
+        sealed class Part {
+            /** Amount received for this part after applying the fees. This is the final amount we can use. */
+            abstract val amountReceived: MilliSatoshi
 
-        /** Fees applied to receive this part. Is zero for Lightning payments. */
-        abstract val fees: MilliSatoshi
+            /** Fees applied to receive this part. Is zero for Lightning payments. */
+            abstract val fees: MilliSatoshi
 
-        /** Payment was received via existing lightning channels. */
-        data class LightningPayment(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?) : ReceivedWith() {
-            // If there is no funding fee, the fees are paid by the sender for lightning payments.
-            override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
-        }
+            /** Payment was received via existing lightning channels. */
+            data class Htlc(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?) : Part() {
+                // If there is no funding fee, the fees are paid by the sender for lightning payments.
+                override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
+            }
 
-        /**
-         * Payment was added to our fee credit for future on-chain operations (see [fr.acinq.lightning.Feature.FundingFeeCredit]).
-         * We didn't really receive this amount yet, but we trust our peer to use it for future on-chain operations.
-         */
-        data class AddedToFeeCredit(override val amountReceived: MilliSatoshi) : ReceivedWith() {
-            // Adding to the fee credit doesn't cost any fees.
-            override val fees: MilliSatoshi = 0.msat
+            /**
+             * Payment was added to our fee credit for future on-chain operations (see [fr.acinq.lightning.Feature.FundingFeeCredit]).
+             * We didn't really receive this amount yet, but we trust our peer to use it for future on-chain operations.
+             */
+            data class FeeCredit(override val amountReceived: MilliSatoshi) : Part() {
+                // Adding to the fee credit doesn't cost any fees.
+                override val fees: MilliSatoshi = 0.msat
+            }
         }
     }
 

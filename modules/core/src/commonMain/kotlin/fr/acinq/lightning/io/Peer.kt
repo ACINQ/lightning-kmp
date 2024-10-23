@@ -967,7 +967,7 @@ class Peer(
         }
         when (result) {
             is IncomingPaymentHandler.ProcessAddResult.Accepted -> {
-                if ((result.incomingPayment.received?.receivedWith?.size ?: 0) > 1) {
+                if ((result.incomingPayment.received?.parts?.size ?: 0) > 1) {
                     // this was a multi-part payment, we signal that the task is finished
                     nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.IncomingMultiPartPayment(result.incomingPayment.paymentHash)))
                 }
