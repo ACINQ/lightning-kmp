@@ -4,10 +4,7 @@ import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
-import fr.acinq.lightning.channel.ChannelAction
-import fr.acinq.lightning.channel.ChannelCommand
-import fr.acinq.lightning.channel.Helpers
-import fr.acinq.lightning.channel.LocalFundingStatus
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ChannelTlv
 import fr.acinq.lightning.wire.OpenDualFundedChannel
@@ -55,6 +52,14 @@ data object WaitForInit : ChannelState() {
                         buildSet {
                             add(ChannelTlv.ChannelTypeTlv(cmd.channelType))
                             cmd.requestRemoteFunding?.let { add(ChannelTlv.RequestFundingTlv(it)) }
+                            if (cmd.channelType == ChannelType.SupportedChannelType.SimpleTaprootStaging || cmd.channelType == ChannelType.SupportedChannelType.SimpleTaprootStagingZeroReserve) add(
+                                ChannelTlv.NextLocalNoncesTlv(
+                                    listOf(
+                                        channelKeys.verificationNonce(0, 0).second,
+                                        channelKeys.verificationNonce(0, 1).second,
+                                        )
+                                )
+                            )
                         }
                     )
                 )
