@@ -29,19 +29,19 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun getLightningIncomingPayment(paymentHash: ByteVector32): LightningIncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, receivedWith: List<LightningIncomingPayment.ReceivedWith>, receivedAt: Long) {
+    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Received.Part>, receivedAt: Long) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
             is Bolt11IncomingPayment ->
                 incoming[paymentHash] = payment.copy(
                     received = LightningIncomingPayment.Received(
-                        receivedWith = payment.received?.receivedWith.orEmpty() + receivedWith,
+                        parts = payment.received?.parts.orEmpty() + parts,
                         receivedAt = receivedAt
                     )
                 )
             is Bolt12IncomingPayment -> incoming[paymentHash] = payment.copy(
                 received = LightningIncomingPayment.Received(
-                    receivedWith = payment.received?.receivedWith.orEmpty() + receivedWith,
+                    parts = payment.received?.parts.orEmpty() + parts,
                     receivedAt = receivedAt
                 )
             )
