@@ -498,6 +498,91 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertEquals(paymentMetadata.paymentHash, invoice.paymentHash)
     }
 
+    @Test
+    fun `send a trampoline payment to blinded recipient`() {
+        val features = Features(
+            Feature.BasicMultiPartPayment to FeatureSupport.Optional,
+            Feature.TrampolinePayment to FeatureSupport.Optional,
+        )
+        val offer = OfferTypes.Offer.createNonBlindedOffer(finalAmount, "test offer", d, features, Block.RegtestGenesisBlock.hash)
+        // D uses a 1-hop blinded path from its trampoline node C.
+        val (invoice, blindedRoute) = run {
+            val payerKey = randomKey()
+            val request = OfferTypes.InvoiceRequest(offer, finalAmount, 1, features, payerKey, "hello", Block.RegtestGenesisBlock.hash)
+            val paymentMetadata = OfferPaymentMetadata.V1(offer.offerId, finalAmount, paymentPreimage, payerKey.publicKey(), "hello", 1, currentTimestampMillis())
+            val blindedPayloadC = RouteBlindingEncryptedData(
+                TlvStream(
+                    RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(d)),
+                    RouteBlindingEncryptedDataTlv.PaymentRelay(channelUpdateCD.cltvExpiryDelta, channelUpdateCD.feeProportionalMillionths, channelUpdateCD.feeBaseMsat),
+                    RouteBlindingEncryptedDataTlv.PaymentConstraints(finalExpiry, 1.msat),
+                )
+            )
+            val blindedPayloadD = RouteBlindingEncryptedData(
+                TlvStream(
+                    RouteBlindingEncryptedDataTlv.PathId(paymentMetadata.toPathId(privD))
+                )
+            )
+            val blindedRouteDetails = RouteBlinding.create(randomKey(), listOf(c, d), listOf(blindedPayloadC, blindedPayloadD).map { it.write().byteVector() })
+            val paymentInfo = createBlindedPaymentInfo(channelUpdateCD)
+            val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRouteDetails.route), paymentInfo)
+            val invoice = Bolt12Invoice(request, paymentPreimage, blindedRouteDetails.blindedPrivateKey(privD), 600, features, listOf(path))
+            assertEquals(invoice.nodeId, blindedRouteDetails.route.blindedNodeIds.last())
+            assertNotEquals(invoice.nodeId, d)
+            assertTrue(invoice.features.hasFeature(Feature.TrampolinePayment))
+            Pair(invoice, blindedRouteDetails.route)
+        }
+
+        // B pays that invoice using its trampoline node C to relay to D using trampoline.
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice.paymentHash, finalAmount, finalExpiry, invoice.blindedPaths.first(), nodeHop_cd)
+        assertEquals(amountBC, firstAmount)
+        assertEquals(expiryBC, firstExpiry)
+
+        // C decrypts the onion, the trampoline onion and the encrypted data before relaying to D.
+        val addC = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
+        val (outerC, innerC, trampolineOnionD) = decryptRelayToBlindedTrampoline(addC, privC)
+        assertEquals(amountBC, outerC.amount)
+        assertEquals(amountBC, outerC.totalAmount)
+        assertEquals(expiryBC, outerC.expiry)
+        assertEquals(2, innerC.records.records.size)
+        val encryptedData = innerC.records.get<OnionPaymentPayloadTlv.EncryptedRecipientData>()?.data
+        assertNotNull(encryptedData)
+        val pathKey = innerC.records.get<OnionPaymentPayloadTlv.PathKey>()?.publicKey
+        assertNotNull(pathKey)
+        assertEquals(blindedRoute.firstPathKey, pathKey)
+        val (encryptedPayload, nextPathKey) = RouteBlinding.decryptPayload(privC, pathKey, encryptedData).right!!
+        val decryptedPayload = RouteBlindingEncryptedData.read(encryptedPayload.toByteArray()).right!!
+        assertEquals(EncodedNodeId(d), decryptedPayload.nextNodeId)
+        val paymentRelay = decryptedPayload.records.get<RouteBlindingEncryptedDataTlv.PaymentRelay>()
+        assertEquals(channelUpdateCD.cltvExpiryDelta, paymentRelay?.cltvExpiryDelta)
+        assertEquals(channelUpdateCD.feeBaseMsat, paymentRelay?.feeBase)
+        assertEquals(channelUpdateCD.feeProportionalMillionths, paymentRelay?.feeProportionalMillionths)
+
+        // C relays the trampoline payment to D.
+        val onionD = run {
+            val payloadD = PaymentOnion.FinalPayload.Standard(
+                TlvStream(
+                    OnionPaymentPayloadTlv.AmountToForward(finalAmount),
+                    OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry),
+                    OnionPaymentPayloadTlv.PaymentData(randomBytes32(), finalAmount),
+                    OnionPaymentPayloadTlv.PathKey(nextPathKey),
+                    OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnionD)
+                )
+            )
+            OutgoingPaymentPacket.buildOnion(listOf(d), listOf(payloadD), paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
+        }
+
+        // D receives the payment.
+        val addD = UpdateAddHtlc(randomBytes32(), 3, finalAmount, paymentHash, finalExpiry, onionD)
+        val payloadD = IncomingPaymentPacket.decrypt(addD, privD).right!!
+        assertIs<PaymentOnion.FinalPayload.Blinded>(payloadD)
+        assertEquals(finalAmount, payloadD.amount)
+        assertEquals(finalExpiry, payloadD.expiry)
+        val paymentMetadata = OfferPaymentMetadata.fromPathId(d, payloadD.pathId)
+        assertNotNull(paymentMetadata)
+        assertEquals(offer.offerId, paymentMetadata.offerId)
+        assertEquals(paymentMetadata.paymentHash, invoice.paymentHash)
+    }
+
     // See bolt04/trampoline-to-blinded-path-payment-onion-test.json
     @Test
     fun `send a trampoline payment to blinded paths -- reference test vector`() {
@@ -1310,6 +1395,89 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             assertNotNull(encryptedFailureC)
             // B decrypts the failure.
             val decrypted = FailurePacket.decrypt(encryptedFailureC.toByteArray(), onionC.sharedSecrets)
+            assertTrue(decrypted.isRight)
+            assertEquals(blindedRoute.blindedNodeIds.last(), decrypted.right?.originNode)
+            assertEquals(failure, decrypted.right?.failureMessage)
+        }
+    }
+
+    @Test
+    fun `build htlc failure onion -- trampoline payment to blinded trampoline recipient`() {
+        // D uses a 1-hop blinded path from its trampoline node C.
+        val (invoice, blindedRoute) = run {
+            val offer = OfferTypes.Offer.createNonBlindedOffer(finalAmount, "test offer", d, Features(Feature.TrampolinePayment to FeatureSupport.Optional), Block.RegtestGenesisBlock.hash)
+            val payerKey = randomKey()
+            val request = OfferTypes.InvoiceRequest(offer, finalAmount, 1, offer.features, payerKey, "hello", Block.RegtestGenesisBlock.hash)
+            val paymentMetadata = OfferPaymentMetadata.V1(offer.offerId, finalAmount, paymentPreimage, payerKey.publicKey(), "hello", 1, currentTimestampMillis())
+            val blindedPayloadC = RouteBlindingEncryptedData(
+                TlvStream(
+                    RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(d)),
+                    RouteBlindingEncryptedDataTlv.PaymentRelay(channelUpdateCD.cltvExpiryDelta, channelUpdateCD.feeProportionalMillionths, channelUpdateCD.feeBaseMsat),
+                    RouteBlindingEncryptedDataTlv.PaymentConstraints(finalExpiry, 1.msat),
+                )
+            )
+            val blindedPayloadD = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(paymentMetadata.toPathId(privD))))
+            val blindedRouteDetails = RouteBlinding.create(randomKey(), listOf(c, d), listOf(blindedPayloadC, blindedPayloadD).map { it.write().byteVector() })
+            val paymentInfo = createBlindedPaymentInfo(channelUpdateCD)
+            val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRouteDetails.route), paymentInfo)
+            val invoice = Bolt12Invoice(request, paymentPreimage, blindedRouteDetails.blindedPrivateKey(privD), 600, offer.features, listOf(path))
+            assertTrue(invoice.features.hasFeature(Feature.TrampolinePayment))
+            Pair(invoice, blindedRouteDetails.route)
+        }
+
+        // B pays that invoice using its trampoline node C to relay to D using trampoline.
+        val (amountBC, expiryBC, onionC) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice.paymentHash, finalAmount, finalExpiry, invoice.blindedPaths.first(), nodeHop_cd)
+        // C decrypts the onion, the trampoline onion and the encrypted data and relays to D.
+        val addC = UpdateAddHtlc(randomBytes32(), 1, amountBC, invoice.paymentHash, expiryBC, onionC.packet)
+        val (_, innerC, trampolineOnionD) = decryptRelayToBlindedTrampoline(addC, privC)
+        val (addD, willAddD, onionD) = run {
+            val encryptedData = innerC.records.get<OnionPaymentPayloadTlv.EncryptedRecipientData>()?.data!!
+            val pathKey = innerC.records.get<OnionPaymentPayloadTlv.PathKey>()?.publicKey!!
+            val (_, nextPathKey) = RouteBlinding.decryptPayload(privC, pathKey, encryptedData).right!!
+            val payloadD = PaymentOnion.FinalPayload.Standard(
+                TlvStream(
+                    OnionPaymentPayloadTlv.AmountToForward(finalAmount),
+                    OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry),
+                    OnionPaymentPayloadTlv.PaymentData(randomBytes32(), finalAmount),
+                    OnionPaymentPayloadTlv.PathKey(nextPathKey),
+                    OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnionD)
+                )
+            )
+            val onionD = OutgoingPaymentPacket.buildOnion(listOf(d), listOf(payloadD), paymentHash, OnionRoutingPacket.PaymentPacketLength)
+            val addD = UpdateAddHtlc(randomBytes32(), 2, finalAmount, addC.paymentHash, finalExpiry, onionD.packet)
+            val willAddD = WillAddHtlc(Block.RegtestGenesisBlock.hash, randomBytes32(), finalAmount, paymentHash, finalExpiry, onionD.packet)
+            Triple(addD, willAddD, onionD)
+        }
+        // D can correctly decrypt the blinded payment.
+        run {
+            val payloadD = IncomingPaymentPacket.decrypt(addD, privD).right!!
+            assertIs<PaymentOnion.FinalPayload.Blinded>(payloadD)
+            assertNotNull(OfferPaymentMetadata.fromPathId(d, payloadD.pathId))
+        }
+        run {
+            val payloadD = IncomingPaymentPacket.decrypt(willAddD, privD).right!!
+            assertIs<PaymentOnion.FinalPayload.Blinded>(payloadD)
+            assertNotNull(OfferPaymentMetadata.fromPathId(d, payloadD.pathId))
+        }
+
+        // D returns a failure: note that it is not a blinded failure, since there is no need to protect the blinded path against probing.
+        val failure = IncorrectOrUnknownPaymentDetails(finalAmount, currentBlockCount)
+        val encryptedFailuresD = run {
+            val encryptedFailureD = OutgoingPaymentPacket.buildHtlcFailure(privD, paymentHash, addD.onionRoutingPacket, addD.pathKey, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(failure)).right
+            assertNotNull(encryptedFailureD)
+            val willFailD = OutgoingPaymentPacket.buildWillAddHtlcFailure(privD, willAddD, failure)
+            assertIs<WillFailHtlc>(willFailD)
+            listOf(encryptedFailureD, willFailD.reason)
+        }
+        encryptedFailuresD.forEach { encryptedFailureD ->
+            // C cannot decrypt the failure.
+            assertTrue(FailurePacket.decrypt(encryptedFailureD.toByteArray(), onionD.sharedSecrets).isLeft)
+            // C peels the error coming from D and re-wraps it for B.
+            val peeled = FailurePacket.wrap(encryptedFailureD.toByteArray(), onionD.sharedSecrets.first().secret).toByteVector()
+            val encryptedFailureC = OutgoingPaymentPacket.buildHtlcFailure(privC, paymentHash, addC.onionRoutingPacket, addC.pathKey, ChannelCommand.Htlc.Settlement.Fail.Reason.Bytes(peeled)).right
+            assertNotNull(encryptedFailureC)
+            // B decrypts the failure.
+            val decrypted = FailurePacket.decrypt(encryptedFailureC.toByteArray(), onionC.outerSharedSecrets + onionC.innerSharedSecrets)
             assertTrue(decrypted.isRight)
             assertEquals(blindedRoute.blindedNodeIds.last(), decrypted.right?.originNode)
             assertEquals(failure, decrypted.right?.failureMessage)
