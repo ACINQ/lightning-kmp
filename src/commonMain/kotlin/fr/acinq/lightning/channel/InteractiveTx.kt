@@ -1147,7 +1147,7 @@ data class InteractiveTxSigningSession(
         }
 
         fun shouldSignFirst(isInitiator: Boolean, channelParams: ChannelParams, tx: SharedTransaction): Boolean {
-            val sharedAmountIn = tx.sharedInput?.let { it.localAmount + it.remoteAmount } ?: 0.msat
+            val sharedAmountIn = tx.sharedInput?.txOut?.amount?.toMilliSatoshi() ?: 0.msat
             val localAmountIn = tx.localInputs.map { it.txOut.amount }.sum().toMilliSatoshi() + if (isInitiator) sharedAmountIn else 0.msat
             val remoteAmountIn = tx.remoteInputs.map { it.txOut.amount }.sum().toMilliSatoshi() + if (isInitiator) 0.msat else sharedAmountIn
             return if (localAmountIn == remoteAmountIn) {
