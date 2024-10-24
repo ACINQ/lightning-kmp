@@ -9,7 +9,7 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 
-data class Syncing(val state: PersistedChannelState, val channelReestablishSent: Boolean) : ChannelState() {
+data class Syncing(val state: PersistedChannelState) : ChannelState() {
 
     val channelId = state.channelId
 
@@ -257,13 +257,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                             }
                         is Closing, is Closed, is WaitForRemotePublishFutureCommitment -> unhandled(cmd)
                     }
-                    Pair(nextState, buildList {
-                        if (!channelReestablishSent) {
-                            val channelReestablish = state.run { createChannelReestablish() }
-                            add(ChannelAction.Message.Send(channelReestablish))
-                        }
-                        addAll(actions)
-                    })
+                    Pair(nextState, actions)
                 }
                 is Error -> state.run { handleRemoteError(cmd.message) }
                 else -> unhandled(cmd)
@@ -292,7 +286,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                             when (nextState) {
                                 is Closing -> Pair(nextState, actions)
                                 is Closed -> Pair(nextState, actions)
-                                else -> Pair(Syncing(nextState, channelReestablishSent), actions)
+                                else -> Pair(Syncing(nextState), actions)
                             }
                         }
                     }
@@ -328,7 +322,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                     when (newState) {
                         is Closing -> Pair(newState, actions)
                         is Closed -> Pair(newState, actions)
-                        else -> Pair(Syncing(newState, channelReestablishSent), actions)
+                        else -> Pair(Syncing(newState), actions)
                     }
                 }
                 is WaitForFundingSigned -> Pair(this@Syncing, listOf())

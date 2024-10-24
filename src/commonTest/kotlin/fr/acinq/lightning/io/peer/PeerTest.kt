@@ -1,6 +1,7 @@
 package fr.acinq.lightning.io.peer
 
 import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
@@ -305,7 +306,7 @@ class PeerTest : LightningTestSuite() {
             nextRemoteRevocationNumber = commitments.remoteCommitIndex,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-        ).withChannelData(commitments.remoteChannelData)
+        )
 
         peer.send(MessageReceived(connectionId = 0, channelReestablish))
 
@@ -348,8 +349,8 @@ class PeerTest : LightningTestSuite() {
 
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
+        peer.send(MessageReceived(connectionId = 0, PeerStorageRetrieval(EncryptedChannelData(ByteVector.empty))))
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
-        assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
 
         // Wait until the channels are Syncing
@@ -377,8 +378,8 @@ class PeerTest : LightningTestSuite() {
 
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
+        peer.send(MessageReceived(connectionId = 0, PeerStorageRetrieval(EncryptedChannelData(ByteVector.empty))))
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
-        assertFalse(aliceReestablish.channelData.isEmpty())
         peer.send(MessageReceived(connectionId = 0, aliceReestablish))
 
         // Wait until the channels are Syncing

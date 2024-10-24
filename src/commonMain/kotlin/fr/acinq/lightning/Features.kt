@@ -134,6 +134,13 @@ sealed class Feature {
     }
 
     @Serializable
+    object ProvideStorage : Feature() {
+        override val rfcName get() = "option_provide_storage"
+        override val mandatory get() = 42
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
+    @Serializable
     object ChannelType : Feature() {
         override val rfcName get() = "option_channel_type"
         override val mandatory get() = 44
@@ -221,22 +228,6 @@ sealed class Feature {
     object TrustedSwapInProvider : Feature() {
         override val rfcName get() = "trusted_swap_in_provider"
         override val mandatory get() = 142
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
-    }
-
-    /** This feature bit should be activated when a node wants to send channel backups to their peers. */
-    @Serializable
-    object ChannelBackupClient : Feature() {
-        override val rfcName get() = "channel_backup_client"
-        override val mandatory get() = 144
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
-    }
-
-    /** This feature bit should be activated when a node stores channel backups for their peers. */
-    @Serializable
-    object ChannelBackupProvider : Feature() {
-        override val rfcName get() = "channel_backup_provider"
-        override val mandatory get() = 146
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
@@ -337,6 +328,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ShutdownAnySegwit,
             Feature.DualFunding,
             Feature.Quiescence,
+            Feature.ProvideStorage,
             Feature.ChannelType,
             Feature.PaymentMetadata,
             Feature.TrampolinePayment,
@@ -349,8 +341,6 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.PayToOpenProvider,
             Feature.TrustedSwapInClient,
             Feature.TrustedSwapInProvider,
-            Feature.ChannelBackupClient,
-            Feature.ChannelBackupProvider,
             Feature.ExperimentalSplice,
             Feature.OnTheFlyFunding,
             Feature.FundingFeeCredit
