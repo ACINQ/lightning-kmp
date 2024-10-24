@@ -131,19 +131,11 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     /** Funds received for this payment, null if no funds have been received yet. */
     abstract val received: Received?
 
-    /**
-     * This timestamp will be defined when the payment is final and usable for spending:
-     * - for lightning payment it is instant.
-     * - for on-chain payments, the associated transaction doesn't necessarily need to be
-     *   confirmed (if zero-conf is used), but both sides have to agree that the funds are
-     *   usable, a.k.a. "locked".
-     */
+    /** This timestamp will be defined when the received amount is usable for spending. */
     override val completedAt: Long? get() = received?.receivedAt
 
     /** Total fees paid to receive this payment. */
     override val fees: MilliSatoshi get() = received?.fees ?: 0.msat
-
-    override val amount: MilliSatoshi get() = amountReceived
 
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
     override val amountReceived: MilliSatoshi get() = received?.amount ?: 0.msat
@@ -159,7 +151,7 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
             /** Amount received for this part after applying the fees. This is the final amount we can use. */
             abstract val amountReceived: MilliSatoshi
 
-            /** Fees applied to receive this part. Is zero for Lightning payments. */
+            /** Fees applied to receive this part.*/
             abstract val fees: MilliSatoshi
 
             /** Payment was received via existing lightning channels. */
@@ -202,7 +194,9 @@ data class Bolt12IncomingPayment(
 /** Trustless swap-in (dual-funding or splice-in) */
 sealed class OnChainIncomingPayment : IncomingPayment() {
     abstract override val id: UUID
+    /** Fees paid to Lightning Service Provider for this on-chain transaction. */
     abstract val serviceFee: MilliSatoshi
+    /** Feed paid to bitcoin miners for processing the on-chain operation. */
     abstract val miningFee: Satoshi
     override val fees: MilliSatoshi get() = serviceFee + miningFee.toMilliSatoshi()
     abstract val channelId: ByteVector32
@@ -210,6 +204,11 @@ sealed class OnChainIncomingPayment : IncomingPayment() {
     abstract val localInputs: Set<OutPoint>
     abstract val confirmedAt: Long?
     abstract val lockedAt: Long?
+    /**
+     * This timestamp will be defined when the received amount is usable for spending. The
+     * associated transaction doesn't necessarily need to be confirmed (if zero-conf is
+     * used), but both sides have to agree that the funds are usable, a.k.a. "locked".
+     */
     override val completedAt: Long? get() = lockedAt
 }
 
@@ -217,9 +216,6 @@ sealed class OnChainIncomingPayment : IncomingPayment() {
  * Payment was received via a new channel opened to us.
  *
  * @param amountReceived Our side of the balance of this channel when it's created. This is the amount received after the creation fees are applied.
- * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
- * @param miningFee Feed paid to bitcoin miners for processing the L1 transaction.
- * @param channelId The long id of the channel created to receive this payment. May be null if the channel id is not known.
  */
 data class NewChannelIncomingPayment(
     override val id: UUID,
@@ -234,10 +230,10 @@ data class NewChannelIncomingPayment(
     override val lockedAt: Long?
 ) : OnChainIncomingPayment()
 
+/** Payment was received by splicing on-chain local funds into an existing channel. */
 data class SpliceInIncomingPayment(
     override val id: UUID,
     override val amountReceived: MilliSatoshi,
-    override val serviceFee: MilliSatoshi,
     override val miningFee: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
@@ -245,7 +241,9 @@ data class SpliceInIncomingPayment(
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?
-) : OnChainIncomingPayment()
+) : OnChainIncomingPayment() {
+    override val serviceFee: MilliSatoshi = 0.msat
+}
 
 @Deprecated("Legacy trusted swap-in, kept for backwards-compatibility with existing databases.")
 data class LegacySwapInIncomingPayment(
