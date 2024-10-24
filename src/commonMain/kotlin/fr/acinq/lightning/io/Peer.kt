@@ -866,7 +866,6 @@ class Peer(
                                 SpliceInIncomingPayment(
                                     id = UUID.randomUUID(),
                                     amountReceived = action.amountReceived,
-                                    serviceFee = action.serviceFee,
                                     miningFee = action.miningFee,
                                     channelId = channelId,
                                     txId = action.txId,
