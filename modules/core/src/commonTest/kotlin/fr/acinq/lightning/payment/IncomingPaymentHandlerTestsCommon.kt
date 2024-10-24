@@ -1883,8 +1883,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             )
             assertEquals(incomingPayment.amount, dbPayment.amount)
             assertEquals(incomingPayment.received?.parts, dbPayment.received?.parts)
-
-
         }
 
         private suspend fun createFixture(invoiceAmount: MilliSatoshi?): Triple<IncomingPaymentHandler, LightningIncomingPayment, ByteVector32> {

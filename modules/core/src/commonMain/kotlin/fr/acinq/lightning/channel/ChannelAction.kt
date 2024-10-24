@@ -9,7 +9,6 @@ import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.db.ChannelClosingType
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.UUID
-import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 
 /** Channel Actions (outputs produced by the state machine). */
@@ -80,7 +79,7 @@ sealed class ChannelAction {
             abstract val txId: TxId
             abstract val localInputs: Set<OutPoint>
             data class ViaNewChannel(val amountReceived: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
-            data class ViaSpliceIn(val amountReceived: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
+            data class ViaSpliceIn(val amountReceived: MilliSatoshi, val miningFee: Satoshi, override val localInputs: Set<OutPoint>, override val txId: TxId, override val origin: Origin?) : StoreIncomingPayment()
         }
         /** Payment sent through on-chain operations (channel close or splice-out) */
         sealed class StoreOutgoingPayment : Storage() {
