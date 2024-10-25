@@ -1034,6 +1034,7 @@ data class InteractiveTxSigningSession(
     }
 
     fun receiveCommitSig(channelKeys: KeyManager.ChannelKeys, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long, logger: MDCLogger): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
+        logger.info { "receiveCommitSig: localCommit=$localCommit" }
         return when (localCommit) {
             is Either.Left -> {
                 val localCommitIndex = localCommit.value.index
@@ -1051,6 +1052,8 @@ data class InteractiveTxSigningSession(
                         Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(signedLocalCommit.value))
                     }
                     is Either.Right -> {
+                        logger.info { "signedLocalCommit=$signedLocalCommit" }
+                        logger.info { "shouldSignFirst=${shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)}" }
                         if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
                             val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
                             val commitment = Commitment(fundingTxIndex, fundingParams.remoteFundingPubkey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit.value, remoteCommit, nextRemoteCommit = null)
