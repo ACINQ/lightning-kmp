@@ -9,20 +9,6 @@ plugins {
     `maven-publish`
 }
 
-allprojects {
-    group = "fr.acinq.lightning"
-    version = "1.8.5-SNAPSHOT"
-
-    repositories {
-        // using the local maven repository with Kotlin Multi Platform can lead to build errors that are hard to diagnose.
-        // uncomment this only if you need to experiment with snapshot dependencies that have not yet be published.
-        // mavenLocal()
-        maven("https://oss.sonatype.org/content/repositories/snapshots")
-        mavenCentral()
-        google()
-    }
-}
-
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
@@ -54,7 +40,7 @@ kotlin {
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 val platform = "Iphonesimulator"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
                 includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
@@ -63,7 +49,7 @@ kotlin {
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 val platform = "Iphoneos"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
                 includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
@@ -72,7 +58,7 @@ kotlin {
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 val platform = "Iphonesimulator"
                 val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
+                interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
                 includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
             }
         }
@@ -281,12 +267,12 @@ afterEvaluate {
 
 /** Electrum integration test environment + tasks configuration */
 val dockerTestEnv by tasks.creating(Exec::class) {
-    workingDir = projectDir.resolve("docker-local-test")
+    workingDir = rootDir.resolve("testing")
     commandLine("bash", "env.sh", "remove", "net-create", "btc-create", "elx-create", "btc-start", "elx-start")
 }
 
 val dockerCleanup by tasks.creating(Exec::class) {
-    workingDir = projectDir.resolve("docker-local-test")
+    workingDir = rootDir.resolve("testing")
     commandLine("bash", "env.sh", "elx-stop", "btc-stop", "remove")
 }
 
