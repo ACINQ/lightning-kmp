@@ -21,5 +21,5 @@ rootProject.name = "lightning-kmp"
 include(":lightning-kmp-ios-crypto")
 include(":lightning-kmp-core")
 
-project(":lightning-kmp-ios-crypto").projectDir = file("./ios-crypto")
-project(":lightning-kmp-core").projectDir = file("./core")
+project(":lightning-kmp-ios-crypto").projectDir = file("./modules/ios-crypto")
+project(":lightning-kmp-core").projectDir = file("./modules/core")

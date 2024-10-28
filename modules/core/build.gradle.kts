@@ -40,7 +40,7 @@ kotlin {
         fun DefaultCInteropSettings.configureFor(platform: String) {
             val interopTask = tasks[interopProcessingTaskName]
             interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
-            val libPath = "$rootDir/ios-crypto/build/Release-${platform.lowercase()}"
+            val libPath = "$rootDir/modules/ios-crypto/build/Release-${platform.lowercase()}"
             extraOpts("-libraryPath", libPath)
             includeDirs.headerFilterOnly("$libPath/include")
         }
