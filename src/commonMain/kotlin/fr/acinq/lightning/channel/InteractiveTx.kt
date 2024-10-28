@@ -1034,39 +1034,26 @@ data class InteractiveTxSigningSession(
     }
 
     fun receiveCommitSig(channelKeys: KeyManager.ChannelKeys, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long, logger: MDCLogger): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
-        logger.info { "receiveCommitSig: localCommit=$localCommit" }
-        return when (localCommit) {
+        val signedLocalCommit = when (localCommit) {
             is Either.Left -> {
                 val localCommitIndex = localCommit.value.index
                 val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommitIndex)
-                when (val signedLocalCommit = LocalCommit.fromCommitSig(channelKeys, channelParams, fundingTxIndex, fundingParams.remoteFundingPubkey, commitInput, remoteCommitSig, localCommitIndex, localCommit.value.spec, localPerCommitmentPoint, logger)) {
-                    is Either.Left -> {
-                        val fundingKey = channelKeys.fundingKey(fundingTxIndex)
-                        val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, fundingKey)
-                        val signedLocalCommitTx = Transactions.addSigs(localCommit.value.commitTx, fundingKey.publicKey(), fundingParams.remoteFundingPubkey, localSigOfLocalTx, remoteCommitSig.signature)
-                        logger.info { "interactiveTxSession=$this" }
-                        logger.info { "channelParams=$channelParams" }
-                        logger.info { "fundingKey=${fundingKey.publicKey()}" }
-                        logger.info { "localSigOfLocalTx=$localSigOfLocalTx" }
-                        logger.info { "signedLocalCommitTx=$signedLocalCommitTx" }
-                        Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(signedLocalCommit.value))
-                    }
-                    is Either.Right -> {
-                        logger.info { "signedLocalCommit=$signedLocalCommit" }
-                        logger.info { "shouldSignFirst=${shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)}" }
-                        if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
-                            val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
-                            val commitment = Commitment(fundingTxIndex, fundingParams.remoteFundingPubkey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit.value, remoteCommit, nextRemoteCommit = null)
-                            val action = InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
-                            Pair(this.copy(localCommit = Either.Right(signedLocalCommit.value)), action)
-                        } else {
-                            Pair(this.copy(localCommit = Either.Right(signedLocalCommit.value)), InteractiveTxSigningSessionAction.WaitForTxSigs)
-                        }
-                    }
+                when (val res =
+                    LocalCommit.fromCommitSig(channelKeys, channelParams, fundingTxIndex, fundingParams.remoteFundingPubkey, commitInput, remoteCommitSig, localCommitIndex, localCommit.value.spec, localPerCommitmentPoint, logger)) {
+                    is Either.Left -> return Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(res.value))
+                    is Either.Right -> res.value
                 }
             }
-            is Either.Right -> Pair(this, InteractiveTxSigningSessionAction.WaitForTxSigs)
+            is Either.Right -> localCommit.value
         }
+        val action = if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
+            val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
+            val commitment = Commitment(fundingTxIndex, fundingParams.remoteFundingPubkey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, nextRemoteCommit = null)
+            InteractiveTxSigningSessionAction.SendTxSigs(fundingStatus, commitment, fundingTx.localSigs)
+        } else {
+            InteractiveTxSigningSessionAction.WaitForTxSigs
+        }
+        return Pair(this.copy(localCommit = Either.Right(signedLocalCommit)), action)
     }
 
     fun receiveTxSigs(channelKeys: KeyManager.ChannelKeys, remoteTxSigs: TxSignatures, currentBlockHeight: Long): Either<InteractiveTxSigningSessionAction.AbortFundingAttempt, InteractiveTxSigningSessionAction.SendTxSigs> {
