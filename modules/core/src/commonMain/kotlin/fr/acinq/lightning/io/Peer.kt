@@ -138,8 +138,6 @@ data class SendOnTheFlyFundingMessage(val message: OnTheFlyFundingMessage) : Pee
 
 sealed class PeerEvent
 
-@Deprecated("Replaced by NodeEvents", replaceWith = ReplaceWith("PaymentEvents.PaymentReceived", "fr.acinq.lightning.PaymentEvents"))
-data class PaymentReceived(val incomingPayment: LightningIncomingPayment, val received: LightningIncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
 sealed class SendPaymentResult : PeerEvent() {
     abstract val request: SendPayment
@@ -970,8 +968,6 @@ class Peer(
                     // this was a multi-part payment, we signal that the task is finished
                     nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.IncomingMultiPartPayment(result.incomingPayment.paymentHash)))
                 }
-                @Suppress("DEPRECATION")
-                _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
             }
             is IncomingPaymentHandler.ProcessAddResult.Pending -> if (result.pendingPayment.parts.size == 1) {
                 // this is the first part of a multi-part payment, we request to keep the app alive to receive subsequent parts
