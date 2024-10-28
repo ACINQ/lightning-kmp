@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.DefaultCInteropSettings
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
@@ -36,30 +37,29 @@ kotlin {
 
         macosArm64()
 
+        fun DefaultCInteropSettings.configureFor(platform: String) {
+            val interopTask = tasks[interopProcessingTaskName]
+            interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
+            val libPath = "$rootDir/ios-crypto/build/Release-${platform.lowercase()}"
+            extraOpts("-libraryPath", libPath)
+            includeDirs.headerFilterOnly("$libPath/include")
+        }
+
         iosX64 { // ios simulator on intel devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "Iphonesimulator"
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
+                configureFor("Iphonesimulator")
             }
         }
 
         iosArm64 { // actual ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "Iphoneos"
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
+                configureFor("Iphoneos")
             }
         }
 
         iosSimulatorArm64 { // actual ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "Iphonesimulator"
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
+                configureFor("Iphonesimulator")
             }
         }
     }
