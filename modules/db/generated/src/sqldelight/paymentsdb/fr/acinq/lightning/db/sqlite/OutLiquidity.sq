@@ -1,0 +1,39 @@
+import fr.acinq.lightning.db.InboundLiquidityOutgoingPayment;
+
+CREATE TABLE out_liquidity (
+    id TEXT NOT NULL PRIMARY KEY,
+    channel_id BLOB NOT NULL,
+    tx_id BLOB NOT NULL,
+    local_mining_fees_sat INTEGER NOT NULL,
+    purchase_type TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    confirmed_at INTEGER DEFAULT NULL,
+    locked_at INTEGER DEFAULT NULL,
+    json TEXT AS InboundLiquidityOutgoingPayment NOT NULL
+);
+
+CREATE INDEX out_liquidity_tx_id_idx ON out_liquidity(tx_id);
+
+insert:
+INSERT INTO out_liquidity (
+    id, channel_id, tx_id, local_mining_fees_sat, purchase_type, created_at, confirmed_at, locked_at, json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+--setConfirmed:
+--UPDATE out_liquidity SET confirmed_at=? WHERE id=?;
+
+--setLocked:
+--UPDATE out_liquidity SET locked_at=? WHERE id=?;
+
+get:
+SELECT *
+FROM out_liquidity
+WHERE id=?;
+
+getByTxId:
+SELECT *
+FROM out_liquidity
+WHERE tx_id=?;
+
+delete:
+DELETE FROM out_liquidity WHERE id=?;
