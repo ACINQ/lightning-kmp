@@ -271,4 +271,18 @@ data class NodeParams(
         // If we add a new feature that we would like to use by default, we will need to explicitly create a new offer.
         return OfferTypes.Offer.createBlindedOffer(amount = null, description = null, this, trampolineNodeId, Features.empty, sessionKey)
     }
+
+    /**
+     * FIXME(vincenzopalazzo): Add docs
+     */
+    fun offer(amount: MilliSatoshi?, description: String?, trampolineNodeId: PublicKey): Pair<OfferTypes.Offer, PrivateKey> {
+        // We generate a deterministic blindingSecret based on:
+        //  - a custom tag indicating that this is used in the Bolt 12 context
+        //  - our trampoline node, which is used as an introduction node for the offer's blinded path
+        //  - our private key, which ensures that nobody else can generate the same blindingSecret
+        // FIXME: there is some problem if I change the string prefix? yes I tried and the LSP was rejecting my code
+        val blindingSecret = PrivateKey(Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8).byteVector() + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
+        // FIXME: it should be included some additional feature
+        return OfferTypes.Offer.createBlindedOffer(amount = amount, description = description, this, trampolineNodeId, Features.empty, blindingSecret)
+    }
 }
