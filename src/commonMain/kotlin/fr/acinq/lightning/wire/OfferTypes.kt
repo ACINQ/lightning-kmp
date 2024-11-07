@@ -782,7 +782,7 @@ object OfferTypes {
              * Create an offer using a single-hop blinded path going through our trampoline node.
              *
              * @param amount amount if it can be determined at offer creation time.
-             * @param description description of the offer (may be null if [amount] is also null).
+             * @param description description of the offer (maybe null if [amount] is also null).
              * @param nodeParams our node parameters.
              * @param trampolineNodeId our trampoline node.
              * @param features features that should be advertised in the offer.
