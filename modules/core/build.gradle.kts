@@ -39,7 +39,7 @@ kotlin {
 
         fun DefaultCInteropSettings.configureFor(platform: String) {
             val interopTask = tasks[interopProcessingTaskName]
-            interopTask.dependsOn(":ios-crypto:buildCrypto$platform")
+            interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
             val libPath = "$rootDir/modules/ios-crypto/build/Release-${platform.lowercase()}"
             extraOpts("-libraryPath", libPath)
             includeDirs.headerFilterOnly("$libPath/include")
@@ -180,7 +180,6 @@ val javadocJar = tasks.create<Jar>("javadocJar") {
 
 publishing {
     publications.withType<MavenPublication>().configureEach {
-        artifactId = "${rootProject.name}-${project.name}"
         version = project.version.toString()
         artifact(javadocJar)
         pom {
