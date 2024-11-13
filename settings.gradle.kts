@@ -19,13 +19,7 @@ dependencyResolutionManagement {
 rootProject.name = "lightning-kmp"
 
 include(":ios-crypto")
-project(":ios-crypto").run {
-    projectDir = file("./modules/ios-crypto")
-    name = "lightning-kmp-ios-crypto"
-}
-
 include(":core")
-project(":core").run {
-    projectDir = file("./modules/core")
-    name = "lightning-kmp-core"
-}
+
+project(":ios-crypto").projectDir = file("./modules/ios-crypto")
+project(":core").projectDir = file("./modules/core")
