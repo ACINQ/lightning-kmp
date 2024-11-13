@@ -56,20 +56,20 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                api(libs.bitcoinkmp)
-                api(libs.kotlinx.datetime)
-                api(libs.kotlinx.coroutines.core)
-                api(libs.kotlinx.serialization.core)
-                api(libs.kotlinx.serialization.cbor)
-                api(libs.kotlinx.serialization.json)
-                api(libs.ktor.network)
-                api(libs.ktor.network.tls)
-                implementation(libs.ktor.client.core)
-                implementation(libs.ktor.client.auth)
-                implementation(libs.ktor.client.json)
-                implementation(libs.ktor.client.contentnegotiation)
-                implementation(libs.ktor.serialization.kotlinx.json)
-                api(libs.kermit)
+                api("fr.acinq.bitcoin:bitcoin-kmp:${libs.versions.bitcoinkmp.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-coroutines-core:${libs.versions.kotlinx.coroutines.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-core:${libs.versions.kotlinx.serialization.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:${libs.versions.kotlinx.serialization.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-json:${libs.versions.kotlinx.serialization.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-datetime:${libs.versions.kotlinx.datetime.get()}")
+                api("co.touchlab:kermit:${libs.versions.kermit.get()}")
+                api("io.ktor:ktor-network:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-network-tls:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-client-core:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-client-auth:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-client-json:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-client-content-negotiation:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-serialization-kotlinx-json:${libs.versions.ktor.get()}")
             }
         }
 
@@ -77,43 +77,43 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
-                implementation("org.kodein.memory:klio-files:0.12.0")
+                implementation("org.kodein.memory:klio-files:${libs.versions.test.kodein.memory.get()}")
             }
         }
 
         jvmMain {
             dependencies {
-                api(libs.ktor.client.okhttp)
-                implementation(libs.secpjnijvm)
-                implementation("org.slf4j:slf4j-api:1.7.36")
+                api("io.ktor:ktor-client-okhttp:${libs.versions.ktor.get()}")
+                implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:${libs.versions.secpjnijvm.get()}")
+                implementation("org.slf4j:slf4j-api:${libs.versions.slf4j.get()}")
             }
         }
 
         jvmTest {
             dependencies {
                 implementation(kotlin("test-junit"))
-                implementation("org.bouncycastle:bcprov-jdk15on:1.64")
-                implementation("ch.qos.logback:logback-classic:1.2.3")
-                implementation("org.xerial:sqlite-jdbc:3.32.3.3")
+                implementation("org.bouncycastle:bcprov-jdk15on:${libs.versions.test.bouncycastle.get()}")
+                implementation("ch.qos.logback:logback-classic:${libs.versions.test.logback.get()}")
+                implementation("org.xerial:sqlite-jdbc:${libs.versions.test.sqlitejdbc.get()}")
             }
         }
 
         if (currentOs.isMacOsX) {
             iosMain {
                 dependencies {
-                    implementation(libs.ktor.client.ios)
+                    api("io.ktor:ktor-client-ios:${libs.versions.ktor.get()}")
                 }
             }
             macosMain {
                 dependencies {
-                    implementation(libs.ktor.client.darwin)
+                    api("io.ktor:ktor-client-darwin:${libs.versions.ktor.get()}")
                 }
             }
         }
 
         linuxMain {
             dependencies {
-                implementation(libs.ktor.client.curl)
+                api("io.ktor:ktor-client-curl:${libs.versions.ktor.get()}")
             }
         }
 
