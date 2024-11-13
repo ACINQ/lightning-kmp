@@ -13,17 +13,6 @@ plugins {
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-
-    val bitcoinKmpVersion = "0.20.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
-    val secpJniJvmVersion = "0.15.0"
-
-    val serializationVersion = "1.6.2"
-    val coroutineVersion = "1.7.3"
-    val datetimeVersion = "0.6.0"
-    val ktorVersion = "2.3.7"
-    fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val kermitLoggerVersion = "2.0.2"
-
     jvm {
         compilations.all {
             kotlinOptions.jvmTarget = "1.8"
@@ -67,20 +56,20 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                api("fr.acinq.bitcoin:bitcoin-kmp:$bitcoinKmpVersion")
-                api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
-                api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
-                api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
-                api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
-                api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
-                api("co.touchlab:kermit:$kermitLoggerVersion")
-                api(ktor("network"))
-                api(ktor("network-tls"))
-                implementation(ktor("client-core"))
-                implementation(ktor("client-auth"))
-                implementation(ktor("client-json"))
-                implementation(ktor("client-content-negotiation"))
-                implementation(ktor("serialization-kotlinx-json"))
+                api(libs.bitcoinkmp)
+                api(libs.kotlinx.datetime)
+                api(libs.kotlinx.coroutines.core)
+                api(libs.kotlinx.serialization.core)
+                api(libs.kotlinx.serialization.cbor)
+                api(libs.kotlinx.serialization.json)
+                api(libs.ktor.network)
+                api(libs.ktor.network.tls)
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.auth)
+                implementation(libs.ktor.client.json)
+                implementation(libs.ktor.client.contentnegotiation)
+                implementation(libs.ktor.serialization.kotlinx.json)
+                api(libs.kermit)
             }
         }
 
@@ -94,8 +83,8 @@ kotlin {
 
         jvmMain {
             dependencies {
-                api(ktor("client-okhttp"))
-                implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:$secpJniJvmVersion")
+                api(libs.ktor.client.okhttp)
+                implementation(libs.secpjnijvm)
                 implementation("org.slf4j:slf4j-api:1.7.36")
             }
         }
@@ -112,19 +101,19 @@ kotlin {
         if (currentOs.isMacOsX) {
             iosMain {
                 dependencies {
-                    implementation(ktor("client-ios"))
+                    implementation(libs.ktor.client.ios)
                 }
             }
             macosMain {
                 dependencies {
-                    implementation(ktor("client-darwin"))
+                    implementation(libs.ktor.client.darwin)
                 }
             }
         }
 
         linuxMain {
             dependencies {
-                implementation(ktor("client-curl"))
+                implementation(libs.ktor.client.curl)
             }
         }
 
