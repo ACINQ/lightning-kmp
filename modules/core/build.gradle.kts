@@ -180,7 +180,6 @@ val javadocJar = tasks.create<Jar>("javadocJar") {
 
 publishing {
     publications.withType<MavenPublication>().configureEach {
-        artifactId = "${rootProject.name}-${project.name}-$name"
         version = project.version.toString()
         artifact(javadocJar)
         pom {
