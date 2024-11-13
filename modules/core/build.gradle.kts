@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.DefaultCInteropSettings
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
@@ -7,20 +8,6 @@ plugins {
     kotlin("plugin.serialization") version "1.9.23"
     id("org.jetbrains.dokka") version "1.9.10"
     `maven-publish`
-}
-
-allprojects {
-    group = "fr.acinq.lightning"
-    version = "1.8.5-SNAPSHOT"
-
-    repositories {
-        // using the local maven repository with Kotlin Multi Platform can lead to build errors that are hard to diagnose.
-        // uncomment this only if you need to experiment with snapshot dependencies that have not yet be published.
-        // mavenLocal()
-        maven("https://oss.sonatype.org/content/repositories/snapshots")
-        mavenCentral()
-        google()
-    }
 }
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
@@ -50,30 +37,29 @@ kotlin {
 
         macosArm64()
 
+        fun DefaultCInteropSettings.configureFor(platform: String) {
+            val interopTask = tasks[interopProcessingTaskName]
+            interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
+            val libPath = "$rootDir/modules/ios-crypto/build/Release-${platform.lowercase()}"
+            extraOpts("-libraryPath", libPath)
+            includeDirs.headerFilterOnly("$libPath/include")
+        }
+
         iosX64 { // ios simulator on intel devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "Iphonesimulator"
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
+                configureFor("Iphonesimulator")
             }
         }
 
         iosArm64 { // actual ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "Iphoneos"
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
+                configureFor("Iphoneos")
             }
         }
 
         iosSimulatorArm64 { // actual ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
-                val platform = "Iphonesimulator"
-                val interopTask = tasks[interopProcessingTaskName]
-                interopTask.dependsOn(":PhoenixCrypto:buildCrypto$platform")
-                includeDirs.headerFilterOnly("$rootDir/PhoenixCrypto/build/Release-${platform.lowercase()}/include")
+                configureFor("Iphonesimulator")
             }
         }
     }
@@ -281,12 +267,12 @@ afterEvaluate {
 
 /** Electrum integration test environment + tasks configuration */
 val dockerTestEnv by tasks.creating(Exec::class) {
-    workingDir = projectDir.resolve("docker-local-test")
+    workingDir = rootDir.resolve("testing")
     commandLine("bash", "env.sh", "remove", "net-create", "btc-create", "elx-create", "btc-start", "elx-start")
 }
 
 val dockerCleanup by tasks.creating(Exec::class) {
-    workingDir = projectDir.resolve("docker-local-test")
+    workingDir = rootDir.resolve("testing")
     commandLine("bash", "env.sh", "elx-stop", "btc-stop", "remove")
 }
 
