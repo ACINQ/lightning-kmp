@@ -4,9 +4,9 @@ import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTes
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.9.23"
-    kotlin("plugin.serialization") version "1.9.23"
-    id("org.jetbrains.dokka") version "1.9.10"
+    alias(libs.plugins.multiplatform)
+    alias(libs.plugins.serialization)
+    alias(libs.plugins.dokka)
     `maven-publish`
 }
 
