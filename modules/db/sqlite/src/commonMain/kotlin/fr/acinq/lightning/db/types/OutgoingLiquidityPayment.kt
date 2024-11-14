@@ -25,7 +25,7 @@ import kotlinx.serialization.UseSerializers
  * 4) add a converter from/to core type
  */
 @Serializable
-internal sealed class InboundLiquidityOutgoingPayment {
+internal sealed class OutgoingLiquidityPayment {
     @Serializable
     data class V0(
         val id: UUID,
@@ -36,5 +36,5 @@ internal sealed class InboundLiquidityOutgoingPayment {
         val createdAt: Long,
         val confirmedAt: Long?,
         val lockedAt: Long?,
-    ) : InboundLiquidityOutgoingPayment()
+    ) : OutgoingLiquidityPayment()
 }

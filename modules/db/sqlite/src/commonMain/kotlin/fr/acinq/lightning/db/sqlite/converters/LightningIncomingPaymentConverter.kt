@@ -1,19 +1,19 @@
 package fr.acinq.lightning.db.sqlite.converters
 
-import fr.acinq.lightning.db.types.LightningIncomingPayment
+import fr.acinq.lightning.db.types.IncomingLightningPayment
 import fr.acinq.lightning.db.types.OfferPaymentMetadata
 import fr.acinq.lightning.payment.Bolt11Invoice
 
-internal object LightningIncomingPaymentConverter : Converter<fr.acinq.lightning.db.LightningIncomingPayment, LightningIncomingPayment> {
+internal object LightningIncomingPaymentConverter : Converter<fr.acinq.lightning.db.LightningIncomingPayment, IncomingLightningPayment> {
 
-    override fun toCoreType(o: LightningIncomingPayment): fr.acinq.lightning.db.LightningIncomingPayment = when (o) {
-        is LightningIncomingPayment.Bolt11IncomingPayment.V0 -> fr.acinq.lightning.db.Bolt11IncomingPayment(
+    override fun toCoreType(o: IncomingLightningPayment): fr.acinq.lightning.db.LightningIncomingPayment = when (o) {
+        is IncomingLightningPayment.IncomingBolt11Payment.V0 -> fr.acinq.lightning.db.Bolt11IncomingPayment(
             preimage = o.preimage,
             paymentRequest = Bolt11Invoice.read(o.paymentRequest).get(),
             received = o.received?.let { LightningIncomingPaymentReceivedConverter.toCoreType(it) },
             createdAt = o.createdAt
         )
-        is LightningIncomingPayment.Bolt12IncomingPayment.V0 -> fr.acinq.lightning.db.Bolt12IncomingPayment(
+        is IncomingLightningPayment.IncomingBolt12Payment.V0 -> fr.acinq.lightning.db.Bolt12IncomingPayment(
             preimage = o.preimage,
             metadata = when (o.metadata) {
                 is OfferPaymentMetadata.V1 -> fr.acinq.lightning.payment.OfferPaymentMetadata.V1(
@@ -31,14 +31,14 @@ internal object LightningIncomingPaymentConverter : Converter<fr.acinq.lightning
         )
     }
 
-    override fun toDbType(o: fr.acinq.lightning.db.LightningIncomingPayment): LightningIncomingPayment = when (o) {
-        is fr.acinq.lightning.db.Bolt11IncomingPayment -> LightningIncomingPayment.Bolt11IncomingPayment.V0(
+    override fun toDbType(o: fr.acinq.lightning.db.LightningIncomingPayment): IncomingLightningPayment = when (o) {
+        is fr.acinq.lightning.db.Bolt11IncomingPayment -> IncomingLightningPayment.IncomingBolt11Payment.V0(
             preimage = o.paymentPreimage,
             paymentRequest = o.paymentRequest.write(),
             received = o.received?.let { LightningIncomingPaymentReceivedConverter.toDbType(it) },
             createdAt = o.createdAt
         )
-        is fr.acinq.lightning.db.Bolt12IncomingPayment -> LightningIncomingPayment.Bolt12IncomingPayment.V0(
+        is fr.acinq.lightning.db.Bolt12IncomingPayment -> IncomingLightningPayment.IncomingBolt12Payment.V0(
             preimage = o.paymentPreimage,
             metadata = when (val metadata = o.metadata) {
                 is fr.acinq.lightning.payment.OfferPaymentMetadata.V1 -> OfferPaymentMetadata.V1(

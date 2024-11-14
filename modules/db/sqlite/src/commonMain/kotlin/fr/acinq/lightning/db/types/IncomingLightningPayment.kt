@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 
 @Serializable
-internal sealed class LightningIncomingPayment {
+internal sealed class IncomingLightningPayment {
 
     @Serializable
     sealed class Received {
@@ -37,24 +37,24 @@ internal sealed class LightningIncomingPayment {
     }
 
     @Serializable
-    sealed class Bolt11IncomingPayment : LightningIncomingPayment() {
+    sealed class IncomingBolt11Payment : IncomingLightningPayment() {
         @Serializable
         data class V0(
             val preimage: ByteVector32,
             val paymentRequest: String,
             val received: Received?,
             val createdAt: Long
-        ) : Bolt11IncomingPayment()
+        ) : IncomingBolt11Payment()
     }
 
     @Serializable
-    sealed class Bolt12IncomingPayment : LightningIncomingPayment() {
+    sealed class IncomingBolt12Payment : IncomingLightningPayment() {
         @Serializable
         data class V0(
             val preimage: ByteVector32,
             val metadata: OfferPaymentMetadata,
             val received: Received?,
             val createdAt: Long
-        ) : Bolt12IncomingPayment()
+        ) : IncomingBolt12Payment()
     }
 }

@@ -273,8 +273,8 @@ data class LegacyPayToOpenIncomingPayment(
     }
 
     sealed class Part {
-        data class Lightning(val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long)
-        data class OnChain(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val channelId: ByteVector32, val txId: TxId, val confirmedAt: Long?, val lockedAt: Long?)
+        data class Lightning(val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : Part()
+        data class OnChain(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val channelId: ByteVector32, val txId: TxId, val confirmedAt: Long?, val lockedAt: Long?) : Part()
     }
 }
 
