@@ -33,3 +33,19 @@ getByPaymentHash:
 SELECT *
 FROM in_lightning
 WHERE payment_hash=?;
+
+listCreatedBetween:
+SELECT *
+FROM in_lightning
+WHERE created_at BETWEEN :from AND :to
+ORDER BY
+       coalesce(received_at, created_at) DESC,
+       payment_hash DESC;
+
+delete:
+DELETE FROM in_lightning
+WHERE payment_hash = ?;
+
+-- use this in a `transaction` block to know how many rows were changed after an UPDATE
+changes:
+SELECT changes();

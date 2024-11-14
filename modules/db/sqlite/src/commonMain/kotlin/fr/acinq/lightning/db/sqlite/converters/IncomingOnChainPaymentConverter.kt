@@ -2,7 +2,7 @@ package fr.acinq.lightning.db.sqlite.converters
 
 import fr.acinq.lightning.db.types.IncomingOnChainPayment
 
-internal object OnChainIncomingPaymentConverter : Converter<fr.acinq.lightning.db.OnChainIncomingPayment, IncomingOnChainPayment> {
+internal object IncomingOnChainPaymentConverter : Converter<fr.acinq.lightning.db.OnChainIncomingPayment, IncomingOnChainPayment> {
 
     override fun toCoreType(o: IncomingOnChainPayment): fr.acinq.lightning.db.OnChainIncomingPayment = when (o) {
         is IncomingOnChainPayment.NewChannelIncomingPayment.V0 -> fr.acinq.lightning.db.NewChannelIncomingPayment(

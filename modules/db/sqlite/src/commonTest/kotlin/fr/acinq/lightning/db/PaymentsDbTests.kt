@@ -5,19 +5,19 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.db.sqlite.*
 import fr.acinq.lightning.db.sqlite.adapters.JsonColumnAdapter
 import fr.acinq.lightning.db.sqlite.converters.InboundLiquidityOutgoingPaymentConverter
-import fr.acinq.lightning.db.sqlite.converters.LightningIncomingPaymentConverter
+import fr.acinq.lightning.db.sqlite.converters.IncomingLightningPaymentConverter
 import fr.acinq.lightning.utils.UUID.Companion.randomUUID
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.LiquidityAds
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 
-class PaymentsDbTestsCommon {
+class SqliteIncomingPaymentsDbTestsCommon {
 
     @Test
     fun `lightning incoming`() = runTest {
         val driver = createSqlDriver()
-        val queries = InLightningQueries(driver, In_lightning.Adapter(JsonColumnAdapter(LightningIncomingPaymentConverter)))
+        val queries = InLightningQueries(driver, In_lightning.Adapter(JsonColumnAdapter(IncomingLightningPaymentConverter)))
     }
 
     @Test

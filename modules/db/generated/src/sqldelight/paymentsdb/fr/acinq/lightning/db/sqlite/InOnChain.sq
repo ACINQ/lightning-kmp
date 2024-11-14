@@ -1,0 +1,28 @@
+import fr.acinq.lightning.db.OnChainIncomingPayment;
+
+CREATE TABLE in_onchain (
+    id TEXT NOT NULL PRIMARY KEY,
+    channel_id BLOB NOT NULL,
+    tx_id BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    confirmed_at INTEGER DEFAULT NULL,
+    locked_at INTEGER DEFAULT NULL,
+    json TEXT AS OnChainIncomingPayment NOT NULL
+);
+
+CREATE INDEX in_onchain_tx_id_idx ON in_onchain(tx_id);
+
+insert:
+INSERT INTO in_onchain (
+    id, channel_id, tx_id, created_at, confirmed_at, locked_at, json
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+get:
+SELECT *
+FROM in_onchain
+WHERE id=?;
+
+getByTxId:
+SELECT *
+FROM in_onchain
+WHERE tx_id=?;
