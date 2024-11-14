@@ -1,0 +1,35 @@
+import fr.acinq.lightning.db.LightningIncomingPayment;
+
+CREATE TABLE in_lightning (
+    id TEXT NOT NULL PRIMARY KEY,
+    amount_msat INTEGER NOT NULL,
+    fees_msat INTEGER NOT NULL,
+    payment_hash BLOB NOT NULL,
+    payment_preimage BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    received_at INTEGER DEFAULT NULL,
+    json TEXT AS LightningIncomingPayment NOT NULL
+);
+
+CREATE INDEX in_lightning_payment_hash_idx ON in_lightning(payment_hash);
+
+insert:
+INSERT INTO in_lightning (
+    id, amount_msat, fees_msat, payment_hash, payment_preimage, created_at, received_at, json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+updateReceived:
+UPDATE in_lightning
+SET    received_at=?,
+       json=?
+WHERE  payment_hash = ?;
+
+get:
+SELECT *
+FROM in_lightning
+WHERE id=?;
+
+getByPaymentHash:
+SELECT *
+FROM in_lightning
+WHERE payment_hash=?;

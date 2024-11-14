@@ -19,9 +19,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 
 /**
- * 1) Add Vx subclass
- * 2) copy class definition from core
- * 3) remove overrides
+ * 1) copy class definition from core
+ * 2) change visibility to internal and move contents to a Vx subclass
+ * 3) remove overrides, visibility modifiers, default values, functions
  * 4) add a converter from/to core type
  */
 @Serializable

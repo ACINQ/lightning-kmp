@@ -16,10 +16,7 @@
 
 package fr.acinq.lightning.db.sqlite.serializers
 
-import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.db.sqlite.serializers.primitives.AbstractStringSerializer
 
 
@@ -47,3 +44,8 @@ object TxIdSerializer : AbstractStringSerializer<TxId>(
     fromString = ::TxId
 )
 
+object PublicKeySerializer : AbstractStringSerializer<PublicKey>(
+    name = "PublicKey",
+    toString = PublicKey::toHex,
+    fromString = PublicKey::fromHex
+)
