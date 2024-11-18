@@ -306,7 +306,6 @@ sealed class ChannelState {
 /** A channel state that is persisted to the DB. */
 sealed class PersistedChannelState : ChannelState() {
     abstract val channelId: ByteVector32
-
     internal fun ChannelContext.createChannelReestablish(): HasEncryptedChannelData = when (val state = this@PersistedChannelState) {
         is WaitForFundingSigned -> {
             val myFirstPerCommitmentPoint = keyManager.channelKeys(state.channelParams.localParams.fundingKeyPath).commitmentPoint(0)
@@ -332,6 +331,29 @@ sealed class PersistedChannelState : ChannelState() {
                 true -> state.commitments.active.map { channelKeys.verificationNonce(it.fundingTxIndex, state.commitments.localCommitIndex + 1).second }
                 else -> null
             }
+            val spliceNonces = when {
+                !state.commitments.isTaprootChannel -> null
+                state is Normal && state.spliceStatus is SpliceStatus.WaitingForSigs -> {
+                    logger.info { "splice in progress, re-sending splice nonces" }
+                    val localCommitIndex = when (state.spliceStatus.session.localCommit) {
+                        is Either.Left -> state.spliceStatus.session.localCommit.value.index
+                        is Either.Right -> state.spliceStatus.session.localCommit.value.index
+                    }
+                    listOf(
+                        channelKeys.verificationNonce(state.spliceStatus.session.fundingTxIndex, localCommitIndex).second,
+                        channelKeys.verificationNonce(state.spliceStatus.session.fundingTxIndex, localCommitIndex + 1).second
+                    )
+                }
+
+                state.commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx -> {
+                    logger.info { "splice may not have confirmed yet, re-sending splice nonces" }
+                    listOf(
+                        channelKeys.verificationNonce(state.commitments.latest.fundingTxIndex, state.commitments.localCommitIndex).second,
+                        channelKeys.verificationNonce(state.commitments.latest.fundingTxIndex, state.commitments.localCommitIndex + 1).second
+                    )
+                }
+                else -> null
+            }
             val unsignedFundingTxId = when (state) {
                 is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()
                 is Normal -> state.getUnsignedFundingTxId() // a splice was in progress, we tell our peer that we are remembering it and are expecting signatures
@@ -339,7 +361,8 @@ sealed class PersistedChannelState : ChannelState() {
             }
             val tlvs: TlvStream<ChannelReestablishTlv> = TlvStream(setOfNotNull(
                 unsignedFundingTxId?.let { ChannelReestablishTlv.NextFunding(it) },
-                myNextLocalNonces?.let { ChannelReestablishTlv.NextLocalNoncesTlv(it) }
+                myNextLocalNonces?.let { ChannelReestablishTlv.NextLocalNoncesTlv(it) },
+                spliceNonces?.let { ChannelReestablishTlv.SpliceNoncesTlv(it) }
             ))
             ChannelReestablish(
                 channelId = channelId,

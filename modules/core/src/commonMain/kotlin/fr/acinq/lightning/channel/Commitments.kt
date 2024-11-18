@@ -133,16 +133,13 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishabl
                     val signed = Transactions.partialSign(localCommitTx, localFundingKey, localFundingKey.publicKey(), remoteFundingPubKey, localNonce!!, remoteSig.nonce)
                         .flatMap { localSig -> Transactions.aggregatePartialSignatures(localCommitTx, localSig, remoteSig.partialSig, localFundingKey.publicKey(), remoteFundingPubKey, localNonce.second, remoteSig.nonce) }
                         .map { aggSig -> Transactions.addAggregatedSignature(localCommitTx, aggSig) }
-                    if (signed.isLeft) {
-                        return Either.Left(InvalidCommitmentSignature(params.channelId, localCommitTx.tx.txid))
-                    }
                     signed.right!!
                 }
             }
             // no need to compute htlc sigs if commit sig doesn't check out
             when (val check = Transactions.checkSpendable(signedCommitTx)) {
                 is Try.Failure -> {
-                    log.error(check.error) { "remote signature $commit is invalid" }
+                    log.error(check.error) { "remote signature $commit is invalid, localNonce = $localNonce" }
                     return Either.Left(InvalidCommitmentSignature(params.channelId, signedCommitTx.tx.txid))
                 }
                 else -> {}

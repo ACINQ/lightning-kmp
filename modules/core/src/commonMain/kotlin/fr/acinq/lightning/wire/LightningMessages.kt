@@ -1370,6 +1370,9 @@ data class ChannelReestablish(
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
     val nextLocalNonces: List<IndividualNonce> = tlvStream.get<ChannelReestablishTlv.NextLocalNoncesTlv>()?.nonces ?: listOf()
+    val spliceNonces: List<IndividualNonce> = tlvStream.get<ChannelReestablishTlv.SpliceNoncesTlv>()?.nonces ?: listOf()
+    val firstSpliceNonce = if (spliceNonces.isNotEmpty()) spliceNonces[0] else null
+    val secondSpliceNonce = if (spliceNonces.isNotEmpty()) spliceNonces[1] else null
 
     override val channelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ChannelReestablish = copy(tlvStream = tlvStream.addOrUpdate(ChannelReestablishTlv.ChannelData(ecd)))
@@ -1391,6 +1394,7 @@ data class ChannelReestablish(
             ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextLocalNoncesTlv.tag to ChannelReestablishTlv.NextLocalNoncesTlv.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.SpliceNoncesTlv.tag to ChannelReestablishTlv.SpliceNoncesTlv.Companion as TlvValueReader<ChannelReestablishTlv>,
         )
 
         override fun read(input: Input): ChannelReestablish {

@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.Script.tail
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.*
@@ -123,6 +124,25 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                             when (val syncResult = handleSync(state.commitments, cmd.message)) {
                                 is SyncResult.Failure -> handleSyncFailure(state.commitments, cmd.message, syncResult)
                                 is SyncResult.Success -> {
+                                    val (pendingRemoteNextLocalNonce, nextRemoteNonces) = when {
+                                        !state.commitments.isTaprootChannel -> Pair(null, listOf())
+                                        state.spliceStatus is SpliceStatus.WaitingForSigs && cmd.message.nextLocalNonces.size == state.commitments.active.size -> {
+                                            Pair(cmd.message.secondSpliceNonce, cmd.message.nextLocalNonces)
+                                        }
+
+                                        state.spliceStatus is SpliceStatus.WaitingForSigs && cmd.message.nextLocalNonces.size == state.commitments.active.size + 1 -> {
+                                            Pair(cmd.message.nextLocalNonces.firstOrNull(), cmd.message.nextLocalNonces.tail())
+                                        }
+
+                                        cmd.message.nextLocalNonces.size == state.commitments.active.size - 1 -> {
+                                            Pair(null, listOf(cmd.message.secondSpliceNonce!!) + cmd.message.nextLocalNonces)
+                                        }
+
+                                        else -> {
+                                            Pair(null, cmd.message.nextLocalNonces)
+                                        }
+                                    }
+
                                     // normal case, our data is up-to-date
                                     val actions = ArrayList<ChannelAction>()
 
@@ -137,8 +157,16 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     // resume splice signing session if any
                                     val spliceStatus1 = if (state.spliceStatus is SpliceStatus.WaitingForSigs && state.spliceStatus.session.fundingTx.txId == cmd.message.nextFundingTxId) {
                                         // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
-                                        logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
-                                        val commitSig = state.spliceStatus.session.remoteCommit.sign(channelKeys(), state.commitments.params, state.spliceStatus.session, cmd.message.nextLocalNonces.firstOrNull())
+                                        val spliceNonce = when {
+                                            state.spliceStatus.session.remoteCommit.index == cmd.message.nextLocalCommitmentNumber -> cmd.message.secondSpliceNonce
+                                            state.spliceStatus.session.remoteCommit.index == cmd.message.nextLocalCommitmentNumber - 1 -> cmd.message.firstSpliceNonce
+                                            else -> {
+                                                // we should never end up here, it would have been handled in handleSync()
+                                                error("invalid nextLocalCommitmentNumber in ChannelReestablish")
+                                            }
+                                        }
+                                        val commitSig = state.spliceStatus.session.remoteCommit.sign(channelKeys(), state.commitments.params, state.spliceStatus.session, spliceNonce)
+                                        logger.info { "re-sending commit_sig ${commitSig.partialSig} for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
                                         actions.add(ChannelAction.Message.Send(commitSig))
                                         state.spliceStatus
                                     } else if (state.commitments.latest.fundingTxId == cmd.message.nextFundingTxId) {
@@ -146,15 +174,16 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             is LocalFundingStatus.UnconfirmedFundingTx -> {
                                                 if (localFundingStatus.sharedTx is PartiallySignedSharedTransaction) {
                                                     // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
-                                                    logger.info { "re-sending commit_sig for fundingTxIndex=${state.commitments.latest.fundingTxIndex} fundingTxId=${state.commitments.latest.fundingTxId}" }
+                                                    logger.info { "re-sending commit_sig and tx_signatures for fundingTxIndex=${state.commitments.latest.fundingTxIndex} fundingTxId=${state.commitments.latest.fundingTxId}" }
                                                     val commitSig = state.commitments.latest.remoteCommit.sign(
                                                         channelKeys(),
                                                         state.commitments.params,
                                                         fundingTxIndex = state.commitments.latest.fundingTxIndex,
                                                         state.commitments.latest.remoteFundingPubkey,
                                                         state.commitments.latest.commitInput,
-                                                        cmd.message.nextLocalNonces.firstOrNull()
+                                                        cmd.message.firstSpliceNonce
                                                     )
+                                                    logger.info { "computed $commitSig with remote nonce = ${nextRemoteNonces.firstOrNull()}" }
                                                     actions.add(ChannelAction.Message.Send(commitSig))
                                                 }
                                                 logger.info { "re-sending tx_signatures for fundingTxId=${cmd.message.nextFundingTxId}" }
@@ -195,7 +224,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     actions.addAll(syncResult.retransmit.map { ChannelAction.Message.Send(it) })
 
                                     // then we clean up unsigned updates
-                                    val commitments1 = discardUnsignedUpdates(state.commitments).copy(nextRemoteNonces = cmd.message.nextLocalNonces)
+                                    val commitments1 = discardUnsignedUpdates(state.commitments).copy(pendingRemoteNextLocalNonce = pendingRemoteNextLocalNonce, nextRemoteNonces = nextRemoteNonces)
 
                                     if (commitments1.changes.localHasChanges()) {
                                         actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
