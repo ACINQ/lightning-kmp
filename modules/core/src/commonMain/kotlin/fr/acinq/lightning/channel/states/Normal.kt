@@ -10,6 +10,7 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchEventConfirmed
 import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
@@ -185,7 +186,7 @@ data class Normal(
                                 is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.liquidityPurchase, cmd.message.channelData)
                             }
                         }
-                        ignoreRetransmittedCommitSig(cmd.message) -> {
+                        ignoreRetransmittedCommitSig(cmd.message, channelKeys()) -> {
                             // We haven't received our peer's tx_signatures for the latest funding transaction and asked them to resend it on reconnection.
                             // They also resend their corresponding commit_sig, but we have already received it so we should ignore it.
                             // Note that the funding transaction may have confirmed while we were offline.
@@ -977,13 +978,57 @@ data class Normal(
         return Pair(nextState, actions)
     }
 
+    /*
+  def ignoreRetransmittedCommitSig(commitSig: CommitSig, keyManager: ChannelKeyManager): Boolean = commitSig.sigOrPartialSig match {
+    case _ if !params.channelFeatures.hasFeature(Features.DualFunding) => false
+    case _ if commitSig.batchSize != 1 => false
+    case Left(_) =>
+      commitSig.sigOrPartialSig == latest.localCommit.commitTxAndRemoteSig.remoteSig
+    case Right(psig) if active.size > 1 =>
+      // we cannot compare partial signatures directly as they are not deterministic (a new signing nonce is used every time a signature is computed)
+      // => instead we simply check that the provided partial signature is valid for our latest commit tx
+      val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, latest.fundingTxIndex).publicKey
+      val Some(localNonce) = generateLocalNonce(keyManager, latest.fundingTxIndex, latest.localCommit.index)
+      val Right(oldPsig) = latest.localCommit.commitTxAndRemoteSig.remoteSig
+      val currentcheck = latest.localCommit.commitTxAndRemoteSig.commitTx.checkPartialSignature(psig, localFundingKey, localNonce, latest.remoteFundingPubKey)
+      val oldcheck = latest.localCommit.commitTxAndRemoteSig.commitTx.checkPartialSignature(oldPsig, localFundingKey, localNonce, latest.remoteFundingPubKey)
+      require(oldcheck)
+      currentcheck
+    case Right(psig) =>
+      // we cannot compare partial signatures directly as they are not deterministic (a new signing nonce is used every time a signature is computed)
+      // => instead we simply check that the provided partial signature is valid for our latest commit tx
+      val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, latest.fundingTxIndex).publicKey
+      val Some(localNonce) = generateLocalNonce(keyManager, latest.fundingTxIndex, latest.localCommit.index)
+      val Right(oldPsig) = latest.localCommit.commitTxAndRemoteSig.remoteSig
+      val currentcheck = latest.localCommit.commitTxAndRemoteSig.commitTx.checkPartialSignature(psig, localFundingKey, localNonce, latest.remoteFundingPubKey)
+      val oldcheck = latest.localCommit.commitTxAndRemoteSig.commitTx.checkPartialSignature(oldPsig, localFundingKey, localNonce, latest.remoteFundingPubKey)
+      require(oldcheck)
+      currentcheck
+  }
+     */
     /** This function should be used to ignore a commit_sig that we've already received. */
-    private fun ignoreRetransmittedCommitSig(commit: CommitSig): Boolean {
+    private fun ignoreRetransmittedCommitSig(commit: CommitSig, channelKeys: KeyManager.ChannelKeys): Boolean {
         // If we already have a signed commitment transaction containing their signature, we must have previously received that commit_sig.
         val commitTx = commitments.latest.localCommit.publishableTxs.commitTx.tx
-        return commitments.params.channelFeatures.hasFeature(Feature.DualFunding) &&
-                commit.batchSize == 1 &&
-                commitTx.txIn.first().witness.stack.contains(Scripts.der(commit.signature, SigHash.SIGHASH_ALL))
+        return when {
+            !commitments.params.channelFeatures.hasFeature(Feature.DualFunding) -> false
+            commit.batchSize != 1 -> false
+            commit.sigOrPartialSig.isLeft -> commitTx.txIn.first().witness.stack.contains(Scripts.der(commit.signature, SigHash.SIGHASH_ALL))
+            this.commitments.active.size > 1 -> {
+                // we cannot compare partial signatures directly as they are not deterministic (a new signing nonce is used every time a signature is computed)
+                // => instead we simply check that the provided partial signature is valid for our latest commit tx
+                val localFundingKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey()
+                val localNonce = channelKeys.verificationNonce(commitments.latest.fundingTxIndex, commitments.latest.localCommit.index).second
+                commitments.latest.localCommit.publishableTxs.commitTx.checkPartialSignature(commit.partialSig!!, localFundingKey, localNonce, commitments.latest.remoteFundingPubkey)
+            }
+            else -> {
+                // we cannot compare partial signatures directly as they are not deterministic (a new signing nonce is used every time a signature is computed)
+                // => instead we simply check that the provided partial signature is valid for our latest commit tx
+                val localFundingKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey()
+                val localNonce = channelKeys.verificationNonce(commitments.latest.fundingTxIndex, commitments.latest.localCommit.index).second
+                commitments.latest.localCommit.publishableTxs.commitTx.checkPartialSignature(commit.partialSig!!, localFundingKey, localNonce, commitments.latest.remoteFundingPubkey)
+            }
+        }
     }
 
     /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */

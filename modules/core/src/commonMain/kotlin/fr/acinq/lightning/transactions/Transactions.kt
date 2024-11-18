@@ -23,11 +23,13 @@ import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
+import fr.acinq.bitcoin.utils.getOrElse
 import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
+import fr.acinq.lightning.channel.PartialSignatureWithNonce
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.transactions.CommitmentOutput.InHtlc
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
@@ -101,7 +103,21 @@ object Transactions {
         data class SpliceTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
 
         @Serializable
-        data class CommitTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
+        data class CommitTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo() {
+            fun checkPartialSignature(psig: PartialSignatureWithNonce, localPubKey: PublicKey, localNonce: IndividualNonce, remotePubKey: PublicKey): Boolean {
+                val inputIndex = this.tx.txIn.indexOfFirst { it.outPoint == input.outPoint }
+                val session = Musig2.taprootSession(
+                    this.tx,
+                    inputIndex,
+                    listOf(this.input.txOut),
+                    Scripts.sort(listOf(localPubKey, remotePubKey)),
+                    listOf(localNonce, psig.nonce),
+                    null
+                )
+                val result = session.map { it.verify(psig.partialSig, psig.nonce, remotePubKey) }.getOrElse { false }
+                return result
+            }
+        }
 
         @Serializable
         sealed class HtlcTx : TransactionWithInputInfo() {

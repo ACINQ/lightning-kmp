@@ -285,6 +285,23 @@ sealed class ChannelReestablishTlv : Tlv {
             }
         }
     }
+
+    data class SpliceNoncesTlv(val nonces: List<IndividualNonce>) : ChannelReestablishTlv() {
+        override val tag: Long get() = SpliceNoncesTlv.tag
+
+        override fun write(out: Output) {
+            nonces.forEach { LightningCodecs.writeBytes(it.toByteArray(), out) }
+        }
+
+        companion object : TlvValueReader<SpliceNoncesTlv> {
+            const val tag: Long = 6
+            override fun read(input: Input): SpliceNoncesTlv {
+                val count = input.availableBytes / 66
+                val nonces = (0 until count).map { IndividualNonce(LightningCodecs.bytes(input, 66)) }
+                return SpliceNoncesTlv(nonces)
+            }
+        }
+    }
 }
 
 sealed class ShutdownTlv : Tlv {
