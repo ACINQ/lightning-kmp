@@ -24,7 +24,7 @@ kotlin {
         commonMain {
             dependencies {
                 implementation(project(":lightning-kmp-core"))
-                implementation(project(":lightning-kmp-db-generated"))
+                implementation(libs.sqldelight.runtime)
             }
         }
         commonTest {

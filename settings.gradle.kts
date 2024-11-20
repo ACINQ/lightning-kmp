@@ -19,6 +19,7 @@ dependencyResolutionManagement {
             version("kotlinx-version", "2.0.0")
             version("sqldelight", "2.0.1")
             library("kotlinx-coroutinesTest", "org.jetbrains.kotlinx", "kotlinx-coroutines-test").version("1.7.3")
+            library("sqldelight-runtime", "app.cash.sqldelight", "runtime").versionRef("sqldelight")
             library("sqldelight-sqliteDriver", "app.cash.sqldelight", "sqlite-driver").versionRef("sqldelight")
             library("sqldelight-nativeDriver", "app.cash.sqldelight", "native-driver").versionRef("sqldelight")
         }
@@ -29,10 +30,10 @@ rootProject.name = "lightning-kmp"
 
 include(":lightning-kmp-ios-crypto")
 include(":lightning-kmp-core")
-include(":lightning-kmp-db-generated")
-include(":lightning-kmp-db-sqlite")
+include(":lightning-kmp-db-schema")
+include(":lightning-kmp-db-types")
 
 project(":lightning-kmp-ios-crypto").projectDir = file("./modules/ios-crypto")
 project(":lightning-kmp-core").projectDir = file("./modules/core")
-project(":lightning-kmp-db-generated").projectDir = file("./modules/db/generated")
-project(":lightning-kmp-db-sqlite").projectDir = file("./modules/db/sqlite")
+project(":lightning-kmp-db-schema").projectDir = file("./modules/db/schema")
+project(":lightning-kmp-db-types").projectDir = file("./modules/db/types")
