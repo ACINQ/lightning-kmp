@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.multiplatform)
     alias(libs.plugins.serialization)
+    `maven-publish`
 }
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
