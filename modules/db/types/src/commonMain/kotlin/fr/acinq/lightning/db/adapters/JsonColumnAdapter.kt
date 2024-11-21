@@ -1,8 +1,8 @@
 package fr.acinq.lightning.db.adapters
 
 import app.cash.sqldelight.ColumnAdapter
-import fr.acinq.lightning.db.sqlite.converters.Converter
-import fr.acinq.lightning.db.sqlite.converters.IncomingLightningPaymentConverter
+import fr.acinq.lightning.db.converters.Converter
+import fr.acinq.lightning.db.converters.IncomingLightningPaymentConverter
 import fr.acinq.lightning.db.types.IncomingLightningPayment
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json

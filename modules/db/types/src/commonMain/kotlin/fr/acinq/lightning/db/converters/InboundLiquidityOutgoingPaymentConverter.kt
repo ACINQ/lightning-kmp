@@ -1,10 +1,12 @@
-package fr.acinq.lightning.db.sqlite.converters
+package fr.acinq.lightning.db.converters
 
+import fr.acinq.lightning.db.InboundLiquidityOutgoingPayment
+import fr.acinq.lightning.db.converters.Converter
 import fr.acinq.lightning.db.types.OutgoingLiquidityPayment
 import fr.acinq.lightning.db.types.LiquidityAds.Purchase.Companion.toCoreType
 import fr.acinq.lightning.db.types.LiquidityAds.Purchase.Companion.toDbType
 
-internal object InboundLiquidityOutgoingPaymentConverter : Converter<fr.acinq.lightning.db.InboundLiquidityOutgoingPayment, OutgoingLiquidityPayment> {
+internal object InboundLiquidityOutgoingPaymentConverter : Converter<InboundLiquidityOutgoingPayment, OutgoingLiquidityPayment> {
 
     override fun toCoreType(o: OutgoingLiquidityPayment): fr.acinq.lightning.db.InboundLiquidityOutgoingPayment = when (o) {
         is OutgoingLiquidityPayment.V0 -> fr.acinq.lightning.db.InboundLiquidityOutgoingPayment(

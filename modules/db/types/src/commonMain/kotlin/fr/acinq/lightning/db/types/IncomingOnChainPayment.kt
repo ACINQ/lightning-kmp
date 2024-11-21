@@ -14,7 +14,9 @@ import fr.acinq.bitcoin.OutPoint
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.db.sqlite.serializers.*
+import fr.acinq.lightning.db.serializers.ByteVector32Serializer
+import fr.acinq.lightning.db.serializers.TxIdSerializer
+import fr.acinq.lightning.db.serializers.*
 import fr.acinq.lightning.utils.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers

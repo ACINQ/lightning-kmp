@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.lightning.db.sqlite.serializers.primitives
+package fr.acinq.lightning.db.serializers.primitives
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind

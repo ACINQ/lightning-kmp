@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package fr.acinq.lightning.db.sqlite.serializers
+package fr.acinq.lightning.db.serializers
 
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.db.sqlite.serializers.primitives.AbstractLongSerializer
+import fr.acinq.lightning.db.serializers.primitives.AbstractLongSerializer
 
 object SatoshiSerializer : AbstractLongSerializer<Satoshi>(
     name = "MilliSatoshi",

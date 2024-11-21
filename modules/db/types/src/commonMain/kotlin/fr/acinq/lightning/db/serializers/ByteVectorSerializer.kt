@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package fr.acinq.lightning.db.sqlite.serializers
+package fr.acinq.lightning.db.serializers
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.db.sqlite.serializers.primitives.AbstractStringSerializer
+import fr.acinq.lightning.db.serializers.primitives.AbstractStringSerializer
 
 
 object ByteVector32Serializer : AbstractStringSerializer<ByteVector32>(

@@ -1,4 +1,4 @@
-package fr.acinq.lightning.db.sqlite.converters
+package fr.acinq.lightning.db.converters
 
 import fr.acinq.lightning.db.types.IncomingOnChainPayment
 

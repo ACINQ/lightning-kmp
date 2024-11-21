@@ -8,7 +8,8 @@ package fr.acinq.lightning.db.types
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.db.sqlite.serializers.*
+import fr.acinq.lightning.db.serializers.ByteVector32Serializer
+import fr.acinq.lightning.db.serializers.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 

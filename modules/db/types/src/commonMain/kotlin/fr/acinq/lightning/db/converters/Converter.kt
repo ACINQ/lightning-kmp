@@ -1,4 +1,4 @@
-package fr.acinq.lightning.db.sqlite.converters
+package fr.acinq.lightning.db.converters
 
 internal interface Converter<C, D> {
     fun toCoreType(o: D): C

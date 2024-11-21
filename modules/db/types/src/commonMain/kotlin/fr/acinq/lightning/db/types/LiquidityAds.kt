@@ -13,7 +13,11 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.db.sqlite.serializers.*
+import fr.acinq.lightning.db.serializers.ByteVector32Serializer
+import fr.acinq.lightning.db.serializers.ByteVector64Serializer
+import fr.acinq.lightning.db.serializers.ByteVectorSerializer
+import fr.acinq.lightning.db.serializers.TxIdSerializer
+import fr.acinq.lightning.db.serializers.*
 import fr.acinq.lightning.db.types.LiquidityAds.PaymentDetails.Companion.toCoreType
 import fr.acinq.lightning.db.types.LiquidityAds.PaymentDetails.Companion.toDbType
 import kotlinx.serialization.Serializable

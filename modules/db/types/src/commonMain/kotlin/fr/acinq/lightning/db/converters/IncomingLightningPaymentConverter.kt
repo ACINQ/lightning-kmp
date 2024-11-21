@@ -1,10 +1,12 @@
-package fr.acinq.lightning.db.sqlite.converters
+package fr.acinq.lightning.db.converters
 
+import fr.acinq.lightning.db.LightningIncomingPayment
+import fr.acinq.lightning.db.converters.Converter
 import fr.acinq.lightning.db.types.IncomingLightningPayment
 import fr.acinq.lightning.db.types.OfferPaymentMetadata
 import fr.acinq.lightning.payment.Bolt11Invoice
 
-internal object IncomingLightningPaymentConverter : Converter<fr.acinq.lightning.db.LightningIncomingPayment, IncomingLightningPayment> {
+internal object IncomingLightningPaymentConverter : Converter<LightningIncomingPayment, IncomingLightningPayment> {
 
     override fun toCoreType(o: IncomingLightningPayment): fr.acinq.lightning.db.LightningIncomingPayment = when (o) {
         is IncomingLightningPayment.IncomingBolt11Payment.V0 -> fr.acinq.lightning.db.Bolt11IncomingPayment(
