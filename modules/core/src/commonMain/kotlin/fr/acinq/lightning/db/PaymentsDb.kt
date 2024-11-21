@@ -257,24 +257,24 @@ data class LegacySwapInIncomingPayment(
 
 @Deprecated("Legacy pay-to-open/pay-to-splice, kept for backwards-compatibility with existing databases. Those payments can be a mix of lightning parts and on-chain parts, and either Bolt11 or Bolt12.")
 data class LegacyPayToOpenIncomingPayment(
-    override val id: UUID,
-    override val amountReceived: MilliSatoshi,
-    override val fees: MilliSatoshi,
-    val channelId: ByteVector32,
     val paymentPreimage: ByteVector32,
     val origin: Origin,
     val parts: List<Part>,
     override val createdAt: Long,
     override val completedAt: Long?
 ) : IncomingPayment() {
+    val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()
+    override val id: UUID = UUID.fromBytes(paymentHash.toByteArray().copyOf(16))
+    override val amountReceived: MilliSatoshi = parts.map { it.amountReceived }.sum()
+    override val fees: MilliSatoshi = parts.filterIsInstance<Part.OnChain>().map { it.serviceFee + it.miningFee.toMilliSatoshi() }.sum()
     sealed class Origin {
         data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
         data class Offer(val metadata: OfferPaymentMetadata) : Origin()
     }
-
     sealed class Part {
-        data class Lightning(val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : Part()
-        data class OnChain(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val channelId: ByteVector32, val txId: TxId, val confirmedAt: Long?, val lockedAt: Long?) : Part()
+        abstract val amountReceived: MilliSatoshi
+        data class Lightning(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : Part()
+        data class OnChain(override val amountReceived: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val channelId: ByteVector32, val txId: TxId, val confirmedAt: Long?, val lockedAt: Long?) : Part()
     }
 }
 
