@@ -13,8 +13,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Origin
-import fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Part
 import fr.acinq.lightning.db.serializers.*
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.OfferPaymentMetadata

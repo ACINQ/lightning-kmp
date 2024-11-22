@@ -2,6 +2,7 @@ package fr.acinq.lightning.db.converters
 
 import fr.acinq.lightning.db.types.IncomingLegacyPayToOpenPayment
 
+@Suppress("DEPRECATION")
 internal object IncomingLegacyPayToOpenPaymentConverter : Converter<fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment, IncomingLegacyPayToOpenPayment> {
 
     override fun toCoreType(o: IncomingLegacyPayToOpenPayment): fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment = when (o) {
