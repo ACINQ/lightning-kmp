@@ -1,4 +1,5 @@
 @file:UseSerializers(
+    ByteVectorSerializer::class,
     ByteVector32Serializer::class,
     MilliSatoshiSerializer::class,
     UUIDSerializer::class,
@@ -6,6 +7,7 @@
 
 package fr.acinq.lightning.db.types
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.db.serializers.ByteVector32Serializer
@@ -53,7 +55,7 @@ internal sealed class IncomingLightningPayment : IncomingPayment() {
         @Serializable
         data class V0(
             val preimage: ByteVector32,
-            val metadata: OfferPaymentMetadata,
+            val encodedMetadata: ByteVector,
             val received: Received?,
             val createdAt: Long
         ) : IncomingBolt12Payment()

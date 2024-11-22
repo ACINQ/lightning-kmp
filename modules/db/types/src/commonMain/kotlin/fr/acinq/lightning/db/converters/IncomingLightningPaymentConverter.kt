@@ -1,9 +1,7 @@
 package fr.acinq.lightning.db.converters
 
 import fr.acinq.lightning.db.LightningIncomingPayment
-import fr.acinq.lightning.db.converters.Converter
 import fr.acinq.lightning.db.types.IncomingLightningPayment
-import fr.acinq.lightning.db.types.OfferPaymentMetadata
 import fr.acinq.lightning.payment.Bolt11Invoice
 
 internal object IncomingLightningPaymentConverter : Converter<LightningIncomingPayment, IncomingLightningPayment> {
@@ -17,17 +15,7 @@ internal object IncomingLightningPaymentConverter : Converter<LightningIncomingP
         )
         is IncomingLightningPayment.IncomingBolt12Payment.V0 -> fr.acinq.lightning.db.Bolt12IncomingPayment(
             preimage = o.preimage,
-            metadata = when (o.metadata) {
-                is OfferPaymentMetadata.V1 -> fr.acinq.lightning.payment.OfferPaymentMetadata.V1(
-                    offerId = o.metadata.offerId,
-                    amount = o.metadata.amount,
-                    preimage = o.metadata.preimage,
-                    payerKey = o.metadata.payerKey,
-                    payerNote = o.metadata.payerNote,
-                    quantity = o.metadata.quantity,
-                    createdAtMillis = o.metadata.createdAtMillis
-                )
-            },
+            metadata = fr.acinq.lightning.payment.OfferPaymentMetadata.decode(o.encodedMetadata),
             received = o.received?.let { IncomingLightningPaymentReceivedConverter.toCoreType(it) },
             createdAt = o.createdAt
         )
@@ -42,17 +30,7 @@ internal object IncomingLightningPaymentConverter : Converter<LightningIncomingP
         )
         is fr.acinq.lightning.db.Bolt12IncomingPayment -> IncomingLightningPayment.IncomingBolt12Payment.V0(
             preimage = o.paymentPreimage,
-            metadata = when (val metadata = o.metadata) {
-                is fr.acinq.lightning.payment.OfferPaymentMetadata.V1 -> OfferPaymentMetadata.V1(
-                    offerId = metadata.offerId,
-                    amount = metadata.amount,
-                    preimage = metadata.preimage,
-                    payerKey = metadata.payerKey,
-                    payerNote = metadata.payerNote,
-                    quantity = metadata.quantity,
-                    createdAtMillis = metadata.createdAtMillis
-                )
-            },
+            encodedMetadata = o.metadata.encode(),
             received = o.received?.let { IncomingLightningPaymentReceivedConverter.toDbType(it) },
             createdAt = o.createdAt
         )

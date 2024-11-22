@@ -1,4 +1,5 @@
 @file:UseSerializers(
+    ByteVectorSerializer::class,
     ByteVector32Serializer::class,
     TxIdSerializer::class,
     SatoshiSerializer::class,
@@ -10,6 +11,7 @@
 
 package fr.acinq.lightning.db.types
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.TxId
@@ -34,7 +36,7 @@ internal sealed class IncomingLegacyPayToOpenPayment : IncomingPayment() {
             @Serializable
             data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
             @Serializable
-            data class Offer(val metadata: OfferPaymentMetadata) : Origin()
+            data class Offer(val encodedMetadata: ByteVector) : Origin()
         }
 
         @Serializable

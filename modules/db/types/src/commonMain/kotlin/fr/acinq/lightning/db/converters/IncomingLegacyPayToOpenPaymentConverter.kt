@@ -1,6 +1,7 @@
 package fr.acinq.lightning.db.converters
 
 import fr.acinq.lightning.db.types.IncomingLegacyPayToOpenPayment
+import fr.acinq.lightning.payment.OfferPaymentMetadata
 
 @Suppress("DEPRECATION")
 internal object IncomingLegacyPayToOpenPaymentConverter : Converter<fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment, IncomingLegacyPayToOpenPayment> {
@@ -10,7 +11,7 @@ internal object IncomingLegacyPayToOpenPaymentConverter : Converter<fr.acinq.lig
             paymentPreimage = o.paymentPreimage,
             origin = when (val origin = o.origin) {
                 is IncomingLegacyPayToOpenPayment.V0.Origin.Invoice -> fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Origin.Invoice(origin.paymentRequest)
-                is IncomingLegacyPayToOpenPayment.V0.Origin.Offer -> fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Origin.Offer(origin.metadata)
+                is IncomingLegacyPayToOpenPayment.V0.Origin.Offer -> fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Origin.Offer(OfferPaymentMetadata.decode(origin.encodedMetadata))
             },
             parts = o.parts.map { part ->
                 when (part) {
@@ -40,7 +41,7 @@ internal object IncomingLegacyPayToOpenPaymentConverter : Converter<fr.acinq.lig
             paymentPreimage = o.paymentPreimage,
             origin = when (val origin = o.origin) {
                 is fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Origin.Invoice -> IncomingLegacyPayToOpenPayment.V0.Origin.Invoice(origin.paymentRequest)
-                is fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Origin.Offer -> IncomingLegacyPayToOpenPayment.V0.Origin.Offer(origin.metadata)
+                is fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Origin.Offer -> IncomingLegacyPayToOpenPayment.V0.Origin.Offer(origin.metadata.encode())
             },
             parts = o.parts.map { part ->
                 when (part) {
