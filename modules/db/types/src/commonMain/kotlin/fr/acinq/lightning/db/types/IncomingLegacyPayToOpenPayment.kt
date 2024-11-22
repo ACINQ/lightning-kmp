@@ -5,6 +5,7 @@
     MilliSatoshiSerializer::class,
     UUIDSerializer::class,
     OutpointSerializer::class,
+    Bolt11InvoiceSerializer::class,
 )
 
 package fr.acinq.lightning.db.types
@@ -15,7 +16,6 @@ import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.db.serializers.*
 import fr.acinq.lightning.payment.Bolt11Invoice
-import fr.acinq.lightning.payment.OfferPaymentMetadata
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 
@@ -31,13 +31,17 @@ internal sealed class IncomingLegacyPayToOpenPayment : IncomingPayment() {
     ) : IncomingLegacyPayToOpenPayment() {
         @Serializable
         sealed class Origin {
+            @Serializable
             data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
+            @Serializable
             data class Offer(val metadata: OfferPaymentMetadata) : Origin()
         }
 
         @Serializable
         sealed class Part {
+            @Serializable
             data class Lightning(val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : Part()
+            @Serializable
             data class OnChain(val amountReceived: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val channelId: ByteVector32, val txId: TxId, val confirmedAt: Long?, val lockedAt: Long?) : Part()
         }
     }
