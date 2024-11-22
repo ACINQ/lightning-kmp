@@ -14,14 +14,17 @@ import kotlinx.serialization.serializer
  */
 internal inline fun <C : Any, reified D : Any> jsonColumnAdapter(converter: Converter<C, D>): ColumnAdapter<C, String> {
     val serializer: KSerializer<D> = serializersModule.serializer()
+    val json = Json {
+        prettyPrint = true
+    }
     return object : ColumnAdapter<C, String> {
 
         override fun decode(databaseValue: String): C {
-            return converter.toCoreType(Json.decodeFromString(serializer, databaseValue))
+            return converter.toCoreType(json.decodeFromString(serializer, databaseValue))
         }
 
         override fun encode(value: C): String {
-            return Json.encodeToString(serializer, converter.toDbType(value))
+            return json.encodeToString(serializer, converter.toDbType(value))
         }
     }
 }
