@@ -13,23 +13,18 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.db.serializers.ByteVector32Serializer
-import fr.acinq.lightning.db.serializers.TxIdSerializer
+import fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Origin
+import fr.acinq.lightning.db.LegacyPayToOpenIncomingPayment.Part
 import fr.acinq.lightning.db.serializers.*
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.OfferPaymentMetadata
-import fr.acinq.lightning.utils.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 
 @Serializable
-internal sealed class IncomingLegacyPayToOpenPayment {
+internal sealed class IncomingLegacyPayToOpenPayment : IncomingPayment() {
     @Serializable
     data class V0(
-        val id: UUID,
-        val amountReceived: MilliSatoshi,
-        val fees: MilliSatoshi,
-        val channelId: ByteVector32,
         val paymentPreimage: ByteVector32,
         val origin: Origin,
         val parts: List<Part>,
@@ -44,8 +39,8 @@ internal sealed class IncomingLegacyPayToOpenPayment {
 
         @Serializable
         sealed class Part {
-            data class Lightning(val amount: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : Part()
-            data class OnChain(val amount: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val channelId: ByteVector32, val txId: TxId, val confirmedAt: Long?, val lockedAt: Long?) : Part()
+            data class Lightning(val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : Part()
+            data class OnChain(val amountReceived: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val channelId: ByteVector32, val txId: TxId, val confirmedAt: Long?, val lockedAt: Long?) : Part()
         }
     }
 }

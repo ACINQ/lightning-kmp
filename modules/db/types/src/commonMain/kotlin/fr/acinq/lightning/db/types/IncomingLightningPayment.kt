@@ -14,7 +14,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 
 @Serializable
-internal sealed class IncomingLightningPayment {
+internal sealed class IncomingLightningPayment : IncomingPayment() {
 
     @Serializable
     sealed class Received {

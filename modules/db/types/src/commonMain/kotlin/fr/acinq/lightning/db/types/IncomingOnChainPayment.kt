@@ -22,7 +22,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 
 @Serializable
-internal sealed class IncomingOnChainPayment {
+internal sealed class IncomingOnChainPayment : IncomingPayment() {
     @Serializable
     sealed class NewChannelIncomingPayment : IncomingOnChainPayment() {
         @Serializable

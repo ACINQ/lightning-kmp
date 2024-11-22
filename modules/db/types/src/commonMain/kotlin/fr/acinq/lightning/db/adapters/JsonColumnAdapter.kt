@@ -3,7 +3,9 @@ package fr.acinq.lightning.db.adapters
 import app.cash.sqldelight.ColumnAdapter
 import fr.acinq.lightning.db.converters.Converter
 import fr.acinq.lightning.db.converters.IncomingLightningPaymentConverter
+import fr.acinq.lightning.db.converters.IncomingPaymentConverter
 import fr.acinq.lightning.db.types.IncomingLightningPayment
+import fr.acinq.lightning.db.types.IncomingPayment
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.Json.Default.serializersModule
@@ -30,3 +32,5 @@ internal inline fun <C : Any, reified D : Any> jsonColumnAdapter(converter: Conv
 }
 
 val IncomingLightningPaymentAdapter = jsonColumnAdapter<fr.acinq.lightning.db.LightningIncomingPayment, IncomingLightningPayment>(IncomingLightningPaymentConverter)
+
+val IncomingPaymentAdapter = jsonColumnAdapter<fr.acinq.lightning.db.IncomingPayment, IncomingPayment>(IncomingPaymentConverter)

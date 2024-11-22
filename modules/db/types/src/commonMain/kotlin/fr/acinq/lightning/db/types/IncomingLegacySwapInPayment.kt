@@ -18,7 +18,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 
 @Serializable
-internal sealed class IncomingLegacySwapInPayment {
+internal sealed class IncomingLegacySwapInPayment : IncomingPayment() {
     @Serializable
     data class V0(
         val id: UUID,
