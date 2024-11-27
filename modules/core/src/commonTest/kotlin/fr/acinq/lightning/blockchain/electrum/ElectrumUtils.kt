@@ -5,7 +5,7 @@ import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.ServerAddress
 import kotlinx.coroutines.CoroutineScope
 
-val ElectrumTestnet4ServerAddress = ServerAddress("mempool.space", 40002, TcpSocket.TLS.TRUSTED_CERTIFICATES())
+val ElectrumTestnet4ServerAddress = ServerAddress("mempool.space", 40002, TcpSocket.TLS.UNSAFE_CERTIFICATES)
 val ElectrumMainnetServerAddress = ServerAddress("electrum.acinq.co", 50002, TcpSocket.TLS.UNSAFE_CERTIFICATES)
 
 suspend fun connectToElectrumServer(scope: CoroutineScope, addr: ServerAddress): ElectrumClient =
