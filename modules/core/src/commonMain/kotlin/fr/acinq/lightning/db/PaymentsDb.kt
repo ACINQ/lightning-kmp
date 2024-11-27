@@ -1,6 +1,7 @@
 package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelManagementFees
@@ -173,6 +174,20 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
 
     /** A payment expires if it is a [Bolt11IncomingPayment] and its invoice has expired. */
     fun isExpired(): Boolean = this is Bolt11IncomingPayment && this.paymentRequest.isExpired()
+
+    companion object {
+        /** Helper method to facilitate updating child classes */
+        fun LightningIncomingPayment.addReceivedParts(parts: List<Received.Part>, receivedAt: Long): LightningIncomingPayment {
+            val newReceived = when (val received = this.received) {
+                null -> Received(parts, receivedAt)
+                else -> received.copy(parts = received.parts + parts)
+            }
+            return when (this) {
+                is Bolt11IncomingPayment -> copy(received = newReceived)
+                is Bolt12IncomingPayment -> copy(received = newReceived)
+            }
+        }
+    }
 }
 
 /** A normal, Bolt11 invoice-based lightning payment. */
@@ -210,6 +225,22 @@ sealed class OnChainIncomingPayment : IncomingPayment() {
      * used), but both sides have to agree that the funds are usable, a.k.a. "locked".
      */
     override val completedAt: Long? get() = lockedAt
+
+    companion object {
+        /** Helper method to facilitate updating child classes */
+        fun OnChainIncomingPayment.setLocked(lockedAt: Long): OnChainIncomingPayment =
+            when (this) {
+                is NewChannelIncomingPayment -> copy(lockedAt = lockedAt)
+                is SpliceInIncomingPayment -> copy(lockedAt = lockedAt)
+            }
+
+        /** Helper method to facilitate updating child classes */
+        fun OnChainIncomingPayment.setConfirmed(confirmedAt: Long): OnChainIncomingPayment =
+            when (this) {
+                is NewChannelIncomingPayment -> copy(confirmedAt = confirmedAt)
+                is SpliceInIncomingPayment -> copy(confirmedAt = confirmedAt)
+            }
+    }
 }
 
 /**
