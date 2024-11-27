@@ -4,26 +4,15 @@ import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTes
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
-    kotlin("multiplatform") version "1.9.23"
-    kotlin("plugin.serialization") version "1.9.23"
-    id("org.jetbrains.dokka") version "1.9.10"
+    alias(libs.plugins.multiplatform)
+    alias(libs.plugins.serialization)
+    alias(libs.plugins.dokka)
     `maven-publish`
 }
 
 val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
-
-    val bitcoinKmpVersion = "0.20.0" // when upgrading bitcoin-kmp, keep secpJniJvmVersion in sync!
-    val secpJniJvmVersion = "0.15.0"
-
-    val serializationVersion = "1.6.2"
-    val coroutineVersion = "1.7.3"
-    val datetimeVersion = "0.6.0"
-    val ktorVersion = "2.3.7"
-    fun ktor(module: String) = "io.ktor:ktor-$module:$ktorVersion"
-    val kermitLoggerVersion = "2.0.2"
-
     jvm {
         compilations.all {
             kotlinOptions.jvmTarget = "1.8"
@@ -67,20 +56,20 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                api("fr.acinq.bitcoin:bitcoin-kmp:$bitcoinKmpVersion")
-                api("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
-                api("org.jetbrains.kotlinx:kotlinx-serialization-core:$serializationVersion")
-                api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:$serializationVersion")
-                api("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
-                api("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
-                api("co.touchlab:kermit:$kermitLoggerVersion")
-                api(ktor("network"))
-                api(ktor("network-tls"))
-                implementation(ktor("client-core"))
-                implementation(ktor("client-auth"))
-                implementation(ktor("client-json"))
-                implementation(ktor("client-content-negotiation"))
-                implementation(ktor("serialization-kotlinx-json"))
+                api("fr.acinq.bitcoin:bitcoin-kmp:${libs.versions.bitcoinkmp.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-coroutines-core:${libs.versions.kotlinx.coroutines.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-core:${libs.versions.kotlinx.serialization.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:${libs.versions.kotlinx.serialization.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-json:${libs.versions.kotlinx.serialization.get()}")
+                api("org.jetbrains.kotlinx:kotlinx-datetime:${libs.versions.kotlinx.datetime.get()}")
+                api("co.touchlab:kermit:${libs.versions.kermit.get()}")
+                api("io.ktor:ktor-network:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-network-tls:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-client-core:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-client-auth:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-client-json:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-client-content-negotiation:${libs.versions.ktor.get()}")
+                api("io.ktor:ktor-serialization-kotlinx-json:${libs.versions.ktor.get()}")
             }
         }
 
@@ -88,43 +77,43 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
-                implementation("org.kodein.memory:klio-files:0.12.0")
+                implementation("org.kodein.memory:klio-files:${libs.versions.test.kodein.memory.get()}")
             }
         }
 
         jvmMain {
             dependencies {
-                api(ktor("client-okhttp"))
-                implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:$secpJniJvmVersion")
-                implementation("org.slf4j:slf4j-api:1.7.36")
+                api("io.ktor:ktor-client-okhttp:${libs.versions.ktor.get()}")
+                implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:${libs.versions.secpjnijvm.get()}")
+                implementation("org.slf4j:slf4j-api:${libs.versions.slf4j.get()}")
             }
         }
 
         jvmTest {
             dependencies {
                 implementation(kotlin("test-junit"))
-                implementation("org.bouncycastle:bcprov-jdk15on:1.64")
-                implementation("ch.qos.logback:logback-classic:1.2.3")
-                implementation("org.xerial:sqlite-jdbc:3.32.3.3")
+                implementation("org.bouncycastle:bcprov-jdk15on:${libs.versions.test.bouncycastle.get()}")
+                implementation("ch.qos.logback:logback-classic:${libs.versions.test.logback.get()}")
+                implementation("org.xerial:sqlite-jdbc:${libs.versions.test.sqlitejdbc.get()}")
             }
         }
 
         if (currentOs.isMacOsX) {
             iosMain {
                 dependencies {
-                    implementation(ktor("client-ios"))
+                    api("io.ktor:ktor-client-ios:${libs.versions.ktor.get()}")
                 }
             }
             macosMain {
                 dependencies {
-                    implementation(ktor("client-darwin"))
+                    api("io.ktor:ktor-client-darwin:${libs.versions.ktor.get()}")
                 }
             }
         }
 
         linuxMain {
             dependencies {
-                implementation(ktor("client-curl"))
+                api("io.ktor:ktor-client-curl:${libs.versions.ktor.get()}")
             }
         }
 
