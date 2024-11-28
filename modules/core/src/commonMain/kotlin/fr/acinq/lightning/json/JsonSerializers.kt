@@ -94,6 +94,8 @@
     JsonSerializers.ChannelReadyTlvSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigsSerializer::class,
+    JsonSerializers.CommitSigTlvAlternativeFeeratePartialSigSerializer::class,
+    JsonSerializers.CommitSigTlvAlternativeFeeratePartialSigsSerializer::class,
     JsonSerializers.CommitSigTlvBatchSerializer::class,
     JsonSerializers.CommitSigTlvPartialSignatureWithNonceSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
@@ -214,6 +216,7 @@ object JsonSerializers {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(ChannelReadyTlv.NextLocalNonceTlv::class, ChannelReadyTlvNextLocalNonceTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
+                subclass(CommitSigTlv.AlternativeFeeratePartialSigs::class, CommitSigTlvAlternativeFeeratePartialSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
                 subclass(CommitSigTlv.PartialSignatureWithNonceTlv::class, CommitSigTlvPartialSignatureWithNonceSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
@@ -563,6 +566,12 @@ object JsonSerializers {
 
     @Serializer(forClass = CommitSigTlv.AlternativeFeerateSigs::class)
     object CommitSigTlvAlternativeFeerateSigsSerializer
+
+    @Serializer(forClass = CommitSigTlv.AlternativeFeeratePartialSig::class)
+    object CommitSigTlvAlternativeFeeratePartialSigSerializer
+
+    @Serializer(forClass = CommitSigTlv.AlternativeFeeratePartialSigs::class)
+    object CommitSigTlvAlternativeFeeratePartialSigsSerializer
 
     @Serializer(forClass = CommitSigTlv.Batch::class)
     object CommitSigTlvBatchSerializer

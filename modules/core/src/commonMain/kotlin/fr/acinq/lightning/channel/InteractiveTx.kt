@@ -1240,26 +1240,41 @@ data class InteractiveTxSigningSession(
                 }
                 val localSigsOfRemoteHtlcTxs = firstCommitTx.remoteHtlcTxs.map { it.sign(channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
-                val alternativeSigs = if (firstCommitTx.remoteHtlcTxs.isEmpty()) {
-                    val commitSigTlvs = Commitments.alternativeFeerates.map { feerate ->
-                        val alternativeSpec = firstCommitTx.remoteSpec.copy(feerate = feerate)
-                        val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(
-                            channelKeys,
-                            remoteCommitmentIndex,
-                            channelParams.localParams,
-                            channelParams.remoteParams,
-                            fundingTxIndex,
-                            fundingParams.remoteFundingPubkey,
-                            firstCommitTx.remoteCommitTx.input,
-                            remotePerCommitmentPoint,
-                            alternativeSpec
-                        )
-                        val sig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
-                        CommitSigTlv.AlternativeFeerateSig(feerate, sig)
+                val alternativeSigs = when {
+                    firstCommitTx.remoteHtlcTxs.isNotEmpty() -> null
+                    else -> {
+                        val alts = Commitments.alternativeFeerates.map { feerate ->
+                            val alternativeSpec = firstCommitTx.remoteSpec.copy(feerate = feerate)
+                            val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(
+                                channelKeys,
+                                remoteCommitmentIndex,
+                                channelParams.localParams,
+                                channelParams.remoteParams,
+                                fundingTxIndex,
+                                fundingParams.remoteFundingPubkey,
+                                firstCommitTx.remoteCommitTx.input,
+                                remotePerCommitmentPoint,
+                                alternativeSpec
+                            )
+                            feerate to alternativeRemoteCommitTx
+                        }
+                        when (session.firstRemoteNonce) {
+                            null -> CommitSigTlv.AlternativeFeerateSigs(alts.map {
+                                val sig = Transactions.sign(it.second, channelKeys.fundingKey(fundingTxIndex))
+                                CommitSigTlv.AlternativeFeerateSig(it.first, sig)
+                            })
+
+                            else -> CommitSigTlv.AlternativeFeeratePartialSigs(alts.map {
+                                val localNonce = channelKeys.signingNonce(fundingTxIndex)
+                                val psig = Transactions.partialSign(
+                                    it.second, channelKeys.fundingKey(fundingTxIndex),
+                                    channelKeys.fundingKey(fundingTxIndex).publicKey(), session.fundingParams.remoteFundingPubkey,
+                                    localNonce, session.firstRemoteNonce
+                                ).right!!
+                                CommitSigTlv.AlternativeFeeratePartialSig(it.first, PartialSignatureWithNonce(psig, localNonce.second))
+                            })
+                        }
                     }
-                    CommitSigTlv.AlternativeFeerateSigs(commitSigTlvs)
-                } else {
-                    null
                 }
                 val tlvStream = TlvStream(setOf(localPartialSigOfRemoteTx, alternativeSigs).filterNotNull().toSet())
                 val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteCommitTx, localSigsOfRemoteHtlcTxs, tlvStream)

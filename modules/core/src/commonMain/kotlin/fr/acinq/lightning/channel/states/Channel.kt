@@ -345,21 +345,21 @@ sealed class PersistedChannelState : ChannelState() {
                     )
                 }
 
-                state.commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx -> {
+                else -> {
                     logger.info { "splice may not have confirmed yet, re-sending splice nonces" }
                     listOf(
                         channelKeys.verificationNonce(state.commitments.latest.fundingTxIndex, state.commitments.localCommitIndex).second,
                         channelKeys.verificationNonce(state.commitments.latest.fundingTxIndex, state.commitments.localCommitIndex + 1).second
                     )
                 }
-                else -> null
             }
             val unsignedFundingTxId = when (state) {
                 is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()
                 is Normal -> state.getUnsignedFundingTxId() // a splice was in progress, we tell our peer that we are remembering it and are expecting signatures
                 else -> null
             }
-            val tlvs: TlvStream<ChannelReestablishTlv> = TlvStream(setOfNotNull(
+            val tlvs: TlvStream<ChannelReestablishTlv> = TlvStream(
+                setOfNotNull(
                 unsignedFundingTxId?.let { ChannelReestablishTlv.NextFunding(it) },
                 myNextLocalNonces?.let { ChannelReestablishTlv.NextLocalNoncesTlv(it) },
                 spliceNonces?.let { ChannelReestablishTlv.SpliceNoncesTlv(it) }

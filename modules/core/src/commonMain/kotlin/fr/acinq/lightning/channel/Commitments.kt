@@ -541,13 +541,41 @@ data class Commitment(
 
         val tlvs = buildSet {
             if (spec.htlcs.isEmpty()) {
-                val alternativeSigs = Commitments.alternativeFeerates.map { feerate ->
+                val alternativeRemoteCommitTxs = Commitments.alternativeFeerates.map { feerate ->
                     val alternativeSpec = spec.copy(feerate = feerate)
-                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitInput, remotePerCommitmentPoint = remoteNextPerCommitmentPoint, alternativeSpec)
-                    val alternativeSig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
-                    CommitSigTlv.AlternativeFeerateSig(feerate, alternativeSig)
+                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(
+                        channelKeys,
+                        commitTxNumber = remoteCommit.index + 1,
+                        params.localParams,
+                        params.remoteParams,
+                        fundingTxIndex = fundingTxIndex,
+                        remoteFundingPubKey = remoteFundingPubkey,
+                        commitInput,
+                        remotePerCommitmentPoint = remoteNextPerCommitmentPoint,
+                        alternativeSpec
+                    )
+                    feerate to alternativeRemoteCommitTx
                 }
-                add(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs))
+                when (remoteNonce) {
+                    null -> {
+                        val alternativeSigs = alternativeRemoteCommitTxs.map {
+                            val alternativeSig = Transactions.sign(it.second, channelKeys.fundingKey(fundingTxIndex))
+                            CommitSigTlv.AlternativeFeerateSig(it.first, alternativeSig)
+                        }
+                        add(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs))
+                    }
+
+                    else -> {
+                        val alternativeSigs = alternativeRemoteCommitTxs.map {
+                            val localNonce = channelKeys.signingNonce(fundingTxIndex)
+                            val fundingKey = channelKeys.fundingKey(fundingTxIndex)
+                            val alternativePsig = Transactions.partialSign(it.second, fundingKey, fundingKey.publicKey(), remoteFundingPubkey, localNonce, remoteNonce).right!!
+                            log.debug { "sendCommit: creating partial sig $alternativePsig for alternative remote commit tx ${it.second.tx.txid} with remote nonce $remoteNonce and remoteNextPerCommitmentPoint = $remoteNextPerCommitmentPoint" }
+                            CommitSigTlv.AlternativeFeeratePartialSig(it.first, PartialSignatureWithNonce(alternativePsig, localNonce.second))
+                        }
+                        add(CommitSigTlv.AlternativeFeeratePartialSigs(alternativeSigs))
+                    }
+                }
             }
             if (batchSize > 1) {
                 add(CommitSigTlv.Batch(batchSize))
@@ -556,6 +584,7 @@ data class Commitment(
                 add(CommitSigTlv.PartialSignatureWithNonceTlv(partialSig))
             }
         }
+
         val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList(), TlvStream(tlvs))
         val commitment1 = copy(nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)))
         return Pair(commitment1, commitSig)
