@@ -1259,9 +1259,12 @@ data class CommitSig(
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): CommitSig = copy(tlvStream = tlvStream.addOrUpdate(CommitSigTlv.ChannelData(ecd)))
 
     val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
+    val alternativeFeeratePartialSigs: List<CommitSigTlv.AlternativeFeeratePartialSig> = tlvStream.get<CommitSigTlv.AlternativeFeeratePartialSigs>()?.psigs ?: listOf()
     val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
     val partialSig = tlvStream.get<CommitSigTlv.PartialSignatureWithNonceTlv>()?.psig
     val sigOrPartialSig: Either<ByteVector64, PartialSignatureWithNonce> = partialSig?.let { Either.Right(it) } ?: Either.Left(signature)
+    val alternativFeerateSigsOrPartialSigs: List<Either<CommitSigTlv.AlternativeFeerateSig, CommitSigTlv.AlternativeFeeratePartialSig>> =
+        partialSig?.let { alternativeFeeratePartialSigs.map { Either.Right(it) } } ?: alternativeFeerateSigs.map { Either.Left(it) }
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1278,6 +1281,7 @@ data class CommitSig(
         val readers = mapOf(
             CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.AlternativeFeerateSigs.tag to CommitSigTlv.AlternativeFeerateSigs.Companion as TlvValueReader<CommitSigTlv>,
+            CommitSigTlv.AlternativeFeeratePartialSigs.tag to CommitSigTlv.AlternativeFeeratePartialSigs.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.PartialSignatureWithNonceTlv.tag to CommitSigTlv.PartialSignatureWithNonceTlv.Companion as TlvValueReader<CommitSigTlv>,
         )

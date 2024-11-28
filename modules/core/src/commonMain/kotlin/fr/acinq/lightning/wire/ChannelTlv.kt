@@ -10,9 +10,7 @@ import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.channel.Origin
 import fr.acinq.lightning.channel.PartialSignatureWithNonce
-import fr.acinq.lightning.wire.ChannelReadyTlv.NextLocalNonceTlv
 
 sealed class ChannelTlv : Tlv {
     /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
@@ -217,6 +215,42 @@ sealed class CommitSigTlv : Tlv {
             }
         }
     }
+
+    data class AlternativeFeeratePartialSig(val feerate: FeeratePerKw, val psig: PartialSignatureWithNonce)
+
+    /**
+     * When there are no pending HTLCs, we provide a list of signatures for the commitment transaction signed at various feerates.
+     * This gives more options to the remote node to recover their funds if the user disappears without closing channels.
+     */
+    data class AlternativeFeeratePartialSigs(val psigs: List<AlternativeFeeratePartialSig>) : CommitSigTlv() {
+        override val tag: Long get() = AlternativeFeeratePartialSigs.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeByte(psigs.size, out)
+            psigs.forEach {
+                LightningCodecs.writeU32(it.feerate.toLong().toInt(), out)
+                LightningCodecs.writeBytes(it.psig.partialSig, out)
+                LightningCodecs.writeBytes(it.psig.nonce.toByteArray(), out)
+            }
+        }
+
+        companion object : TlvValueReader<AlternativeFeeratePartialSigs> {
+            const val tag: Long = 0x47010003
+            override fun read(input: Input): AlternativeFeeratePartialSigs {
+                val count = LightningCodecs.byte(input)
+                val sigs = (0 until count).map {
+                    AlternativeFeeratePartialSig(
+                        FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
+                        PartialSignatureWithNonce(
+                            LightningCodecs.bytes(input, 32).byteVector32(),
+                            IndividualNonce(LightningCodecs.bytes(input, 66))
+                        )
+                    )
+                }
+                return AlternativeFeeratePartialSigs(sigs)
+            }
+        }
+    }
+
 }
 
 sealed class RevokeAndAckTlv : Tlv {
