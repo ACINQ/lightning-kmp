@@ -45,7 +45,7 @@ class RouteBlindingTestsCommon : LightningTestSuite() {
             ByteVector("0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007 0821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f") to RouteBlindingEncryptedData(
                 TlvStream(
                     OutgoingNodeId(EncodedNodeId(PublicKey(ByteVector("027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")))),
-                    NextBlinding(PublicKey(ByteVector("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
+                    NextPathKey(PublicKey(ByteVector("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
                 )
             ),
         )

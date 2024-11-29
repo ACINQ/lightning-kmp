@@ -461,7 +461,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
                     RouteBlinding.BlindedRoute(
                         EncodedNodeId.ShortChannelIdDir(isNode1 = true, ShortChannelId(1234)),
                         PublicKey.fromHex("0379b470d00b78ded936f8972a0f3ecda2bb6e6df40dcd581dbaeb3742b30008ff"),
-                        listOf(RouteBlinding.BlindedNode(PublicKey.fromHex("02fba71b72623187dd24670110eec870e28b848f255ba2edc0486d3a8e89ec44b7"), ByteVector.fromHex("1dea")))
+                        listOf(RouteBlinding.BlindedHop(PublicKey.fromHex("02fba71b72623187dd24670110eec870e28b848f255ba2edc0486d3a8e89ec44b7"), ByteVector.fromHex("1dea")))
                     )
                 )
             ),
@@ -471,7 +471,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
                     RouteBlinding.BlindedRoute(
                         EncodedNodeId.ShortChannelIdDir(isNode1 = false, ShortChannelId(56789)),
                         PublicKey.fromHex("0353a081bb02d6e361be3df3e92b41b788ca65667f6ea0c01e2bfa03664460ef86"),
-                        listOf(RouteBlinding.BlindedNode(PublicKey.fromHex("03bce3f0cdb4172caac82ec8a9251eb35df1201bdcb977c5a03f3624ec4156a65f"), ByteVector.fromHex("c0ffee")))
+                        listOf(RouteBlinding.BlindedHop(PublicKey.fromHex("03bce3f0cdb4172caac82ec8a9251eb35df1201bdcb977c5a03f3624ec4156a65f"), ByteVector.fromHex("c0ffee")))
                     )
                 )
             ),
@@ -481,7 +481,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
                     RouteBlinding.BlindedRoute(
                         EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
                         PublicKey.fromHex("0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966"),
-                        listOf(RouteBlinding.BlindedNode(PublicKey.fromHex("02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328"), ByteVector.fromHex("cafe")))
+                        listOf(RouteBlinding.BlindedHop(PublicKey.fromHex("02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328"), ByteVector.fromHex("cafe")))
                     )
                 )
             ),
@@ -491,7 +491,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
                     RouteBlinding.BlindedRoute(
                         EncodedNodeId.WithPublicKey.Plain(PublicKey.fromHex("03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
                         PublicKey.fromHex("028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd"),
-                        listOf(RouteBlinding.BlindedNode(PublicKey.fromHex("02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2"), ByteVector.fromHex("ec1a13")))
+                        listOf(RouteBlinding.BlindedHop(PublicKey.fromHex("02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2"), ByteVector.fromHex("ec1a13")))
                     )
                 )
             ),
@@ -518,7 +518,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         assertEquals(1, offer.contactInfos.size)
         val path = offer.contactInfos.first()
         assertIs<BlindedPath>(path)
-        assertEquals(EncodedNodeId(trampolineNode), path.route.introductionNodeId)
+        assertEquals(EncodedNodeId(trampolineNode), path.route.firstNodeId)
         assertEquals(key.publicKey(), path.route.blindedNodeIds.last())
         val expectedOffer = Offer.decode("lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0qf70a6j2x2akrhazctejaaqr8y4qtzjtjzmfesay6mzr3s789uryuqsr8dpgfgxuk56vh7cl89769zdpdrkqwtypzhu2t8ehp73dqeeq65lsqvlx5pj8mw2kz54p4f6ct66stdfxz0df8nqq7svjjdjn2dv8sz28y7z07yg3vqyfyy8ywevqc8kzp36lhd5cqwlpkg8vdcqsfvz89axkmv5sgdysmwn95tpsct6mdercmz8jh2r82qqscrf6uc3tse5gw5sv5xjdfw8f6c").get()
         assertEquals(expectedOffer, offer)

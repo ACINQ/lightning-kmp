@@ -8,15 +8,15 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.utils.msat
 
 sealed class UpdateAddHtlcTlv : Tlv {
-    /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
-    data class Blinding(val publicKey: PublicKey) : UpdateAddHtlcTlv() {
-        override val tag: Long get() = Blinding.tag
+    /** Path key that should be used to derive shared secrets when using route blinding. */
+    data class PathKey(val publicKey: PublicKey) : UpdateAddHtlcTlv() {
+        override val tag: Long get() = PathKey.tag
 
         override fun write(out: Output) = LightningCodecs.writeBytes(publicKey.value, out)
 
-        companion object : TlvValueReader<Blinding> {
+        companion object : TlvValueReader<PathKey> {
             const val tag: Long = 0
-            override fun read(input: Input): Blinding = Blinding(PublicKey(LightningCodecs.bytes(input, 33)))
+            override fun read(input: Input): PathKey = PathKey(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 
@@ -42,15 +42,15 @@ sealed class UpdateAddHtlcTlv : Tlv {
 }
 
 sealed class WillAddHtlcTlv : Tlv {
-    /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
-    data class Blinding(val publicKey: PublicKey) : WillAddHtlcTlv() {
-        override val tag: Long get() = Blinding.tag
+    /** Path key that should be used to derive shared secrets when using route blinding. */
+    data class PathKey(val publicKey: PublicKey) : WillAddHtlcTlv() {
+        override val tag: Long get() = PathKey.tag
 
         override fun write(out: Output) = LightningCodecs.writeBytes(publicKey.value, out)
 
-        companion object : TlvValueReader<Blinding> {
+        companion object : TlvValueReader<PathKey> {
             const val tag: Long = 0
-            override fun read(input: Input): Blinding = Blinding(PublicKey(LightningCodecs.bytes(input, 33)))
+            override fun read(input: Input): PathKey = PathKey(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 }

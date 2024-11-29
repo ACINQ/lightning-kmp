@@ -85,16 +85,16 @@ sealed class OnionPaymentPayloadTlv : Tlv {
         }
     }
 
-    /** Blinding ephemeral public key for the introduction node of a blinded route. */
-    data class BlindingPoint(val publicKey: PublicKey) : OnionPaymentPayloadTlv() {
-        override val tag: Long get() = BlindingPoint.tag
+    /** Path key for the introduction node of a blinded route. */
+    data class PathKey(val publicKey: PublicKey) : OnionPaymentPayloadTlv() {
+        override val tag: Long get() = PathKey.tag
         override fun write(out: Output) {
             LightningCodecs.writeBytes(publicKey.value, out)
         }
 
-        companion object : TlvValueReader<BlindingPoint> {
+        companion object : TlvValueReader<PathKey> {
             const val tag: Long = 12
-            override fun read(input: Input): BlindingPoint = BlindingPoint(PublicKey(LightningCodecs.bytes(input, 33)))
+            override fun read(input: Input): PathKey = PathKey(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 
@@ -251,7 +251,7 @@ object PaymentOnion {
                     OnionPaymentPayloadTlv.OutgoingChannelId.tag to OnionPaymentPayloadTlv.OutgoingChannelId.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.PaymentData.tag to OnionPaymentPayloadTlv.PaymentData.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.EncryptedRecipientData.tag to OnionPaymentPayloadTlv.EncryptedRecipientData.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
-                    OnionPaymentPayloadTlv.BlindingPoint.tag to OnionPaymentPayloadTlv.BlindingPoint.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
+                    OnionPaymentPayloadTlv.PathKey.tag to OnionPaymentPayloadTlv.PathKey.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.PaymentMetadata.tag to OnionPaymentPayloadTlv.PaymentMetadata.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.TotalAmount.tag to OnionPaymentPayloadTlv.TotalAmount.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.InvoiceFeatures.tag to OnionPaymentPayloadTlv.InvoiceFeatures.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
@@ -375,12 +375,12 @@ object PaymentOnion {
 
             companion object {
                 fun validate(records: TlvStream<OnionPaymentPayloadTlv>, blindedRecords: RouteBlindingEncryptedData): Either<InvalidTlvPayload, Blinded> {
-                    // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data`, `current_blinding_point`, `amt_to_forward`, `outgoing_cltv_value` and `total_amount_msat`.
+                    // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data`, `current_path_key`, `amt_to_forward`, `outgoing_cltv_value` and `total_amount_msat`.
                     val allowed = setOf(
                         OnionPaymentPayloadTlv.AmountToForward.tag,
                         OnionPaymentPayloadTlv.OutgoingCltv.tag,
                         OnionPaymentPayloadTlv.EncryptedRecipientData.tag,
-                        OnionPaymentPayloadTlv.BlindingPoint.tag,
+                        OnionPaymentPayloadTlv.PathKey.tag,
                         OnionPaymentPayloadTlv.TotalAmount.tag,
                     )
                     return when {
@@ -446,7 +446,7 @@ object PaymentOnion {
                         tlvs.get<OnionPaymentPayloadTlv.OutgoingCltv>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingCltv.tag, 0))
                         tlvs.get<OnionPaymentPayloadTlv.OutgoingNodeId>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingNodeId.tag, 0))
                         tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
-                        tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.BlindingPoint.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.PathKey>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.PathKey.tag, 0))
                         else -> Either.Right(NodeRelayPayload(tlvs))
                     }
                 }
@@ -489,7 +489,7 @@ object PaymentOnion {
                         tlvs.get<OnionPaymentPayloadTlv.InvoiceFeatures>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.InvoiceFeatures.tag, 0))
                         tlvs.get<OnionPaymentPayloadTlv.InvoiceRoutingInfo>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.InvoiceRoutingInfo.tag, 0))
                         tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
-                        tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.BlindingPoint.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.PathKey>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.PathKey.tag, 0))
                         else -> Either.Right(RelayToNonTrampolinePayload(tlvs))
                     }
                 }
@@ -529,7 +529,7 @@ object PaymentOnion {
                         tlvs.get<OnionPaymentPayloadTlv.InvoiceFeatures>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.InvoiceFeatures.tag, 0))
                         tlvs.get<OnionPaymentPayloadTlv.OutgoingBlindedPaths>() == null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.OutgoingBlindedPaths.tag, 0))
                         tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.EncryptedRecipientData.tag, 0))
-                        tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.BlindingPoint.tag, 0))
+                        tlvs.get<OnionPaymentPayloadTlv.PathKey>() != null -> Either.Left(InvalidOnionPayload(OnionPaymentPayloadTlv.PathKey.tag, 0))
                         else -> Either.Right(RelayToBlindedPayload(tlvs))
                     }
                 }

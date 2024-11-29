@@ -49,7 +49,7 @@
     JsonSerializers.FundingSignedSerializer::class,
     JsonSerializers.UpdateAddHtlcSerializer::class,
     JsonSerializers.UpdateAddHtlcTlvSerializer::class,
-    JsonSerializers.UpdateAddHtlcTlvBlindingSerializer::class,
+    JsonSerializers.UpdateAddHtlcTlvPathKeySerializer::class,
     JsonSerializers.UpdateFulfillHtlcSerializer::class,
     JsonSerializers.UpdateFailHtlcSerializer::class,
     JsonSerializers.UpdateFailMalformedHtlcSerializer::class,
@@ -209,7 +209,7 @@ object JsonSerializers {
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(ClosingSignedTlv.FeeRange::class, ClosingSignedTlvFeeRangeSerializer)
-                subclass(UpdateAddHtlcTlv.Blinding::class, UpdateAddHtlcTlvBlindingSerializer)
+                subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
             }
             // TODO The following declarations are required because serializers for [TransactionWithInputInfo]
             //  depend themselves on @Contextual serializers. Once we get rid of v2/v3 serialization and we
@@ -476,8 +476,8 @@ object JsonSerializers {
     @Serializer(forClass = EncryptedChannelData::class)
     object EncryptedChannelDataSerializer
 
-    @Serializer(forClass = UpdateAddHtlcTlv.Blinding::class)
-    object UpdateAddHtlcTlvBlindingSerializer
+    @Serializer(forClass = UpdateAddHtlcTlv.PathKey::class)
+    object UpdateAddHtlcTlvPathKeySerializer
 
     @Serializer(forClass = UpdateAddHtlcTlv::class)
     object UpdateAddHtlcTlvSerializer
@@ -649,7 +649,7 @@ object JsonSerializers {
         delegateSerializer = EncodedNodeIdSurrogate.serializer()
     )
 
-    @Serializer(forClass = RouteBlinding.BlindedNode::class)
+    @Serializer(forClass = RouteBlinding.BlindedHop::class)
     object BlindedNodeSerializer
 
     @Serializer(forClass = RouteBlinding.BlindedRoute::class)

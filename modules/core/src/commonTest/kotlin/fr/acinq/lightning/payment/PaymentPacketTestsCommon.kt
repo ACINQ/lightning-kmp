@@ -150,7 +150,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
                 blindedPayload
             )
             val onionD = OutgoingPaymentPacket.buildOnion(listOf(blindedRoute.blindedNodeIds.last()), listOf(finalPayload), paymentHash, OnionRoutingPacket.PaymentPacketLength)
-            val addD = UpdateAddHtlc(randomBytes32(), 1, finalAmount, paymentHash, finalExpiry, onionD.packet, blindedRoute.blindingKey, null)
+            val addD = UpdateAddHtlc(randomBytes32(), 1, finalAmount, paymentHash, finalExpiry, onionD.packet, blindedRoute.firstPathKey, null)
             return Pair(addD, paymentMetadata)
         }
 
@@ -342,7 +342,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
         // C is the introduction node of the blinded path: it can decrypt the first blinded payload and relay to D.
         val addD = run {
-            val (dataC, blindingD) = RouteBlinding.decryptPayload(privC, blindedRoute.blindingKey, blindedRoute.encryptedPayloads.first()).right!!
+            val (dataC, blindingD) = RouteBlinding.decryptPayload(privC, blindedRoute.firstPathKey, blindedRoute.encryptedPayloads.first()).right!!
             val payloadC = RouteBlindingEncryptedData.read(dataC.toByteArray()).right!!
             assertEquals(channelUpdateCD.shortChannelId, payloadC.outgoingChannelId)
             // C would normally create this payload based on the payment_relay field it received.
@@ -452,7 +452,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             blindedPayload
         )
         val onionD = OutgoingPaymentPacket.buildOnion(listOf(blindedRoute.blindedNodeIds.last()), listOf(payloadD), paymentHash, OnionRoutingPacket.PaymentPacketLength)
-        val addD = UpdateAddHtlc(randomBytes32(), 1, finalAmount, paymentHash, finalExpiry, onionD.packet, blindedRoute.blindingKey, null)
+        val addD = UpdateAddHtlc(randomBytes32(), 1, finalAmount, paymentHash, finalExpiry, onionD.packet, blindedRoute.firstPathKey, null)
         val failure = IncomingPaymentPacket.decrypt(addD, privD)
         assertTrue(failure.isLeft)
         assertEquals(failure.left, InvalidOnionBlinding(hash(addD.onionRoutingPacket)))

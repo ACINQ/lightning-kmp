@@ -27,7 +27,7 @@ class OnionMessagesTestsCommon {
     val logger: MDCLogger = MDCLogger(testLoggerFactory.newLogger(this::class))
 
     private fun relayMessage(privateKey: PrivateKey, msg: OnionMessage): Pair<Either<ShortChannelId, EncodedNodeId>, OnionMessage> {
-        val blindedPrivateKey = RouteBlinding.derivePrivateKey(privateKey, msg.blindingKey)
+        val blindedPrivateKey = RouteBlinding.derivePrivateKey(privateKey, msg.pathKey)
         val decrypted = Sphinx.peel(
             blindedPrivateKey,
             ByteVector.empty,
@@ -36,14 +36,14 @@ class OnionMessagesTestsCommon {
         val message = MessageOnion.read(decrypted.payload.toByteArray())
         val (decryptedPayload, nextBlinding) = RouteBlinding.decryptPayload(
             privateKey,
-            msg.blindingKey,
+            msg.pathKey,
             message.encryptedData
         ).right!!
         val relayInfo = RouteBlindingEncryptedData.read(decryptedPayload.toByteArray()).right!!
         assertFalse(decrypted.isLastPacket)
         return Pair(
             relayInfo.nextNodeId?.let { Either.Right(it) } ?: Either.Left(relayInfo.outgoingChannelId!!),
-            OnionMessage(relayInfo.nextBlindingOverride ?: nextBlinding, decrypted.nextPacket)
+            OnionMessage(relayInfo.nextPathKeyOverride ?: nextBlinding, decrypted.nextPacket)
         )
     }
 
@@ -81,7 +81,7 @@ class OnionMessagesTestsCommon {
         val messageForAlice = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(bob.publicKey()))))
         val encodedForAlice = messageForAlice.write().toByteVector()
         assertEquals("04210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c", encodedForAlice.toHex())
-        val messageForBob = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(carol.publicKey())), RouteBlindingEncryptedDataTlv.NextBlinding(blindingOverride.publicKey())))
+        val messageForBob = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(carol.publicKey())), RouteBlindingEncryptedDataTlv.NextPathKey(blindingOverride.publicKey())))
         val encodedForBob = messageForBob.write().toByteVector()
         assertEquals("0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007082102989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f", encodedForBob.toHex())
         val messageForCarol = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.Padding(ByteVector.fromHex("0000000000000000000000000000000000000000000000000000000000000000000000")), RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(dave.publicKey()))))
@@ -97,7 +97,7 @@ class OnionMessagesTestsCommon {
         // Building blinded path Alice -> Bob
         val routeToCarol = RouteBlinding.create(blindingSecret, listOf(alice.publicKey(), bob.publicKey()), listOf(encodedForAlice, encodedForBob)).route
 
-        val publicKeys = routeToCarol.blindedNodes.map { it.blindedPublicKey } + routeFromCarol.blindedNodes.map { it.blindedPublicKey }
+        val publicKeys = routeToCarol.blindedHops.map { it.blindedPublicKey } + routeFromCarol.blindedHops.map { it.blindedPublicKey }
         val encryptedPayloads = routeToCarol.encryptedPayloads + routeFromCarol.encryptedPayloads
         val payloads = encryptedPayloads.map { MessageOnion.tlvSerializer.write(TlvStream(OnionMessagePayloadTlv.EncryptedData(it))) }
         val expectedPayloads = listOf(
@@ -150,10 +150,10 @@ class OnionMessagesTestsCommon {
         val encodedBlindedPayload = blindedPayload.write().toByteVector()
         assertEquals("04210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c", encodedBlindedPayload.toHex())
         val blindedRoute = RouteBlinding.create(blindingSecret, listOf(alice.publicKey()), listOf(encodedBlindedPayload)).route
-        assertEquals(blindedAlice, blindedRoute.blindedNodes.first().blindedPublicKey)
+        assertEquals(blindedAlice, blindedRoute.blindedHops.first().blindedPublicKey)
         assertEquals("bae3d9ea2b06efd1b7b9b49b6cdcaad0e789474a6939ffa54ff5ec9224d5b76c", Crypto.sha256(blindingKey.value + sharedSecret).toHex())
-        assertEquals("6970e870b473ddbc27e3098bfa45bb1aa54f1f637f803d957e6271d8ffeba89da2665d62123763d9b634e30714144a1c165ac9", blindedRoute.blindedNodes.first().encryptedPayload.toHex())
-        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(alice, blindingKey, blindedRoute.blindedNodes.first().encryptedPayload).right!!.first.toByteArray()).right!!
+        assertEquals("6970e870b473ddbc27e3098bfa45bb1aa54f1f637f803d957e6271d8ffeba89da2665d62123763d9b634e30714144a1c165ac9", blindedRoute.blindedHops.first().encryptedPayload.toHex())
+        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(alice, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
     }
 
@@ -170,16 +170,16 @@ class OnionMessagesTestsCommon {
         assertEquals("8074773a3745818b0d97dd875023486cc35e7afd95f5e9ec1363f517979e8373", Sphinx.mac("blinded_node_id".encodeToByteArray().toByteVector(), sharedSecret).toHex())
         val blindedBob = PublicKey.fromHex("026ea8e36f78e038c659beba9229699796127471d9c7a24a0308533371fd63ad48")
         val blindingOverride = PrivateKey.fromHex("070707070707070707070707070707070707070707070707070707070707070701").publicKey()
-        val blindedPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(carol.publicKey())), RouteBlindingEncryptedDataTlv.NextBlinding(blindingOverride)))
+        val blindedPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(carol.publicKey())), RouteBlindingEncryptedDataTlv.NextPathKey(blindingOverride)))
         val encodedBlindedPayload = blindedPayload.write().toByteVector()
         assertEquals("0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007082102989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f", encodedBlindedPayload.toHex())
         val blindedRoute = RouteBlinding.create(blindingSecret, listOf(bob.publicKey()), listOf(encodedBlindedPayload)).route
-        assertEquals(blindedBob, blindedRoute.blindedNodes.first().blindedPublicKey)
+        assertEquals(blindedBob, blindedRoute.blindedHops.first().blindedPublicKey)
         assertEquals("9afb8b2ebc174dcf9e270be24771da7796542398d29d4ff6a4e7b6b4b9205cfe", Crypto.sha256(blindingKey.value + sharedSecret).toHex())
-        assertEquals("1630da85e8759b8f3b94d74a539c6f0d870a87cf03d4986175865a2985553c997b560c32613bd9184c1a6d41a37027aabdab5433009d8409a1b638eb90373778a05716af2c2140b3196dca23997cdad4cfa7a7adc8d4", blindedRoute.blindedNodes.first().encryptedPayload.toHex())
-        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(bob, blindingKey, blindedRoute.blindedNodes.first().encryptedPayload).right!!.first.toByteArray()).right!!
+        assertEquals("1630da85e8759b8f3b94d74a539c6f0d870a87cf03d4986175865a2985553c997b560c32613bd9184c1a6d41a37027aabdab5433009d8409a1b638eb90373778a05716af2c2140b3196dca23997cdad4cfa7a7adc8d4", blindedRoute.blindedHops.first().encryptedPayload.toHex())
+        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(bob, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
-        assertEquals(blindingOverride, decryptedPayload.nextBlindingOverride)
+        assertEquals(blindingOverride, decryptedPayload.nextPathKeyOverride)
     }
 
     @Test
@@ -198,10 +198,10 @@ class OnionMessagesTestsCommon {
         val encodedBlindedPayload = blindedPayload.write().toByteVector()
         assertEquals("012300000000000000000000000000000000000000000000000000000000000000000000000421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991", encodedBlindedPayload.toHex())
         val blindedRoute = RouteBlinding.create(blindingSecret, listOf(carol.publicKey()), listOf(encodedBlindedPayload)).route
-        assertEquals(blindedCarol, blindedRoute.blindedNodes.first().blindedPublicKey)
+        assertEquals(blindedCarol, blindedRoute.blindedHops.first().blindedPublicKey)
         assertEquals("cc3b918cda6b1b049bdbe469c4dd952935e7c1518dd9c7ed0cd2cd5bc2742b82", Crypto.sha256(blindingKey.value + sharedSecret).toHex())
-        assertEquals("8285acbceb37dfb38b877a888900539be656233cd74a55c55344fb068f9d8da365340d21db96fb41b76123207daeafdfb1f571e3fea07a22e10da35f03109a0380b3c69fcbed9c698086671809658761cf65ecbc3c07a2e5", blindedRoute.blindedNodes.first().encryptedPayload.toHex())
-        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(carol, blindingKey, blindedRoute.blindedNodes.first().encryptedPayload).right!!.first.toByteArray()).right!!
+        assertEquals("8285acbceb37dfb38b877a888900539be656233cd74a55c55344fb068f9d8da365340d21db96fb41b76123207daeafdfb1f571e3fea07a22e10da35f03109a0380b3c69fcbed9c698086671809658761cf65ecbc3c07a2e5", blindedRoute.blindedHops.first().encryptedPayload.toHex())
+        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(carol, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
     }
 
@@ -212,10 +212,10 @@ class OnionMessagesTestsCommon {
         val blindingOverride = randomKey()
         val destination = randomKey()
         val replyPath = buildRoute(blindingOverride, listOf(IntermediateNode(EncodedNodeId(destination.publicKey()))), Recipient(EncodedNodeId(destination.publicKey()), pathId = ByteVector.fromHex("01234567")))
-        assertEquals(blindingOverride.publicKey(), replyPath.blindingKey)
-        assertEquals(EncodedNodeId(destination.publicKey()), replyPath.introductionNodeId)
+        assertEquals(blindingOverride.publicKey(), replyPath.firstPathKey)
+        assertEquals(EncodedNodeId(destination.publicKey()), replyPath.firstNodeId)
         val message = buildMessage(sessionKey, blindingSecret, listOf(), BlindedPath(replyPath), TlvStream.empty()).right!!
-        assertEquals(blindingOverride.publicKey(), message.blindingKey) // blindingSecret was not used as the replyPath was used as is
+        assertEquals(blindingOverride.publicKey(), message.pathKey) // blindingSecret was not used as the replyPath was used as is
 
         val (nextNodeId, message2) = relayMessage(destination, message)
         assertEquals(Either.Right(EncodedNodeId(destination.publicKey())), nextNodeId)

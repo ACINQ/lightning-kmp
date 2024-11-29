@@ -1083,7 +1083,7 @@ data class UpdateAddHtlc(
 ) : HtlcMessage, UpdateMessage, HasChannelId, ForbiddenMessageDuringSplice {
     override val type: Long get() = UpdateAddHtlc.type
 
-    val blinding: PublicKey? = tlvStream.get<UpdateAddHtlcTlv.Blinding>()?.publicKey
+    val pathKey: PublicKey? = tlvStream.get<UpdateAddHtlcTlv.PathKey>()?.publicKey
     val fundingFee: LiquidityAds.FundingFee? = tlvStream.get<UpdateAddHtlcTlv.FundingFeeTlv>()?.fee
     val usesOnTheFlyFunding: Boolean = fundingFee != null
 
@@ -1102,7 +1102,7 @@ data class UpdateAddHtlc(
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
-            UpdateAddHtlcTlv.Blinding.tag to UpdateAddHtlcTlv.Blinding as TlvValueReader<UpdateAddHtlcTlv>,
+            UpdateAddHtlcTlv.PathKey.tag to UpdateAddHtlcTlv.PathKey as TlvValueReader<UpdateAddHtlcTlv>,
             UpdateAddHtlcTlv.FundingFeeTlv.tag to UpdateAddHtlcTlv.FundingFeeTlv as TlvValueReader<UpdateAddHtlcTlv>,
         )
 
@@ -1124,11 +1124,11 @@ data class UpdateAddHtlc(
             paymentHash: ByteVector32,
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
-            blinding: PublicKey?,
+            pathKey: PublicKey?,
             fundingFee: LiquidityAds.FundingFee?
         ): UpdateAddHtlc {
             val tlvs = setOfNotNull(
-                blinding?.let { UpdateAddHtlcTlv.Blinding(it) },
+                pathKey?.let { UpdateAddHtlcTlv.PathKey(it) },
                 fundingFee?.let { UpdateAddHtlcTlv.FundingFeeTlv(it) }
             )
             return UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
@@ -1613,27 +1613,27 @@ data class ClosingSigned(
 }
 
 data class OnionMessage(
-    val blindingKey: PublicKey,
+    val pathKey: PublicKey,
     val onionRoutingPacket: OnionRoutingPacket
 ) : LightningMessage {
     override val type: Long get() = OnionMessage.type
 
     override fun write(out: Output) {
-        LightningCodecs.writeBytes(blindingKey.value, out)
+        LightningCodecs.writeBytes(pathKey.value, out)
         LightningCodecs.writeU16(onionRoutingPacket.payload.size() + 66, out)
         OnionRoutingPacketSerializer(onionRoutingPacket.payload.size()).write(onionRoutingPacket, out)
     }
 
     override fun toString(): String =
-        "OnionMessage(blindingKey=$blindingKey, onionRoutingPacket=OnionRoutingPacket(version=${onionRoutingPacket.version}, publicKey=${onionRoutingPacket.publicKey.toHex()}, payload=<${onionRoutingPacket.payload.size()} bytes>, hmac=${onionRoutingPacket.hmac.toHex()}))"
+        "OnionMessage(pathKey=$pathKey, onionRoutingPacket=OnionRoutingPacket(version=${onionRoutingPacket.version}, publicKey=${onionRoutingPacket.publicKey.toHex()}, payload=<${onionRoutingPacket.payload.size()} bytes>, hmac=${onionRoutingPacket.hmac.toHex()}))"
 
     companion object : LightningMessageReader<OnionMessage> {
         const val type: Long = 513
 
         override fun read(input: Input): OnionMessage {
-            val blindingKey = PublicKey(LightningCodecs.bytes(input, 33))
+            val pathKey = PublicKey(LightningCodecs.bytes(input, 33))
             val onion = OnionRoutingPacketSerializer(LightningCodecs.u16(input) - 66).read(input)
-            return OnionMessage(blindingKey, onion)
+            return OnionMessage(pathKey, onion)
         }
     }
 }
@@ -1655,7 +1655,7 @@ data class WillAddHtlc(
 ) : OnTheFlyFundingMessage, HasChainHash {
     override val type: Long get() = WillAddHtlc.type
 
-    val blinding: PublicKey? = tlvStream.get<WillAddHtlcTlv.Blinding>()?.publicKey
+    val pathKey: PublicKey? = tlvStream.get<WillAddHtlcTlv.PathKey>()?.publicKey
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(chainHash.value, out)
@@ -1672,7 +1672,7 @@ data class WillAddHtlc(
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
-            WillAddHtlcTlv.Blinding.tag to WillAddHtlcTlv.Blinding as TlvValueReader<WillAddHtlcTlv>,
+            WillAddHtlcTlv.PathKey.tag to WillAddHtlcTlv.PathKey as TlvValueReader<WillAddHtlcTlv>,
         )
 
         override fun read(input: Input): WillAddHtlc = WillAddHtlc(
@@ -1692,9 +1692,9 @@ data class WillAddHtlc(
             paymentHash: ByteVector32,
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
-            blinding: PublicKey?
+            pathKey: PublicKey?
         ): WillAddHtlc {
-            val tlvStream = TlvStream(setOfNotNull<WillAddHtlcTlv>(blinding?.let { WillAddHtlcTlv.Blinding(it) }))
+            val tlvStream = TlvStream(setOfNotNull<WillAddHtlcTlv>(pathKey?.let { WillAddHtlcTlv.PathKey(it) }))
             return WillAddHtlc(chainHash, id, amount, paymentHash, cltvExpiry, onionRoutingPacket, tlvStream)
         }
     }

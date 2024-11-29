@@ -201,7 +201,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                         sendInvoiceError("failed to build onion message", decrypted.content.replyPath)
                     }
                     is Right -> {
-                        logger.info { "sending BOLT 12 invoice with amount=${invoice.amount}, paymentHash=${invoice.paymentHash}, payerId=${invoice.invoiceRequest.payerId} to introduction node ${destination.route.introductionNodeId}" }
+                        logger.info { "sending BOLT 12 invoice with amount=${invoice.amount}, paymentHash=${invoice.paymentHash}, payerId=${invoice.invoiceRequest.payerId} to introduction node ${destination.route.firstNodeId}" }
                         OnionMessageAction.SendMessage(invoiceMessage.value)
                     }
                 }
@@ -220,7 +220,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     /** If our trampoline node is the introduction node, we don't need an intermediate encryption step. */
     private fun intermediateNodes(destination: Destination): List<IntermediateNode> {
         val needIntermediateHop = when (destination) {
-            is Destination.BlindedPath -> when (val introduction = destination.route.introductionNodeId) {
+            is Destination.BlindedPath -> when (val introduction = destination.route.firstNodeId) {
                 is EncodedNodeId.WithPublicKey.Plain -> introduction.publicKey != remoteNodeId
                 is EncodedNodeId.WithPublicKey.Wallet -> true
                 is EncodedNodeId.ShortChannelIdDir -> true // we don't have access to the graph data and rely on our peer to resolve the scid

@@ -36,17 +36,17 @@ class OfferManagerTestsCommon : LightningTestSuite() {
 
     /** Simulate the decryption step performed by the trampoline node when relaying onion messages. */
     private fun trampolineRelay(msg: OnionMessage, trampolineKey: PrivateKey): Pair<OnionMessage, Either<ShortChannelId, EncodedNodeId>> {
-        val blindedPrivateKey = RouteBlinding.derivePrivateKey(trampolineKey, msg.blindingKey)
+        val blindedPrivateKey = RouteBlinding.derivePrivateKey(trampolineKey, msg.pathKey)
         val decrypted = Sphinx.peel(blindedPrivateKey, ByteVector.empty, msg.onionRoutingPacket)
         assertIs<Either.Right<DecryptedPacket>>(decrypted)
         assertFalse(decrypted.value.isLastPacket)
         val message = MessageOnion.read(decrypted.value.payload.toByteArray())
-        val (decryptedPayload, nextBlinding) = RouteBlinding.decryptPayload(trampolineKey, msg.blindingKey, message.encryptedData).right!!
+        val (decryptedPayload, nextBlinding) = RouteBlinding.decryptPayload(trampolineKey, msg.pathKey, message.encryptedData).right!!
         val relayInfo = RouteBlindingEncryptedData.read(decryptedPayload.toByteArray()).right!!
         assertNull(relayInfo.pathId)
         assertEquals(Features.empty, relayInfo.allowedFeatures)
         val nextNode = relayInfo.nextNodeId?.let { Either.Right(it) } ?: Either.Left(relayInfo.outgoingChannelId!!)
-        return Pair(OnionMessage(relayInfo.nextBlindingOverride ?: nextBlinding, decrypted.value.nextPacket), nextNode)
+        return Pair(OnionMessage(relayInfo.nextPathKeyOverride ?: nextBlinding, decrypted.value.nextPacket), nextNode)
     }
 
     private fun createOffer(offerManager: OfferManager, amount: MilliSatoshi? = null): OfferTypes.Offer {
@@ -66,7 +66,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
     private fun decryptPathId(invoice: Bolt12Invoice, trampolineKey: PrivateKey): OfferPaymentMetadata.V1 {
         val blindedRoute = invoice.blindedPaths.first().route.route
         assertEquals(2, blindedRoute.encryptedPayloads.size)
-        val (_, nextBlinding) = RouteBlinding.decryptPayload(trampolineKey, blindedRoute.blindingKey, blindedRoute.encryptedPayloads.first()).right!!
+        val (_, nextBlinding) = RouteBlinding.decryptPayload(trampolineKey, blindedRoute.firstPathKey, blindedRoute.encryptedPayloads.first()).right!!
         val (lastPayload, _) = RouteBlinding.decryptPayload(TestConstants.Alice.nodeParams.nodePrivateKey, nextBlinding, blindedRoute.encryptedPayloads.last()).right!!
         val pathId = RouteBlindingEncryptedData.read(lastPayload.toByteArray()).right!!.pathId!!
         return OfferPaymentMetadata.fromPathId(TestConstants.Alice.nodeParams.nodeId, pathId) as OfferPaymentMetadata.V1
@@ -97,12 +97,12 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertEquals(payOffer, payInvoice.payOffer)
         assertEquals(1, payInvoice.invoice.blindedPaths.size)
         val path = payInvoice.invoice.blindedPaths.first()
-        assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
+        assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.firstNodeId)
         assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
         assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
         assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
         // The blinded path expires long after the invoice expiry to allow senders to add their own expiry delta.
-        val (alicePayload, _) = RouteBlinding.decryptPayload(aliceTrampolineKey, path.route.route.blindingKey, path.route.route.encryptedPayloads.first()).right!!
+        val (alicePayload, _) = RouteBlinding.decryptPayload(aliceTrampolineKey, path.route.route.firstPathKey, path.route.route.encryptedPayloads.first()).right!!
         val paymentConstraints = RouteBlindingEncryptedData.read(alicePayload.toByteArray()).right!!.paymentConstraints!!
         assertTrue(paymentConstraints.maxCltvExpiry > CltvExpiryDelta(720).toCltvExpiry(currentBlockHeight.toLong()))
     }
@@ -135,7 +135,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertEquals(payOffer, payInvoice.payOffer)
         assertEquals(1, payInvoice.invoice.blindedPaths.size)
         val path = payInvoice.invoice.blindedPaths.first()
-        assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.introductionNodeId)
+        assertEquals(EncodedNodeId(aliceTrampolineKey.publicKey()), path.route.route.firstNodeId)
         assertEquals(aliceOfferManager.nodeParams.expiryDeltaBlocks + aliceOfferManager.nodeParams.minFinalCltvExpiryDelta, path.paymentInfo.cltvExpiryDelta)
         assertEquals(TestConstants.Alice.nodeParams.htlcMinimum, path.paymentInfo.minHtlc)
         assertEquals(payOffer.amount * 2, path.paymentInfo.maxHtlc)
@@ -198,7 +198,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
         val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
         val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
-        assertNull(aliceOfferManager.receiveMessage(messageForAlice.copy(blindingKey = randomKey().publicKey()), listOf(), 0))
+        assertNull(aliceOfferManager.receiveMessage(messageForAlice.copy(pathKey = randomKey().publicKey()), listOf(), 0))
     }
 
     @Test
@@ -216,7 +216,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val invoiceResponse = aliceOfferManager.receiveMessage(messageForAlice, listOf(), 0)
         assertIs<OnionMessageAction.SendMessage>(invoiceResponse)
         val (messageForBob, _) = trampolineRelay(invoiceResponse.message, aliceTrampolineKey)
-        assertNull(bobOfferManager.receiveMessage(messageForBob.copy(blindingKey = randomKey().publicKey()), listOf(), 0))
+        assertNull(bobOfferManager.receiveMessage(messageForBob.copy(pathKey = randomKey().publicKey()), listOf(), 0))
     }
 
     @Test

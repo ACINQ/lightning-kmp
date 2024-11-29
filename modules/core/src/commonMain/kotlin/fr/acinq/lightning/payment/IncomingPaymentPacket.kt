@@ -40,9 +40,9 @@ object IncomingPaymentPacket {
         val htlcAmount = add.fold({ it.amount }, { it.amountMsat + (it.fundingFee?.amount ?: 0.msat) })
         val htlcExpiry = add.fold({ it.expiry }, { it.cltvExpiry })
         val paymentHash = add.fold({ it.paymentHash }, { it.paymentHash })
-        val blinding = add.fold({ it.blinding }, { it.blinding })
+        val pathKey = add.fold({ it.pathKey }, { it.pathKey })
         val onion = add.fold({ it.finalPacket }, { it.onionRoutingPacket })
-        return decryptOnion(paymentHash, onion, privateKey, blinding).flatMap { outer ->
+        return decryptOnion(paymentHash, onion, privateKey, pathKey).flatMap { outer ->
             when (outer) {
                 is PaymentOnion.FinalPayload.Standard ->
                     when (val trampolineOnion = outer.records.get<OnionPaymentPayloadTlv.TrampolineOnion>()) {
@@ -63,24 +63,24 @@ object IncomingPaymentPacket {
         }
     }
 
-    private fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, privateKey: PrivateKey, blinding: PublicKey?): Either<FailureMessage, PaymentOnion.FinalPayload> {
-        val onionDecryptionKey = blinding?.let { RouteBlinding.derivePrivateKey(privateKey, it) } ?: privateKey
+    private fun decryptOnion(paymentHash: ByteVector32, packet: OnionRoutingPacket, privateKey: PrivateKey, pathKey: PublicKey?): Either<FailureMessage, PaymentOnion.FinalPayload> {
+        val onionDecryptionKey = pathKey?.let { RouteBlinding.derivePrivateKey(privateKey, it) } ?: privateKey
         return Sphinx.peel(onionDecryptionKey, paymentHash, packet).flatMap { decrypted ->
             when {
                 !decrypted.isLastPacket -> Either.Left(UnknownNextPeer)
                 else -> PaymentOnion.PerHopPayload.read(decrypted.payload.toByteArray()).flatMap { tlvs ->
                     when (val encryptedRecipientData = tlvs.get<OnionPaymentPayloadTlv.EncryptedRecipientData>()?.data) {
                         null -> when {
-                            blinding != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
-                            tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            pathKey != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            tlvs.get<OnionPaymentPayloadTlv.PathKey>() != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
                             else -> PaymentOnion.FinalPayload.Standard.read(decrypted.payload)
                         }
                         else -> when {
                             // We're never the introduction node of a blinded path, since we don't have public channels.
-                            tlvs.get<OnionPaymentPayloadTlv.BlindingPoint>() != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
-                            // We must receive the blinding point to be able to decrypt the blinded path data.
-                            blinding == null -> Either.Left(InvalidOnionBlinding(hash(packet)))
-                            else -> when (val payload = decryptRecipientData(privateKey, blinding, encryptedRecipientData, tlvs)) {
+                            tlvs.get<OnionPaymentPayloadTlv.PathKey>() != null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            // We must receive the path key to be able to decrypt the blinded path data.
+                            pathKey == null -> Either.Left(InvalidOnionBlinding(hash(packet)))
+                            else -> when (val payload = decryptRecipientData(privateKey, pathKey, encryptedRecipientData, tlvs)) {
                                 is Either.Left -> Either.Left(InvalidOnionBlinding(hash(packet)))
                                 is Either.Right -> Either.Right(payload.value)
                             }
@@ -91,8 +91,8 @@ object IncomingPaymentPacket {
         }
     }
 
-    private fun decryptRecipientData(privateKey: PrivateKey, blinding: PublicKey, data: ByteVector, tlvs: TlvStream<OnionPaymentPayloadTlv>): Either<InvalidTlvPayload, PaymentOnion.FinalPayload.Blinded> {
-        return RouteBlinding.decryptPayload(privateKey, blinding, data)
+    private fun decryptRecipientData(privateKey: PrivateKey, pathKey: PublicKey, data: ByteVector, tlvs: TlvStream<OnionPaymentPayloadTlv>): Either<InvalidTlvPayload, PaymentOnion.FinalPayload.Blinded> {
+        return RouteBlinding.decryptPayload(privateKey, pathKey, data)
             .flatMap { (decryptedRecipientData, _) -> RouteBlindingEncryptedData.read(decryptedRecipientData.toByteArray()) }
             .flatMap { blindedTlvs -> PaymentOnion.FinalPayload.Blinded.validate(tlvs, blindedTlvs) }
     }

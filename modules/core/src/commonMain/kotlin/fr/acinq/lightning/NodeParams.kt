@@ -262,13 +262,13 @@ data class NodeParams(
      * @return the default offer and the private key that will sign invoices for this offer.
      */
     fun defaultOffer(trampolineNodeId: PublicKey): Pair<OfferTypes.Offer, PrivateKey> {
-        // We generate a deterministic blindingSecret based on:
+        // We generate a deterministic path key secret based on:
         //  - a custom tag indicating that this is used in the Bolt 12 context
         //  - our trampoline node, which is used as an introduction node for the offer's blinded path
-        //  - our private key, which ensures that nobody else can generate the same blindingSecret
-        val blindingSecret = PrivateKey(Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8).byteVector() + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
+        //  - our private key, which ensures that nobody else can generate the same path key secret
+        val pathKeySecret = PrivateKey(Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8).byteVector() + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
         // We don't use our currently activated features, otherwise the offer would change when we add support for new features.
         // If we add a new feature that we would like to use by default, we will need to explicitly create a new offer.
-        return OfferTypes.Offer.createBlindedOffer(amount = null, description = null, this, trampolineNodeId, Features.empty, blindingSecret)
+        return OfferTypes.Offer.createBlindedOffer(amount = null, description = null, this, trampolineNodeId, Features.empty, pathKeySecret)
     }
 }

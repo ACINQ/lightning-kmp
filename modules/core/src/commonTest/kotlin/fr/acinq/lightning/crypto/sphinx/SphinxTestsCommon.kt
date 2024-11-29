@@ -585,11 +585,11 @@ class SphinxTestsCommon : LightningTestSuite() {
     fun `create blinded route -- reference test vector`() {
         val sessionKey = PrivateKey(ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"))
         val (blindedRoute, lastBlinding) = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
-        assertEquals(blindedRoute.introductionNode.nodeId, EncodedNodeId(publicKeys[0]))
-        assertEquals(blindedRoute.introductionNodeId, EncodedNodeId(publicKeys[0]))
-        assertEquals(blindedRoute.introductionNode.blindedPublicKey, PublicKey.fromHex("02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"))
-        assertEquals(blindedRoute.introductionNode.blindingEphemeralKey, PublicKey.fromHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
-        assertEquals(blindedRoute.introductionNode.encryptedPayload, ByteVector("af4fbf67bd52520bdfab6a88cd4e7f22ffad08d8b153b17ff303f93fdb4712"))
+        assertEquals(blindedRoute.firstHop.nodeId, EncodedNodeId(publicKeys[0]))
+        assertEquals(blindedRoute.firstNodeId, EncodedNodeId(publicKeys[0]))
+        assertEquals(blindedRoute.firstHop.blindedPublicKey, PublicKey.fromHex("02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"))
+        assertEquals(blindedRoute.firstHop.pathKey, PublicKey.fromHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
+        assertEquals(blindedRoute.firstHop.encryptedPayload, ByteVector("af4fbf67bd52520bdfab6a88cd4e7f22ffad08d8b153b17ff303f93fdb4712"))
         assertEquals(
             blindedRoute.blindedNodeIds, listOf(
                 PublicKey.fromHex("02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"),
@@ -600,16 +600,16 @@ class SphinxTestsCommon : LightningTestSuite() {
             )
         )
         assertEquals(
-            blindedRoute.subsequentNodes.map { it.blindedPublicKey }, listOf(
+            blindedRoute.subsequentHops.map { it.blindedPublicKey }, listOf(
                 PublicKey.fromHex("022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
                 PublicKey.fromHex("03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
                 PublicKey.fromHex("03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
                 PublicKey.fromHex("03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
             )
         )
-        assertEquals(blindedRoute.encryptedPayloads, listOf(blindedRoute.introductionNode.encryptedPayload) + blindedRoute.subsequentNodes.map { it.encryptedPayload })
+        assertEquals(blindedRoute.encryptedPayloads, listOf(blindedRoute.firstHop.encryptedPayload) + blindedRoute.subsequentHops.map { it.encryptedPayload })
         assertEquals(
-            blindedRoute.subsequentNodes.map { it.encryptedPayload }, listOf(
+            blindedRoute.subsequentHops.map { it.encryptedPayload }, listOf(
                 ByteVector("146c9694ead7de2a54fc43e8bb927bfc377dda7ed5a2e36b327b739e368aa602e43e07e14bfb81d66e1e295f848b6f15ee6483005abb830f4ef08a9da6"),
                 ByteVector("8ad7d5d448f15208417a1840f82274101b3c254c24b1b49fd676fd0c4293c9aa66ed51da52579e934a869f016f213044d1b13b63bf586e9c9832106b59"),
                 ByteVector("52a45a884542d180e76fe84fc13e71a01f65d943ff89aed29b94644a91b037b9143cfda8f1ff25ba61c37108a5ae57d9ddc5ab688ee8b2f9f6bd94522c"),
@@ -619,7 +619,7 @@ class SphinxTestsCommon : LightningTestSuite() {
         assertEquals(blindedRoute.blindedNodeIds.last(), RouteBlinding.derivePrivateKey(privKeys.last(), lastBlinding).publicKey())
 
         // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
-        val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.introductionNode.blindingEphemeralKey, blindedRoute.encryptedPayloads[0]).right!!
+        val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.firstHop.pathKey, blindedRoute.encryptedPayloads[0]).right!!
         assertEquals(payload0, routeBlindingPayloads[0])
         assertEquals(ephKey1, PublicKey.fromHex("035cb4c003d58e16cc9207270b3596c2be3309eca64c36b208c946bbb599bfcad0"))
 
@@ -658,8 +658,8 @@ class SphinxTestsCommon : LightningTestSuite() {
                 ByteVector("010f000000000000000000000000000000 061000112233445566778899aabbccddeeff")
             )
             val blindedRoute = RouteBlinding.create(sessionKey, publicKeys.drop(2), payloads).route
-            assertEquals(blindedRoute.blindingKey, PublicKey.fromHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
-            Triple(blindedRoute.blindingKey, blindedRoute, payloads)
+            assertEquals(blindedRoute.firstPathKey, PublicKey.fromHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
+            Triple(blindedRoute.firstPathKey, blindedRoute, payloads)
         }
         // The sender also wants to use route blinding to reach the introduction point.
         val (blindedRouteStart, payloadsStart) = run {
@@ -671,8 +671,8 @@ class SphinxTestsCommon : LightningTestSuite() {
             )
             Pair(RouteBlinding.create(sessionKey, publicKeys.take(2), payloads).route, payloads)
         }
-        val blindedRoute = RouteBlinding.BlindedRoute(EncodedNodeId(publicKeys[0]), blindedRouteStart.blindingKey, blindedRouteStart.blindedNodes + blindedRouteEnd.blindedNodes)
-        assertEquals(blindedRoute.blindingKey, PublicKey.fromHex("024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"))
+        val blindedRoute = RouteBlinding.BlindedRoute(EncodedNodeId(publicKeys[0]), blindedRouteStart.firstPathKey, blindedRouteStart.blindedHops + blindedRouteEnd.blindedHops)
+        assertEquals(blindedRoute.firstPathKey, PublicKey.fromHex("024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"))
         assertEquals(
             blindedRoute.blindedNodeIds, listOf(
                 PublicKey.fromHex("0303176d13958a8a59d59517a6223e12cf291ba5f65c8011efcdca0a52c3850abc"),
@@ -693,7 +693,7 @@ class SphinxTestsCommon : LightningTestSuite() {
         )
 
         // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
-        val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.blindingKey, blindedRoute.encryptedPayloads[0]).right!!
+        val (payload0, ephKey1) = RouteBlinding.decryptPayload(privKeys[0], blindedRoute.firstPathKey, blindedRoute.encryptedPayloads[0]).right!!
         assertEquals(payload0, payloadsStart[0])
         assertEquals(ephKey1, PublicKey.fromHex("02be4b436dbc6cfa43d7d5652bc630ffdaf0dac93e6682db7950828506055ad1a7"))
 

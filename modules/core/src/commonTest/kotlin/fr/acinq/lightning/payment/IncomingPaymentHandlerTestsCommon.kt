@@ -1573,7 +1573,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
         val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
-        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey)
+        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.firstPathKey)
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
 
         assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
@@ -1602,7 +1602,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // - Bob doesn't accept the MPP set yet
         run {
             val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amount1, totalAmount, cltvExpiry, preimage = preimage)
-            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, paymentHash, finalPayload, route.blindingKey)
+            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, paymentHash, finalPayload, route.firstPathKey)
             val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
             assertNull(result.incomingPayment.received)
@@ -1614,7 +1614,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // - Bob now accepts the MPP set
         run {
             val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amount2, totalAmount, cltvExpiry, preimage = preimage)
-            val add = makeUpdateAddHtlc(1, channelId, paymentHandler, paymentHash, finalPayload, route.blindingKey)
+            val add = makeUpdateAddHtlc(1, channelId, paymentHandler, paymentHash, finalPayload, route.firstPathKey)
             val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
             val (expectedActions, expectedReceivedWith) = setOf(
@@ -1637,7 +1637,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val paymentHash = Crypto.sha256(preimage).toByteVector32()
         val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
-        val willAddHtlc = makeWillAddHtlc(paymentHandler, paymentHash, finalPayload, route.blindingKey)
+        val willAddHtlc = makeWillAddHtlc(paymentHandler, paymentHash, finalPayload, route.firstPathKey)
         val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
         assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
         assertEquals(1, result.actions.size)
@@ -1672,7 +1672,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         run {
             val cltvExpiry = TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
             val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
-            val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
+            val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.firstPathKey, payment.fundingFee)
             val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
         }
@@ -1680,7 +1680,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertTrue((TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2) < TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta)
             val cltvExpiry = (TestConstants.Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks * 2).toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
             val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = preimage)
-            val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.blindingKey, payment.fundingFee)
+            val add = makeUpdateAddHtlc(0, randomBytes32(), paymentHandler, paymentHash, finalPayload, route.firstPathKey, payment.fundingFee)
             val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
             val fulfill = ChannelCommand.Htlc.Settlement.Fulfill(add.id, preimage, commit = true)
@@ -1698,7 +1698,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val (paymentHandler, incomingPayment, _) = createFixture(defaultAmount)
         val cltvExpiry = TestConstants.Bob.nodeParams.minFinalCltvExpiryDelta.toCltvExpiry(TestConstants.defaultBlockHeight.toLong())
         val (blindedPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, defaultAmount, defaultAmount, cltvExpiry, preimage = incomingPayment.preimage)
-        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, incomingPayment.paymentHash, blindedPayload, route.blindingKey)
+        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, incomingPayment.paymentHash, blindedPayload, route.firstPathKey)
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
 
         assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
@@ -1722,7 +1722,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         // - Bob doesn't accept the MPP set yet
         run {
             val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amount1, totalAmount, cltvExpiry, preimage = preimage)
-            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, paymentHash, finalPayload, route.blindingKey)
+            val add = makeUpdateAddHtlc(0, channelId, paymentHandler, paymentHash, finalPayload, route.firstPathKey)
             val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
             assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
             assertNull(result.incomingPayment.received)
@@ -1749,7 +1749,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val pathId = metadata.toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
         val amountTooLow = metadata.amount - 10_000_000.msat
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, amountTooLow, amountTooLow, cltvExpiry, pathId)
-        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, metadata.paymentHash, finalPayload, route.blindingKey)
+        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, metadata.paymentHash, finalPayload, route.firstPathKey)
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
 
         assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
@@ -1765,7 +1765,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val metadata = OfferPaymentMetadata.V1(randomBytes32(), 100_000_000.msat, randomBytes32(), randomKey().publicKey(), null, 1, currentTimestampMillis())
         val pathId = metadata.toPathId(TestConstants.Bob.nodeParams.nodePrivateKey)
         val (finalPayload, route) = makeBlindedPayload(TestConstants.Bob.nodeParams.nodeId, metadata.amount, metadata.amount, cltvExpiry, pathId)
-        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, metadata.paymentHash.reversed(), finalPayload, route.blindingKey)
+        val add = makeUpdateAddHtlc(8, randomBytes32(), paymentHandler, metadata.paymentHash.reversed(), finalPayload, route.firstPathKey)
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
 
         assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
