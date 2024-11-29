@@ -98,7 +98,7 @@
     JsonSerializers.Bolt11UnknownTagSerializer::class,
     JsonSerializers.Bolt11InvalidTagSerializer::class,
     JsonSerializers.EncodedNodeIdSerializer::class,
-    JsonSerializers.BlindedNodeSerializer::class,
+    JsonSerializers.BlindedHopSerializer::class,
     JsonSerializers.BlindedRouteSerializer::class,
 )
 @file:UseContextualSerialization(
@@ -650,7 +650,7 @@ object JsonSerializers {
     )
 
     @Serializer(forClass = RouteBlinding.BlindedHop::class)
-    object BlindedNodeSerializer
+    object BlindedHopSerializer
 
     @Serializer(forClass = RouteBlinding.BlindedRoute::class)
     object BlindedRouteSerializer
