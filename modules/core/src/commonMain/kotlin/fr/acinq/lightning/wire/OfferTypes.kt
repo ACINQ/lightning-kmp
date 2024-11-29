@@ -786,7 +786,7 @@ object OfferTypes {
              * @param nodeParams our node parameters.
              * @param trampolineNodeId our trampoline node.
              * @param features features that should be advertised in the offer.
-             * @param pathKeySecret session key used for the blinded path included in the offer.
+             * @param blindedPathSessionKey session key used for the blinded path included in the offer, the corresponding public key will be the first path key.
              */
             fun createBlindedOffer(
                 amount: MilliSatoshi?,
@@ -794,12 +794,12 @@ object OfferTypes {
                 nodeParams: NodeParams,
                 trampolineNodeId: PublicKey,
                 features: Features,
-                pathKeySecret: PrivateKey,
+                blindedPathSessionKey: PrivateKey,
                 additionalTlvs: Set<OfferTlv> = setOf(),
                 customTlvs: Set<GenericTlv> = setOf()
             ): Pair<Offer, PrivateKey> {
                 if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
-                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(pathKeySecret, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), null))
+                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(blindedPathSessionKey, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), null))
                 val tlvs: Set<OfferTlv> = setOfNotNull(
                     if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
                     amount?.let { OfferAmount(it) },

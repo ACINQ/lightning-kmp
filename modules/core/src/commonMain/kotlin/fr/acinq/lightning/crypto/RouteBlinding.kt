@@ -65,7 +65,7 @@ object RouteBlinding {
     /**
      * Blind the provided route and encrypt intermediate nodes' payloads.
      *
-     * @param sessionKey this node's session key.
+     * @param sessionKey session key of the blinded path, the corresponding public key will be the first path key.
      * @param publicKeys public keys of each node on the route, starting from the introduction point.
      * @param payloads payloads that should be encrypted for each node on the route.
      * @return a blinded route.

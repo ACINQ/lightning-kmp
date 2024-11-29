@@ -53,7 +53,7 @@ object OnionMessages {
     }
 
     fun buildRouteToRecipient(
-        pathKeySecret: PrivateKey,
+        sessionKey: PrivateKey,
         intermediateNodes: List<IntermediateNode>,
         recipient: Destination.Recipient
     ): RouteBlinding. BlindedRouteDetails {
@@ -64,20 +64,20 @@ object OnionMessages {
         )
         val lastPayload = RouteBlindingEncryptedData(TlvStream(tlvs, recipient.customTlvs)).write().toByteVector()
         return RouteBlinding.create(
-            pathKeySecret,
+            sessionKey,
             intermediateNodes.map { it.nodeId.publicKey } + recipient.nodeId.publicKey,
             intermediatePayloads + lastPayload
         )
     }
 
     fun buildRoute(
-        pathKeySecret: PrivateKey,
+        sessionKey: PrivateKey,
         intermediateNodes: List<IntermediateNode>,
         destination: Destination
     ): RouteBlinding.BlindedRoute {
         return when (destination) {
             is Destination.Recipient -> {
-                buildRouteToRecipient(pathKeySecret, intermediateNodes, destination).route
+                buildRouteToRecipient(sessionKey, intermediateNodes, destination).route
             }
             is Destination.BlindedPath -> when {
                 intermediateNodes.isEmpty() -> destination.route
@@ -89,7 +89,7 @@ object OnionMessages {
                         destination.route.firstPathKey
                     )
                     val routePrefix = RouteBlinding.create(
-                        pathKeySecret,
+                        sessionKey,
                         intermediateNodes.map { it.nodeId.publicKey },
                         intermediatePayloads
                     ).route
@@ -110,19 +110,19 @@ object OnionMessages {
      * Builds an encrypted onion containing a message that should be relayed to the destination.
      *
      * @param sessionKey a random key to encrypt the onion.
-     * @param pathKeySecret a random key to create the blinded path.
+     * @param blindedPathSessionKey a random key to create the blinded path.
      * @param intermediateNodes list of intermediate nodes between us and the destination (can be empty if we want to contact the destination directly).
      * @param destination the destination of this message, can be a node id or a blinded route.
      * @param content list of TLVs to send to the recipient of the message.
      */
     fun buildMessage(
         sessionKey: PrivateKey,
-        pathKeySecret: PrivateKey,
+        blindedPathSessionKey: PrivateKey,
         intermediateNodes: List<IntermediateNode>,
         destination: Destination,
         content: TlvStream<OnionMessagePayloadTlv>
     ): Either<BuildMessageError, OnionMessage> {
-        val route = buildRoute(pathKeySecret, intermediateNodes, destination)
+        val route = buildRoute(blindedPathSessionKey, intermediateNodes, destination)
         val payloads = buildList {
             // Intermediate nodes only receive blinded path relay information.
             addAll(route.encryptedPayloads.dropLast(1).map { MessageOnion(TlvStream(OnionMessagePayloadTlv.EncryptedData(it))).write() })
