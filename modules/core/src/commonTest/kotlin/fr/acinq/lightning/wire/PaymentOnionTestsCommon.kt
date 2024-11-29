@@ -188,7 +188,7 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
         val testCases = mapOf(
             // @formatter:off
             TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1234567)), OnionPaymentPayloadTlv.EncryptedRecipientData(ByteVector("deadbeef")), OnionPaymentPayloadTlv.TotalAmount(1105.msat)) to Hex.decode("13 02020231 040312d687 0a04deadbeef 12020451"),
-            TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1234567)), OnionPaymentPayloadTlv.EncryptedRecipientData(ByteVector("deadbeef")), OnionPaymentPayloadTlv.BlindingPoint(PublicKey.fromHex("036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")), OnionPaymentPayloadTlv.TotalAmount(1105.msat)) to Hex.decode("36 02020231 040312d687 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 12020451"),
+            TlvStream(OnionPaymentPayloadTlv.AmountToForward(561.msat), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1234567)), OnionPaymentPayloadTlv.EncryptedRecipientData(ByteVector("deadbeef")), OnionPaymentPayloadTlv.PathKey(PublicKey.fromHex("036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")), OnionPaymentPayloadTlv.TotalAmount(1105.msat)) to Hex.decode("36 02020231 040312d687 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 12020451"),
             // @formatter:on
         )
         testCases.forEach {

@@ -16,10 +16,10 @@ sealed class OnionMessagePayloadTlv : Tlv {
     data class ReplyPath(val blindedRoute: RouteBlinding.BlindedRoute) : OnionMessagePayloadTlv() {
         override val tag: Long get() = ReplyPath.tag
         override fun write(out: Output) {
-            LightningCodecs.writeEncodedNodeId(blindedRoute.introductionNodeId, out)
-            LightningCodecs.writeBytes(blindedRoute.blindingKey.value, out)
-            LightningCodecs.writeByte(blindedRoute.blindedNodes.size, out)
-            for (hop in blindedRoute.blindedNodes) {
+            LightningCodecs.writeEncodedNodeId(blindedRoute.firstNodeId, out)
+            LightningCodecs.writeBytes(blindedRoute.firstPathKey.value, out)
+            LightningCodecs.writeByte(blindedRoute.blindedHops.size, out)
+            for (hop in blindedRoute.blindedHops) {
                 LightningCodecs.writeBytes(hop.blindedPublicKey.value, out)
                 LightningCodecs.writeU16(hop.encryptedPayload.size(), out)
                 LightningCodecs.writeBytes(hop.encryptedPayload, out)
@@ -30,14 +30,14 @@ sealed class OnionMessagePayloadTlv : Tlv {
             const val tag: Long = 2
             override fun read(input: Input): ReplyPath {
                 val firstNodeId = LightningCodecs.encodedNodeId(input)
-                val blinding = PublicKey(LightningCodecs.bytes(input, 33))
+                val pathKey = PublicKey(LightningCodecs.bytes(input, 33))
                 val numHops = LightningCodecs.byte(input)
                 val path = (0 until numHops).map {
                     val blindedPublicKey = PublicKey(LightningCodecs.bytes(input, 33))
                     val encryptedPayload = ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
-                    RouteBlinding.BlindedNode(blindedPublicKey, encryptedPayload)
+                    RouteBlinding.BlindedHop(blindedPublicKey, encryptedPayload)
                 }
-                return ReplyPath(RouteBlinding.BlindedRoute(firstNodeId, blinding, path))
+                return ReplyPath(RouteBlinding.BlindedRoute(firstNodeId, pathKey, path))
             }
         }
     }

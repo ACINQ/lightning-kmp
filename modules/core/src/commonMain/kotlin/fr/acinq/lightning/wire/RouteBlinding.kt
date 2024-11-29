@@ -59,14 +59,14 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
         }
     }
 
-    /** Blinding override for the rest of the route. */
-    data class NextBlinding(val blinding: PublicKey) : RouteBlindingEncryptedDataTlv() {
-        override val tag: Long get() = NextBlinding.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(blinding.value, out)
+    /** Path key override for the rest of the route. */
+    data class NextPathKey(val pathKey: PublicKey) : RouteBlindingEncryptedDataTlv() {
+        override val tag: Long get() = NextPathKey.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(pathKey.value, out)
 
-        companion object : TlvValueReader<NextBlinding> {
+        companion object : TlvValueReader<NextPathKey> {
             const val tag: Long = 8
-            override fun read(input: Input): NextBlinding = NextBlinding(PublicKey(LightningCodecs.bytes(input, 33)))
+            override fun read(input: Input): NextPathKey = NextPathKey(PublicKey(LightningCodecs.bytes(input, 33)))
         }
     }
 
@@ -127,7 +127,7 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
     val nextNodeId = records.get<RouteBlindingEncryptedDataTlv.OutgoingNodeId>()?.nodeId
     val outgoingChannelId = records.get<RouteBlindingEncryptedDataTlv.OutgoingChannelId>()?.shortChannelId
     val pathId = records.get<RouteBlindingEncryptedDataTlv.PathId>()?.data
-    val nextBlindingOverride = records.get<RouteBlindingEncryptedDataTlv.NextBlinding>()?.blinding
+    val nextPathKeyOverride = records.get<RouteBlindingEncryptedDataTlv.NextPathKey>()?.pathKey
     val paymentConstraints = records.get<RouteBlindingEncryptedDataTlv.PaymentConstraints>()
     val allowedFeatures: Features = records.get<RouteBlindingEncryptedDataTlv.AllowedFeatures>()?.features ?: Features.empty
 
@@ -146,7 +146,7 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
                 RouteBlindingEncryptedDataTlv.OutgoingChannelId.tag to RouteBlindingEncryptedDataTlv.OutgoingChannelId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.OutgoingNodeId.tag to RouteBlindingEncryptedDataTlv.OutgoingNodeId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.PathId.tag to RouteBlindingEncryptedDataTlv.PathId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
-                RouteBlindingEncryptedDataTlv.NextBlinding.tag to RouteBlindingEncryptedDataTlv.NextBlinding as TlvValueReader<RouteBlindingEncryptedDataTlv>,
+                RouteBlindingEncryptedDataTlv.NextPathKey.tag to RouteBlindingEncryptedDataTlv.NextPathKey as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.PaymentRelay.tag to RouteBlindingEncryptedDataTlv.PaymentRelay as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.PaymentConstraints.tag to RouteBlindingEncryptedDataTlv.PaymentConstraints as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.AllowedFeatures.tag to RouteBlindingEncryptedDataTlv.AllowedFeatures as TlvValueReader<RouteBlindingEncryptedDataTlv>,

@@ -33,10 +33,10 @@ object OfferTypes {
     }
 
     fun writePath(path: ContactInfo.BlindedPath, out: Output) {
-        LightningCodecs.writeEncodedNodeId(path.route.introductionNodeId, out)
-        LightningCodecs.writeBytes(path.route.blindingKey.value, out)
-        LightningCodecs.writeByte(path.route.blindedNodes.size, out)
-        for (node in path.route.blindedNodes) {
+        LightningCodecs.writeEncodedNodeId(path.route.firstNodeId, out)
+        LightningCodecs.writeBytes(path.route.firstPathKey.value, out)
+        LightningCodecs.writeByte(path.route.blindedHops.size, out)
+        for (node in path.route.blindedHops) {
             LightningCodecs.writeBytes(node.blindedPublicKey.value, out)
             LightningCodecs.writeU16(node.encryptedPayload.size(), out)
             LightningCodecs.writeBytes(node.encryptedPayload, out)
@@ -45,15 +45,15 @@ object OfferTypes {
 
     fun readPath(input: Input): ContactInfo.BlindedPath {
         val introductionNodeId = LightningCodecs.encodedNodeId(input)
-        val blindingKey = PublicKey(LightningCodecs.bytes(input, 33))
-        val blindedNodes = ArrayList<RouteBlinding.BlindedNode>()
+        val pathKey = PublicKey(LightningCodecs.bytes(input, 33))
+        val blindedNodes = ArrayList<RouteBlinding.BlindedHop>()
         val numBlindedNodes = LightningCodecs.byte(input)
         for (i in 1..numBlindedNodes) {
             val blindedKey = PublicKey(LightningCodecs.bytes(input, 33))
             val payload = ByteVector(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
-            blindedNodes.add(RouteBlinding.BlindedNode(blindedKey, payload))
+            blindedNodes.add(RouteBlinding.BlindedHop(blindedKey, payload))
         }
-        return ContactInfo.BlindedPath(RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes))
+        return ContactInfo.BlindedPath(RouteBlinding.BlindedRoute(introductionNodeId, pathKey, blindedNodes))
     }
 
     sealed class Bolt12Tlv : Tlv
@@ -786,7 +786,7 @@ object OfferTypes {
              * @param nodeParams our node parameters.
              * @param trampolineNodeId our trampoline node.
              * @param features features that should be advertised in the offer.
-             * @param blindingSecret session key used for the blinded path included in the offer.
+             * @param blindedPathSessionKey session key used for the blinded path included in the offer, the corresponding public key will be the first path key.
              */
             fun createBlindedOffer(
                 amount: MilliSatoshi?,
@@ -794,12 +794,12 @@ object OfferTypes {
                 nodeParams: NodeParams,
                 trampolineNodeId: PublicKey,
                 features: Features,
-                blindingSecret: PrivateKey,
+                blindedPathSessionKey: PrivateKey,
                 additionalTlvs: Set<OfferTlv> = setOf(),
                 customTlvs: Set<GenericTlv> = setOf()
             ): Pair<Offer, PrivateKey> {
                 if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
-                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(blindingSecret, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), null))
+                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(blindedPathSessionKey, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), null))
                 val tlvs: Set<OfferTlv> = setOfNotNull(
                     if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
                     amount?.let { OfferAmount(it) },
