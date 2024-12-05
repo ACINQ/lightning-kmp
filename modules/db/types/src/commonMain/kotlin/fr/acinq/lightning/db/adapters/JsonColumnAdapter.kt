@@ -12,7 +12,7 @@ import kotlinx.serialization.serializer
 /**
  * Generic adapter that uses json encoding.
  */
-internal inline fun <C : Any, reified D : Any> jsonColumnAdapter(converter: Converter<C, D>): ColumnAdapter<C, String> {
+private inline fun <C : Any, reified D : Any> jsonColumnAdapter(converter: Converter<C, D>): ColumnAdapter<C, String> {
     val serializer: KSerializer<D> = serializersModule.serializer()
     val format = Json {
         prettyPrint = true

@@ -14,7 +14,7 @@ import kotlinx.serialization.serializer
  * Generic adapter that uses cbor encoding.
  */
 @OptIn(ExperimentalSerializationApi::class)
-internal inline fun <C : Any, reified D : Any> cborColumnAdapter(converter: Converter<C, D>): ColumnAdapter<C, ByteArray> {
+private inline fun <C : Any, reified D : Any> cborColumnAdapter(converter: Converter<C, D>): ColumnAdapter<C, ByteArray> {
     val serializer: KSerializer<D> = serializersModule.serializer()
     val format = Cbor {
 
@@ -31,4 +31,4 @@ internal inline fun <C : Any, reified D : Any> cborColumnAdapter(converter: Conv
     }
 }
 
-val IncomingPaymentCborAdapter = jsonColumnAdapter<fr.acinq.lightning.db.IncomingPayment, IncomingPayment>(IncomingPaymentConverter)
+val IncomingPaymentCborAdapter = cborColumnAdapter<fr.acinq.lightning.db.IncomingPayment, IncomingPayment>(IncomingPaymentConverter)
