@@ -395,7 +395,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret),
             Feature.OnTheFlyFunding to listOf(Feature.ExperimentalSplice),
             Feature.FundingFeeCredit to listOf(Feature.OnTheFlyFunding),
-            Feature.SimpleTaprootStaging to listOf(Feature.AnchorOutputs, Feature.StaticRemoteKey)
+            Feature.SimpleTaprootStaging to listOf(Feature.StaticRemoteKey)
         )
 
         class FeatureException(message: String) : IllegalArgumentException(message)
