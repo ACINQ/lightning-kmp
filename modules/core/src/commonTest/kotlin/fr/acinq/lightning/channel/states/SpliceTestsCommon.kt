@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.*
@@ -154,6 +155,9 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice funds out -- would go below reserve`() {
+        if (defaultChannelType.toFeatures().hasFeature(Feature.ZeroReserveChannels)) {
+            return
+        }
         val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
         val (alice1, bob1, _) = setupHtlcs(alice, bob)
         val cmd = createSpliceOutRequest(810_000.sat)
