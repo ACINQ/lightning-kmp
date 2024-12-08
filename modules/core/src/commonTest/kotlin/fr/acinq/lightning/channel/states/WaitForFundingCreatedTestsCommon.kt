@@ -99,8 +99,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding, Feature.SimpleTaprootStaging)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding, Feature.SimpleTaprootStaging)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding, Feature.SimpleTaprootStaging)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding, Feature.SimpleTaprootStaging)))
         verifyCommits(alice2.state.signingSession, bob3.state.signingSession, TestConstants.aliceFundingAmount.toMilliSatoshi(), 0.msat)
     }
 
