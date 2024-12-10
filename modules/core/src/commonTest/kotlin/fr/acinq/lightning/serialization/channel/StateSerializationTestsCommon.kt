@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization
+package fr.acinq.lightning.serialization.channel
 
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomKey
@@ -8,7 +8,7 @@ import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.SpliceTestsCommon
-import fr.acinq.lightning.serialization.Encryption.from
+import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat

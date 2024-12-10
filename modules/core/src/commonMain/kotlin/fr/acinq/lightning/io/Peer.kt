@@ -19,8 +19,8 @@ import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.logging.withMDC
 import fr.acinq.lightning.payment.*
-import fr.acinq.lightning.serialization.Encryption.from
-import fr.acinq.lightning.serialization.Serialization.DeserializationResult
+import fr.acinq.lightning.serialization.channel.Encryption.from
+import fr.acinq.lightning.serialization.channel.Serialization.DeserializationResult
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
