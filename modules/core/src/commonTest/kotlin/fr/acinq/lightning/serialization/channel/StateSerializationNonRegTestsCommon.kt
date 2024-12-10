@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization
+package fr.acinq.lightning.serialization.channel
 
 import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.utils.value

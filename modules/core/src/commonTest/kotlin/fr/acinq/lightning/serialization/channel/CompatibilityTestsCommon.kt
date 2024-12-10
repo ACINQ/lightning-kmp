@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization
+package fr.acinq.lightning.serialization.channel
 
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector
@@ -12,7 +12,7 @@ import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForChannelReady
 import fr.acinq.lightning.channel.states.WaitForFundingConfirmed
 import fr.acinq.lightning.channel.states.WaitForFundingConfirmedTestsCommon
-import fr.acinq.lightning.serialization.Encryption.from
+import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat

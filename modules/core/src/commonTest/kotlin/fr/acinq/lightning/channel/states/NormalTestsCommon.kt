@@ -23,7 +23,7 @@ import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.TestsHelper.signAndRevack
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.router.Announcements
-import fr.acinq.lightning.serialization.Encryption.from
+import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions.commitTxFeeMsat

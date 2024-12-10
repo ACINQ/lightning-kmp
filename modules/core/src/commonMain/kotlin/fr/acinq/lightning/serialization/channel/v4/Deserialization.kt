@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization.v4
+package fr.acinq.lightning.serialization.channel.v4
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
