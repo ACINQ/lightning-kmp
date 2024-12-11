@@ -26,7 +26,7 @@ object Deserialization {
     fun deserialize(bin: ByteArray): PersistedChannelState {
         val input = ByteArrayInput(bin)
         val version = input.read()
-        require(version == Serialization.versionMagic) { "incorrect version $version, expected ${Serialization.versionMagic}" }
+        require(version == Serialization.VERSION_MAGIC) { "incorrect version $version, expected ${Serialization.VERSION_MAGIC}" }
         return input.readPersistedChannelState()
     }
 
