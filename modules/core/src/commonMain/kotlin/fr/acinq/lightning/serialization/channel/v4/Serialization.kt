@@ -33,11 +33,11 @@ import fr.acinq.lightning.wire.LiquidityAds
  */
 object Serialization {
 
-    const val versionMagic = 4
+    const val VERSION_MAGIC = 4
 
     fun serialize(o: PersistedChannelState): ByteArray {
         val out = ByteArrayOutput()
-        out.write(versionMagic)
+        out.write(VERSION_MAGIC)
         out.writePersistedChannelState(o)
         return out.toByteArray()
     }
