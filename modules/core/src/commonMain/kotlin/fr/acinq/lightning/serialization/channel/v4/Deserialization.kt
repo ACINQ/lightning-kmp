@@ -24,6 +24,7 @@ import fr.acinq.lightning.serialization.InputExtensions.readNumber
 import fr.acinq.lightning.serialization.InputExtensions.readPublicKey
 import fr.acinq.lightning.serialization.InputExtensions.readString
 import fr.acinq.lightning.serialization.InputExtensions.readTxId
+import fr.acinq.lightning.serialization.common.liquidityads.Deserialization.readLiquidityPurchase
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.UUID
@@ -445,31 +446,6 @@ object Deserialization {
             }.toList()
         )
     )
-
-    private fun Input.readLiquidityFees(): LiquidityAds.Fees = LiquidityAds.Fees(miningFee = readNumber().sat, serviceFee = readNumber().sat)
-
-    private fun Input.readLiquidityPurchase(): LiquidityAds.Purchase = when (val discriminator = read()) {
-        0x00 -> LiquidityAds.Purchase.Standard(
-            amount = readNumber().sat,
-            fees = readLiquidityFees(),
-            paymentDetails = readLiquidityAdsPaymentDetails()
-        )
-        0x01 -> LiquidityAds.Purchase.WithFeeCredit(
-            amount = readNumber().sat,
-            fees = readLiquidityFees(),
-            feeCreditUsed = readNumber().msat,
-            paymentDetails = readLiquidityAdsPaymentDetails()
-        )
-        else -> error("unknown discriminator $discriminator for class ${LiquidityAds.Purchase::class}")
-    }
-
-    private fun Input.readLiquidityAdsPaymentDetails(): LiquidityAds.PaymentDetails = when (val discriminator = read()) {
-        0x00 -> LiquidityAds.PaymentDetails.FromChannelBalance
-        0x80 -> LiquidityAds.PaymentDetails.FromFutureHtlc(readCollection { readByteVector32() }.toList())
-        0x81 -> LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(readCollection { readByteVector32() }.toList())
-        0x82 -> LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(readCollection { readByteVector32() }.toList())
-        else -> error("unknown discriminator $discriminator for class ${LiquidityAds.PaymentDetails::class}")
-    }
 
     private fun Input.skipLegacyLiquidityLease() {
         readNumber() // amount

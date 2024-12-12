@@ -21,6 +21,8 @@ object OutputExtensions {
 
     fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
 
+    fun Output.writePrivateKey(o: PrivateKey) = write(o.value.toByteArray())
+
     fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
 
     fun Output.writeUuid(o: UUID) = o.run {
