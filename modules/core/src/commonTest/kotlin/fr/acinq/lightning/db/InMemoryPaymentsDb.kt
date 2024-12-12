@@ -2,6 +2,7 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.TxId
+import fr.acinq.lightning.db.LightningIncomingPayment.Companion.addReceivedParts
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.utils.UUID
 
@@ -29,22 +30,10 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun getLightningIncomingPayment(paymentHash: ByteVector32): LightningIncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Received.Part>, receivedAt: Long) {
+    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            is Bolt11IncomingPayment ->
-                incoming[paymentHash] = payment.copy(
-                    received = LightningIncomingPayment.Received(
-                        parts = payment.received?.parts.orEmpty() + parts,
-                        receivedAt = receivedAt
-                    )
-                )
-            is Bolt12IncomingPayment -> incoming[paymentHash] = payment.copy(
-                received = LightningIncomingPayment.Received(
-                    parts = payment.received?.parts.orEmpty() + parts,
-                    receivedAt = receivedAt
-                )
-            )
+            else -> incoming[paymentHash] = payment.addReceivedParts(parts)
         }
     }
 
@@ -61,14 +50,14 @@ class InMemoryPaymentsDb : PaymentsDb {
             .asSequence()
             .filter { it.createdAt in fromCreatedAt until toCreatedAt }
             .filter { it.isExpired() }
-            .filter { it.received == null }
+            .filter { it.parts.isEmpty() }
             .sortedByDescending { it.createdAt }
             .toList()
 
     override suspend fun removeLightningIncomingPayment(paymentHash: ByteVector32): Boolean {
         val payment = getLightningIncomingPayment(paymentHash)
-        return when (payment?.received) {
-            null -> incoming.remove(paymentHash) != null
+        return when (payment?.parts?.isEmpty()) {
+            true -> incoming.remove(paymentHash) != null
             else -> false // do nothing if payment already partially paid
         }
     }

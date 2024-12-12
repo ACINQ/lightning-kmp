@@ -8,6 +8,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.*
+import fr.acinq.lightning.db.LightningIncomingPayment.Companion.addReceivedParts
 import fr.acinq.lightning.io.AddLiquidityForIncomingPayment
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.SendOnTheFlyFundingMessage
@@ -47,7 +48,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
     sealed class ProcessAddResult {
         abstract val actions: List<PeerCommand>
 
-        data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: LightningIncomingPayment, val received: LightningIncomingPayment.Received) : ProcessAddResult()
+        data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: LightningIncomingPayment, val parts: List<LightningIncomingPayment.Part>) : ProcessAddResult()
         data class Rejected(override val actions: List<PeerCommand>, val incomingPayment: LightningIncomingPayment?) : ProcessAddResult()
         data class Pending(val incomingPayment: LightningIncomingPayment, val pendingPayment: PendingPayment, override val actions: List<PeerCommand> = listOf()) : ProcessAddResult()
     }
@@ -100,7 +101,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             timestampSeconds
         )
         logger.info(mapOf("paymentHash" to paymentHash)) { "generated payment request ${pr.write()}" }
-        val incomingPayment = Bolt11IncomingPayment(paymentPreimage, pr, received = null)
+        val incomingPayment = Bolt11IncomingPayment(paymentPreimage, pr)
         db.addIncomingPayment(incomingPayment)
         return pr
     }
@@ -149,8 +150,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             is Either.Left -> validationResult.value
             is Either.Right -> {
                 val incomingPayment = validationResult.value
-                val received = incomingPayment.received
-                if (received != null) {
+                val receivedParts = incomingPayment.parts
+                if (receivedParts.isNotEmpty()) {
                     return when (paymentPart) {
                         is HtlcPart -> {
                             // The invoice for this payment hash has already been paid. Two possible scenarios:
@@ -162,11 +163,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                             //
                             // 2) This is a new htlc. This can happen when a sender pays an already paid invoice. In that case the
                             //    htlc can be safely rejected.
-                            val htlcsMapInDb = received.parts.filterIsInstance<LightningIncomingPayment.Received.Part.Htlc>().map { it.channelId to it.htlcId }
+                            val htlcsMapInDb = receivedParts.filterIsInstance<LightningIncomingPayment.Part.Htlc>().map { it.channelId to it.htlcId }
                             if (htlcsMapInDb.contains(paymentPart.htlc.channelId to paymentPart.htlc.id)) {
                                 logger.info { "accepting local replay of htlc=${paymentPart.htlc.id} on channel=${paymentPart.htlc.channelId}" }
                                 val action = WrappedChannelCommand(paymentPart.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(paymentPart.htlc.id, incomingPayment.paymentPreimage, true))
-                                ProcessAddResult.Accepted(listOf(action), incomingPayment, received)
+                                ProcessAddResult.Accepted(listOf(action), incomingPayment, receivedParts)
                             } else {
                                 logger.info { "rejecting htlc part for an invoice that has already been paid" }
                                 val action = actionForFailureMessage(IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong()), paymentPart.htlc)
@@ -233,8 +234,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                             addToFeeCredit -> {
                                                 logger.info { "adding on-the-fly funding to fee credit (amount=${willAddHtlcParts.map { it.amount }.sum()})" }
                                                 val parts = buildList {
-                                                    htlcParts.forEach { add(LightningIncomingPayment.Received.Part.Htlc(it.amount, it.htlc.channelId, it.htlc.id, it.htlc.fundingFee)) }
-                                                    willAddHtlcParts.forEach { add(LightningIncomingPayment.Received.Part.FeeCredit(it.amount)) }
+                                                    htlcParts.forEach { add(LightningIncomingPayment.Part.Htlc(it.amount, it.htlc.channelId, it.htlc.id, it.htlc.fundingFee)) }
+                                                    willAddHtlcParts.forEach { add(LightningIncomingPayment.Part.FeeCredit(it.amount)) }
                                                 }
                                                 val actions = buildList {
                                                     // We send a single add_fee_credit for the will_add_htlc set.
@@ -280,7 +281,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                         rejectPayment(payment, incomingPayment, failure)
                                     }
                                     is Either.Right -> {
-                                        val parts = htlcParts.map { part -> LightningIncomingPayment.Received.Part.Htlc(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
+                                        val parts = htlcParts.map { part -> LightningIncomingPayment.Part.Htlc(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
                                         val actions = htlcParts.map { part ->
                                             val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.paymentPreimage, true)
                                             WrappedChannelCommand(part.htlc.channelId, cmd)
@@ -296,7 +297,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
     }
 
-    private suspend fun acceptPayment(incomingPayment: LightningIncomingPayment, parts: List<LightningIncomingPayment.Received.Part>, actions: List<PeerCommand>): ProcessAddResult.Accepted {
+    private suspend fun acceptPayment(incomingPayment: LightningIncomingPayment, parts: List<LightningIncomingPayment.Part>, actions: List<PeerCommand>): ProcessAddResult.Accepted {
         pending.remove(incomingPayment.paymentHash)
         if (incomingPayment is Bolt12IncomingPayment) {
             // We didn't store the Bolt 12 invoice in our DB when receiving the invoice_request (to protect against DoS).
@@ -304,13 +305,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
             db.addIncomingPayment(incomingPayment)
         }
         db.receiveLightningPayment(incomingPayment.paymentHash, parts)
-        val received = LightningIncomingPayment.Received(parts)
-        val incomingPayment1 = when (incomingPayment) {
-            is Bolt11IncomingPayment -> incomingPayment.copy(received = received)
-            is Bolt12IncomingPayment -> incomingPayment.copy(received = received)
-        }
+        val incomingPayment1 = incomingPayment.addReceivedParts(parts)
         nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(incomingPayment1))
-        return ProcessAddResult.Accepted(actions, incomingPayment1, received)
+        return ProcessAddResult.Accepted(actions, incomingPayment1, parts)
     }
 
     private fun rejectPayment(payment: PendingPayment, incomingPayment: LightningIncomingPayment, failure: FailureMessage): ProcessAddResult.Rejected {
@@ -410,7 +407,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                     }
                     // Payments are rejected for expired invoices UNLESS invoice has already been paid
                     // We must accept payments for already paid invoices, because it could be the channel replaying HTLCs that we already fulfilled
-                    incomingPayment.isExpired() && incomingPayment.received == null -> {
+                    incomingPayment.isExpired() && incomingPayment.parts.isEmpty() -> {
                         logger.warning { "the invoice is expired" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
@@ -465,7 +462,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
                     }
                     else -> {
-                        val incomingPayment = db.getLightningIncomingPayment(paymentPart.paymentHash) ?: Bolt12IncomingPayment(metadata.preimage, metadata, received = null)
+                        val incomingPayment = db.getLightningIncomingPayment(paymentPart.paymentHash) ?: Bolt12IncomingPayment(metadata.preimage, metadata)
                         when {
                             incomingPayment !is Bolt12IncomingPayment -> {
                                 logger.warning { "unsupported payment type: ${incomingPayment::class}" }
@@ -483,7 +480,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                 logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment, currentBlockHeight)}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
-                            metadata.createdAtMillis + nodeParams.bolt12InvoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.received == null -> {
+                            metadata.createdAtMillis + nodeParams.bolt12InvoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.parts.isEmpty() -> {
                                 logger.warning { "the invoice is expired" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }

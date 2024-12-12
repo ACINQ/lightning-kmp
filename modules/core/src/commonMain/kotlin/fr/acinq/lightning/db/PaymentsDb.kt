@@ -49,7 +49,7 @@ interface IncomingPaymentsDb {
      *
      * @param parts Is a list containing the payment parts holding the incoming amount.
      */
-    suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Received.Part>, receivedAt: Long = currentTimestampMillis())
+    suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>)
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listLightningExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<LightningIncomingPayment>
@@ -129,46 +129,40 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
 
     override val id: UUID = UUID.fromBytes(paymentHash.toByteArray().copyOf(16))
 
-    /** Funds received for this payment, null if no funds have been received yet. */
-    abstract val received: Received?
+    /** Funds received for this payment, empty if no funds have been received yet. */
+    abstract val parts: List<Part>
 
     /** This timestamp will be defined when the received amount is usable for spending. */
-    override val completedAt: Long? get() = received?.receivedAt
+    override val completedAt: Long? get() = parts.maxByOrNull { it.receivedAt }?.receivedAt
 
     /** Total fees paid to receive this payment. */
-    override val fees: MilliSatoshi get() = received?.fees ?: 0.msat
+    override val fees: MilliSatoshi get() = parts.map { it.fees }.sum()
 
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
-    override val amountReceived: MilliSatoshi get() = received?.amount ?: 0.msat
+    override val amountReceived: MilliSatoshi get() = parts.map { it.amountReceived }.sum()
 
-    data class Received(val parts: List<Part>, val receivedAt: Long = currentTimestampMillis()) {
-        /** Total amount received after applying the fees. */
-        val amount: MilliSatoshi = parts.map { it.amountReceived }.sum()
+    sealed class Part {
+        /** Amount received for this part after applying the fees. This is the final amount we can use. */
+        abstract val amountReceived: MilliSatoshi
 
-        /** Fees applied to receive this payment. */
-        val fees: MilliSatoshi = parts.map { it.fees }.sum()
+        /** Fees applied to receive this part.*/
+        abstract val fees: MilliSatoshi
 
-        sealed class Part {
-            /** Amount received for this part after applying the fees. This is the final amount we can use. */
-            abstract val amountReceived: MilliSatoshi
+        abstract val receivedAt: Long
 
-            /** Fees applied to receive this part.*/
-            abstract val fees: MilliSatoshi
+        /** Payment was received via existing lightning channels. */
+        data class Htlc(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?, override val receivedAt: Long = currentTimestampMillis()) : Part() {
+            // If there is no funding fee, the fees are paid by the sender for lightning payments.
+            override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
+        }
 
-            /** Payment was received via existing lightning channels. */
-            data class Htlc(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?) : Part() {
-                // If there is no funding fee, the fees are paid by the sender for lightning payments.
-                override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
-            }
-
-            /**
-             * Payment was added to our fee credit for future on-chain operations (see [fr.acinq.lightning.Feature.FundingFeeCredit]).
-             * We didn't really receive this amount yet, but we trust our peer to use it for future on-chain operations.
-             */
-            data class FeeCredit(override val amountReceived: MilliSatoshi) : Part() {
-                // Adding to the fee credit doesn't cost any fees.
-                override val fees: MilliSatoshi = 0.msat
-            }
+        /**
+         * Payment was added to our fee credit for future on-chain operations (see [fr.acinq.lightning.Feature.FundingFeeCredit]).
+         * We didn't really receive this amount yet, but we trust our peer to use it for future on-chain operations.
+         */
+        data class FeeCredit(override val amountReceived: MilliSatoshi, override val receivedAt: Long = currentTimestampMillis()) : Part() {
+            // Adding to the fee credit doesn't cost any fees.
+            override val fees: MilliSatoshi = 0.msat
         }
     }
 
@@ -177,14 +171,10 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
 
     companion object {
         /** Helper method to facilitate updating child classes */
-        fun LightningIncomingPayment.addReceivedParts(parts: List<Received.Part>, receivedAt: Long): LightningIncomingPayment {
-            val newReceived = when (val received = this.received) {
-                null -> Received(parts, receivedAt)
-                else -> received.copy(parts = received.parts + parts)
-            }
+        fun LightningIncomingPayment.addReceivedParts(parts: List<Part>): LightningIncomingPayment {
             return when (this) {
-                is Bolt11IncomingPayment -> copy(received = newReceived)
-                is Bolt12IncomingPayment -> copy(received = newReceived)
+                is Bolt11IncomingPayment -> copy(parts = this.parts + parts)
+                is Bolt12IncomingPayment -> copy(parts = this.parts + parts)
             }
         }
     }
@@ -194,7 +184,7 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
 data class Bolt11IncomingPayment(
     private val preimage: ByteVector32,
     val paymentRequest: Bolt11Invoice,
-    override val received: Received?,
+    override val parts: List<Part> = emptyList(),
     override val createdAt: Long = currentTimestampMillis()
 ) : LightningIncomingPayment(preimage)
 
@@ -202,7 +192,7 @@ data class Bolt11IncomingPayment(
 data class Bolt12IncomingPayment(
     private val preimage: ByteVector32,
     val metadata: OfferPaymentMetadata,
-    override val received: Received?,
+    override val parts: List<Part> = emptyList(),
     override val createdAt: Long = currentTimestampMillis()
 ) : LightningIncomingPayment(preimage)
 
