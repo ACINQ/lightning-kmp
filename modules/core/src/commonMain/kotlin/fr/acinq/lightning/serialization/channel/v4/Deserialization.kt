@@ -1,7 +1,6 @@
 package fr.acinq.lightning.serialization.channel.v4
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.readNBytes
@@ -13,6 +12,18 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.ShaChain
+import fr.acinq.lightning.serialization.InputExtensions.readBoolean
+import fr.acinq.lightning.serialization.InputExtensions.readByteVector32
+import fr.acinq.lightning.serialization.InputExtensions.readByteVector64
+import fr.acinq.lightning.serialization.InputExtensions.readCollection
+import fr.acinq.lightning.serialization.InputExtensions.readDelimitedByteArray
+import fr.acinq.lightning.serialization.InputExtensions.readEither
+import fr.acinq.lightning.serialization.InputExtensions.readLightningMessage
+import fr.acinq.lightning.serialization.InputExtensions.readNullable
+import fr.acinq.lightning.serialization.InputExtensions.readNumber
+import fr.acinq.lightning.serialization.InputExtensions.readPublicKey
+import fr.acinq.lightning.serialization.InputExtensions.readString
+import fr.acinq.lightning.serialization.InputExtensions.readTxId
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.UUID
@@ -713,8 +724,6 @@ object Deserialization {
 
     private fun Input.readOutPoint(): OutPoint = OutPoint.read(readDelimitedByteArray())
 
-    private fun Input.readTxOut(): TxOut = TxOut.read(readDelimitedByteArray())
-
     private fun Input.readTransaction(): Transaction = Transaction.read(readDelimitedByteArray())
 
     private fun Input.readTransactionWithInputInfo(): Transactions.TransactionWithInputInfo = when (val discriminator = read()) {
@@ -741,47 +750,4 @@ object Deserialization {
         min = FeeratePerKw(readNumber().sat),
         max = FeeratePerKw(readNumber().sat)
     )
-
-    private fun Input.readNumber(): Long = LightningCodecs.bigSize(this)
-
-    private fun Input.readBoolean(): Boolean = read() == 1
-
-    private fun Input.readString(): String = readDelimitedByteArray().decodeToString()
-
-    private fun Input.readByteVector32(): ByteVector32 = ByteVector32(ByteArray(32).also { read(it, 0, it.size) })
-
-    private fun Input.readByteVector64(): ByteVector64 = ByteVector64(ByteArray(64).also { read(it, 0, it.size) })
-
-    private fun Input.readPublicKey() = PublicKey(ByteArray(33).also { read(it, 0, it.size) })
-
-    private fun Input.readTxId(): TxId = TxId(readByteVector32())
-
-    private fun Input.readPublicNonce() = IndividualNonce(ByteArray(66).also { read(it, 0, it.size) })
-
-    private fun Input.readDelimitedByteArray(): ByteArray {
-        val size = readNumber().toInt()
-        return ByteArray(size).also { read(it, 0, size) }
-    }
-
-    private fun Input.readLightningMessage() = LightningMessage.decode(readDelimitedByteArray())
-
-    private fun <T> Input.readCollection(readElem: () -> T): Collection<T> {
-        val size = readNumber()
-        return buildList {
-            repeat(size.toInt()) {
-                add(readElem())
-            }
-        }
-    }
-
-    private fun <L, R> Input.readEither(readLeft: () -> L, readRight: () -> R): Either<L, R> = when (read()) {
-        0 -> Either.Left(readLeft())
-        else -> Either.Right(readRight())
-    }
-
-    private fun <T : Any> Input.readNullable(readNotNull: () -> T): T? = when (read()) {
-        1 -> readNotNull()
-        else -> null
-    }
-
 }

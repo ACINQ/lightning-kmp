@@ -1,13 +1,17 @@
 package fr.acinq.lightning.serialization.payment.v1
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.OutPoint
-import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.db.*
-import fr.acinq.lightning.utils.UUID
-import fr.acinq.lightning.wire.LightningCodecs
+import fr.acinq.lightning.serialization.OutputExtensions.writeByteVector32
+import fr.acinq.lightning.serialization.OutputExtensions.writeCollection
+import fr.acinq.lightning.serialization.OutputExtensions.writeDelimited
+import fr.acinq.lightning.serialization.OutputExtensions.writeNullable
+import fr.acinq.lightning.serialization.OutputExtensions.writeNumber
+import fr.acinq.lightning.serialization.OutputExtensions.writeString
+import fr.acinq.lightning.serialization.OutputExtensions.writeTxId
+import fr.acinq.lightning.serialization.OutputExtensions.writeUuid
 
 @Suppress("DEPRECATION")
 object Serialization {
@@ -150,47 +154,8 @@ object Serialization {
         writeNullable(completedAt) { writeNumber(it) }
     }
 
-    private fun Output.writeUuid(o: UUID) = o.run {
-        // NB: copied from kotlin source code (https://github.com/JetBrains/kotlin/blob/v2.1.0/libraries/stdlib/src/kotlin/uuid/Uuid.kt) in order to be forward compatible
-        fun Long.toByteArray(dst: ByteArray, dstOffset: Int) {
-            for (index in 0 until 8) {
-                val shift = 8 * (7 - index)
-                dst[dstOffset + index] = (this ushr shift).toByte()
-            }
-        }
-        val bytes = ByteArray(16)
-        mostSignificantBits.toByteArray(bytes, 0)
-        leastSignificantBits.toByteArray(bytes, 8)
-        write(bytes)
-    }
-
     private fun Output.writeOutPoint(o: OutPoint) = o.run {
         writeTxId(txid)
         writeNumber(index)
-    }
-
-    private fun Output.writeDelimited(o: ByteArray) {
-        writeNumber(o.size)
-        write(o)
-    }
-
-    private fun Output.writeNumber(o: Number): Unit = LightningCodecs.writeBigSize(o.toLong(), this)
-
-    private fun Output.writeString(o: String): Unit = writeDelimited(o.encodeToByteArray())
-
-    private fun Output.writeByteVector32(o: ByteVector32) = write(o.toByteArray())
-
-    private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
-
-    private fun <T> Output.writeCollection(o: Collection<T>, writeElem: (T) -> Unit) {
-        writeNumber(o.size)
-        o.forEach { writeElem(it) }
-    }
-
-    private fun <T : Any> Output.writeNullable(o: T?, writeNotNull: (T) -> Unit) = when (o) {
-        is T -> {
-            write(1); writeNotNull(o)
-        }
-        else -> write(0)
     }
 }

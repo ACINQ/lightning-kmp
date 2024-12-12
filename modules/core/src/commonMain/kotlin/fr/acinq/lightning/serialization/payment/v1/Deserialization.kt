@@ -1,19 +1,22 @@
 package fr.acinq.lightning.serialization.payment.v1
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.OutPoint
-import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.byteVector
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.lightning.db.*
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.OfferPaymentMetadata
-import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.serialization.InputExtensions.readByteVector32
+import fr.acinq.lightning.serialization.InputExtensions.readCollection
+import fr.acinq.lightning.serialization.InputExtensions.readDelimitedByteArray
+import fr.acinq.lightning.serialization.InputExtensions.readNullable
+import fr.acinq.lightning.serialization.InputExtensions.readNumber
+import fr.acinq.lightning.serialization.InputExtensions.readString
+import fr.acinq.lightning.serialization.InputExtensions.readTxId
+import fr.acinq.lightning.serialization.InputExtensions.readUuid
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.wire.LightningCodecs
-import fr.acinq.lightning.wire.LightningMessage
 import fr.acinq.lightning.wire.LiquidityAds
 
 @Suppress("DEPRECATION")
@@ -139,39 +142,8 @@ object Deserialization {
         completedAt = readNullable { readNumber() }
     )
 
-    private fun Input.readUuid(): UUID = UUID.fromBytes(ByteArray(16).also { read(it, 0, it.size) })
-
     private fun Input.readOutPoint(): OutPoint = OutPoint(
         txid = readTxId(),
         index = readNumber()
     )
-
-    private fun Input.readNumber(): Long = LightningCodecs.bigSize(this)
-
-    private fun Input.readString(): String = readDelimitedByteArray().decodeToString()
-
-    private fun Input.readByteVector32(): ByteVector32 = ByteVector32(ByteArray(32).also { read(it, 0, it.size) })
-
-    private fun Input.readTxId(): TxId = TxId(readByteVector32())
-
-    private fun Input.readDelimitedByteArray(): ByteArray {
-        val size = readNumber().toInt()
-        return ByteArray(size).also { read(it, 0, size) }
-    }
-
-    private fun Input.readLightningMessage() = LightningMessage.decode(readDelimitedByteArray())
-
-    private fun <T> Input.readCollection(readElem: () -> T): Collection<T> {
-        val size = readNumber()
-        return buildList {
-            repeat(size.toInt()) {
-                add(readElem())
-            }
-        }
-    }
-
-    private fun <T : Any> Input.readNullable(readNotNull: () -> T): T? = when (read()) {
-        1 -> readNotNull()
-        else -> null
-    }
 }
