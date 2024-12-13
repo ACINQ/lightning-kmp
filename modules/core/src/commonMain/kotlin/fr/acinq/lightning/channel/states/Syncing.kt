@@ -406,7 +406,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 // we resend the same updates and the same sig, and preserve the same ordering
                                 val signedUpdates = commitments.changes.localChanges.signed
                                 val commitSigs = commitments.active.map { it.nextRemoteCommit }.filterIsInstance<NextRemoteCommit>().map { it.sig }
-                                SyncResult.Success(retransmit = when (retransmitRevocation) {
+                                val retransmit = when (retransmitRevocation) {
                                     null -> buildList {
                                         addAll(signedUpdates)
                                         addAll(commitSigs)
@@ -424,7 +424,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             addAll(commitSigs)
                                         }
                                     }
-                                })
+                                }
+                                SyncResult.Success(retransmit)
                             }
                             remoteChannelReestablish.nextLocalCommitmentNumber == (commitments.nextRemoteCommitIndex + 1) -> {
                                 // we just sent a new commit_sig, they have received it but we haven't received their revocation
@@ -447,6 +448,11 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                         when {
                             remoteChannelReestablish.nextLocalCommitmentNumber == (commitments.remoteCommitIndex + 1) -> {
                                 // they have acknowledged the last commit_sig we sent
+                                SyncResult.Success(retransmit = listOfNotNull(retransmitRevocation))
+                            }
+                            remoteChannelReestablish.nextLocalCommitmentNumber == commitments.remoteCommitIndex && remoteChannelReestablish.nextFundingTxId != null -> {
+                                // they haven't received the commit_sig we sent as part of signing a splice transaction
+                                // we will retransmit it before exchanging tx_signatures
                                 SyncResult.Success(retransmit = listOfNotNull(retransmitRevocation))
                             }
                             remoteChannelReestablish.nextLocalCommitmentNumber < (commitments.remoteCommitIndex + 1) -> {
