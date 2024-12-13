@@ -16,10 +16,12 @@ import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutp
 import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelClosingType
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggingContext
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -306,7 +308,7 @@ sealed class PersistedChannelState : ChannelState() {
             val myFirstPerCommitmentPoint = keyManager.channelKeys(state.channelParams.localParams.fundingKeyPath).commitmentPoint(0)
             ChannelReestablish(
                 channelId = channelId,
-                nextLocalCommitmentNumber = 1,
+                nextLocalCommitmentNumber = state.signingSession.reconnectNextLocalCommitmentNumber,
                 nextRemoteRevocationNumber = 0,
                 yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
                 myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
@@ -316,15 +318,28 @@ sealed class PersistedChannelState : ChannelState() {
         is ChannelStateWithCommitments -> {
             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
             val myCurrentPerCommitmentPoint = keyManager.channelKeys(state.commitments.params.localParams.fundingKeyPath).commitmentPoint(state.commitments.localCommitIndex)
+            // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
+            val nextLocalCommitmentNumber = when (state) {
+                is WaitForFundingConfirmed -> when (state.rbfStatus) {
+                    is RbfStatus.WaitingForSigs -> state.rbfStatus.session.reconnectNextLocalCommitmentNumber
+                    else -> state.commitments.localCommitIndex + 1
+                }
+                is Normal -> when (state.spliceStatus) {
+                    is SpliceStatus.WaitingForSigs -> state.spliceStatus.session.reconnectNextLocalCommitmentNumber
+                    else -> state.commitments.localCommitIndex + 1
+                }
+                else -> state.commitments.localCommitIndex + 1
+            }
+            // If we disconnected while signing a funding transaction, we may need our peer to (re)transmit their tx_signatures.
             val unsignedFundingTxId = when (state) {
                 is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()
-                is Normal -> state.getUnsignedFundingTxId() // a splice was in progress, we tell our peer that we are remembering it and are expecting signatures
+                is Normal -> state.getUnsignedFundingTxId()
                 else -> null
             }
             val tlvs: TlvStream<ChannelReestablishTlv> = unsignedFundingTxId?.let { TlvStream(ChannelReestablishTlv.NextFunding(it)) } ?: TlvStream.empty()
             ChannelReestablish(
                 channelId = channelId,
-                nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,
+                nextLocalCommitmentNumber = nextLocalCommitmentNumber,
                 nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                 myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,

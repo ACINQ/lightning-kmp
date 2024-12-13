@@ -1028,6 +1028,11 @@ data class InteractiveTxSigningSession(
         is Either.Left -> localCommit.value.commitTx.input
         is Either.Right -> localCommit.value.publishableTxs.commitTx.input
     }
+    // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
+    val reconnectNextLocalCommitmentNumber = when (localCommit) {
+        is Either.Left -> localCommit.value.index
+        is Either.Right -> localCommit.value.index + 1
+    }
 
     fun receiveCommitSig(channelKeys: KeyManager.ChannelKeys, channelParams: ChannelParams, remoteCommitSig: CommitSig, currentBlockHeight: Long, logger: MDCLogger): Pair<InteractiveTxSigningSession, InteractiveTxSigningSessionAction> {
         return when (localCommit) {
