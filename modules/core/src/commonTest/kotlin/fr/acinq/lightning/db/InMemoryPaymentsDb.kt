@@ -73,6 +73,12 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
+    override suspend fun addLightningOutgoingPaymentParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>) {
+        require(outgoing.contains(parentId)) { "parent outgoing payment with id=$parentId doesn't exist" }
+        parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
+        parts.forEach { outgoingParts[it.id] = Pair(parentId, it) }
+    }
+
     override suspend fun getLightningOutgoingPayment(id: UUID): LightningOutgoingPayment? {
         return outgoing[id]?.let { payment ->
             val parts = outgoingParts.values.filter { it.first == payment.id }.map { it.second }
@@ -88,12 +94,6 @@ class InMemoryPaymentsDb : PaymentsDb {
             is InboundLiquidityOutgoingPayment -> onChainPayment
             else -> null
         }
-    }
-
-    override suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>) {
-        require(outgoing.contains(parentId)) { "parent outgoing payment with id=$parentId doesn't exist" }
-        parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
-        parts.forEach { outgoingParts[it.id] = Pair(parentId, it) }
     }
 
     override suspend fun completeLightningOutgoingPayment(id: UUID, status: LightningOutgoingPayment.Status.Completed) {

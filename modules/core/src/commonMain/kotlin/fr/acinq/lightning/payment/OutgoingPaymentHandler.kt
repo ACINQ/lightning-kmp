@@ -92,7 +92,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 if (attemptNumber == 0) {
                     db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails, listOf(childPayment), LightningOutgoingPayment.Status.Pending))
                 } else {
-                    db.addOutgoingLightningParts(request.paymentId, listOf(childPayment))
+                    db.addLightningOutgoingPaymentParts(request.paymentId, listOf(childPayment))
                 }
                 val payment = PaymentAttempt(request, attemptNumber, childPayment, sharedSecrets, failures)
                 pending[request.paymentId] = payment
