@@ -27,9 +27,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Left(TooManyAcceptedHtlcs(ByteVector32.Zeroes, 42))
             )
         )
-        assertIs<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[0].failure)
-        assertIs<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[1].failure)
-        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RouteFailure>(failure.failures[2].failure)
+        assertIs<LightningOutgoingPayment.Part.Status.Failed.Failure.RouteFailure>(failure.failures[0].failure)
+        assertIs<LightningOutgoingPayment.Part.Status.Failed.Failure.RouteFailure>(failure.failures[1].failure)
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failed.Failure.RouteFailure>(failure.failures[2].failure)
     }
 
     @Test
@@ -42,9 +42,9 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Right(IncorrectOrUnknownPaymentDetails(100_000.msat, 150))
             )
         )
-        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[0].failure)
-        assertIsNot<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[1].failure)
-        assertIs<LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment>(failure.failures[2].failure)
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientRejectedPayment>(failure.failures[0].failure)
+        assertIsNot<LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientRejectedPayment>(failure.failures[1].failure)
+        assertIs<LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientRejectedPayment>(failure.failures[2].failure)
     }
 
     @Test
@@ -56,7 +56,7 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
                 Either.Right(PaymentTimeout),
             )
         )
-        assertEquals(Either.Left(LightningOutgoingPayment.Part.Status.Failure.RecipientLiquidityIssue), failure.explain())
+        assertEquals(Either.Left(LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientLiquidityIssue), failure.explain())
     }
 
     @Test

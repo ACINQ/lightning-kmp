@@ -77,7 +77,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         return outgoing[id]?.let { payment ->
             val parts = outgoingParts.values.filter { it.first == payment.id }.map { it.second }
             return when (payment.status) {
-                is LightningOutgoingPayment.Status.Completed.Succeeded -> payment.copy(parts = parts.filter { it.status is LightningOutgoingPayment.Part.Status.Succeeded })
+                is LightningOutgoingPayment.Status.Succeeded -> payment.copy(parts = parts.filter { it.status is LightningOutgoingPayment.Part.Status.Succeeded })
                 else -> payment.copy(parts = parts)
             }
         }
@@ -90,34 +90,22 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long) {
-        require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
-        val payment = outgoing[id]!!
-        outgoing[id] = payment.copy(status = LightningOutgoingPayment.Status.Completed.Succeeded.OffChain(preimage = preimage, completedAt = completedAt))
-    }
-
-    override suspend fun completeOutgoingPaymentOffchain(id: UUID, finalFailure: FinalFailure, completedAt: Long) {
-        require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
-        val payment = outgoing[id]!!
-        outgoing[id] = payment.copy(status = LightningOutgoingPayment.Status.Completed.Failed(reason = finalFailure, completedAt = completedAt))
-    }
-
     override suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>) {
         require(outgoing.contains(parentId)) { "parent outgoing payment with id=$parentId doesn't exist" }
         parts.forEach { require(!outgoingParts.contains(it.id)) { "an outgoing payment part with id=${it.id} already exists" } }
         parts.forEach { outgoingParts[it.id] = Pair(parentId, it) }
     }
 
-    override suspend fun completeOutgoingLightningPart(partId: UUID, failure: LightningOutgoingPayment.Part.Status.Failure, completedAt: Long) {
-        require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
-        val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, part.copy(status = LightningOutgoingPayment.Part.Status.Failed(failure, completedAt)))
+    override suspend fun completeLightningOutgoingPayment(id: UUID, status: LightningOutgoingPayment.Status.Completed) {
+        require(outgoing.contains(id)) { "outgoing payment with id=$id doesn't exist" }
+        val payment = outgoing[id]!!
+        outgoing[id] = payment.copy(status = status)
     }
 
-    override suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long) {
+    override suspend fun completeLightningOutgoingPaymentPart(parentId: UUID, partId: UUID, status: LightningOutgoingPayment.Part.Status.Completed) {
         require(outgoingParts.contains(partId)) { "outgoing payment part with id=$partId doesn't exist" }
-        val (parentId, part) = outgoingParts[partId]!!
-        outgoingParts[partId] = Pair(parentId, part.copy(status = LightningOutgoingPayment.Part.Status.Succeeded(preimage, completedAt)))
+        val (_, part) = outgoingParts[partId]!!
+        outgoingParts[partId] = Pair(parentId, part.copy(status = status))
     }
 
     override suspend fun getLightningOutgoingPaymentFromPartId(partId: UUID): LightningOutgoingPayment? {

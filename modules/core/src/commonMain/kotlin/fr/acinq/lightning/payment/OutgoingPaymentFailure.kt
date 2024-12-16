@@ -3,6 +3,8 @@ package fr.acinq.lightning.payment
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.LightningOutgoingPayment
+import fr.acinq.lightning.db.OutgoingPaymentsDb
+import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.wire.*
 
@@ -39,8 +41,8 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
     )
 
     /** Extracts the most user-friendly reason for the payment failure. */
-    fun explain(): Either<LightningOutgoingPayment.Part.Status.Failure, FinalFailure> {
-        val partFailure = failures.map { it.failure }.lastOrNull { it !is LightningOutgoingPayment.Part.Status.Failure.Uninterpretable } ?: failures.lastOrNull()?.failure
+    fun explain(): Either<LightningOutgoingPayment.Part.Status.Failed.Failure, FinalFailure> {
+        val partFailure = failures.map { it.failure }.lastOrNull { it !is LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable } ?: failures.lastOrNull()?.failure
         return when (reason) {
             FinalFailure.NoAvailableChannels, FinalFailure.UnknownError, FinalFailure.RetryExhausted -> partFailure?.let { Either.Left(it) } ?: Either.Right(reason)
             else -> Either.Right(reason)
@@ -54,54 +56,54 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
     fun details(): String = failures.foldIndexed("") { index, msg, problem -> msg + "${index + 1}: ${problem.failure}\n" }
 
     companion object {
-        fun convertFailure(failure: Either<ChannelException, FailureMessage>): LightningOutgoingPayment.Part.Status.Failure {
+        fun convertFailure(failure: Either<ChannelException, FailureMessage>): LightningOutgoingPayment.Part.Status.Failed.Failure {
             return when (failure) {
                 is Either.Left -> when (failure.value) {
-                    is HtlcValueTooSmall -> LightningOutgoingPayment.Part.Status.Failure.PaymentAmountTooSmall
-                    is CannotAffordFees -> LightningOutgoingPayment.Part.Status.Failure.PaymentAmountTooBig
-                    is RemoteCannotAffordFeesForNewHtlc -> LightningOutgoingPayment.Part.Status.Failure.PaymentAmountTooBig
-                    is HtlcValueTooHighInFlight -> LightningOutgoingPayment.Part.Status.Failure.PaymentAmountTooBig
-                    is InsufficientFunds -> LightningOutgoingPayment.Part.Status.Failure.NotEnoughFunds
-                    is TooManyAcceptedHtlcs -> LightningOutgoingPayment.Part.Status.Failure.TooManyPendingPayments
-                    is TooManyOfferedHtlcs -> LightningOutgoingPayment.Part.Status.Failure.TooManyPendingPayments
-                    is ExpiryTooBig -> LightningOutgoingPayment.Part.Status.Failure.PaymentExpiryTooBig
-                    is ForbiddenDuringSplice -> LightningOutgoingPayment.Part.Status.Failure.ChannelIsSplicing
-                    is ChannelUnavailable -> LightningOutgoingPayment.Part.Status.Failure.ChannelIsClosing
-                    is ClosingAlreadyInProgress -> LightningOutgoingPayment.Part.Status.Failure.ChannelIsClosing
-                    is ForcedLocalCommit -> LightningOutgoingPayment.Part.Status.Failure.ChannelIsClosing
-                    is FundingTxSpent -> LightningOutgoingPayment.Part.Status.Failure.ChannelIsClosing
-                    is HtlcOverriddenByLocalCommit -> LightningOutgoingPayment.Part.Status.Failure.ChannelIsClosing
-                    is HtlcsTimedOutDownstream -> LightningOutgoingPayment.Part.Status.Failure.ChannelIsClosing
-                    is NoMoreHtlcsClosingInProgress -> LightningOutgoingPayment.Part.Status.Failure.ChannelIsClosing
-                    else -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
+                    is HtlcValueTooSmall -> LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooSmall
+                    is CannotAffordFees -> LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooBig
+                    is RemoteCannotAffordFeesForNewHtlc -> LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooBig
+                    is HtlcValueTooHighInFlight -> LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooBig
+                    is InsufficientFunds -> LightningOutgoingPayment.Part.Status.Failed.Failure.NotEnoughFunds
+                    is TooManyAcceptedHtlcs -> LightningOutgoingPayment.Part.Status.Failed.Failure.TooManyPendingPayments
+                    is TooManyOfferedHtlcs -> LightningOutgoingPayment.Part.Status.Failed.Failure.TooManyPendingPayments
+                    is ExpiryTooBig -> LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentExpiryTooBig
+                    is ForbiddenDuringSplice -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsSplicing
+                    is ChannelUnavailable -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
+                    is ClosingAlreadyInProgress -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
+                    is ForcedLocalCommit -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
+                    is FundingTxSpent -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
+                    is HtlcOverriddenByLocalCommit -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
+                    is HtlcsTimedOutDownstream -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
+                    is NoMoreHtlcsClosingInProgress -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
+                    else -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
                 }
                 is Either.Right -> when (failure.value) {
-                    is AmountBelowMinimum -> LightningOutgoingPayment.Part.Status.Failure.PaymentAmountTooSmall
-                    is FeeInsufficient -> LightningOutgoingPayment.Part.Status.Failure.NotEnoughFees
-                    TrampolineExpiryTooSoon -> LightningOutgoingPayment.Part.Status.Failure.NotEnoughFees
-                    TrampolineFeeInsufficient -> LightningOutgoingPayment.Part.Status.Failure.NotEnoughFees
-                    is FinalIncorrectCltvExpiry -> LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment
-                    is FinalIncorrectHtlcAmount -> LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment
-                    is IncorrectOrUnknownPaymentDetails -> LightningOutgoingPayment.Part.Status.Failure.RecipientRejectedPayment
-                    PaymentTimeout -> LightningOutgoingPayment.Part.Status.Failure.RecipientLiquidityIssue
-                    UnknownNextPeer -> LightningOutgoingPayment.Part.Status.Failure.RecipientIsOffline
-                    is ExpiryTooSoon -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
-                    ExpiryTooFar -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
-                    is ChannelDisabled -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
-                    is TemporaryChannelFailure -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
-                    TemporaryNodeFailure -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
-                    PermanentChannelFailure -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
-                    PermanentNodeFailure -> LightningOutgoingPayment.Part.Status.Failure.TemporaryRemoteFailure
-                    is InvalidOnionBlinding -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    is InvalidOnionHmac -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    is InvalidOnionKey -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    is InvalidOnionPayload -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    is InvalidOnionVersion -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    InvalidRealm -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    is IncorrectCltvExpiry -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    RequiredChannelFeatureMissing -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    RequiredNodeFeatureMissing -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
-                    is UnknownFailureMessage -> LightningOutgoingPayment.Part.Status.Failure.Uninterpretable(failure.value.message)
+                    is AmountBelowMinimum -> LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooSmall
+                    is FeeInsufficient -> LightningOutgoingPayment.Part.Status.Failed.Failure.NotEnoughFees
+                    TrampolineExpiryTooSoon -> LightningOutgoingPayment.Part.Status.Failed.Failure.NotEnoughFees
+                    TrampolineFeeInsufficient -> LightningOutgoingPayment.Part.Status.Failed.Failure.NotEnoughFees
+                    is FinalIncorrectCltvExpiry -> LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientRejectedPayment
+                    is FinalIncorrectHtlcAmount -> LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientRejectedPayment
+                    is IncorrectOrUnknownPaymentDetails -> LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientRejectedPayment
+                    PaymentTimeout -> LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientLiquidityIssue
+                    UnknownNextPeer -> LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientIsOffline
+                    is ExpiryTooSoon -> LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure
+                    ExpiryTooFar -> LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure
+                    is ChannelDisabled -> LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure
+                    is TemporaryChannelFailure -> LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure
+                    TemporaryNodeFailure -> LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure
+                    PermanentChannelFailure -> LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure
+                    PermanentNodeFailure -> LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure
+                    is InvalidOnionBlinding -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    is InvalidOnionHmac -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    is InvalidOnionKey -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    is InvalidOnionPayload -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    is InvalidOnionVersion -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    InvalidRealm -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    is IncorrectCltvExpiry -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    RequiredChannelFeatureMissing -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    RequiredNodeFeatureMissing -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
+                    is UnknownFailureMessage -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)
                 }
             }
         }
