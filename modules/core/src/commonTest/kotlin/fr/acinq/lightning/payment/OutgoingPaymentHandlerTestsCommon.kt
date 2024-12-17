@@ -99,8 +99,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNotNull(dbPayment)
         assertEquals(100_000.msat, dbPayment.recipientAmount)
         assertEquals(invoice.nodeId, dbPayment.recipient)
-        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Completed.Failed)
-        assertEquals(FinalFailure.ChannelNotConnected, (dbPayment.status as LightningOutgoingPayment.Status.Completed.Failed).reason)
+        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Failed)
+        assertEquals(FinalFailure.ChannelNotConnected, (dbPayment.status as LightningOutgoingPayment.Status.Failed).reason)
         assertTrue(dbPayment.parts.isEmpty())
     }
 
@@ -118,8 +118,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         val dbPayment = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
         assertNotNull(dbPayment)
         assertEquals(amount, dbPayment.recipientAmount)
-        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Completed.Failed)
-        assertEquals(FinalFailure.InsufficientBalance, (dbPayment.status as LightningOutgoingPayment.Status.Completed.Failed).reason)
+        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Failed)
+        assertEquals(FinalFailure.InsufficientBalance, (dbPayment.status as LightningOutgoingPayment.Status.Failed).reason)
         assertTrue(dbPayment.parts.isEmpty())
     }
 
@@ -303,7 +303,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(invoice.nodeId, success.payment.recipient)
         assertEquals(invoice.paymentHash, success.payment.paymentHash)
         assertEquals(invoice, (success.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
-        assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
+        assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Succeeded).preimage)
         assertEquals(1, success.payment.parts.size)
         val part = success.payment.parts.first()
         assertNotEquals(part.id, payment.paymentId)
@@ -350,7 +350,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(invoice.nodeId, success.payment.recipient)
         assertEquals(invoice.paymentHash, success.payment.paymentHash)
         assertEquals(invoice, (success.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
-        assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
+        assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Succeeded).preimage)
         assertEquals(1, success.payment.parts.size)
         assertEquals(310_000.msat, success.payment.parts.first().amount)
         val status = success.payment.parts.first().status
@@ -443,7 +443,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(invoice.nodeId, success.payment.recipient)
         assertEquals(invoice.paymentHash, success.payment.paymentHash)
         assertEquals(invoice, (success.payment.details as LightningOutgoingPayment.Details.Normal).paymentRequest)
-        assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
+        assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Succeeded).preimage)
         assertEquals(1, success.payment.parts.size)
         assertEquals(301_030.msat, success.payment.parts.first().amount)
         val status = success.payment.parts.first().status
@@ -453,7 +453,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
         val dbPayment2 = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
         assertNotNull(dbPayment2)
-        assertIs<LightningOutgoingPayment.Status.Completed.Succeeded.OffChain>(dbPayment2.status)
+        assertIs<LightningOutgoingPayment.Status.Succeeded>(dbPayment2.status)
         assertEquals(1, dbPayment2.parts.size)
         assertTrue(dbPayment2.parts.all { it.status is LightningOutgoingPayment.Part.Status.Succeeded })
     }
@@ -577,7 +577,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(FinalFailure.WalletRestarted, fail.failure.reason)
             assertEquals(1, fail.failure.failures.size)
             // Since we haven't stored the shared secrets, we can't decrypt remote failure.
-            assertIs<LightningOutgoingPayment.Part.Status.Failure.Uninterpretable>(fail.failure.failures.first().failure)
+            assertIs<LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable>(fail.failure.failures.first().failure)
         }
     }
 
@@ -605,7 +605,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(preimage, success.preimage)
             assertEquals(1, success.payment.parts.size)
             assertEquals(payment, success.request)
-            assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Completed.Succeeded.OffChain).preimage)
+            assertEquals(preimage, (success.payment.status as LightningOutgoingPayment.Status.Succeeded).preimage)
         }
     }
 
@@ -659,7 +659,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     private suspend fun assertDbPaymentFailed(db: OutgoingPaymentsDb, paymentId: UUID, partsCount: Int) {
         val dbPayment = db.getLightningOutgoingPayment(paymentId)
         assertNotNull(dbPayment)
-        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Completed.Failed)
+        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Failed)
         assertEquals(partsCount, dbPayment.parts.size)
         assertTrue(dbPayment.parts.all { it.status is LightningOutgoingPayment.Part.Status.Failed })
     }
@@ -669,7 +669,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNotNull(dbPayment)
         assertEquals(amount, dbPayment.recipientAmount)
         assertEquals(fees, dbPayment.fees)
-        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Completed.Succeeded.OffChain)
+        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Succeeded)
         assertEquals(partsCount, dbPayment.parts.size)
         assertTrue(dbPayment.parts.all { it.status is LightningOutgoingPayment.Part.Status.Succeeded })
     }

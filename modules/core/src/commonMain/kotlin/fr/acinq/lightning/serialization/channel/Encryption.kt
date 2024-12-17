@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization
+package fr.acinq.lightning.serialization.channel
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
