@@ -32,6 +32,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
 }
 
 interface IncomingPaymentsDb {
+
     /** Add a new expected incoming payment (not yet received). */
     suspend fun addIncomingPayment(incomingPayment: IncomingPayment)
 
@@ -453,6 +454,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract override val createdAt: Long
     abstract val confirmedAt: Long?
     abstract val lockedAt: Long?
+    override val completedAt: Long? get() = lockedAt
 
     companion object {
         /** Helper method to facilitate updating child classes */
@@ -488,7 +490,6 @@ data class SpliceOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
-    override val completedAt: Long? = confirmedAt
 }
 
 data class SpliceCpfpOutgoingPayment(
@@ -502,7 +503,6 @@ data class SpliceCpfpOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = miningFees.toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
-    override val completedAt: Long? = confirmedAt
 }
 
 data class InboundLiquidityOutgoingPayment(
@@ -519,7 +519,6 @@ data class InboundLiquidityOutgoingPayment(
     val serviceFees: Satoshi = purchase.fees.serviceFee
     override val fees: MilliSatoshi = (localMiningFees + purchase.fees.total).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
-    override val completedAt: Long? = lockedAt
     val fundingFee: LiquidityAds.FundingFee = LiquidityAds.FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
     /**
      * Even in the "from future htlc" case the mining fee corresponding to the previous channel output
@@ -572,7 +571,6 @@ data class ChannelCloseOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
-    override val completedAt: Long? = confirmedAt
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
