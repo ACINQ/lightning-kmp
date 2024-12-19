@@ -453,7 +453,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     override val completedAt: Long? get() = lockedAt
 
     /** Helper method to facilitate updating child classes */
-    fun OnChainOutgoingPayment.setLocked(lockedAt: Long): OnChainOutgoingPayment =
+    fun setLocked(lockedAt: Long): OnChainOutgoingPayment =
         when (this) {
             is SpliceOutgoingPayment -> copy(lockedAt = lockedAt)
             is SpliceCpfpOutgoingPayment -> copy(lockedAt = lockedAt)
@@ -462,7 +462,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
         }
 
     /** Helper method to facilitate updating child classes */
-    fun OnChainOutgoingPayment.setConfirmed(confirmedAt: Long): OnChainOutgoingPayment =
+    fun setConfirmed(confirmedAt: Long): OnChainOutgoingPayment =
         when (this) {
             is SpliceOutgoingPayment -> copy(confirmedAt = confirmedAt)
             is SpliceCpfpOutgoingPayment -> copy(confirmedAt = confirmedAt)
