@@ -138,8 +138,6 @@ data class SendOnTheFlyFundingMessage(val message: OnTheFlyFundingMessage) : Pee
 
 sealed class PeerEvent
 
-@Deprecated("Replaced by NodeEvents", replaceWith = ReplaceWith("PaymentEvents.PaymentReceived", "fr.acinq.lightning.PaymentEvents"))
-data class PaymentReceived(val incomingPayment: IncomingPayment, val received: IncomingPayment.Received) : PeerEvent()
 data class PaymentProgress(val request: SendPayment, val fees: MilliSatoshi) : PeerEvent()
 sealed class SendPaymentResult : PeerEvent() {
     abstract val request: SendPayment
@@ -847,8 +845,36 @@ class Peer(
                         action.htlcs.forEach { db.channels.addHtlcInfo(actualChannelId, it.commitmentNumber, it.paymentHash, it.cltvExpiry) }
                     }
                     is ChannelAction.Storage.StoreIncomingPayment -> {
-                        logger.info { "storing incoming payment $action" }
-                        incomingPaymentHandler.process(actualChannelId, action)
+                        logger.info { "storing $action" }
+                        val payment = when (action) {
+                            is ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel ->
+                                NewChannelIncomingPayment(
+                                    id = UUID.randomUUID(),
+                                    amountReceived = action.amountReceived,
+                                    serviceFee = action.serviceFee,
+                                    miningFee = action.miningFee,
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    localInputs = action.localInputs,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = null,
+                                )
+                            is ChannelAction.Storage.StoreIncomingPayment.ViaSpliceIn ->
+                                SpliceInIncomingPayment(
+                                    id = UUID.randomUUID(),
+                                    amountReceived = action.amountReceived,
+                                    miningFee = action.miningFee,
+                                    channelId = channelId,
+                                    txId = action.txId,
+                                    localInputs = action.localInputs,
+                                    createdAt = currentTimestampMillis(),
+                                    confirmedAt = null,
+                                    lockedAt = null,
+                                )
+                        }
+                        nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(payment))
+                        db.payments.addIncomingPayment(payment)
                     }
                     is ChannelAction.Storage.StoreOutgoingPayment -> {
                         logger.info { "storing $action" }
@@ -938,12 +964,10 @@ class Peer(
         }
         when (result) {
             is IncomingPaymentHandler.ProcessAddResult.Accepted -> {
-                if ((result.incomingPayment.received?.receivedWith?.size ?: 0) > 1) {
+                if (result.incomingPayment.parts.size > 1) {
                     // this was a multi-part payment, we signal that the task is finished
                     nodeParams._nodeEvents.tryEmit(SensitiveTaskEvents.TaskEnded(SensitiveTaskEvents.TaskIdentifier.IncomingMultiPartPayment(result.incomingPayment.paymentHash)))
                 }
-                @Suppress("DEPRECATION")
-                _eventsFlow.emit(PaymentReceived(result.incomingPayment, result.received))
             }
             is IncomingPaymentHandler.ProcessAddResult.Pending -> if (result.pendingPayment.parts.size == 1) {
                 // this is the first part of a multi-part payment, we request to keep the app alive to receive subsequent parts

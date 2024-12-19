@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
 import fr.acinq.lightning.db.IncomingPayment
+import fr.acinq.lightning.db.LightningIncomingPayment
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.Init
@@ -70,9 +71,6 @@ sealed interface SensitiveTaskEvents : NodeEvents {
 data object UpgradeRequired : NodeEvents
 
 sealed interface PaymentEvents : NodeEvents {
-    data class PaymentReceived(val paymentHash: ByteVector32, val receivedWith: List<IncomingPayment.ReceivedWith>) : PaymentEvents {
-        val amount: MilliSatoshi = receivedWith.map { it.amountReceived }.sum()
-        val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
-    }
+    data class PaymentReceived(val payment: IncomingPayment) : PaymentEvents
     data class PaymentSent(val payment: OutgoingPayment) : PaymentEvents
 }

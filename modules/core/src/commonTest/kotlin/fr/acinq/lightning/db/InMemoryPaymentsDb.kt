@@ -1,40 +1,38 @@
 package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.utils.UUID
-import fr.acinq.lightning.utils.toByteVector32
 
 class InMemoryPaymentsDb : PaymentsDb {
-    private val incoming = mutableMapOf<ByteVector32, IncomingPayment>()
+    private val incoming = mutableMapOf<ByteVector32, LightningIncomingPayment>()
+    private val onchainIncoming = mutableMapOf<UUID, OnChainIncomingPayment>()
     private val outgoing = mutableMapOf<UUID, LightningOutgoingPayment>()
     private val onChainOutgoing = mutableMapOf<TxId, OnChainOutgoingPayment>()
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
     override suspend fun setLocked(txId: TxId) {}
 
-    override suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long): IncomingPayment {
-        val paymentHash = Crypto.sha256(preimage).toByteVector32()
-        require(!incoming.contains(paymentHash)) { "an incoming payment for $paymentHash already exists" }
-        val incomingPayment = IncomingPayment(preimage, origin, null, createdAt)
-        incoming[paymentHash] = incomingPayment
-        return incomingPayment
+    override suspend fun addIncomingPayment(incomingPayment: IncomingPayment) {
+        when (incomingPayment) {
+            is LightningIncomingPayment -> {
+                require(!incoming.contains(incomingPayment.paymentHash)) { "an incoming payment for ${incomingPayment.paymentHash} already exists" }
+                incoming[incomingPayment.paymentHash] = incomingPayment
+            }
+            is OnChainIncomingPayment -> {
+                require(!onchainIncoming.contains(incomingPayment.id)) { "an incoming payment with id=${incomingPayment.id} already exists" }
+                onchainIncoming[incomingPayment.id] = incomingPayment
+            }
+            else -> TODO()
+        }
     }
 
-    override suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment? = incoming[paymentHash]
+    override suspend fun getLightningIncomingPayment(paymentHash: ByteVector32): LightningIncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long) {
+    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = run {
-                payment.copy(
-                    received = IncomingPayment.Received(
-                        receivedWith = (payment.received?.receivedWith ?: emptySet()) + receivedWith,
-                        receivedAt = receivedAt
-                    )
-                )
-            }
+            else -> incoming[paymentHash] = payment.addReceivedParts(parts)
         }
     }
 
@@ -46,19 +44,19 @@ class InMemoryPaymentsDb : PaymentsDb {
             .take(count)
             .toList()
 
-    override suspend fun listExpiredPayments(fromCreatedAt: Long, toCreatedAt: Long): List<IncomingPayment> =
+    override suspend fun listLightningExpiredPayments(fromCreatedAt: Long, toCreatedAt: Long): List<LightningIncomingPayment> =
         incoming.values
             .asSequence()
             .filter { it.createdAt in fromCreatedAt until toCreatedAt }
             .filter { it.isExpired() }
-            .filter { it.received == null }
+            .filter { it.parts.isEmpty() }
             .sortedByDescending { it.createdAt }
             .toList()
 
-    override suspend fun removeIncomingPayment(paymentHash: ByteVector32): Boolean {
-        val payment = getIncomingPayment(paymentHash)
-        return when (payment?.received) {
-            null -> incoming.remove(paymentHash) != null
+    override suspend fun removeLightningIncomingPayment(paymentHash: ByteVector32): Boolean {
+        val payment = getLightningIncomingPayment(paymentHash)
+        return when (payment?.parts?.isEmpty()) {
+            true -> incoming.remove(paymentHash) != null
             else -> false // do nothing if payment already partially paid
         }
     }
