@@ -8,20 +8,12 @@ object Serialization {
         return fr.acinq.lightning.serialization.payment.v1.Serialization.serialize(payment)
     }
 
-    fun deserialize(bin: ByteArray): DeserializationResult {
-        return when (bin.firstOrNull()?.toInt()) {
-            1 -> DeserializationResult.Success(fr.acinq.lightning.serialization.payment.v1.Deserialization.deserialize(bin))
-            else -> DeserializationResult.UnknownVersion(bin[0].toInt())
-        }
-    }
-
-    sealed class DeserializationResult {
-        data class Success(val data: WalletPayment) : DeserializationResult()
-        data class UnknownVersion(val version: Int) : DeserializationResult()
-
-        fun get(): WalletPayment = when(this) {
-            is Success -> data
-            is UnknownVersion -> error("unknown version ${this.version}")
+    fun deserialize(bin: ByteArray): Result<WalletPayment> {
+        return runCatching {
+            when (val version = bin.first().toInt()) {
+                1 -> fr.acinq.lightning.serialization.payment.v1.Deserialization.deserialize(bin)
+                else -> error("unknown version $version")
+            }
         }
     }
 

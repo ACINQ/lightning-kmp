@@ -144,7 +144,7 @@ class PaymentSerializationTestsCommon {
         )
 
         payments.forEach {
-            assertEquals(it, Serialization.deserialize(Serialization.serialize(it)).get())
+            assertEquals(it, Serialization.deserialize(Serialization.serialize(it)).getOrThrow())
         }
     }
 }
