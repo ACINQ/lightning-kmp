@@ -1,7 +1,6 @@
 package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelManagementFees
@@ -33,6 +32,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
 }
 
 interface IncomingPaymentsDb {
+
     /** Add a new expected incoming payment (not yet received). */
     suspend fun addIncomingPayment(incomingPayment: IncomingPayment)
 
@@ -62,29 +62,23 @@ interface OutgoingPaymentsDb {
     /** Add a new pending outgoing payment (not yet settled). */
     suspend fun addOutgoingPayment(outgoingPayment: OutgoingPayment)
 
+    /** Add new partial payments to a pending outgoing payment. */
+    suspend fun addLightningOutgoingPaymentParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>)
+
     /** Get information about an outgoing payment (settled or not). */
     suspend fun getLightningOutgoingPayment(id: UUID): LightningOutgoingPayment?
 
-    /** Get information about a liquidity purchase (for which the funding transaction has been signed). */
-    suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment?
-
-    /** Mark an outgoing payment as completed over Lightning. */
-    suspend fun completeOutgoingPaymentOffchain(id: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
-
-    /** Mark an outgoing payment as failed. */
-    suspend fun completeOutgoingPaymentOffchain(id: UUID, finalFailure: FinalFailure, completedAt: Long = currentTimestampMillis())
-
-    /** Add new partial payments to a pending outgoing payment. */
-    suspend fun addOutgoingLightningParts(parentId: UUID, parts: List<LightningOutgoingPayment.Part>)
-
-    /** Mark an outgoing payment part as failed. */
-    suspend fun completeOutgoingLightningPart(partId: UUID, failure: LightningOutgoingPayment.Part.Status.Failure, completedAt: Long = currentTimestampMillis())
-
-    /** Mark an outgoing payment part as succeeded. This should not update the parent payment, since some parts may still be pending. */
-    suspend fun completeOutgoingLightningPart(partId: UUID, preimage: ByteVector32, completedAt: Long = currentTimestampMillis())
-
     /** Get information about an outgoing payment from the id of one of its parts. */
     suspend fun getLightningOutgoingPaymentFromPartId(partId: UUID): LightningOutgoingPayment?
+
+    /** Mark a lightning outgoing payment as completed. */
+    suspend fun completeLightningOutgoingPayment(id: UUID, status: LightningOutgoingPayment.Status.Completed)
+
+    /** Mark a lightning outgoing payment part as completed. */
+    suspend fun completeLightningOutgoingPaymentPart(parentId: UUID, partId: UUID, status: LightningOutgoingPayment.Part.Status.Completed)
+
+    /** Get information about a liquidity purchase (for which the funding transaction has been signed). */
+    suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment?
 
     /** List all the outgoing payment attempts that tried to pay the given payment hash. */
     suspend fun listLightningOutgoingPayments(paymentHash: ByteVector32): List<LightningOutgoingPayment>
@@ -329,8 +323,8 @@ data class LightningOutgoingPayment(
     /** This is the total fees that have been paid to make the payment work. It includes the LN routing fees, the fee for the swap-out service, the mining fees for closing a channel. */
     override val fees: MilliSatoshi = when (status) {
         is Status.Pending -> 0.msat
-        is Status.Completed.Failed -> 0.msat
-        is Status.Completed.Succeeded.OffChain -> {
+        is Status.Failed -> 0.msat
+        is Status.Succeeded -> {
             if (details is Details.SwapOut) {
                 // The swap-out service takes a fee to cover the miner fee. It's the difference between what we paid the service (recipientAmount) and what goes to the address.
                 // We also include the routing fee, in case the swap-service is NOT the trampoline node.
@@ -376,15 +370,10 @@ data class LightningOutgoingPayment(
         data object Pending : Status()
         sealed class Completed : Status() {
             abstract val completedAt: Long
-
-            data class Failed(val reason: FinalFailure, override val completedAt: Long = currentTimestampMillis()) : Completed()
-            sealed class Succeeded : Completed() {
-                data class OffChain(
-                    val preimage: ByteVector32,
-                    override val completedAt: Long = currentTimestampMillis()
-                ) : Succeeded()
-            }
         }
+
+        data class Succeeded(val preimage: ByteVector32, override val completedAt: Long = currentTimestampMillis()) : Completed()
+        data class Failed(val reason: FinalFailure, override val completedAt: Long = currentTimestampMillis()) : Completed()
     }
 
     /**
@@ -405,44 +394,49 @@ data class LightningOutgoingPayment(
     ) {
         sealed class Status {
             data object Pending : Status()
-            data class Succeeded(val preimage: ByteVector32, val completedAt: Long = currentTimestampMillis()) : Status()
-            data class Failed(val failure: Failure, val completedAt: Long = currentTimestampMillis()) : Status()
+            sealed class Completed : Status() {
+                abstract val completedAt: Long
+            }
 
-            /**
-             * User-friendly payment part failure reason, whenever possible.
-             * Applications should define their own localized message for each of these failure cases.
-             */
-            sealed class Failure {
-                // @formatter:off
-                /** The payment is too small: try sending a larger amount. */
-                data object PaymentAmountTooSmall : Failure() { override fun toString(): String = "the payment amount is too small" }
-                /** The user has sufficient balance, but the payment is too big: try sending a smaller amount. */
-                data object PaymentAmountTooBig : Failure() { override fun toString(): String = "the payment amount is too large" }
-                /** The user doesn't have sufficient balance: try sending a smaller amount. */
-                data object NotEnoughFunds : Failure() { override fun toString(): String = "not enough funds" }
-                /** The payment must be retried with more fees to reach the recipient. */
-                data object NotEnoughFees : Failure() { override fun toString(): String = "routing fees are insufficient" }
-                /** The payment expiry specified by the recipient is too far away in the future. */
-                data object PaymentExpiryTooBig : Failure() { override fun toString(): String = "the payment expiry is too far in the future" }
-                /** There are too many pending payments: wait for them to settle and retry. */
-                data object TooManyPendingPayments : Failure() { override fun toString(): String = "too many pending payments" }
-                /** Payments are temporarily paused while a channel is splicing: the payment can be retried after the splice. */
-                data object ChannelIsSplicing : Failure() { override fun toString(): String = "a splicing operation is in progress" }
-                /** The channel is closing: another channel should be created to send the payment. */
-                data object ChannelIsClosing : Failure() { override fun toString(): String = "channel closing is in progress" }
-                /** Remote failure from an intermediate node in the payment route. */
-                sealed class RouteFailure : Failure()
-                /** A remote node had a temporary failure: the payment may succeed if retried. */
-                data object TemporaryRemoteFailure : RouteFailure() { override fun toString(): String = "a node in the route had a temporary failure" }
-                /** The payment amount could not be relayed to the recipient, most likely because they don't have enough inbound liquidity. */
-                data object RecipientLiquidityIssue : RouteFailure() { override fun toString(): String = "liquidity issue at the recipient node" }
-                /** The payment recipient is offline and could not accept the payment. */
-                data object RecipientIsOffline : RouteFailure() { override fun toString(): String = "recipient node is offline or unreachable" }
-                /** The payment recipient received the payment but rejected it. */
-                data object RecipientRejectedPayment : Failure() { override fun toString(): String = "recipient node rejected the payment" }
-                /** This is an error that cannot be easily interpreted: we don't know what exactly went wrong and cannot correctly inform the user. */
-                data class Uninterpretable(val message: String) : Failure() { override fun toString(): String = message }
-                // @formatter:on
+            data class Succeeded(val preimage: ByteVector32, override val completedAt: Long = currentTimestampMillis()) : Completed()
+            data class Failed(val failure: Failure, override val completedAt: Long = currentTimestampMillis()) : Completed() {
+
+                /**
+                 * User-friendly payment part failure reason, whenever possible.
+                 * Applications should define their own localized message for each of these failure cases.
+                 */
+                sealed class Failure {
+                    // @formatter:off
+                    /** The payment is too small: try sending a larger amount. */
+                    data object PaymentAmountTooSmall : Failure() { override fun toString(): String = "the payment amount is too small" }
+                    /** The user has sufficient balance, but the payment is too big: try sending a smaller amount. */
+                    data object PaymentAmountTooBig : Failure() { override fun toString(): String = "the payment amount is too large" }
+                    /** The user doesn't have sufficient balance: try sending a smaller amount. */
+                    data object NotEnoughFunds : Failure() { override fun toString(): String = "not enough funds" }
+                    /** The payment must be retried with more fees to reach the recipient. */
+                    data object NotEnoughFees : Failure() { override fun toString(): String = "routing fees are insufficient" }
+                    /** The payment expiry specified by the recipient is too far away in the future. */
+                    data object PaymentExpiryTooBig : Failure() { override fun toString(): String = "the payment expiry is too far in the future" }
+                    /** There are too many pending payments: wait for them to settle and retry. */
+                    data object TooManyPendingPayments : Failure() { override fun toString(): String = "too many pending payments" }
+                    /** Payments are temporarily paused while a channel is splicing: the payment can be retried after the splice. */
+                    data object ChannelIsSplicing : Failure() { override fun toString(): String = "a splicing operation is in progress" }
+                    /** The channel is closing: another channel should be created to send the payment. */
+                    data object ChannelIsClosing : Failure() { override fun toString(): String = "channel closing is in progress" }
+                    /** Remote failure from an intermediate node in the payment route. */
+                    sealed class RouteFailure : Failure()
+                    /** A remote node had a temporary failure: the payment may succeed if retried. */
+                    data object TemporaryRemoteFailure : RouteFailure() { override fun toString(): String = "a node in the route had a temporary failure" }
+                    /** The payment amount could not be relayed to the recipient, most likely because they don't have enough inbound liquidity. */
+                    data object RecipientLiquidityIssue : RouteFailure() { override fun toString(): String = "liquidity issue at the recipient node" }
+                    /** The payment recipient is offline and could not accept the payment. */
+                    data object RecipientIsOffline : RouteFailure() { override fun toString(): String = "recipient node is offline or unreachable" }
+                    /** The payment recipient received the payment but rejected it. */
+                    data object RecipientRejectedPayment : Failure() { override fun toString(): String = "recipient node rejected the payment" }
+                    /** This is an error that cannot be easily interpreted: we don't know what exactly went wrong and cannot correctly inform the user. */
+                    data class Uninterpretable(val message: String) : Failure() { override fun toString(): String = message }
+                    // @formatter:on
+                }
             }
         }
     }
@@ -456,6 +450,25 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract override val createdAt: Long
     abstract val confirmedAt: Long?
     abstract val lockedAt: Long?
+    override val completedAt: Long? get() = lockedAt
+
+    /** Helper method to facilitate updating child classes */
+    fun setLocked(lockedAt: Long): OnChainOutgoingPayment =
+        when (this) {
+            is SpliceOutgoingPayment -> copy(lockedAt = lockedAt)
+            is SpliceCpfpOutgoingPayment -> copy(lockedAt = lockedAt)
+            is InboundLiquidityOutgoingPayment -> copy(lockedAt = lockedAt)
+            is ChannelCloseOutgoingPayment -> copy(lockedAt = lockedAt)
+        }
+
+    /** Helper method to facilitate updating child classes */
+    fun setConfirmed(confirmedAt: Long): OnChainOutgoingPayment =
+        when (this) {
+            is SpliceOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is SpliceCpfpOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is InboundLiquidityOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is ChannelCloseOutgoingPayment -> copy(confirmedAt = confirmedAt)
+        }
 }
 
 data class SpliceOutgoingPayment(
@@ -471,7 +484,6 @@ data class SpliceOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
-    override val completedAt: Long? = confirmedAt
 }
 
 data class SpliceCpfpOutgoingPayment(
@@ -485,7 +497,6 @@ data class SpliceCpfpOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = miningFees.toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
-    override val completedAt: Long? = confirmedAt
 }
 
 data class InboundLiquidityOutgoingPayment(
@@ -502,7 +513,6 @@ data class InboundLiquidityOutgoingPayment(
     val serviceFees: Satoshi = purchase.fees.serviceFee
     override val fees: MilliSatoshi = (localMiningFees + purchase.fees.total).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
-    override val completedAt: Long? = lockedAt
     val fundingFee: LiquidityAds.FundingFee = LiquidityAds.FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
     /**
      * Even in the "from future htlc" case the mining fee corresponding to the previous channel output
@@ -555,7 +565,6 @@ data class ChannelCloseOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
-    override val completedAt: Long? = confirmedAt
 }
 
 data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
