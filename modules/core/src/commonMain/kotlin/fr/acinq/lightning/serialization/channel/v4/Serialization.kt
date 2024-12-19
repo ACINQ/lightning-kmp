@@ -1,17 +1,32 @@
-package fr.acinq.lightning.serialization.v4
+package fr.acinq.lightning.serialization.channel.v4
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.BtcSerializer
+import fr.acinq.bitcoin.OutPoint
+import fr.acinq.bitcoin.ScriptWitness
+import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
-import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.*
+import fr.acinq.lightning.serialization.OutputExtensions.writeBoolean
+import fr.acinq.lightning.serialization.OutputExtensions.writeBtcObject
+import fr.acinq.lightning.serialization.OutputExtensions.writeByteVector32
+import fr.acinq.lightning.serialization.OutputExtensions.writeByteVector64
+import fr.acinq.lightning.serialization.OutputExtensions.writeCollection
+import fr.acinq.lightning.serialization.OutputExtensions.writeDelimited
+import fr.acinq.lightning.serialization.OutputExtensions.writeEither
+import fr.acinq.lightning.serialization.OutputExtensions.writeLightningMessage
+import fr.acinq.lightning.serialization.OutputExtensions.writeNullable
+import fr.acinq.lightning.serialization.OutputExtensions.writeNumber
+import fr.acinq.lightning.serialization.OutputExtensions.writePublicKey
+import fr.acinq.lightning.serialization.OutputExtensions.writeString
+import fr.acinq.lightning.serialization.OutputExtensions.writeTxId
+import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeLiquidityPurchase
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.wire.LightningCodecs
-import fr.acinq.lightning.wire.LightningMessage
 import fr.acinq.lightning.wire.LiquidityAds
 
 /**
@@ -33,11 +48,11 @@ import fr.acinq.lightning.wire.LiquidityAds
  */
 object Serialization {
 
-    const val versionMagic = 4
+    const val VERSION_MAGIC = 4
 
     fun serialize(o: PersistedChannelState): ByteArray {
         val out = ByteArrayOutput()
-        out.write(versionMagic)
+        out.write(VERSION_MAGIC)
         out.writePersistedChannelState(o)
         return out.toByteArray()
     }
@@ -401,47 +416,6 @@ object Serialization {
         }
     }
 
-    private fun Output.writeLiquidityFees(fees: LiquidityAds.Fees) {
-        writeNumber(fees.miningFee.toLong())
-        writeNumber(fees.serviceFee.toLong())
-    }
-
-    private fun Output.writeLiquidityPurchase(purchase: LiquidityAds.Purchase) {
-        when (purchase) {
-            is LiquidityAds.Purchase.Standard -> {
-                write(0x00) // discriminator
-                writeNumber(purchase.amount.toLong())
-                writeLiquidityFees(purchase.fees)
-                writeLiquidityAdsPaymentDetails(purchase.paymentDetails)
-            }
-            is LiquidityAds.Purchase.WithFeeCredit -> {
-                write(0x01) // discriminator
-                writeNumber(purchase.amount.toLong())
-                writeLiquidityFees(purchase.fees)
-                writeNumber(purchase.feeCreditUsed.toLong())
-                writeLiquidityAdsPaymentDetails(purchase.paymentDetails)
-            }
-        }
-    }
-
-    private fun Output.writeLiquidityAdsPaymentDetails(paymentDetails: LiquidityAds.PaymentDetails) {
-        when (paymentDetails) {
-            is LiquidityAds.PaymentDetails.FromChannelBalance -> write(0x00)
-            is LiquidityAds.PaymentDetails.FromFutureHtlc -> {
-                write(0x80)
-                writeCollection(paymentDetails.paymentHashes) { writeByteVector32(it) }
-            }
-            is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> {
-                write(0x81)
-                writeCollection(paymentDetails.preimages) { writeByteVector32(it) }
-            }
-            is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> {
-                write(0x82)
-                writeCollection(paymentDetails.paymentHashes) { writeByteVector32(it) }
-            }
-        }
-    }
-
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
@@ -699,49 +673,5 @@ object Serialization {
         writeNumber(preferred.toLong())
         writeNumber(min.toLong())
         writeNumber(max.toLong())
-    }
-
-    private fun Output.writeNumber(o: Number): Unit = LightningCodecs.writeBigSize(o.toLong(), this)
-
-    private fun Output.writeBoolean(o: Boolean): Unit = if (o) write(1) else write(0)
-
-    private fun Output.writeString(o: String): Unit = writeDelimited(o.encodeToByteArray())
-
-    private fun Output.writeByteVector32(o: ByteVector32) = write(o.toByteArray())
-
-    private fun Output.writeByteVector64(o: ByteVector64) = write(o.toByteArray())
-
-    private fun Output.writePublicKey(o: PublicKey) = write(o.value.toByteArray())
-
-    private fun Output.writeTxId(o: TxId) = write(o.value.toByteArray())
-
-    private fun Output.writeDelimited(o: ByteArray) {
-        writeNumber(o.size)
-        write(o)
-    }
-
-    private fun <T : BtcSerializable<T>> Output.writeBtcObject(o: T): Unit = writeDelimited(o.serializer().write(o))
-
-    private fun Output.writeLightningMessage(o: LightningMessage) = writeDelimited(LightningMessage.encode(o))
-
-    private fun <T> Output.writeCollection(o: Collection<T>, writeElem: (T) -> Unit) {
-        writeNumber(o.size)
-        o.forEach { writeElem(it) }
-    }
-
-    private fun <L, R> Output.writeEither(o: Either<L, R>, writeLeft: (L) -> Unit, writeRight: (R) -> Unit) = when (o) {
-        is Either.Left -> {
-            write(0); writeLeft(o.value)
-        }
-        is Either.Right -> {
-            write(1); writeRight(o.value)
-        }
-    }
-
-    private fun <T : Any> Output.writeNullable(o: T?, writeNotNull: (T) -> Unit) = when (o) {
-        is T -> {
-            write(1); writeNotNull(o)
-        }
-        else -> write(0)
     }
 }

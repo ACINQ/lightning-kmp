@@ -14,7 +14,7 @@ import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
-import fr.acinq.lightning.serialization.Serialization
+import fr.acinq.lightning.serialization.channel.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.transactions.Transactions

@@ -233,6 +233,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun `outgoing swap-out payment fee and amount computation`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         val (a, b, c) = listOf(randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey())

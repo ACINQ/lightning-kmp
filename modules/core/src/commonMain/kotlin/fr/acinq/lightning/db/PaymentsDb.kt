@@ -303,6 +303,7 @@ sealed class OutgoingPayment : WalletPayment()
  * @param parts list of partial child payments that have actually been sent.
  * @param status current status of the payment.
  */
+@Suppress("DEPRECATION")
 data class LightningOutgoingPayment(
     override val id: UUID,
     val recipientAmount: MilliSatoshi,
@@ -361,6 +362,7 @@ data class LightningOutgoingPayment(
          * Swap-out payments send a lightning payment to a swap server, which will send an on-chain transaction to a given address.
          * The swap-out fee is taken by the swap server to cover the miner fee.
          */
+        @Deprecated("Legacy trusted swap-out, kept for backwards-compatibility with existing databases.")
         data class SwapOut(val address: String, override val paymentRequest: PaymentRequest, val swapOutFee: Satoshi) : Details() {
             override val paymentHash: ByteVector32 = paymentRequest.paymentHash
         }
