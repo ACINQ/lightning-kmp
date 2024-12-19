@@ -452,25 +452,23 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract val lockedAt: Long?
     override val completedAt: Long? get() = lockedAt
 
-    companion object {
-        /** Helper method to facilitate updating child classes */
-        fun OnChainOutgoingPayment.setLocked(lockedAt: Long): OnChainOutgoingPayment =
-            when (this) {
-                is SpliceOutgoingPayment -> copy(lockedAt = lockedAt)
-                is SpliceCpfpOutgoingPayment -> copy(lockedAt = lockedAt)
-                is InboundLiquidityOutgoingPayment -> copy(lockedAt = lockedAt)
-                is ChannelCloseOutgoingPayment -> copy(lockedAt = lockedAt)
-            }
+    /** Helper method to facilitate updating child classes */
+    fun OnChainOutgoingPayment.setLocked(lockedAt: Long): OnChainOutgoingPayment =
+        when (this) {
+            is SpliceOutgoingPayment -> copy(lockedAt = lockedAt)
+            is SpliceCpfpOutgoingPayment -> copy(lockedAt = lockedAt)
+            is InboundLiquidityOutgoingPayment -> copy(lockedAt = lockedAt)
+            is ChannelCloseOutgoingPayment -> copy(lockedAt = lockedAt)
+        }
 
-        /** Helper method to facilitate updating child classes */
-        fun OnChainOutgoingPayment.setConfirmed(confirmedAt: Long): OnChainOutgoingPayment =
-            when (this) {
-                is SpliceOutgoingPayment -> copy(confirmedAt = confirmedAt)
-                is SpliceCpfpOutgoingPayment -> copy(confirmedAt = confirmedAt)
-                is InboundLiquidityOutgoingPayment -> copy(confirmedAt = confirmedAt)
-                is ChannelCloseOutgoingPayment -> copy(confirmedAt = confirmedAt)
-            }
-    }
+    /** Helper method to facilitate updating child classes */
+    fun OnChainOutgoingPayment.setConfirmed(confirmedAt: Long): OnChainOutgoingPayment =
+        when (this) {
+            is SpliceOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is SpliceCpfpOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is InboundLiquidityOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is ChannelCloseOutgoingPayment -> copy(confirmedAt = confirmedAt)
+        }
 }
 
 data class SpliceOutgoingPayment(

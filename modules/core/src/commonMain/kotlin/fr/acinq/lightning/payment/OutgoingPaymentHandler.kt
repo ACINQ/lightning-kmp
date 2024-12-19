@@ -231,8 +231,8 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
 
         logger.info { "payment successfully sent (fees=${payment.fees})" }
-        db.completeLightningOutgoingPaymentPart(payment.request.paymentId, event.paymentId, LightningOutgoingPayment.Part.Status.Succeeded(preimage))
-        db.completeLightningOutgoingPayment(payment.request.paymentId, LightningOutgoingPayment.Status.Succeeded(preimage))
+        db.completeLightningOutgoingPaymentPart(payment.request.paymentId, event.paymentId, preimage)
+        db.completeLightningOutgoingPayment(payment.request.paymentId, preimage)
         removeFromState(payment.request.paymentId)
         val status = LightningOutgoingPayment.Status.Succeeded(preimage)
         val part = payment.pending.copy(status = LightningOutgoingPayment.Part.Status.Succeeded(preimage))
@@ -248,10 +248,10 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             }
             else -> {
                 val logger = MDCLogger(logger, staticMdc = mapOf("childPaymentId" to partId) + payment.mdc())
-                db.completeLightningOutgoingPaymentPart(payment.id, partId, LightningOutgoingPayment.Part.Status.Succeeded(preimage))
+                db.completeLightningOutgoingPaymentPart(payment.id, partId, preimage)
                 logger.info { "payment successfully sent (wallet restart)" }
                 val request = PayInvoice(payment.id, payment.recipientAmount, payment.details)
-                db.completeLightningOutgoingPayment(payment.id, LightningOutgoingPayment.Status.Succeeded(preimage))
+                db.completeLightningOutgoingPayment(payment.id, preimage)
                 removeFromState(payment.id)
                 // NB: we reload the payment to ensure all parts status are updated
                 // this payment cannot be null
@@ -329,6 +329,12 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             }
         }
     }
+
+    private suspend fun OutgoingPaymentsDb.completeLightningOutgoingPayment(id: UUID, preimage: ByteVector32) =
+        completeLightningOutgoingPayment(id, LightningOutgoingPayment.Status.Succeeded(preimage))
+
+    private suspend fun OutgoingPaymentsDb.completeLightningOutgoingPaymentPart(id: UUID, partId: UUID, preimage: ByteVector32) =
+        completeLightningOutgoingPaymentPart(id, partId, LightningOutgoingPayment.Part.Status.Succeeded(preimage))
 
     private suspend fun OutgoingPaymentsDb.completeLightningOutgoingPayment(id: UUID, failure: FinalFailure) =
         completeLightningOutgoingPayment(id, LightningOutgoingPayment.Status.Failed(failure))
