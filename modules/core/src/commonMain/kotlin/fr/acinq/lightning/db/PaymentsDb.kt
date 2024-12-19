@@ -1,6 +1,7 @@
 package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.channel.ChannelManagementFees
@@ -33,28 +34,28 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
 
 interface IncomingPaymentsDb {
     /** Add a new expected incoming payment (not yet received). */
-    suspend fun addIncomingPayment(preimage: ByteVector32, origin: IncomingPayment.Origin, createdAt: Long = currentTimestampMillis()): IncomingPayment
+    suspend fun addIncomingPayment(incomingPayment: IncomingPayment)
 
     /** Get information about an incoming payment (paid or not) for the given payment hash, if any. */
-    suspend fun getIncomingPayment(paymentHash: ByteVector32): IncomingPayment?
+    suspend fun getLightningIncomingPayment(paymentHash: ByteVector32): LightningIncomingPayment?
 
     /**
      * Mark an incoming payment as received (paid).
      * Note that this function assumes that there is a matching payment request in the DB, otherwise it will be a no-op.
      *
      * This method is additive:
-     * - receivedWith set is appended to the existing set in database.
+     * - parts list is appended to the existing list in database.
      * - receivedAt must be updated in database.
      *
-     * @param receivedWith Is a set containing the payment parts holding the incoming amount.
+     * @param parts Is a list containing the payment parts holding the incoming amount.
      */
-    suspend fun receivePayment(paymentHash: ByteVector32, receivedWith: List<IncomingPayment.ReceivedWith>, receivedAt: Long = currentTimestampMillis())
+    suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>)
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
-    suspend fun listExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<IncomingPayment>
+    suspend fun listLightningExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<LightningIncomingPayment>
 
     /** Remove a pending incoming payment.*/
-    suspend fun removeIncomingPayment(paymentHash: ByteVector32): Boolean
+    suspend fun removeLightningIncomingPayment(paymentHash: ByteVector32): Boolean
 }
 
 interface OutgoingPaymentsDb {
@@ -91,6 +92,8 @@ interface OutgoingPaymentsDb {
 
 /** A payment made to or from the wallet. */
 sealed class WalletPayment {
+    abstract val id: UUID
+
     /** Absolute time in milliseconds since UNIX epoch when the payment was created. */
     abstract val createdAt: Long
 
@@ -108,70 +111,47 @@ sealed class WalletPayment {
     abstract val amount: MilliSatoshi
 }
 
+sealed class IncomingPayment : WalletPayment() {
+    /** Amount received for this part after applying the fees. This is the final amount we can use. */
+    abstract val amountReceived: MilliSatoshi
+    override val amount: MilliSatoshi get() = amountReceived
+}
+
 /**
  * An incoming payment received by this node.
  * At first it is in a pending state, then will become either a success (if we receive a matching payment) or a failure (if the payment request expires).
  *
- * @param preimage payment preimage, which acts as a proof-of-payment for the payer.
- * @param origin origin of a payment (normal, swap, etc).
- * @param received funds received for this payment, null if no funds have been received yet.
- * @param createdAt absolute time in milliseconds since UNIX epoch when the payment request was generated.
+ * @param paymentPreimage payment preimage, which acts as a proof-of-payment for the payer.
  */
-data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val received: Received?, override val createdAt: Long = currentTimestampMillis()) : WalletPayment() {
+sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : IncomingPayment() {
 
-    val paymentHash: ByteVector32 = Crypto.sha256(preimage).toByteVector32()
+    val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()
 
-    /**
-     * This timestamp will be defined when the payment is final and usable for spending:
-     * - for lightning payment it is instant.
-     * - for on-chain payments, the associated transaction doesn't necessarily need to be
-     *   confirmed (if zero-conf is used), but both sides have to agree that the funds are
-     *   usable, a.k.a. "locked".
-     */
-    override val completedAt: Long?
-        get() = when {
-            received == null -> null // payment has not yet been received
-            received.receivedWith.any { it is ReceivedWith.OnChainIncomingPayment && it.lockedAt == null } -> null // payment has been received, but there is at least one unconfirmed on-chain part
-            else -> received.receivedAt
-        }
+    override val id: UUID = UUID.fromBytes(paymentHash.toByteArray().copyOf(16))
+
+    /** Funds received for this payment, empty if no funds have been received yet. */
+    abstract val parts: List<Part>
+
+    /** This timestamp will be defined when the received amount is usable for spending. */
+    override val completedAt: Long? get() = parts.maxByOrNull { it.receivedAt }?.receivedAt
 
     /** Total fees paid to receive this payment. */
-    override val fees: MilliSatoshi = received?.fees ?: 0.msat
+    override val fees: MilliSatoshi get() = parts.map { it.fees }.sum()
 
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
-    override val amount: MilliSatoshi = received?.amount ?: 0.msat
+    override val amountReceived: MilliSatoshi get() = parts.map { it.amountReceived }.sum()
 
-    sealed class Origin {
-        /** A normal, Bolt11 invoice-based lightning payment. */
-        data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
-
-        /** A payment for a Bolt 12 offer: note that we only keep a few fields from the corresponding Bolt 12 invoice. */
-        data class Offer(val metadata: OfferPaymentMetadata) : Origin()
-
-        /** DEPRECATED: this is the legacy trusted swap-in, which we keep for backwards-compatibility (previous payments inside the DB). */
-        data class SwapIn(val address: String?) : Origin()
-
-        /** Trustless swap-in (dual-funding or splice-in) */
-        data class OnChain(val txId: TxId, val localInputs: Set<OutPoint>) : Origin()
-    }
-
-    data class Received(val receivedWith: List<ReceivedWith>, val receivedAt: Long = currentTimestampMillis()) {
-        /** Total amount received after applying the fees. */
-        val amount: MilliSatoshi = receivedWith.map { it.amountReceived }.sum()
-
-        /** Fees applied to receive this payment. */
-        val fees: MilliSatoshi = receivedWith.map { it.fees }.sum()
-    }
-
-    sealed class ReceivedWith {
+    sealed class Part {
         /** Amount received for this part after applying the fees. This is the final amount we can use. */
         abstract val amountReceived: MilliSatoshi
 
-        /** Fees applied to receive this part. Is zero for Lightning payments. */
+        /** Fees applied to receive this part.*/
         abstract val fees: MilliSatoshi
 
+        abstract val receivedAt: Long
+
         /** Payment was received via existing lightning channels. */
-        data class LightningPayment(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?) : ReceivedWith() {
+        data class Htlc(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?, override val receivedAt: Long = currentTimestampMillis()) : Part() {
             // If there is no funding fee, the fees are paid by the sender for lightning payments.
             override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
         }
@@ -180,57 +160,142 @@ data class IncomingPayment(val preimage: ByteVector32, val origin: Origin, val r
          * Payment was added to our fee credit for future on-chain operations (see [fr.acinq.lightning.Feature.FundingFeeCredit]).
          * We didn't really receive this amount yet, but we trust our peer to use it for future on-chain operations.
          */
-        data class AddedToFeeCredit(override val amountReceived: MilliSatoshi) : ReceivedWith() {
+        data class FeeCredit(override val amountReceived: MilliSatoshi, override val receivedAt: Long = currentTimestampMillis()) : Part() {
             // Adding to the fee credit doesn't cost any fees.
             override val fees: MilliSatoshi = 0.msat
         }
-
-        sealed class OnChainIncomingPayment : ReceivedWith() {
-            abstract val serviceFee: MilliSatoshi
-            abstract val miningFee: Satoshi
-            override val fees: MilliSatoshi get() = serviceFee + miningFee.toMilliSatoshi()
-            abstract val channelId: ByteVector32
-            abstract val txId: TxId
-            abstract val confirmedAt: Long?
-            abstract val lockedAt: Long?
-        }
-
-        /**
-         * Payment was received via a new channel opened to us.
-         *
-         * @param amountReceived Our side of the balance of this channel when it's created. This is the amount received after the creation fees are applied.
-         * @param serviceFee Fees paid to Lightning Service Provider to open this channel.
-         * @param miningFee Feed paid to bitcoin miners for processing the L1 transaction.
-         * @param channelId The long id of the channel created to receive this payment. May be null if the channel id is not known.
-         */
-        data class NewChannel(
-            override val amountReceived: MilliSatoshi,
-            override val serviceFee: MilliSatoshi,
-            override val miningFee: Satoshi,
-            override val channelId: ByteVector32,
-            override val txId: TxId,
-            override val confirmedAt: Long?,
-            override val lockedAt: Long?
-        ) : OnChainIncomingPayment()
-
-        data class SpliceIn(
-            override val amountReceived: MilliSatoshi,
-            override val serviceFee: MilliSatoshi,
-            override val miningFee: Satoshi,
-            override val channelId: ByteVector32,
-            override val txId: TxId,
-            override val confirmedAt: Long?,
-            override val lockedAt: Long?
-        ) : OnChainIncomingPayment()
     }
 
-    /** A payment expires if its origin is [Origin.Invoice] and its invoice has expired. */
-    fun isExpired(): Boolean = origin is Origin.Invoice && origin.paymentRequest.isExpired()
+    /** A payment expires if it is a [Bolt11IncomingPayment] and its invoice has expired. */
+    fun isExpired(): Boolean = this is Bolt11IncomingPayment && this.paymentRequest.isExpired()
+
+    /** Helper method to facilitate updating child classes */
+    fun addReceivedParts(parts: List<Part>): LightningIncomingPayment {
+        return when (this) {
+            is Bolt11IncomingPayment -> copy(parts = this.parts + parts)
+            is Bolt12IncomingPayment -> copy(parts = this.parts + parts)
+        }
+    }
 }
 
-sealed class OutgoingPayment : WalletPayment() {
-    abstract val id: UUID
+/** A normal, Bolt11 invoice-based lightning payment. */
+data class Bolt11IncomingPayment(
+    private val preimage: ByteVector32,
+    val paymentRequest: Bolt11Invoice,
+    override val parts: List<Part> = emptyList(),
+    override val createdAt: Long = currentTimestampMillis()
+) : LightningIncomingPayment(preimage)
+
+/** A payment for a Bolt 12 offer: note that we only keep a few fields from the corresponding Bolt 12 invoice. */
+data class Bolt12IncomingPayment(
+    private val preimage: ByteVector32,
+    val metadata: OfferPaymentMetadata,
+    override val parts: List<Part> = emptyList(),
+    override val createdAt: Long = currentTimestampMillis()
+) : LightningIncomingPayment(preimage)
+
+/** Trustless swap-in (dual-funding or splice-in) */
+sealed class OnChainIncomingPayment : IncomingPayment() {
+    abstract override val id: UUID
+    /** Fees paid to Lightning Service Provider for this on-chain transaction. */
+    abstract val serviceFee: MilliSatoshi
+    /** Feed paid to bitcoin miners for processing the on-chain operation. */
+    abstract val miningFee: Satoshi
+    override val fees: MilliSatoshi get() = serviceFee + miningFee.toMilliSatoshi()
+    abstract val channelId: ByteVector32
+    abstract val txId: TxId
+    abstract val localInputs: Set<OutPoint>
+    abstract val confirmedAt: Long?
+    abstract val lockedAt: Long?
+    /**
+     * This timestamp will be defined when the received amount is usable for spending. The
+     * associated transaction doesn't necessarily need to be confirmed (if zero-conf is
+     * used), but both sides have to agree that the funds are usable, a.k.a. "locked".
+     */
+    override val completedAt: Long? get() = lockedAt
+
+    /** Helper method to facilitate updating child classes */
+    fun setLocked(lockedAt: Long): OnChainIncomingPayment =
+        when (this) {
+            is NewChannelIncomingPayment -> copy(lockedAt = lockedAt)
+            is SpliceInIncomingPayment -> copy(lockedAt = lockedAt)
+        }
+
+    /** Helper method to facilitate updating child classes */
+    fun setConfirmed(confirmedAt: Long): OnChainIncomingPayment =
+        when (this) {
+            is NewChannelIncomingPayment -> copy(confirmedAt = confirmedAt)
+            is SpliceInIncomingPayment -> copy(confirmedAt = confirmedAt)
+        }
 }
+
+/**
+ * Payment was received via a new channel opened to us.
+ *
+ * @param amountReceived Our side of the balance of this channel when it's created. This is the amount received after the creation fees are applied.
+ */
+data class NewChannelIncomingPayment(
+    override val id: UUID,
+    override val amountReceived: MilliSatoshi,
+    override val serviceFee: MilliSatoshi,
+    override val miningFee: Satoshi,
+    override val channelId: ByteVector32,
+    override val txId: TxId,
+    override val localInputs: Set<OutPoint>,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?
+) : OnChainIncomingPayment()
+
+/** Payment was received by splicing on-chain local funds into an existing channel. */
+data class SpliceInIncomingPayment(
+    override val id: UUID,
+    override val amountReceived: MilliSatoshi,
+    override val miningFee: Satoshi,
+    override val channelId: ByteVector32,
+    override val txId: TxId,
+    override val localInputs: Set<OutPoint>,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?
+) : OnChainIncomingPayment() {
+    override val serviceFee: MilliSatoshi = 0.msat
+}
+
+@Deprecated("Legacy trusted swap-in, kept for backwards-compatibility with existing databases.")
+data class LegacySwapInIncomingPayment(
+    override val id: UUID,
+    override val amountReceived: MilliSatoshi,
+    override val fees: MilliSatoshi,
+    val address: String?,
+    override val createdAt: Long,
+    override val completedAt: Long?
+) : IncomingPayment()
+
+@Deprecated("Legacy pay-to-open/pay-to-splice, kept for backwards-compatibility with existing databases. Those payments can be a mix of lightning parts and on-chain parts, and either Bolt11 or Bolt12.")
+data class LegacyPayToOpenIncomingPayment(
+    val paymentPreimage: ByteVector32,
+    val origin: Origin,
+    val parts: List<Part>,
+    override val createdAt: Long,
+    override val completedAt: Long?
+) : IncomingPayment() {
+    val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage).toByteVector32()
+    override val id: UUID = UUID.fromBytes(paymentHash.toByteArray().copyOf(16))
+    override val amountReceived: MilliSatoshi = parts.map { it.amountReceived }.sum()
+    override val fees: MilliSatoshi = parts.filterIsInstance<Part.OnChain>().map { it.serviceFee + it.miningFee.toMilliSatoshi() }.sum()
+    sealed class Origin {
+        data class Invoice(val paymentRequest: Bolt11Invoice) : Origin()
+        data class Offer(val metadata: OfferPaymentMetadata) : Origin()
+    }
+    sealed class Part {
+        abstract val amountReceived: MilliSatoshi
+        data class Lightning(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long) : Part()
+        data class OnChain(override val amountReceived: MilliSatoshi, val serviceFee: MilliSatoshi, val miningFee: Satoshi, val channelId: ByteVector32, val txId: TxId, val confirmedAt: Long?, val lockedAt: Long?) : Part()
+    }
+}
+
+sealed class OutgoingPayment : WalletPayment()
 
 /**
  * An outgoing payment sent by this node.
