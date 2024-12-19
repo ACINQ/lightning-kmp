@@ -8,7 +8,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.*
-import fr.acinq.lightning.db.LightningIncomingPayment.Companion.addReceivedParts
 import fr.acinq.lightning.io.AddLiquidityForIncomingPayment
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.SendOnTheFlyFundingMessage
@@ -48,7 +47,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
     sealed class ProcessAddResult {
         abstract val actions: List<PeerCommand>
 
-        data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: LightningIncomingPayment, val parts: List<LightningIncomingPayment.Part>) : ProcessAddResult()
+        data class Accepted(override val actions: List<PeerCommand>, val incomingPayment: LightningIncomingPayment, val parts: List<LightningIncomingPayment.Part>) : ProcessAddResult() {
+            val amount = parts.map { it.amountReceived }.sum()
+        }
         data class Rejected(override val actions: List<PeerCommand>, val incomingPayment: LightningIncomingPayment?) : ProcessAddResult()
         data class Pending(val incomingPayment: LightningIncomingPayment, val pendingPayment: PendingPayment, override val actions: List<PeerCommand> = listOf()) : ProcessAddResult()
     }

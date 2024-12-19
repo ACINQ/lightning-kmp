@@ -1774,8 +1774,6 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val defaultAmount = 150_000_000.msat
         val feeCreditFeatures = Features(Feature.ExperimentalSplice to FeatureSupport.Optional, Feature.OnTheFlyFunding to FeatureSupport.Optional, Feature.FundingFeeCredit to FeatureSupport.Optional)
 
-        val IncomingPaymentHandler.ProcessAddResult.Accepted.amount: MilliSatoshi get() = this.parts.map { it.amountReceived }.sum()
-
         fun LightningIncomingPayment.Part.resetTimestamp() = when (this) {
             is LightningIncomingPayment.Part.Htlc -> copy(receivedAt = 0)
             is LightningIncomingPayment.Part.FeeCredit -> copy(receivedAt = 0)

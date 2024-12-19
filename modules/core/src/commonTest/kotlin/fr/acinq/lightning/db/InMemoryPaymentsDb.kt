@@ -2,7 +2,6 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.TxId
-import fr.acinq.lightning.db.LightningIncomingPayment.Companion.addReceivedParts
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.utils.UUID
 

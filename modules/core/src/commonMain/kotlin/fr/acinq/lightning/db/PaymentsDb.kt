@@ -169,13 +169,11 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     /** A payment expires if it is a [Bolt11IncomingPayment] and its invoice has expired. */
     fun isExpired(): Boolean = this is Bolt11IncomingPayment && this.paymentRequest.isExpired()
 
-    companion object {
-        /** Helper method to facilitate updating child classes */
-        fun LightningIncomingPayment.addReceivedParts(parts: List<Part>): LightningIncomingPayment {
-            return when (this) {
-                is Bolt11IncomingPayment -> copy(parts = this.parts + parts)
-                is Bolt12IncomingPayment -> copy(parts = this.parts + parts)
-            }
+    /** Helper method to facilitate updating child classes */
+    fun addReceivedParts(parts: List<Part>): LightningIncomingPayment {
+        return when (this) {
+            is Bolt11IncomingPayment -> copy(parts = this.parts + parts)
+            is Bolt12IncomingPayment -> copy(parts = this.parts + parts)
         }
     }
 }
@@ -216,21 +214,19 @@ sealed class OnChainIncomingPayment : IncomingPayment() {
      */
     override val completedAt: Long? get() = lockedAt
 
-    companion object {
-        /** Helper method to facilitate updating child classes */
-        fun OnChainIncomingPayment.setLocked(lockedAt: Long): OnChainIncomingPayment =
-            when (this) {
-                is NewChannelIncomingPayment -> copy(lockedAt = lockedAt)
-                is SpliceInIncomingPayment -> copy(lockedAt = lockedAt)
-            }
+    /** Helper method to facilitate updating child classes */
+    fun setLocked(lockedAt: Long): OnChainIncomingPayment =
+        when (this) {
+            is NewChannelIncomingPayment -> copy(lockedAt = lockedAt)
+            is SpliceInIncomingPayment -> copy(lockedAt = lockedAt)
+        }
 
-        /** Helper method to facilitate updating child classes */
-        fun OnChainIncomingPayment.setConfirmed(confirmedAt: Long): OnChainIncomingPayment =
-            when (this) {
-                is NewChannelIncomingPayment -> copy(confirmedAt = confirmedAt)
-                is SpliceInIncomingPayment -> copy(confirmedAt = confirmedAt)
-            }
-    }
+    /** Helper method to facilitate updating child classes */
+    fun setConfirmed(confirmedAt: Long): OnChainIncomingPayment =
+        when (this) {
+            is NewChannelIncomingPayment -> copy(confirmedAt = confirmedAt)
+            is SpliceInIncomingPayment -> copy(confirmedAt = confirmedAt)
+        }
 }
 
 /**
