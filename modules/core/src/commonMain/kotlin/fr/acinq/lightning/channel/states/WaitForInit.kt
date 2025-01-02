@@ -1,5 +1,6 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.channel.ChannelAction
@@ -73,13 +74,13 @@ data object WaitForInit : ChannelState() {
                 // There can be multiple funding transactions due to rbf, and they can be unconfirmed in any state due to zero-conf.
                 val fundingTxWatches = when (cmd.state) {
                     is ChannelStateWithCommitments -> cmd.state.commitments.active.map { commitment ->
+                        val fundingMinDepth = staticParams.nodeParams.minDepth(commitment.fundingAmount)
                         when (commitment.localFundingStatus) {
-                            is LocalFundingStatus.UnconfirmedFundingTx -> {
-                                val fundingMinDepth = staticParams.nodeParams.minDepth(commitment.fundingAmount)
-                                WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
-                            }
-                            is LocalFundingStatus.ConfirmedFundingTx -> {
-                                WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
+                            is LocalFundingStatus.UnconfirmedFundingTx -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
+                            is LocalFundingStatus.ConfirmedFundingTx -> when (commitment.localFundingStatus.shortChannelId) {
+                                // If the short_channel_id isn't correctly set, we fetch the funding transaction to update it.
+                                ShortChannelId(0) -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
+                                else -> WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
                             }
                         }
                     }
