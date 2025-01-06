@@ -348,6 +348,10 @@ class Peer(
                 previousState = it
             }
         }
+
+        launch {
+            reloadOffersFromPersistance()
+        }
     }
 
     data class ConnectionJob(val job: Job, val socket: TcpSocket) {
@@ -750,6 +754,16 @@ class Peer(
         offerManager.registerOffer(offer, secret.value)
         db.offers.addOffer(offer, secret)
         return offer
+    }
+
+    /**
+     * Reload the offers from the database to allow to reuse custom offers across restarts.
+     */
+    suspend fun reloadOffersFromPersistance() {
+        val offers = db.offers.listOffers()
+        offers.forEach { (pathId, offer) ->
+            offerManager.registerOffer(offer, pathId.value)
+        }
     }
 
     // The (node_id, fcm_token) tuple only needs to be registered once.
