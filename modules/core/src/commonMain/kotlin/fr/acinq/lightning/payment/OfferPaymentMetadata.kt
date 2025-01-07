@@ -205,7 +205,7 @@ sealed class OfferPaymentMetadata {
         val quantity: Long?,
         val contactSecret: ByteVector32?,
         val payerOffer: OfferTypes.Offer?,
-        val payerAddress: ContactAddress?,
+        val payerAddress: UnverifiedContactAddress?,
     ) : OfferPaymentMetadata() {
         override val version: Byte get() = 3
 
@@ -242,7 +242,10 @@ sealed class OfferPaymentMetadata {
             }
             contactSecret?.let { LightningCodecs.writeBytes(it, out) }
             payerOffer?.let { LightningCodecs.writeBytes(OfferTypes.Offer.tlvSerializer.write(it.records), out) }
-            payerAddress?.let { LightningCodecs.writeBytes(it.toString().encodeToByteArray(), out) }
+            payerAddress?.let {
+                LightningCodecs.writeBytes(it.address.toString().encodeToByteArray(), out)
+                LightningCodecs.writeBytes(it.expectedOfferSigningKey.value, out)
+            }
         }
 
         companion object {
@@ -275,7 +278,13 @@ sealed class OfferPaymentMetadata {
                 }
                 val contactSecret = if (hasContactSecret) LightningCodecs.bytes(input, 32).byteVector32() else null
                 val payerOffer = if (hasPayerOffer) OfferTypes.Offer(OfferTypes.Offer.tlvSerializer.read(input)) else null
-                val payerAddress = if (hasPayerAddress) ContactAddress.fromString(LightningCodecs.bytes(input, input.availableBytes).decodeToString()) else null
+                val payerAddress = when {
+                    hasPayerAddress -> ContactAddress.fromString(LightningCodecs.bytes(input, input.availableBytes - 33).decodeToString())?.let {
+                        val offerKey = PublicKey(LightningCodecs.bytes(input, 33))
+                        UnverifiedContactAddress(it, offerKey)
+                    }
+                    else -> null
+                }
                 return V3(offerId, amount, preimage, createdAtSeconds, relativeExpirySeconds, description, payerKey, payerNote, quantity, contactSecret, payerOffer, payerAddress)
             }
 

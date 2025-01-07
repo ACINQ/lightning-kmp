@@ -172,7 +172,7 @@ class OfferPaymentMetadataTestsCommon {
     }
 
     @Test
-    fun `encode - decode v3 metadata with contact information`() {
+    fun `encode - decode v3 metadata with contact offer`() {
         val nodeKey = randomKey()
         val preimage = randomBytes32()
         val payerOffer = OfferTypes.Offer.createBlindedOffer(
@@ -205,6 +205,30 @@ class OfferPaymentMetadataTestsCommon {
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
         assertTrue(pathId.size() in 350..400)
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
+    }
+
+    @Test
+    fun `encode - decode v3 metadata with contact address`() {
+        val nodeKey = randomKey()
+        val preimage = randomBytes32()
+        val metadata = OfferPaymentMetadata.V3(
+            offerId = randomBytes32(),
+            amount = 200_000_000.msat,
+            preimage = preimage,
+            createdAtSeconds = 0,
+            relativeExpirySeconds = null,
+            description = null,
+            payerKey = randomKey().publicKey(),
+            payerNote = "hello there",
+            quantity = 1,
+            contactSecret = randomBytes32(),
+            payerOffer = null,
+            payerAddress = UnverifiedContactAddress(ContactAddress.fromString("alice@acinq.co")!!, randomKey().publicKey()),
+        )
+        assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
+        val pathId = metadata.toPathId(nodeKey)
+        assertEquals(213, pathId.size())
         assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
     }
 
