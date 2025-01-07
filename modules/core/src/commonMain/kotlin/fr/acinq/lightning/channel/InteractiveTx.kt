@@ -249,7 +249,7 @@ sealed class FundingContributionFailure {
 data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, val outputs: List<InteractiveTxOutput.Outgoing>) {
     companion object {
         /** Compute our local splice contribution using all the funds available in our wallet. */
-        fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, targetFeerate: FeeratePerKw): Satoshi {
+        fun computeSpliceContribution(isInitiator: Boolean, commitment: Commitment, walletInputs: List<WalletState.Utxo>, localOutputs: List<TxOut>, liquidityPurchase: Boolean, targetFeerate: FeeratePerKw): Satoshi {
             val weight = computeWeightPaid(isInitiator, commitment, walletInputs, localOutputs)
             val fees = Transactions.weight2fee(targetFeerate, weight)
             return when {
@@ -257,7 +257,7 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                 // The maximum amount we can use for on-chain fees is our current balance, which is fine because:
                 //  - this will simply result in a splice transaction with a lower feerate than expected
                 //  - liquidity fees will be paid later from future HTLCs relayed to us
-                walletInputs.isEmpty() && localOutputs.isEmpty() -> -(fees.min(commitment.localCommit.spec.toLocal.truncateToSatoshi()))
+                walletInputs.isEmpty() && localOutputs.isEmpty() && liquidityPurchase -> -(fees.min(commitment.localCommit.spec.toLocal.truncateToSatoshi()))
                 else -> walletInputs.map { it.amount }.sum() - localOutputs.map { it.amount }.sum() - fees
             }
         }

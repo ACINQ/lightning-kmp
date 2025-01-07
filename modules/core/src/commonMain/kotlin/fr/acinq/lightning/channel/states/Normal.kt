@@ -383,6 +383,7 @@ data class Normal(
                                             commitment = parentCommitment,
                                             walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                             localOutputs = spliceStatus.command.spliceOutputs,
+                                            liquidityPurchase = spliceStatus.command.requestRemoteFunding != null,
                                             targetFeerate = spliceStatus.command.feerate
                                         )
                                         val commitTxFees = when {
@@ -543,7 +544,14 @@ data class Normal(
                                         channelKeys = channelKeys(),
                                         swapInKeys = keyManager.swapInOnChainWallet,
                                         params = fundingParams,
-                                        sharedUtxo = Pair(sharedInput, SharedFundingInputBalances(toLocal = parentCommitment.localCommit.spec.toLocal, toRemote = parentCommitment.localCommit.spec.toRemote, toHtlcs = parentCommitment.localCommit.spec.htlcs.map { it.add.amountMsat }.sum())),
+                                        sharedUtxo = Pair(
+                                            sharedInput,
+                                            SharedFundingInputBalances(
+                                                toLocal = parentCommitment.localCommit.spec.toLocal,
+                                                toRemote = parentCommitment.localCommit.spec.toRemote,
+                                                toHtlcs = parentCommitment.localCommit.spec.htlcs.map { it.add.amountMsat }.sum()
+                                            )
+                                        ),
                                         walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                         localOutputs = spliceStatus.command.spliceOutputs,
                                         liquidityPurchase = liquidityPurchase.value,
