@@ -227,36 +227,11 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 }
                             }
                         }
-                        // negotiation restarts from the beginning, and is initialized by the initiator
-                        // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
-                        is Negotiating ->
-                            if (state.paysClosingFees) {
-                                // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch
-                                val (closingTx, closingSigned) = Helpers.Closing.makeFirstClosingTx(
-                                    channelKeys(),
-                                    state.commitments.latest,
-                                    state.localShutdown.scriptPubKey.toByteArray(),
-                                    state.remoteShutdown.scriptPubKey.toByteArray(),
-                                    state.closingFeerates ?: ClosingFeerates(currentOnChainFeerates().mutualCloseFeerate)
-                                )
-                                val closingTxProposed1 = state.closingTxProposed + listOf(listOf(ClosingTxProposed(closingTx, closingSigned)))
-                                val nextState = state.copy(closingTxProposed = closingTxProposed1)
-                                val actions = listOf(
-                                    ChannelAction.Storage.StoreState(nextState),
-                                    ChannelAction.Message.Send(state.localShutdown),
-                                    ChannelAction.Message.Send(closingSigned)
-                                )
-                                Pair(nextState, actions)
-                            } else {
-                                // we start a new round of negotiation
-                                val closingTxProposed1 = if (state.closingTxProposed.last().isEmpty()) state.closingTxProposed else state.closingTxProposed + listOf(listOf())
-                                val nextState = state.copy(closingTxProposed = closingTxProposed1)
-                                val actions = listOf(
-                                    ChannelAction.Storage.StoreState(nextState),
-                                    ChannelAction.Message.Send(state.localShutdown)
-                                )
-                                Pair(nextState, actions)
-                            }
+                        is Negotiating -> {
+                            // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+                            val shutdown = Shutdown(channelId, state.localScript)
+                            Pair(state, listOf(ChannelAction.Message.Send(shutdown)))
+                        }
                         is Closing, is Closed, is WaitForRemotePublishFutureCommitment -> unhandled(cmd)
                     }
                     Pair(nextState, buildList {
@@ -273,21 +248,21 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
             is ChannelCommand.WatchReceived -> when (state) {
                 is ChannelStateWithCommitments -> when (val watch = cmd.watch) {
                     is WatchSpentTriggered -> when {
-                        state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.spendingTx.txid } -> {
-                            logger.info { "closing tx published: closingTxId=${watch.spendingTx.txid}" }
-                            val closingTx = state.getMutualClosePublished(watch.spendingTx)
-                            val nextState = Closing(
-                                state.commitments,
-                                waitingSinceBlock = currentBlockHeight.toLong(),
-                                mutualCloseProposed = state.closingTxProposed.flatten().map { it.unsignedTx },
-                                mutualClosePublished = listOf(closingTx)
-                            )
+                        state is Negotiating && state.publishedClosingTxs.any { it.tx.txid == watch.spendingTx.txid } -> {
+                            // This is one of the transactions we already published, we watch for confirmations.
+                            val actions = listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(state.commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed)))
+                            Pair(this@Syncing, actions)
+                        }
+                        state is Negotiating && state.proposedClosingTxs.flatMap { it.all }.any { it.tx.txid == watch.spendingTx.txid } -> {
+                            // They published one of our closing transactions without sending us their signature.
+                            val closingTx = state.run { getMutualClosePublished(watch.spendingTx) }
+                            val nextState = state.copy(publishedClosingTxs = state.publishedClosingTxs + closingTx)
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
                                 ChannelAction.Blockchain.PublishTx(closingTx),
                                 ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(state.commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed))
                             )
-                            Pair(nextState, actions)
+                            Pair(this@Syncing.copy(state = nextState), actions)
                         }
                         else -> {
                             val (nextState, actions) = state.run { handlePotentialForceClose(watch) }
@@ -318,10 +293,21 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 }
                             }
                         }
-                        else -> {
-                            logger.warning { "unexpected watch-confirmed while syncing: ${watch.event}" }
-                            Pair(this@Syncing, listOf())
+                        WatchConfirmed.ClosingTxConfirmed -> when {
+                            state is Negotiating && state.publishedClosingTxs.any { it.tx.txid == watch.tx.txid } -> {
+                                // One of our published transactions confirmed, the channel is now closed.
+                                state.run { completeMutualClose(publishedClosingTxs.first { it.tx.txid == watch.tx.txid }) }
+                            }
+                            state is Negotiating && state.proposedClosingTxs.flatMap { it.all }.any { it.tx.txid == watch.tx.txid } -> {
+                                // A transaction that we proposed for which they didn't send us their signature was confirmed, the channel is now closed.
+                                state.run { completeMutualClose(getMutualClosePublished(watch.tx)) }
+                            }
+                            else -> {
+                                logger.warning { "unknown closing transaction confirmed with txId=${watch.tx.txid}" }
+                                Pair(this@Syncing, listOf())
+                            }
                         }
+                        else -> Pair(this@Syncing, listOf())
                     }
                 }
                 is WaitForFundingSigned -> Pair(this@Syncing, listOf())
