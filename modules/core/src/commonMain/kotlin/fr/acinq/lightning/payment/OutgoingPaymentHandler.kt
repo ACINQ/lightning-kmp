@@ -9,8 +9,8 @@ import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.PacketAndSecrets
 import fr.acinq.lightning.crypto.sphinx.SharedSecrets
-import fr.acinq.lightning.db.HopDesc
 import fr.acinq.lightning.db.LightningOutgoingPayment
+import fr.acinq.lightning.db.LightningOutgoingPayment.Part.HopDesc
 import fr.acinq.lightning.db.OutgoingPaymentsDb
 import fr.acinq.lightning.io.PayInvoice
 import fr.acinq.lightning.io.WrappedChannelCommand

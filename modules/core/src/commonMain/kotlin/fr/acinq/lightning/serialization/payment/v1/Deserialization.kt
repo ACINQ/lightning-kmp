@@ -188,7 +188,7 @@ object Deserialization {
                 id = readUuid(),
                 amount = readNumber().msat,
                 route = readCollection {
-                    HopDesc(
+                    LightningOutgoingPayment.Part.HopDesc(
                         nodeId = readPublicKey(),
                         nextNodeId = readPublicKey(),
                         shortChannelId = readNullable { ShortChannelId(readNumber()) }

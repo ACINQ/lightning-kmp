@@ -394,6 +394,13 @@ data class LightningOutgoingPayment(
         val status: Status,
         val createdAt: Long = currentTimestampMillis()
     ) {
+        data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
+            override fun toString(): String = when (shortChannelId) {
+                null -> "$nodeId->$nextNodeId"
+                else -> "$nodeId->$shortChannelId->$nextNodeId"
+            }
+        }
+
         sealed class Status {
             data object Pending : Status()
             sealed class Completed : Status() {
@@ -567,11 +574,4 @@ data class ChannelCloseOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
     override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
-}
-
-data class HopDesc(val nodeId: PublicKey, val nextNodeId: PublicKey, val shortChannelId: ShortChannelId? = null) {
-    override fun toString(): String = when (shortChannelId) {
-        null -> "$nodeId->$nextNodeId"
-        else -> "$nodeId->$shortChannelId->$nextNodeId"
-    }
 }
