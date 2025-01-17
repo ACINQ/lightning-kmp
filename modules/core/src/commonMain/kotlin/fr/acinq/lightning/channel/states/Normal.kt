@@ -383,7 +383,7 @@ data class Normal(
                                             commitment = parentCommitment,
                                             walletInputs = spliceStatus.command.spliceIn?.walletInputs ?: emptyList(),
                                             localOutputs = spliceStatus.command.spliceOutputs,
-                                            liquidityPurchase = spliceStatus.command.requestRemoteFunding != null,
+                                            isLiquidityPurchase = spliceStatus.command.requestRemoteFunding != null,
                                             targetFeerate = spliceStatus.command.feerate
                                         )
                                         val commitTxFees = when {
