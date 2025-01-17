@@ -187,6 +187,34 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `splice cpfp -- not enough funds`() {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 75_000.sat, bobFundingAmount = 25_000.sat)
+        val (alice1, bob1) = spliceOut(alice, bob, 65_000.sat)
+        // After the splice-out, Alice doesn't have enough funds to pay the mining fees to CPFP.
+        val spliceCpfp = ChannelCommand.Commitment.Splice.Request(
+            replyTo = CompletableDeferred(),
+            spliceIn = null,
+            spliceOut = null,
+            requestRemoteFunding = null,
+            currentFeeCredit = 0.msat,
+            feerate = FeeratePerKw(20_000.sat),
+            origins = listOf(),
+        )
+        val (alice2, actionsAlice2) = alice1.process(spliceCpfp)
+        val aliceStfu = actionsAlice2.findOutgoingMessage<Stfu>()
+        val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(aliceStfu))
+        val bobStfu = actionsBob2.findOutgoingMessage<Stfu>()
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(bobStfu))
+        actionsAlice3.hasOutgoingMessage<TxAbort>()
+        assertIs<Normal>(alice3.state)
+        assertEquals(SpliceStatus.Aborted, alice3.state.spliceStatus)
+        runBlocking {
+            val response = spliceCpfp.replyTo.await()
+            assertIs<ChannelFundingResponse.Failure.InsufficientFunds>(response)
+        }
+    }
+
+    @Test
     fun `splice to purchase inbound liquidity`() {
         val (alice, bob) = reachNormal()
         val fundingRates = LiquidityAds.WillFundRates(
