@@ -34,11 +34,12 @@ import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
-class ClosingTestsCommon : LightningTestSuite() {
+open class ClosingTestsCommon : LightningTestSuite() {
+    open val channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootStaging
 
     @Test
     fun `recv ChannelCommand_Htlc_Add`() {
-        val (alice, _) = reachNormal()
+        val (alice, _) = reachNormal(channelType)
         val (alice1, _) = localClose(alice)
         val (_, actions) = alice1.process(
             ChannelCommand.Htlc.Add(
@@ -121,7 +122,19 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelSpent -- local commit`() {
-        val (aliceNormal, _) = reachNormal()
+        val (aliceNormal, _) = reachNormal(channelType)
+        val (aliceClosing, localCommitPublished) = localClose(aliceNormal)
+
+        // actual test starts here
+        // we are notified afterwards from our watcher about the tx that we just published
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(aliceNormal.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), localCommitPublished.commitTx)))
+        assertEquals(aliceClosing, alice1)
+        assertTrue(actions1.isEmpty())
+    }
+
+    @Test
+    fun `recv ChannelSpent -- local commit -- simple taproot channels`() {
+        val (aliceNormal, _) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
         val (aliceClosing, localCommitPublished) = localClose(aliceNormal)
 
         // actual test starts here
@@ -133,7 +146,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- local commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, localCommitPublished, htlcs) = run {
             // alice sends an htlc to bob
             val (nodes1, _, htlc1) = addHtlc(50_000_000.msat, alice0, bob0)
@@ -202,9 +215,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         actions3.find<ChannelAction.Storage.SetLocked>().also { assertEquals(localCommitPublished.commitTx.txid, it.txId) }
     }
 
-    @Test
-    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment`() {
-        val (alice0, bob0) = reachNormal()
+    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment -- internal`(channelType: ChannelType.SupportedChannelType) {
+        val (alice0, bob0) = reachNormal(channelType)
         // alice sends an htlc to bob
         val (aliceClosing, localCommitPublished) = run {
             val (nodes1, preimage, _) = addHtlc(30_000_000.msat, alice0, bob0)
@@ -246,8 +258,18 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment`() {
+        `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment -- internal`(ChannelType.SupportedChannelType.SimpleTaprootStaging)
+    }
+
+    @Test
+    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment -- simple taproot channels`() {
+        `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment -- internal`(ChannelType.SupportedChannelType.SimpleTaprootStaging)
+    }
+
+    @Test
     fun `recv ClosingTxConfirmed -- local commit with htlcs only signed by local`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val aliceCommitTx = alice0.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (aliceClosing, localCommitPublished, add) = run {
             // alice sends an htlc to bob
@@ -277,7 +299,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- local commit -- followed by CMD_FULFILL_HTLC`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, localCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
             val (nodes1, preimage, htlc) = addHtlc(110_000_000.msat, bob0, alice0)
@@ -320,7 +342,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- local commit --  followed by UpdateFailHtlc not acked by remote`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, localCommitPublished, htlc) = run {
             // An HTLC Alice -> Bob is cross-signed that will be failed later.
             val (nodes1, _, htlc) = addHtlc(25_000_000.msat, alice0, bob0)
@@ -360,7 +382,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_OUTPUT_SPENT -- local commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, localCommitPublished, preimage) = run {
             val (nodes1, preimage, _) = addHtlc(20_000_000.msat, alice0, bob0)
             val (alice1, bob1) = nodes1
@@ -428,7 +450,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelEvent Restore -- local commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, localCommitPublished) = run {
             // alice sends an htlc to bob
             val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
@@ -473,7 +495,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelSpent -- remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val bobCommitTx = bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx
         assertEquals(4, bobCommitTx.txOut.size) // main outputs and anchors
         val (_, remoteCommitPublished) = remoteClose(bobCommitTx, alice0)
@@ -484,7 +506,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, remoteCommitPublished, htlcs) = run {
             // alice sends an htlc to bob
             val (nodes1, _, htlc1) = addHtlc(50_000_000.msat, alice0, bob0)
@@ -557,7 +579,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- remote commit with multiple htlcs for the same payment`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         // alice sends an htlc to bob
         val (aliceClosing, remoteCommitPublished) = run {
             val (nodes1, preimage, _) = addHtlc(30_000_000.msat, alice0, bob0)
@@ -588,7 +610,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- remote commit with htlcs only signed by local in next remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val bobCommitTx = bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (aliceClosing, remoteCommitPublished, add) = run {
             // alice sends an htlc to bob
@@ -616,7 +638,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- remote commit --  followed by CMD_FULFILL_HTLC`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, remoteCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
             val (nodes1, preimage, htlc) = addHtlc(110_000_000.msat, bob0, alice0)
@@ -658,7 +680,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- remote commit -- alternative feerate`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (bobClosing, remoteCommitPublished) = run {
             val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
             val (alice1, bob1) = nodes1
@@ -674,7 +696,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigAlice))
             val revBob = actionsBob6.hasOutgoingMessage<RevokeAndAck>()
             val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(revBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), commitSigBob.alternativFeerateSigsOrPartialSigs.first())
             remoteClose(alternativeCommitTx, bob6)
         }
 
@@ -690,7 +712,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_OUTPUT_SPENT -- remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, remoteCommitPublished, preimage) = run {
             val (nodes1, rb1, addAlice1) = addHtlc(20_000_000.msat, alice0, bob0)
             val (alice1, bob1) = nodes1
@@ -769,7 +791,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelEvent Restore -- remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, remoteCommitPublished) = run {
             // alice sends an htlc to bob
             val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
@@ -812,7 +834,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelSpent -- next remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         // alice sends an htlc to bob
         val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
         val (alice1, bob1) = nodes1
@@ -838,7 +860,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- next remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         // alice sends an htlc to bob
         val (aliceClosing, remoteCommitPublished) = run {
             val (nodes1, preimage, _) = addHtlc(30_000_000.msat, alice0, bob0)
@@ -879,7 +901,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- next remote commit -- followed by CMD_FULFILL_HTLC`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, remoteCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
             val (nodes1, preimage, htlc) = addHtlc(110_000_000.msat, bob0, alice0)
@@ -931,7 +953,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- next remote commit -- alternative feerate`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (bobClosing, remoteCommitPublished) = run {
             val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
             val (alice1, bob1) = nodes1
@@ -940,7 +962,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
             val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
             val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), commitSigBob.alternativFeerateSigsOrPartialSigs.first())
             remoteClose(alternativeCommitTx, bob4)
         }
 
@@ -956,7 +978,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_OUTPUT_SPENT -- next remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, remoteCommitPublished) = run {
             val (nodes1, rb1, addAlice1) = addHtlc(20_000_000.msat, alice0, bob0)
             val (alice1, bob1) = nodes1
@@ -1039,7 +1061,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelEvent Restore -- next remote commit`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         val (aliceClosing, remoteCommitPublished) = run {
             // alice sends an htlc to bob
             val (nodes1, preimage, _) = addHtlc(30_000_000.msat, alice0, bob0)
@@ -1395,7 +1417,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ClosingTxConfirmed -- one revoked tx + pending htlcs`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType)
         // bob's first commit tx doesn't contain any htlc
         assertEquals(4, bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx.txOut.size) // 2 main outputs + 2 anchors
 
@@ -1456,9 +1478,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(addSettledFails.all { it.result is ChannelAction.HtlcResult.Fail.OnChainFail })
     }
 
-    @Test
-    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx`() {
-        val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
+    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx -- internal`(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs) {
+        val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose(channelType)
 
         // bob publishes one of his revoked txs
         val bobRevokedTx = bobCommitTxs[2]
@@ -1564,6 +1585,16 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx`() {
+        `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx -- internal`()
+    }
+
+    @Test
+    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx -- simple taproot channels`() {
+        `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx -- internal`(ChannelType.SupportedChannelType.SimpleTaprootStaging)
+    }
+
+    @Test
     fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published aggregated htlc tx`() {
         val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
 
@@ -1631,7 +1662,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelReestablish`() {
-        val (alice, bob) = reachNormal()
+        val (alice, bob) = reachNormal(channelType)
         val (alice1, lcp) = localClose(alice)
         val bobCurrentPerCommitmentPoint = bob.commitments.params.localParams.channelKeys(bob.ctx.keyManager).commitmentPoint(bob.commitments.localCommitIndex)
         val channelReestablish = ChannelReestablish(bob.channelId, 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint)
@@ -1646,7 +1677,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv NewBlock -- an htlc timed out`() {
-        val (alice, bob) = reachNormal()
+        val (alice, bob) = reachNormal(channelType)
         val (aliceClosing, htlc) = run {
             val (nodes1, _, htlc) = addHtlc(30_000_000.msat, alice, bob)
             val (alice1, bob1) = nodes1
@@ -1665,7 +1696,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv Disconnected`() {
-        val (alice, _) = reachNormal()
+        val (alice, _) = reachNormal(channelType)
         val (alice1, _) = localClose(alice)
         val (alice2, _) = alice1.process(ChannelCommand.Disconnected)
         assertIs<Closing>(alice2.state)
@@ -1674,8 +1705,8 @@ class ClosingTestsCommon : LightningTestSuite() {
     companion object {
         data class RevokedCloseFixture(val alice: LNChannel<Normal>, val bob: LNChannel<Normal>, val bobRevokedTxs: List<PublishableTxs>, val htlcsAlice: List<UpdateAddHtlc>, val htlcsBob: List<UpdateAddHtlc>)
 
-        fun prepareRevokedClose(): RevokedCloseFixture {
-            val (aliceInit, bobInit) = reachNormal()
+        fun prepareRevokedClose(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs): RevokedCloseFixture {
+            val (aliceInit, bobInit) = reachNormal(channelType)
             var mutableAlice: LNChannel<Normal> = aliceInit
             var mutableBob: LNChannel<Normal> = bobInit
 
@@ -1776,5 +1807,8 @@ class ClosingTestsCommon : LightningTestSuite() {
             actions.has<ChannelAction.Storage.SetLocked>()
         }
     }
+}
 
+class SimpleTaprootChannelsClosingTestsCommon : ClosingTestsCommon() {
+    override val channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging
 }

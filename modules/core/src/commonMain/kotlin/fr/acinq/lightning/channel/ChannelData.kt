@@ -11,6 +11,7 @@ import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.transactions.Scripts
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.toMilliSatoshi
 
@@ -195,10 +196,25 @@ data class RemoteCommitPublished(
 
     fun isClaimHtlcTimeout(tx: Transaction): Boolean {
         return tx.txIn
-            .filter { claimHtlcTxs[it.outPoint] is ClaimHtlcTx.ClaimHtlcTimeoutTx }
-            .map { it.witness }
-            .mapNotNull(Scripts.extractPaymentHashFromClaimHtlcTimeout())
-            .isNotEmpty()
+            .asSequence()
+            .map { it to claimHtlcTxs[it.outPoint] }
+            .filter { it.second != null }
+            .filterIsInstance<Pair<TxIn, ClaimHtlcTx.ClaimHtlcTimeoutTx>>()
+            .map {
+                when (it.second.input) {
+                    is Transactions.InputInfo.SegwitInput ->
+                        it.first.witness.stack.size == 3 && it.first.witness.stack[1].isEmpty()
+
+                    is Transactions.InputInfo.TaprootInput ->
+                        when (val redeemPath = (it.second.input as Transactions.InputInfo.TaprootInput).redeemPath) {
+                            is Transactions.InputInfo.RedeemPath.ScriptPath ->
+                                Scripts.Taproot.witnessSpendsLeftBranch(it.first.witness, redeemPath.scriptTree)
+
+                            else -> false
+                        }
+                }
+            }
+            .contains(true)
     }
 
     fun isClaimHtlcSuccess(tx: Transaction): Boolean {

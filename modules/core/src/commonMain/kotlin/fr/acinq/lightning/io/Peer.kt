@@ -1441,6 +1441,11 @@ class Peer(
                                             // We ask our peer to pay the commit tx fees.
                                             val localParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
                                             val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
+                                            val channelType = if (Features.canUseFeature(localParams.features, theirInit!!.features, Feature.SimpleTaprootStaging)) {
+                                                ChannelType.SupportedChannelType.SimpleTaprootStaging
+                                            } else {
+                                                ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
+                                            }
                                             val initCommand = ChannelCommand.Init.Initiator(
                                                 replyTo = CompletableDeferred(),
                                                 fundingAmount = localFundingAmount,
@@ -1451,7 +1456,7 @@ class Peer(
                                                 remoteInit = theirInit!!,
                                                 channelFlags = channelFlags,
                                                 channelConfig = ChannelConfig.standard,
-                                                channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+                                                channelType = channelType,
                                                 requestRemoteFunding = requestRemoteFunding,
                                                 channelOrigin = Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), fees),
                                             )
@@ -1556,6 +1561,11 @@ class Peer(
                             }
                             else -> {
                                 logger.info { "requesting on-the-fly channel for paymentHash=${cmd.paymentHash} feerate=$fundingFeerate fee=${totalFees.total} paymentType=${paymentDetails.paymentType}" }
+                                val channelType = if (Features.canUseFeature(localParams.features, theirInit!!.features, Feature.SimpleTaprootStaging)) {
+                                    ChannelType.SupportedChannelType.SimpleTaprootStaging
+                                } else {
+                                    ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
+                                }
                                 val (state, actions) = WaitForInit.process(
                                     ChannelCommand.Init.Initiator(
                                         replyTo = CompletableDeferred(),
@@ -1567,7 +1577,7 @@ class Peer(
                                         remoteInit = theirInit!!,
                                         channelFlags = channelFlags,
                                         channelConfig = ChannelConfig.standard,
-                                        channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+                                        channelType = channelType,
                                         requestRemoteFunding = LiquidityAds.RequestFunding(cmd.requestedAmount, cmd.fundingRate, paymentDetails),
                                         channelOrigin = Origin.OffChainPayment(cmd.preimage, cmd.paymentAmount, totalFees),
                                     )
