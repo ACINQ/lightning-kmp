@@ -45,10 +45,11 @@ object Deserialization {
     private fun Input.readIncomingPayment(): IncomingPayment = when (val discriminator = read()) {
         0x00 -> readBolt11IncomingPayment()
         0x01 -> readBolt12IncomingPayment()
-        0x02 -> readNewChannelIncomingPayment()
+        // 0x02 -> do not use
         0x03 -> readSpliceInIncomingPayment()
         0x04 -> readLegacyPayToOpenIncomingPayment()
         0x05 -> readLegacySwapInIncomingPayment()
+        0x06 -> readNewChannelIncomingPayment()
         else -> error("unknown discriminator $discriminator for class ${IncomingPayment::class}")
     }
 
@@ -89,8 +90,9 @@ object Deserialization {
     private fun Input.readNewChannelIncomingPayment(): NewChannelIncomingPayment = NewChannelIncomingPayment(
         id = readUuid(),
         amountReceived = readNumber().msat,
-        serviceFee = readNumber().msat,
         miningFee = readNumber().sat,
+        serviceFee = readNumber().msat,
+        liquidityPurchase = readNullable { readLiquidityPurchase() },
         channelId = readByteVector32(),
         txId = readTxId(),
         localInputs = readCollection { readOutPoint() }.toSet(),

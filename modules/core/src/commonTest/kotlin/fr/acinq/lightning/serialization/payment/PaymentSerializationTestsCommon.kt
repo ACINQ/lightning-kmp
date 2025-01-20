@@ -96,8 +96,9 @@ class PaymentSerializationTestsCommon {
             NewChannelIncomingPayment(
                 id = UUID.randomUUID(),
                 amountReceived = 100_000_000.msat,
-                serviceFee = 100_000.msat,
                 miningFee = 5_000.sat,
+                serviceFee = 100_000.msat,
+                liquidityPurchase = null,
                 channelId = randomBytes32(),
                 txId = TxId(randomBytes32()),
                 localInputs = setOf(OutPoint(TxId(randomBytes32()), 1)),

@@ -201,10 +201,10 @@ data class Bolt12IncomingPayment(
 /** Trustless swap-in (dual-funding or splice-in) */
 sealed class OnChainIncomingPayment : IncomingPayment() {
     abstract override val id: UUID
-    /** Fees paid to Lightning Service Provider for this on-chain transaction. */
-    abstract val serviceFee: MilliSatoshi
-    /** Feed paid to bitcoin miners for processing the on-chain operation. */
+    /** Total fee paid to bitcoin miners for this operation, including liquidity-related mining fee if any. */
     abstract val miningFee: Satoshi
+    /** Fee paid to the Lightning Service Provider for this operation. */
+    abstract val serviceFee: MilliSatoshi
     override val fees: MilliSatoshi get() = serviceFee + miningFee.toMilliSatoshi()
     abstract val channelId: ByteVector32
     abstract val txId: TxId
@@ -237,12 +237,14 @@ sealed class OnChainIncomingPayment : IncomingPayment() {
  * Payment was received via a new channel opened to us.
  *
  * @param amountReceived Our side of the balance of this channel when it's created. This is the amount received after the creation fees are applied.
+ * @param serviceFee The service fee could be computed from the liquidity purchase, so this field is redundant, but it is useful for backward compatibility (before we used liquidity ads).
  */
 data class NewChannelIncomingPayment(
     override val id: UUID,
     override val amountReceived: MilliSatoshi,
-    override val serviceFee: MilliSatoshi,
     override val miningFee: Satoshi,
+    override val serviceFee: MilliSatoshi,
+    val liquidityPurchase: LiquidityAds.Purchase?,
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val localInputs: Set<OutPoint>,

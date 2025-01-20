@@ -48,7 +48,7 @@ object Serialization {
             write(0x01); writeBolt12IncomingPayment(o)
         }
         is NewChannelIncomingPayment -> {
-            write(0x02); writeNewChannelIncomingPayment(o)
+            write(0x06); writeNewChannelIncomingPayment(o)
         }
         is SpliceInIncomingPayment -> {
             write(0x03); writeSpliceInIncomingPayment(o)
@@ -97,8 +97,9 @@ object Serialization {
     private fun Output.writeNewChannelIncomingPayment(o: NewChannelIncomingPayment) = o.run {
         writeUuid(id)
         writeNumber(amountReceived.toLong())
-        writeNumber(serviceFee.toLong())
         writeNumber(miningFee.toLong())
+        writeNumber(serviceFee.toLong())
+        writeNullable(liquidityPurchase) { writeLiquidityPurchase(it) }
         writeByteVector32(channelId)
         writeTxId(txId)
         writeCollection(localInputs) { writeOutPoint(it) }

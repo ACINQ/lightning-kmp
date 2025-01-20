@@ -851,8 +851,9 @@ class Peer(
                                 NewChannelIncomingPayment(
                                     id = UUID.randomUUID(),
                                     amountReceived = action.amountReceived,
-                                    serviceFee = action.serviceFee,
                                     miningFee = action.miningFee,
+                                    serviceFee = action.serviceFee,
+                                    liquidityPurchase = action.liquidityPurchase,
                                     channelId = channelId,
                                     txId = action.txId,
                                     localInputs = action.localInputs,
