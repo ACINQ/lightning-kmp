@@ -111,6 +111,17 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv BITCOIN_TX_CONFIRMED -- mutual close -- simple taproot channel`() {
+        val (alice0, _, _) = initMutualClose(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
+        val mutualCloseTx = alice0.state.mutualClosePublished.last()
+
+        // actual test starts here
+        val (alice1, actions1) = alice0.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(ByteVector32.Zeroes, WatchConfirmed.ClosingTxConfirmed, 0, 0, mutualCloseTx.tx)))
+        assertIs<Closed>(alice1.state)
+        assertContains(actions1, ChannelAction.Storage.SetLocked(mutualCloseTx.tx.txid))
+    }
+
+    @Test
     fun `recv ClosingTxConfirmed -- mutual close with external btc address`() {
         val pubKey = Lightning.randomKey().publicKey()
         val bobBtcAddr = computeP2PkhAddress(pubKey, TestConstants.Bob.nodeParams.chainHash)
@@ -216,6 +227,18 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv ChannelSpent -- local commit -- simple taproot channels`() {
+        val (aliceNormal, _) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootStaging)
+        val (aliceClosing, localCommitPublished) = localClose(aliceNormal)
+
+        // actual test starts here
+        // we are notified afterwards from our watcher about the tx that we just published
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(aliceNormal.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), localCommitPublished.commitTx)))
+        assertEquals(aliceClosing, alice1)
+        assertTrue(actions1.isEmpty())
+    }
+
+    @Test
     fun `recv ClosingTxConfirmed -- local commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, htlcs) = run {
@@ -286,9 +309,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         actions3.find<ChannelAction.Storage.SetLocked>().also { assertEquals(localCommitPublished.commitTx.txid, it.txId) }
     }
 
-    @Test
-    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment`() {
-        val (alice0, bob0) = reachNormal()
+    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment -- internal`(channelType: ChannelType.SupportedChannelType) {
+        val (alice0, bob0) = reachNormal(channelType)
         // alice sends an htlc to bob
         val (aliceClosing, localCommitPublished) = run {
             val (nodes1, preimage, _) = addHtlc(30_000_000.msat, alice0, bob0)
@@ -327,6 +349,16 @@ class ClosingTestsCommon : LightningTestSuite() {
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 3, localCommitPublished.claimHtlcDelayedTxs[3].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
+    }
+
+    @Test
+    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment`() {
+        `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment -- internal`(ChannelType.SupportedChannelType.SimpleTaprootStaging)
+    }
+
+    @Test
+    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment -- simple taproot channels`() {
+        `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment -- internal`(ChannelType.SupportedChannelType.SimpleTaprootStaging)
     }
 
     @Test
@@ -760,7 +792,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigAlice))
             val revBob = actionsBob6.hasOutgoingMessage<RevokeAndAck>()
             val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(revBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), commitSigBob.alternativFeerateSigsOrPartialSigs.first())
             remoteClose(alternativeCommitTx, bob6)
         }
 
@@ -1026,7 +1058,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
             val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
             val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), commitSigBob.alternativFeerateSigsOrPartialSigs.first())
             remoteClose(alternativeCommitTx, bob4)
         }
 
@@ -1542,9 +1574,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(addSettledFails.all { it.result is ChannelAction.HtlcResult.Fail.OnChainFail })
     }
 
-    @Test
-    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx`() {
-        val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
+    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx -- internal`(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs) {
+        val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose(channelType)
 
         // bob publishes one of his revoked txs
         val bobRevokedTx = bobCommitTxs[2]
@@ -1647,6 +1678,16 @@ class ClosingTestsCommon : LightningTestSuite() {
             )
             confirmWatchedTxs(alice4, watchConfirmed)
         }
+    }
+
+    @Test
+    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx`() {
+        `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx -- internal`()
+    }
+
+    @Test
+    fun `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx -- simple taproot channels`() {
+        `recv BITCOIN_OUTPUT_SPENT -- one revoked tx + counterparty published HtlcSuccess tx -- internal`(ChannelType.SupportedChannelType.SimpleTaprootStaging)
     }
 
     @Test
@@ -1766,8 +1807,8 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     companion object {
-        fun initMutualClose(withPayments: Boolean = false): Triple<LNChannel<Closing>, LNChannel<Closing>, List<PublishableTxs>> {
-            val (aliceInit, bobInit) = reachNormal()
+        fun initMutualClose(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs, withPayments: Boolean = false): Triple<LNChannel<Closing>, LNChannel<Closing>, List<PublishableTxs>> {
+            val (aliceInit, bobInit) = reachNormal(channelType = channelType)
             var mutableAlice: LNChannel<Normal> = aliceInit
             var mutableBob: LNChannel<Normal> = bobInit
 
@@ -1808,8 +1849,8 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         data class RevokedCloseFixture(val alice: LNChannel<Normal>, val bob: LNChannel<Normal>, val bobRevokedTxs: List<PublishableTxs>, val htlcsAlice: List<UpdateAddHtlc>, val htlcsBob: List<UpdateAddHtlc>)
 
-        fun prepareRevokedClose(): RevokedCloseFixture {
-            val (aliceInit, bobInit) = reachNormal()
+        fun prepareRevokedClose(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs): RevokedCloseFixture {
+            val (aliceInit, bobInit) = reachNormal(channelType)
             var mutableAlice: LNChannel<Normal> = aliceInit
             var mutableBob: LNChannel<Normal> = bobInit
 
@@ -1910,5 +1951,4 @@ class ClosingTestsCommon : LightningTestSuite() {
             actions.has<ChannelAction.Storage.SetLocked>()
         }
     }
-
 }

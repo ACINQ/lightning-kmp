@@ -316,7 +316,7 @@ data class Closing(
                     // note spendingTx != Nil (that's a requirement of DATA_CLOSING)
                     val exc = FundingTxSpent(channelId, spendingTxs.first().txid)
                     val error = Error(channelId, exc.message)
-                    Pair(this@Closing, listOf(ChannelAction.Message.Send(error)))
+                    Pair(this@Closing, listOf(ChannelAction.Message.Send(error))) // README: we don't need to update nonces, we're already in CLOSING state
                 }
                 is Error -> {
                     logger.error { "peer sent error: ascii=${cmd.message.toAscii()} bin=${cmd.message.data.toHex()}" }

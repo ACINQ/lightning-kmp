@@ -104,7 +104,10 @@ data class WaitForFundingConfirmed(
                                         SharedFundingInputBalances(0.msat, 0.msat, 0.msat),
                                         toSend,
                                         previousFundingTxs.map { it.sharedTx },
-                                        commitments.latest.localCommit.spec.htlcs
+                                        commitments.latest.localCommit.spec.htlcs,
+                                        fundingTxIndex = commitments.latest.fundingTxIndex,
+                                        localCommitmentIndex = commitments.localCommitIndex,
+                                        remoteCommitmentIndex = commitments.remoteCommitIndex,
                                     )
                                     val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
                                     Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localContribution))))
@@ -134,7 +137,7 @@ data class WaitForFundingConfirmed(
                             latestFundingTx.fundingParams.dustLimit,
                             rbfStatus.command.targetFeerate
                         )
-                        when (val contributions = FundingContributions.create(channelKeys(), keyManager.swapInOnChainWallet, fundingParams, rbfStatus.command.walletInputs, null)) {
+                        when (val contributions = FundingContributions.create(channelKeys(), keyManager.swapInOnChainWallet, fundingParams, rbfStatus.command.walletInputs, null, isTaprootChannel = false)) { // FIXME
                             is Either.Left -> {
                                 logger.warning { "error creating funding contributions: ${contributions.value}" }
                                 Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
@@ -149,7 +152,11 @@ data class WaitForFundingConfirmed(
                                     0.msat,
                                     emptySet(),
                                     contributions.value,
-                                    previousFundingTxs.map { it.sharedTx }).send()
+                                    previousFundingTxs.map { it.sharedTx },
+                                    fundingTxIndex = commitments.latest.fundingTxIndex,
+                                    localCommitmentIndex = commitments.localCommitIndex,
+                                    remoteCommitmentIndex = commitments.remoteCommitIndex
+                                ).send()
                                 when (action) {
                                     is InteractiveTxSessionAction.SendMessage -> {
                                         val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
@@ -259,8 +266,8 @@ data class WaitForFundingConfirmed(
                     is Either.Left -> Pair(this@WaitForFundingConfirmed, listOf())
                     is Either.Right -> {
                         val (commitments1, commitment, actions) = res.value
-                        val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
-                        val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
+                        val channelReady = createChannelReady()
+                            //ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network
                         // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)

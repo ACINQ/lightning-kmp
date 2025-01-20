@@ -22,6 +22,7 @@ import fr.acinq.lightning.serialization.InputExtensions.readLightningMessage
 import fr.acinq.lightning.serialization.InputExtensions.readNullable
 import fr.acinq.lightning.serialization.InputExtensions.readNumber
 import fr.acinq.lightning.serialization.InputExtensions.readPublicKey
+import fr.acinq.lightning.serialization.InputExtensions.readPublicNonce
 import fr.acinq.lightning.serialization.InputExtensions.readString
 import fr.acinq.lightning.serialization.InputExtensions.readTxId
 import fr.acinq.lightning.serialization.common.liquidityads.Deserialization.readLiquidityPurchase
@@ -83,7 +84,7 @@ object Deserialization {
         signingSession = readInteractiveTxSigningSession(),
         remoteSecondPerCommitmentPoint = readPublicKey(),
         liquidityPurchase = readNullable { readLiquidityPurchase() },
-        channelOrigin = readNullable { readChannelOrigin() }
+        channelOrigin = readNullable { readChannelOrigin() },
     )
 
     private fun Input.readWaitForFundingSignedWithPushAmount(): WaitForFundingSigned {
@@ -248,6 +249,11 @@ object Deserialization {
 
     private fun Input.readSharedFundingInput(): SharedFundingInput = when (val discriminator = read()) {
         0x01 -> SharedFundingInput.Multisig2of2(
+            info = readInputInfo(),
+            fundingTxIndex = readNumber(),
+            remoteFundingPubkey = readPublicKey()
+        )
+        0x02 -> SharedFundingInput.Musig2Input(
             info = readInputInfo(),
             fundingTxIndex = readNumber(),
             remoteFundingPubkey = readPublicKey()
@@ -482,7 +488,7 @@ object Deserialization {
             txid = readTxId(),
             remotePerCommitmentPoint = readPublicKey()
         )
-        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommit, remoteCommit)
+        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommit, remoteCommit, null)
     }
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
@@ -669,7 +675,10 @@ object Deserialization {
             lastIndex = readNullable { readNumber() }
         )
         val remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
-        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
+        val nextRemoteNonces = if (params.isTaprootChannel) {
+            readCollection { readPublicNonce() }
+        } else listOf()
+        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData, nextRemoteNonces.toList())
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {
@@ -704,11 +713,23 @@ object Deserialization {
         toRemote = readNumber().msat
     )
 
-    private fun Input.readInputInfo(): Transactions.InputInfo = Transactions.InputInfo(
-        outPoint = readOutPoint(),
-        txOut = TxOut.read(readDelimitedByteArray()),
-        redeemScript = readDelimitedByteArray().toByteVector()
-    )
+    private fun Input.readScriptTree(): ScriptTree = ScriptTree.read(ByteArrayInput(readDelimitedByteArray()))
+
+    private fun Input.readRedeemPath(): Transactions.InputInfo.RedeemPath = when (val discriminator = read()) {
+        0x01 -> Transactions.InputInfo.RedeemPath.KeyPath(readNullable { readScriptTree() })
+        0x02 -> Transactions.InputInfo.RedeemPath.ScriptPath(readScriptTree(), readByteVector32())
+        else -> error("unknown discriminator $discriminator for class ${Transactions.InputInfo.RedeemPath::class}")
+    }
+
+    private fun Input.readInputInfo(): Transactions.InputInfo {
+        val outPoint = readOutPoint()
+        val txOut = TxOut.read(readDelimitedByteArray())
+        val redeemScript = readDelimitedByteArray().toByteVector()
+        return when (redeemScript.isEmpty()) {
+            true -> Transactions.InputInfo.TaprootInput(outPoint, txOut, XonlyPublicKey(readByteVector32()), readRedeemPath())
+            else -> Transactions.InputInfo.SegwitInput(outPoint, txOut, redeemScript)
+        }
+    }
 
     private fun Input.readOutPoint(): OutPoint = OutPoint.read(readDelimitedByteArray())
 
