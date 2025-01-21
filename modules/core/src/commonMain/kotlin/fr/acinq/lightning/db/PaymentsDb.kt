@@ -467,7 +467,7 @@ data class LightningOutgoingPayment(
 
 sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract override val id: UUID
-    abstract val miningFees: Satoshi
+    abstract val miningFee: Satoshi
     abstract val channelId: ByteVector32
     abstract val txId: TxId
     abstract override val createdAt: Long
@@ -499,43 +499,43 @@ data class SpliceOutgoingPayment(
     override val id: UUID,
     val recipientAmount: Satoshi,
     val address: String,
-    override val miningFees: Satoshi,
+    override val miningFee: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
-    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val amount: MilliSatoshi = (recipientAmount + miningFee).toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFee.toMilliSatoshi()
 }
 
 data class SpliceCpfpOutgoingPayment(
     override val id: UUID,
-    override val miningFees: Satoshi,
+    override val miningFee: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val amount: MilliSatoshi = miningFees.toMilliSatoshi()
-    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val amount: MilliSatoshi = miningFee.toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFee.toMilliSatoshi()
 }
 
 data class InboundLiquidityOutgoingPayment(
     override val id: UUID,
     override val channelId: ByteVector32,
     override val txId: TxId,
-    val localMiningFees: Satoshi,
+    val localMiningFee: Satoshi,
     val purchase: LiquidityAds.Purchase,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val miningFees: Satoshi = localMiningFees + purchase.fees.miningFee
-    val serviceFees: Satoshi = purchase.fees.serviceFee
-    override val fees: MilliSatoshi = (localMiningFees + purchase.fees.total).toMilliSatoshi()
+    override val miningFee: Satoshi = localMiningFee + purchase.fees.miningFee
+    val serviceFee: Satoshi = purchase.fees.serviceFee
+    override val fees: MilliSatoshi = (localMiningFee + purchase.fees.total).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
     val fundingFee: LiquidityAds.FundingFee = LiquidityAds.FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
     /**
@@ -547,10 +547,10 @@ data class InboundLiquidityOutgoingPayment(
      * The sum of [LiquidityAds.FundingFee.amount] will match [InboundLiquidityOutgoingPayment.feePaidFromFutureHtlc].
      */
     val feePaidFromChannelBalance = when (purchase.paymentDetails.paymentType) {
-        is LiquidityAds.PaymentType.FromChannelBalance -> ChannelManagementFees(miningFee = miningFees, serviceFee = purchase.fees.serviceFee)
-        is LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc -> ChannelManagementFees(miningFee = miningFees, serviceFee = purchase.fees.serviceFee)
-        is LiquidityAds.PaymentType.FromFutureHtlc -> ChannelManagementFees(miningFee = miningFees - purchase.fees.miningFee, serviceFee = 0.sat)
-        is LiquidityAds.PaymentType.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = miningFees - purchase.fees.miningFee, serviceFee = 0.sat)
+        is LiquidityAds.PaymentType.FromChannelBalance -> ChannelManagementFees(miningFee = miningFee, serviceFee = purchase.fees.serviceFee)
+        is LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc -> ChannelManagementFees(miningFee = miningFee, serviceFee = purchase.fees.serviceFee)
+        is LiquidityAds.PaymentType.FromFutureHtlc -> ChannelManagementFees(miningFee = miningFee - purchase.fees.miningFee, serviceFee = 0.sat)
+        is LiquidityAds.PaymentType.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = miningFee - purchase.fees.miningFee, serviceFee = 0.sat)
         is LiquidityAds.PaymentType.Unknown -> TODO()
     }
     val feePaidFromFutureHtlc = when (purchase.paymentDetails.paymentType) {
@@ -575,7 +575,7 @@ data class ChannelCloseOutgoingPayment(
     // So `isSentToDefaultAddress` means this default Phoenix address was used,
     // and is used by the UI to explain the situation to the user.
     val isSentToDefaultAddress: Boolean,
-    override val miningFees: Satoshi,
+    override val miningFee: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val createdAt: Long,
@@ -586,6 +586,6 @@ data class ChannelCloseOutgoingPayment(
     enum class ChannelClosingType {
         Mutual, Local, Remote, Revoked, Other;
     }
-    override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
-    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val amount: MilliSatoshi = (recipientAmount + miningFee).toMilliSatoshi()
+    override val fees: MilliSatoshi = miningFee.toMilliSatoshi()
 }

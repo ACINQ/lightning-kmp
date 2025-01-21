@@ -882,8 +882,8 @@ data class Normal(
                 val isPurchaseOnly = action.fundingTx.sharedTx.tx.let {
                     action.fundingTx.fundingParams.isInitiator && it.localInputs.isEmpty() && it.localOutputs.isEmpty() && it.remoteInputs.isNotEmpty()
                 }
-                val localMiningFees = if (isPurchaseOnly) action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() else 0.sat
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, localMiningFees = localMiningFees, purchase = purchase))
+                val localMiningFee = if (isPurchaseOnly) action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() else 0.sat
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, localMiningFee = localMiningFee, purchase = purchase))
                 add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
             }
             // NB: the following assumes that there can't be a splice-in and a splice-out simultaneously,
@@ -900,14 +900,14 @@ data class Normal(
             addAll(action.fundingTx.fundingParams.localOutputs.map { txOut ->
                 ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceOut(
                     amount = txOut.amount,
-                    miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
+                    miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
                     address = Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, txOut.publicKeyScript.toByteArray()).right ?: "unknown",
                     txId = action.fundingTx.txId
                 )
             })
             // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp.
             if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(miningFees = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(), txId = action.fundingTx.txId))
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp(miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(), txId = action.fundingTx.txId))
             }
             origins.filterIsInstance<Origin.OnChainWallet>().forEach { origin ->
                 add(ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees)))

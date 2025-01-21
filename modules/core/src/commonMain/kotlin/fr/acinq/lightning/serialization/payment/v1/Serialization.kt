@@ -314,7 +314,7 @@ object Serialization {
         writeUuid(id)
         writeNumber(recipientAmount.toLong())
         writeString(address)
-        writeNumber(miningFees.toLong())
+        writeNumber(miningFee.toLong())
         writeByteVector32(channelId)
         writeTxId(txId)
         writeNumber(createdAt)
@@ -324,7 +324,7 @@ object Serialization {
 
     private fun Output.writeSpliceCpfpOutgoingPayment(o: SpliceCpfpOutgoingPayment) = o.run {
         writeUuid(id)
-        writeNumber(miningFees.toLong())
+        writeNumber(miningFee.toLong())
         writeByteVector32(channelId)
         writeTxId(txId)
         writeNumber(createdAt)
@@ -336,7 +336,7 @@ object Serialization {
         writeUuid(id)
         writeByteVector32(channelId)
         writeTxId(txId)
-        writeNumber(localMiningFees.toLong())
+        writeNumber(localMiningFee.toLong())
         writeLiquidityPurchase(purchase)
         writeNumber(createdAt)
         writeNullable(confirmedAt) { writeNumber(it) }
@@ -348,7 +348,7 @@ object Serialization {
         writeNumber(recipientAmount.toLong())
         writeString(address)
         writeBoolean(isSentToDefaultAddress)
-        writeNumber(miningFees.toLong())
+        writeNumber(miningFee.toLong())
         writeByteVector32(channelId)
         writeTxId(txId)
         writeNumber(createdAt)
