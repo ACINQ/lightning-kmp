@@ -146,7 +146,7 @@ data class WaitForFundingSigned(
                     // We only count the mining fees that we must refund to our peer as part of the liquidity purchase.
                     // If we're also contributing to the funding transaction, the mining fees we pay for our inputs and
                     // outputs will be recorded in the ViaNewChannel incoming payment entry below.
-                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, localMiningFee = 0.sat, purchase = purchase))
+                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFee = purchase.fees.miningFee, purchase = purchase))
                 }
             }
             liquidityPurchaseRequestedBySelf?.let { add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(it))) }

@@ -286,7 +286,7 @@ object Deserialization {
         id = readUuid(),
         channelId = readByteVector32(),
         txId = readTxId(),
-        localMiningFee = readNumber().sat,
+        miningFee = readNumber().sat,
         purchase = readLiquidityPurchase(),
         createdAt = readNumber(),
         confirmedAt = readNullable { readNumber() },

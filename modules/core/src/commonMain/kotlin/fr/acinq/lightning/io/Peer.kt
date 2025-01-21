@@ -907,7 +907,7 @@ class Peer(
                                     id = UUID.randomUUID(),
                                     channelId = channelId,
                                     txId = action.txId,
-                                    localMiningFee = action.localMiningFee,
+                                    miningFee = action.miningFee,
                                     purchase = action.purchase,
                                     createdAt = currentTimestampMillis(),
                                     confirmedAt = null,

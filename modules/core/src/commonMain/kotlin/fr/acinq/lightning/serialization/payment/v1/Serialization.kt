@@ -336,7 +336,7 @@ object Serialization {
         writeUuid(id)
         writeByteVector32(channelId)
         writeTxId(txId)
-        writeNumber(localMiningFee.toLong())
+        writeNumber(miningFee.toLong())
         writeLiquidityPurchase(purchase)
         writeNumber(createdAt)
         writeNullable(confirmedAt) { writeNumber(it) }

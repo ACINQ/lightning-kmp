@@ -883,7 +883,8 @@ data class Normal(
                     action.fundingTx.fundingParams.isInitiator && it.localInputs.isEmpty() && it.localOutputs.isEmpty() && it.remoteInputs.isNotEmpty()
                 }
                 val localMiningFee = if (isPurchaseOnly) action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() else 0.sat
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, localMiningFee = localMiningFee, purchase = purchase))
+                val miningFee = purchase.fees.miningFee + localMiningFee
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFee = miningFee, purchase = purchase))
                 add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
             }
             // NB: the following assumes that there can't be a splice-in and a splice-out simultaneously,
