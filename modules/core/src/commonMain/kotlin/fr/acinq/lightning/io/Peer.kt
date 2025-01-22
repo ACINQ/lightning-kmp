@@ -902,8 +902,8 @@ class Peer(
                                     confirmedAt = null,
                                     lockedAt = null
                                 )
-                            is ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest ->
-                                InboundLiquidityOutgoingPayment(
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaManualInboundLiquidityRequest ->
+                                ManualInboundLiquidityOutgoingPayment(
                                     id = UUID.randomUUID(),
                                     channelId = channelId,
                                     txId = action.txId,
@@ -932,6 +932,11 @@ class Peer(
                         }
                         nodeParams._nodeEvents.emit(PaymentEvents.PaymentSent(payment))
                         db.payments.addOutgoingPayment(payment)
+                    }
+                    is ChannelAction.Storage.StoreLiquidityPurchase -> {
+                        logger.info { "storing liquidity purchase txid=${action.txId} purchase=${action.purchase}" }
+                        nodeParams._nodeEvents.emit(LiquidityEvents.Purchased(action.purchase))
+                        db.payments.addLiquidityPurchase(action.txId, action.purchase)
                     }
                     is ChannelAction.Storage.SetLocked -> {
                         logger.info { "setting status locked for txid=${action.txId}" }

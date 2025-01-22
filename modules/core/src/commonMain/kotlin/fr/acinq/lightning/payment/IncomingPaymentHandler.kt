@@ -235,7 +235,8 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                             addToFeeCredit -> {
                                                 logger.info { "adding on-the-fly funding to fee credit (amount=${willAddHtlcParts.map { it.amount }.sum()})" }
                                                 val parts = buildList {
-                                                    htlcParts.forEach { add(LightningIncomingPayment.Part.Htlc(it.amount, it.htlc.channelId, it.htlc.id, it.htlc.fundingFee)) }
+                                                    // TODO: mix of fee-credit and funding fee should be impossible, we're not even checking the funding fee
+                                                    htlcParts.forEach { add(LightningIncomingPayment.Part.Htlc(it.amount, it.htlc.channelId, it.htlc.id, liquidityPurchase = null, it.htlc.fundingFee)) }
                                                     willAddHtlcParts.forEach { add(LightningIncomingPayment.Part.FeeCredit(it.amount)) }
                                                 }
                                                 val actions = buildList {
@@ -282,7 +283,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                         rejectPayment(payment, incomingPayment, failure)
                                     }
                                     is Either.Right -> {
-                                        val parts = htlcParts.map { part -> LightningIncomingPayment.Part.Htlc(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
+                                        val parts = htlcParts.map { part -> LightningIncomingPayment.Part.Htlc(part.amount, part.htlc.channelId, part.htlc.id, liquidityPurchase = part.htlc.fundingFee?.let { fundingFee.value?.first }, part.htlc.fundingFee) }
                                         val actions = htlcParts.map { part ->
                                             val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.paymentPreimage, true)
                                             WrappedChannelCommand(part.htlc.channelId, cmd)
@@ -369,15 +370,16 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
     }
 
-    private suspend fun validateFundingFee(parts: List<HtlcPart>): Either<ChannelException, LiquidityAds.FundingFee?> {
-        return when (val fundingTxId = parts.map { it.htlc.fundingFee?.fundingTxId }.firstOrNull()) {
+    private suspend fun validateFundingFee(parts: List<HtlcPart>): Either<ChannelException, Pair<LiquidityAds.Purchase.Standard, LiquidityAds.FundingFee>?> {
+        return when (val fundingTxId = parts.firstNotNullOfOrNull { it.htlc.fundingFee?.fundingTxId }) {
             is TxId -> {
                 val channelId = parts.first().htlc.channelId
                 val paymentHash = parts.first().htlc.paymentHash
                 val fundingFee = parts.map { it.htlc.fundingFee?.amount ?: 0.msat }.sum()
-                when (val purchase = db.getInboundLiquidityPurchase(fundingTxId)?.purchase) {
+                when (val purchase = db.getLiquidityPurchase(fundingTxId)) {
                     null -> Either.Left(UnexpectedLiquidityAdsFundingFee(channelId, fundingTxId))
-                    else -> {
+                    is LiquidityAds.Purchase.WithFeeCredit -> Either.Left(UnexpectedLiquidityAdsFundingFee(channelId, fundingTxId))
+                    is LiquidityAds.Purchase.Standard -> {
                         val fundingFeeOk = when (val details = purchase.paymentDetails) {
                             is LiquidityAds.PaymentDetails.FromFutureHtlc -> details.paymentHashes.contains(paymentHash) && fundingFee <= purchase.fees.total.toMilliSatoshi()
                             is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> details.preimages.any { Crypto.sha256(it).byteVector32() == paymentHash } && fundingFee <= purchase.fees.total.toMilliSatoshi()
@@ -386,7 +388,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                             is LiquidityAds.PaymentDetails.FromChannelBalance -> false
                         }
                         when {
-                            fundingFeeOk -> Either.Right(LiquidityAds.FundingFee(fundingFee, fundingTxId))
+                            fundingFeeOk -> Either.Right(purchase to LiquidityAds.FundingFee(fundingFee, fundingTxId))
                             else -> Either.Left(InvalidLiquidityAdsFundingFee(channelId, fundingTxId, paymentHash, purchase.fees.total, fundingFee))
                         }
                     }

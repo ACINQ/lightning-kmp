@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.wire.LiquidityAds
 
 class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, LightningIncomingPayment>()
@@ -11,7 +12,14 @@ class InMemoryPaymentsDb : PaymentsDb {
     private val outgoing = mutableMapOf<UUID, LightningOutgoingPayment>()
     private val onChainOutgoing = mutableMapOf<TxId, OnChainOutgoingPayment>()
     private val outgoingParts = mutableMapOf<UUID, Pair<UUID, LightningOutgoingPayment.Part>>()
+    private val liquidityPurchases = mutableMapOf<TxId, LiquidityAds.Purchase>()
     override suspend fun setLocked(txId: TxId) {}
+
+    override suspend fun addLiquidityPurchase(txId: TxId, purchase: LiquidityAds.Purchase) {
+        liquidityPurchases[txId] = purchase
+    }
+
+    override suspend fun getLiquidityPurchase(txId: TxId): LiquidityAds.Purchase? = liquidityPurchases[txId]
 
     override suspend fun addIncomingPayment(incomingPayment: IncomingPayment) {
         when (incomingPayment) {
@@ -89,9 +97,9 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment? {
+    override suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): ManualInboundLiquidityOutgoingPayment? {
         return when (val onChainPayment = onChainOutgoing[fundingTxId]) {
-            is InboundLiquidityOutgoingPayment -> onChainPayment
+            is ManualInboundLiquidityOutgoingPayment -> onChainPayment
             else -> null
         }
     }

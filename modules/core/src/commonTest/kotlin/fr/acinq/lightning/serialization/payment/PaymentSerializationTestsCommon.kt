@@ -49,12 +49,13 @@ class PaymentSerializationTestsCommon {
                 )
             },
             randomBytes32().let { preimage ->
+                val paymentHash = sha256(preimage).byteVector32()
                 Bolt11IncomingPayment(
                     preimage = preimage,
                     paymentRequest = Bolt11Invoice.create(
                         Chain.Testnet4,
                         200_000_000.msat,
-                        sha256(preimage).byteVector32(),
+                        paymentHash,
                         randomKey(),
                         Either.Left("test payment"),
                         CltvExpiryDelta(400),
@@ -66,8 +67,8 @@ class PaymentSerializationTestsCommon {
                         )
                     ),
                     parts = listOf(
-                        LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, null, 1_444_5555_666_000),
-                        LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, LiquidityAds.FundingFee(100_000_000.msat, TxId(randomBytes32())), 1_444_5555_666_001),
+                        LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, null, null, 1_444_5555_666_000),
+                        LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, LiquidityAds.Purchase.Standard(500_000.sat, LiquidityAds.Fees(10_000.sat, 990_000.sat), LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(paymentHash))), LiquidityAds.FundingFee(100_000_000.msat, TxId(randomBytes32())), 1_444_5555_666_001),
                         LightningIncomingPayment.Part.FeeCredit(1_000.msat, 1_444_5555_666_002),
                     ),
                     createdAt = 1_234_567_890_000
@@ -82,12 +83,13 @@ class PaymentSerializationTestsCommon {
                 )
             },
             randomBytes32().let { preimage ->
+                val paymentHash = sha256(preimage).byteVector32()
                 Bolt12IncomingPayment(
                     preimage = preimage,
                     metadata = OfferPaymentMetadata.V1(randomBytes32(), 35_000_000.msat, preimage, randomKey().publicKey(), "my offer", quantity = 1, createdAtMillis = 1_111_111_111_000),
                     parts = listOf(
-                        LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, null, 1_444_5555_666_000),
-                        LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, LiquidityAds.FundingFee(100_000_000.msat, TxId(randomBytes32())), 1_444_5555_666_001),
+                        LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, null, null, 1_444_5555_666_000),
+                        LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, LiquidityAds.Purchase.Standard(500_000.sat, LiquidityAds.Fees(10_000.sat, 990_000.sat), LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(paymentHash))), LiquidityAds.FundingFee(100_000_000.msat, TxId(randomBytes32())), 1_444_5555_666_001),
                         LightningIncomingPayment.Part.FeeCredit(1_000.msat, 1_444_5555_666_002),
                     ),
                     createdAt = 1_234_567_890_000

@@ -18,7 +18,6 @@ sealed class ChannelException(open val channelId: ByteVector32, override val mes
 // @formatter:off
 data class InvalidChainHash                        (override val channelId: ByteVector32, val local: BlockHash, val remote: BlockHash) : ChannelException(channelId, "invalid chainHash (local=$local remote=$remote)")
 data class InvalidFundingAmount                    (override val channelId: ByteVector32, val fundingAmount: Satoshi) : ChannelException(channelId, "invalid funding_amount=$fundingAmount")
-data class InvalidPushAmount                       (override val channelId: ByteVector32, val pushAmount: MilliSatoshi, val max: MilliSatoshi) : ChannelException(channelId, "invalid pushAmount=$pushAmount (max=$max)")
 data class InvalidMaxAcceptedHtlcs                 (override val channelId: ByteVector32, val maxAcceptedHtlcs: Int, val max: Int) : ChannelException(channelId, "invalid max_accepted_htlcs=$maxAcceptedHtlcs (max=$max)")
 data class InvalidChannelType                      (override val channelId: ByteVector32, val ourChannelType: ChannelType, val theirChannelType: ChannelType) : ChannelException(channelId, "invalid channel_type=${theirChannelType.name}, expected channel_type=${ourChannelType.name}")
 data class MissingChannelType                      (override val channelId: ByteVector32) : ChannelException(channelId, "option_channel_type was negotiated but channel_type is missing")

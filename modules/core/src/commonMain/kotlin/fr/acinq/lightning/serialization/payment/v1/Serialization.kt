@@ -81,6 +81,7 @@ object Serialization {
             writeNumber(o.amountReceived.toLong())
             writeByteVector32(o.channelId)
             writeNumber(o.htlcId)
+            writeNullable(o.liquidityPurchase) { writeLiquidityPurchase(it) }
             writeNullable(o.fundingFee) {
                 writeNumber(it.amount.toLong())
                 writeTxId(it.fundingTxId)
@@ -178,7 +179,7 @@ object Serialization {
         is SpliceCpfpOutgoingPayment -> {
             write(0x02); writeSpliceCpfpOutgoingPayment(o)
         }
-        is InboundLiquidityOutgoingPayment -> {
+        is ManualInboundLiquidityOutgoingPayment -> {
             write(0x03); writeInboundLiquidityOutgoingPayment(o)
         }
         is ChannelCloseOutgoingPayment -> {
@@ -332,7 +333,7 @@ object Serialization {
         writeNullable(lockedAt) { writeNumber(it) }
     }
 
-    private fun Output.writeInboundLiquidityOutgoingPayment(o: InboundLiquidityOutgoingPayment) = o.run {
+    private fun Output.writeInboundLiquidityOutgoingPayment(o: ManualInboundLiquidityOutgoingPayment) = o.run {
         writeUuid(id)
         writeByteVector32(channelId)
         writeTxId(txId)

@@ -140,16 +140,10 @@ data class WaitForFundingSigned(
                         origin = channelOrigin,
                     )
                 )
-            } else {
-                // Otherwise, we count the purchased liquidity, if any, as an outgoing payment.
-                liquidityPurchaseRequestedBySelf?.let { purchase ->
-                    // We only count the mining fees that we must refund to our peer as part of the liquidity purchase.
-                    // If we're also contributing to the funding transaction, the mining fees we pay for our inputs and
-                    // outputs will be recorded in the ViaNewChannel incoming payment entry below.
-                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, miningFee = purchase.fees.miningFee, purchase = purchase))
-                }
             }
-            liquidityPurchaseRequestedBySelf?.let { add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(it))) }
+            liquidityPurchaseRequestedBySelf?.let { purchase ->
+                add(ChannelAction.Storage.StoreLiquidityPurchase(action.fundingTx.txId, purchase))
+            }
             listOfNotNull(channelOrigin).filterIsInstance<Origin.OnChainWallet>().forEach { origin ->
                 add(ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees)))
             }

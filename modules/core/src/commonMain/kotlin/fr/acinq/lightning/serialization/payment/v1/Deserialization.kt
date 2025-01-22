@@ -72,6 +72,7 @@ object Deserialization {
             amountReceived = readNumber().msat,
             channelId = readByteVector32(),
             htlcId = readNumber(),
+            liquidityPurchase = readNullable { readLiquidityPurchase() as LiquidityAds.Purchase.Standard },
             fundingFee = readNullable {
                 LiquidityAds.FundingFee(
                     amount = readNumber().msat,
@@ -282,7 +283,7 @@ object Deserialization {
         lockedAt = readNullable { readNumber() }
     )
 
-    private fun Input.readInboundLiquidityOutgoingPayment(): InboundLiquidityOutgoingPayment = InboundLiquidityOutgoingPayment(
+    private fun Input.readInboundLiquidityOutgoingPayment(): ManualInboundLiquidityOutgoingPayment = ManualInboundLiquidityOutgoingPayment(
         id = readUuid(),
         channelId = readByteVector32(),
         txId = readTxId(),

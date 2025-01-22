@@ -29,6 +29,10 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
      * when the channel is closed, meaning that all related transactions have been confirmed.
      */
     suspend fun setLocked(txId: TxId)
+
+    suspend fun addLiquidityPurchase(txId: TxId, purchase: LiquidityAds.Purchase)
+
+    suspend fun getLiquidityPurchase(txId: TxId): LiquidityAds.Purchase?
 }
 
 interface IncomingPaymentsDb {
@@ -78,7 +82,7 @@ interface OutgoingPaymentsDb {
     suspend fun completeLightningOutgoingPaymentPart(parentId: UUID, partId: UUID, status: LightningOutgoingPayment.Part.Status.Completed)
 
     /** Get information about a liquidity purchase (for which the funding transaction has been signed). */
-    suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment?
+    suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): ManualInboundLiquidityOutgoingPayment?
 
     /** List all the outgoing payment attempts that tried to pay the given payment hash. */
     suspend fun listLightningOutgoingPayments(paymentHash: ByteVector32): List<LightningOutgoingPayment>
@@ -145,6 +149,8 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
     override val amountReceived: MilliSatoshi get() = parts.map { it.amountReceived }.sum()
 
+    val liquidityPurchase: LiquidityAds.Purchase? get() = parts.filterIsInstance<Part.Htlc>().firstOrNull()?.liquidityPurchase
+
     sealed class Part {
         /** Amount received for this part after applying the fees. This is the final amount we can use. */
         abstract val amountReceived: MilliSatoshi
@@ -155,7 +161,7 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
         abstract val receivedAt: Long
 
         /** Payment was received via existing lightning channels. */
-        data class Htlc(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val fundingFee: LiquidityAds.FundingFee?, override val receivedAt: Long = currentTimestampMillis()) : Part() {
+        data class Htlc(override val amountReceived: MilliSatoshi, val channelId: ByteVector32, val htlcId: Long, val liquidityPurchase: LiquidityAds.Purchase.Standard?, val fundingFee: LiquidityAds.FundingFee?, override val receivedAt: Long = currentTimestampMillis()) : Part() {
             // If there is no funding fee, the fees are paid by the sender for lightning payments.
             override val fees: MilliSatoshi = fundingFee?.amount ?: 0.msat
         }
@@ -481,7 +487,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
         when (this) {
             is SpliceOutgoingPayment -> copy(lockedAt = lockedAt)
             is SpliceCpfpOutgoingPayment -> copy(lockedAt = lockedAt)
-            is InboundLiquidityOutgoingPayment -> copy(lockedAt = lockedAt)
+            is ManualInboundLiquidityOutgoingPayment -> copy(lockedAt = lockedAt)
             is ChannelCloseOutgoingPayment -> copy(lockedAt = lockedAt)
         }
 
@@ -490,7 +496,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
         when (this) {
             is SpliceOutgoingPayment -> copy(confirmedAt = confirmedAt)
             is SpliceCpfpOutgoingPayment -> copy(confirmedAt = confirmedAt)
-            is InboundLiquidityOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is ManualInboundLiquidityOutgoingPayment -> copy(confirmedAt = confirmedAt)
             is ChannelCloseOutgoingPayment -> copy(confirmedAt = confirmedAt)
         }
 }
@@ -523,7 +529,7 @@ data class SpliceCpfpOutgoingPayment(
     override val fees: MilliSatoshi = miningFee.toMilliSatoshi()
 }
 
-data class InboundLiquidityOutgoingPayment(
+data class ManualInboundLiquidityOutgoingPayment(
     override val id: UUID,
     override val channelId: ByteVector32,
     override val txId: TxId,
@@ -542,8 +548,8 @@ data class InboundLiquidityOutgoingPayment(
      * will be paid immediately from the channel balance, except if there is no channel.
      *
      * In the "from future htlc case", this inbound liquidity purchase is going to be followed by one or several [IncomingPayment.ReceivedWith.LightningPayment]
-     * with a non-null [LiquidityAds.FundingFee] where [LiquidityAds.FundingFee.fundingTxId] matches this [InboundLiquidityOutgoingPayment.txId].
-     * The sum of [LiquidityAds.FundingFee.amount] will match [InboundLiquidityOutgoingPayment.feePaidFromFutureHtlc].
+     * with a non-null [LiquidityAds.FundingFee] where [LiquidityAds.FundingFee.fundingTxId] matches this [ManualInboundLiquidityOutgoingPayment.txId].
+     * The sum of [LiquidityAds.FundingFee.amount] will match [ManualInboundLiquidityOutgoingPayment.feePaidFromFutureHtlc].
      */
     val feePaidFromChannelBalance = when (purchase.paymentDetails.paymentType) {
         is LiquidityAds.PaymentType.FromChannelBalance -> ChannelManagementFees(miningFee = miningFee, serviceFee = purchase.fees.serviceFee)
