@@ -12,7 +12,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
      * Get information about a liquidity purchase (for which the funding transaction has been signed).
      * A liquidity purchase can be found either in an [OnChainIncomingPayment] or an [OnChainOutgoingPayment].
      */
-    suspend fun getInboundLiquidityPurchase(txId: TxId): LiquidityAds.InboundLiquidityPurchase?
+    suspend fun getInboundLiquidityPurchase(txId: TxId): LiquidityAds.LiquidityTransactionDetails?
 
     /**
      * On-chain-related payments are not instant, but needs to be displayed as soon as possible to the user
@@ -55,7 +55,7 @@ interface IncomingPaymentsDb {
      * @param parts Is a list containing the payment parts holding the incoming amount.
      * @param liquidityPurchase (optional) liquidity purchase linked to this lightning payment.
      */
-    suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>, liquidityPurchase: LiquidityAds.InboundLiquidityPurchase?)
+    suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>, liquidityPurchase: LiquidityAds.LiquidityTransactionDetails?)
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listLightningExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<LightningIncomingPayment>
@@ -140,7 +140,7 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     abstract val parts: List<Part>
 
     /** Optional liquidity purchase linked to this lightning payment (triggered by on-the-fly-funding). */
-    abstract val liquidityPurchase: LiquidityAds.InboundLiquidityPurchase?
+    abstract val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails?
 
     /** This timestamp will be defined when the received amount is usable for spending. */
     override val completedAt: Long? get() = parts.maxByOrNull { it.receivedAt }?.receivedAt
@@ -180,10 +180,10 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     fun isExpired(): Boolean = this is Bolt11IncomingPayment && this.paymentRequest.isExpired()
 
     /** Helper method to facilitate updating child classes */
-    fun addReceivedParts(parts: List<Part>, liquidityPurchase: LiquidityAds.InboundLiquidityPurchase?): LightningIncomingPayment {
+    fun addReceivedParts(parts: List<Part>, liquidityPurchase: LiquidityAds.LiquidityTransactionDetails?): LightningIncomingPayment {
         return when (this) {
-            is Bolt11IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchase = this.liquidityPurchase ?: liquidityPurchase)
-            is Bolt12IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchase = this.liquidityPurchase ?: liquidityPurchase)
+            is Bolt11IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchaseDetails = this.liquidityPurchaseDetails ?: liquidityPurchase)
+            is Bolt12IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchaseDetails = this.liquidityPurchaseDetails ?: liquidityPurchase)
         }
     }
 }
@@ -193,7 +193,7 @@ data class Bolt11IncomingPayment(
     private val preimage: ByteVector32,
     val paymentRequest: Bolt11Invoice,
     override val parts: List<Part> = emptyList(),
-    override val liquidityPurchase: LiquidityAds.InboundLiquidityPurchase? = null,
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? = null,
     override val createdAt: Long = currentTimestampMillis()
 ) : LightningIncomingPayment(preimage)
 
@@ -202,7 +202,7 @@ data class Bolt12IncomingPayment(
     private val preimage: ByteVector32,
     val metadata: OfferPaymentMetadata,
     override val parts: List<Part> = emptyList(),
-    override val liquidityPurchase: LiquidityAds.InboundLiquidityPurchase? = null,
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? = null,
     override val createdAt: Long = currentTimestampMillis()
 ) : LightningIncomingPayment(preimage)
 
@@ -228,7 +228,7 @@ sealed class OnChainIncomingPayment : IncomingPayment() {
      */
     override val completedAt: Long? get() = lockedAt
 
-    val liquidityPurchaseDetails: LiquidityAds.InboundLiquidityPurchase? get() = liquidityPurchase?.let { LiquidityAds.InboundLiquidityPurchase(txId, miningFee, it) }
+    val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? get() = liquidityPurchase?.let { LiquidityAds.LiquidityTransactionDetails(txId, miningFee, it) }
 
     /** Helper method to facilitate updating child classes */
     fun setLocked(lockedAt: Long): OnChainIncomingPayment =
@@ -496,7 +496,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     /** If some liquidity was purchased, we paid a service fee on top of the mining fee. */
     override val fees: MilliSatoshi get() = miningFee.toMilliSatoshi() + serviceFee
 
-    val liquidityPurchaseDetails: LiquidityAds.InboundLiquidityPurchase? get() = liquidityPurchase?.let { LiquidityAds.InboundLiquidityPurchase(txId, miningFee, it) }
+    val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? get() = liquidityPurchase?.let { LiquidityAds.LiquidityTransactionDetails(txId, miningFee, it) }
 
     /** Helper method to facilitate updating child classes */
     fun setLocked(lockedAt: Long): OnChainOutgoingPayment =

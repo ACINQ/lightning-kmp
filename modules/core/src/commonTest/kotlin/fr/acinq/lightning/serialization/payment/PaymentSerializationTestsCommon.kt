@@ -45,7 +45,7 @@ class PaymentSerializationTestsCommon {
                         )
                     ),
                     parts = emptyList(),
-                    liquidityPurchase = null,
+                    liquidityPurchaseDetails = null,
                     createdAt = 1_234_567_890_000
                 )
             },
@@ -71,7 +71,7 @@ class PaymentSerializationTestsCommon {
                         LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, LiquidityAds.FundingFee(100_000_000.msat, TxId(randomBytes32())), 1_444_5555_666_001),
                         LightningIncomingPayment.Part.FeeCredit(1_000.msat, 1_444_5555_666_002),
                     ),
-                    liquidityPurchase = LiquidityAds.InboundLiquidityPurchase(
+                    liquidityPurchaseDetails = LiquidityAds.LiquidityTransactionDetails(
                         txId = TxId(randomBytes32()),
                         miningFee = 550.sat,
                         purchase = LiquidityAds.Purchase.WithFeeCredit(150_000.sat, LiquidityAds.Fees(500.sat, 100.sat), 1_000.msat, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(sha256(preimage).byteVector32()))),
@@ -84,7 +84,7 @@ class PaymentSerializationTestsCommon {
                     preimage = preimage,
                     metadata = OfferPaymentMetadata.V1(randomBytes32(), 35_000_000.msat, preimage, randomKey().publicKey(), "my offer", quantity = 1, createdAtMillis = 1_111_111_111_000),
                     parts = emptyList(),
-                    liquidityPurchase = null,
+                    liquidityPurchaseDetails = null,
                     createdAt = 1_234_567_890_000
                 )
             },
@@ -97,7 +97,7 @@ class PaymentSerializationTestsCommon {
                         LightningIncomingPayment.Part.Htlc(200_000_111.msat, randomBytes32(), 42, LiquidityAds.FundingFee(100_000_000.msat, TxId(randomBytes32())), 1_444_5555_666_001),
                         LightningIncomingPayment.Part.FeeCredit(1_000.msat, 1_444_5555_666_002),
                     ),
-                    liquidityPurchase = LiquidityAds.InboundLiquidityPurchase(
+                    liquidityPurchaseDetails = LiquidityAds.LiquidityTransactionDetails(
                         txId = TxId(randomBytes32()),
                         miningFee = 550.sat,
                         purchase = LiquidityAds.Purchase.WithFeeCredit(150_000.sat, LiquidityAds.Fees(500.sat, 100.sat), 1_000.msat, LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(listOf(preimage))),

@@ -95,7 +95,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val (db, preimage, pr) = createFixture()
         val incoming = Bolt11IncomingPayment(preimage, pr, createdAt = 200)
         db.addIncomingPayment(incoming)
-        val liquidityPurchase = LiquidityAds.InboundLiquidityPurchase(
+        val liquidityPurchase = LiquidityAds.LiquidityTransactionDetails(
             txId = TxId(randomBytes32()),
             miningFee = 5_000.sat,
             purchase = LiquidityAds.Purchase.Standard(
@@ -109,7 +109,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         val received = db.getLightningIncomingPayment(pr.paymentHash)
         assertEquals(40_000_000.msat, received!!.amount)
         assertEquals(10_000_000.msat, received.fees)
-        assertEquals(liquidityPurchase, received.liquidityPurchase)
+        assertEquals(liquidityPurchase, received.liquidityPurchaseDetails)
     }
 
     @Test

@@ -335,7 +335,7 @@ object LiquidityAds {
      * @param txId txId of the transaction including this [purchase].
      * @param miningFee total mining fees paid for this transaction, including the fees from the [purchase].
      */
-    data class InboundLiquidityPurchase(val txId: TxId, val miningFee: Satoshi, val purchase: Purchase) {
+    data class LiquidityTransactionDetails(val txId: TxId, val miningFee: Satoshi, val purchase: Purchase) {
         /** Total funding fee that must be deduced from HTLCs if [isPaidByFutureHtlcs] is true. */
         val fundingFee: FundingFee = when (purchase.paymentDetails) {
             is PaymentDetails.FromChannelBalance -> FundingFee(0.msat, txId)
@@ -374,8 +374,8 @@ object LiquidityAds {
          * amount will be found in the [purchase].
          *
          * The liquidity purchase will be followed by one or several HTLCs with a non-null [LiquidityAds.FundingFee]
-         * where [LiquidityAds.FundingFee.fundingTxId] matches this [InboundLiquidityPurchase.txId].
-         * The sum of [LiquidityAds.FundingFee.amount] will match [InboundLiquidityPurchase.feePaidFromFutureHtlc].
+         * where [LiquidityAds.FundingFee.fundingTxId] matches this [LiquidityTransactionDetails.txId].
+         * The sum of [LiquidityAds.FundingFee.amount] will match [LiquidityTransactionDetails.feePaidFromFutureHtlc].
          */
         val feePaidFromChannelBalance = when (purchase.paymentDetails) {
             is PaymentDetails.FromChannelBalance -> ChannelManagementFees(miningFee = miningFee, serviceFee = purchase.fees.serviceFee)

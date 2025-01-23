@@ -304,7 +304,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
     private suspend fun acceptPayment(
         incomingPayment: LightningIncomingPayment,
         parts: List<LightningIncomingPayment.Part>,
-        liquidityPurchase: LiquidityAds.InboundLiquidityPurchase?,
+        liquidityPurchase: LiquidityAds.LiquidityTransactionDetails?,
         actions: List<PeerCommand>
     ): ProcessAddResult.Accepted {
         pending.remove(incomingPayment.paymentHash)
@@ -377,7 +377,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
     }
 
-    private suspend fun validateFundingFee(parts: List<HtlcPart>): Either<ChannelException, LiquidityAds.InboundLiquidityPurchase?> {
+    private suspend fun validateFundingFee(parts: List<HtlcPart>): Either<ChannelException, LiquidityAds.LiquidityTransactionDetails?> {
         val fundingTxIds = parts.mapNotNull { it.htlc.fundingFee?.fundingTxId }.toSet()
         return when {
             fundingTxIds.isEmpty() -> Either.Right(null)

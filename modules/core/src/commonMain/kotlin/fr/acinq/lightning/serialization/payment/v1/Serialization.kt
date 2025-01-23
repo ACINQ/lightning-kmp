@@ -16,8 +16,8 @@ import fr.acinq.lightning.serialization.OutputExtensions.writePublicKey
 import fr.acinq.lightning.serialization.OutputExtensions.writeString
 import fr.acinq.lightning.serialization.OutputExtensions.writeTxId
 import fr.acinq.lightning.serialization.OutputExtensions.writeUuid
-import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeInboundLiquidityPurchase
 import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeLiquidityPurchase
+import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeLiquidityTransactionDetails
 
 @Suppress("DEPRECATION")
 object Serialization {
@@ -65,7 +65,7 @@ object Serialization {
         writeByteVector32(paymentPreimage)
         writeString(paymentRequest.write())
         writeCollection(o.parts) { writeLightningIncomingPaymentPart(it) }
-        writeNullable(o.liquidityPurchase) { writeInboundLiquidityPurchase(it) }
+        writeNullable(o.liquidityPurchaseDetails) { writeLiquidityTransactionDetails(it) }
         writeNumber(createdAt)
     }
 
@@ -73,7 +73,7 @@ object Serialization {
         writeByteVector32(paymentPreimage)
         writeDelimited(metadata.encode().toByteArray())
         writeCollection(o.parts) { writeLightningIncomingPaymentPart(it) }
-        writeNullable(o.liquidityPurchase) { writeInboundLiquidityPurchase(it) }
+        writeNullable(o.liquidityPurchaseDetails) { writeLiquidityTransactionDetails(it) }
         writeNumber(createdAt)
     }
 

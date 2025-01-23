@@ -888,7 +888,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             assertEquals(totalAmount - fundingFee.amount, result.amount)
             assertEqualsIgnoreTimestamps(parts, result.parts)
-            assertEquals(result.incomingPayment.liquidityPurchase, purchase.liquidityPurchaseDetails)
+            assertEquals(result.incomingPayment.liquidityPurchaseDetails, purchase.liquidityPurchaseDetails)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
@@ -944,7 +944,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(expectedActions.toSet(), result.actions.toSet())
             assertEquals(amount, result.amount)
             assertEqualsIgnoreTimestamps(parts, result.parts)
-            assertEquals(result.incomingPayment.liquidityPurchase, purchase.liquidityPurchaseDetails)
+            assertEquals(result.incomingPayment.liquidityPurchaseDetails, purchase.liquidityPurchaseDetails)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }
@@ -1754,7 +1754,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertEquals(defaultAmount - fundingFee.amount, result.amount)
             val parts = LightningIncomingPayment.Part.Htlc(defaultAmount - fundingFee.amount, add.channelId, 0, fundingFee)
             assertEqualsIgnoreTimestamps(listOf(parts), result.parts)
-            assertEquals(result.incomingPayment.liquidityPurchase, payment.liquidityPurchaseDetails)
+            assertEquals(result.incomingPayment.liquidityPurchaseDetails, payment.liquidityPurchaseDetails)
             checkDbPayment(result.incomingPayment, paymentHandler.db)
         }
     }

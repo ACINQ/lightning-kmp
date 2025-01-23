@@ -21,8 +21,8 @@ import fr.acinq.lightning.serialization.InputExtensions.readPublicKey
 import fr.acinq.lightning.serialization.InputExtensions.readString
 import fr.acinq.lightning.serialization.InputExtensions.readTxId
 import fr.acinq.lightning.serialization.InputExtensions.readUuid
-import fr.acinq.lightning.serialization.common.liquidityads.Deserialization.readInboundLiquidityPurchase
 import fr.acinq.lightning.serialization.common.liquidityads.Deserialization.readLiquidityPurchase
+import fr.acinq.lightning.serialization.common.liquidityads.Deserialization.readLiquidityTransactionDetails
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.LiquidityAds
@@ -57,7 +57,7 @@ object Deserialization {
         preimage = readByteVector32(),
         paymentRequest = Bolt11Invoice.read(readString()).get(),
         parts = readCollection { readLightningIncomingPaymentPart() }.toList(),
-        liquidityPurchase = readNullable { readInboundLiquidityPurchase() },
+        liquidityPurchaseDetails = readNullable { readLiquidityTransactionDetails() },
         createdAt = readNumber()
     )
 
@@ -65,7 +65,7 @@ object Deserialization {
         preimage = readByteVector32(),
         metadata = OfferPaymentMetadata.decode(readDelimitedByteArray().byteVector()),
         parts = readCollection { readLightningIncomingPaymentPart() }.toList(),
-        liquidityPurchase = readNullable { readInboundLiquidityPurchase() },
+        liquidityPurchaseDetails = readNullable { readLiquidityTransactionDetails() },
         createdAt = readNumber()
     )
 

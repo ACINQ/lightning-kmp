@@ -29,7 +29,7 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun getLightningIncomingPayment(paymentHash: ByteVector32): LightningIncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>, liquidityPurchase: LiquidityAds.InboundLiquidityPurchase?) {
+    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>, liquidityPurchase: LiquidityAds.LiquidityTransactionDetails?) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
             else -> incoming[paymentHash] = payment.addReceivedParts(parts, liquidityPurchase)
@@ -89,7 +89,7 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun getInboundLiquidityPurchase(txId: TxId): LiquidityAds.InboundLiquidityPurchase? {
+    override suspend fun getInboundLiquidityPurchase(txId: TxId): LiquidityAds.LiquidityTransactionDetails? {
         val fromIncoming = onchainIncoming.values.find { it.txId == txId }?.liquidityPurchaseDetails
         val fromOutgoing = onChainOutgoing[txId]?.liquidityPurchaseDetails
         return fromIncoming ?: fromOutgoing

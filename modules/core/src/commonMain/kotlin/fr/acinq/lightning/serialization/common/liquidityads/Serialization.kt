@@ -50,7 +50,7 @@ object Serialization {
         }
     }
 
-    fun Output.writeInboundLiquidityPurchase(details: LiquidityAds.InboundLiquidityPurchase) {
+    fun Output.writeLiquidityTransactionDetails(details: LiquidityAds.LiquidityTransactionDetails) {
         writeTxId(details.txId)
         writeNumber(details.miningFee.toLong())
         writeLiquidityPurchase(details.purchase)

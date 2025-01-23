@@ -36,7 +36,7 @@ object Deserialization {
         else -> error("unknown discriminator $discriminator for class ${LiquidityAds.Purchase::class}")
     }
 
-    fun Input.readInboundLiquidityPurchase(): LiquidityAds.InboundLiquidityPurchase = LiquidityAds.InboundLiquidityPurchase(
+    fun Input.readLiquidityTransactionDetails(): LiquidityAds.LiquidityTransactionDetails = LiquidityAds.LiquidityTransactionDetails(
         txId = readTxId(),
         miningFee = readNumber().sat,
         purchase = readLiquidityPurchase(),
