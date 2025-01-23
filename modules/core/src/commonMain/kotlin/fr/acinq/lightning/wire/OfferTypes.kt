@@ -121,7 +121,7 @@ object OfferTypes {
         companion object : TlvValueReader<OfferCurrency> {
             const val tag: Long = 6
             override fun read(input: Input): OfferCurrency {
-                return OfferCurrency(LightningCodecs.bytes(input, input.availableBytes).decodeToString())
+                return OfferCurrency(LightningCodecs.bytes(input, input.availableBytes).decodeToString(throwOnInvalidSequence = true))
             }
         }
     }
@@ -157,7 +157,7 @@ object OfferTypes {
         companion object : TlvValueReader<OfferDescription> {
             const val tag: Long = 10
             override fun read(input: Input): OfferDescription {
-                return OfferDescription(LightningCodecs.bytes(input, input.availableBytes).decodeToString())
+                return OfferDescription(LightningCodecs.bytes(input, input.availableBytes).decodeToString(throwOnInvalidSequence = true))
             }
         }
     }
@@ -236,7 +236,7 @@ object OfferTypes {
         companion object : TlvValueReader<OfferIssuer> {
             const val tag: Long = 18
             override fun read(input: Input): OfferIssuer {
-                return OfferIssuer(LightningCodecs.bytes(input, input.availableBytes).decodeToString())
+                return OfferIssuer(LightningCodecs.bytes(input, input.availableBytes).decodeToString(throwOnInvalidSequence = true))
             }
         }
     }
@@ -403,7 +403,7 @@ object OfferTypes {
         companion object : TlvValueReader<InvoiceRequestPayerNote> {
             const val tag: Long = 89
             override fun read(input: Input): InvoiceRequestPayerNote {
-                return InvoiceRequestPayerNote(LightningCodecs.bytes(input, input.availableBytes).decodeToString())
+                return InvoiceRequestPayerNote(LightningCodecs.bytes(input, input.availableBytes).decodeToString(throwOnInvalidSequence = true))
             }
         }
     }
@@ -712,7 +712,7 @@ object OfferTypes {
         companion object : TlvValueReader<Error> {
             const val tag: Long = 5
             override fun read(input: Input): Error {
-                return Error(LightningCodecs.bytes(input, input.availableBytes).decodeToString())
+                return Error(LightningCodecs.bytes(input, input.availableBytes).decodeToString(throwOnInvalidSequence = true))
             }
         }
     }
@@ -834,8 +834,21 @@ object OfferTypes {
                 )
             )
 
+            /**
+             * An offer string can be split with '+' to fit in places with a low character limit. This validates that the string adheres to the spec format to guard against copy-pasting errors.
+             * @return a lowercase string with '+' and whitespaces removed
+             */
+            private fun validateFormat(s: String): String {
+                val lowercase = s.lowercase()
+                require(s == lowercase || s == s.uppercase())
+                require(lowercase.first() == 'l')
+                require(Bech32.alphabet.contains(lowercase.last()))
+                require(!lowercase.matches(Regex(".*\\+\\s*\\+.*")))
+                return Regex("\\+\\s*").replace(lowercase, "")
+            }
+
             fun decode(s: String): Try<Offer> = runTrying {
-                val (prefix, encoded, encoding) = Bech32.decodeBytes(s.lowercase(), true)
+                val (prefix, encoded, encoding) = Bech32.decodeBytes(validateFormat(s), true)
                 require(prefix == hrp)
                 require(encoding == Bech32.Encoding.Beck32WithoutChecksum)
                 val tlvs = tlvSerializer.read(encoded)
