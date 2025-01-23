@@ -32,10 +32,10 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertEquals(incoming, pending)
 
         val parts = LightningIncomingPayment.Part.Htlc(200_000.msat, channelId, 1, fundingFee = null, receivedAt = 110)
-        db.receiveLightningPayment(pr.paymentHash, listOf(parts))
+        db.receiveLightningPayment(pr.paymentHash, listOf(parts), liquidityPurchase = null)
         val received = db.getLightningIncomingPayment(pr.paymentHash)
         assertNotNull(received)
-        assertEquals(pending.addReceivedParts(listOf(parts)), received)
+        assertEquals(pending.addReceivedParts(listOf(parts), liquidityPurchase = null), received)
     }
 
     @Test
@@ -50,12 +50,11 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
         assertIs<Bolt11IncomingPayment>(pending)
         assertEquals(incoming, pending)
 
-        db.receiveLightningPayment(
-            pr.paymentHash, listOf(
-                LightningIncomingPayment.Part.Htlc(57_000.msat, channelId1, 1, fundingFee = null, receivedAt = 110),
-                LightningIncomingPayment.Part.Htlc(43_000.msat, channelId2, 54, fundingFee = null, receivedAt = 110),
-            )
+        val parts = listOf(
+            LightningIncomingPayment.Part.Htlc(57_000.msat, channelId1, 1, fundingFee = null, receivedAt = 110),
+            LightningIncomingPayment.Part.Htlc(43_000.msat, channelId2, 54, fundingFee = null, receivedAt = 110),
         )
+        db.receiveLightningPayment(pr.paymentHash, parts, liquidityPurchase = null)
         val received = db.getLightningIncomingPayment(pr.paymentHash)
         assertNotNull(received)
         assertEquals(100_000.msat, received.amount)
@@ -78,12 +77,12 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
             LightningIncomingPayment.Part.Htlc(200_000.msat, channelId, 1, fundingFee = null, receivedAt = 110),
             LightningIncomingPayment.Part.Htlc(100_000.msat, channelId, 2, fundingFee = null, receivedAt = 150)
         )
-        db.receiveLightningPayment(pr.paymentHash, listOf(parts.first()))
+        db.receiveLightningPayment(pr.paymentHash, listOf(parts.first()), liquidityPurchase = null)
         val received1 = db.getLightningIncomingPayment(pr.paymentHash)
         assertNotNull(received1)
         assertEquals(200_000.msat, received1.amount)
 
-        db.receiveLightningPayment(pr.paymentHash, listOf(parts.last()))
+        db.receiveLightningPayment(pr.paymentHash, listOf(parts.last()), liquidityPurchase = null)
         val received2 = db.getLightningIncomingPayment(pr.paymentHash)
         assertNotNull(received2)
         assertEquals(300_000.msat, received2.amount)
@@ -92,15 +91,25 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive lightning payment with funding fee`() = runSuspendTest {
+    fun `receive lightning payment with liquidity purchase`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         val incoming = Bolt11IncomingPayment(preimage, pr, createdAt = 200)
         db.addIncomingPayment(incoming)
-        val parts = LightningIncomingPayment.Part.Htlc(40_000_000.msat, randomBytes32(), 3, LiquidityAds.FundingFee(10_000_000.msat, TxId(randomBytes32())), receivedAt = 110)
-        db.receiveLightningPayment(pr.paymentHash, listOf(parts))
+        val liquidityPurchase = LiquidityAds.InboundLiquidityPurchase(
+            txId = TxId(randomBytes32()),
+            miningFee = 5_000.sat,
+            purchase = LiquidityAds.Purchase.Standard(
+                amount = 250_000.sat,
+                fees = LiquidityAds.Fees(miningFee = 3_000.sat, serviceFee = 7_000.sat),
+                paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incoming.paymentHash))
+            )
+        )
+        val parts = LightningIncomingPayment.Part.Htlc(40_000_000.msat, randomBytes32(), 3, liquidityPurchase.fundingFee, receivedAt = 110)
+        db.receiveLightningPayment(pr.paymentHash, listOf(parts), liquidityPurchase)
         val received = db.getLightningIncomingPayment(pr.paymentHash)
         assertEquals(40_000_000.msat, received!!.amount)
         assertEquals(10_000_000.msat, received.fees)
+        assertEquals(liquidityPurchase, received.liquidityPurchase)
     }
 
     @Test

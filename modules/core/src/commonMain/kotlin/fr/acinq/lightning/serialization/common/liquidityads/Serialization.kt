@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.serialization.OutputExtensions.writeByteVector32
 import fr.acinq.lightning.serialization.OutputExtensions.writeCollection
 import fr.acinq.lightning.serialization.OutputExtensions.writeNumber
+import fr.acinq.lightning.serialization.OutputExtensions.writeTxId
 import fr.acinq.lightning.wire.LiquidityAds
 
 object Serialization {
@@ -47,5 +48,11 @@ object Serialization {
                 writeLiquidityAdsPaymentDetails(purchase.paymentDetails)
             }
         }
+    }
+
+    fun Output.writeInboundLiquidityPurchase(details: LiquidityAds.InboundLiquidityPurchase) {
+        writeTxId(details.txId)
+        writeNumber(details.miningFee.toLong())
+        writeLiquidityPurchase(details.purchase)
     }
 }

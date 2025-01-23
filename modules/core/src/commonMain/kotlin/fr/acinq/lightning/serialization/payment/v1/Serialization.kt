@@ -16,8 +16,8 @@ import fr.acinq.lightning.serialization.OutputExtensions.writePublicKey
 import fr.acinq.lightning.serialization.OutputExtensions.writeString
 import fr.acinq.lightning.serialization.OutputExtensions.writeTxId
 import fr.acinq.lightning.serialization.OutputExtensions.writeUuid
+import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeInboundLiquidityPurchase
 import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeLiquidityPurchase
-import fr.acinq.lightning.wire.LiquidityAds
 
 @Suppress("DEPRECATION")
 object Serialization {
@@ -65,6 +65,7 @@ object Serialization {
         writeByteVector32(paymentPreimage)
         writeString(paymentRequest.write())
         writeCollection(o.parts) { writeLightningIncomingPaymentPart(it) }
+        writeNullable(o.liquidityPurchase) { writeInboundLiquidityPurchase(it) }
         writeNumber(createdAt)
     }
 
@@ -72,6 +73,7 @@ object Serialization {
         writeByteVector32(paymentPreimage)
         writeDelimited(metadata.encode().toByteArray())
         writeCollection(o.parts) { writeLightningIncomingPaymentPart(it) }
+        writeNullable(o.liquidityPurchase) { writeInboundLiquidityPurchase(it) }
         writeNumber(createdAt)
     }
 
@@ -97,8 +99,9 @@ object Serialization {
     private fun Output.writeNewChannelIncomingPayment(o: NewChannelIncomingPayment) = o.run {
         writeUuid(id)
         writeNumber(amountReceived.toLong())
-        writeNumber(serviceFee.toLong())
         writeNumber(miningFee.toLong())
+        writeNumber(serviceFee.toLong())
+        writeNullable(liquidityPurchase) { writeLiquidityPurchase(it) }
         writeByteVector32(channelId)
         writeTxId(txId)
         writeCollection(localInputs) { writeOutPoint(it) }
@@ -111,6 +114,7 @@ object Serialization {
         writeUuid(id)
         writeNumber(amountReceived.toLong())
         writeNumber(miningFee.toLong())
+        writeNullable(liquidityPurchase) { writeLiquidityPurchase(it) }
         writeByteVector32(channelId)
         writeTxId(txId)
         writeCollection(localInputs) { writeOutPoint(it) }
@@ -174,11 +178,11 @@ object Serialization {
         is SpliceOutgoingPayment -> {
             write(0x01); writeSpliceOutgoingPayment(o)
         }
-        is SpliceCpfpOutgoingPayment -> {
-            write(0x02); writeSpliceCpfpOutgoingPayment(o)
+        is SpliceCpfp -> {
+            write(0x02); writeSpliceCpfp(o)
         }
-        is InboundLiquidityOutgoingPayment -> {
-            write(0x03); writeInboundLiquidityOutgoingPayment(o)
+        is LiquidityPurchasePayment -> {
+            write(0x03); writeLiquidityPurchasePayment(o)
         }
         is ChannelCloseOutgoingPayment -> {
             write(0x04); writeChannelCloseOutgoingPayment(o)
@@ -313,7 +317,18 @@ object Serialization {
         writeUuid(id)
         writeNumber(recipientAmount.toLong())
         writeString(address)
-        writeNumber(miningFees.toLong())
+        writeNumber(miningFee.toLong())
+        writeByteVector32(channelId)
+        writeTxId(txId)
+        writeNullable(o.liquidityPurchase) { writeLiquidityPurchase(it) }
+        writeNumber(createdAt)
+        writeNullable(confirmedAt) { writeNumber(it) }
+        writeNullable(lockedAt) { writeNumber(it) }
+    }
+
+    private fun Output.writeSpliceCpfp(o: SpliceCpfp) = o.run {
+        writeUuid(id)
+        writeNumber(miningFee.toLong())
         writeByteVector32(channelId)
         writeTxId(txId)
         writeNumber(createdAt)
@@ -321,22 +336,12 @@ object Serialization {
         writeNullable(lockedAt) { writeNumber(it) }
     }
 
-    private fun Output.writeSpliceCpfpOutgoingPayment(o: SpliceCpfpOutgoingPayment) = o.run {
+    private fun Output.writeLiquidityPurchasePayment(o: LiquidityPurchasePayment) = o.run {
         writeUuid(id)
-        writeNumber(miningFees.toLong())
+        writeNumber(miningFee.toLong())
         writeByteVector32(channelId)
         writeTxId(txId)
-        writeNumber(createdAt)
-        writeNullable(confirmedAt) { writeNumber(it) }
-        writeNullable(lockedAt) { writeNumber(it) }
-    }
-
-    private fun Output.writeInboundLiquidityOutgoingPayment(o: InboundLiquidityOutgoingPayment) = o.run {
-        writeUuid(id)
-        writeByteVector32(channelId)
-        writeTxId(txId)
-        writeNumber(localMiningFees.toLong())
-        writeLiquidityPurchase(purchase)
+        writeLiquidityPurchase(liquidityPurchase)
         writeNumber(createdAt)
         writeNullable(confirmedAt) { writeNumber(it) }
         writeNullable(lockedAt) { writeNumber(it) }
@@ -347,7 +352,7 @@ object Serialization {
         writeNumber(recipientAmount.toLong())
         writeString(address)
         writeBoolean(isSentToDefaultAddress)
-        writeNumber(miningFees.toLong())
+        writeNumber(miningFee.toLong())
         writeByteVector32(channelId)
         writeTxId(txId)
         writeNumber(createdAt)

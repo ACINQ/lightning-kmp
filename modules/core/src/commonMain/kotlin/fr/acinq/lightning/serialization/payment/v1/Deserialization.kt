@@ -21,6 +21,7 @@ import fr.acinq.lightning.serialization.InputExtensions.readPublicKey
 import fr.acinq.lightning.serialization.InputExtensions.readString
 import fr.acinq.lightning.serialization.InputExtensions.readTxId
 import fr.acinq.lightning.serialization.InputExtensions.readUuid
+import fr.acinq.lightning.serialization.common.liquidityads.Deserialization.readInboundLiquidityPurchase
 import fr.acinq.lightning.serialization.common.liquidityads.Deserialization.readLiquidityPurchase
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -56,6 +57,7 @@ object Deserialization {
         preimage = readByteVector32(),
         paymentRequest = Bolt11Invoice.read(readString()).get(),
         parts = readCollection { readLightningIncomingPaymentPart() }.toList(),
+        liquidityPurchase = readNullable { readInboundLiquidityPurchase() },
         createdAt = readNumber()
     )
 
@@ -63,6 +65,7 @@ object Deserialization {
         preimage = readByteVector32(),
         metadata = OfferPaymentMetadata.decode(readDelimitedByteArray().byteVector()),
         parts = readCollection { readLightningIncomingPaymentPart() }.toList(),
+        liquidityPurchase = readNullable { readInboundLiquidityPurchase() },
         createdAt = readNumber()
     )
 
@@ -89,8 +92,9 @@ object Deserialization {
     private fun Input.readNewChannelIncomingPayment(): NewChannelIncomingPayment = NewChannelIncomingPayment(
         id = readUuid(),
         amountReceived = readNumber().msat,
-        serviceFee = readNumber().msat,
         miningFee = readNumber().sat,
+        serviceFee = readNumber().msat,
+        liquidityPurchase = readNullable { readLiquidityPurchase() },
         channelId = readByteVector32(),
         txId = readTxId(),
         localInputs = readCollection { readOutPoint() }.toSet(),
@@ -103,6 +107,7 @@ object Deserialization {
         id = readUuid(),
         amountReceived = readNumber().msat,
         miningFee = readNumber().sat,
+        liquidityPurchase = readNullable { readLiquidityPurchase() },
         channelId = readByteVector32(),
         txId = readTxId(),
         localInputs = readCollection { readOutPoint() }.toSet(),
@@ -159,7 +164,7 @@ object Deserialization {
         0x00 -> readLightningOutgoingPayment()
         0x01 -> readSpliceOutgoingPayment()
         0x02 -> readSpliceCpfpOutgoingPayment()
-        0x03 -> readInboundLiquidityOutgoingPayment()
+        0x03 -> readLiquidityPurchasePayment()
         0x04 -> readChannelCloseOutgoingPayment()
         else -> error("unknown discriminator $discriminator for class ${OutgoingPayment::class}")
     }
@@ -262,7 +267,18 @@ object Deserialization {
         id = readUuid(),
         recipientAmount = readNumber().sat,
         address = readString(),
-        miningFees = readNumber().sat,
+        miningFee = readNumber().sat,
+        channelId = readByteVector32(),
+        txId = readTxId(),
+        liquidityPurchase = readNullable { readLiquidityPurchase() },
+        createdAt = readNumber(),
+        confirmedAt = readNullable { readNumber() },
+        lockedAt = readNullable { readNumber() }
+    )
+
+    private fun Input.readSpliceCpfpOutgoingPayment(): SpliceCpfp = SpliceCpfp(
+        id = readUuid(),
+        miningFee = readNumber().sat,
         channelId = readByteVector32(),
         txId = readTxId(),
         createdAt = readNumber(),
@@ -270,22 +286,12 @@ object Deserialization {
         lockedAt = readNullable { readNumber() }
     )
 
-    private fun Input.readSpliceCpfpOutgoingPayment(): SpliceCpfpOutgoingPayment = SpliceCpfpOutgoingPayment(
+    private fun Input.readLiquidityPurchasePayment(): LiquidityPurchasePayment = LiquidityPurchasePayment(
         id = readUuid(),
-        miningFees = readNumber().sat,
+        miningFee = readNumber().sat,
         channelId = readByteVector32(),
         txId = readTxId(),
-        createdAt = readNumber(),
-        confirmedAt = readNullable { readNumber() },
-        lockedAt = readNullable { readNumber() }
-    )
-
-    private fun Input.readInboundLiquidityOutgoingPayment(): InboundLiquidityOutgoingPayment = InboundLiquidityOutgoingPayment(
-        id = readUuid(),
-        channelId = readByteVector32(),
-        txId = readTxId(),
-        localMiningFees = readNumber().sat,
-        purchase = readLiquidityPurchase(),
+        liquidityPurchase = readLiquidityPurchase(),
         createdAt = readNumber(),
         confirmedAt = readNullable { readNumber() },
         lockedAt = readNullable { readNumber() }
@@ -296,7 +302,7 @@ object Deserialization {
         recipientAmount = readNumber().sat,
         address = readString(),
         isSentToDefaultAddress = readBoolean(),
-        miningFees = readNumber().sat,
+        miningFee = readNumber().sat,
         channelId = readByteVector32(),
         txId = readTxId(),
         createdAt = readNumber(),

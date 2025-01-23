@@ -7,7 +7,10 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.sphinx.Sphinx
-import fr.acinq.lightning.db.*
+import fr.acinq.lightning.db.Bolt11IncomingPayment
+import fr.acinq.lightning.db.Bolt12IncomingPayment
+import fr.acinq.lightning.db.LightningIncomingPayment
+import fr.acinq.lightning.db.PaymentsDb
 import fr.acinq.lightning.io.AddLiquidityForIncomingPayment
 import fr.acinq.lightning.io.PeerCommand
 import fr.acinq.lightning.io.SendOnTheFlyFundingMessage
@@ -243,7 +246,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                                     add(SendOnTheFlyFundingMessage(AddFeeCredit(nodeParams.chainHash, incomingPayment.paymentPreimage)))
                                                     htlcParts.forEach { add(WrappedChannelCommand(it.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(it.htlc.id, incomingPayment.paymentPreimage, true))) }
                                                 }
-                                                acceptPayment(incomingPayment, parts, actions)
+                                                acceptPayment(incomingPayment, parts, liquidityPurchase = null, actions)
                                             }
                                             else -> {
                                                 // We're not adding to our fee credit, so we need to check our liquidity policy.
@@ -275,9 +278,9 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                         }
                                     }
                                 }
-                                else -> when (val fundingFee = validateFundingFee(htlcParts)) {
+                                else -> when (val liquidityPurchase = validateFundingFee(htlcParts)) {
                                     is Either.Left -> {
-                                        logger.warning { "rejecting htlcs with invalid on-the-fly funding fee: ${fundingFee.value.message}" }
+                                        logger.warning { "rejecting htlcs with invalid on-the-fly funding fee: ${liquidityPurchase.value.message}" }
                                         val failure = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
                                         rejectPayment(payment, incomingPayment, failure)
                                     }
@@ -287,7 +290,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                             val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.paymentPreimage, true)
                                             WrappedChannelCommand(part.htlc.channelId, cmd)
                                         }
-                                        acceptPayment(incomingPayment, parts, actions)
+                                        acceptPayment(incomingPayment, parts, liquidityPurchase.value, actions)
                                     }
                                 }
                             }
@@ -298,15 +301,20 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
     }
 
-    private suspend fun acceptPayment(incomingPayment: LightningIncomingPayment, parts: List<LightningIncomingPayment.Part>, actions: List<PeerCommand>): ProcessAddResult.Accepted {
+    private suspend fun acceptPayment(
+        incomingPayment: LightningIncomingPayment,
+        parts: List<LightningIncomingPayment.Part>,
+        liquidityPurchase: LiquidityAds.InboundLiquidityPurchase?,
+        actions: List<PeerCommand>
+    ): ProcessAddResult.Accepted {
         pending.remove(incomingPayment.paymentHash)
         if (incomingPayment is Bolt12IncomingPayment) {
             // We didn't store the Bolt 12 invoice in our DB when receiving the invoice_request (to protect against DoS).
             // We need to create the DB entry now otherwise the payment won't be recorded.
             db.addIncomingPayment(incomingPayment)
         }
-        db.receiveLightningPayment(incomingPayment.paymentHash, parts)
-        val incomingPayment1 = incomingPayment.addReceivedParts(parts)
+        db.receiveLightningPayment(incomingPayment.paymentHash, parts, liquidityPurchase)
+        val incomingPayment1 = incomingPayment.addReceivedParts(parts, liquidityPurchase)
         nodeParams._nodeEvents.emit(PaymentEvents.PaymentReceived(incomingPayment1))
         return ProcessAddResult.Accepted(actions, incomingPayment1, parts)
     }
@@ -369,25 +377,28 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
     }
 
-    private suspend fun validateFundingFee(parts: List<HtlcPart>): Either<ChannelException, LiquidityAds.FundingFee?> {
-        return when (val fundingTxId = parts.map { it.htlc.fundingFee?.fundingTxId }.firstOrNull()) {
+    private suspend fun validateFundingFee(parts: List<HtlcPart>): Either<ChannelException, LiquidityAds.InboundLiquidityPurchase?> {
+        return when (val fundingTxId = parts.firstNotNullOfOrNull { it.htlc.fundingFee?.fundingTxId }) {
             is TxId -> {
                 val channelId = parts.first().htlc.channelId
                 val paymentHash = parts.first().htlc.paymentHash
-                val fundingFee = parts.map { it.htlc.fundingFee?.amount ?: 0.msat }.sum()
-                when (val purchase = db.getInboundLiquidityPurchase(fundingTxId)?.purchase) {
+                val fundingFeePaid = parts.map { it.htlc.fundingFee?.amount ?: 0.msat }.sum()
+                when (val liquidityPurchase = db.getInboundLiquidityPurchase(fundingTxId)) {
                     null -> Either.Left(UnexpectedLiquidityAdsFundingFee(channelId, fundingTxId))
                     else -> {
-                        val fundingFeeOk = when (val details = purchase.paymentDetails) {
-                            is LiquidityAds.PaymentDetails.FromFutureHtlc -> details.paymentHashes.contains(paymentHash) && fundingFee <= purchase.fees.total.toMilliSatoshi()
-                            is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> details.preimages.any { Crypto.sha256(it).byteVector32() == paymentHash } && fundingFee <= purchase.fees.total.toMilliSatoshi()
+                        // Our peer decides how much funding fee to deduce from the HTLCs they forward to us.
+                        // We verify that they didn't deduce more than the funding fee we owe them for the liquidity purchase.
+                        val fundingFeeOwed = liquidityPurchase.purchase.fees.total.toMilliSatoshi()
+                        val fundingFeeOk = when (val details = liquidityPurchase.purchase.paymentDetails) {
+                            is LiquidityAds.PaymentDetails.FromFutureHtlc -> details.paymentHashes.contains(paymentHash) && fundingFeePaid <= fundingFeeOwed
+                            is LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage -> details.preimages.any { Crypto.sha256(it).byteVector32() == paymentHash } && fundingFeePaid <= fundingFeeOwed
                             // Fees have already been paid from our channel balance.
-                            is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> details.paymentHashes.contains(paymentHash) && fundingFee == 0.msat
+                            is LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc -> details.paymentHashes.contains(paymentHash) && fundingFeePaid == 0.msat
                             is LiquidityAds.PaymentDetails.FromChannelBalance -> false
                         }
                         when {
-                            fundingFeeOk -> Either.Right(LiquidityAds.FundingFee(fundingFee, fundingTxId))
-                            else -> Either.Left(InvalidLiquidityAdsFundingFee(channelId, fundingTxId, paymentHash, purchase.fees.total, fundingFee))
+                            fundingFeeOk -> Either.Right(liquidityPurchase)
+                            else -> Either.Left(InvalidLiquidityAdsFundingFee(channelId, fundingTxId, paymentHash, fundingFeeOwed.truncateToSatoshi(), fundingFeePaid))
                         }
                     }
                 }

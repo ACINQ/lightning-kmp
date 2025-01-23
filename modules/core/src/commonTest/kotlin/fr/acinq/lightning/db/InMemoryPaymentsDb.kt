@@ -2,8 +2,8 @@ package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.TxId
-import fr.acinq.lightning.payment.FinalFailure
 import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.wire.LiquidityAds
 
 class InMemoryPaymentsDb : PaymentsDb {
     private val incoming = mutableMapOf<ByteVector32, LightningIncomingPayment>()
@@ -29,10 +29,10 @@ class InMemoryPaymentsDb : PaymentsDb {
 
     override suspend fun getLightningIncomingPayment(paymentHash: ByteVector32): LightningIncomingPayment? = incoming[paymentHash]
 
-    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>) {
+    override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>, liquidityPurchase: LiquidityAds.InboundLiquidityPurchase?) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = payment.addReceivedParts(parts)
+            else -> incoming[paymentHash] = payment.addReceivedParts(parts, liquidityPurchase)
         }
     }
 
@@ -89,11 +89,10 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment? {
-        return when (val onChainPayment = onChainOutgoing[fundingTxId]) {
-            is InboundLiquidityOutgoingPayment -> onChainPayment
-            else -> null
-        }
+    override suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): LiquidityAds.InboundLiquidityPurchase? {
+        val fromIncoming = onchainIncoming.values.find { it.txId == fundingTxId }?.liquidityPurchaseDetails
+        val fromOutgoing = onChainOutgoing[fundingTxId]?.liquidityPurchaseDetails
+        return fromIncoming ?: fromOutgoing
     }
 
     override suspend fun completeLightningOutgoingPayment(id: UUID, status: LightningOutgoingPayment.Status.Completed) {
