@@ -559,6 +559,12 @@ data class LiquidityPurchasePayment(
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = fees
+
+    /**
+     * Returns true if the liquidity fees are paid by a [LightningIncomingPayment] received after the liquidity purchase.
+     * Wallets may choose to hide this [LiquidityPurchasePayment] since it will be redundant with the [LightningIncomingPayment].
+     */
+    val isPaidByFutureHtlcs: Boolean = this.liquidityPurchaseDetails?.isPaidByFutureHtlcs ?: false
 }
 
 data class ChannelCloseOutgoingPayment(
