@@ -964,6 +964,53 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `receive payment with liquidity purchase -- multiple transactions`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val (amount1, amount2) = listOf(50_000_000.msat, 100_000_000.msat)
+        val totalAmount = amount1 + amount2
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(totalAmount)
+        checkDbPayment(incomingPayment, paymentHandler.db)
+
+        // We have a matching transaction in our DB.
+        val purchase = LiquidityAds.Purchase.WithFeeCredit(
+            defaultAmount.truncateToSatoshi(),
+            LiquidityAds.Fees(2000.sat, 3000.sat),
+            250_000.msat,
+            LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incomingPayment.paymentHash)),
+        )
+        val payment = LiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
+        paymentHandler.db.addOutgoingPayment(payment)
+        val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
+        assertNotNull(fundingFee)
+
+        // Step 1 of 2:
+        //  - Alice sends a first HTLC to Bob that partially pays the funding fee
+        //  - Bob doesn't accept the MPP set yet
+        run {
+            val fundingFee1 = fundingFee.copy(amount = fundingFee.amount - 1_500_000.msat)
+            val htlc = makeUpdateAddHtlc(1, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret), fundingFee = fundingFee1)
+            assertTrue(htlc.amountMsat < amount1)
+            val result = paymentHandler.process(htlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+        }
+        // Step 2 of 2:
+        //  - Alice sends a second HTLC to Bob that pays the remaining funding fee, but with a different txid
+        //  - Bob rejects the MPP set
+        run {
+            val fundingFee2 = LiquidityAds.FundingFee(1_500_000.msat, TxId(randomBytes32()))
+            val htlc = makeUpdateAddHtlc(2, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret), fundingFee = fundingFee2)
+            assertTrue(htlc.amountMsat < amount2)
+            val result = paymentHandler.process(htlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+            val expected = listOf(
+                ChannelCommand.Htlc.Settlement.Fail(1, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true),
+                ChannelCommand.Htlc.Settlement.Fail(2, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
+            )
+            assertEquals(expected.map { WrappedChannelCommand(htlc.channelId, it) }.toSet(), result.actions.toSet())
+        }
+    }
+
+    @Test
     fun `receive payment with liquidity purchase -- fee too high`() = runSuspendTest {
         val channelId = randomBytes32()
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)

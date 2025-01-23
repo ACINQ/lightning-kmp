@@ -378,8 +378,12 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
     }
 
     private suspend fun validateFundingFee(parts: List<HtlcPart>): Either<ChannelException, LiquidityAds.InboundLiquidityPurchase?> {
-        return when (val fundingTxId = parts.firstNotNullOfOrNull { it.htlc.fundingFee?.fundingTxId }) {
-            is TxId -> {
+        val fundingTxIds = parts.mapNotNull { it.htlc.fundingFee?.fundingTxId }.toSet()
+        return when {
+            fundingTxIds.isEmpty() -> Either.Right(null)
+            fundingTxIds.size > 1 -> Either.Left(InvalidLiquidityAdsTxIds(parts.first().htlc.channelId, parts.first().htlc.paymentHash, fundingTxIds))
+            else -> {
+                val fundingTxId = fundingTxIds.first()
                 val channelId = parts.first().htlc.channelId
                 val paymentHash = parts.first().htlc.paymentHash
                 val fundingFeePaid = parts.map { it.htlc.fundingFee?.amount ?: 0.msat }.sum()
@@ -403,7 +407,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                     }
                 }
             }
-            else -> Either.Right(null)
         }
     }
 

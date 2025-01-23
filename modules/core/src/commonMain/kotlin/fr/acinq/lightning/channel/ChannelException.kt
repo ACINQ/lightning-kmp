@@ -18,7 +18,6 @@ sealed class ChannelException(open val channelId: ByteVector32, override val mes
 // @formatter:off
 data class InvalidChainHash                        (override val channelId: ByteVector32, val local: BlockHash, val remote: BlockHash) : ChannelException(channelId, "invalid chainHash (local=$local remote=$remote)")
 data class InvalidFundingAmount                    (override val channelId: ByteVector32, val fundingAmount: Satoshi) : ChannelException(channelId, "invalid funding_amount=$fundingAmount")
-data class InvalidPushAmount                       (override val channelId: ByteVector32, val pushAmount: MilliSatoshi, val max: MilliSatoshi) : ChannelException(channelId, "invalid pushAmount=$pushAmount (max=$max)")
 data class InvalidMaxAcceptedHtlcs                 (override val channelId: ByteVector32, val maxAcceptedHtlcs: Int, val max: Int) : ChannelException(channelId, "invalid max_accepted_htlcs=$maxAcceptedHtlcs (max=$max)")
 data class InvalidChannelType                      (override val channelId: ByteVector32, val ourChannelType: ChannelType, val theirChannelType: ChannelType) : ChannelException(channelId, "invalid channel_type=${theirChannelType.name}, expected channel_type=${ourChannelType.name}")
 data class MissingChannelType                      (override val channelId: ByteVector32) : ChannelException(channelId, "option_channel_type was negotiated but channel_type is missing")
@@ -31,6 +30,7 @@ data class InvalidLiquidityAdsAmount               (override val channelId: Byte
 data class InvalidLiquidityAdsRate                 (override val channelId: ByteVector32) : ChannelException(channelId, "liquidity ads funding rate does not match the rate we selected")
 data class UnexpectedLiquidityAdsFundingFee        (override val channelId: ByteVector32, val fundingTxId: TxId) : ChannelException(channelId, "unexpected liquidity ads funding fee for txId=$fundingTxId (transaction not found)")
 data class InvalidLiquidityAdsFundingFee           (override val channelId: ByteVector32, val fundingTxId: TxId, val paymentHash: ByteVector32, val expected: Satoshi, val proposed: MilliSatoshi) : ChannelException(channelId, "invalid liquidity ads funding fee for txId=$fundingTxId and paymentHash=$paymentHash (expected $expected, got $proposed)")
+data class InvalidLiquidityAdsTxIds                (override val channelId: ByteVector32, val paymentHash: ByteVector32, val fundingTxIds: Set<TxId>) : ChannelException(channelId, "invalid liquidity ads funding fee for paymentHash=$paymentHash: multiple txs are provided (${fundingTxIds.joinToString(", ")})")
 data class ChannelFundingError                     (override val channelId: ByteVector32) : ChannelException(channelId, "channel funding error")
 data class RbfAttemptAborted                       (override val channelId: ByteVector32) : ChannelException(channelId, "rbf attempt aborted")
 data class SpliceAborted                           (override val channelId: ByteVector32) : ChannelException(channelId, "splice aborted")
