@@ -12,7 +12,7 @@ interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
      * Get information about a liquidity purchase (for which the funding transaction has been signed).
      * A liquidity purchase can be found either in an [OnChainIncomingPayment] or an [OnChainOutgoingPayment].
      */
-    suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): LiquidityAds.InboundLiquidityPurchase?
+    suspend fun getInboundLiquidityPurchase(txId: TxId): LiquidityAds.InboundLiquidityPurchase?
 
     /**
      * On-chain-related payments are not instant, but needs to be displayed as soon as possible to the user
@@ -182,8 +182,8 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     /** Helper method to facilitate updating child classes */
     fun addReceivedParts(parts: List<Part>, liquidityPurchase: LiquidityAds.InboundLiquidityPurchase?): LightningIncomingPayment {
         return when (this) {
-            is Bolt11IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchase = liquidityPurchase)
-            is Bolt12IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchase = liquidityPurchase)
+            is Bolt11IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchase = this.liquidityPurchase ?: liquidityPurchase)
+            is Bolt12IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchase = this.liquidityPurchase ?: liquidityPurchase)
         }
     }
 }
@@ -490,8 +490,11 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     override val completedAt: Long? get() = lockedAt
     override val succeededAt: Long? get() = lockedAt
 
+    /** Fee paid to the Lightning Service Provider for this on-chain operation. */
+    val serviceFee: MilliSatoshi get() = liquidityPurchase?.fees?.serviceFee?.toMilliSatoshi() ?: 0.msat
+
     /** If some liquidity was purchased, we paid a service fee on top of the mining fee. */
-    override val fees: MilliSatoshi get() = miningFee.toMilliSatoshi() + (liquidityPurchase?.fees?.serviceFee?.toMilliSatoshi() ?: 0.msat)
+    override val fees: MilliSatoshi get() = miningFee.toMilliSatoshi() + serviceFee
 
     val liquidityPurchaseDetails: LiquidityAds.InboundLiquidityPurchase? get() = liquidityPurchase?.let { LiquidityAds.InboundLiquidityPurchase(txId, miningFee, it) }
 

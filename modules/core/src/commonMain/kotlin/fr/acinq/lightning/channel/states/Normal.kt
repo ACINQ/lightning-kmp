@@ -874,7 +874,7 @@ data class Normal(
             add(ChannelAction.Message.Send(action.localSigs))
             // If we purchased liquidity as part of the splice, we will record it with the corresponding incoming or outgoing payment.
             // Only the initiator can request liquidity (the non-initiator is selling liquidity).
-            val liquidityPurchaseRequestedBySelf = if (commitments.params.localParams.isChannelOpener) liquidityPurchase else null
+            val liquidityPurchaseRequestedBySelf = if (action.fundingTx.fundingParams.isInitiator) liquidityPurchase else null
             liquidityPurchaseRequestedBySelf?.let { add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(it))) }
             // NB: the following assumes that there can't be a splice-in and a splice-out simultaneously,
             // or more than one splice-out, because we attribute all local mining fees to each payment entry.
@@ -898,9 +898,9 @@ data class Normal(
                 )
             })
             // If we initiated the splice but there are no new inputs or outputs on our side, it may be a liquidity purchase.
-            if (action.fundingTx.fundingParams.isInitiator && liquidityPurchase != null && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {
-                val miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + liquidityPurchase.fees.miningFee
-                add(ChannelAction.Storage.StoreOutgoingPayment.ViaLiquidityPurchase(txId = action.fundingTx.txId, miningFee = miningFee, purchase = liquidityPurchase))
+            if (liquidityPurchaseRequestedBySelf != null && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {
+                val miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + liquidityPurchaseRequestedBySelf.fees.miningFee
+                add(ChannelAction.Storage.StoreOutgoingPayment.ViaLiquidityPurchase(txId = action.fundingTx.txId, miningFee = miningFee, purchase = liquidityPurchaseRequestedBySelf))
             }
             // If we initiated the splice but there are no new inputs on either side and no new output on our side, it's a cpfp.
             if (action.fundingTx.fundingParams.isInitiator && action.fundingTx.sharedTx.tx.localInputs.isEmpty() && action.fundingTx.sharedTx.tx.remoteInputs.isEmpty() && action.fundingTx.fundingParams.localOutputs.isEmpty()) {

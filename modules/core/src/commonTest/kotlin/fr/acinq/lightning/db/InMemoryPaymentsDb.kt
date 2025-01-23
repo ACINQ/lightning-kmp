@@ -89,9 +89,9 @@ class InMemoryPaymentsDb : PaymentsDb {
         }
     }
 
-    override suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): LiquidityAds.InboundLiquidityPurchase? {
-        val fromIncoming = onchainIncoming.values.find { it.txId == fundingTxId }?.liquidityPurchaseDetails
-        val fromOutgoing = onChainOutgoing[fundingTxId]?.liquidityPurchaseDetails
+    override suspend fun getInboundLiquidityPurchase(txId: TxId): LiquidityAds.InboundLiquidityPurchase? {
+        val fromIncoming = onchainIncoming.values.find { it.txId == txId }?.liquidityPurchaseDetails
+        val fromOutgoing = onChainOutgoing[txId]?.liquidityPurchaseDetails
         return fromIncoming ?: fromOutgoing
     }
 

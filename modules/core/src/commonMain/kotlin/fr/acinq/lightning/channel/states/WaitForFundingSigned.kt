@@ -134,6 +134,8 @@ data class WaitForFundingSigned(
                         //  - mining fees we're paying for our inputs
                         //  - mining fees paid to the remote node for the inputs they provided as liquidity
                         miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + (liquidityPurchaseRequestedBySelf?.fees?.miningFee ?: 0.sat),
+                        // The service fee is exclusively due to the liquidity purchase. It is sort of redundant to define
+                        // a separate field, but this was useful for backward compatibility (before we used liquidity ads).
                         serviceFee = liquidityPurchaseRequestedBySelf?.fees?.serviceFee?.toMilliSatoshi() ?: 0.msat,
                         liquidityPurchase = liquidityPurchaseRequestedBySelf,
                         localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
