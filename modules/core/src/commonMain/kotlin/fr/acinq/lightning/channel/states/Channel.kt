@@ -128,7 +128,7 @@ sealed class ChannelState {
                     listOf(
                         ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
                             amount = finalAmount,
-                            miningFees = channelBalance.truncateToSatoshi() - finalAmount,
+                            miningFee = channelBalance.truncateToSatoshi() - finalAmount,
                             address = address,
                             txId = closingTx.tx.txid,
                             isSentToDefaultAddress = closingTx.toLocalOutput?.publicKeyScript == oldState.commitments.params.localParams.defaultFinalScriptPubKey,
@@ -157,7 +157,7 @@ sealed class ChannelState {
                     listOf(
                         ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
                             amount = channelBalance.truncateToSatoshi(),
-                            miningFees = 0.sat, // TODO: mining fees are tricky in force close scenario, we just lump everything in the amount field
+                            miningFee = 0.sat, // TODO: mining fees are tricky in force close scenario, we just lump everything in the amount field
                             address = address,
                             txId = commitTx.txid,
                             isSentToDefaultAddress = true, // force close always send to the default script

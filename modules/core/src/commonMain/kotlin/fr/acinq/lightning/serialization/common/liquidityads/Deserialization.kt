@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.io.Input
 import fr.acinq.lightning.serialization.InputExtensions.readByteVector32
 import fr.acinq.lightning.serialization.InputExtensions.readCollection
 import fr.acinq.lightning.serialization.InputExtensions.readNumber
+import fr.acinq.lightning.serialization.InputExtensions.readTxId
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.LiquidityAds
@@ -34,4 +35,10 @@ object Deserialization {
         )
         else -> error("unknown discriminator $discriminator for class ${LiquidityAds.Purchase::class}")
     }
+
+    fun Input.readLiquidityTransactionDetails(): LiquidityAds.LiquidityTransactionDetails = LiquidityAds.LiquidityTransactionDetails(
+        txId = readTxId(),
+        miningFee = readNumber().sat,
+        purchase = readLiquidityPurchase(),
+    )
 }

@@ -4,13 +4,17 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.*
+import fr.acinq.lightning.ChannelEvents
+import fr.acinq.lightning.LiquidityEvents
+import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.SwapInEvents
 import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
 import kotlin.math.absoluteValue
 
@@ -117,29 +121,40 @@ data class WaitForFundingSigned(
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
             add(ChannelAction.Message.Send(action.localSigs))
-            // If we purchased liquidity as part of the channel creation, we will add it to our payments db.
-            liquidityPurchase?.let { purchase ->
-                if (channelParams.localParams.isChannelOpener) {
-                    // We only count the mining fees that we must refund to our peer as part of the liquidity purchase.
-                    // If we're also contributing to the funding transaction, the mining fees we pay for our inputs and
-                    // outputs will be recorded in the ViaNewChannel incoming payment entry below.
-                    add(ChannelAction.Storage.StoreOutgoingPayment.ViaInboundLiquidityRequest(txId = action.fundingTx.txId, localMiningFees = 0.sat, purchase = purchase))
-                    add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(purchase)))
-                }
-            }
-            // If we receive funds as part of the channel creation, we will add it to our payments db.
-            if (action.commitment.localCommit.spec.toLocal > 0.msat) add(
-                ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel(
-                    amountReceived = action.commitment.localCommit.spec.toLocal,
-                    serviceFee = 0.msat,
-                    // We only count the mining fees we're paying for our inputs and outputs.
-                    // The mining fees for the remote inputs and outputs are paid by the remote node.
-                    miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi(),
-                    localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
-                    txId = action.fundingTx.txId,
-                    origin = channelOrigin
+            // If we purchased liquidity as part of the channel creation, we will record it in our payments db.
+            // Only the initiator can request liquidity (the non-initiator is selling liquidity).
+            val liquidityPurchaseRequestedBySelf = if (channelParams.localParams.isChannelOpener) liquidityPurchase else null
+            liquidityPurchaseRequestedBySelf?.let { add(ChannelAction.EmitEvent(LiquidityEvents.Purchased(it))) }
+            if (action.fundingTx.sharedTx.tx.localInputs.isNotEmpty()) {
+                // If we've contributed on-chain funds to this channel, this is an incoming on-chain payment.
+                add(
+                    ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel(
+                        amountReceived = action.commitment.localCommit.spec.toLocal,
+                        // The total mining fee paid is the sum of:
+                        //  - mining fees we're paying for our inputs
+                        //  - mining fees paid to the remote node for the inputs they provided as liquidity
+                        miningFee = action.fundingTx.sharedTx.tx.localFees.truncateToSatoshi() + (liquidityPurchaseRequestedBySelf?.fees?.miningFee ?: 0.sat),
+                        // The service fee is exclusively due to the liquidity purchase. It is sort of redundant to define
+                        // a separate field, but this was useful for backward compatibility (before we used liquidity ads).
+                        serviceFee = liquidityPurchaseRequestedBySelf?.fees?.serviceFee?.toMilliSatoshi() ?: 0.msat,
+                        liquidityPurchase = liquidityPurchaseRequestedBySelf,
+                        localInputs = action.fundingTx.sharedTx.tx.localInputs.map { it.outPoint }.toSet(),
+                        txId = action.fundingTx.txId,
+                        origin = channelOrigin
+                    )
                 )
-            )
+            } else if (liquidityPurchaseRequestedBySelf != null) {
+                // Otherwise, this may be a liquidity purchase using on-the-fly funding: this is thus an outgoing payment.
+                // We will receive the corresponding incoming lightning payments afterwards.
+                add(
+                    ChannelAction.Storage.StoreOutgoingPayment.ViaLiquidityPurchase(
+                        txId = action.fundingTx.txId,
+                        // We don't have any input, so we haven't paid any mining fee yet.
+                        miningFee = liquidityPurchaseRequestedBySelf.fees.miningFee,
+                        purchase = liquidityPurchaseRequestedBySelf
+                    )
+                )
+            }
             listOfNotNull(channelOrigin).filterIsInstance<Origin.OnChainWallet>().forEach { origin ->
                 add(ChannelAction.EmitEvent(SwapInEvents.Accepted(origin.inputs, origin.amountBeforeFees.truncateToSatoshi(), origin.fees)))
             }
