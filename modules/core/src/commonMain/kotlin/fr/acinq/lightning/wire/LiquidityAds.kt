@@ -336,8 +336,11 @@ object LiquidityAds {
      * @param miningFee total mining fees paid for this transaction, including the fees from the [purchase].
      */
     data class LiquidityTransactionDetails(val txId: TxId, val miningFee: Satoshi, val purchase: Purchase) {
+        /** Total fee paid for this liquidity transaction. */
+        val fee: Satoshi = miningFee + purchase.fees.serviceFee
+
         /** Total funding fee that must be deduced from HTLCs if [isPaidByFutureHtlcs] is true. */
-        val fundingFee: FundingFee = when (purchase.paymentDetails) {
+        val htlcFundingFee: FundingFee = when (purchase.paymentDetails) {
             is PaymentDetails.FromChannelBalance -> FundingFee(0.msat, txId)
             is PaymentDetails.FromChannelBalanceForFutureHtlc -> FundingFee(0.msat, txId)
             is PaymentDetails.FromFutureHtlc -> FundingFee(purchase.fees.total.toMilliSatoshi(), txId)

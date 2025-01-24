@@ -873,7 +873,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         //  - After the splice completes, Alice sends a second HTLC to Bob with the funding fee deduced
         //  - Bob accepts the MPP set
         run {
-            val fundingFee = purchase.liquidityPurchaseDetails?.fundingFee
+            val fundingFee = purchase.liquidityPurchaseDetails?.htlcFundingFee
             assertNotNull(fundingFee)
             val htlc = makeUpdateAddHtlc(1, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret), fundingFee = fundingFee)
             assertTrue(htlc.amountMsat < amount2)
@@ -926,7 +926,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         //  - After the splice completes, Alice sends a second HTLC to Bob without deducting the funding fee (it was paid from the channel balance)
         //  - Bob accepts the MPP set
         run {
-            val fundingFee = purchase.liquidityPurchaseDetails?.fundingFee
+            val fundingFee = purchase.liquidityPurchaseDetails?.htlcFundingFee
             assertNotNull(fundingFee)
             assertEquals(0.msat, fundingFee.amount)
             val htlc = makeUpdateAddHtlc(7, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, amount, paymentSecret), fundingFee = fundingFee)
@@ -980,7 +980,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
-        val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
+        val fundingFee = payment.liquidityPurchaseDetails?.htlcFundingFee
         assertNotNull(fundingFee)
 
         // Step 1 of 2:
@@ -1024,7 +1024,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
-        val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
+        val fundingFee = payment.liquidityPurchaseDetails?.htlcFundingFee
         assertNotNull(fundingFee)
         assertTrue(fundingFee.amount > 0.msat)
 
@@ -1063,7 +1063,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
-        val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
+        val fundingFee = payment.liquidityPurchaseDetails?.htlcFundingFee
         assertNotNull(fundingFee)
         assertEquals(0.msat, fundingFee.amount)
 
@@ -1091,7 +1091,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
-        val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
+        val fundingFee = payment.liquidityPurchaseDetails?.htlcFundingFee
         assertNotNull(fundingFee)
 
         val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(defaultAmount, defaultAmount, paymentSecret), fundingFee = fundingFee)
@@ -1727,7 +1727,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee + 500.sat, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
-        val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
+        val fundingFee = payment.liquidityPurchaseDetails?.htlcFundingFee
         assertNotNull(fundingFee)
         assertTrue(fundingFee.amount > 0.msat)
 

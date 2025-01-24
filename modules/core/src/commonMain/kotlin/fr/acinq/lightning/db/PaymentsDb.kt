@@ -145,8 +145,13 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     /** This timestamp will be defined when the received amount is usable for spending. */
     override val completedAt: Long? get() = parts.maxByOrNull { it.receivedAt }?.receivedAt
 
-    /** Total fees paid to receive this payment. */
-    override val fees: MilliSatoshi get() = parts.map { it.fees }.sum()
+    /**
+     * Total fees paid to receive this payment (if a liquidity purchase was involved).
+     * The breakdown of how the fees were paid can be obtained using:
+     *  - [LiquidityAds.LiquidityTransactionDetails.feePaidFromChannelBalance]
+     *  - [LiquidityAds.LiquidityTransactionDetails.feePaidFromFutureHtlc]
+     */
+    override val fees: MilliSatoshi get() = liquidityPurchaseDetails?.fee?.toMilliSatoshi() ?: 0.msat
 
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
     override val amountReceived: MilliSatoshi get() = parts.map { it.amountReceived }.sum()
@@ -154,10 +159,9 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     sealed class Part {
         /** Amount received for this part after applying the fees. This is the final amount we can use. */
         abstract val amountReceived: MilliSatoshi
-
-        /** Fees applied to receive this part.*/
+        /** Fees applied to receive this part. */
         abstract val fees: MilliSatoshi
-
+        /** UNIX timestamp of when that part was received. */
         abstract val receivedAt: Long
 
         /** Payment was received via existing lightning channels. */

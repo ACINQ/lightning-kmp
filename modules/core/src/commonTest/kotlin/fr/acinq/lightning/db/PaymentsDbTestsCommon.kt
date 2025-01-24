@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.channel.ChannelManagementFees
 import fr.acinq.lightning.db.LightningOutgoingPayment.Part.HopDesc
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.FinalFailure
@@ -91,7 +92,7 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `receive lightning payment with liquidity purchase`() = runSuspendTest {
+    fun `receive lightning payment with liquidity purchase from future htlcs`() = runSuspendTest {
         val (db, preimage, pr) = createFixture()
         val incoming = Bolt11IncomingPayment(preimage, pr, createdAt = 200)
         db.addIncomingPayment(incoming)
@@ -104,12 +105,40 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
                 paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incoming.paymentHash))
             )
         )
-        val parts = LightningIncomingPayment.Part.Htlc(40_000_000.msat, randomBytes32(), 3, liquidityPurchase.fundingFee, receivedAt = 110)
+        val parts = LightningIncomingPayment.Part.Htlc(40_000_000.msat, randomBytes32(), 3, liquidityPurchase.htlcFundingFee, receivedAt = 110)
+        assertEquals(10_000_000.msat, parts.fees)
         db.receiveLightningPayment(pr.paymentHash, listOf(parts), liquidityPurchase)
         val received = db.getLightningIncomingPayment(pr.paymentHash)
         assertEquals(40_000_000.msat, received!!.amount)
-        assertEquals(10_000_000.msat, received.fees)
+        assertEquals(12_000_000.msat, received.fees)
         assertEquals(liquidityPurchase, received.liquidityPurchaseDetails)
+        assertEquals(ChannelManagementFees(miningFee = 2_000.sat, serviceFee = 0.sat), liquidityPurchase.feePaidFromChannelBalance)
+        assertEquals(ChannelManagementFees(miningFee = 3_000.sat, serviceFee = 7_000.sat), liquidityPurchase.feePaidFromFutureHtlc)
+    }
+
+    @Test
+    fun `receive lightning payment with liquidity purchase from channel balance`() = runSuspendTest {
+        val (db, preimage, pr) = createFixture()
+        val incoming = Bolt11IncomingPayment(preimage, pr, createdAt = 200)
+        db.addIncomingPayment(incoming)
+        val liquidityPurchase = LiquidityAds.LiquidityTransactionDetails(
+            txId = TxId(randomBytes32()),
+            miningFee = 5_000.sat,
+            purchase = LiquidityAds.Purchase.Standard(
+                amount = 250_000.sat,
+                fees = LiquidityAds.Fees(miningFee = 3_000.sat, serviceFee = 7_000.sat),
+                paymentDetails = LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(incoming.paymentHash))
+            )
+        )
+        val parts = LightningIncomingPayment.Part.Htlc(40_000_000.msat, randomBytes32(), 3, liquidityPurchase.htlcFundingFee, receivedAt = 110)
+        assertEquals(0.msat, parts.fees)
+        db.receiveLightningPayment(pr.paymentHash, listOf(parts), liquidityPurchase)
+        val received = db.getLightningIncomingPayment(pr.paymentHash)
+        assertEquals(40_000_000.msat, received!!.amount)
+        assertEquals(12_000_000.msat, received.fees)
+        assertEquals(liquidityPurchase, received.liquidityPurchaseDetails)
+        assertEquals(ChannelManagementFees(miningFee = 5_000.sat, serviceFee = 7_000.sat), liquidityPurchase.feePaidFromChannelBalance)
+        assertEquals(ChannelManagementFees(miningFee = 0.sat, serviceFee = 0.sat), liquidityPurchase.feePaidFromFutureHtlc)
     }
 
     @Test
