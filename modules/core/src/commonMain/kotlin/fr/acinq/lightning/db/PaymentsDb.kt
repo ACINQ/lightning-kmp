@@ -10,7 +10,7 @@ import fr.acinq.lightning.wire.LiquidityAds
 interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
     /**
      * Get information about a liquidity purchase (for which the funding transaction has been signed).
-     * A liquidity purchase can be found either in an [OnChainIncomingPayment] or an [OnChainOutgoingPayment].
+     * A liquidity purchase can be found either in an [OnChainIncomingPayment], a [LightningIncomingPayment] or an [OnChainOutgoingPayment].
      */
     suspend fun getInboundLiquidityPurchase(txId: TxId): LiquidityAds.LiquidityTransactionDetails?
 
