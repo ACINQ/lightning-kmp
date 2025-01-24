@@ -895,7 +895,7 @@ class Peer(
                                     lockedAt = null
                                 )
                             is ChannelAction.Storage.StoreOutgoingPayment.ViaSpliceCpfp ->
-                                SpliceCpfp(
+                                SpliceCpfpOutgoingPayment(
                                     id = UUID.randomUUID(),
                                     miningFee = action.miningFee,
                                     channelId = channelId,
@@ -904,17 +904,31 @@ class Peer(
                                     confirmedAt = null,
                                     lockedAt = null
                                 )
-                            is ChannelAction.Storage.StoreOutgoingPayment.ViaLiquidityPurchase ->
-                                LiquidityPurchasePayment(
-                                    id = UUID.randomUUID(),
-                                    miningFee = action.miningFee,
-                                    channelId = channelId,
-                                    txId = action.txId,
-                                    liquidityPurchase = action.purchase,
-                                    createdAt = currentTimestampMillis(),
-                                    confirmedAt = null,
-                                    lockedAt = null
-                                )
+                            is ChannelAction.Storage.StoreOutgoingPayment.ViaLiquidityPurchase -> {
+                                if (action.purchase.paymentDetails == LiquidityAds.PaymentDetails.FromChannelBalance) {
+                                    ManualLiquidityPurchasePayment(
+                                        id = UUID.randomUUID(),
+                                        miningFee = action.miningFee,
+                                        channelId = channelId,
+                                        txId = action.txId,
+                                        liquidityPurchase = action.purchase,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null,
+                                        lockedAt = null
+                                    )
+                                } else {
+                                    AutomaticLiquidityPurchasePayment(
+                                        id = UUID.randomUUID(),
+                                        miningFee = action.miningFee,
+                                        channelId = channelId,
+                                        txId = action.txId,
+                                        liquidityPurchase = action.purchase,
+                                        createdAt = currentTimestampMillis(),
+                                        confirmedAt = null,
+                                        lockedAt = null
+                                    )
+                                }
+                            }
                             is ChannelAction.Storage.StoreOutgoingPayment.ViaClose -> {
                                 _eventsFlow.emit(ChannelClosing(channelId))
                                 ChannelCloseOutgoingPayment(

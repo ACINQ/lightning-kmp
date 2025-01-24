@@ -221,7 +221,7 @@ class PaymentSerializationTestsCommon {
                 confirmedAt = 2538,
                 lockedAt = 1987,
             ),
-            SpliceCpfp(
+            SpliceCpfpOutgoingPayment(
                 id = UUID.randomUUID(),
                 miningFee = 1151.sat,
                 channelId = randomBytes32(),
@@ -230,7 +230,7 @@ class PaymentSerializationTestsCommon {
                 confirmedAt = null,
                 lockedAt = 1932,
             ),
-            LiquidityPurchasePayment(
+            ManualLiquidityPurchasePayment(
                 id = UUID.randomUUID(),
                 miningFee = 1151.sat,
                 channelId = randomBytes32(),
@@ -244,7 +244,21 @@ class PaymentSerializationTestsCommon {
                 confirmedAt = null,
                 lockedAt = null,
             ),
-            LiquidityPurchasePayment(
+            AutomaticLiquidityPurchasePayment(
+                id = UUID.randomUUID(),
+                miningFee = 1151.sat,
+                channelId = randomBytes32(),
+                txId = TxId(randomBytes32()),
+                liquidityPurchase = LiquidityAds.Purchase.Standard(
+                    amount = 100_000.sat,
+                    fees = LiquidityAds.Fees(miningFee = 150.sat, serviceFee = 550.sat),
+                    paymentDetails = LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(randomBytes32())),
+                ),
+                createdAt = 1729,
+                confirmedAt = null,
+                lockedAt = null,
+            ),
+            AutomaticLiquidityPurchasePayment(
                 id = UUID.randomUUID(),
                 miningFee = 1151.sat,
                 channelId = randomBytes32(),

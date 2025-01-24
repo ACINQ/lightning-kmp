@@ -178,14 +178,17 @@ object Serialization {
         is SpliceOutgoingPayment -> {
             write(0x01); writeSpliceOutgoingPayment(o)
         }
-        is SpliceCpfp -> {
-            write(0x02); writeSpliceCpfp(o)
+        is SpliceCpfpOutgoingPayment -> {
+            write(0x02); writeSpliceCpfpOutgoingPayment(o)
         }
-        is LiquidityPurchasePayment -> {
-            write(0x03); writeLiquidityPurchasePayment(o)
+        is ManualLiquidityPurchasePayment -> {
+            write(0x03); writeManualLiquidityPurchasePayment(o)
+        }
+        is AutomaticLiquidityPurchasePayment -> {
+            write(0x04); writeAutomaticLiquidityPurchasePayment(o)
         }
         is ChannelCloseOutgoingPayment -> {
-            write(0x04); writeChannelCloseOutgoingPayment(o)
+            write(0x05); writeChannelCloseOutgoingPayment(o)
         }
     }
 
@@ -326,7 +329,7 @@ object Serialization {
         writeNullable(lockedAt) { writeNumber(it) }
     }
 
-    private fun Output.writeSpliceCpfp(o: SpliceCpfp) = o.run {
+    private fun Output.writeSpliceCpfpOutgoingPayment(o: SpliceCpfpOutgoingPayment) = o.run {
         writeUuid(id)
         writeNumber(miningFee.toLong())
         writeByteVector32(channelId)
@@ -336,7 +339,18 @@ object Serialization {
         writeNullable(lockedAt) { writeNumber(it) }
     }
 
-    private fun Output.writeLiquidityPurchasePayment(o: LiquidityPurchasePayment) = o.run {
+    private fun Output.writeManualLiquidityPurchasePayment(o: ManualLiquidityPurchasePayment) = o.run {
+        writeUuid(id)
+        writeNumber(miningFee.toLong())
+        writeByteVector32(channelId)
+        writeTxId(txId)
+        writeLiquidityPurchase(liquidityPurchase)
+        writeNumber(createdAt)
+        writeNullable(confirmedAt) { writeNumber(it) }
+        writeNullable(lockedAt) { writeNumber(it) }
+    }
+
+    private fun Output.writeAutomaticLiquidityPurchasePayment(o: AutomaticLiquidityPurchasePayment) = o.run {
         writeUuid(id)
         writeNumber(miningFee.toLong())
         writeByteVector32(channelId)

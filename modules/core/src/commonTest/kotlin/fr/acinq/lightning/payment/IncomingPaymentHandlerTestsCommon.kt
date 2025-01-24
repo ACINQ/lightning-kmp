@@ -864,7 +864,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             )
             // Additional mining fee will be paid from our channel balance during the splice.
             val miningFee = purchase.fees.miningFee + 250.sat
-            val payment = LiquidityPurchasePayment(UUID.randomUUID(), miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
+            val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
             paymentHandler.db.addOutgoingPayment(payment)
             payment
         }
@@ -917,7 +917,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             )
             // Additional mining fee will be paid from our channel balance during the splice.
             val miningFee = purchase.fees.miningFee + 150.sat
-            val payment = LiquidityPurchasePayment(UUID.randomUUID(), miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
+            val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
             paymentHandler.db.addOutgoingPayment(payment)
             payment
         }
@@ -978,7 +978,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             250_000.msat,
             LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incomingPayment.paymentHash)),
         )
-        val payment = LiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
+        val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
         val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
         assertNotNull(fundingFee)
@@ -1022,7 +1022,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             LiquidityAds.Fees(2000.sat, 3000.sat),
             LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incomingPayment.paymentHash)),
         )
-        val payment = LiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
+        val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
         val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
         assertNotNull(fundingFee)
@@ -1061,7 +1061,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             LiquidityAds.Fees(2000.sat, 3000.sat),
             LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(incomingPayment.paymentHash)),
         )
-        val payment = LiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
+        val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
         val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
         assertNotNull(fundingFee)
@@ -1089,7 +1089,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             250_000.msat,
             LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(randomBytes32())),
         )
-        val payment = LiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
+        val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
         val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
         assertNotNull(fundingFee)
@@ -1725,7 +1725,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             500.msat,
             LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(listOf(preimage)),
         )
-        val payment = LiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee + 500.sat, channelId, TxId(randomBytes32()), purchase, 0, null, null)
+        val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), purchase.fees.miningFee + 500.sat, channelId, TxId(randomBytes32()), purchase, 0, null, null)
         paymentHandler.db.addOutgoingPayment(payment)
         val fundingFee = payment.liquidityPurchaseDetails?.fundingFee
         assertNotNull(fundingFee)

@@ -356,9 +356,6 @@ object LiquidityAds {
          * Returns true if the liquidity fees are paid by HTLCs received after the liquidity purchase.
          * Note that even in that case, the mining fee may also be partially paid from the channel balance.
          * The [feePaidFromChannelBalance] and [feePaidFromFutureHtlc] should be used for a detailed summary.
-         *
-         * Wallets should avoid displaying the corresponding [fr.acinq.lightning.db.LiquidityPurchasePayment]
-         * which will be redundant with the [fr.acinq.lightning.db.LightningIncomingPayment].
          */
         val isPaidByFutureHtlcs = when (purchase.paymentDetails) {
             is PaymentDetails.FromChannelBalance -> false

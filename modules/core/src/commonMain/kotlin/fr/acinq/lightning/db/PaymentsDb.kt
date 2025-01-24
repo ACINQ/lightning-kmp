@@ -502,8 +502,9 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     fun setLocked(lockedAt: Long): OnChainOutgoingPayment =
         when (this) {
             is SpliceOutgoingPayment -> copy(lockedAt = lockedAt)
-            is SpliceCpfp -> copy(lockedAt = lockedAt)
-            is LiquidityPurchasePayment -> copy(lockedAt = lockedAt)
+            is SpliceCpfpOutgoingPayment -> copy(lockedAt = lockedAt)
+            is ManualLiquidityPurchasePayment -> copy(lockedAt = lockedAt)
+            is AutomaticLiquidityPurchasePayment -> copy(lockedAt = lockedAt)
             is ChannelCloseOutgoingPayment -> copy(lockedAt = lockedAt)
         }
 
@@ -511,8 +512,9 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     fun setConfirmed(confirmedAt: Long): OnChainOutgoingPayment =
         when (this) {
             is SpliceOutgoingPayment -> copy(confirmedAt = confirmedAt)
-            is SpliceCpfp -> copy(confirmedAt = confirmedAt)
-            is LiquidityPurchasePayment -> copy(confirmedAt = confirmedAt)
+            is SpliceCpfpOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is ManualLiquidityPurchasePayment -> copy(confirmedAt = confirmedAt)
+            is AutomaticLiquidityPurchasePayment -> copy(confirmedAt = confirmedAt)
             is ChannelCloseOutgoingPayment -> copy(confirmedAt = confirmedAt)
         }
 }
@@ -534,7 +536,7 @@ data class SpliceOutgoingPayment(
 }
 
 /** A splice transaction that only bumps the fees of the parent splice transactions. */
-data class SpliceCpfp(
+data class SpliceCpfpOutgoingPayment(
     override val id: UUID,
     override val miningFee: Satoshi,
     override val channelId: ByteVector32,
@@ -547,8 +549,8 @@ data class SpliceCpfp(
     override val liquidityPurchase: LiquidityAds.Purchase? = null
 }
 
-/** An on-chain transaction that only purchases inbound liquidity. */
-data class LiquidityPurchasePayment(
+/** An on-chain transaction that only purchases inbound liquidity, triggered by the wallet user. */
+data class ManualLiquidityPurchasePayment(
     override val id: UUID,
     override val miningFee: Satoshi,
     override val channelId: ByteVector32,
@@ -559,12 +561,26 @@ data class LiquidityPurchasePayment(
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = fees
+}
 
-    /**
-     * Returns true if the liquidity fees are paid by a [LightningIncomingPayment] received after the liquidity purchase.
-     * Wallets may choose to hide this [LiquidityPurchasePayment] since it will be redundant with the [LightningIncomingPayment].
-     */
-    val isPaidByFutureHtlcs: Boolean = this.liquidityPurchaseDetails?.isPaidByFutureHtlcs ?: false
+/**
+ * An on-chain transaction that only purchases inbound liquidity, triggered automatically by an on-the-fly payment.
+ * A [LightningIncomingPayment] will be received that is linked to this purchase and will pay the purchase fees by deducing
+ * them from the HTLCs, unless they've already been paid using [LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc].
+ *
+ * Wallets may choose to hide this [AutomaticLiquidityPurchasePayment] since it will be redundant with the [LightningIncomingPayment].
+ */
+data class AutomaticLiquidityPurchasePayment(
+    override val id: UUID,
+    override val miningFee: Satoshi,
+    override val channelId: ByteVector32,
+    override val txId: TxId,
+    override val liquidityPurchase: LiquidityAds.Purchase,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?,
+) : OnChainOutgoingPayment() {
+    override val amount: MilliSatoshi = fees
 }
 
 data class ChannelCloseOutgoingPayment(

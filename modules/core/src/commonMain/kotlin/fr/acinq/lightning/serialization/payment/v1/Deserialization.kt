@@ -164,8 +164,9 @@ object Deserialization {
         0x00 -> readLightningOutgoingPayment()
         0x01 -> readSpliceOutgoingPayment()
         0x02 -> readSpliceCpfpOutgoingPayment()
-        0x03 -> readLiquidityPurchasePayment()
-        0x04 -> readChannelCloseOutgoingPayment()
+        0x03 -> readManualLiquidityPurchasePayment()
+        0x04 -> readAutomaticLiquidityPurchasePayment()
+        0x05 -> readChannelCloseOutgoingPayment()
         else -> error("unknown discriminator $discriminator for class ${OutgoingPayment::class}")
     }
 
@@ -276,7 +277,7 @@ object Deserialization {
         lockedAt = readNullable { readNumber() }
     )
 
-    private fun Input.readSpliceCpfpOutgoingPayment(): SpliceCpfp = SpliceCpfp(
+    private fun Input.readSpliceCpfpOutgoingPayment(): SpliceCpfpOutgoingPayment = SpliceCpfpOutgoingPayment(
         id = readUuid(),
         miningFee = readNumber().sat,
         channelId = readByteVector32(),
@@ -286,7 +287,18 @@ object Deserialization {
         lockedAt = readNullable { readNumber() }
     )
 
-    private fun Input.readLiquidityPurchasePayment(): LiquidityPurchasePayment = LiquidityPurchasePayment(
+    private fun Input.readManualLiquidityPurchasePayment(): ManualLiquidityPurchasePayment = ManualLiquidityPurchasePayment(
+        id = readUuid(),
+        miningFee = readNumber().sat,
+        channelId = readByteVector32(),
+        txId = readTxId(),
+        liquidityPurchase = readLiquidityPurchase(),
+        createdAt = readNumber(),
+        confirmedAt = readNullable { readNumber() },
+        lockedAt = readNullable { readNumber() }
+    )
+
+    private fun Input.readAutomaticLiquidityPurchasePayment(): AutomaticLiquidityPurchasePayment = AutomaticLiquidityPurchasePayment(
         id = readUuid(),
         miningFee = readNumber().sat,
         channelId = readByteVector32(),
