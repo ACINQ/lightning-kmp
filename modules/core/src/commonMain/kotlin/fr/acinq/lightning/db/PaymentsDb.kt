@@ -572,7 +572,9 @@ data class ManualLiquidityPurchasePayment(
  * A [LightningIncomingPayment] will be received that is linked to this purchase and will pay the purchase fees by deducing
  * them from the HTLCs, unless they've already been paid using [LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc].
  *
- * Wallets may choose to hide this [AutomaticLiquidityPurchasePayment] since it will be redundant with the [LightningIncomingPayment].
+ * The [incomingPaymentReceivedAt] field must be set when receiving the corresponding [LightningIncomingPayment].
+ * Wallets should hide this [AutomaticLiquidityPurchasePayment] once [incomingPaymentReceivedAt] is set since it
+ * will be redundant with the [LightningIncomingPayment].
  */
 data class AutomaticLiquidityPurchasePayment(
     override val id: UUID,
@@ -583,6 +585,7 @@ data class AutomaticLiquidityPurchasePayment(
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
+    val incomingPaymentReceivedAt: Long?,
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = fees
 }

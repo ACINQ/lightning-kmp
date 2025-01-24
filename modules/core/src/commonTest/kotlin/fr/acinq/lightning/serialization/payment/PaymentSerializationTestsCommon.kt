@@ -257,6 +257,7 @@ class PaymentSerializationTestsCommon {
                 createdAt = 1729,
                 confirmedAt = null,
                 lockedAt = null,
+                incomingPaymentReceivedAt = null
             ),
             AutomaticLiquidityPurchasePayment(
                 id = UUID.randomUUID(),
@@ -269,8 +270,9 @@ class PaymentSerializationTestsCommon {
                     paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(randomBytes32())),
                 ),
                 createdAt = 1729,
-                confirmedAt = null,
-                lockedAt = null,
+                confirmedAt = 1731,
+                lockedAt = 1731,
+                incomingPaymentReceivedAt = 1735
             ),
             ChannelCloseOutgoingPayment(
                 id = UUID.randomUUID(),

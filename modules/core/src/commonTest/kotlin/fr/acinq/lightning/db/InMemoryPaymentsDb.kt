@@ -3,6 +3,7 @@ package fr.acinq.lightning.db
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.utils.UUID
+import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.wire.LiquidityAds
 
 class InMemoryPaymentsDb : PaymentsDb {
@@ -32,7 +33,13 @@ class InMemoryPaymentsDb : PaymentsDb {
     override suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>, liquidityPurchase: LiquidityAds.LiquidityTransactionDetails?) {
         when (val payment = incoming[paymentHash]) {
             null -> Unit // no-op
-            else -> incoming[paymentHash] = payment.addReceivedParts(parts, liquidityPurchase)
+            else -> {
+                incoming[paymentHash] = payment.addReceivedParts(parts, liquidityPurchase)
+                when (val onChainPayment = liquidityPurchase?.let { p -> onChainOutgoing[p.txId] }) {
+                    is AutomaticLiquidityPurchasePayment -> onChainOutgoing[onChainPayment.txId] = onChainPayment.copy(incomingPaymentReceivedAt = currentTimestampMillis())
+                    else -> {}
+                }
+            }
         }
     }
 

@@ -359,6 +359,7 @@ object Serialization {
         writeNumber(createdAt)
         writeNullable(confirmedAt) { writeNumber(it) }
         writeNullable(lockedAt) { writeNumber(it) }
+        writeNullable(incomingPaymentReceivedAt) { writeNumber(it) }
     }
 
     private fun Output.writeChannelCloseOutgoingPayment(o: ChannelCloseOutgoingPayment) = o.run {

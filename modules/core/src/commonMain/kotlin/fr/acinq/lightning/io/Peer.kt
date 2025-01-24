@@ -925,7 +925,8 @@ class Peer(
                                         liquidityPurchase = action.purchase,
                                         createdAt = currentTimestampMillis(),
                                         confirmedAt = null,
-                                        lockedAt = null
+                                        lockedAt = null,
+                                        incomingPaymentReceivedAt = null
                                     )
                                 }
                             }

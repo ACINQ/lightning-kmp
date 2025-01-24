@@ -306,7 +306,8 @@ object Deserialization {
         liquidityPurchase = readLiquidityPurchase(),
         createdAt = readNumber(),
         confirmedAt = readNullable { readNumber() },
-        lockedAt = readNullable { readNumber() }
+        lockedAt = readNullable { readNumber() },
+        incomingPaymentReceivedAt = readNullable { readNumber() }
     )
 
     private fun Input.readChannelCloseOutgoingPayment(): ChannelCloseOutgoingPayment = ChannelCloseOutgoingPayment(
