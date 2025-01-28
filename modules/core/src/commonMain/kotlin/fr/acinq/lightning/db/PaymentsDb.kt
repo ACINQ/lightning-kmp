@@ -500,7 +500,7 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
     /** If some liquidity was purchased, we paid a service fee on top of the mining fee. */
     override val fees: MilliSatoshi get() = miningFee.toMilliSatoshi() + serviceFee
 
-    val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? get() = liquidityPurchase?.let { LiquidityAds.LiquidityTransactionDetails(txId, miningFee, it) }
+    abstract val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails?
 
     /** Helper method to facilitate updating child classes */
     fun setLocked(lockedAt: Long): OnChainOutgoingPayment =
@@ -537,6 +537,7 @@ data class SpliceOutgoingPayment(
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = recipientAmount.toMilliSatoshi() + fees
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? get() = liquidityPurchase?.let { LiquidityAds.LiquidityTransactionDetails(txId, miningFee, it) }
 }
 
 /** A splice transaction that only bumps the fees of the parent splice transactions. */
@@ -551,6 +552,7 @@ data class SpliceCpfpOutgoingPayment(
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = miningFee.toMilliSatoshi()
     override val liquidityPurchase: LiquidityAds.Purchase? = null
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? = null
 }
 
 /** An on-chain transaction that only purchases inbound liquidity, triggered by the wallet user. */
@@ -565,6 +567,7 @@ data class ManualLiquidityPurchasePayment(
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = fees
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails get() = LiquidityAds.LiquidityTransactionDetails(txId, miningFee, liquidityPurchase)
 }
 
 /**
@@ -588,6 +591,7 @@ data class AutomaticLiquidityPurchasePayment(
     val incomingPaymentReceivedAt: Long?,
 ) : OnChainOutgoingPayment() {
     override val amount: MilliSatoshi = fees
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails get() = LiquidityAds.LiquidityTransactionDetails(txId, miningFee, liquidityPurchase)
 }
 
 data class ChannelCloseOutgoingPayment(
@@ -612,4 +616,5 @@ data class ChannelCloseOutgoingPayment(
     }
     override val amount: MilliSatoshi = (recipientAmount + miningFee).toMilliSatoshi()
     override val liquidityPurchase: LiquidityAds.Purchase? = null
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? = null
 }
