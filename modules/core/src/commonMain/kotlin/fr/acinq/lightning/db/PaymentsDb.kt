@@ -3,12 +3,17 @@ package fr.acinq.lightning.db
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.channel.ChannelManagementFees
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.LiquidityAds
 
 interface PaymentsDb : IncomingPaymentsDb, OutgoingPaymentsDb {
+    /**
+     * Get information about a liquidity purchase (for which the funding transaction has been signed).
+     * A liquidity purchase can be found either in an [OnChainIncomingPayment], a [LightningIncomingPayment] or an [OnChainOutgoingPayment].
+     */
+    suspend fun getInboundLiquidityPurchase(txId: TxId): LiquidityAds.LiquidityTransactionDetails?
+
     /**
      * On-chain-related payments are not instant, but needs to be displayed as soon as possible to the user
      * for UX purposes. They affect the balance differently whether they are incoming or outgoing.
@@ -48,8 +53,9 @@ interface IncomingPaymentsDb {
      * - receivedAt must be updated in database.
      *
      * @param parts Is a list containing the payment parts holding the incoming amount.
+     * @param liquidityPurchase (optional) liquidity purchase linked to this lightning payment.
      */
-    suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>)
+    suspend fun receiveLightningPayment(paymentHash: ByteVector32, parts: List<LightningIncomingPayment.Part>, liquidityPurchase: LiquidityAds.LiquidityTransactionDetails?)
 
     /** List expired unpaid normal payments created within specified time range (with the most recent payments first). */
     suspend fun listLightningExpiredPayments(fromCreatedAt: Long = 0, toCreatedAt: Long = currentTimestampMillis()): List<LightningIncomingPayment>
@@ -76,9 +82,6 @@ interface OutgoingPaymentsDb {
 
     /** Mark a lightning outgoing payment part as completed. */
     suspend fun completeLightningOutgoingPaymentPart(parentId: UUID, partId: UUID, status: LightningOutgoingPayment.Part.Status.Completed)
-
-    /** Get information about a liquidity purchase (for which the funding transaction has been signed). */
-    suspend fun getInboundLiquidityPurchase(fundingTxId: TxId): InboundLiquidityOutgoingPayment?
 
     /** List all the outgoing payment attempts that tried to pay the given payment hash. */
     suspend fun listLightningOutgoingPayments(paymentHash: ByteVector32): List<LightningOutgoingPayment>
@@ -136,11 +139,19 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     /** Funds received for this payment, empty if no funds have been received yet. */
     abstract val parts: List<Part>
 
+    /** Optional liquidity purchase linked to this lightning payment (triggered by on-the-fly-funding). */
+    abstract val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails?
+
     /** This timestamp will be defined when the received amount is usable for spending. */
     override val completedAt: Long? get() = parts.maxByOrNull { it.receivedAt }?.receivedAt
 
-    /** Total fees paid to receive this payment. */
-    override val fees: MilliSatoshi get() = parts.map { it.fees }.sum()
+    /**
+     * Total fees paid to receive this payment (if a liquidity purchase was involved).
+     * The breakdown of how the fees were paid can be obtained using:
+     *  - [LiquidityAds.LiquidityTransactionDetails.feePaidFromChannelBalance]
+     *  - [LiquidityAds.LiquidityTransactionDetails.feePaidFromFutureHtlc]
+     */
+    override val fees: MilliSatoshi get() = liquidityPurchaseDetails?.fee?.toMilliSatoshi() ?: 0.msat
 
     /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
     override val amountReceived: MilliSatoshi get() = parts.map { it.amountReceived }.sum()
@@ -148,10 +159,9 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     sealed class Part {
         /** Amount received for this part after applying the fees. This is the final amount we can use. */
         abstract val amountReceived: MilliSatoshi
-
-        /** Fees applied to receive this part.*/
+        /** Fees applied to receive this part. */
         abstract val fees: MilliSatoshi
-
+        /** UNIX timestamp of when that part was received. */
         abstract val receivedAt: Long
 
         /** Payment was received via existing lightning channels. */
@@ -174,10 +184,10 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
     fun isExpired(): Boolean = this is Bolt11IncomingPayment && this.paymentRequest.isExpired()
 
     /** Helper method to facilitate updating child classes */
-    fun addReceivedParts(parts: List<Part>): LightningIncomingPayment {
+    fun addReceivedParts(parts: List<Part>, liquidityPurchase: LiquidityAds.LiquidityTransactionDetails?): LightningIncomingPayment {
         return when (this) {
-            is Bolt11IncomingPayment -> copy(parts = this.parts + parts)
-            is Bolt12IncomingPayment -> copy(parts = this.parts + parts)
+            is Bolt11IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchaseDetails = this.liquidityPurchaseDetails ?: liquidityPurchase)
+            is Bolt12IncomingPayment -> copy(parts = this.parts + parts, liquidityPurchaseDetails = this.liquidityPurchaseDetails ?: liquidityPurchase)
         }
     }
 }
@@ -187,6 +197,7 @@ data class Bolt11IncomingPayment(
     private val preimage: ByteVector32,
     val paymentRequest: Bolt11Invoice,
     override val parts: List<Part> = emptyList(),
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? = null,
     override val createdAt: Long = currentTimestampMillis()
 ) : LightningIncomingPayment(preimage)
 
@@ -195,16 +206,19 @@ data class Bolt12IncomingPayment(
     private val preimage: ByteVector32,
     val metadata: OfferPaymentMetadata,
     override val parts: List<Part> = emptyList(),
+    override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? = null,
     override val createdAt: Long = currentTimestampMillis()
 ) : LightningIncomingPayment(preimage)
 
 /** Trustless swap-in (dual-funding or splice-in) */
 sealed class OnChainIncomingPayment : IncomingPayment() {
     abstract override val id: UUID
-    /** Fees paid to Lightning Service Provider for this on-chain transaction. */
-    abstract val serviceFee: MilliSatoshi
-    /** Feed paid to bitcoin miners for processing the on-chain operation. */
+    /** Total fee paid to bitcoin miners for this operation, including liquidity-related mining fee if any. */
     abstract val miningFee: Satoshi
+    /** Fee paid to the Lightning Service Provider for this on-chain operation. */
+    abstract val serviceFee: MilliSatoshi
+    /** Optional liquidity purchase included in this on-chain operation. */
+    abstract val liquidityPurchase: LiquidityAds.Purchase?
     override val fees: MilliSatoshi get() = serviceFee + miningFee.toMilliSatoshi()
     abstract val channelId: ByteVector32
     abstract val txId: TxId
@@ -217,6 +231,8 @@ sealed class OnChainIncomingPayment : IncomingPayment() {
      * used), but both sides have to agree that the funds are usable, a.k.a. "locked".
      */
     override val completedAt: Long? get() = lockedAt
+
+    val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? get() = liquidityPurchase?.let { LiquidityAds.LiquidityTransactionDetails(txId, miningFee, it) }
 
     /** Helper method to facilitate updating child classes */
     fun setLocked(lockedAt: Long): OnChainIncomingPayment =
@@ -237,12 +253,14 @@ sealed class OnChainIncomingPayment : IncomingPayment() {
  * Payment was received via a new channel opened to us.
  *
  * @param amountReceived Our side of the balance of this channel when it's created. This is the amount received after the creation fees are applied.
+ * @param serviceFee The service fee could be computed from the liquidity purchase, so this field is redundant, but it is useful for backward compatibility (before we used liquidity ads).
  */
 data class NewChannelIncomingPayment(
     override val id: UUID,
     override val amountReceived: MilliSatoshi,
-    override val serviceFee: MilliSatoshi,
     override val miningFee: Satoshi,
+    override val serviceFee: MilliSatoshi,
+    override val liquidityPurchase: LiquidityAds.Purchase?,
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val localInputs: Set<OutPoint>,
@@ -256,6 +274,7 @@ data class SpliceInIncomingPayment(
     override val id: UUID,
     override val amountReceived: MilliSatoshi,
     override val miningFee: Satoshi,
+    override val liquidityPurchase: LiquidityAds.Purchase?,
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val localInputs: Set<OutPoint>,
@@ -263,7 +282,7 @@ data class SpliceInIncomingPayment(
     override val confirmedAt: Long?,
     override val lockedAt: Long?
 ) : OnChainIncomingPayment() {
-    override val serviceFee: MilliSatoshi = 0.msat
+    override val serviceFee: MilliSatoshi = liquidityPurchase?.fees?.serviceFee?.toMilliSatoshi() ?: 0.msat
 }
 
 @Deprecated("Legacy trusted swap-in, kept for backwards-compatibility with existing databases.")
@@ -465,21 +484,31 @@ data class LightningOutgoingPayment(
 
 sealed class OnChainOutgoingPayment : OutgoingPayment() {
     abstract override val id: UUID
-    abstract val miningFees: Satoshi
+    abstract val miningFee: Satoshi
     abstract val channelId: ByteVector32
     abstract val txId: TxId
+    abstract val liquidityPurchase: LiquidityAds.Purchase?
     abstract override val createdAt: Long
     abstract val confirmedAt: Long?
     abstract val lockedAt: Long?
     override val completedAt: Long? get() = lockedAt
     override val succeededAt: Long? get() = lockedAt
 
+    /** Fee paid to the Lightning Service Provider for this on-chain operation. */
+    val serviceFee: MilliSatoshi get() = liquidityPurchase?.fees?.serviceFee?.toMilliSatoshi() ?: 0.msat
+
+    /** If some liquidity was purchased, we paid a service fee on top of the mining fee. */
+    override val fees: MilliSatoshi get() = miningFee.toMilliSatoshi() + serviceFee
+
+    val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? get() = liquidityPurchase?.let { LiquidityAds.LiquidityTransactionDetails(txId, miningFee, it) }
+
     /** Helper method to facilitate updating child classes */
     fun setLocked(lockedAt: Long): OnChainOutgoingPayment =
         when (this) {
             is SpliceOutgoingPayment -> copy(lockedAt = lockedAt)
             is SpliceCpfpOutgoingPayment -> copy(lockedAt = lockedAt)
-            is InboundLiquidityOutgoingPayment -> copy(lockedAt = lockedAt)
+            is ManualLiquidityPurchasePayment -> copy(lockedAt = lockedAt)
+            is AutomaticLiquidityPurchasePayment -> copy(lockedAt = lockedAt)
             is ChannelCloseOutgoingPayment -> copy(lockedAt = lockedAt)
         }
 
@@ -488,80 +517,77 @@ sealed class OnChainOutgoingPayment : OutgoingPayment() {
         when (this) {
             is SpliceOutgoingPayment -> copy(confirmedAt = confirmedAt)
             is SpliceCpfpOutgoingPayment -> copy(confirmedAt = confirmedAt)
-            is InboundLiquidityOutgoingPayment -> copy(confirmedAt = confirmedAt)
+            is ManualLiquidityPurchasePayment -> copy(confirmedAt = confirmedAt)
+            is AutomaticLiquidityPurchasePayment -> copy(confirmedAt = confirmedAt)
             is ChannelCloseOutgoingPayment -> copy(confirmedAt = confirmedAt)
         }
 }
 
+/** A splice transaction that sends a payment to an on-chain address. */
 data class SpliceOutgoingPayment(
     override val id: UUID,
     val recipientAmount: Satoshi,
     val address: String,
-    override val miningFees: Satoshi,
+    override val miningFee: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
+    override val liquidityPurchase: LiquidityAds.Purchase?,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
-    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val amount: MilliSatoshi = recipientAmount.toMilliSatoshi() + fees
 }
 
+/** A splice transaction that only bumps the fees of the parent splice transactions. */
 data class SpliceCpfpOutgoingPayment(
     override val id: UUID,
-    override val miningFees: Satoshi,
+    override val miningFee: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val amount: MilliSatoshi = miningFees.toMilliSatoshi()
-    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val amount: MilliSatoshi = miningFee.toMilliSatoshi()
+    override val liquidityPurchase: LiquidityAds.Purchase? = null
 }
 
-data class InboundLiquidityOutgoingPayment(
+/** An on-chain transaction that only purchases inbound liquidity, triggered by the wallet user. */
+data class ManualLiquidityPurchasePayment(
     override val id: UUID,
+    override val miningFee: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
-    val localMiningFees: Satoshi,
-    val purchase: LiquidityAds.Purchase,
+    override val liquidityPurchase: LiquidityAds.Purchase,
     override val createdAt: Long,
     override val confirmedAt: Long?,
     override val lockedAt: Long?,
 ) : OnChainOutgoingPayment() {
-    override val miningFees: Satoshi = localMiningFees + purchase.fees.miningFee
-    val serviceFees: Satoshi = purchase.fees.serviceFee
-    override val fees: MilliSatoshi = (localMiningFees + purchase.fees.total).toMilliSatoshi()
     override val amount: MilliSatoshi = fees
-    val fundingFee: LiquidityAds.FundingFee = LiquidityAds.FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
-    /**
-     * Even in the "from future htlc" case the mining fee corresponding to the previous channel output
-     * will be paid immediately from the channel balance, except if there is no channel.
-     *
-     * In the "from future htlc case", this inbound liquidity purchase is going to be followed by one or several [IncomingPayment.ReceivedWith.LightningPayment]
-     * with a non-null [LiquidityAds.FundingFee] where [LiquidityAds.FundingFee.fundingTxId] matches this [InboundLiquidityOutgoingPayment.txId].
-     * The sum of [LiquidityAds.FundingFee.amount] will match [InboundLiquidityOutgoingPayment.feePaidFromFutureHtlc].
-     */
-    val feePaidFromChannelBalance = when (purchase.paymentDetails.paymentType) {
-        is LiquidityAds.PaymentType.FromChannelBalance -> ChannelManagementFees(miningFee = miningFees, serviceFee = purchase.fees.serviceFee)
-        is LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc -> ChannelManagementFees(miningFee = miningFees, serviceFee = purchase.fees.serviceFee)
-        is LiquidityAds.PaymentType.FromFutureHtlc -> ChannelManagementFees(miningFee = miningFees - purchase.fees.miningFee, serviceFee = 0.sat)
-        is LiquidityAds.PaymentType.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = miningFees - purchase.fees.miningFee, serviceFee = 0.sat)
-        is LiquidityAds.PaymentType.Unknown -> TODO()
-    }
-    val feePaidFromFutureHtlc = when (purchase.paymentDetails.paymentType) {
-        is LiquidityAds.PaymentType.FromChannelBalance -> ChannelManagementFees(miningFee = 0.sat, serviceFee = 0.sat)
-        is LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc -> ChannelManagementFees(miningFee = 0.sat, serviceFee = 0.sat)
-        is LiquidityAds.PaymentType.FromFutureHtlc -> ChannelManagementFees(miningFee = purchase.fees.miningFee, serviceFee = purchase.fees.serviceFee)
-        is LiquidityAds.PaymentType.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = purchase.fees.miningFee, serviceFee = purchase.fees.serviceFee)
-        is LiquidityAds.PaymentType.Unknown -> TODO()
-    }
-    val feeCreditUsed = when (purchase) {
-        is LiquidityAds.Purchase.WithFeeCredit -> purchase.feeCreditUsed
-        else -> 0.msat
-    }
+}
+
+/**
+ * An on-chain transaction that only purchases inbound liquidity, triggered automatically by an on-the-fly payment.
+ * A [LightningIncomingPayment] will be received that is linked to this purchase and will pay the purchase fees by deducing
+ * them from the HTLCs, unless they've already been paid using [LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc].
+ *
+ * The [incomingPaymentReceivedAt] field must be set when receiving the corresponding [LightningIncomingPayment].
+ * Wallets should hide this [AutomaticLiquidityPurchasePayment] once [incomingPaymentReceivedAt] is set since it
+ * will be redundant with the [LightningIncomingPayment].
+ */
+data class AutomaticLiquidityPurchasePayment(
+    override val id: UUID,
+    override val miningFee: Satoshi,
+    override val channelId: ByteVector32,
+    override val txId: TxId,
+    override val liquidityPurchase: LiquidityAds.Purchase,
+    override val createdAt: Long,
+    override val confirmedAt: Long?,
+    override val lockedAt: Long?,
+    val incomingPaymentReceivedAt: Long?,
+) : OnChainOutgoingPayment() {
+    override val amount: MilliSatoshi = fees
 }
 
 data class ChannelCloseOutgoingPayment(
@@ -573,7 +599,7 @@ data class ChannelCloseOutgoingPayment(
     // So `isSentToDefaultAddress` means this default Phoenix address was used,
     // and is used by the UI to explain the situation to the user.
     val isSentToDefaultAddress: Boolean,
-    override val miningFees: Satoshi,
+    override val miningFee: Satoshi,
     override val channelId: ByteVector32,
     override val txId: TxId,
     override val createdAt: Long,
@@ -584,6 +610,6 @@ data class ChannelCloseOutgoingPayment(
     enum class ChannelClosingType {
         Mutual, Local, Remote, Revoked, Other;
     }
-    override val amount: MilliSatoshi = (recipientAmount + miningFees).toMilliSatoshi()
-    override val fees: MilliSatoshi = miningFees.toMilliSatoshi()
+    override val amount: MilliSatoshi = (recipientAmount + miningFee).toMilliSatoshi()
+    override val liquidityPurchase: LiquidityAds.Purchase? = null
 }

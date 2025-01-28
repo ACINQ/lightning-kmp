@@ -12,6 +12,7 @@ import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.BitField
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toMilliSatoshi
 
 /**
  * Liquidity ads create a decentralized market for channel liquidity.
@@ -329,5 +330,73 @@ object LiquidityAds {
     }
 
     data class WillFundPurchase(val willFund: WillFund, val purchase: Purchase)
+
+    /**
+     * @param txId txId of the transaction including this [purchase].
+     * @param miningFee total mining fees paid for this transaction, including the fees from the [purchase].
+     */
+    data class LiquidityTransactionDetails(val txId: TxId, val miningFee: Satoshi, val purchase: Purchase) {
+        /** Total fee paid for this liquidity transaction. */
+        val fee: Satoshi = miningFee + purchase.fees.serviceFee
+
+        /** Total funding fee that must be deduced from HTLCs if [isPaidByFutureHtlcs] is true. */
+        val htlcFundingFee: FundingFee = when (purchase.paymentDetails) {
+            is PaymentDetails.FromChannelBalance -> FundingFee(0.msat, txId)
+            is PaymentDetails.FromChannelBalanceForFutureHtlc -> FundingFee(0.msat, txId)
+            is PaymentDetails.FromFutureHtlc -> FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
+            is PaymentDetails.FromFutureHtlcWithPreimage -> FundingFee(purchase.fees.total.toMilliSatoshi(), txId)
+        }
+
+        /** Returns true if this liquidity was automatically purchased using on-the-fly-funding. */
+        val isOnTheFlyFunding = when (purchase.paymentDetails) {
+            is PaymentDetails.FromChannelBalance -> false
+            is PaymentDetails.FromChannelBalanceForFutureHtlc -> true
+            is PaymentDetails.FromFutureHtlc -> true
+            is PaymentDetails.FromFutureHtlcWithPreimage -> true
+        }
+
+        /**
+         * Returns true if the liquidity fees are paid by HTLCs received after the liquidity purchase.
+         * Note that even in that case, the mining fee may also be partially paid from the channel balance.
+         * The [feePaidFromChannelBalance] and [feePaidFromFutureHtlc] should be used for a detailed summary.
+         */
+        val isPaidByFutureHtlcs = when (purchase.paymentDetails) {
+            is PaymentDetails.FromChannelBalance -> false
+            is PaymentDetails.FromChannelBalanceForFutureHtlc -> false
+            is PaymentDetails.FromFutureHtlc -> true
+            is PaymentDetails.FromFutureHtlcWithPreimage -> true
+        }
+
+        /**
+         * Even in the "from future htlc" case, we may partially pay the mining fee from our channel balance if we're splicing
+         * an existing channel, because we must pay for the weight of the shared input and output of the transaction. The rest
+         * of the mining fee will be refunded to the LSP by being deducted from the HTLCs we will receive, and the corresponding
+         * amount will be found in the [purchase].
+         *
+         * The liquidity purchase will be followed by one or several HTLCs with a non-null [LiquidityAds.FundingFee]
+         * where [LiquidityAds.FundingFee.fundingTxId] matches this [LiquidityTransactionDetails.txId].
+         * The sum of [LiquidityAds.FundingFee.amount] will match [LiquidityTransactionDetails.feePaidFromFutureHtlc].
+         */
+        val feePaidFromChannelBalance = when (purchase.paymentDetails) {
+            is PaymentDetails.FromChannelBalance -> ChannelManagementFees(miningFee = miningFee, serviceFee = purchase.fees.serviceFee)
+            is PaymentDetails.FromChannelBalanceForFutureHtlc -> ChannelManagementFees(miningFee = miningFee, serviceFee = purchase.fees.serviceFee)
+            is PaymentDetails.FromFutureHtlc -> ChannelManagementFees(miningFee = miningFee - purchase.fees.miningFee, serviceFee = 0.sat)
+            is PaymentDetails.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = miningFee - purchase.fees.miningFee, serviceFee = 0.sat)
+        }
+
+        /** Fee deduced from incoming HTLCs. */
+        val feePaidFromFutureHtlc = when (purchase.paymentDetails) {
+            is PaymentDetails.FromChannelBalance -> ChannelManagementFees(miningFee = 0.sat, serviceFee = 0.sat)
+            is PaymentDetails.FromChannelBalanceForFutureHtlc -> ChannelManagementFees(miningFee = 0.sat, serviceFee = 0.sat)
+            is PaymentDetails.FromFutureHtlc -> ChannelManagementFees(miningFee = purchase.fees.miningFee, serviceFee = purchase.fees.serviceFee)
+            is PaymentDetails.FromFutureHtlcWithPreimage -> ChannelManagementFees(miningFee = purchase.fees.miningFee, serviceFee = purchase.fees.serviceFee)
+        }
+
+        /** Fee credit consumed for this purchase (which may or may not fully cover the liquidity fee). */
+        val feeCreditUsed = when (purchase) {
+            is Purchase.WithFeeCredit -> purchase.feeCreditUsed
+            else -> 0.msat
+        }
+    }
 
 }
