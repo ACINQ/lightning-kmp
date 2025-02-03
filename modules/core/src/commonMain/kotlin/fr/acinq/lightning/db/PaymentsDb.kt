@@ -153,8 +153,12 @@ sealed class LightningIncomingPayment(val paymentPreimage: ByteVector32) : Incom
      */
     override val fees: MilliSatoshi get() = liquidityPurchaseDetails?.fee?.toMilliSatoshi() ?: 0.msat
 
-    /** Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490. */
-    override val amountReceived: MilliSatoshi get() = parts.map { it.amountReceived }.sum()
+    /**
+     * Total amount actually received for this payment after applying the fees. If someone sent you 500 and the fee was 10, this amount will be 490.
+     * If a liquidity purchase was involved, then a fee will already have been paid upfront directly from our channel balance (even in the
+     * [LiquidityAds.PaymentDetails.FromFutureHtlc] case). We must deduct it from the amount received via [Part.Htlc].
+     */
+    override val amountReceived: MilliSatoshi get() = parts.map { it.amountReceived }.sum() - (liquidityPurchaseDetails?.feePaidFromChannelBalance?.total?.toMilliSatoshi() ?: 0.msat)
 
     sealed class Part {
         /** Amount received for this part after applying the fees. This is the final amount we can use. */
