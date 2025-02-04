@@ -105,13 +105,16 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
                 paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incoming.paymentHash))
             )
         )
-        val parts = LightningIncomingPayment.Part.Htlc(40_000_000.msat, randomBytes32(), 3, liquidityPurchase.htlcFundingFee, receivedAt = 110)
+        // The total incoming payment is 40 000 sat, with 10 000 sat liquidity fee + 2 000 sat local mining fee
+        val parts = LightningIncomingPayment.Part.Htlc(30_000_000.msat, randomBytes32(), 3, LiquidityAds.FundingFee(liquidityPurchase.purchase.fees.total.toMilliSatoshi(), liquidityPurchase.txId), receivedAt = 110)
         assertEquals(10_000_000.msat, parts.fees)
         db.receiveLightningPayment(pr.paymentHash, listOf(parts), liquidityPurchase)
-        val received = db.getLightningIncomingPayment(pr.paymentHash)
-        assertEquals(40_000_000.msat, received!!.amount)
+        val received = db.getLightningIncomingPayment(pr.paymentHash)!!
+        assertEquals(28_000_000.msat, received.amount)
+        assertEquals(2_000.sat, liquidityPurchase.feePaidFromChannelBalance.total)
         assertEquals(12_000_000.msat, received.fees)
         assertEquals(liquidityPurchase, received.liquidityPurchaseDetails)
+        assertEquals(liquidityPurchase.htlcFundingFee, parts.fundingFee)
         assertEquals(ChannelManagementFees(miningFee = 2_000.sat, serviceFee = 0.sat), liquidityPurchase.feePaidFromChannelBalance)
         assertEquals(ChannelManagementFees(miningFee = 3_000.sat, serviceFee = 7_000.sat), liquidityPurchase.feePaidFromFutureHtlc)
     }
@@ -130,11 +133,13 @@ class PaymentsDbTestsCommon : LightningTestSuite() {
                 paymentDetails = LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(listOf(incoming.paymentHash))
             )
         )
-        val parts = LightningIncomingPayment.Part.Htlc(40_000_000.msat, randomBytes32(), 3, liquidityPurchase.htlcFundingFee, receivedAt = 110)
+        // The total incoming payment is 40 000 sat, with 10 000 sat liquidity fee + 2 000 sat local mining fee
+        val parts = LightningIncomingPayment.Part.Htlc(40_000_000.msat, randomBytes32(), 3,  fundingFee = null, receivedAt = 110)
         assertEquals(0.msat, parts.fees)
         db.receiveLightningPayment(pr.paymentHash, listOf(parts), liquidityPurchase)
-        val received = db.getLightningIncomingPayment(pr.paymentHash)
-        assertEquals(40_000_000.msat, received!!.amount)
+        val received = db.getLightningIncomingPayment(pr.paymentHash)!!
+        assertEquals(28_000_000.msat, received.amount)
+        assertEquals(12_000.sat, liquidityPurchase.feePaidFromChannelBalance.total)
         assertEquals(12_000_000.msat, received.fees)
         assertEquals(liquidityPurchase, received.liquidityPurchaseDetails)
         assertEquals(ChannelManagementFees(miningFee = 5_000.sat, serviceFee = 7_000.sat), liquidityPurchase.feePaidFromChannelBalance)
