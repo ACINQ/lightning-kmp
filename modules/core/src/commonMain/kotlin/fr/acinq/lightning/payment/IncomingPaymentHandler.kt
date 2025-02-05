@@ -221,7 +221,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                             // We may need to use a higher feerate than the current value depending on whether this is a new channel or not,
                                             // and whether we have enough balance. We keep adding to our fee credit until we reach the worst case scenario
                                             // in terms of fees we need to pay, otherwise we may not have enough to actually pay the liquidity fees.
-                                            val maxFeerate = currentFeerate * AddLiquidityForIncomingPayment.SpliceWithNoBalanceFeerateRatio
+                                            val maxFeerate = AddLiquidityForIncomingPayment.adjustFeerate(currentFeerate, isChannelCreation = false)
                                             val maxLiquidityFees = fundingRate.fees(maxFeerate, requestedAmount, requestedAmount, isChannelCreation = true).total.toMilliSatoshi()
                                             val maxFeeCredit = when (val policy = nodeParams.liquidityPolicy.value) {
                                                 LiquidityPolicy.Disable -> 0.msat

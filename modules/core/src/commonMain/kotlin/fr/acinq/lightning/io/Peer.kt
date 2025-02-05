@@ -8,6 +8,7 @@ import fr.acinq.lightning.blockchain.IWatcher
 import fr.acinq.lightning.blockchain.WatchEvent
 import fr.acinq.lightning.blockchain.computeSpliceCpfpFeerate
 import fr.acinq.lightning.blockchain.electrum.*
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.blockchain.mempool.MempoolSpaceClient
@@ -68,30 +69,30 @@ data class AddLiquidityForIncomingPayment(val paymentAmount: MilliSatoshi, val r
 
     companion object {
         /**
-         * When we open a new channel without contributing any input, we won't be able to pay on-chain fees for our
-         * weight of the funding transaction. If we don't do anything, the resulting transaction will thus have a
-         * lower feerate than requested and may not confirm.
-         *
-         * To avoid that, we ask our peer to target a higher feerate than the one we actually want. They will pay
-         * more mining fees to satisfy that feerate, while we won't pay any mining fees. We should be paying for the
-         * shared output, which doesn't add too much weight, so we add 25%. This is hacky but should result in an
-         * effective feerate that is somewhat close to the initial feerate we wanted. Note that we will pay liquidity
-         * fees based on this inflated feerate, which will refund our peer for this hack.
+         * When purchasing liquidity for on-the-fly HTLCs, we're supposed for pay the mining fees for:
+         *  - the common transaction fields (nVersion, nLockTime, etc)
+         *  - the channel output
+         *  - if it's a splice, the previous channel input
+         * However, if we don't have any balance in that channel, we won't be able to contribute those mining fees.
+         * Instead, we adjust the target feerate to a greater value and the LSP will pay mining fees for their inputs
+         * and outputs at this adjusted feerate: if we use the correct ratio, the resulting mining fees will match
+         * the initial target feerate. This won't be a loss for the LSP, because we will refund some of those mining
+         * fees by subtracting them from the received HTLCs at the adjusted feerate (see [LiquidityAds.Fees.miningFee]).
+         * The main difficulty is that we don't know how many inputs and outputs the LSP will contribute, which impacts
+         * the ratio: at lower feerates we use the most conservative ratios that assume a single input and an optional
+         * change output, which at higher feerates we use a more loose ratio to avoid penalizing the LSP too much if
+         * they end up using many inputs.
          */
-        const val ChannelOpenFeerateRatio = 1.25
-
-        /**
-         * When our balance is low, we won't be able to pay the mining fees for our weight of the splice transaction.
-         * If we don't do anything, the resulting transaction will thus have a lower feerate than requested and may
-         * not confirm.
-         *
-         * To avoid that, we ask our peer to target a higher feerate than the one we actually want. They will pay more
-         * mining fees to satisfy that feerate, while we'll pay whatever we can from our current balance. We should be
-         * paying for the shared input and shared output, which is a lot of weight, so we add 50%. This is hacky but
-         * should result in an effective feerate that is somewhat close to the initial feerate we wanted. Note that we
-         * will pay liquidity fees based on the inflated feerate, which will refund our peer for this hack.
-         */
-        const val SpliceWithNoBalanceFeerateRatio = 1.5
+        fun adjustFeerate(targetFeerate: FeeratePerKw, isChannelCreation: Boolean): FeeratePerKw {
+            return when {
+                targetFeerate <= FeeratePerKw(FeeratePerByte(2.sat)) && isChannelCreation -> targetFeerate * 2.5
+                targetFeerate <= FeeratePerKw(FeeratePerByte(2.sat)) && !isChannelCreation -> targetFeerate * 3.8
+                targetFeerate <= FeeratePerKw(FeeratePerByte(5.sat)) && isChannelCreation -> targetFeerate * 2
+                targetFeerate <= FeeratePerKw(FeeratePerByte(5.sat)) && !isChannelCreation -> targetFeerate * 2.9
+                isChannelCreation -> targetFeerate * 1.6
+                else -> targetFeerate * 2.2
+            }
+        }
     }
 }
 
@@ -692,7 +693,8 @@ class Peer(
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
         this.launch {
-            res.complete(eventsFlow
+            res.complete(
+                eventsFlow
                 .filterIsInstance<SendPaymentResult>()
                 .filter { it.request.paymentId == paymentId }
                 .first()
@@ -706,7 +708,8 @@ class Peer(
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
         this.launch {
-            res.complete(eventsFlow
+            res.complete(
+                eventsFlow
                 .filterIsInstance<SendPaymentResult>()
                 .filter { it.request.paymentId == paymentId }
                 .first()
@@ -1454,7 +1457,7 @@ class Peer(
                                     localBalance >= localMiningFee * 0.75 -> fundingFeerate
                                     // Our current balance is too low to pay the mining fees for our weight of the splice transaction.
                                     // We target a higher feerate so that the effective feerate isn't too low compared to our target.
-                                    else -> fundingFeerate * AddLiquidityForIncomingPayment.SpliceWithNoBalanceFeerateRatio
+                                    else -> AddLiquidityForIncomingPayment.adjustFeerate(fundingFeerate, isChannelCreation = false)
                                 }
                                 // We cannot pay the liquidity fees from our channel balance, so we fall back to future HTLCs.
                                 val paymentDetails = when {
@@ -1496,7 +1499,7 @@ class Peer(
                         val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
                         // Since we don't have inputs to contribute, we're unable to pay on-chain fees for the shared output.
                         // We target a higher feerate so that the effective feerate isn't too low compared to our target.
-                        val fundingFeerate = currentFeerates.fundingFeerate * AddLiquidityForIncomingPayment.ChannelOpenFeerateRatio
+                        val fundingFeerate = AddLiquidityForIncomingPayment.adjustFeerate(currentFeerates.fundingFeerate, isChannelCreation = true)
                         // We don't pay any local on-chain fees, our fee is only for the liquidity lease.
                         val leaseFees = cmd.fees(fundingFeerate, isChannelCreation = true)
                         val totalFees = ChannelManagementFees(miningFee = leaseFees.miningFee, serviceFee = leaseFees.serviceFee)
