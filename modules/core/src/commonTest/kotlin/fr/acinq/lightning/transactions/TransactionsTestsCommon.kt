@@ -15,12 +15,14 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
+import fr.acinq.lightning.io.AddLiquidityForIncomingPayment
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.lightning.transactions.Scripts.htlcOffered
 import fr.acinq.lightning.transactions.Scripts.htlcReceived
 import fr.acinq.lightning.transactions.Scripts.toLocalDelayed
+import fr.acinq.lightning.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.lightning.transactions.Transactions.PlaceHolderSig
 import fr.acinq.lightning.transactions.Transactions.TxGenerationSkipped.AmountBelowDustLimit
 import fr.acinq.lightning.transactions.Transactions.TxGenerationSkipped.OutputNotFound
@@ -562,6 +564,88 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val txWithAdditionalInput = tx.copy(txIn = tx.txIn + listOf(swapInput))
         val inputWeight = txWithAdditionalInput.weight() - tx.weight()
         assertEquals(inputWeight, swapInputWeight)
+    }
+
+    @Test
+    fun `adjust feerate when purchasing liquidity for on-the-fly payment`() {
+        val fundingScript = write(Scripts.multiSig2of2(PlaceHolderPubKey, PlaceHolderPubKey))
+        val fundingWitness = Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey)
+        val changeOutput = TxOut(150_000.sat, pay2wpkh(PlaceHolderPubKey))
+
+        fun createSignedWalletInput(): TxIn {
+            val witness = Script.witnessPay2wpkh(PlaceHolderPubKey, Scripts.der(PlaceHolderSig, SigHash.SIGHASH_ALL))
+            return TxIn(OutPoint(TxId(randomBytes32()), 3), ByteVector.empty, 0, witness)
+        }
+
+        fun computeRatio(emptyTx: Transaction, completeTx: Transaction): Double = completeTx.weight().toDouble() / (completeTx.weight() - emptyTx.weight())
+
+        // When a wallet user purchases liquidity for an on-the-fly payment and they don't have any on-chain funds,
+        // they won't be able to contribute to the mining fees for the channel creation or splice.
+        // The LSP will be the only contributor to the mining fees, so we need to take into account the fact that
+        // they must pay the wallet's mining fees (and will be refunded by collecting fees from the future HTLCs).
+        // We make that work by multiplying the target feerate by the weight ratio between the weight that should
+        // be paid by the wallet user and the weight that should be paid by the LSP.
+        // We don't know beforehand how many inputs/outputs the LSP will add: the more they add, the smaller the
+        // ratio is, but we must ensure that in the case where the LSP adds a single input and no change output
+        // (which is the case where the ratio is the highest) we still apply a large enough multiplier to ensure
+        // that the transaction meets the minimum relay fees (1 sat/byte on most nodes).
+        //
+        // The sections below highlight the ratios for the following cases, for channel creation and splicing:
+        //  - the LSP adds a single input and no change output (highest ratio)
+        //  - the LSP adds a single input and a change output
+        //  - the LSP adds two inputs and a change output
+        run {
+            // When opening a new channel, the liquidity buyer is responsible for paying the fees of the shared output and common transaction fields.
+            val txNoInput = Transaction(2, listOf(), listOf(TxOut(500_000.sat, fundingScript)), 0)
+            // For low feerates, we will apply the largest ratio.
+            val lowFeerate = FeeratePerKw(300.sat)
+            val highRatio = run {
+                val txOneInput = txNoInput.addInput(createSignedWalletInput())
+                computeRatio(txNoInput, txOneInput)
+            }
+            assertTrue(highRatio in 2.3..2.4)
+            assertEquals(lowFeerate * 2.5, AddLiquidityForIncomingPayment.adjustFeerate(lowFeerate, isChannelCreation = true))
+            val mediumFeerate = FeeratePerKw(1000.sat)
+            val mediumRatio = run {
+                val txOneInputWithChange = txNoInput.addInput(createSignedWalletInput()).addOutput(changeOutput)
+                computeRatio(txNoInput, txOneInputWithChange)
+            }
+            assertTrue(mediumRatio in 1.9..2.0)
+            assertEquals(mediumFeerate * 2, AddLiquidityForIncomingPayment.adjustFeerate(mediumFeerate, isChannelCreation = true))
+            val highFeerate = FeeratePerKw(2000.sat)
+            val lowRatio = run {
+                val txTwoInputsWithChange = txNoInput.addInput(createSignedWalletInput()).addInput(createSignedWalletInput()).addOutput(changeOutput)
+                computeRatio(txNoInput, txTwoInputsWithChange)
+            }
+            assertTrue(lowRatio in 1.5..1.6)
+            assertEquals(highFeerate * 1.6, AddLiquidityForIncomingPayment.adjustFeerate(highFeerate, isChannelCreation = true))
+        }
+        run {
+            // When splicing an existing channel, the liquidity buyer is responsible for paying the fees of the shared input, the shared output and common transaction fields.
+            val txNoInput = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 3), ByteVector.empty, 0, fundingWitness)), listOf(TxOut(500_000.sat, fundingScript)), 0)
+            // For low feerates, we will apply the largest ratio.
+            val lowFeerate = FeeratePerKw(300.sat)
+            val highRatio = run {
+                val txOneInput = txNoInput.addInput(createSignedWalletInput())
+                computeRatio(txNoInput, txOneInput)
+            }
+            assertTrue(highRatio in 3.7..3.8)
+            assertEquals(lowFeerate * 3.8, AddLiquidityForIncomingPayment.adjustFeerate(lowFeerate, isChannelCreation = false))
+            val mediumFeerate = FeeratePerKw(1000.sat)
+            val mediumRatio = run {
+                val txOneInputWithChange = txNoInput.addInput(createSignedWalletInput()).addOutput(changeOutput)
+                computeRatio(txNoInput, txOneInputWithChange)
+            }
+            assertTrue(mediumRatio in 2.8..2.9)
+            assertEquals(mediumFeerate * 2.9, AddLiquidityForIncomingPayment.adjustFeerate(mediumFeerate, isChannelCreation = false))
+            val highFeerate = FeeratePerKw(2000.sat)
+            val lowRatio = run {
+                val txTwoInputsWithChange = txNoInput.addInput(createSignedWalletInput()).addInput(createSignedWalletInput()).addOutput(changeOutput)
+                computeRatio(txNoInput, txTwoInputsWithChange)
+            }
+            assertTrue(lowRatio in 2.1..2.2)
+            assertEquals(highFeerate * 2.2, AddLiquidityForIncomingPayment.adjustFeerate(highFeerate, isChannelCreation = false))
+        }
     }
 
     @Test
