@@ -311,6 +311,8 @@ object Serialization {
                     write(0x0b)
                 FinalFailure.WalletRestarted ->
                     write(0x0c)
+                FinalFailure.AlreadyInProgress ->
+                    write(0x0d)
             }
             writeNumber(o.completedAt)
         }

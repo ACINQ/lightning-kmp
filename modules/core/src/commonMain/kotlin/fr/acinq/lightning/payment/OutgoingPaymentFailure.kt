@@ -18,6 +18,7 @@ sealed class FinalFailure {
     fun toPaymentFailure(): OutgoingPaymentFailure = OutgoingPaymentFailure(this, listOf<LightningOutgoingPayment.Part.Status.Failed>())
 
     // @formatter:off
+    data object AlreadyInProgress : FinalFailure() { override fun toString(): String = "another payment is in progress for that invoice" }
     data object AlreadyPaid : FinalFailure() { override fun toString(): String = "this invoice has already been paid" }
     data object InvalidPaymentAmount : FinalFailure() { override fun toString(): String = "payment amount must be positive" }
     data object FeaturesNotSupported : FinalFailure() { override fun toString(): String = "payment request features not supported" }
