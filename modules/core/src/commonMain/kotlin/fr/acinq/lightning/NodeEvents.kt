@@ -1,8 +1,8 @@
 package fr.acinq.lightning
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.OutPoint
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.channel.ChannelManagementFees
@@ -12,7 +12,6 @@ import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
 import fr.acinq.lightning.db.IncomingPayment
-import fr.acinq.lightning.db.LightningIncomingPayment
 import fr.acinq.lightning.db.OutgoingPayment
 import fr.acinq.lightning.utils.sum
 import fr.acinq.lightning.wire.Init

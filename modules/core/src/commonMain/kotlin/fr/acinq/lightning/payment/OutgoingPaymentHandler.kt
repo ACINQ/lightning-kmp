@@ -237,6 +237,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         val status = LightningOutgoingPayment.Status.Succeeded(preimage)
         val part = payment.pending.copy(status = LightningOutgoingPayment.Part.Status.Succeeded(preimage))
         val result = LightningOutgoingPayment(payment.request.paymentId, payment.request.amount, payment.request.recipient, payment.request.paymentDetails, listOf(part), status)
+        nodeParams._nodeEvents.emit(PaymentEvents.PaymentSent(result))
         return Success(payment.request, result, preimage)
     }
 
@@ -256,6 +257,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
                 // NB: we reload the payment to ensure all parts status are updated
                 // this payment cannot be null
                 val succeeded = db.getLightningOutgoingPayment(payment.id)!!
+                nodeParams._nodeEvents.emit(PaymentEvents.PaymentSent(succeeded))
                 Success(request, succeeded, preimage)
             }
         }
