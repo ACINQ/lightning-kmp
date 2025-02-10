@@ -69,15 +69,19 @@ data class AddLiquidityForIncomingPayment(val paymentAmount: MilliSatoshi, val r
 
     companion object {
         /**
-         * When purchasing liquidity for on-the-fly HTLCs, we're supposed for pay the mining fees for:
+         * When purchasing liquidity for on-the-fly HTLCs, we're supposed to pay the mining fees for:
          *  - the common transaction fields (nVersion, nLockTime, etc)
          *  - the channel output
          *  - if it's a splice, the previous channel input
-         * However, if we don't have any balance in that channel, we won't be able to contribute those mining fees.
+         *
+         * However, if we don't have any balance in that channel or no channel at all, we won't be able to contribute
+         * those mining fees.
+         *
          * Instead, we adjust the target feerate to a greater value and the LSP will pay mining fees for their inputs
          * and outputs at this adjusted feerate: if we use the correct ratio, the resulting mining fees will match
          * the initial target feerate. This won't be a loss for the LSP, because we will refund some of those mining
          * fees by subtracting them from the received HTLCs at the adjusted feerate (see [LiquidityAds.Fees.miningFee]).
+         *
          * The main difficulty is that we don't know how many inputs and outputs the LSP will contribute, which impacts
          * the ratio: at lower feerates we use the most conservative ratios that assume a single input and an optional
          * change output, which at higher feerates we use a more loose ratio to avoid penalizing the LSP too much if
