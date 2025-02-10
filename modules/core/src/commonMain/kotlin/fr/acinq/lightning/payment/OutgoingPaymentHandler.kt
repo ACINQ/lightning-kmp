@@ -116,9 +116,14 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             logger.error { "contract violation: caller is recycling uuid's" }
             return Failure(request, FinalFailure.InvalidPaymentId.toPaymentFailure())
         }
-        if (db.listLightningOutgoingPayments(request.paymentHash).find { it.status is LightningOutgoingPayment.Status.Succeeded } != null) {
+        val previousPayments = db.listLightningOutgoingPayments(request.paymentHash)
+        if (previousPayments.any { it.status is LightningOutgoingPayment.Status.Succeeded }) {
             logger.error { "invoice has already been paid" }
             return Failure(request, FinalFailure.AlreadyPaid.toPaymentFailure())
+        }
+        if (previousPayments.any { it.status is LightningOutgoingPayment.Status.Pending }) {
+            logger.error { "another payment is in progress for that invoice" }
+            return Failure(request, FinalFailure.AlreadyInProgress.toPaymentFailure())
         }
         return sendPaymentInternal(request, listOf(), channels, currentBlockHeight, logger).fold({ it }, { it })
     }

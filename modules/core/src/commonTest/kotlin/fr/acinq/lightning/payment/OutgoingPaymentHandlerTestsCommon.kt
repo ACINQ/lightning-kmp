@@ -124,6 +124,19 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `concurrent payment for same invoice`() = runSuspendTest {
+        val (alice, _) = TestsHelper.reachNormal()
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
+        val invoice = makeInvoice(amount = 100_000.msat, supportsTrampoline = true)
+        val payment = PayInvoice(UUID.randomUUID(), 100_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
+        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Progress
+        findAddHtlcCommand(result)
+        val duplicatePayment = payment.copy(paymentId = UUID.randomUUID())
+        val error = outgoingPaymentHandler.sendPayment(duplicatePayment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
+        assertEquals(FinalFailure.AlreadyInProgress, error.failure.reason)
+    }
+
+    @Test
     fun `invoice already paid`() = runSuspendTest {
         val (alice, _) = TestsHelper.reachNormal()
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
@@ -135,7 +148,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
 
         val duplicatePayment = payment.copy(paymentId = UUID.randomUUID())
         val error = outgoingPaymentHandler.sendPayment(duplicatePayment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight) as OutgoingPaymentHandler.Failure
-        assertEquals(error.failure.reason, FinalFailure.AlreadyPaid)
+        assertEquals(FinalFailure.AlreadyPaid, error.failure.reason)
     }
 
     @Test
