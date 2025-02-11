@@ -140,29 +140,27 @@ kotlin {
 }
 
 val dokkaOutputDir = layout.buildDirectory.dir("dokka")
-tasks.dokkaHtml {
-    outputDirectory.set(file(dokkaOutputDir))
-    dokkaSourceSets {
-        configureEach {
-            val platformName = platform.get().name
-            displayName.set(platformName)
+dokka {
+    dokkaPublications.html {
+        outputDirectory.set(dokkaOutputDir)
+        dokkaSourceSets {
+            configureEach {
+                val platformName = analysisPlatform.get().name
+                displayName.set(platformName)
 
-            perPackageOption {
-                matchingRegex.set(".*\\.internal.*") // will match all .internal packages and sub-packages
-                suppress.set(true)
+                perPackageOption {
+                    matchingRegex.set(".*\\.internal.*") // will match all .internal packages and sub-packages
+                    suppress.set(true)
+                }
             }
         }
     }
 }
 
-val deleteDokkaOutputDir by tasks.register<Delete>("deleteDokkaOutputDirectory") {
-    delete(dokkaOutputDir)
-}
-
 val javadocJar = tasks.create<Jar>("javadocJar") {
     archiveClassifier.set("javadoc")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    dependsOn(deleteDokkaOutputDir, tasks.dokkaHtml)
+    dependsOn("dokkaGenerate")
     from(dokkaOutputDir)
 }
 
