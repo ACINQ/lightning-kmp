@@ -12,6 +12,7 @@ import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
@@ -37,6 +38,7 @@ import fr.acinq.lightning.transactions.Transactions.claimHtlcTimeoutWeight
 import fr.acinq.lightning.transactions.Transactions.commitTxFee
 import fr.acinq.lightning.transactions.Transactions.decodeTxNumber
 import fr.acinq.lightning.transactions.Transactions.encodeTxNumber
+import fr.acinq.lightning.transactions.Transactions.fee2rate
 import fr.acinq.lightning.transactions.Transactions.getCommitTxNumber
 import fr.acinq.lightning.transactions.Transactions.htlcPenaltyWeight
 import fr.acinq.lightning.transactions.Transactions.mainPenaltyWeight
@@ -123,40 +125,40 @@ class TransactionsTestsCommon : LightningTestSuite() {
             // ClaimHtlcDelayedTx
             // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the ClaimDelayedOutputTx
             val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey())))
-            val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
+            val htlcSuccessOrTimeoutTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
             val claimHtlcDelayedTx = makeClaimLocalDelayedOutputTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey(), finalPubKeyScript, feeratePerKw)
             assertTrue(claimHtlcDelayedTx is Success, "is $claimHtlcDelayedTx")
             // we use dummy signatures to compute the weight
             val weight = Transaction.weight(addSigs(claimHtlcDelayedTx.result, PlaceHolderSig).tx)
             assertEquals(claimHtlcDelayedWeight, weight)
-            assertTrue(claimHtlcDelayedTx.result.fee >= claimHtlcDelayedTx.result.minRelayFee)
+            assertEquals(FeeratePerByte(fee2rate(claimHtlcDelayedTx.result.fee, weight)), FeeratePerByte(1.sat))
         }
         run {
             // MainPenaltyTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
             val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey(), toLocalDelay, localPaymentPriv.publicKey())))
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
+            val commitTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(20000.sat, pubKeyScript)), lockTime = 0)
             val mainPenaltyTx = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey(), finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey(), feeratePerKw)
             assertTrue(mainPenaltyTx is Success, "is $mainPenaltyTx")
             // we use dummy signatures to compute the weight
             val weight = Transaction.weight(addSigs(mainPenaltyTx.result, PlaceHolderSig).tx)
             assertEquals(mainPenaltyWeight, weight)
-            assertTrue(mainPenaltyTx.result.fee >= mainPenaltyTx.result.minRelayFee)
+            assertEquals(FeeratePerByte(fee2rate(mainPenaltyTx.result.fee, weight)), FeeratePerByte(1.sat))
         }
         run {
             // HtlcPenaltyTx
             // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
             val paymentPreimage = randomBytes32()
-            val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), CltvExpiryDelta(144).toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
+            val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, 20_000_000.msat, ByteVector32(sha256(paymentPreimage)), CltvExpiryDelta(144).toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val redeemScript = htlcReceived(localHtlcPriv.publicKey(), remoteHtlcPriv.publicKey(), localRevocationPriv.publicKey(), ripemd160(htlc.paymentHash), htlc.cltvExpiry)
             val pubKeyScript = write(pay2wsh(redeemScript))
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
+            val commitTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = listOf(TxOut(htlc.amountMsat.truncateToSatoshi(), pubKeyScript)), lockTime = 0)
             val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, 0, write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
             assertTrue(htlcPenaltyTx is Success, "is $htlcPenaltyTx")
             // we use dummy signatures to compute the weight
             val weight = Transaction.weight(addSigs(htlcPenaltyTx.result, PlaceHolderSig, localRevocationPriv.publicKey()).tx)
             assertEquals(htlcPenaltyWeight, weight)
-            assertTrue(htlcPenaltyTx.result.fee >= htlcPenaltyTx.result.minRelayFee)
+            assertEquals(FeeratePerByte(fee2rate(htlcPenaltyTx.result.fee, weight)), FeeratePerByte(1.sat))
         }
         run {
             // ClaimHtlcSuccessTx
@@ -178,14 +180,14 @@ class TransactionsTestsCommon : LightningTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
+            val commitTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcSuccessTx =
                 makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
             assertTrue(claimHtlcSuccessTx is Success, "is $claimHtlcSuccessTx")
             // we use dummy signatures to compute the weight
             val weight = Transaction.weight(addSigs(claimHtlcSuccessTx.result, PlaceHolderSig, paymentPreimage).tx)
             assertEquals(claimHtlcSuccessWeight, weight)
-            assertTrue(claimHtlcSuccessTx.result.fee >= claimHtlcSuccessTx.result.minRelayFee)
+            assertEquals(FeeratePerByte(fee2rate(claimHtlcSuccessTx.result.fee, weight)), FeeratePerByte(1.sat))
         }
         run {
             // ClaimHtlcTimeoutTx
@@ -207,14 +209,14 @@ class TransactionsTestsCommon : LightningTestSuite() {
                     remoteHtlcPriv.publicKey(),
                     spec
                 )
-            val commitTx = Transaction(version = 0, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
+            val commitTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcTimeoutTx =
                 makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
             assertTrue(claimHtlcTimeoutTx is Success, "is $claimHtlcTimeoutTx")
             // we use dummy signatures to compute the weight
             val weight = Transaction.weight(addSigs(claimHtlcTimeoutTx.result, PlaceHolderSig).tx)
             assertEquals(claimHtlcTimeoutWeight, weight)
-            assertTrue(claimHtlcTimeoutTx.result.fee >= claimHtlcTimeoutTx.result.minRelayFee)
+            assertEquals(FeeratePerByte(fee2rate(claimHtlcTimeoutTx.result.fee, weight)), FeeratePerByte(1.sat))
         }
     }
 
