@@ -24,7 +24,6 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
-import fr.acinq.lightning.io.*
 import fr.acinq.lightning.transactions.CommitmentOutput.InHtlc
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.lightning.utils.*
@@ -43,7 +42,7 @@ object Transactions {
     const val MAX_STANDARD_TX_WEIGHT = 400_000
 
     @Serializable
-    data class InputInfo constructor(
+    data class InputInfo(
         @Contextual val outPoint: OutPoint,
         @Contextual val txOut: TxOut,
         @Contextual val redeemScript: ByteVector
@@ -55,12 +54,8 @@ object Transactions {
     sealed class TransactionWithInputInfo {
         abstract val input: InputInfo
         abstract val tx: Transaction
+        val amountIn: Satoshi get() = input.txOut.amount
         val fee: Satoshi get() = input.txOut.amount - tx.txOut.map { it.amount }.sum()
-        val minRelayFee: Satoshi
-            get() {
-                val vsize = (tx.weight() + 3) / 4
-                return (FeeratePerKw.MinimumRelayFeeRate * vsize / 1000).sat
-            }
 
         @Serializable
         data class SpliceTx(override val input: InputInfo, @Contextual override val tx: Transaction) : TransactionWithInputInfo()
@@ -140,26 +135,26 @@ object Transactions {
     }
 
     /**
-     * When *local* *current* [[CommitTx]] is published:
-     *   - [[ClaimDelayedOutputTx]] spends to-local output of [[CommitTx]] after a delay
-     *   - [[HtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
-     *     - [[ClaimDelayedOutputTx]] spends [[HtlcSuccessTx]] after a delay
-     *   - [[HtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
-     *     - [[ClaimDelayedOutputTx]] spends [[HtlcTimeoutTx]] after a delay
+     * When *local* *current* [TransactionWithInputInfo.CommitTx] is published:
+     *   - [TransactionWithInputInfo.ClaimLocalDelayedOutputTx] spends to-local output of [TransactionWithInputInfo.CommitTx] after a delay
+     *   - [TransactionWithInputInfo.HtlcTx.HtlcSuccessTx] spends htlc-received outputs of [TransactionWithInputInfo.CommitTx] for which we have the preimage
+     *     - [TransactionWithInputInfo.ClaimLocalDelayedOutputTx] spends [TransactionWithInputInfo.HtlcTx.HtlcSuccessTx] after a delay
+     *   - [TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx] spends htlc-sent outputs of [TransactionWithInputInfo.CommitTx] after a timeout
+     *     - [TransactionWithInputInfo.ClaimLocalDelayedOutputTx] spends [TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx] after a delay
      *
-     * When *remote* *current* [[CommitTx]] is published:
-     *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
-     *   - [[ClaimHtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
-     *   - [[ClaimHtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
+     * When *remote* *current* [TransactionWithInputInfo.CommitTx] is published:
+     *   - [TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx] spends to-local output of [TransactionWithInputInfo.CommitTx]
+     *   - [TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx] spends htlc-received outputs of [TransactionWithInputInfo.CommitTx] for which we have the preimage
+     *   - [TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx] spends htlc-sent outputs of [TransactionWithInputInfo.CommitTx] after a timeout
      *
-     * When *remote* *revoked* [[CommitTx]] is published:
-     *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
-     *   - [[MainPenaltyTx]] spends remote main output using the per-commitment secret
-     *   - [[HtlcSuccessTx]] spends htlc-sent outputs of [[CommitTx]] for which they have the preimage (published by remote)
-     *     - [[ClaimDelayedOutputPenaltyTx]] spends [[HtlcSuccessTx]] using the revocation secret (published by local)
-     *   - [[HtlcTimeoutTx]] spends htlc-received outputs of [[CommitTx]] after a timeout (published by remote)
-     *     - [[ClaimDelayedOutputPenaltyTx]] spends [[HtlcTimeoutTx]] using the revocation secret (published by local)
-     *   - [[HtlcPenaltyTx]] spends competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] for the same outputs (published by local)
+     * When *remote* *revoked* [TransactionWithInputInfo.CommitTx] is published:
+     *   - [TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx] spends to-local output of [TransactionWithInputInfo.CommitTx]
+     *   - [TransactionWithInputInfo.MainPenaltyTx] spends remote main output using the per-commitment secret
+     *   - [TransactionWithInputInfo.HtlcTx.HtlcSuccessTx] spends htlc-sent outputs of [TransactionWithInputInfo.CommitTx] for which they have the preimage (published by remote)
+     *     - [TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx] spends [TransactionWithInputInfo.HtlcTx.HtlcSuccessTx] using the revocation secret (published by local)
+     *   - [TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx] spends htlc-received outputs of [TransactionWithInputInfo.CommitTx] after a timeout (published by remote)
+     *     - [TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx] spends [TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx] using the revocation secret (published by local)
+     *   - [TransactionWithInputInfo.HtlcPenaltyTx] spends competes with [TransactionWithInputInfo.HtlcTx.HtlcSuccessTx] and [TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx] for the same outputs (published by local)
      */
     // legacy swap-in. witness is 2 signatures (73 bytes) + redeem script (77 bytes)
     const val swapInputWeightLegacy = 392
@@ -167,8 +162,6 @@ object Transactions {
     const val swapInputWeight = 233
 
     // The following values are specific to lightning and used to estimate fees.
-    const val claimP2WPKHOutputWeight = 438
-    const val claimAnchorOutputWeight = 321
     const val claimHtlcDelayedWeight = 483
     const val claimHtlcSuccessWeight = 574
     const val claimHtlcTimeoutWeight = 548
@@ -724,7 +717,7 @@ object Transactions {
             lockTime = 0
         )
         // compute weight with a dummy 73 bytes signature (the largest you can get)
-        val weight = addSigs(TransactionWithInputInfo.MainPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
+        val weight = addSigs(TransactionWithInputInfo.HtlcPenaltyTx(input, tx), PlaceHolderSig, PlaceHolderPubKey).tx.weight()
         val fee = weight2fee(feerate, weight)
         val amount = input.txOut.amount - fee
         return if (amount < localDustLimit) {
@@ -808,7 +801,7 @@ object Transactions {
     fun sign(txInfo: TransactionWithInputInfo, key: PrivateKey, sigHash: Int = SigHash.SIGHASH_ALL): ByteVector64 {
         val inputIndex = txInfo.tx.txIn.indexOfFirst { it.outPoint == txInfo.input.outPoint }
         require(inputIndex >= 0) { "transaction doesn't spend the input to sign" }
-        return sign(txInfo.tx, inputIndex, txInfo.input.redeemScript.toByteArray(), txInfo.input.txOut.amount, key, sigHash)
+        return sign(txInfo.tx, inputIndex, txInfo.input.redeemScript.toByteArray(), txInfo.amountIn, key, sigHash)
     }
 
     fun addSigs(
@@ -877,7 +870,7 @@ object Transactions {
     }
 
     fun checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey, sigHash: Int = SigHash.SIGHASH_ALL): Boolean {
-        val data = txinfo.tx.hashForSigning(0, txinfo.input.redeemScript.toByteArray(), sigHash, txinfo.input.txOut.amount, SigVersion.SIGVERSION_WITNESS_V0)
+        val data = txinfo.tx.hashForSigning(0, txinfo.input.redeemScript.toByteArray(), sigHash, txinfo.amountIn, SigVersion.SIGVERSION_WITNESS_V0)
         return Crypto.verifySignature(data, sig, pubKey)
     }
 }

@@ -2019,10 +2019,10 @@ class NormalTestsCommon : LightningTestSuite() {
         // two main outputs are 760 000 and 200 000 (minus fees)
         assertEquals(798_070.sat, mainOutputTx.txOut[0].amount)
         assertEquals(147_580.sat, mainPenaltyTx.txOut[0].amount)
-        assertEquals(7_255.sat, htlcPenaltyTxs[0].txOut[0].amount)
-        assertEquals(7_255.sat, htlcPenaltyTxs[1].txOut[0].amount)
-        assertEquals(7_255.sat, htlcPenaltyTxs[2].txOut[0].amount)
-        assertEquals(7_255.sat, htlcPenaltyTxs[3].txOut[0].amount)
+        assertEquals(7_095.sat, htlcPenaltyTxs[0].txOut[0].amount)
+        assertEquals(7_095.sat, htlcPenaltyTxs[1].txOut[0].amount)
+        assertEquals(7_095.sat, htlcPenaltyTxs[2].txOut[0].amount)
+        assertEquals(7_095.sat, htlcPenaltyTxs[3].txOut[0].amount)
     }
 
     @Test
