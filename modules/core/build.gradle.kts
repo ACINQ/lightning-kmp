@@ -16,9 +16,8 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
     jvm {
-        @OptIn(ExperimentalKotlinGradlePluginApi::class)
         compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_1_8) // TODO: update this?
+            jvmTarget.set(JvmTarget.JVM_21)
         }
     }
 
