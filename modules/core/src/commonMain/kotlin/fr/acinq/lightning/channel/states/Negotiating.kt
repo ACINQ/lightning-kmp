@@ -150,25 +150,28 @@ data class Negotiating(
             }
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
                 is WatchConfirmedTriggered -> updateFundingTxStatus(watch)
-                is WatchSpentTriggered -> when {
-                    watch.event is WatchSpent.ChannelSpent && closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.spendingTx.txid } -> {
-                        // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
-                        logger.info { "closing tx published: closingTxId=${watch.spendingTx.txid}" }
-                        val closingTx = getMutualClosePublished(watch.spendingTx)
-                        val nextState = Closing(
-                            commitments,
-                            waitingSinceBlock = currentBlockHeight.toLong(),
-                            mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                            mutualClosePublished = listOf(closingTx)
-                        )
-                        val actions = listOf(
-                            ChannelAction.Storage.StoreState(nextState),
-                            ChannelAction.Blockchain.PublishTx(closingTx),
-                            ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed))
-                        )
-                        Pair(nextState, actions)
+                is WatchSpentTriggered -> when (watch.event) {
+                    is WatchSpent.ChannelSpent -> when {
+                        closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.spendingTx.txid } -> {
+                            // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
+                            logger.info { "closing tx published: closingTxId=${watch.spendingTx.txid}" }
+                            val closingTx = getMutualClosePublished(watch.spendingTx)
+                            val nextState = Closing(
+                                commitments,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(closingTx)
+                            )
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Blockchain.PublishTx(closingTx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed))
+                            )
+                            Pair(nextState, actions)
+                        }
+                        else -> handlePotentialForceClose(watch)
                     }
-                    else -> handlePotentialForceClose(watch)
+                    is WatchSpent.ClosingOutputSpent -> unhandled(cmd)
                 }
             }
             is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()

@@ -58,8 +58,8 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
             is ChannelCommand.MessageReceived -> unhandled(cmd)
             is ChannelCommand.WatchReceived -> when (state) {
                 is ChannelStateWithCommitments -> when (val watch = cmd.watch) {
-                    is WatchConfirmedTriggered -> {
-                        if (watch.event is WatchConfirmed.ChannelFundingDepthOk) {
+                    is WatchConfirmedTriggered -> when (watch.event) {
+                        WatchConfirmed.ChannelFundingDepthOk -> {
                             when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
                                 is Either.Left -> Pair(this@Offline, listOf())
                                 is Either.Right -> {
@@ -77,7 +77,9 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                                     Pair(this@Offline.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                                 }
                             }
-                        } else {
+                        }
+                        else -> {
+                            logger.warning { "unexpected watch-confirmed while offline: ${watch.event}" }
                             Pair(this@Offline, listOf())
                         }
                     }

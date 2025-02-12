@@ -298,8 +298,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                             }
                         }
                     }
-                    is WatchConfirmedTriggered -> {
-                        if (watch.event is WatchConfirmed.ChannelFundingDepthOk) {
+                    is WatchConfirmedTriggered -> when (watch.event) {
+                        WatchConfirmed.ChannelFundingDepthOk -> {
                             when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
                                 is Either.Left -> Pair(this@Syncing, listOf())
                                 is Either.Right -> {
@@ -317,7 +317,9 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     Pair(this@Syncing.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                                 }
                             }
-                        } else {
+                        }
+                        else -> {
+                            logger.warning { "unexpected watch-confirmed while syncing: ${watch.event}" }
                             Pair(this@Syncing, listOf())
                         }
                     }
