@@ -19,7 +19,6 @@ import fr.acinq.lightning.message.OnionMessages.decryptMessage
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
-import org.kodein.memory.text.toHex
 import kotlin.test.*
 
 class OnionMessagesTestsCommon {
@@ -106,7 +105,7 @@ class OnionMessagesTestsCommon {
             "5a04588285acbceb37dfb38b877a888900539be656233cd74a55c55344fb068f9d8da365340d21db96fb41b76123207daeafdfb1f571e3fea07a22e10da35f03109a0380b3c69fcbed9c698086671809658761cf65ecbc3c07a2e5",
             "180416a20771fd5ff63f8ee26fac46c9de93cf6bd5916a928c"
         )
-        assertEquals(expectedPayloads, payloads.map { it.toHex() })
+        assertEquals(expectedPayloads, payloads.map { it.toHexString() })
 
         val sessionKey = PrivateKey.fromHex("090909090909090909090909090909090909090909090909090909090909090901")
 
@@ -151,7 +150,7 @@ class OnionMessagesTestsCommon {
         assertEquals("04210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c", encodedBlindedPayload.toHex())
         val blindedRoute = RouteBlinding.create(blindingSecret, listOf(alice.publicKey()), listOf(encodedBlindedPayload)).route
         assertEquals(blindedAlice, blindedRoute.blindedHops.first().blindedPublicKey)
-        assertEquals("bae3d9ea2b06efd1b7b9b49b6cdcaad0e789474a6939ffa54ff5ec9224d5b76c", Crypto.sha256(blindingKey.value + sharedSecret).toHex())
+        assertEquals("bae3d9ea2b06efd1b7b9b49b6cdcaad0e789474a6939ffa54ff5ec9224d5b76c", Crypto.sha256(blindingKey.value + sharedSecret).toHexString())
         assertEquals("6970e870b473ddbc27e3098bfa45bb1aa54f1f637f803d957e6271d8ffeba89da2665d62123763d9b634e30714144a1c165ac9", blindedRoute.blindedHops.first().encryptedPayload.toHex())
         val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(alice, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
@@ -175,7 +174,7 @@ class OnionMessagesTestsCommon {
         assertEquals("0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007082102989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f", encodedBlindedPayload.toHex())
         val blindedRoute = RouteBlinding.create(blindingSecret, listOf(bob.publicKey()), listOf(encodedBlindedPayload)).route
         assertEquals(blindedBob, blindedRoute.blindedHops.first().blindedPublicKey)
-        assertEquals("9afb8b2ebc174dcf9e270be24771da7796542398d29d4ff6a4e7b6b4b9205cfe", Crypto.sha256(blindingKey.value + sharedSecret).toHex())
+        assertEquals("9afb8b2ebc174dcf9e270be24771da7796542398d29d4ff6a4e7b6b4b9205cfe", Crypto.sha256(blindingKey.value + sharedSecret).toHexString())
         assertEquals("1630da85e8759b8f3b94d74a539c6f0d870a87cf03d4986175865a2985553c997b560c32613bd9184c1a6d41a37027aabdab5433009d8409a1b638eb90373778a05716af2c2140b3196dca23997cdad4cfa7a7adc8d4", blindedRoute.blindedHops.first().encryptedPayload.toHex())
         val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(bob, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
@@ -199,7 +198,7 @@ class OnionMessagesTestsCommon {
         assertEquals("012300000000000000000000000000000000000000000000000000000000000000000000000421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991", encodedBlindedPayload.toHex())
         val blindedRoute = RouteBlinding.create(blindingSecret, listOf(carol.publicKey()), listOf(encodedBlindedPayload)).route
         assertEquals(blindedCarol, blindedRoute.blindedHops.first().blindedPublicKey)
-        assertEquals("cc3b918cda6b1b049bdbe469c4dd952935e7c1518dd9c7ed0cd2cd5bc2742b82", Crypto.sha256(blindingKey.value + sharedSecret).toHex())
+        assertEquals("cc3b918cda6b1b049bdbe469c4dd952935e7c1518dd9c7ed0cd2cd5bc2742b82", Crypto.sha256(blindingKey.value + sharedSecret).toHexString())
         assertEquals("8285acbceb37dfb38b877a888900539be656233cd74a55c55344fb068f9d8da365340d21db96fb41b76123207daeafdfb1f571e3fea07a22e10da35f03109a0380b3c69fcbed9c698086671809658761cf65ecbc3c07a2e5", blindedRoute.blindedHops.first().encryptedPayload.toHex())
         val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(carol, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
