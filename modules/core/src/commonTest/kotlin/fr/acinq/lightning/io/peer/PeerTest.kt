@@ -7,8 +7,8 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
-import fr.acinq.lightning.blockchain.WatchEventConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelFlags
 import fr.acinq.lightning.channel.ChannelType
@@ -154,9 +154,9 @@ class PeerTest : LightningTestSuite() {
         val fundingTx = aliceState.latestFundingTx.signedTx
         assertNotNull(fundingTx)
 
-        alice.send(WatchReceived(WatchEventConfirmed(channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, fundingTx)))
+        alice.send(WatchReceived(WatchConfirmedTriggered(channelId, WatchConfirmed.ChannelFundingDepthOk, 50, 0, fundingTx)))
         val channelReadyAlice = alice2bob.expect<ChannelReady>()
-        bob.send(WatchReceived(WatchEventConfirmed(channelId, BITCOIN_FUNDING_DEPTHOK, 50, 0, fundingTx)))
+        bob.send(WatchReceived(WatchConfirmedTriggered(channelId, WatchConfirmed.ChannelFundingDepthOk, 50, 0, fundingTx)))
         val channelReadyBob = bob2alice.expect<ChannelReady>()
         alice.forward(channelReadyBob)
         bob.forward(channelReadyAlice)

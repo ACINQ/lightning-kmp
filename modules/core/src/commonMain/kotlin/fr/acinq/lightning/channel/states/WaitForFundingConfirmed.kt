@@ -3,9 +3,8 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
-import fr.acinq.lightning.blockchain.WatchEventConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
@@ -97,7 +96,16 @@ data class WaitForFundingConfirmed(
                                         addAll(latestFundingTx.sharedTx.tx.localInputs.map { Either.Left(it) })
                                         addAll(latestFundingTx.sharedTx.tx.localOutputs.map { Either.Right(it) })
                                     }
-                                    val session = InteractiveTxSession(staticParams.remoteNodeId, channelKeys(), keyManager.swapInOnChainWallet, fundingParams, SharedFundingInputBalances(0.msat, 0.msat, 0.msat), toSend, previousFundingTxs.map { it.sharedTx }, commitments.latest.localCommit.spec.htlcs)
+                                    val session = InteractiveTxSession(
+                                        staticParams.remoteNodeId,
+                                        channelKeys(),
+                                        keyManager.swapInOnChainWallet,
+                                        fundingParams,
+                                        SharedFundingInputBalances(0.msat, 0.msat, 0.msat),
+                                        toSend,
+                                        previousFundingTxs.map { it.sharedTx },
+                                        commitments.latest.localCommit.spec.htlcs
+                                    )
                                     val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
                                     Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localContribution))))
                                 }
@@ -132,7 +140,16 @@ data class WaitForFundingConfirmed(
                                 Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfAborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, ChannelFundingError(channelId).message))))
                             }
                             is Either.Right -> {
-                                val (session, action) = InteractiveTxSession(staticParams.remoteNodeId, channelKeys(), keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, emptySet(), contributions.value, previousFundingTxs.map { it.sharedTx }).send()
+                                val (session, action) = InteractiveTxSession(
+                                    staticParams.remoteNodeId,
+                                    channelKeys(),
+                                    keyManager.swapInOnChainWallet,
+                                    fundingParams,
+                                    0.msat,
+                                    0.msat,
+                                    emptySet(),
+                                    contributions.value,
+                                    previousFundingTxs.map { it.sharedTx }).send()
                                 when (action) {
                                     is InteractiveTxSessionAction.SendMessage -> {
                                         val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
@@ -238,7 +255,7 @@ data class WaitForFundingConfirmed(
                 else -> unhandled(cmd)
             }
             is ChannelCommand.WatchReceived -> when (cmd.watch) {
-                is WatchEventConfirmed -> when (val res = acceptFundingTxConfirmed(cmd.watch)) {
+                is WatchConfirmedTriggered -> when (val res = acceptFundingTxConfirmed(cmd.watch)) {
                     is Either.Left -> Pair(this@WaitForFundingConfirmed, listOf())
                     is Either.Right -> {
                         val (commitments1, commitment, actions) = res.value
@@ -304,9 +321,9 @@ data class WaitForFundingConfirmed(
 
     private fun ChannelContext.sendRbfTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<WaitForFundingConfirmed, List<ChannelAction>> {
         logger.info { "rbf funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
-        val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
+        val fundingMinDepth = staticParams.nodeParams.minDepth(action.fundingTx.fundingParams.fundingAmount)
         logger.info { "will wait for $fundingMinDepth confirmations" }
-        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
         val nextState = WaitForFundingConfirmed(
             commitments.add(action.commitment).copy(remoteChannelData = remoteChannelData),
             waitingSinceBlock,

@@ -3,7 +3,10 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.bitcoin.utils.runTrying
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.bitcoind.BitcoindService
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -50,12 +53,12 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
                 tx.txid,
                 tx.txOut[0].publicKeyScript,
                 4,
-                BITCOIN_FUNDING_DEPTHOK
+                WatchConfirmed.ChannelFundingDepthOk
             )
         )
         bitcoincli.generateBlocks(5)
 
-        val confirmed = listener.first() as WatchEventConfirmed
+        val confirmed = listener.first() as WatchConfirmedTriggered
         assertEquals(tx.txid, confirmed.tx.txid)
 
         watcher.stop()
@@ -79,11 +82,11 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
                 tx.txid,
                 tx.txOut[0].publicKeyScript,
                 4,
-                BITCOIN_FUNDING_DEPTHOK
+                WatchConfirmed.ChannelFundingDepthOk
             )
         )
 
-        val confirmed = listener.first() as WatchEventConfirmed
+        val confirmed = listener.first() as WatchConfirmedTriggered
         assertEquals(tx.txid, confirmed.tx.txid)
 
         watcher.stop()
@@ -131,7 +134,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
                 tx.txid,
                 pos,
                 tx.txOut[pos].publicKeyScript,
-                BITCOIN_FUNDING_SPENT
+                WatchSpent.ChannelSpent(tx.txOut[pos].amount)
             )
         )
 
@@ -140,8 +143,8 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         assertEquals(spendingTx, sentTx)
         bitcoincli.generateBlocks(2)
 
-        val msg = listener.first() as WatchEventSpent
-        assertEquals(spendingTx.txid, msg.tx.txid)
+        val msg = listener.first() as WatchSpentTriggered
+        assertEquals(spendingTx.txid, msg.spendingTx.txid)
 
         watcher.stop()
         client.stop()
@@ -188,7 +191,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
                 tx.txid,
                 pos,
                 tx.txOut[pos].publicKeyScript,
-                BITCOIN_FUNDING_SPENT
+                WatchSpent.ChannelSpent(tx.txOut[pos].amount)
             )
         )
 
@@ -199,8 +202,8 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
         client.connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder())
 
-        val msg = listener.first() as WatchEventSpent
-        assertEquals(spendingTx.txid, msg.tx.txid)
+        val msg = listener.first() as WatchSpentTriggered
+        assertEquals(spendingTx.txid, msg.spendingTx.txid)
 
         watcher.stop()
         client.stop()
@@ -254,12 +257,12 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
                 tx.txid,
                 pos,
                 tx.txOut[pos].publicKeyScript,
-                BITCOIN_FUNDING_SPENT
+                WatchSpent.ChannelSpent(tx.txOut[pos].amount)
             )
         )
 
-        val msg = listener.first() as WatchEventSpent
-        assertEquals(spendingTx.txid, msg.tx.txid)
+        val msg = listener.first() as WatchSpentTriggered
+        assertEquals(spendingTx.txid, msg.spendingTx.txid)
 
         watcher.stop()
         client.stop()
@@ -332,14 +335,14 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             lockTime = 0
         )
 
-        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx1, 1, BITCOIN_FUNDING_DEPTHOK))
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx1, 1, WatchConfirmed.ChannelFundingDepthOk))
         watcher.publish(tx2)
 
         bitcoincli.generateBlocks(1) // 156
         bitcoincli.getBlockCount()
 
         val watchEvent1 = watcherNotifications.first()
-        assertTrue(watchEvent1 is WatchEventConfirmed)
+        assertTrue(watchEvent1 is WatchConfirmedTriggered)
         assertEquals(tx1.txid, watchEvent1.tx.txid)
 
         bitcoincli.generateBlocks(2) // 158
@@ -356,15 +359,15 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             lockTime = (bitcoincli.getBlockCount() + 5).toLong()
         )
 
-        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx2, 1, BITCOIN_FUNDING_DEPTHOK))
-        watcher.watch(WatchSpent(ByteVector32.Zeroes, tx2, 0, BITCOIN_FUNDING_SPENT))
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx2, 1, WatchConfirmed.ChannelFundingDepthOk))
+        watcher.watch(WatchSpent(ByteVector32.Zeroes, tx2, 0, WatchSpent.ChannelSpent(tx2.txOut[0].amount)))
         watcher.publish(tx3)
 
         bitcoincli.generateBlocks(1) // 159
         bitcoincli.getBlockCount()
 
         val watchEvent2 = watcherNotifications.first()
-        assertTrue(watchEvent2 is WatchEventConfirmed)
+        assertTrue(watchEvent2 is WatchConfirmedTriggered)
         assertEquals(tx2.txid, watchEvent2.tx.txid)
 
         // after 1 block, the relative delay is elapsed, but not the absolute delay
@@ -379,8 +382,8 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         bitcoincli.getBlockCount()
 
         val watchEvent3 = watcherNotifications.first()
-        assertTrue(watchEvent3 is WatchEventSpent)
-        assertEquals(tx3.txid, watchEvent3.tx.txid)
+        assertTrue(watchEvent3 is WatchSpentTriggered)
+        assertEquals(tx3.txid, watchEvent3.spendingTx.txid)
         checkIfExistsInMempool(tx3)
 
         watcher.stop()
@@ -398,11 +401,12 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         delay(1_000) // Wait for the electrum client to be ready
 
         // tx is in the blockchain
-        val tx =
-            Transaction.read("0100000001b5cbd7615a7494f60304695c180eb255113bd5effcf54aec6c7dfbca67f533a1010000006a473044022042115a5d1a489bbc9bd4348521b098025625c9b6c6474f84b96b11301da17a0602203ccb684b1d133ff87265a6017ef0fdd2d22dd6eef0725c57826f8aaadcc16d9d012103629aa3df53cad290078bbad26491f1e11f9c01697c65db0967561f6f142c993cffffffff02801015000000000017a914b8984d6344eed24689cdbc77adaf73c66c4fdd688734e9e818000000001976a91404607585722760691867b42d43701905736be47d88ac00000000")
-        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx, 1, BITCOIN_FUNDING_DEPTHOK))
+        val tx = Transaction.read(
+            "0100000001b5cbd7615a7494f60304695c180eb255113bd5effcf54aec6c7dfbca67f533a1010000006a473044022042115a5d1a489bbc9bd4348521b098025625c9b6c6474f84b96b11301da17a0602203ccb684b1d133ff87265a6017ef0fdd2d22dd6eef0725c57826f8aaadcc16d9d012103629aa3df53cad290078bbad26491f1e11f9c01697c65db0967561f6f142c993cffffffff02801015000000000017a914b8984d6344eed24689cdbc77adaf73c66c4fdd688734e9e818000000001976a91404607585722760691867b42d43701905736be47d88ac00000000"
+        )
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx, 1, WatchConfirmed.ChannelFundingDepthOk))
         val watchEvent = watcherNotifications.first()
-        assertTrue(watchEvent is WatchEventConfirmed)
+        assertTrue(watchEvent is WatchConfirmedTriggered)
         assertEquals(tx.txid, watchEvent.tx.txid)
 
         val timestamp = currentTimestampMillis()

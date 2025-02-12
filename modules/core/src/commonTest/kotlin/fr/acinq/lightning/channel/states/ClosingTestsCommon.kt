@@ -5,7 +5,10 @@ import fr.acinq.bitcoin.Bitcoin.computeP2PkhAddress
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.addHtlc
@@ -58,7 +61,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT -- mutual close before converging`() {
+    fun `recv ChannelSpent -- mutual close before converging`() {
         val (alice0, bob0) = reachNormal()
         // alice initiates a closing with a low fee
         val (alice1, aliceActions1) = alice0.process(ChannelCommand.Close.MutualClose(null, ClosingFeerates(FeeratePerKw(500.sat), FeeratePerKw(250.sat), FeeratePerKw(1000.sat))))
@@ -90,25 +93,25 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         // actual test starts here
-        val (bob4, _) = bob3.process(ChannelCommand.WatchReceived(WatchEventSpent(ByteVector32.Zeroes, BITCOIN_FUNDING_SPENT, mutualCloseTx.tx)))
-        val (bob5, bobActions5) = bob4.process(ChannelCommand.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
+        val (bob4, _) = bob3.process(ChannelCommand.WatchReceived(WatchSpentTriggered(ByteVector32.Zeroes, WatchSpent.ChannelSpent(mutualCloseTx.amountIn), mutualCloseTx.tx)))
+        val (bob5, bobActions5) = bob4.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(ByteVector32.Zeroes, WatchConfirmed.ClosingTxConfirmed, 0, 0, mutualCloseTx.tx)))
         assertIs<Closed>(bob5.state)
         assertContains(bobActions5, ChannelAction.Storage.SetLocked(mutualCloseTx.tx.txid))
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- mutual close`() {
+    fun `recv ClosingTxConfirmed -- mutual close`() {
         val (alice0, _, _) = initMutualClose()
         val mutualCloseTx = alice0.state.mutualClosePublished.last()
 
         // actual test starts here
-        val (alice1, actions1) = alice0.process(ChannelCommand.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
+        val (alice1, actions1) = alice0.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(ByteVector32.Zeroes, WatchConfirmed.ClosingTxConfirmed, 0, 0, mutualCloseTx.tx)))
         assertIs<Closed>(alice1.state)
         assertContains(actions1, ChannelAction.Storage.SetLocked(mutualCloseTx.tx.txid))
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- mutual close with external btc address`() {
+    fun `recv ClosingTxConfirmed -- mutual close with external btc address`() {
         val pubKey = Lightning.randomKey().publicKey()
         val bobBtcAddr = computeP2PkhAddress(pubKey, TestConstants.Bob.nodeParams.chainHash)
         val bobFinalScript = Script.write(Script.pay2pkh(pubKey)).toByteVector()
@@ -129,18 +132,18 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         // actual test starts here
-        val (bob4, bobActions4) = bob3.process(ChannelCommand.WatchReceived(WatchEventConfirmed(ByteVector32.Zeroes, BITCOIN_TX_CONFIRMED(mutualCloseTx.tx), 0, 0, mutualCloseTx.tx)))
+        val (bob4, bobActions4) = bob3.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(ByteVector32.Zeroes, WatchConfirmed.ClosingTxConfirmed, 0, 0, mutualCloseTx.tx)))
         assertIs<Closed>(bob4.state)
         assertContains(bobActions4, ChannelAction.Storage.SetLocked(mutualCloseTx.tx.txid))
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_DEPTHOK`() {
+    fun `recv ChannelFundingDepthOk`() {
         val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         run {
             val (aliceClosing, _) = localClose(alice)
-            val (_, _) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, fundingTx)))
+            val (_, _) = aliceClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.state.channelId, WatchConfirmed.ChannelFundingDepthOk, 561, 3, fundingTx)))
                 .also { (state, actions) ->
                     assertEquals(1, state.commitments.active.size)
                     actions.has<ChannelAction.Storage.StoreState>()
@@ -149,7 +152,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
         run {
             val (bobClosing, _) = localClose(bob)
-            val (_, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, fundingTx)))
+            val (_, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.state.channelId, WatchConfirmed.ChannelFundingDepthOk, 561, 3, fundingTx)))
                 .also { (state, actions) ->
                     assertEquals(1, state.commitments.active.size)
                     assertIs<LocalFundingStatus.ConfirmedFundingTx>(state.commitments.latest.localFundingStatus)
@@ -160,7 +163,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
+    fun `recv ChannelFundingDepthOk -- previous funding tx`() {
         val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1, fundingTx) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
         assertNotEquals(previousFundingTx.txid, fundingTx.txid)
@@ -168,7 +171,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (aliceClosing, localCommitPublished) = localClose(alice1)
             assertEquals(fundingTx.txid, aliceClosing.commitments.latest.fundingTxId)
             assertEquals(2, aliceClosing.commitments.active.size)
-            val (_, _) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, previousFundingTx)))
+            val (_, _) = aliceClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.state.channelId, WatchConfirmed.ChannelFundingDepthOk, 561, 3, previousFundingTx)))
                 .also { (state, actions) ->
                     assertIs<Closing>(state.state)
                     assertEquals(previousFundingTx.txid, state.commitments.latest.fundingTxId)
@@ -185,7 +188,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bobClosing, localCommitPublished) = localClose(bob1)
             assertEquals(fundingTx.txid, bobClosing.commitments.latest.fundingTxId)
             assertEquals(2, bobClosing.commitments.active.size)
-            val (_, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.state.channelId, BITCOIN_FUNDING_DEPTHOK, 561, 3, previousFundingTx)))
+            val (_, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.state.channelId, WatchConfirmed.ChannelFundingDepthOk, 561, 3, previousFundingTx)))
                 .also { (state, actions) ->
                     assertIs<Closing>(state.state)
                     assertEquals(state.commitments.latest.fundingTxId, previousFundingTx.txid)
@@ -201,19 +204,19 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT -- local commit`() {
+    fun `recv ChannelSpent -- local commit`() {
         val (aliceNormal, _) = reachNormal()
         val (aliceClosing, localCommitPublished) = localClose(aliceNormal)
 
         // actual test starts here
         // we are notified afterwards from our watcher about the tx that we just published
-        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventSpent(aliceNormal.state.channelId, BITCOIN_FUNDING_SPENT, localCommitPublished.commitTx)))
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(aliceNormal.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), localCommitPublished.commitTx)))
         assertEquals(aliceClosing, alice1)
         assertTrue(actions1.isEmpty())
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- local commit`() {
+    fun `recv ClosingTxConfirmed -- local commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, htlcs) = run {
             // alice sends an htlc to bob
@@ -235,10 +238,10 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(1, localCommitPublished.claimHtlcDelayedTxs.size)
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 0, localCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs().first().tx), 201, 0, localCommitPublished.htlcTimeoutTxs().first().tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs.first().tx), 202, 0, localCommitPublished.claimHtlcDelayedTxs.first().tx)
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, localCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, localCommitPublished.htlcTimeoutTxs().first().tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, localCommitPublished.claimHtlcDelayedTxs.first().tx)
         )
 
         var alice = aliceClosing
@@ -269,14 +272,14 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- local commit -- non-initiator pays commit fees`() {
+    fun `recv ClosingTxConfirmed -- local commit -- non-initiator pays commit fees`() {
         val (alice0, bob0) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
         assertFalse(alice0.commitments.params.localParams.paysCommitTxFees)
         assertTrue(bob0.commitments.params.localParams.paysCommitTxFees)
         val (alice1, localCommitPublished) = localClose(alice0)
-        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 7, localCommitPublished.commitTx)))
+        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 7, localCommitPublished.commitTx)))
         val claimMain = localCommitPublished.claimMainDelayedOutputTx!!.tx
-        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(claimMain), 43, 3, claimMain)))
+        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 3, claimMain)))
         assertIs<Closed>(alice3.state)
         assertEquals(2, actions3.size)
         actions3.has<ChannelAction.Storage.StoreState>()
@@ -284,7 +287,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- local commit with multiple htlcs for the same payment`() {
+    fun `recv ClosingTxConfirmed -- local commit with multiple htlcs for the same payment`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
         val (aliceClosing, localCommitPublished) = run {
@@ -312,22 +315,22 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         // if commit tx and htlc-timeout txs end up in the same block, we may receive the htlc-timeout confirmation before the commit tx confirmation
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[2].tx), 42, 0, localCommitPublished.htlcTimeoutTxs()[2].tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[1].tx), 202, 0, localCommitPublished.htlcTimeoutTxs()[1].tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[2].tx), 203, 2, localCommitPublished.claimHtlcDelayedTxs[2].tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[0].tx), 202, 1, localCommitPublished.htlcTimeoutTxs()[0].tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[0].tx), 203, 0, localCommitPublished.claimHtlcDelayedTxs[0].tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[1].tx), 203, 1, localCommitPublished.claimHtlcDelayedTxs[1].tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[3].tx), 203, 0, localCommitPublished.htlcTimeoutTxs()[3].tx),
-            WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimHtlcDelayedTxs[3].tx), 203, 3, localCommitPublished.claimHtlcDelayedTxs[3].tx)
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, localCommitPublished.htlcTimeoutTxs()[2].tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, localCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, localCommitPublished.htlcTimeoutTxs()[1].tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 2, localCommitPublished.claimHtlcDelayedTxs[2].tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 1, localCommitPublished.htlcTimeoutTxs()[0].tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 0, localCommitPublished.claimHtlcDelayedTxs[0].tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 1, localCommitPublished.claimHtlcDelayedTxs[1].tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 0, localCommitPublished.htlcTimeoutTxs()[3].tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 3, localCommitPublished.claimHtlcDelayedTxs[3].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- local commit with htlcs only signed by local`() {
+    fun `recv ClosingTxConfirmed -- local commit with htlcs only signed by local`() {
         val (alice0, bob0) = reachNormal()
         val aliceCommitTx = alice0.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (aliceClosing, localCommitPublished, add) = run {
@@ -345,7 +348,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(localCommitPublished.htlcTimeoutTxs().isEmpty())
         assertTrue(localCommitPublished.htlcSuccessTxs().isEmpty())
 
-        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceCommitTx), 42, 1, aliceCommitTx)))
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, aliceCommitTx)))
         assertIs<Closing>(alice1.state)
         // when the commit tx is confirmed, alice knows that the htlc she sent right before the unilateral close will never reach the chain, so she fails it
         assertEquals(2, actions1.size)
@@ -357,7 +360,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- local commit -- followed by CMD_FULFILL_HTLC`() {
+    fun `recv ClosingTxConfirmed -- local commit -- followed by CMD_FULFILL_HTLC`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
@@ -389,18 +392,18 @@ class ClosingTestsCommon : LightningTestSuite() {
         Transaction.correctlySpends(htlcSuccess.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[0].tx), 210, 0, localCommitPublished.htlcTimeoutTxs()[0].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(htlcSuccess.tx), 210, 1, htlcSuccess.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs[0].tx), 215, 1, aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs[0].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs[1].tx), 215, 0, aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 250, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, localCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 0, localCommitPublished.htlcTimeoutTxs()[0].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 1, htlcSuccess.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 215, 1, aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs[0].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 215, 0, aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- local commit --  followed by UpdateFailHtlc not acked by remote`() {
+    fun `recv ClosingTxConfirmed -- local commit --  followed by UpdateFailHtlc not acked by remote`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, htlc) = run {
             // An HTLC Alice -> Bob is cross-signed that will be failed later.
@@ -428,7 +431,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(localCommitPublished.htlcTimeoutTxs().isEmpty())
         assertTrue(localCommitPublished.claimHtlcDelayedTxs.isEmpty())
 
-        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx)))
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, localCommitPublished.commitTx)))
         assertIs<Closing>(alice1.state)
         // when the commit tx is confirmed, alice knows that the htlc will never reach the chain
         assertEquals(2, actions1.size)
@@ -477,32 +480,32 @@ class ClosingTestsCommon : LightningTestSuite() {
             lockTime = 0
         )
 
-        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobClaimSuccessTx)))
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(20_000.sat), bobClaimSuccessTx)))
         assertEquals(aliceClosing, alice1)
         assertEquals(3, actions1.size)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobClaimSuccessTx, 3, BITCOIN_TX_CONFIRMED(bobClaimSuccessTx)), actions1.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobClaimSuccessTx, 3, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
         // alice extracts Bob's preimage from his claim-htlc-success tx.
         val addSettled = actions1.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFulfill>().first()
         assertEquals(ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage), addSettled.result)
 
-        val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobClaimTimeoutTx)))
+        val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(10_000.sat), bobClaimTimeoutTx)))
         assertEquals(aliceClosing, alice2)
         assertEquals(2, actions2.size)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobClaimTimeoutTx, 3, BITCOIN_TX_CONFIRMED(bobClaimTimeoutTx)), actions2.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobClaimTimeoutTx, 3, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
 
         val claimHtlcSuccessDelayed = localCommitPublished.claimHtlcDelayedTxs.find { it.input.outPoint.txid == localCommitPublished.htlcSuccessTxs()[1].tx.txid }!!
         val claimHtlcTimeoutDelayed = localCommitPublished.claimHtlcDelayedTxs.find { it.input.outPoint.txid == localCommitPublished.htlcTimeoutTxs()[1].tx.txid }!!
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobClaimSuccessTx), 42, 0, bobClaimSuccessTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx), 42, 1, localCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx), 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcSuccessTxs()[1].tx), 202, 0, localCommitPublished.htlcSuccessTxs()[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobClaimTimeoutTx), 202, 0, bobClaimTimeoutTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(localCommitPublished.htlcTimeoutTxs()[1].tx), 202, 0, localCommitPublished.htlcTimeoutTxs()[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccessDelayed.tx), 203, 0, claimHtlcSuccessDelayed.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcTimeoutDelayed.tx), 203, 0, claimHtlcTimeoutDelayed.tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, bobClaimSuccessTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, localCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, localCommitPublished.htlcSuccessTxs()[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, bobClaimTimeoutTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, localCommitPublished.htlcTimeoutTxs()[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 0, claimHtlcSuccessDelayed.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 0, claimHtlcTimeoutDelayed.tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -553,7 +556,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT -- remote commit`() {
+    fun `recv ChannelSpent -- remote commit`() {
         val (alice, _, bobCommitTxs) = initMutualClose(withPayments = true)
         // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
         val bobCommitTx = bobCommitTxs.last().commitTx.tx
@@ -566,7 +569,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- remote commit`() {
+    fun `recv ClosingTxConfirmed -- remote commit`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished, htlcs) = run {
             // alice sends an htlc to bob
@@ -587,9 +590,9 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(1, remoteCommitPublished.claimHtlcTimeoutTxs().size)
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 0, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 43, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs().first().tx), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs().first().tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs().first().tx),
         )
 
         var alice = aliceClosing
@@ -623,15 +626,15 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- remote commit -- non-initiator pays commit fees`() {
+    fun `recv ClosingTxConfirmed -- remote commit -- non-initiator pays commit fees`() {
         val (alice0, bob0) = reachNormal(requestRemoteFunding = TestConstants.bobFundingAmount)
         assertFalse(alice0.commitments.params.localParams.paysCommitTxFees)
         assertTrue(bob0.commitments.params.localParams.paysCommitTxFees)
         val remoteCommitTx = bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (alice1, remoteCommitPublished) = remoteClose(remoteCommitTx, alice0)
-        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitTx), 42, 7, remoteCommitTx)))
+        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 7, remoteCommitTx)))
         val claimMain = remoteCommitPublished.claimMainOutputTx!!.tx
-        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.state.channelId, BITCOIN_TX_CONFIRMED(claimMain), 43, 3, claimMain)))
+        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 3, claimMain)))
         assertIs<Closed>(alice3.state)
         assertEquals(2, actions3.size)
         actions3.has<ChannelAction.Storage.StoreState>()
@@ -639,7 +642,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- remote commit with multiple htlcs for the same payment`() {
+    fun `recv ClosingTxConfirmed -- remote commit with multiple htlcs for the same payment`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
         val (aliceClosing, remoteCommitPublished) = run {
@@ -660,17 +663,17 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         // if commit tx and claim-htlc-timeout txs end up in the same block, we may receive them in any order
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 42, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx), 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- remote commit with htlcs only signed by local in next remote commit`() {
+    fun `recv ClosingTxConfirmed -- remote commit with htlcs only signed by local in next remote commit`() {
         val (alice0, bob0) = reachNormal()
         val bobCommitTx = bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx
         val (aliceClosing, remoteCommitPublished, add) = run {
@@ -686,7 +689,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         assertTrue(remoteCommitPublished.claimHtlcTimeoutTxs().isEmpty())
 
-        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobCommitTx), 42, 1, bobCommitTx)))
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, bobCommitTx)))
         assertIs<Closing>(alice1.state)
         // when the commit tx is confirmed, alice knows that the htlc she sent right before the unilateral close will never reach the chain, so she fails it
         assertEquals(2, actions1.size)
@@ -698,7 +701,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- remote commit --  followed by CMD_FULFILL_HTLC`() {
+    fun `recv ClosingTxConfirmed -- remote commit --  followed by CMD_FULFILL_HTLC`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
@@ -731,16 +734,16 @@ class ClosingTestsCommon : LightningTestSuite() {
         Transaction.correctlySpends(claimHtlcSuccess.tx, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx), 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccess.tx), 210, 0, claimHtlcSuccess.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 0, claimHtlcSuccess.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- remote commit -- alternative feerate`() {
+    fun `recv ClosingTxConfirmed -- remote commit -- alternative feerate`() {
         val (alice0, bob0) = reachNormal()
         val (bobClosing, remoteCommitPublished) = run {
             val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
@@ -765,8 +768,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         val claimMain = remoteCommitPublished.claimMainOutputTx!!.tx
         Transaction.correctlySpends(claimMain, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 0, remoteCommitPublished.commitTx)))
-        val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob0.channelId, BITCOIN_TX_CONFIRMED(claimMain), 43, 0, claimMain)))
+        val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx)))
+        val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, claimMain)))
         assertIs<Closed>(bobClosed.state)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
     }
@@ -824,28 +827,28 @@ class ClosingTestsCommon : LightningTestSuite() {
             lockTime = 0
         )
 
-        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcSuccessTx)))
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(20_000.sat), bobHtlcSuccessTx)))
         assertEquals(aliceClosing, alice1)
         assertEquals(3, actions1.size)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx, 3, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx)), actions1.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx, 3, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
         // alice extracts Bob's preimage from his htlc-success tx.
         val addSettled = actions1.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFulfill>().first()
         assertEquals(ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage), addSettled.result)
 
-        val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcTimeoutTx)))
+        val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(10_000.sat), bobHtlcTimeoutTx)))
         assertEquals(aliceClosing, alice2)
         assertEquals(2, actions2.size)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx, 3, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx)), actions2.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx, 3, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx), 42, 0, bobHtlcSuccessTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcSuccessTxs()[1].tx), 202, 0, remoteCommitPublished.claimHtlcSuccessTxs()[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx), 202, 0, bobHtlcTimeoutTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, bobHtlcSuccessTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcSuccessTxs()[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, bobHtlcTimeoutTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -894,7 +897,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT -- next remote commit`() {
+    fun `recv ChannelSpent -- next remote commit`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
         val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
@@ -920,7 +923,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- next remote commit`() {
+    fun `recv ClosingTxConfirmed -- next remote commit`() {
         val (alice0, bob0) = reachNormal()
         // alice sends an htlc to bob
         val (aliceClosing, remoteCommitPublished) = run {
@@ -951,17 +954,17 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(remoteCommitPublished.claimHtlcSuccessTxs().isEmpty())
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx), 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 202, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx), 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- next remote commit -- followed by CMD_FULFILL_HTLC`() {
+    fun `recv ClosingTxConfirmed -- next remote commit -- followed by CMD_FULFILL_HTLC`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, remoteCommitPublished, fulfill) = run {
             // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
@@ -1003,17 +1006,17 @@ class ClosingTestsCommon : LightningTestSuite() {
         actionsFulfill.doesNotHave<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx), 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcSuccess.tx), 210, 1, claimHtlcSuccess.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 210, 3, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 1, claimHtlcSuccess.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 3, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- next remote commit -- alternative feerate`() {
+    fun `recv ClosingTxConfirmed -- next remote commit -- alternative feerate`() {
         val (alice0, bob0) = reachNormal()
         val (bobClosing, remoteCommitPublished) = run {
             val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
@@ -1031,8 +1034,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         val claimMain = remoteCommitPublished.claimMainOutputTx!!.tx
         Transaction.correctlySpends(claimMain, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 0, remoteCommitPublished.commitTx)))
-        val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob0.channelId, BITCOIN_TX_CONFIRMED(claimMain), 43, 0, claimMain)))
+        val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx)))
+        val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, claimMain)))
         assertIs<Closed>(bobClosed.state)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
     }
@@ -1096,26 +1099,26 @@ class ClosingTestsCommon : LightningTestSuite() {
             lockTime = 0
         )
 
-        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcSuccessTx)))
+        val (alice1, actions1) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(20_000.sat), bobHtlcSuccessTx)))
         assertEquals(aliceClosing, alice1)
         assertEquals(2, actions1.size)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx, 3, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx)), actions1.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx, 3, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
 
-        val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcTimeoutTx)))
+        val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(10_000.sat), bobHtlcTimeoutTx)))
         assertEquals(aliceClosing, alice2)
         assertEquals(2, actions2.size)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx, 3, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx)), actions2.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx, 3, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx), 42, 0, bobHtlcSuccessTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx), 42, 1, remoteCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimMainOutputTx!!.tx), 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcSuccessTxs()[1].tx), 202, 0, remoteCommitPublished.claimHtlcSuccessTxs()[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx), 202, 0, bobHtlcTimeoutTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx), 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, bobHtlcSuccessTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcSuccessTxs()[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, bobHtlcTimeoutTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
     }
@@ -1175,7 +1178,7 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- future remote commit`() {
+    fun `recv ClosingTxConfirmed -- future remote commit`() {
         val (alice0, bob0) = reachNormal(bobFeatures = TestConstants.Bob.nodeParams.features.remove(Feature.ChannelBackupClient))
         val (_, bobDisconnected) = run {
             // This HTLC will be fulfilled.
@@ -1230,7 +1233,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertTrue(it.isSentToDefaultAddress)
         }
 
-        val (alice3, aliceActions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
+        val (alice3, aliceActions3) = alice2.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
         assertIs<Closing>(alice3.state)
         aliceActions3.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(bobCommitTx.txid, it.txId)
@@ -1257,11 +1260,11 @@ class ClosingTestsCommon : LightningTestSuite() {
             actions4.doesNotHave<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         }
 
-        val (alice4, aliceActions4) = alice3.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobCommitTx), 50, 0, bobCommitTx)))
+        val (alice4, aliceActions4) = alice3.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 0, bobCommitTx)))
         assertIs<Closing>(alice4.state)
         assertEquals(listOf(ChannelAction.Storage.StoreState(alice4.state)), aliceActions4)
 
-        val (alice5, aliceActions5) = alice4.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(aliceTxs[0]), 60, 3, aliceTxs[0])))
+        val (alice5, aliceActions5) = alice4.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 60, 3, aliceTxs[0])))
         assertIs<Closed>(alice5.state)
         assertEquals(
             listOf(ChannelAction.Storage.StoreState(alice5.state)),
@@ -1271,14 +1274,14 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT -- one revoked tx`() {
+    fun `recv ChannelSpent -- one revoked tx`() {
         val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
 
         // bob publishes one of his revoked txs
         val bobRevokedTx = bobCommitTxs[1].commitTx.tx
         assertEquals(6, bobRevokedTx.txOut.size)
 
-        val (alice1, aliceActions1) = alice0.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobRevokedTx)))
+        val (alice1, aliceActions1) = alice0.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobRevokedTx)))
         assertIs<Closing>(alice1.state)
         aliceActions1.hasOutgoingMessage<Error>()
         aliceActions1.has<ChannelAction.Storage.StoreState>()
@@ -1357,22 +1360,22 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         val watchConfirmed = listOf(
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.commitTx), 42, 0, revokedCommitPublished.commitTx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!.tx), 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!.tx), 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[1].tx), 50, 1, revokedCommitPublished.htlcPenaltyTxs[1].tx),
-            WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[0].tx), 52, 2, revokedCommitPublished.htlcPenaltyTxs[0].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, revokedCommitPublished.commitTx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 1, revokedCommitPublished.htlcPenaltyTxs[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 52, 2, revokedCommitPublished.htlcPenaltyTxs[0].tx),
         )
         confirmWatchedTxs(alice2, watchConfirmed)
     }
 
     @Test
-    fun `recv BITCOIN_FUNDING_SPENT -- multiple revoked tx`() {
+    fun `recv ChannelSpent -- multiple revoked tx`() {
         val (alice0, _, bobCommitTxs, htlcsAlice, htlcsBob) = prepareRevokedClose()
         assertEquals(bobCommitTxs.size, bobCommitTxs.map { it.commitTx.tx.txid }.toSet().size) // all commit txs are distinct
 
         // bob publishes one of his revoked txs
-        val (alice1, aliceActions1) = alice0.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobCommitTxs[0].commitTx.tx)))
+        val (alice1, aliceActions1) = alice0.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTxs[0].commitTx.tx)))
         assertIs<Closing>(alice1.state)
         aliceActions1.hasOutgoingMessage<Error>()
         aliceActions1.has<ChannelAction.Storage.StoreState>()
@@ -1396,7 +1399,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         // bob publishes another one of his revoked txs
-        val (alice2, aliceActions2) = alice1.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobCommitTxs[1].commitTx.tx)))
+        val (alice2, aliceActions2) = alice1.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTxs[1].commitTx.tx)))
         assertIs<Closing>(alice2.state)
         aliceActions2.hasOutgoingMessage<Error>()
         aliceActions2.has<ChannelAction.Storage.StoreState>()
@@ -1466,18 +1469,18 @@ class ClosingTestsCommon : LightningTestSuite() {
 
             // this revoked transaction is the one to confirm
             val watchConfirmed = listOf(
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.commitTx), 42, 0, revokedCommitPublished.commitTx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!.tx), 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!.tx), 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[1].tx), 50, 1, revokedCommitPublished.htlcPenaltyTxs[1].tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.htlcPenaltyTxs[0].tx), 52, 2, revokedCommitPublished.htlcPenaltyTxs[0].tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, revokedCommitPublished.commitTx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 1, revokedCommitPublished.htlcPenaltyTxs[1].tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 52, 2, revokedCommitPublished.htlcPenaltyTxs[0].tx),
             )
             confirmWatchedTxs(alice4, watchConfirmed)
         }
     }
 
     @Test
-    fun `recv BITCOIN_TX_CONFIRMED -- one revoked tx + pending htlcs`() {
+    fun `recv ClosingTxConfirmed -- one revoked tx + pending htlcs`() {
         val (alice0, bob0) = reachNormal()
         // bob's first commit tx doesn't contain any htlc
         assertEquals(4, bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx.txOut.size) // 2 main outputs + 2 anchors
@@ -1511,7 +1514,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         // bob publishes a revoked tx
         val bobRevokedTx = bob1.commitments.latest.localCommit.publishableTxs.commitTx.tx
-        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobRevokedTx)))
+        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobRevokedTx)))
         assertIs<Closing>(alice3.state)
         actions3.hasOutgoingMessage<Error>()
         actions3.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
@@ -1529,7 +1532,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         actions4.doesNotHave<ChannelAction.Storage.StoreOutgoingPayment>()
 
         // bob's revoked tx confirms: alice should fail all pending htlcs
-        val (alice5, actions5) = alice4.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobRevokedTx), 100, 3, bobRevokedTx)))
+        val (alice5, actions5) = alice4.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 100, 3, bobRevokedTx)))
         assertTrue(alice5.state is Closing)
         actions5.doesNotHave<ChannelAction.Storage.StoreOutgoingPayment>()
         val addSettledActions = actions5.filterIsInstance<ChannelAction.ProcessCmdRes>()
@@ -1547,7 +1550,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         val bobRevokedTx = bobCommitTxs[2]
         assertEquals(8, bobRevokedTx.commitTx.tx.txOut.size)
 
-        val (alice1, aliceActions1) = alice0.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobRevokedTx.commitTx.tx)))
+        val (alice1, aliceActions1) = alice0.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobRevokedTx.commitTx.tx)))
         assertIs<Closing>(alice1.state)
         aliceActions1.hasOutgoingMessage<Error>()
         aliceActions1.has<ChannelAction.Storage.StoreState>()
@@ -1609,38 +1612,38 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertEquals(2, bobOutpoints.size)
 
             // alice reacts by publishing penalty txs that spend bob's htlc transactions
-            val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcSuccessTx.txinfo.tx)))
+            val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(bobHtlcSuccessTx.txinfo.amountIn), bobHtlcSuccessTx.txinfo.tx)))
             assertIs<Closing>(alice3.state)
             assertEquals(4, actions3.size)
             assertEquals(1, alice3.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
             assertTrue(actions3.contains(ChannelAction.Storage.StoreState(alice3.state)))
-            assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, 3, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx.txinfo.tx)), actions3.findWatch())
+            assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, 3, WatchConfirmed.ClosingTxConfirmed), actions3.findWatch())
             actions3.hasPublishTx(alice3.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0].tx)
-            assertEquals(WatchSpent(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, alice3.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0].input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT), actions3.findWatch())
+            assertEquals(WatchSpent(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, alice3.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0].input.outPoint.index.toInt(), WatchSpent.ClosingOutputSpent(bobHtlcSuccessTx.txinfo.tx.txOut[0].amount)), actions3.findWatch())
 
-            val (alice4, actions4) = alice3.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcTimeoutTx.txinfo.tx)))
+            val (alice4, actions4) = alice3.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(bobHtlcTimeoutTx.txinfo.amountIn), bobHtlcTimeoutTx.txinfo.tx)))
             assertIs<LNChannel<Closing>>(alice4)
             assertIs<Closing>(alice4.state)
             assertEquals(4, actions4.size)
             assertEquals(2, alice4.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
             assertTrue(actions4.contains(ChannelAction.Storage.StoreState(alice4.state)))
-            assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, 3, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx.txinfo.tx)), actions4.findWatch())
+            assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, 3, WatchConfirmed.ClosingTxConfirmed), actions4.findWatch())
             actions4.hasPublishTx(alice4.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1].tx)
-            assertEquals(WatchSpent(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, alice4.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1].input.outPoint.index.toInt(), BITCOIN_OUTPUT_SPENT), actions4.findWatch())
+            assertEquals(WatchSpent(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, alice4.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1].input.outPoint.index.toInt(), WatchSpent.ClosingOutputSpent(bobHtlcTimeoutTx.txinfo.tx.txOut[0].amount)), actions4.findWatch())
 
             val claimHtlcDelayedPenaltyTxs = alice4.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs
             val remainingHtlcPenaltyTxs = revokedCommitPublished.htlcPenaltyTxs.filterNot { bobOutpoints.contains(it.input.outPoint) }
             assertEquals(2, remainingHtlcPenaltyTxs.size)
             val watchConfirmed = listOf(
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.commitTx), 42, 0, revokedCommitPublished.commitTx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.claimMainOutputTx!!.tx), 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(revokedCommitPublished.mainPenaltyTx!!.tx), 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remainingHtlcPenaltyTxs[1].tx), 50, 1, remainingHtlcPenaltyTxs[1].tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx.txinfo.tx), 50, 2, bobHtlcSuccessTx.txinfo.tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(remainingHtlcPenaltyTxs[0].tx), 50, 3, remainingHtlcPenaltyTxs[0].tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcDelayedPenaltyTxs[0].tx), 51, 3, claimHtlcDelayedPenaltyTxs[0].tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx.txinfo.tx), 51, 0, bobHtlcTimeoutTx.txinfo.tx),
-                WatchEventConfirmed(alice0.channelId, BITCOIN_TX_CONFIRMED(claimHtlcDelayedPenaltyTxs[1].tx), 51, 1, claimHtlcDelayedPenaltyTxs[1].tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, revokedCommitPublished.commitTx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 1, remainingHtlcPenaltyTxs[1].tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 2, bobHtlcSuccessTx.txinfo.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 3, remainingHtlcPenaltyTxs[0].tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 51, 3, claimHtlcDelayedPenaltyTxs[0].tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 51, 0, bobHtlcTimeoutTx.txinfo.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 51, 1, claimHtlcDelayedPenaltyTxs[1].tx),
             )
             confirmWatchedTxs(alice4, watchConfirmed)
         }
@@ -1654,7 +1657,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         val bobRevokedTx = bobCommitTxs[2]
         assertEquals(8, bobRevokedTx.commitTx.tx.txOut.size)
 
-        val (alice1, _) = alice0.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_FUNDING_SPENT, bobRevokedTx.commitTx.tx)))
+        val (alice1, _) = alice0.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobRevokedTx.commitTx.tx)))
         assertIs<Closing>(alice1.state)
 
         // alice fetches information about the revoked htlcs
@@ -1689,7 +1692,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             0
         )
 
-        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.channelId, BITCOIN_OUTPUT_SPENT, bobHtlcTx)))
+        val (alice3, actions3) = alice2.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(bobRevokedTx.htlcTxsAndSigs[0].txinfo.amountIn), bobHtlcTx)))
         assertIs<Closing>(alice3.state)
         assertEquals(10, actions3.size)
         assertEquals(4, alice3.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
@@ -1697,17 +1700,17 @@ class ClosingTestsCommon : LightningTestSuite() {
         claimHtlcDelayedPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobHtlcTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
         assertEquals(setOf(OutPoint(bobHtlcTx, 1), OutPoint(bobHtlcTx, 2), OutPoint(bobHtlcTx, 3), OutPoint(bobHtlcTx, 4)), claimHtlcDelayedPenaltyTxs.map { it.input.outPoint }.toSet())
         assertTrue(actions3.contains(ChannelAction.Storage.StoreState(alice3.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTx, 3, BITCOIN_TX_CONFIRMED(bobHtlcTx)), actions3.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTx, 3, WatchConfirmed.ClosingTxConfirmed), actions3.findWatch())
         actions3.hasPublishTx(claimHtlcDelayedPenaltyTxs[0].tx)
         actions3.hasPublishTx(claimHtlcDelayedPenaltyTxs[1].tx)
         actions3.hasPublishTx(claimHtlcDelayedPenaltyTxs[2].tx)
         actions3.hasPublishTx(claimHtlcDelayedPenaltyTxs[3].tx)
         val watchSpent = actions3.findWatches<WatchSpent>().toSet()
         val expected = setOf(
-            WatchSpent(alice0.channelId, bobHtlcTx, 1, BITCOIN_OUTPUT_SPENT),
-            WatchSpent(alice0.channelId, bobHtlcTx, 2, BITCOIN_OUTPUT_SPENT),
-            WatchSpent(alice0.channelId, bobHtlcTx, 3, BITCOIN_OUTPUT_SPENT),
-            WatchSpent(alice0.channelId, bobHtlcTx, 4, BITCOIN_OUTPUT_SPENT),
+            WatchSpent(alice0.channelId, bobHtlcTx, 1, WatchSpent.ClosingOutputSpent(claimHtlcDelayedPenaltyTxs[0].amountIn)),
+            WatchSpent(alice0.channelId, bobHtlcTx, 2, WatchSpent.ClosingOutputSpent(claimHtlcDelayedPenaltyTxs[1].amountIn)),
+            WatchSpent(alice0.channelId, bobHtlcTx, 3, WatchSpent.ClosingOutputSpent(claimHtlcDelayedPenaltyTxs[2].amountIn)),
+            WatchSpent(alice0.channelId, bobHtlcTx, 4, WatchSpent.ClosingOutputSpent(claimHtlcDelayedPenaltyTxs[3].amountIn)),
         )
         assertEquals(expected, watchSpent)
     }
@@ -1890,7 +1893,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             return RevokedCloseFixture(mutableAlice, mutableBob, listOf(commitTx1, commitTx2, commitTx3, commitTx4), listOf(htlcAlice1, htlcAlice2), listOf(htlcBob1, htlcBob2))
         }
 
-        private fun confirmWatchedTxs(firstClosingState: LNChannel<Closing>, watchConfirmed: List<WatchEventConfirmed>) {
+        private fun confirmWatchedTxs(firstClosingState: LNChannel<Closing>, watchConfirmed: List<WatchConfirmedTriggered>) {
             var alice = firstClosingState
             watchConfirmed.dropLast(1).forEach {
                 val (aliceNew, actions) = alice.process(ChannelCommand.WatchReceived(it))

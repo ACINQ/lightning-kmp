@@ -22,8 +22,8 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
     private val logger = loggerFactory.newLogger(this::class)
     private val mailbox = Channel<WatcherCommand>(Channel.BUFFERED)
 
-    private val _notificationsFlow = MutableSharedFlow<WatchEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
-    override fun openWatchNotificationsFlow(): Flow<WatchEvent> = _notificationsFlow.asSharedFlow()
+    private val _notificationsFlow = MutableSharedFlow<WatchTriggered>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
+    override fun openWatchNotificationsFlow(): Flow<WatchTriggered> = _notificationsFlow.asSharedFlow()
 
     // this is used by a Swift watch-tower module in the Phoenix iOS app to tell when the watcher is up-to-date
     // the value that is emitted in the time elapsed (in milliseconds) since the watcher is ready and idle
@@ -79,7 +79,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                         .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
                         .map { w ->
                             logger.info { "output ${w.txId}:${w.outputIndex} spent by transaction ${tx.txid}" }
-                            _notificationsFlow.emit(WatchEventSpent(w.channelId, w.event, tx))
+                            _notificationsFlow.emit(WatchSpentTriggered(w.channelId, w.event, tx))
                         }
                 }
             }
@@ -95,11 +95,11 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                     client.getMerkle(w.txId, item.blockHeight)?.let { merkle ->
                         val confirmations = state.height - merkle.blockHeight + 1
                         logger.info { "txid=${w.txId} had confirmations=$confirmations in block=${merkle.blockHeight} pos=${merkle.pos}" }
-                        _notificationsFlow.emit(WatchEventConfirmed(w.channelId, w.event, merkle.blockHeight, merkle.pos, txMap[w.txId]!!))
+                        _notificationsFlow.emit(WatchConfirmedTriggered(w.channelId, w.event, merkle.blockHeight, merkle.pos, txMap[w.txId]!!))
 
                         // check whether we have transactions to publish
                         when (val event = w.event) {
-                            is BITCOIN_PARENT_TX_CONFIRMED -> {
+                            is WatchConfirmed.ParentTxConfirmed -> {
                                 val tx = event.childTx
                                 logger.info { "parent tx of txid=${tx.txid} has been confirmed" }
                                 val cltvTimeout = Scripts.cltvTimeout(tx)
@@ -247,7 +247,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                                     val parentTxid = tx.txIn[0].outPoint.txid
                                     logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
                                     val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
-                                    addWatch(WatchConfirmed(ByteVector32.Zeroes, parentTxid, parentPublicKeyScript, csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(tx)))
+                                    addWatch(WatchConfirmed(ByteVector32.Zeroes, parentTxid, parentPublicKeyScript, csvTimeout, WatchConfirmed.ParentTxConfirmed(tx)))
                                 }
 
                                 cltvTimeout > blockCount -> {

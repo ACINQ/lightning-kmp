@@ -3,8 +3,8 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.WatchEventConfirmed
-import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -93,8 +93,8 @@ data class WaitForChannelReady(
                 else -> unhandled(cmd)
             }
             is ChannelCommand.WatchReceived -> when (cmd.watch) {
-                is WatchEventConfirmed -> updateFundingTxStatus(cmd.watch)
-                is WatchEventSpent -> handlePotentialForceClose(cmd.watch)
+                is WatchConfirmedTriggered -> updateFundingTxStatus(cmd.watch)
+                is WatchSpentTriggered -> handlePotentialForceClose(cmd.watch)
             }
             is ChannelCommand.Close.MutualClose -> Pair(this@WaitForChannelReady, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))

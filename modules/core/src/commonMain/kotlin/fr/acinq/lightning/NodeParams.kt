@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlin.math.max
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -115,7 +116,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param htlcMinimum minimum accepted HTLC value.
  * @param toRemoteDelayBlocks number of blocks our peer will have to wait before they get their main output back in case they force-close a channel.
  * @param maxToLocalDelayBlocks maximum number of blocks we will have to wait before we get our main output back in case we force-close a channel.
- * @param minDepthBlocks minimum depth of a transaction before we consider it safely confirmed.
+ * @param minDepthBlocks minimum depth of a transaction before we consider it safely confirmed: note that it will be scaled based on the amount at stake.
  * @param feeBase base fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
  * @param feeProportionalMillionths proportional fee used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
  * @param pingInterval delay between ping messages.
@@ -255,6 +256,22 @@ data class NodeParams(
             )
         ),
     )
+
+    /**
+     * Returns the number of confirmations needed to consider a transaction irrevocably confirmed
+     * and thus safe from reorgs. We make sure the cumulative block reward largely exceeds the
+     * transaction amount.
+     *
+     * @param amount amount at stake in this transaction.
+     * @return number of confirmations needed.
+     */
+    fun minDepth(amount: Satoshi): Long {
+        val blockReward = 3.125f // this will be too large after the halving in 2028
+        val scalingFactor = 10
+        val btc = amount.toLong().toDouble() / 100_000_000L
+        val blocksToReachFunding = (((scalingFactor * btc) / blockReward) + 1).toLong()
+        return max(minDepthBlocks.toLong(), blocksToReachFunding)
+    }
 
     /**
      * We generate a default, deterministic Bolt 12 offer based on the node's seed and its trampoline node.

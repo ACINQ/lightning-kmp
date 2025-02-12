@@ -3,7 +3,10 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.updated
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.states.Channel.MAX_NEGOTIATION_ITERATIONS
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
@@ -146,26 +149,29 @@ data class Negotiating(
                 else -> unhandled(cmd)
             }
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
-                is WatchEventConfirmed -> updateFundingTxStatus(watch)
-                is WatchEventSpent -> when {
-                    watch.event is BITCOIN_FUNDING_SPENT && closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
-                        // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
-                        logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
-                        val closingTx = getMutualClosePublished(watch.tx)
-                        val nextState = Closing(
-                            commitments,
-                            waitingSinceBlock = currentBlockHeight.toLong(),
-                            mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
-                            mutualClosePublished = listOf(closingTx)
-                        )
-                        val actions = listOf(
-                            ChannelAction.Storage.StoreState(nextState),
-                            ChannelAction.Blockchain.PublishTx(closingTx),
-                            ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
-                        )
-                        Pair(nextState, actions)
+                is WatchConfirmedTriggered -> updateFundingTxStatus(watch)
+                is WatchSpentTriggered -> when (watch.event) {
+                    is WatchSpent.ChannelSpent -> when {
+                        closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.spendingTx.txid } -> {
+                            // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
+                            logger.info { "closing tx published: closingTxId=${watch.spendingTx.txid}" }
+                            val closingTx = getMutualClosePublished(watch.spendingTx)
+                            val nextState = Closing(
+                                commitments,
+                                waitingSinceBlock = currentBlockHeight.toLong(),
+                                mutualCloseProposed = closingTxProposed.flatten().map { it.unsignedTx },
+                                mutualClosePublished = listOf(closingTx)
+                            )
+                            val actions = listOf(
+                                ChannelAction.Storage.StoreState(nextState),
+                                ChannelAction.Blockchain.PublishTx(closingTx),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed))
+                            )
+                            Pair(nextState, actions)
+                        }
+                        else -> handlePotentialForceClose(watch)
                     }
-                    else -> handlePotentialForceClose(watch)
+                    is WatchSpent.ClosingOutputSpent -> unhandled(cmd)
                 }
             }
             is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
@@ -200,7 +206,7 @@ data class Negotiating(
             add(ChannelAction.Storage.StoreState(nextState))
             closingSigned?.let { add(ChannelAction.Message.Send(it)) }
             add(ChannelAction.Blockchain.PublishTx(signedClosingTx))
-            add(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(signedClosingTx.tx))))
+            add(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepth(commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed)))
         }
         return Pair(nextState, actions)
     }

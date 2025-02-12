@@ -8,8 +8,8 @@ import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
-import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
@@ -445,7 +445,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             assertIs<LNChannel<Closing>>(aliceClosing)
             val lcp = aliceClosing.state.localCommitPublished
             assertNotNull(lcp)
-            val (bobClosing, _) = bob9.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.state.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
+            val (bobClosing, _) = bob9.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), lcp.commitTx)))
             assertIs<LNChannel<Closing>>(bobClosing)
             val rcp = bobClosing.state.remoteCommitPublished
             assertNotNull(rcp)

@@ -103,7 +103,7 @@ data class LocalCommitPublished(
             .isNotEmpty()
     }
 
-    internal fun LoggingContext.doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+    internal fun LoggingContext.doPublish(nodeParams: NodeParams, channelId: ByteVector32): List<ChannelAction> {
         val publishQueue = buildList {
             add(ChannelAction.Blockchain.PublishTx(commitTx, ChannelAction.Blockchain.PublishTx.Type.CommitTx))
             claimMainDelayedOutputTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
@@ -120,11 +120,11 @@ data class LocalCommitPublished(
             claimMainDelayedOutputTx?.let { add(it.tx) }
             addAll(claimHtlcDelayedTxs.map { it.tx })
         }
-        val watchConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId, minDepth)
+        val watchConfirmedList = watchConfirmedIfNeeded(nodeParams, channelId, watchConfirmedQueue, irrevocablySpent)
 
         // we watch outputs of the commitment tx that both parties may spend
         val watchSpentQueue = htlcTxs.keys.toList()
-        val watchSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
+        val watchSpentList = watchSpentIfNeeded(channelId, commitTx, watchSpentQueue, irrevocablySpent)
 
         return buildList {
             addAll(publishList)
@@ -210,7 +210,7 @@ data class RemoteCommitPublished(
             .isNotEmpty()
     }
 
-    internal fun LoggingContext.doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+    internal fun LoggingContext.doPublish(nodeParams: NodeParams, channelId: ByteVector32): List<ChannelAction> {
         val publishQueue = buildList {
             claimMainOutputTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
             addAll(claimHtlcTxs.values.filterNotNull().map { ChannelAction.Blockchain.PublishTx(it) })
@@ -224,11 +224,11 @@ data class RemoteCommitPublished(
             add(commitTx)
             claimMainOutputTx?.let { add(it.tx) }
         }
-        val watchEventConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId, minDepth)
+        val watchEventConfirmedList = watchConfirmedIfNeeded(nodeParams, channelId, watchConfirmedQueue, irrevocablySpent)
 
         // we watch outputs of the commitment tx that both parties may spend
         val watchSpentQueue = claimHtlcTxs.keys.toList()
-        val watchEventSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
+        val watchEventSpentList = watchSpentIfNeeded(channelId, commitTx, watchSpentQueue, irrevocablySpent)
 
         return buildList {
             addAll(publishList)
@@ -310,7 +310,7 @@ data class RevokedCommitPublished(
         return irrevocablySpent.values.any { it.txid == commitTx.txid } || irrevocablySpent.keys.any { it.txid == commitTx.txid }
     }
 
-    internal fun LoggingContext.doPublish(channelId: ByteVector32, minDepth: Long): List<ChannelAction> {
+    internal fun LoggingContext.doPublish(nodeParams: NodeParams, channelId: ByteVector32): List<ChannelAction> {
         val publishQueue = buildList {
             claimMainOutputTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
             mainPenaltyTx?.let { add(ChannelAction.Blockchain.PublishTx(it)) }
@@ -326,14 +326,14 @@ data class RevokedCommitPublished(
             add(commitTx)
             claimMainOutputTx?.let { add(it.tx) }
         }
-        val watchEventConfirmedList = watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, channelId, minDepth)
+        val watchEventConfirmedList = watchConfirmedIfNeeded(nodeParams, channelId, watchConfirmedQueue, irrevocablySpent)
 
         // we watch outputs of the commitment tx that both parties may spend
         val watchSpentQueue = buildList {
             mainPenaltyTx?.let { add(it.input.outPoint) }
             addAll(htlcPenaltyTxs.map { it.input.outPoint })
         }
-        val watchEventSpentList = watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent, channelId)
+        val watchEventSpentList = watchSpentIfNeeded(channelId, commitTx, watchSpentQueue, irrevocablySpent)
 
         return buildList {
             addAll(publishList)

@@ -3,7 +3,8 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.toMilliSatoshi
@@ -59,11 +60,11 @@ data class LegacyWaitForFundingLocked(
                 else -> unhandled(cmd)
             }
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
-                is WatchEventSpent -> when (watch.tx.txid) {
-                    commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(watch.tx, commitments.latest)
-                    else -> handleRemoteSpentOther(watch.tx)
+                is WatchSpentTriggered -> when (watch.spendingTx.txid) {
+                    commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(watch.spendingTx, commitments.latest)
+                    else -> handleRemoteSpentOther(watch.spendingTx)
                 }
-                else -> unhandled(cmd)
+                is WatchConfirmedTriggered -> unhandled(cmd)
             }
             is ChannelCommand.Close.MutualClose -> Pair(this@LegacyWaitForFundingLocked, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))

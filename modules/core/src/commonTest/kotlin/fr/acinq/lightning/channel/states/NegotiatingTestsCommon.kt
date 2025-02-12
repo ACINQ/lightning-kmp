@@ -3,7 +3,10 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.makeCmdAdd
@@ -244,7 +247,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Closing>>(bob3)
         val mutualCloseTx = bobActions3.findPublishTxs().first()
         assertEquals(bob3.state.mutualClosePublished.map { it.tx }, listOf(mutualCloseTx))
-        assertEquals(bobActions3.findWatches<WatchConfirmed>().map { it.event }, listOf(BITCOIN_TX_CONFIRMED(mutualCloseTx)))
+        assertEquals(bobActions3.findWatches<WatchConfirmed>().map { it.txId }, listOf(mutualCloseTx.txid))
     }
 
     @Test
@@ -423,10 +426,10 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertEquals(closingTxA, closingTxB)
 
         // Alice sees Bob's closing tx (which should be the same as the one she published)
-        val (alice4, _) = alice3.process(ChannelCommand.WatchReceived(WatchEventSpent(alice3.channelId, BITCOIN_FUNDING_SPENT, closingTxB)))
+        val (alice4, _) = alice3.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice3.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), closingTxB)))
         assertIs<LNChannel<Closing>>(alice4)
 
-        val (alice5, _) = alice4.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice3.channelId, BITCOIN_TX_CONFIRMED(closingTxA), 144, 0, closingTxA)))
+        val (alice5, _) = alice4.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice3.channelId, WatchConfirmed.ClosingTxConfirmed, 144, 0, closingTxA)))
         assertIs<LNChannel<Closed>>(alice5)
     }
 
@@ -454,7 +457,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertNotEquals(firstMutualCloseTx.tx.txid, latestMutualCloseTx.tx.txid)
 
         // at this point bob will receive a new signature, but he decides instead to publish the first mutual close
-        val (alice4, aliceActions4) = alice3.process(ChannelCommand.WatchReceived(WatchEventSpent(alice3.channelId, BITCOIN_FUNDING_SPENT, firstMutualCloseTx.tx)))
+        val (alice4, aliceActions4) = alice3.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice3.channelId, WatchSpent.ChannelSpent(firstMutualCloseTx.amountIn), firstMutualCloseTx.tx)))
         assertIs<LNChannel<Closing>>(alice4)
         aliceActions4.has<ChannelAction.Storage.StoreState>()
         aliceActions4.hasPublishTx(firstMutualCloseTx.tx)
@@ -475,7 +478,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (alice1, actions) = alice.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Closing>>(alice1)
         actions.hasPublishTx(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx)
-        assertTrue(actions.findWatches<WatchConfirmed>().map { it.event }.contains(BITCOIN_TX_CONFIRMED(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx)))
+        assertTrue(actions.findWatches<WatchConfirmed>().map { it.txId }.contains(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx.txid))
     }
 
     companion object {
@@ -508,7 +511,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
                     val bobClosingTx = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }.firstOrNull()
                     if (bobClosingTx != null && bobClosingTx.txIn[0].outPoint == a.commitments.latest.localCommit.publishableTxs.commitTx.input.outPoint && a.state !is Closing) {
                         // Bob just spent the funding tx
-                        val (a1, actions2) = a.process(ChannelCommand.WatchReceived(WatchEventSpent(a.channelId, BITCOIN_FUNDING_SPENT, bobClosingTx)))
+                        val (a1, actions2) = a.process(ChannelCommand.WatchReceived(WatchSpentTriggered(a.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobClosingTx)))
                         actions2.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also { assertEquals(bobClosingTx.txid, it.txId) }
                         return converge(a1, b1, actions2.findOutgoingMessageOpt())
                     }

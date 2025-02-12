@@ -1,12 +1,14 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.testLoggerFactory
@@ -42,7 +44,7 @@ class LegacyWaitForFundingLockedTestsCommon {
         assertIs<LNChannel<Offline>>(state1)
         assertEquals(actions1.size, 1)
         val watchConfirmed = actions1.findWatch<WatchConfirmed>()
-        assertEquals(watchConfirmed.event, BITCOIN_FUNDING_DEPTHOK)
+        assertEquals(watchConfirmed.event, WatchConfirmed.ChannelFundingDepthOk)
         assertEquals(watchConfirmed.txId, fundingTx.txid)
         // Reconnect to our peer.
         val localInit = Init(state.commitments.params.localParams.features)
