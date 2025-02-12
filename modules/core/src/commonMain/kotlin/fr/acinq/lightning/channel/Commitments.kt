@@ -581,6 +581,10 @@ data class Commitments(
     val remoteCommitIndex = active.first().remoteCommit.index
     val nextRemoteCommitIndex = remoteCommitIndex + 1
 
+    // While we have multiple active commitments, we use the min or max depending on the scenario.
+    val capacityMin = active.minOf { it.fundingAmount }
+    val capacityMax = active.maxOf { it.fundingAmount }
+
     fun availableBalanceForSend(): MilliSatoshi = active.minOf { it.availableBalanceForSend(params, changes) }
     fun availableBalanceForReceive(): MilliSatoshi = active.minOf { it.availableBalanceForReceive(params, changes) }
 

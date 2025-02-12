@@ -3,8 +3,8 @@ package fr.acinq.lightning.blockchain.electrum
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.SwapInParams
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
-import fr.acinq.lightning.blockchain.WatchEventConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.LNChannel
 import fr.acinq.lightning.channel.LocalFundingStatus
@@ -160,7 +160,7 @@ class SwapInManagerTestsCommon : LightningTestSuite() {
         val inputs = (alice1.commitments.latest.localFundingStatus as LocalFundingStatus.UnconfirmedFundingTx).sharedTx.tx.localInputs
         assertEquals(2, inputs.size) // 2 splice inputs
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
-        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 100, 2, spliceTx)))
+        val (alice2, _) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ChannelFundingDepthOk, 100, 2, spliceTx)))
         val (alice3, _) = alice2.process(ChannelCommand.MessageReceived(SpliceLocked(alice.channelId, spliceTx.txid)))
         assertIs<LNChannel<Normal>>(alice3)
         assertEquals(1, alice3.commitments.all.size)

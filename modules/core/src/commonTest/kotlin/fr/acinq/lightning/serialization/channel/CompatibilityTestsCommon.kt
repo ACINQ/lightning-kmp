@@ -4,10 +4,12 @@ import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.byteVector
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
-import fr.acinq.lightning.blockchain.WatchEventConfirmed
-import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.channel.LNChannel
+import fr.acinq.lightning.channel.findOutgoingMessage
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForChannelReady
 import fr.acinq.lightning.channel.states.WaitForFundingConfirmed
@@ -19,7 +21,9 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.UpdateAddHtlc
-import kotlin.test.*
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class CompatibilityTestsCommon {
     //@Test
@@ -30,7 +34,7 @@ class CompatibilityTestsCommon {
         val bin = EncryptedChannelData.from(TestConstants.Bob.nodeParams.nodePrivateKey, bob.state)
         println("wait_for_funding_confirmed: ${bin.data}")
 
-        val (bob1, actionsBob) = bob.process(ChannelCommand.WatchReceived(WatchEventConfirmed(bob.channelId, BITCOIN_FUNDING_DEPTHOK, 42, 0, fundingTx)))
+        val (bob1, actionsBob) = bob.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.channelId, WatchConfirmed.ChannelFundingDepthOk, 42, 0, fundingTx)))
         val channelReady = actionsBob.findOutgoingMessage<ChannelReady>()
         assertIs<LNChannel<WaitForChannelReady>>(bob1)
 
@@ -42,7 +46,7 @@ class CompatibilityTestsCommon {
         assertEquals(channelReady, alice1.state.deferred)
 
         assertTrue(actionsAlice.isEmpty()) // alice waits until she sees on-chain confirmations herself
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchEventConfirmed(alice.channelId, BITCOIN_FUNDING_DEPTHOK, 0, 42, fundingTx)))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ChannelFundingDepthOk, 0, 42, fundingTx)))
         val channelReadyAlice = actionsAlice2.findOutgoingMessage<ChannelReady>()
         val (bob2, _) = bob1.process(ChannelCommand.MessageReceived(channelReadyAlice))
         assertIs<LNChannel<Normal>>(bob2)

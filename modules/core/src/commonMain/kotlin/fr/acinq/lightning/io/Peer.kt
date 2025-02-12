@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.IClient
 import fr.acinq.lightning.blockchain.IWatcher
-import fr.acinq.lightning.blockchain.WatchEvent
+import fr.acinq.lightning.blockchain.WatchTriggered
 import fr.acinq.lightning.blockchain.computeSpliceCpfpFeerate
 import fr.acinq.lightning.blockchain.electrum.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
@@ -116,7 +116,7 @@ data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, v
 
 data class Connected(val peerConnection: PeerConnection) : PeerCommand()
 data class MessageReceived(val connectionId: Long, val msg: LightningMessage) : PeerCommand()
-data class WatchReceived(val watch: WatchEvent) : PeerCommand()
+data class WatchReceived(val watch: WatchTriggered) : PeerCommand()
 data class WrappedChannelCommand(val channelId: ByteVector32, val channelCommand: ChannelCommand) : PeerCommand()
 data object Disconnected : PeerCommand()
 

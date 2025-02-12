@@ -7,7 +7,9 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.ChannelAction.Blockchain.PublishTx.Type
@@ -886,14 +888,12 @@ class NormalTestsCommon : LightningTestSuite() {
 
         assertEquals(2, actionsBob1.findWatches<WatchConfirmed>().count())
         actionsBob1.findWatches<WatchConfirmed>().first().run {
-            val e = event as? BITCOIN_TX_CONFIRMED
-            assertNotNull(e)
-            assertEquals(tx, e.tx)
+            assertEquals(WatchConfirmed.ClosingTxConfirmed, event)
+            assertEquals(tx.txid, txId)
         }
         actionsBob1.findWatches<WatchConfirmed>().last().run {
-            val e = event as? BITCOIN_TX_CONFIRMED
-            assertNotNull(e)
-            assertEquals(tx.txid, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
+            assertEquals(WatchConfirmed.ClosingTxConfirmed, event)
+            assertEquals(actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txid, txId)
         }
     }
 
@@ -914,14 +914,12 @@ class NormalTestsCommon : LightningTestSuite() {
 
         assertEquals(2, actionsBob1.findWatches<WatchConfirmed>().count())
         actionsBob1.findWatches<WatchConfirmed>().first().run {
-            val e = event as? BITCOIN_TX_CONFIRMED
-            assertNotNull(e)
-            assertEquals(tx, e.tx)
+            assertEquals(WatchConfirmed.ClosingTxConfirmed, event)
+            assertEquals(tx.txid, txId)
         }
         actionsBob1.findWatches<WatchConfirmed>().last().run {
-            val e = event as? BITCOIN_TX_CONFIRMED
-            assertNotNull(e)
-            assertEquals(tx.txid, actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
+            assertEquals(WatchConfirmed.ClosingTxConfirmed, event)
+            assertEquals(actionsBob1.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txid, txId)
         }
     }
 
@@ -945,14 +943,12 @@ class NormalTestsCommon : LightningTestSuite() {
 
         assertEquals(2, actionsBob2.findWatches<WatchConfirmed>().count())
         actionsBob2.findWatches<WatchConfirmed>().first().run {
-            val e = event as? BITCOIN_TX_CONFIRMED
-            assertNotNull(e)
-            assertEquals(tx, e.tx)
+            assertEquals(WatchConfirmed.ClosingTxConfirmed, event)
+            assertEquals(tx.txid, txId)
         }
         actionsBob2.findWatches<WatchConfirmed>().last().run {
-            val e = event as? BITCOIN_TX_CONFIRMED
-            assertNotNull(e)
-            assertEquals(tx.txid, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
+            assertEquals(WatchConfirmed.ClosingTxConfirmed, event)
+            assertEquals(actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txid, txId)
         }
     }
 
@@ -975,14 +971,12 @@ class NormalTestsCommon : LightningTestSuite() {
 
         assertEquals(2, actionsBob2.findWatches<WatchConfirmed>().count())
         actionsBob2.findWatches<WatchConfirmed>().first().run {
-            val e = event as? BITCOIN_TX_CONFIRMED
-            assertNotNull(e)
-            assertEquals(tx, e.tx)
+            assertEquals(WatchConfirmed.ClosingTxConfirmed, event)
+            assertEquals(tx.txid, txId)
         }
         actionsBob2.findWatches<WatchConfirmed>().last().run {
-            val e = event as? BITCOIN_TX_CONFIRMED
-            assertNotNull(e)
-            assertEquals(tx.txid, actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txIn.first().outPoint.txid)
+            assertEquals(WatchConfirmed.ClosingTxConfirmed, event)
+            assertEquals(actionsBob2.filterIsInstance<ChannelAction.Blockchain.PublishTx>().last().tx.txid, txId)
         }
     }
 
@@ -1843,7 +1837,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val bobCommitTx = bob8.commitments.latest.localCommit.publishableTxs.commitTx.tx
         assertEquals(8, bobCommitTx.txOut.size) // 2 main outputs, 4 pending htlcs and 2 anchors
 
-        val (aliceClosing, actions) = alice8.process(ChannelCommand.WatchReceived(WatchEventSpent(alice8.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
+        val (aliceClosing, actions) = alice8.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice8.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
         assertIs<LNChannel<Closing>>(aliceClosing)
         assertTrue(actions.isNotEmpty())
 
@@ -1864,9 +1858,9 @@ class NormalTestsCommon : LightningTestSuite() {
         val rcp = aliceClosing.state.remoteCommitPublished!!
         val watchConfirmed = actions.findWatches<WatchConfirmed>()
         assertEquals(2, watchConfirmed.size)
-        assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), watchConfirmed[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(rcp.claimMainOutputTx!!.tx), watchConfirmed[1].event)
-        assertEquals(4, actions.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
+        assertEquals(bobCommitTx.txid, watchConfirmed[0].txId)
+        assertEquals(rcp.claimMainOutputTx!!.tx.txid, watchConfirmed[1].txId)
+        assertEquals(4, actions.findWatches<WatchSpent>().count { it.event is WatchSpent.ClosingOutputSpent })
         assertEquals(4, rcp.claimHtlcTxs.size)
         assertEquals(1, rcp.claimHtlcSuccessTxs().size)
         assertEquals(2, rcp.claimHtlcTimeoutTxs().size)
@@ -1913,7 +1907,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val bobCommitTx = bob9.commitments.latest.localCommit.publishableTxs.commitTx.tx
         assertEquals(7, bobCommitTx.txOut.size) // 2 main outputs, 3 pending htlcs and 2 anchors
 
-        val (aliceClosing, actions9) = alice9.process(ChannelCommand.WatchReceived(WatchEventSpent(alice9.channelId, BITCOIN_FUNDING_SPENT, bobCommitTx)))
+        val (aliceClosing, actions9) = alice9.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice9.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
         assertIs<LNChannel<Closing>>(aliceClosing)
         assertTrue(actions9.isNotEmpty())
 
@@ -1934,9 +1928,9 @@ class NormalTestsCommon : LightningTestSuite() {
         val rcp = aliceClosing.state.nextRemoteCommitPublished!!
         val watchConfirmed = actions9.findWatches<WatchConfirmed>()
         assertEquals(2, watchConfirmed.size)
-        assertEquals(BITCOIN_TX_CONFIRMED(bobCommitTx), watchConfirmed[0].event)
-        assertEquals(BITCOIN_TX_CONFIRMED(rcp.claimMainOutputTx!!.tx), watchConfirmed[1].event)
-        assertEquals(3, actions9.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
+        assertEquals(bobCommitTx.txid, watchConfirmed[0].txId)
+        assertEquals(rcp.claimMainOutputTx!!.tx.txid, watchConfirmed[1].txId)
+        assertEquals(3, actions9.findWatches<WatchSpent>().count { it.event is WatchSpent.ClosingOutputSpent })
         assertEquals(3, rcp.claimHtlcTxs.size)
         assertEquals(0, rcp.claimHtlcSuccessTxs().size)
         assertEquals(2, rcp.claimHtlcTimeoutTxs().size)
@@ -1989,7 +1983,7 @@ class NormalTestsCommon : LightningTestSuite() {
         //  a->b =  10 000 sat
         assertEquals(8, revokedTx.txOut.size) // 2 anchor outputs + 2 main outputs + 4 htlc
 
-        val (aliceClosing1, actions1) = alice.process(ChannelCommand.WatchReceived(WatchEventSpent(alice.channelId, BITCOIN_FUNDING_SPENT, revokedTx)))
+        val (aliceClosing1, actions1) = alice.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), revokedTx)))
         assertIs<LNChannel<Closing>>(aliceClosing1)
         assertEquals(1, aliceClosing1.state.revokedCommitPublished.size)
         actions1.hasOutgoingMessage<Error>()
@@ -2006,14 +2000,14 @@ class NormalTestsCommon : LightningTestSuite() {
         val mainOutputTx = claimTxs[0]
         val mainPenaltyTx = claimTxs[1]
         Transaction.correctlySpends(mainPenaltyTx, revokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        assertEquals(setOf(BITCOIN_TX_CONFIRMED(revokedTx), BITCOIN_TX_CONFIRMED(mainOutputTx)), actions2.findWatches<WatchConfirmed>().map { it.event }.toSet())
+        assertEquals(setOf(revokedTx.txid, mainOutputTx.txid), actions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
 
         val htlcPenaltyTxs = claimTxs.drop(2)
         assertTrue(htlcPenaltyTxs.all { it.txIn.size == 1 })
         htlcPenaltyTxs.forEach { Transaction.correctlySpends(it, revokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
         val htlcInputs = htlcPenaltyTxs.map { it.txIn.first().outPoint }.toSet()
         assertEquals(4, htlcInputs.size) // each htlc-penalty tx spends a different output
-        assertEquals(5, actions2.findWatches<WatchSpent>().count { it.event is BITCOIN_OUTPUT_SPENT })
+        assertEquals(5, actions2.findWatches<WatchSpent>().count { it.event is WatchSpent.ClosingOutputSpent })
         assertEquals(htlcInputs + mainPenaltyTx.txIn.first().outPoint, actions2.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet())
 
         // two main outputs are 760 000 and 200 000 (minus fees)

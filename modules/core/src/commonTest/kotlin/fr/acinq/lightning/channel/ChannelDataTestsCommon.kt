@@ -3,10 +3,9 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
-import fr.acinq.lightning.blockchain.WatchEventSpent
 import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.crossSign
@@ -14,7 +13,9 @@ import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.channel.states.Closing
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggingContext
+import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions.InputInfo
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
@@ -37,7 +38,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
         assertFalse(lcp.isDone())
 
         run {
-            val actions = lcp.run { doPublish(randomBytes32(), 6) }
+            val actions = lcp.run { doPublish(TestConstants.Alice.nodeParams, randomBytes32()) }
             // We use watch-confirmed on the outputs only us can claim.
             val watchConfirmed = actions.findWatches<WatchConfirmed>().map { it.txId }.toSet()
             assertEquals(watchConfirmed, setOf(lcp.commitTx.txid, lcp.claimMainDelayedOutputTx!!.tx.txid) + lcp.claimHtlcDelayedTxs.map { it.tx.txid }.toSet())
@@ -65,7 +66,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
         assertFalse(lcp3.isDone())
 
         run {
-            val actions = lcp3.run { doPublish(randomBytes32(), 3) }
+            val actions = lcp3.run { doPublish(TestConstants.Bob.nodeParams, randomBytes32()) }
             // The only remaining transactions to watch are the 3rd-stage txs for the htlc-timeout.
             val watchConfirmed = actions.findWatches<WatchConfirmed>().map { it.txId }.toSet()
             assertEquals(watchConfirmed, lcp.claimHtlcDelayedTxs.drop(2).map { it.tx.txid }.toSet())
@@ -108,7 +109,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
         assertFalse(rcp.isDone())
 
         run {
-            val actions = rcp.run { doPublish(randomBytes32(), 6) }
+            val actions = rcp.run { doPublish(TestConstants.Alice.nodeParams, randomBytes32()) }
             // We use watch-confirmed on the outputs only us can claim.
             val watchConfirmed = actions.findWatches<WatchConfirmed>().map { it.txId }.toSet()
             assertEquals(watchConfirmed, setOf(rcp.commitTx.txid, rcp.claimMainOutputTx!!.tx.txid))
@@ -136,7 +137,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
         assertFalse(rcp3.isDone())
 
         run {
-            val actions = rcp3.run { doPublish(randomBytes32(), 3) }
+            val actions = rcp3.run { doPublish(TestConstants.Bob.nodeParams, randomBytes32()) }
             // Our main output has been confirmed already.
             assertTrue(actions.findWatches<WatchConfirmed>().isEmpty())
             // We still watch the remaining unclaimed htlc outputs.
@@ -177,7 +178,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
         assertFalse(rvk.isDone())
 
         run {
-            val actions = rvk.run { doPublish(randomBytes32(), 6) }
+            val actions = rvk.run { doPublish(TestConstants.Alice.nodeParams, randomBytes32()) }
             // We use watch-confirmed on the outputs only us can claim.
             val watchConfirmed = actions.findWatches<WatchConfirmed>().map { it.txId }.toSet()
             assertEquals(watchConfirmed, setOf(rvk.commitTx.txid, rvk.claimMainOutputTx!!.tx.txid))
@@ -202,7 +203,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
         assertFalse(rvk3.isDone())
 
         run {
-            val actions = rvk3.run { doPublish(randomBytes32(), 3) }
+            val actions = rvk3.run { doPublish(TestConstants.Bob.nodeParams, randomBytes32()) }
             // Our main output has been confirmed already.
             assertTrue(actions.findWatches<WatchConfirmed>().isEmpty())
             // We still watch the remaining unclaimed outputs (htlc and remote main output).
@@ -238,7 +239,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             )
             assertFalse(rvk4b.isDone())
 
-            val actions = rvk4b.run { doPublish(randomBytes32(), 3) }
+            val actions = rvk4b.run { doPublish(TestConstants.Bob.nodeParams, randomBytes32()) }
             assertTrue(actions.findWatches<WatchConfirmed>().isEmpty())
             // NB: the channel, after calling Helpers.claimRevokedHtlcTxOutputs, will put a watch-spent on the htlc-txs.
             assertTrue(actions.findWatches<WatchSpent>().isEmpty())
@@ -275,7 +276,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             assertIs<LNChannel<Closing>>(aliceClosing)
             val lcp = aliceClosing.state.localCommitPublished
             assertNotNull(lcp)
-            val (bobClosing, _) = bob7.process(ChannelCommand.WatchReceived(WatchEventSpent(alice0.state.channelId, BITCOIN_FUNDING_SPENT, lcp.commitTx)))
+            val (bobClosing, _) = bob7.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), lcp.commitTx)))
             assertIs<LNChannel<Closing>>(bobClosing)
             val rcp = bobClosing.state.remoteCommitPublished
             assertNotNull(rcp)

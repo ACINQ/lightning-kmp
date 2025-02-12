@@ -4,34 +4,25 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
 
-sealed class BitcoinEvent
-data object BITCOIN_FUNDING_DEPTHOK : BitcoinEvent()
-data object BITCOIN_FUNDING_SPENT : BitcoinEvent()
-data object BITCOIN_OUTPUT_SPENT : BitcoinEvent()
-data class BITCOIN_TX_CONFIRMED(val tx: Transaction) : BitcoinEvent()
-data class BITCOIN_PARENT_TX_CONFIRMED(val childTx: Transaction) : BitcoinEvent()
-data object BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED : BitcoinEvent()
-
-/**
- * generic "Watch" request
- */
 sealed class Watch {
     abstract val channelId: ByteVector32
-    abstract val event: BitcoinEvent
 }
 
-// we need a public key script to use electrum apis
+sealed class WatchTriggered {
+    abstract val channelId: ByteVector32
+}
+
 data class WatchConfirmed(
     override val channelId: ByteVector32,
     val txId: TxId,
+    // We need a public key script to use electrum apis.
     val publicKeyScript: ByteVector,
     val minDepth: Long,
-    override val event: BitcoinEvent,
-    val channelNotification: Boolean = true
+    val event: OnChainEvent,
 ) : Watch() {
-    // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
-    // we support both p2pkh and p2wpkh scripts
-    constructor(channelId: ByteVector32, tx: Transaction, minDepth: Long, event: BitcoinEvent) : this(
+    // If we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript.
+    // We support both p2pkh and p2wpkh scripts.
+    constructor(channelId: ByteVector32, tx: Transaction, minDepth: Long, event: OnChainEvent) : this(
         channelId,
         tx.txid,
         if (tx.txOut.isEmpty()) ByteVector.empty else tx.txOut[0].publicKeyScript,
@@ -42,6 +33,12 @@ data class WatchConfirmed(
     init {
         require(minDepth > 0) { "minimum depth must be greater than 0 when watching transaction confirmation" }
     }
+
+    sealed class OnChainEvent
+    data object ChannelFundingDepthOk : OnChainEvent()
+    data object ClosingTxConfirmed : OnChainEvent()
+    data class ParentTxConfirmed(val childTx: Transaction) : OnChainEvent()
+    data object AlternativeCommitTxConfirmed : OnChainEvent()
 
     companion object {
         fun extractPublicKeyScript(witness: ScriptWitness): ByteVector {
@@ -57,29 +54,38 @@ data class WatchConfirmed(
     }
 }
 
+data class WatchConfirmedTriggered(
+    override val channelId: ByteVector32,
+    val event: WatchConfirmed.OnChainEvent,
+    val blockHeight: Int,
+    val txIndex: Int,
+    val tx: Transaction
+) : WatchTriggered()
+
 data class WatchSpent(
     override val channelId: ByteVector32,
     val txId: TxId,
     val outputIndex: Int,
     val publicKeyScript: ByteVector,
-    override val event: BitcoinEvent
+    val event: OnChainEvent
 ) : Watch() {
-    constructor(channelId: ByteVector32, tx: Transaction, outputIndex: Int, event: BitcoinEvent) : this(
+    constructor(channelId: ByteVector32, tx: Transaction, outputIndex: Int, event: OnChainEvent) : this(
         channelId,
         tx.txid,
         outputIndex,
         tx.txOut[outputIndex].publicKeyScript,
         event
     )
+
+    // @formatter:off
+    sealed class OnChainEvent { abstract val amount: Satoshi }
+    data class ChannelSpent(override val amount: Satoshi) : OnChainEvent()
+    data class ClosingOutputSpent(override val amount: Satoshi) : OnChainEvent()
+    // @formatter:on
 }
 
-/**
- * generic "watch" event
- */
-sealed class WatchEvent {
-    abstract val channelId: ByteVector32
-    abstract val event: BitcoinEvent
-}
-
-data class WatchEventConfirmed(override val channelId: ByteVector32, override val event: BitcoinEvent, val blockHeight: Int, val txIndex: Int, val tx: Transaction) : WatchEvent()
-data class WatchEventSpent(override val channelId: ByteVector32, override val event: BitcoinEvent, val tx: Transaction) : WatchEvent()
+data class WatchSpentTriggered(
+    override val channelId: ByteVector32,
+    val event: WatchSpent.OnChainEvent,
+    val spendingTx: Transaction
+) : WatchTriggered()

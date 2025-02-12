@@ -5,7 +5,6 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -35,7 +34,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
                 assertIs<WaitForFundingConfirmed>(state.state)
                 assertEquals(actions.size, 5)
                 actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
-                actions.findWatch<WatchConfirmed>().also { assertEquals(WatchConfirmed(state.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), it) }
+                actions.findWatch<WatchConfirmed>().also { assertEquals(WatchConfirmed(state.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, WatchConfirmed.ChannelFundingDepthOk), it) }
                 actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi(), it.amountReceived) }
                 actions.has<ChannelAction.Storage.StoreState>()
                 actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
@@ -86,7 +85,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertEquals(TestConstants.bobFundingAmount + purchase.fees.total, state.commitments.latest.localCommit.spec.toLocal.truncateToSatoshi())
             assertEquals(TestConstants.aliceFundingAmount - purchase.fees.total, state.commitments.latest.localCommit.spec.toRemote.truncateToSatoshi())
             actions.hasOutgoingMessage<TxSignatures>().also { assertFalse(it.channelData.isEmpty()) }
-            actions.findWatch<WatchConfirmed>().also { assertEquals(BITCOIN_FUNDING_DEPTHOK, it.event) }
+            actions.findWatch<WatchConfirmed>().also { assertEquals(WatchConfirmed.ChannelFundingDepthOk, it.event) }
             actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals((TestConstants.bobFundingAmount + purchase.fees.total).toMilliSatoshi(), it.amountReceived) }
             actions.has<ChannelAction.Storage.StoreState>()
             actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
@@ -151,7 +150,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertTrue(actionsAlice2.hasOutgoingMessage<TxSignatures>().channelData.isEmpty())
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
             val watchConfirmedAlice = actionsAlice2.findWatch<WatchConfirmed>()
-            assertEquals(WatchConfirmed(alice2.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmedAlice)
+            assertEquals(WatchConfirmed(alice2.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, WatchConfirmed.ChannelFundingDepthOk), watchConfirmedAlice)
             assertEquals(ChannelEvents.Created(alice2.state), actionsAlice2.find<ChannelAction.EmitEvent>().event)
             val fundingTx = actionsAlice2.find<ChannelAction.Blockchain.PublishTx>().tx
             assertEquals(fundingTx.txid, txSigsBob.txId)
@@ -178,7 +177,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
             assertTrue(actionsAlice2.hasOutgoingMessage<TxSignatures>().channelData.isEmpty())
             actionsAlice2.has<ChannelAction.Storage.StoreState>()
             val watchConfirmedAlice = actionsAlice2.findWatch<WatchConfirmed>()
-            assertEquals(WatchConfirmed(alice2.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK), watchConfirmedAlice)
+            assertEquals(WatchConfirmed(alice2.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, 3, WatchConfirmed.ChannelFundingDepthOk), watchConfirmedAlice)
             val channelEvent = actionsAlice2.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>()
             assertEquals(channelEvent.txId, txSigsBob.txId)
             val liquidityPurchase = channelEvent.liquidityPurchase

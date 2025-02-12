@@ -3,7 +3,9 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReadyTlv
@@ -56,8 +58,8 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
             is ChannelCommand.MessageReceived -> unhandled(cmd)
             is ChannelCommand.WatchReceived -> when (state) {
                 is ChannelStateWithCommitments -> when (val watch = cmd.watch) {
-                    is WatchEventConfirmed -> {
-                        if (watch.event is BITCOIN_FUNDING_DEPTHOK) {
+                    is WatchConfirmedTriggered -> {
+                        if (watch.event is WatchConfirmed.ChannelFundingDepthOk) {
                             when (val res = state.run { acceptFundingTxConfirmed(watch) }) {
                                 is Either.Left -> Pair(this@Offline, listOf())
                                 is Either.Right -> {
@@ -79,10 +81,10 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                             Pair(this@Offline, listOf())
                         }
                     }
-                    is WatchEventSpent -> when {
-                        state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.tx.txid } -> {
-                            logger.info { "closing tx published: closingTxId=${watch.tx.txid}" }
-                            val closingTx = state.getMutualClosePublished(watch.tx)
+                    is WatchSpentTriggered -> when {
+                        state is Negotiating && state.closingTxProposed.flatten().any { it.unsignedTx.tx.txid == watch.spendingTx.txid } -> {
+                            logger.info { "closing tx published: closingTxId=${watch.spendingTx.txid}" }
+                            val closingTx = state.getMutualClosePublished(watch.spendingTx)
                             val nextState = Closing(
                                 state.commitments,
                                 waitingSinceBlock = currentBlockHeight.toLong(),
@@ -92,7 +94,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
                                 ChannelAction.Blockchain.PublishTx(closingTx),
-                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(watch.tx)))
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(state.commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed))
                             )
                             Pair(nextState, actions)
                         }

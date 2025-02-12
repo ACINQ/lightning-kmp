@@ -172,7 +172,7 @@ sealed class ChannelState {
     internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         when (cmd) {
             is ChannelCommand.MessageReceived -> logger.warning { "unhandled message ${cmd.message::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
-            is ChannelCommand.WatchReceived -> logger.warning { "unhandled watch event ${cmd.watch.event::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
+            is ChannelCommand.WatchReceived -> logger.warning { "unhandled watch event ${cmd.watch::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
             else -> logger.warning { "unhandled command ${cmd::class.simpleName} in state ${this@ChannelState::class.simpleName}" }
         }
         return Pair(this@ChannelState, listOf())
@@ -188,13 +188,13 @@ sealed class ChannelState {
 
     internal fun ChannelContext.doPublish(tx: ClosingTx, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
         ChannelAction.Blockchain.PublishTx(tx),
-        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(tx.tx)))
+        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepth(tx.amountIn), WatchConfirmed.ClosingTxConfirmed))
     )
 
     internal suspend fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         when (cmd) {
             is ChannelCommand.MessageReceived -> logger.error(t) { "error on message ${cmd.message::class.simpleName}" }
-            is ChannelCommand.WatchReceived -> logger.error { "error on watch event ${cmd.watch.event::class.simpleName}" }
+            is ChannelCommand.WatchReceived -> logger.error { "error on watch event ${cmd.watch::class.simpleName}" }
             else -> logger.error(t) { "error on command ${cmd::class.simpleName}" }
         }
 
@@ -236,7 +236,7 @@ sealed class ChannelState {
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),
                         ChannelAction.Blockchain.PublishTx(state.bestUnpublishedClosingTx),
-                        ChannelAction.Blockchain.SendWatch(WatchConfirmed(state.channelId, state.bestUnpublishedClosingTx.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_TX_CONFIRMED(state.bestUnpublishedClosingTx.tx)))
+                        ChannelAction.Blockchain.SendWatch(WatchConfirmed(state.channelId, state.bestUnpublishedClosingTx.tx, staticParams.nodeParams.minDepth(state.bestUnpublishedClosingTx.amountIn), WatchConfirmed.ClosingTxConfirmed))
                     )
                     Pair(nextState, actions)
                 }
@@ -369,11 +369,11 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
      * When a funding transaction confirms, we can prune previous commitments.
      * We also watch this funding transaction to be able to detect force-close attempts.
      */
-    internal fun ChannelContext.acceptFundingTxConfirmed(w: WatchEventConfirmed): Either<Commitments, Triple<Commitments, Commitment, List<ChannelAction>>> {
+    internal fun ChannelContext.acceptFundingTxConfirmed(w: WatchConfirmedTriggered): Either<Commitments, Triple<Commitments, Commitment, List<ChannelAction>>> {
         logger.info { "funding txid=${w.tx.txid} was confirmed at blockHeight=${w.blockHeight} txIndex=${w.txIndex}" }
         return commitments.run {
             updateLocalFundingConfirmed(w.tx).map { (commitments1, commitment) ->
-                val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
                 val actions = buildList {
                     newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetLocked(it.fundingTxId)) }
                     add(ChannelAction.Blockchain.SendWatch(watchSpent))
@@ -386,7 +386,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     /**
      * Default handler when a funding transaction confirms.
      */
-    internal fun ChannelContext.updateFundingTxStatus(w: WatchEventConfirmed): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
+    internal fun ChannelContext.updateFundingTxStatus(w: WatchConfirmedTriggered): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         return when (val res = acceptFundingTxConfirmed(w)) {
             is Either.Left -> Pair(this@ChannelStateWithCommitments, listOf())
             is Either.Right -> {
@@ -411,22 +411,22 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     /**
      * Analyze and react to a potential force-close transaction spending one of our funding transactions.
      */
-    internal suspend fun ChannelContext.handlePotentialForceClose(w: WatchEventSpent): Pair<ChannelStateWithCommitments, List<ChannelAction>> = when {
-        w.event != BITCOIN_FUNDING_SPENT -> Pair(this@ChannelStateWithCommitments, listOf())
-        commitments.all.any { it.fundingTxId == w.tx.txid } -> Pair(this@ChannelStateWithCommitments, listOf()) // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
-        w.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> spendLocalCurrent()
-        w.tx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(w.tx, commitments.latest)
-        w.tx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(w.tx, commitments.latest)
-        w.tx.txIn.any { it.outPoint == commitments.latest.commitInput.outPoint } -> handleRemoteSpentOther(w.tx)
-        else -> when (val commitment = commitments.resolveCommitment(w.tx)) {
+    internal suspend fun ChannelContext.handlePotentialForceClose(w: WatchSpentTriggered): Pair<ChannelStateWithCommitments, List<ChannelAction>> = when {
+        w.event !is WatchSpent.ChannelSpent -> Pair(this@ChannelStateWithCommitments, listOf())
+        commitments.all.any { it.fundingTxId == w.spendingTx.txid } -> Pair(this@ChannelStateWithCommitments, listOf()) // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
+        w.spendingTx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> spendLocalCurrent()
+        w.spendingTx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(w.spendingTx, commitments.latest)
+        w.spendingTx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(w.spendingTx, commitments.latest)
+        w.spendingTx.txIn.any { it.outPoint == commitments.latest.commitInput.outPoint } -> handleRemoteSpentOther(w.spendingTx)
+        else -> when (val commitment = commitments.resolveCommitment(w.spendingTx)) {
             is Commitment -> {
                 logger.warning { "a commit tx for an older commitment has been published fundingTxId=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
                 // We try spending our latest commitment but we also watch their commitment: if it confirms, we will react by spending our corresponding outputs.
-                val watch = ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, w.tx, staticParams.nodeParams.minDepthBlocks.toLong(), BITCOIN_ALTERNATIVE_COMMIT_TX_CONFIRMED))
+                val watch = ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, w.spendingTx, staticParams.nodeParams.minDepth(commitments.capacityMax), WatchConfirmed.AlternativeCommitTxConfirmed))
                 spendLocalCurrent().run { copy(second = second + watch) }
             }
             else -> {
-                logger.warning { "unrecognized tx=${w.tx.txid}" }
+                logger.warning { "unrecognized tx=${w.spendingTx.txid}" }
                 // This case can happen in the following (harmless) scenario:
                 //  - we create and publish a splice transaction, then we go offline
                 //  - the transaction confirms while we are offline
@@ -462,7 +462,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
 
         return Pair(nextState, buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
+            addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
         })
     }
 
@@ -491,7 +491,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
 
         return Pair(nextState, buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
+            addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
         })
     }
 
@@ -522,7 +522,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             }
             Pair(nextState, buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
-                addAll(revokedCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
+                addAll(revokedCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
                 add(ChannelAction.Message.Send(error))
                 add(ChannelAction.Storage.GetHtlcInfos(revokedCommitPublished.commitTx.txid, commitmentNumber))
             })
@@ -538,7 +538,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     )
                     Pair(nextState, buildList {
                         add(ChannelAction.Storage.StoreState(nextState))
-                        addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
+                        addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
                     })
                 }
                 else -> {
@@ -568,7 +568,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                             }
                             return Pair(nextState, buildList {
                                 add(ChannelAction.Storage.StoreState(nextState))
-                                addAll(remoteCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
+                                addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
                             })
                         }
                     }
@@ -612,7 +612,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
 
             Pair(nextState, buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
-                addAll(localCommitPublished.run { doPublish(channelId, staticParams.nodeParams.minDepthBlocks.toLong()) })
+                addAll(localCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
             })
         }
     }

@@ -12,8 +12,6 @@ import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
-import fr.acinq.lightning.blockchain.BITCOIN_OUTPUT_SPENT
-import fr.acinq.lightning.blockchain.BITCOIN_TX_CONFIRMED
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -27,7 +25,7 @@ import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForRevocation
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.ShaChain
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Scripts.multiSig2of2
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx
@@ -37,26 +35,13 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Htl
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
 import fr.acinq.lightning.transactions.Transactions.commitTxFee
 import fr.acinq.lightning.transactions.Transactions.makeCommitTxOutputs
-import fr.acinq.lightning.utils.*
+import fr.acinq.lightning.utils.getValue
+import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.sum
+import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
-import kotlin.math.max
 
 object Helpers {
-
-    /**
-     * Returns the number of confirmations needed to safely handle the funding transaction,
-     * we make sure the cumulative block reward largely exceeds the channel size.
-     *
-     * @param fundingAmount funding amount of the channel
-     * @return number of confirmations needed
-     */
-    fun minDepthForFunding(nodeParams: NodeParams, fundingAmount: Satoshi): Int {
-        val blockReward = 6.25f // this is true as of ~May 2020, but will be too large after 2024
-        val scalingFactor = 15
-        val btc = fundingAmount.toLong().toDouble() / 100_000_000L
-        val blocksToReachFunding: Int = (((scalingFactor * btc) / blockReward) + 1).toInt()
-        return max(nodeParams.minDepthBlocks, blocksToReachFunding)
-    }
 
     /** Called by the non-initiator. */
     fun validateParamsNonInitiator(nodeParams: NodeParams, open: OpenDualFundedChannel): Either<ChannelException, ChannelType> {
@@ -174,19 +159,25 @@ object Helpers {
     }
 
     /** This helper method will watch txs only if they haven't yet reached minDepth. */
-    fun LoggingContext.watchConfirmedIfNeeded(txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32, minDepth: Long): List<ChannelAction.Blockchain.SendWatch> {
+    fun LoggingContext.watchConfirmedIfNeeded(nodeParams: NodeParams, channelId: ByteVector32, txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
         skip.forEach { tx -> logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" } }
-        return process.map { tx -> ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, minDepth, BITCOIN_TX_CONFIRMED(tx))) }
+        return process.map { tx ->
+            // Those are channel force-close transactions, which don't include a change output: every output is potentially at stake.
+            val minDepth = nodeParams.minDepth(tx.txOut.map { it.amount }.sum())
+            ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, minDepth, WatchConfirmed.ClosingTxConfirmed))
+        }
     }
 
     /** This helper method will watch txs only if the utxo they spend hasn't already been irrevocably spent. */
-    fun LoggingContext.watchSpentIfNeeded(parentTx: Transaction, outputs: List<OutPoint>, irrevocablySpent: Map<OutPoint, Transaction>, channelId: ByteVector32): List<ChannelAction.Blockchain.SendWatch> {
+    fun LoggingContext.watchSpentIfNeeded(channelId: ByteVector32, parentTx: Transaction, outputs: List<OutPoint>, irrevocablySpent: Map<OutPoint, Transaction>): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = outputs.partition { irrevocablySpent.contains(it) }
         skip.forEach { output -> logger.info { "no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent[output]?.txid}" } }
         return process.map { output ->
             require(output.txid == parentTx.txid) { "output doesn't belong to the given parentTx: txid=${output.txid} but expected txid=${parentTx.txid}" }
-            ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, parentTx, output.index.toInt(), BITCOIN_OUTPUT_SPENT))
+            require(output.index < parentTx.txOut.size) { "output doesn't belong to the given parentTx: index=${output.index} but parentTx has ${parentTx.txOut.size} outputs" }
+            val outputAmount = parentTx.txOut[output.index.toInt()].amount
+            ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, parentTx, output.index.toInt(), WatchSpent.ClosingOutputSpent(outputAmount)))
         }
     }
 
@@ -221,7 +212,14 @@ object Helpers {
             )
         }
 
-        data class PairOfCommitTxs(val localSpec: CommitmentSpec, val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val localHtlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>, val remoteSpec: CommitmentSpec, val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx, val remoteHtlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>)
+        data class PairOfCommitTxs(
+            val localSpec: CommitmentSpec,
+            val localCommitTx: Transactions.TransactionWithInputInfo.CommitTx,
+            val localHtlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>,
+            val remoteSpec: CommitmentSpec,
+            val remoteCommitTx: Transactions.TransactionWithInputInfo.CommitTx,
+            val remoteHtlcTxs: List<Transactions.TransactionWithInputInfo.HtlcTx>
+        )
 
         /**
          * Creates both sides' first commitment transaction.
@@ -247,7 +245,7 @@ object Helpers {
             remotePerCommitmentPoint: PublicKey
         ): Either<ChannelException, PairOfCommitTxs> {
             val localSpec = CommitmentSpec(localHtlcs, commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
-            val remoteSpec = CommitmentSpec(localHtlcs.map{ it.opposite() }.toSet(), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
+            val remoteSpec = CommitmentSpec(localHtlcs.map { it.opposite() }.toSet(), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
             if (!localParams.paysCommitTxFees) {
                 // They are responsible for paying the commitment transaction fee: we need to make sure they can afford it!

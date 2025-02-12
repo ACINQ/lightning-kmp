@@ -6,8 +6,8 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.WatchEventConfirmed
-import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.Error
@@ -37,7 +37,7 @@ data class LegacyWaitForFundingConfirmed(
             }
             is ChannelCommand.WatchReceived ->
                 when (cmd.watch) {
-                    is WatchEventConfirmed -> {
+                    is WatchConfirmedTriggered -> {
                         val result = runTrying {
                             commitments.latest.localCommit.publishableTxs.commitTx.tx.correctlySpends(listOf(cmd.watch.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
                         }
@@ -66,9 +66,9 @@ data class LegacyWaitForFundingConfirmed(
                             Pair(nextState, actions)
                         }
                     }
-                    is WatchEventSpent -> when (cmd.watch.tx.txid) {
-                        commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(cmd.watch.tx, commitments.latest)
-                        else -> handleRemoteSpentOther(cmd.watch.tx)
+                    is WatchSpentTriggered -> when (cmd.watch.spendingTx.txid) {
+                        commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(cmd.watch.spendingTx, commitments.latest)
+                        else -> handleRemoteSpentOther(cmd.watch.spendingTx)
                     }
                 }
             is ChannelCommand.Close.MutualClose -> Pair(this@LegacyWaitForFundingConfirmed, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))

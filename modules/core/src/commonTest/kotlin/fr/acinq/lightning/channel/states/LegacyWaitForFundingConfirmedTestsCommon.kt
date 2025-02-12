@@ -1,13 +1,15 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
-import fr.acinq.lightning.blockchain.WatchEventConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.logging.*
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.testLoggerFactory
@@ -35,7 +37,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         assertEquals(state.commitments.latest.fundingTxId, fundingTx.txid)
         val ctx = ChannelContext(
             StaticParams(TestConstants.Bob.nodeParams, TestConstants.Alice.nodeParams.nodeId),
-            TestConstants.defaultBlockHeight ,
+            TestConstants.defaultBlockHeight,
             MutableStateFlow(OnChainFeerates(TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw, TestConstants.feeratePerKw)),
             MDCLogger(testLoggerFactory.newLogger("ChannelState"))
         )
@@ -43,7 +45,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         assertIs<LNChannel<Offline>>(state1)
         assertEquals(actions1.size, 1)
         val watchConfirmed = actions1.findWatch<WatchConfirmed>()
-        assertEquals(watchConfirmed.event, BITCOIN_FUNDING_DEPTHOK)
+        assertEquals(watchConfirmed.event, WatchConfirmed.ChannelFundingDepthOk)
         assertEquals(watchConfirmed.txId, fundingTx.txid)
         // Reconnect to our peer.
         val localInit = Init(state.commitments.params.localParams.features)
@@ -63,7 +65,7 @@ class LegacyWaitForFundingConfirmedTestsCommon {
         assertEquals(actions3.size, 1)
         actions3.hasOutgoingMessage<ChannelReestablish>()
         // The funding tx confirms.
-        val (state4, actions4) = state3.process(ChannelCommand.WatchReceived(WatchEventConfirmed(state.channelId, watchConfirmed.event, 1105, 3, fundingTx)))
+        val (state4, actions4) = state3.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(state.channelId, watchConfirmed.event, 1105, 3, fundingTx)))
         assertIs<LNChannel<LegacyWaitForFundingLocked>>(state4)
         assertEquals(actions4.size, 2)
         actions4.hasOutgoingMessage<ChannelReady>()

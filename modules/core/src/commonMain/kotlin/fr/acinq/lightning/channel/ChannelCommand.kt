@@ -3,7 +3,7 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.MilliSatoshi
-import fr.acinq.lightning.blockchain.WatchEvent
+import fr.acinq.lightning.blockchain.WatchTriggered
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.states.ClosingFeerates
@@ -60,7 +60,7 @@ sealed class ChannelCommand {
     }
 
     data class MessageReceived(val message: LightningMessage) : ChannelCommand()
-    data class WatchReceived(val watch: WatchEvent) : ChannelCommand()
+    data class WatchReceived(val watch: WatchTriggered) : ChannelCommand()
 
     sealed interface ForbiddenDuringSplice
     sealed interface ForbiddenDuringQuiescence
@@ -131,7 +131,7 @@ sealed class ChannelFundingResponse {
 
     sealed class Failure : ChannelFundingResponse() {
         data class InsufficientFunds(val balanceAfterFees: MilliSatoshi, val liquidityFees: MilliSatoshi, val currentFeeCredit: MilliSatoshi) : Failure()
-        data object InvalidSpliceOutPubKeyScript : ChannelFundingResponse.Failure()
+        data object InvalidSpliceOutPubKeyScript : Failure()
         data object SpliceAlreadyInProgress : Failure()
         data object ConcurrentRemoteSplice : Failure()
         data object ChannelNotQuiescent : Failure()

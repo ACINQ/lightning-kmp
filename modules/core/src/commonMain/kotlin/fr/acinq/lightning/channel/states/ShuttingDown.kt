@@ -1,8 +1,8 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.blockchain.WatchEventConfirmed
-import fr.acinq.lightning.blockchain.WatchEventSpent
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.wire.*
@@ -177,8 +177,8 @@ data class ShuttingDown(
             is ChannelCommand.Close.MutualClose -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId))
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.WatchReceived -> when (val watch = cmd.watch) {
-                is WatchEventConfirmed -> updateFundingTxStatus(watch)
-                is WatchEventSpent -> handlePotentialForceClose(watch)
+                is WatchConfirmedTriggered -> updateFundingTxStatus(watch)
+                is WatchSpentTriggered -> handlePotentialForceClose(watch)
             }
             is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelCommand.Disconnected -> {

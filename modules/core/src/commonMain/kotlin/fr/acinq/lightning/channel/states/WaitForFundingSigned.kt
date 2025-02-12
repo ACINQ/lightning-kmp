@@ -8,7 +8,6 @@ import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.LiquidityEvents
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.SwapInEvents
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.ShaChain
@@ -105,8 +104,8 @@ data class WaitForFundingSigned(
     private fun ChannelContext.sendTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<ChannelState, List<ChannelAction>> {
         logger.info { "funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
-        val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, action.fundingTx.fundingParams.fundingAmount)
-        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth.toLong(), BITCOIN_FUNDING_DEPTHOK)
+        val fundingMinDepth = staticParams.nodeParams.minDepth(action.fundingTx.fundingParams.fundingAmount)
+        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
         val commitments = Commitments(
             channelParams,
             CommitmentChanges.init(),

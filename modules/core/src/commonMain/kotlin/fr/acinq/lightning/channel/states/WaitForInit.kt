@@ -1,14 +1,10 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_DEPTHOK
-import fr.acinq.lightning.blockchain.BITCOIN_FUNDING_SPENT
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
-import fr.acinq.lightning.channel.Helpers
 import fr.acinq.lightning.channel.LocalFundingStatus
-import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.ChannelTlv
 import fr.acinq.lightning.wire.OpenDualFundedChannel
 import fr.acinq.lightning.wire.TlvStream
@@ -79,11 +75,11 @@ data object WaitForInit : ChannelState() {
                     is ChannelStateWithCommitments -> cmd.state.commitments.active.map { commitment ->
                         when (commitment.localFundingStatus) {
                             is LocalFundingStatus.UnconfirmedFundingTx -> {
-                                val fundingMinDepth = Helpers.minDepthForFunding(staticParams.nodeParams, commitment.fundingAmount).toLong()
-                                WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, BITCOIN_FUNDING_DEPTHOK)
+                                val fundingMinDepth = staticParams.nodeParams.minDepth(commitment.fundingAmount)
+                                WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
                             }
                             is LocalFundingStatus.ConfirmedFundingTx -> {
-                                WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+                                WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
                             }
                         }
                     }
@@ -101,33 +97,32 @@ data object WaitForInit : ChannelState() {
                                 Pair(cmd.state, doPublish(closingType.tx, cmd.state.channelId))
                             }
                             is LocalClose -> {
-                                val actions = closingType.localCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
+                                val actions = closingType.localCommitPublished.run { doPublish(staticParams.nodeParams, cmd.state.channelId) }
                                 Pair(cmd.state, actions)
                             }
                             is RemoteClose -> {
-                                val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
+                                val actions = closingType.remoteCommitPublished.run { doPublish(staticParams.nodeParams, cmd.state.channelId) }
                                 Pair(cmd.state, actions)
                             }
                             is RevokedClose -> {
-                                val actions = closingType.revokedCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
+                                val actions = closingType.revokedCommitPublished.run { doPublish(staticParams.nodeParams, cmd.state.channelId) }
                                 Pair(cmd.state, actions)
                             }
                             is RecoveryClose -> {
-                                val actions = closingType.remoteCommitPublished.run { doPublish(cmd.state.channelId, staticParams.nodeParams.minDepthBlocks.toLong()) }
+                                val actions = closingType.remoteCommitPublished.run { doPublish(staticParams.nodeParams, cmd.state.channelId) }
                                 Pair(cmd.state, actions)
                             }
                             null -> {
                                 // in all other cases we need to be ready for any type of closing
-                                val minDepth = staticParams.nodeParams.minDepthBlocks.toLong()
                                 val actions = buildList {
                                     addAll(unconfirmedFundingTxs.map { ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx) })
                                     addAll(fundingTxWatches.map { ChannelAction.Blockchain.SendWatch(it) })
                                     cmd.state.mutualClosePublished.forEach { addAll(doPublish(it, cmd.state.channelId)) }
-                                    cmd.state.localCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
-                                    cmd.state.remoteCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
-                                    cmd.state.nextRemoteCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
-                                    cmd.state.revokedCommitPublished.forEach { it.run { addAll(doPublish(cmd.state.channelId, minDepth)) } }
-                                    cmd.state.futureRemoteCommitPublished?.run { addAll(doPublish(cmd.state.channelId, minDepth)) }
+                                    cmd.state.localCommitPublished?.run { addAll(doPublish(staticParams.nodeParams, cmd.state.channelId)) }
+                                    cmd.state.remoteCommitPublished?.run { addAll(doPublish(staticParams.nodeParams, cmd.state.channelId)) }
+                                    cmd.state.nextRemoteCommitPublished?.run { addAll(doPublish(staticParams.nodeParams, cmd.state.channelId)) }
+                                    cmd.state.revokedCommitPublished.forEach { it.run { addAll(doPublish(staticParams.nodeParams, cmd.state.channelId)) } }
+                                    cmd.state.futureRemoteCommitPublished?.run { addAll(doPublish(staticParams.nodeParams, cmd.state.channelId)) }
                                 }
                                 Pair(cmd.state, actions)
                             }

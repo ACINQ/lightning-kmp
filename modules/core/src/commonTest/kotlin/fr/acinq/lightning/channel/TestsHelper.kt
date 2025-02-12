@@ -3,7 +3,10 @@ package fr.acinq.lightning.channel
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.Watch
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
@@ -37,7 +40,7 @@ internal inline fun <reified T : LightningMessage> List<ChannelAction>.hasOutgoi
 internal inline fun <reified T : Watch> List<ChannelAction>.findWatches(): List<T> = filterIsInstance<ChannelAction.Blockchain.SendWatch>().map { it.watch }.filterIsInstance<T>()
 internal inline fun <reified T : Watch> List<ChannelAction>.findWatch(): T = findWatches<T>().firstOrNull() ?: fail("cannot find watch ${T::class}")
 internal inline fun <reified T : Watch> List<ChannelAction>.hasWatch() = assertNotNull(findWatches<T>().firstOrNull(), "cannot find watch ${T::class}")
-internal fun List<ChannelAction>.hasWatchFundingSpent(txId: TxId): WatchSpent = hasWatch<WatchSpent>().also { assertEquals(txId, it.txId); assertEquals(BITCOIN_FUNDING_SPENT, it.event) }
+internal fun List<ChannelAction>.hasWatchFundingSpent(txId: TxId): WatchSpent = hasWatch<WatchSpent>().also { assertEquals(txId, it.txId); assertIs<WatchSpent.ChannelSpent>(it.event) }
 internal fun List<ChannelAction>.hasWatchConfirmed(txId: TxId): WatchConfirmed = assertNotNull(findWatches<WatchConfirmed>().firstOrNull { it.txId == txId })
 
 // Commands
@@ -304,7 +307,7 @@ object TestsHelper {
         actions1.has<ChannelAction.Storage.StoreState>()
         actions1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(commitTx.txid, it.txId)
-            assertEquals(ChannelCloseOutgoingPayment.ChannelClosingType.Local, it.closingType)
+            assertEquals(ChannelClosingType.Local, it.closingType)
         }
 
         val localCommitPublished = s1.state.localCommitPublished
@@ -324,16 +327,18 @@ object TestsHelper {
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
         val expectedWatchConfirmed = buildSet {
-            add(BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx))
-            add(BITCOIN_TX_CONFIRMED(localCommitPublished.claimMainDelayedOutputTx!!.tx))
-            addAll(localCommitPublished.claimHtlcDelayedTxs.map { BITCOIN_TX_CONFIRMED(it.tx) })
+            add(localCommitPublished.commitTx.txid)
+            add(localCommitPublished.claimMainDelayedOutputTx!!.tx.txid)
+            addAll(localCommitPublished.claimHtlcDelayedTxs.map { it.tx.txid })
         }
-        assertEquals(expectedWatchConfirmed, actions1.findWatches<WatchConfirmed>().map { it.event }.toSet())
+        val watchConfirmed = actions1.findWatches<WatchConfirmed>()
+        watchConfirmed.forEach { assertEquals(WatchConfirmed.ClosingTxConfirmed, it.event) }
+        assertEquals(expectedWatchConfirmed, watchConfirmed.map { it.txId }.toSet())
 
         // we watch outputs of the commitment tx that both parties may spend
         val watchSpent = actions1.findWatches<WatchSpent>()
         watchSpent.forEach { watch ->
-            assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
+            assertIs<WatchSpent.ClosingOutputSpent>(watch.event)
             assertEquals(watch.txId, commitTx.txid)
         }
         assertEquals(localCommitPublished.htlcTxs.keys, watchSpent.map { OutPoint(commitTx, it.outputIndex.toLong()) }.toSet())
@@ -345,7 +350,7 @@ object TestsHelper {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
         assertContains(s.state.commitments.params.channelFeatures.features, Feature.AnchorOutputs)
         // we make s believe r unilaterally closed the channel
-        val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchEventSpent(s.state.channelId, BITCOIN_FUNDING_SPENT, rCommitTx)))
+        val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchSpentTriggered(s.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), rCommitTx)))
         assertIs<LNChannel<Closing>>(s1)
 
         if (s.state !is Closing) {
@@ -375,15 +380,16 @@ object TestsHelper {
 
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
         val watchConfirmedList = actions1.findWatches<WatchConfirmed>()
-        assertEquals(BITCOIN_TX_CONFIRMED(rCommitTx), watchConfirmedList.first().event)
+        watchConfirmedList.forEach { assertEquals(WatchConfirmed.ClosingTxConfirmed, it.event) }
+        assertEquals(rCommitTx.txid, watchConfirmedList.first().txId)
         remoteCommitPublished.claimMainOutputTx?.let { claimMain ->
-            assertEquals(BITCOIN_TX_CONFIRMED(claimMain.tx), watchConfirmedList.drop(1).first().event)
+            assertEquals(claimMain.tx.txid, watchConfirmedList.drop(1).first().txId)
         }
 
         // we watch outputs of the commitment tx that both parties may spend
         val watchSpent = actions1.findWatches<WatchSpent>()
         watchSpent.forEach { watch ->
-            assertEquals(BITCOIN_OUTPUT_SPENT, watch.event)
+            assertIs<WatchSpent.ClosingOutputSpent>(watch.event)
             assertEquals(watch.txId, rCommitTx.txid)
         }
         assertEquals(remoteCommitPublished.claimHtlcTxs.keys, watchSpent.map { OutPoint(rCommitTx, it.outputIndex.toLong()) }.toSet())
