@@ -80,7 +80,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
-                implementation("org.kodein.memory:klio-files:${libs.versions.test.kodein.memory.get()}")
+                implementation("org.jetbrains.kotlinx:kotlinx-io-core:${libs.versions.test.kotlinx.io.core.get()}")
             }
         }
 
