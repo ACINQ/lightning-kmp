@@ -2,9 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.lightning.CltvExpiry
-import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Features
+import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
@@ -518,7 +516,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                     Commitment(
                         fundingTxIndex = 0,
                         remoteFundingPubkey = randomKey().publicKey(),
-                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), TxId(randomBytes32()), listOf())),
+                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), TxId(randomBytes32()), listOf()), ShortChannelId(1729)),
                         RemoteFundingStatus.Locked,
                         LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
                         RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), TxId(randomBytes32()), randomKey().publicKey()),
