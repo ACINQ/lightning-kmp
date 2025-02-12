@@ -906,6 +906,7 @@ data class Commitments(
                     }
                     is LocalFundingStatus.ConfirmedFundingTx -> when (c.localFundingStatus.shortChannelId) {
                         ShortChannelId(0) -> {
+                            // This branch is only useful to update old channel states that didn't store the short_channel_id.
                             logger.debug { "setting short_channel_id for fundingTxId=${fundingTx.txid}" }
                             c.copy(localFundingStatus = c.localFundingStatus.copy(shortChannelId = shortChannelId))
                         }

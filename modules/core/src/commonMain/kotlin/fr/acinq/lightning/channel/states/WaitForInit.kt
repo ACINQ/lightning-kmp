@@ -78,7 +78,7 @@ data object WaitForInit : ChannelState() {
                         when (commitment.localFundingStatus) {
                             is LocalFundingStatus.UnconfirmedFundingTx -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
                             is LocalFundingStatus.ConfirmedFundingTx -> when (commitment.localFundingStatus.shortChannelId) {
-                                // If the short_channel_id isn't correctly set, we fetch the funding transaction to update it.
+                                // If the short_channel_id isn't correctly set, we put a watch on the funding transaction to compute it.
                                 ShortChannelId(0) -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
                                 else -> WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
                             }
