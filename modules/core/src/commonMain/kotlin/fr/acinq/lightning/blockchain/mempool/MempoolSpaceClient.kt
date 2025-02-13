@@ -25,7 +25,6 @@ class MempoolSpaceClient(val mempoolUrl: Url, loggerFactory: LoggerFactory) : IC
 
     private val logger = loggerFactory.newLogger(this::class)
 
-    @OptIn(ExperimentalSerializationApi::class)
     val client = HttpClient {
         install(ContentNegotiation) {
             json(json = Json {
