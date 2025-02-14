@@ -14,17 +14,12 @@ import fr.acinq.lightning.channel.RemoteParams
 import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
 import fr.acinq.lightning.crypto.KeyManager.ChannelKeys
 import fr.acinq.lightning.tests.TestConstants
+import fr.acinq.lightning.tests.utils.TestHelpers
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
 import kotlinx.serialization.json.Json
-import org.kodein.memory.file.FileSystem
-import org.kodein.memory.file.Path
-import org.kodein.memory.file.openReadableFile
-import org.kodein.memory.file.resolve
-import org.kodein.memory.system.Environment
-import org.kodein.memory.text.readString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -237,11 +232,6 @@ class AnchorOutputsTestsCommon {
         }
 
         val format = Json { ignoreUnknownKeys = true }
-        val json = run {
-            val resourceDir = Environment.findVariable("TEST_RESOURCES_PATH")?.let { Path(it) } ?: FileSystem.workingDir().resolve("src/commonTest/resources")
-            val file = resourceDir.resolve("bolt3_anchor_outputs_test_vectors.json")
-            file.openReadableFile().run { readString(sizeBytes = remaining) }
-        }
-        val testCases = format.decodeFromString<Array<TestCase>>(json)
+        val testCases = format.decodeFromString<Array<TestCase>>(TestHelpers.readResourceAsString("bolt3_anchor_outputs_test_vectors.json"))
     }
 }

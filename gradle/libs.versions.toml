@@ -1,21 +1,21 @@
 [versions]
-kotlin = "1.9.23"
-kotlinx-coroutines = "1.7.3"
-kotlinx-datetime = "0.6.0"
-kotlinx-serialization = "1.6.2"
-ktor = "2.3.7"
+kotlin = "2.1.10"
+kotlinx-coroutines = "1.10.1"
+kotlinx-datetime = "0.6.2"
+kotlinx-serialization = "1.8.0"
+ktor = "2.3.13"
 bitcoinkmp = "0.21.0" # when upgrading bitcoin-kmp, keep secpjnijvm in sync!
 secpjnijvm = "0.16.0"
-kermit = "2.0.2"
-slf4j = "1.7.36"
+kermit = "2.0.5"
+slf4j = "2.0.16"
 
 # test dependencies
-test-kodein-memory = "0.12.0"
+test-kotlinx-io-core = "0.6.0"
 test-bouncycastle = "1.64"
-test-logback = "1.2.3"
+test-logback = "1.5.16"
 test-sqlitejdbc = "3.32.3.3"
 
 [plugins]
 multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-dokka = { id = "org.jetbrains.dokka", version = "1.9.10" }
+dokka = { id = "org.jetbrains.dokka", version = "2.0.0" }

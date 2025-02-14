@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.DefaultCInteropSettings
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest
@@ -14,8 +16,9 @@ val currentOs = org.gradle.internal.os.OperatingSystem.current()
 
 kotlin {
     jvm {
-        compilations.all {
-            kotlinOptions.jvmTarget = "1.8"
+        @OptIn(ExperimentalKotlinGradlePluginApi::class)
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_1_8) // TODO: update this?
         }
     }
 
@@ -77,7 +80,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
-                implementation("org.kodein.memory:klio-files:${libs.versions.test.kodein.memory.get()}")
+                implementation("org.jetbrains.kotlinx:kotlinx-io-core:${libs.versions.test.kotlinx.io.core.get()}")
             }
         }
 
@@ -128,42 +131,37 @@ kotlin {
         resolutionStrategy.cacheChangingModulesFor(0, TimeUnit.SECONDS)
     }
 
-    targets.all {
-        compilations.all {
-            kotlinOptions {
-                allWarningsAsErrors = true
-                // We use expect/actual for classes (see Chacha20Poly1305CipherFunctions). This feature is in beta and raises a warning.
-                // See https://youtrack.jetbrains.com/issue/KT-61573
-                kotlinOptions.freeCompilerArgs += "-Xexpect-actual-classes"
-            }
-        }
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+        // We use expect/actual for classes (see Chacha20Poly1305CipherFunctions). This feature is in beta and raises a warning.
+        // See https://youtrack.jetbrains.com/issue/KT-61573
+        freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 }
 
 val dokkaOutputDir = layout.buildDirectory.dir("dokka")
-tasks.dokkaHtml {
-    outputDirectory.set(file(dokkaOutputDir))
-    dokkaSourceSets {
-        configureEach {
-            val platformName = platform.get().name
-            displayName.set(platformName)
+dokka {
+    dokkaPublications.html {
+        outputDirectory.set(dokkaOutputDir)
+        dokkaSourceSets {
+            configureEach {
+                val platformName = analysisPlatform.get().name
+                displayName.set(platformName)
 
-            perPackageOption {
-                matchingRegex.set(".*\\.internal.*") // will match all .internal packages and sub-packages
-                suppress.set(true)
+                perPackageOption {
+                    matchingRegex.set(".*\\.internal.*") // will match all .internal packages and sub-packages
+                    suppress.set(true)
+                }
             }
         }
     }
-}
-
-val deleteDokkaOutputDir by tasks.register<Delete>("deleteDokkaOutputDirectory") {
-    delete(dokkaOutputDir)
 }
 
 val javadocJar = tasks.create<Jar>("javadocJar") {
     archiveClassifier.set("javadoc")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    dependsOn(deleteDokkaOutputDir, tasks.dokkaHtml)
+    dependsOn("dokkaGenerate")
     from(dokkaOutputDir)
 }
 
@@ -212,7 +210,11 @@ afterEvaluate {
             compileTaskProvider.get().enabled = false
             tasks[processResourcesTaskName].enabled = false
         }
-        binaries.all { linkTask.enabled = false }
+        binaries.all {
+            linkTaskProvider {
+                enabled = false
+            }
+        }
 
         mavenPublication {
             val publicationToDisable = this
@@ -292,10 +294,3 @@ tasks
     .map {
         it.filter.excludeTestsMatching("*MempoolSpace*Test")
     }
-
-// Make NS_FORMAT_ARGUMENT(1) a no-op
-// This fixes an issue when building PhoenixCrypto using XCode 13
-// More on this: https://youtrack.jetbrains.com/issue/KT-48807#focus=Comments-27-5210791.0-0
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.CInteropProcess::class.java) {
-    settings.compilerOpts("-DNS_FORMAT_ARGUMENT(A)=")
-}
