@@ -164,23 +164,25 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
     actual override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         val logger = loggerFactory.newLogger(this::class)
         return withContext(Dispatchers.IO) {
+            var socket: Socket? = null
             try {
-                val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let { socket ->
+                socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let {
                     when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> socket.tls(tlsContext(logger))
-                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> socket.tls(tlsContext(logger)) {
+                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> it.tls(tlsContext(logger))
+                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> it.tls(tlsContext(logger)) {
                             logger.warning { "using unsafe TLS!" }
                             trustManager = JvmTcpSocket.unsafeX509TrustManager()
                         }
                         is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
                             logger.info { "using certificate pinning for connections with $host" }
-                            socket.tls(tlsContext(logger), JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
+                            it.tls(tlsContext(logger), JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
                         }
-                        else -> socket
+                        else -> it
                     }
                 }
                 JvmTcpSocket(socket, loggerFactory)
             } catch (e: Exception) {
+                socket?.dispose()
                 throw when (e) {
                     is ConnectException -> TcpSocket.IOException.ConnectionRefused(e)
                     is SocketException -> TcpSocket.IOException.Unknown(e.message, e)

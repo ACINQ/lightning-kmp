@@ -74,20 +74,23 @@ class KtorNoTlsTcpSocket(private val socket: Socket) : TcpSocket {
 internal object KtorSocketBuilder : TcpSocket.Builder {
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         return withContext(Dispatchers.IO) {
+            var socket: Socket? = null
             try {
-                val socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port,
+                socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(
+                    host, port,
                     configure = {
                         keepAlive = true
                         socketTimeout = 15.seconds.inWholeMilliseconds
                         noDelay = true
-                    }).let { socket ->
+                    }).let {
                     when (tls) {
-                        is TcpSocket.TLS.DISABLED -> socket
+                        is TcpSocket.TLS.DISABLED -> it
                         else -> TODO("TLS not supported")
                     }
                 }
                 KtorNoTlsTcpSocket(socket)
             } catch (e: Exception) {
+                socket?.dispose()
                 throw e
             }
         }
