@@ -70,11 +70,14 @@ class KtorNoTlsTcpSocket(private val socket: Socket) : TcpSocket {
 }
 
 internal object KtorSocketBuilder : TcpSocket.Builder {
+
+    private val Selector = SelectorManager(Dispatchers.IO)
+
     override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         return withContext(Dispatchers.IO) {
             var socket: Socket? = null
             try {
-                socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(
+                socket = aSocket(Selector).tcp().connect(
                     host, port,
                     configure = {
                         keepAlive = true

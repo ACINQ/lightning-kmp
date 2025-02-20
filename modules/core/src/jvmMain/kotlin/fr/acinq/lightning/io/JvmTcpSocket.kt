@@ -154,12 +154,15 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
 }
 
 internal actual object PlatformSocketBuilder : TcpSocket.Builder {
+
+    private val Selector = SelectorManager(Dispatchers.IO)
+
     actual override suspend fun connect(host: String, port: Int, tls: TcpSocket.TLS, loggerFactory: LoggerFactory): TcpSocket {
         val logger = loggerFactory.newLogger(this::class)
         return withContext(Dispatchers.IO) {
             var socket: Socket? = null
             try {
-                socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port)
+                socket = aSocket(Selector).tcp().connect(host, port)
                     .let {
                         when (tls) {
                             is TcpSocket.TLS.DISABLED -> it
