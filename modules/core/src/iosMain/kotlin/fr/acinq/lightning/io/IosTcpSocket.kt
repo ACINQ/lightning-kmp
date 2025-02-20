@@ -95,29 +95,6 @@ class IosTcpSocket @OptIn(ExperimentalForeignApi::class) constructor(private val
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    override suspend fun startTls(
-        tls: TcpSocket.TLS
-    ): TcpSocket = suspendCancellableCoroutine { continuation ->
-
-        // @kotlinx.cinterop.ObjCMethod
-        // public open external fun startTLSWithTls(
-        //   tls: swift.phoenix_crypto.NativeSocketTLS,
-        //   success: (swift.phoenix_crypto.NativeSocket?) -> kotlin.Unit,
-        //   failure: (swift.phoenix_crypto.NativeSocketError?) -> kotlin.Unit
-        // ): kotlin.Unit { /* compiled code */ }
-
-        socket.startTLSWithTls(
-            tls = tls.toNativeSocketTLS(),
-            success = { newSocket ->
-                continuation.resume(IosTcpSocket(newSocket!!))
-            },
-            failure = { error ->
-                continuation.resumeWithException(error!!.toIOException())
-            }
-        )
-    }
-
-    @OptIn(ExperimentalForeignApi::class)
     override fun close() {
 
         // @kotlinx.cinterop.ObjCMethod
