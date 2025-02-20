@@ -21,9 +21,7 @@ import java.util.*
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
-class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSocket {
-
-    private val logger = loggerFactory.newLogger(this::class)
+class JvmTcpSocket(val socket: Socket) : TcpSocket {
 
     private val connection = socket.connection()
 
@@ -73,38 +71,12 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
             .takeUnless { it == -1 } ?: throw TcpSocket.IOException.ConnectionClosed()
     }
 
-    override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = try {
-        when (tls) {
-            is TcpSocket.TLS.TRUSTED_CERTIFICATES -> JvmTcpSocket(connection.tls(tlsContext(logger)), loggerFactory)
-            TcpSocket.TLS.UNSAFE_CERTIFICATES -> JvmTcpSocket(connection.tls(tlsContext(logger)) {
-                logger.warning { "using unsafe TLS!" }
-                trustManager = unsafeX509TrustManager()
-            }, loggerFactory)
-            is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                JvmTcpSocket(connection.tls(tlsContext(logger), tlsConfigForPinnedCert(tls.pubKey, logger)), loggerFactory)
-            }
-            TcpSocket.TLS.DISABLED -> this
-        }
-    } catch (e: Exception) {
-        throw when (e) {
-            is ConnectException -> TcpSocket.IOException.ConnectionRefused(e)
-            is SocketException -> TcpSocket.IOException.Unknown(e.message, e)
-            else -> e
-        }
-    }
-
     override fun close() {
         // NB: this safely calls close(), wrapping it into a try/catch.
         socket.dispose()
     }
 
     companion object {
-
-        fun unsafeX509TrustManager() = object : X509TrustManager {
-            override fun checkClientTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
-            override fun checkServerTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate>? = null
-        }
 
         fun buildPublicKey(encodedKey: ByteArray, logger: Logger): java.security.PublicKey {
             val spec = X509EncodedKeySpec(encodedKey)
@@ -119,7 +91,7 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
             throw IllegalArgumentException("unsupported key's algorithm, only $algorithms")
         }
 
-        fun tlsConfigForPinnedCert(pinnedPubkey: String, logger: Logger): TLSConfig = TLSConfigBuilder().apply {
+        private fun tlsConfigForPinnedCert(pinnedPubkey: String, logger: Logger): TLSConfig = TLSConfigBuilder().apply {
             // build a default X509 trust manager.
             val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())!!
             factory.init(null as KeyStore?)
@@ -157,6 +129,27 @@ class JvmTcpSocket(val socket: Socket, val loggerFactory: LoggerFactory) : TcpSo
                 override fun getAcceptedIssuers(): Array<X509Certificate> = defaultX509TrustManager.acceptedIssuers
             }
         }.build()
+
+        private fun tlsConfigForUnsafeCertificates(): TLSConfig = TLSConfigBuilder().apply {
+            trustManager = object : X509TrustManager {
+                override fun checkClientTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
+                override fun checkServerTrusted(p0: Array<out X509Certificate>?, p1: String?) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate>? = null
+            }
+        }.build()
+
+        fun buildTlsConfigFor(host: String, tls: TcpSocket.TLS.ENABLED, logger: Logger) = when (tls) {
+            is TcpSocket.TLS.TRUSTED_CERTIFICATES -> TLSConfigBuilder().build()
+            is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
+                logger.warning { "using unsafe TLS for connection with $host" }
+                tlsConfigForPinnedCert(tls.pubKey, logger)
+            }
+            is TcpSocket.TLS.UNSAFE_CERTIFICATES -> {
+                logger.info { "using certificate pinning for connections with $host" }
+                tlsConfigForUnsafeCertificates()
+            }
+        }
+
     }
 }
 
@@ -166,21 +159,14 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
         return withContext(Dispatchers.IO) {
             var socket: Socket? = null
             try {
-                socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port).let {
-                    when (tls) {
-                        is TcpSocket.TLS.TRUSTED_CERTIFICATES -> it.tls(tlsContext(logger))
-                        TcpSocket.TLS.UNSAFE_CERTIFICATES -> it.tls(tlsContext(logger)) {
-                            logger.warning { "using unsafe TLS!" }
-                            trustManager = JvmTcpSocket.unsafeX509TrustManager()
+                socket = aSocket(SelectorManager(Dispatchers.IO)).tcp().connect(host, port)
+                    .let {
+                        when (tls) {
+                            is TcpSocket.TLS.DISABLED -> it
+                            is TcpSocket.TLS.ENABLED -> it.tls(tlsContext(logger), JvmTcpSocket.buildTlsConfigFor(host, tls, logger))
                         }
-                        is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                            logger.info { "using certificate pinning for connections with $host" }
-                            it.tls(tlsContext(logger), JvmTcpSocket.tlsConfigForPinnedCert(tls.pubKey, logger))
-                        }
-                        else -> it
                     }
-                }
-                JvmTcpSocket(socket, loggerFactory)
+                JvmTcpSocket(socket)
             } catch (e: Exception) {
                 socket?.dispose()
                 throw when (e) {

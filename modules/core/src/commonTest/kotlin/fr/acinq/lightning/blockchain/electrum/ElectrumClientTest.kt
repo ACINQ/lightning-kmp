@@ -246,7 +246,6 @@ class ElectrumClientTest : LightningTestSuite() {
 
             override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int) = TODO("Not yet implemented")
             override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) = TODO("Not yet implemented")
-            override suspend fun startTls(tls: TcpSocket.TLS): TcpSocket = TODO("Not yet implemented")
             override fun close() = TODO("Not yet implemented")
         }
 
