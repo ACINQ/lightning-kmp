@@ -16,13 +16,13 @@ interface TcpSocket {
     suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int)
     suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int
 
-    suspend fun startTls(tls: TLS): TcpSocket
-
     fun close()
 
     sealed class TLS {
         /** Used for Lightning connections */
         data object DISABLED : TLS()
+
+        sealed class ENABLED : TLS()
 
         /** Used for Electrum servers when expecting a valid certificate */
         data class TRUSTED_CERTIFICATES(
@@ -31,10 +31,10 @@ interface TcpSocket {
              * within TcpSocket.Builder.connect(). This may be the case when using Tor.
              */
             val expectedHostName: String? = null
-        ) : TLS()
+        ) : ENABLED()
 
         /** Only used in unit tests */
-        data object UNSAFE_CERTIFICATES : TLS()
+        data object UNSAFE_CERTIFICATES : ENABLED()
 
         /**
          * Used for Electrum servers when expecting a specific public key
@@ -46,7 +46,7 @@ interface TcpSocket {
              * (I.e. same as PEM format, without BEGIN/END header/footer)
              */
             val pubKey: String
-        ) : TLS() {
+        ) : ENABLED() {
             override fun toString(): String {
                 return "PINNED_PUBLIC_KEY(pubKey=${pubKey.take(64)}...}"
             }
