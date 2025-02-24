@@ -1,8 +1,6 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 
@@ -40,25 +38,6 @@ sealed class InitTlv : Tlv {
         companion object : TlvValueReader<OptionWillFund> {
             const val tag: Long = 1339
             override fun read(input: Input): OptionWillFund = OptionWillFund(LiquidityAds.WillFundRates.read(input))
-        }
-    }
-
-    data class PhoenixAndroidLegacyNodeId(val legacyNodeId: PublicKey, val signature: ByteVector64) : InitTlv() {
-        override val tag: Long get() = PhoenixAndroidLegacyNodeId.tag
-
-        override fun write(out: Output) {
-            LightningCodecs.writeBytes(legacyNodeId.value, out)
-            LightningCodecs.writeBytes(signature, out)
-        }
-
-        companion object : TlvValueReader<PhoenixAndroidLegacyNodeId> {
-            const val tag: Long = 0x47020001
-
-            override fun read(input: Input): PhoenixAndroidLegacyNodeId {
-                val legacyNodeId = PublicKey(LightningCodecs.bytes(input, 33))
-                val signature = ByteVector64(LightningCodecs.bytes(input, 64))
-                return PhoenixAndroidLegacyNodeId(legacyNodeId, signature)
-            }
         }
     }
 }
