@@ -173,7 +173,6 @@ data class AddressAssigned(val address: String) : PeerEvent()
  * @param watcher Watches events from the Electrum client and publishes transactions and events.
  * @param db Wraps the various databases persisting the channels and payments data related to the Peer.
  * @param socketBuilder Builds the TCP socket used to connect to the Peer.
- * @param initTlvStream Optional stream of TLV for the [Init] message we send to this Peer after connection. Empty by default.
  */
 @OptIn(ExperimentalStdlibApi::class)
 class Peer(
@@ -183,8 +182,7 @@ class Peer(
     val watcher: IWatcher,
     val db: Databases,
     socketBuilder: TcpSocket.Builder?,
-    scope: CoroutineScope,
-    private val initTlvStream: TlvStream<InitTlv> = TlvStream.empty()
+    scope: CoroutineScope
 ) : CoroutineScope by scope {
     companion object {
         private const val prefix: Byte = 0x00
@@ -235,7 +233,7 @@ class Peer(
 
     private val features = nodeParams.features
 
-    private val ourInit = Init(features.initFeatures(), initTlvStream)
+    private val ourInit = Init(features.initFeatures())
     private var theirInit: Init? = null
 
     val currentTipFlow = MutableStateFlow<Int?>(null)
