@@ -195,6 +195,10 @@ publishing {
             }
         }
     }
+
+    repositories {
+        mavenLocal()
+    }
 }
 
 // Disable cross compilation
