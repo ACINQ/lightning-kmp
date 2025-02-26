@@ -7,6 +7,7 @@ It can run on many different platforms, including mobile devices (iOS and Androi
 
 On all platforms:
 
+- [OpenJDK 21](https://adoptium.net/temurin/releases/?package=jdk&version=21)
 - [Docker](https://www.docker.com/) 18.03 or newer is required if you want to run all tests
 
 For iOS, you need to have [Xcode](https://developer.apple.com/xcode/) and [Homebrew](https://brew.sh/) installed, and then:
