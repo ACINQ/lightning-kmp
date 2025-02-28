@@ -629,6 +629,27 @@ class Peer(
     }
 
     /**
+     * Estimate the actual fee that will be paid when closing the given channel at the target feerate.
+     */
+    fun estimateFeeForMutualClose(channelId: ByteVector32, targetFeerate: FeeratePerKw): ChannelManagementFees? {
+        return channels.values
+            .filterIsInstance<ChannelStateWithCommitments>()
+            .filter { it is Normal || it is ShuttingDown || it is Negotiating }
+            .find { it.channelId == channelId }
+            ?.let { channel ->
+                // We cannot be sure of the scripts that will end up being used, but that shouldn't change the fee too much.
+                Helpers.Closing.makeClosingTxs(
+                    nodeParams.keyManager.channelKeys(channel.commitments.params.localParams.fundingKeyPath),
+                    channel.commitments.latest,
+                    channel.commitments.params.localParams.defaultFinalScriptPubKey,
+                    channel.commitments.params.localParams.defaultFinalScriptPubKey,
+                    targetFeerate,
+                    0
+                ).map { ChannelManagementFees(miningFee = it.second.fees, serviceFee = 0.sat) }.right
+            }
+    }
+
+    /**
      * Do a splice out using any suitable channel.
      *
      * @return [ChannelFundingResponse] if a splice was attempted, or {null} if no suitable channel was found
