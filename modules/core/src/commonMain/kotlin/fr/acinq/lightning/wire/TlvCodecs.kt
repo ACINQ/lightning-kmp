@@ -177,6 +177,10 @@ data class TlvStream<T : Tlv>(val records: Set<T>, val unknown: Set<GenericTlv> 
         }
     }
 
+    inline fun <reified R : T> remove(): TlvStream<T> {
+        return copy(records = records.filter { it !is R }.toSet())
+    }
+
     companion object {
         fun <T : Tlv> empty() = TlvStream(setOf<T>(), setOf())
     }

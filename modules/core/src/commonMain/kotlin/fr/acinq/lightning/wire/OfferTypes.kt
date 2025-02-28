@@ -281,6 +281,26 @@ object OfferTypes {
         }
     }
 
+    data class CardParams(val params: String) : OfferTlv() {
+        override val tag: Long get() = CardParams.tag
+
+        override fun write(out: Output) {
+            val bytes = params.encodeToByteArray()
+            LightningCodecs.writeBytes(bytes, out)
+        }
+
+        companion object : TlvValueReader<CardParams> {
+            // NTAG 424: N(78) + T(84) + A(65) + G(71) = 298
+            const val tag: Long = 1_000_298_424
+
+            override fun read(input: Input): CardParams {
+                val bytes = LightningCodecs.bytes(input, input.availableBytes)
+                val params = bytes.decodeToString()
+                return CardParams(params)
+            }
+        }
+    }
+
     /**
      * Random data to provide enough entropy so that some fields of the invoice request / invoice can be revealed without revealing the others.
      */
@@ -833,6 +853,7 @@ object OfferTypes {
                     OfferIssuer.tag to OfferIssuer as TlvValueReader<OfferTlv>,
                     OfferQuantityMax.tag to OfferQuantityMax as TlvValueReader<OfferTlv>,
                     OfferIssuerId.tag to OfferIssuerId as TlvValueReader<OfferTlv>,
+                    CardParams.tag to CardParams as TlvValueReader<OfferTlv>
                 )
             )
 

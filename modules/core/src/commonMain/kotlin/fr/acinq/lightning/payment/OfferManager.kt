@@ -2,18 +2,21 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.crypto.RouteBlinding
+import fr.acinq.lightning.io.CardRequestReceived
 import fr.acinq.lightning.io.OfferInvoiceReceived
 import fr.acinq.lightning.io.OfferNotPaid
 import fr.acinq.lightning.io.PayOffer
 import fr.acinq.lightning.io.PeerEvent
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.message.OnionMessages
+import fr.acinq.lightning.message.OnionMessages.BuildMessageError
 import fr.acinq.lightning.message.OnionMessages.Destination
 import fr.acinq.lightning.message.OnionMessages.IntermediateNode
 import fr.acinq.lightning.message.OnionMessages.buildMessage
@@ -54,6 +57,19 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         localOffers[pathId ?: ByteVector32.Zeroes] = offer
     }
 
+    fun buildOnion(
+        destination: Destination,
+        content: TlvStream<OnionMessagePayloadTlv>
+    ): Either<BuildMessageError, OnionMessage> {
+        return buildMessage(
+            sessionKey = randomKey(),
+            blindedPathSessionKey = randomKey(),
+            intermediateNodes = intermediateNodes(destination),
+            destination = destination,
+            content = content
+        )
+    }
+
     /**
      * @return invoice requests that must be sent and the corresponding path_id that must be used in case of a timeout.
      */
@@ -86,6 +102,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         return OnionMessages.decryptMessage(nodeParams.nodePrivateKey, msg, logger)?.let { decrypted ->
             when {
                 pendingInvoiceRequests.containsKey(decrypted.pathId) -> receiveInvoiceResponse(decrypted)
+                isCardRequest(decrypted) -> null
                 localOffers.containsKey(decrypted.pathId) -> receiveInvoiceRequest(decrypted, remoteChannelUpdates, currentBlockHeight)
                 else -> {
                     logger.warning { "pathId:${decrypted.pathId} ignoring onion message (could be a duplicate invoice response)" }
@@ -207,6 +224,15 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 }
             }
         }
+    }
+
+    private suspend fun isCardRequest(decrypted: OnionMessages.DecryptedMessage): Boolean {
+        val request = decrypted.content.records.get<OnionMessagePayloadTlv.CardRequest>() ?: return false
+        val offer = OfferTypes.Offer.validate(request.tlvs).right ?: return false
+        val params = offer.records.get<OfferTypes.CardParams>() ?: return false
+        val updatedOffer = OfferTypes.Offer(offer.records.remove<OfferTypes.CardParams>())
+        eventsFlow.emit(CardRequestReceived(updatedOffer, params.params))
+        return true
     }
 
     private fun sendInvoiceError(message: String, replyPath: RouteBlinding.BlindedRoute): OnionMessageAction.SendMessage? {

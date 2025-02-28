@@ -3,6 +3,8 @@ package fr.acinq.lightning.io
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.IClient
 import fr.acinq.lightning.blockchain.IWatcher
 import fr.acinq.lightning.blockchain.WatchTriggered
@@ -19,6 +21,7 @@ import fr.acinq.lightning.db.*
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.logging.withMDC
+import fr.acinq.lightning.message.OnionMessages
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.serialization.channel.Serialization.DeserializationResult
@@ -155,6 +158,8 @@ data class PaymentNotSent(override val request: PayInvoice, val reason: Outgoing
 data class PaymentSent(override val request: PayInvoice, val payment: LightningOutgoingPayment) : SendPaymentResult()
 
 data class OfferInvoiceReceived(val request: PayOffer, val invoice: Bolt12Invoice) : PeerEvent()
+data class CardRequestReceived(val offer: OfferTypes.Offer, val cardParams: String): PeerEvent()
+
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 /**
@@ -719,6 +724,34 @@ class Peer(
         }
         send(PayOffer(paymentId, payerKey, payerNote, amount, offer, fetchInvoiceTimeout))
         return res.await()
+    }
+
+    suspend fun requestCardPayment(
+        amount: MilliSatoshi,
+        cardHolderOffer: OfferTypes.Offer,
+        cardParams: String
+    ): Pair<OfferTypes.Offer, ByteVector32> {
+        // Generate a temporary offer & register it with the OfferManager
+        val secret = randomKey()
+        val ourOffer = createOffer(secret, amount, "card payment")
+        // Build the onion message content
+        val content: TlvStream<OnionMessagePayloadTlv> = TlvStream(
+            OnionMessagePayloadTlv.CardRequest(
+                ourOffer.records.addOrUpdate(
+                    OfferTypes.CardParams(params = cardParams)
+                )
+            )
+        )
+        // Send the onion message(s)
+        cardHolderOffer.contactInfos.mapNotNull {
+            offerManager.buildOnion(
+                destination = OnionMessages.Destination(it),
+                content = content
+            ).right
+        }.forEach { onionMessage ->
+            send(SendOnionMessage(onionMessage))
+        }
+        return Pair(ourOffer, secret.value)
     }
 
     suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expiry: Duration? = null): Bolt11Invoice {

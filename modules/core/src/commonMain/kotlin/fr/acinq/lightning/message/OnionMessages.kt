@@ -123,11 +123,15 @@ object OnionMessages {
         content: TlvStream<OnionMessagePayloadTlv>
     ): Either<BuildMessageError, OnionMessage> {
         val route = buildRoute(blindedPathSessionKey, intermediateNodes, destination)
+        val updatedContent = MessageOnion(content.copy(
+            records = content.records + OnionMessagePayloadTlv.EncryptedData(route.encryptedPayloads.last()),
+            unknown = content.unknown
+        ))
         val payloads = buildList {
             // Intermediate nodes only receive blinded path relay information.
             addAll(route.encryptedPayloads.dropLast(1).map { MessageOnion(TlvStream(OnionMessagePayloadTlv.EncryptedData(it))).write() })
             // The destination receives the message contents and the blinded path information.
-            add(MessageOnion(content.copy(records = content.records + OnionMessagePayloadTlv.EncryptedData(route.encryptedPayloads.last()))).write())
+            add(updatedContent.write())
         }
         val payloadSize = payloads.sumOf { it.size + Sphinx.MacLength }
         val packetSize = when {
