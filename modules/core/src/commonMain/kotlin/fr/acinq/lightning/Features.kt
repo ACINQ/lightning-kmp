@@ -147,6 +147,13 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Invoice)
     }
 
+    @Serializable
+    object Splicing : Feature() {
+        override val rfcName get() = "option_splice"
+        override val mandatory get() = 62
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
+
     // The following features have not been standardised, hence the high feature bits to avoid conflicts.
 
     // We historically used the following feature bit in our invoices.
@@ -250,13 +257,6 @@ sealed class Feature {
     }
 
     @Serializable
-    object ExperimentalSplice : Feature() {
-        override val rfcName get() = "splice_experimental"
-        override val mandatory get() = 154
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
-    }
-
-    @Serializable
     object OnTheFlyFunding : Feature() {
         override val rfcName get() = "on_the_fly_funding"
         override val mandatory get() = 560
@@ -340,6 +340,7 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.ChannelType,
             Feature.PaymentMetadata,
             Feature.TrampolinePayment,
+            Feature.Splicing,
             Feature.ExperimentalTrampolinePayment,
             Feature.ZeroReserveChannels,
             Feature.ZeroConfChannels,
@@ -351,7 +352,6 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.TrustedSwapInProvider,
             Feature.ChannelBackupClient,
             Feature.ChannelBackupProvider,
-            Feature.ExperimentalSplice,
             Feature.OnTheFlyFunding,
             Feature.FundingFeeCredit
         )
@@ -386,7 +386,6 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
             Feature.TrampolinePayment to listOf(Feature.PaymentSecret),
             Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret),
-            Feature.OnTheFlyFunding to listOf(Feature.ExperimentalSplice),
             Feature.FundingFeeCredit to listOf(Feature.OnTheFlyFunding)
         )
 

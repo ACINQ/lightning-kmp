@@ -987,7 +987,7 @@ data class SpliceInit(
     }
 
     companion object : LightningMessageReader<SpliceInit> {
-        const val type: Long = 37000
+        const val type: Long = 80
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
@@ -1035,7 +1035,7 @@ data class SpliceAck(
     }
 
     companion object : LightningMessageReader<SpliceAck> {
-        const val type: Long = 37002
+        const val type: Long = 81
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
@@ -1067,7 +1067,7 @@ data class SpliceLocked(
     }
 
     companion object : LightningMessageReader<SpliceLocked> {
-        const val type: Long = 37004
+        const val type: Long = 77
 
         private val readers = emptyMap<Long, TlvValueReader<ChannelTlv>>()
 
@@ -1238,6 +1238,7 @@ data class CommitSig(
 
     val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
     val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
+    val fundingTxId: TxId? = tlvStream.get<CommitSigTlv.Batch>()?.fundingTxId
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
