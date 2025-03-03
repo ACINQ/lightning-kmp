@@ -707,7 +707,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (bob6, actionsBob6) = bob5.process(ChannelCommand.Commitment.Sign)
         assertEquals(actionsBob6.size, 3)
         val commitSigBob = actionsBob6.findOutgoingMessage<CommitSig>()
-        assertEquals(commitSigBob.batchSize, 1)
+        assertNull(commitSigBob.fundingTxId)
         actionsBob6.has<ChannelAction.Storage.StoreHtlcInfos>()
         actionsBob6.has<ChannelAction.Storage.StoreState>()
         val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(revokeAndAckBob))

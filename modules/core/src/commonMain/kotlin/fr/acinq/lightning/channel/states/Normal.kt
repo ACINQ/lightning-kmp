@@ -892,7 +892,7 @@ data class Normal(
         // If we already have a signed commitment transaction containing their signature, we must have previously received that commit_sig.
         val commitTx = commitments.latest.localCommit.publishableTxs.commitTx.tx
         return commitments.params.channelFeatures.hasFeature(Feature.DualFunding) &&
-                commit.batchSize == 1 &&
+                commit.fundingTxId == null &&
                 commitTx.txIn.first().witness.stack.contains(Scripts.der(commit.signature, SigHash.SIGHASH_ALL))
     }
 
