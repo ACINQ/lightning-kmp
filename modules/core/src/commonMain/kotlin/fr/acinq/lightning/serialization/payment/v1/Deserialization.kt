@@ -258,6 +258,7 @@ object Deserialization {
                 0x0b -> FinalFailure.UnknownError
                 0x0c -> FinalFailure.WalletRestarted
                 0x0d -> FinalFailure.AlreadyInProgress
+                0x0e -> FinalFailure.RecipientRejectedPayment
                 else -> error("unknown discriminator $failureDiscriminator for class ${LightningOutgoingPayment.Status.Failed::class}")
             },
             completedAt = readNumber()
