@@ -69,7 +69,6 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                                     state.commitments.latest.remoteFundingPubkey,
                                                     state.commitments.latest.commitInput(channelKeys),
                                                     state.commitments.latest.commitmentFormat,
-                                                    batchSize = 1,
                                                     remoteNonce = cmd.message.currentCommitNonce,
                                                     logger
                                                 )) {
@@ -106,7 +105,6 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             state.commitments.latest.remoteFundingPubkey,
                                             state.commitments.latest.commitInput(channelKeys),
                                             state.commitments.latest.commitmentFormat,
-                                            batchSize = 1,
                                             remoteNonce = cmd.message.currentCommitNonce,
                                             logger
                                         )) {
@@ -170,7 +168,6 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                                         state.commitments.latest.remoteFundingPubkey,
                                                         state.commitments.latest.commitInput(channelKeys),
                                                         state.commitments.latest.commitmentFormat,
-                                                        batchSize = 1,
                                                         remoteNonce = cmd.message.currentCommitNonce,
                                                         logger
                                                     )) {
@@ -435,14 +432,13 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 // We just sent a new commit_sig but they didn't receive it: we resend the same updates and sign them again,
                                 // and preserve the same ordering of messages.
                                 val signedUpdates = commitments.changes.localChanges.signed
-                                val batchSize = commitments.active.size
                                 val commitSigs = CommitSigs.fromSigs(commitments.active.mapNotNull { c ->
                                     val commitInput = c.commitInput(channelKeys)
                                     val remoteNonce = remoteChannelReestablish.nextCommitNonces[c.fundingTxId]
                                     // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
                                     // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
                                     // case, we simply won't send back our commit_sig until they fix their node.
-                                    c.nextRemoteCommit?.sign(commitments.channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubkey, commitInput, c.commitmentFormat, batchSize, remoteNonce, logger)?.right
+                                    c.nextRemoteCommit?.sign(commitments.channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubkey, commitInput, c.commitmentFormat, remoteNonce, logger)?.right
                                 })
                                 val retransmit = when (retransmitRevocation) {
                                     null -> buildList {

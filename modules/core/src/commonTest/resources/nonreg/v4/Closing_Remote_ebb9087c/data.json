@@ -60,12 +60,12 @@
                         "option_channel_type": "Mandatory",
                         "zero_reserve_channels": "Optional",
                         "wake_up_notification_client": "Optional",
-                        "trampoline_payment_experimental": "Optional",
-                        "splice_experimental": "Optional"
+                        "trampoline_payment_experimental": "Optional"
                     },
                     "unknown": [
                         137,
-                        145
+                        145,
+                        155
                     ]
                 }
             },
