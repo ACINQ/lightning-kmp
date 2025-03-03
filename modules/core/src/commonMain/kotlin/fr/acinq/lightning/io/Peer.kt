@@ -115,7 +115,10 @@ data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, v
 
     fun send(msg: LightningMessage) {
         when (msg) {
-            is CommitSigBatch -> msg.messages.map { sendInternal(it) }
+            is CommitSigBatch -> {
+                sendInternal(StartBatch(msg.channelId, msg.batchSize))
+                msg.messages.map { sendInternal(it) }
+            }
             else -> sendInternal(msg)
         }
     }
@@ -488,14 +491,14 @@ class Peer(
 
                 try {
                     while (isActive) {
-                        val msg = when (val msg = receiveMessage()) {
-                            is CommitSig -> {
-                                val others = (1 until msg.batchSize).mapNotNull { receiveMessage() as CommitSig }
-                                CommitSigs.fromSigs(listOf(msg) + others)
+                        when (val msg = receiveMessage()) {
+                            is StartBatch -> {
+                                val sigs = (0 until msg.batchSize).mapNotNull { receiveMessage() as CommitSig }
+                                input.send(MessageReceived(peerConnection.id, CommitSigs.fromSigs(sigs)))
                             }
-                            else -> msg
+                            is LightningMessage -> input.send(MessageReceived(peerConnection.id, msg))
+                            else -> {}
                         }
-                        msg?.let { input.send(MessageReceived(peerConnection.id, it)) }
                     }
                     closeSocket(null)
                 } catch (ex: Throwable) {

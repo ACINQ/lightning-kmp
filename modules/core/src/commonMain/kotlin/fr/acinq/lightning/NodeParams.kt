@@ -172,6 +172,7 @@ data class NodeParams(
         require(features.hasFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)) { "${Feature.PaymentSecret.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.ChannelType, FeatureSupport.Mandatory)) { "${Feature.ChannelType.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.DualFunding, FeatureSupport.Mandatory)) { "${Feature.DualFunding.rfcName} should be mandatory" }
+        require(features.hasFeature(Feature.Splicing, FeatureSupport.Mandatory)) { "${Feature.Splicing.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.RouteBlinding)) { "${Feature.RouteBlinding.rfcName} should be supported" }
         require(features.hasFeature(Feature.ShutdownAnySegwit, FeatureSupport.Mandatory)) { "${Feature.ShutdownAnySegwit.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.SimpleClose, FeatureSupport.Mandatory)) { "${Feature.SimpleClose.rfcName} should be mandatory" }
@@ -203,10 +204,10 @@ data class NodeParams(
             Feature.ChannelType to FeatureSupport.Mandatory,
             Feature.PaymentMetadata to FeatureSupport.Optional,
             Feature.SimpleClose to FeatureSupport.Mandatory,
+            Feature.Splicing to FeatureSupport.Mandatory,
             Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
             Feature.ZeroReserveChannels to FeatureSupport.Optional,
             Feature.WakeUpNotificationClient to FeatureSupport.Optional,
-            Feature.ExperimentalSplice to FeatureSupport.Optional,
             Feature.OnTheFlyFunding to FeatureSupport.Optional,
             Feature.FundingFeeCredit to FeatureSupport.Optional,
         ),

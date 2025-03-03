@@ -167,7 +167,6 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         remoteFundingPubKey: PublicKey,
         commitInput: Transactions.InputInfo,
         commitmentFormat: Transactions.CommitmentFormat,
-        batchSize: Int,
         remoteNonce: IndividualNonce?,
         logger: MDCLogger
     ): Either<ChannelException, CommitSig> {
@@ -194,7 +193,7 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         return when (commitmentFormat) {
             Transactions.CommitmentFormat.AnchorOutputs -> {
                 val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
-                Either.Right(CommitSig(channelParams.channelId, sig, htlcSigs, batchSize))
+                Either.Right(CommitSig(channelParams.channelId, commitInput.outPoint.txid, sig, htlcSigs))
             }
             Transactions.CommitmentFormat.SimpleTaprootChannels -> when (remoteNonce) {
                 null -> Either.Left(MissingCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
@@ -202,7 +201,7 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
                     val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey(), remoteFundingPubKey, commitInput.outPoint.txid)
                     when (val psig = remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, mapOf(), localNonce, listOf(localNonce.publicNonce, remoteNonce))) {
                         is Either.Left -> Either.Left(InvalidCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
-                        is Either.Right -> Either.Right(CommitSig(channelParams.channelId, psig.value, htlcSigs, batchSize))
+                        is Either.Right -> Either.Right(CommitSig(channelParams.channelId, commitInput.outPoint.txid, psig.value, htlcSigs))
                     }
                 }
             }
@@ -218,7 +217,6 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
             signingSession.fundingParams.remoteFundingPubkey,
             signingSession.commitInput(channelKeys),
             signingSession.fundingParams.commitmentFormat,
-            batchSize = 1,
             remoteNonce,
             logger
         )
@@ -563,7 +561,6 @@ data class Commitment(
         commitKeys: RemoteCommitmentKeys,
         changes: CommitmentChanges,
         remoteNextPerCommitmentPoint: PublicKey,
-        batchSize: Int,
         nextRemoteNonce: IndividualNonce?,
         logger: MDCLogger
     ): Either<ChannelException, Pair<Commitment, CommitSig>> {
@@ -601,7 +598,7 @@ data class Commitment(
             val htlcsOut = spec.htlcs.incomings().map { it.id }.joinToString(",")
             "built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txId=${remoteCommitTx.tx.txid} fundingTxId=$fundingTxId"
         }
-        val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList(), batchSize)
+        val commitSig = CommitSig(params.channelId, fundingTxId, sig, htlcSigs.toList())
         val commitment1 = copy(nextRemoteCommit = RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))
         return Either.Right(Pair(commitment1, commitSig))
     }
@@ -868,7 +865,7 @@ data class Commitments(
         val (active1, sigs) = active.map { c ->
             val commitKeys = channelKeys.remoteCommitmentKeys(channelParams, remoteNextPerCommitmentPoint)
             val remoteNonce = remoteCommitNonces[c.fundingTxId]
-            when (val res = c.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, remoteNonce, logger)) {
+            when (val res = c.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, remoteNonce, logger)) {
                 is Either.Left -> return Either.Left(res.left)
                 is Either.Right -> res.value
             }
@@ -896,9 +893,12 @@ data class Commitments(
             return Either.Left(CommitSigCountMismatch(channelId, active.size, sigs.size))
         }
         val commitKeys = channelKeys.localCommitmentKeys(channelParams, localCommitIndex + 1)
-        // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
-        val active1 = active.zip(sigs).map {
-            when (val commitment1 = it.first.receiveCommit(channelParams, channelKeys, commitKeys, changes, it.second, logger)) {
+        val active1 = active.withIndex().map { (i, c) ->
+            // If the funding_txid isn't provided, we assume that signatures are sent in order (most recent first).
+            // This ensures that the case where we have a batch of a single element (no pending splice) works correctly.
+            // This also ensures that we get a signature failure when our set of funding txs doesn't match with our peer.
+            val commit = sigs.find { it.fundingTxId == c.fundingTxId } ?: sigs[i]
+            when (val commitment1 = c.receiveCommit(channelParams, channelKeys, commitKeys, changes, commit, logger)) {
                 is Either.Left -> return Either.Left(commitment1.value)
                 is Either.Right -> commitment1.value
             }
