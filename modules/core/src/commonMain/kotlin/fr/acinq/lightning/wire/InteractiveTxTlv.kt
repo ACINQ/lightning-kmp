@@ -18,7 +18,7 @@ sealed class TxAddInputTlv : Tlv {
         override fun write(out: Output) = LightningCodecs.writeTxHash(TxHash(txId), out)
 
         companion object : TlvValueReader<SharedInputTxId> {
-            const val tag: Long = 1105
+            const val tag: Long = 0
             override fun read(input: Input): SharedInputTxId = SharedInputTxId(TxId(LightningCodecs.txHash(input)))
         }
     }
@@ -136,7 +136,7 @@ sealed class TxSignaturesTlv : Tlv {
         override fun write(out: Output) = LightningCodecs.writeBytes(sig.toByteArray(), out)
 
         companion object : TlvValueReader<PreviousFundingTxSig> {
-            const val tag: Long = 601
+            const val tag: Long = 0
             override fun read(input: Input): PreviousFundingTxSig = PreviousFundingTxSig(LightningCodecs.bytes(input, 64).toByteVector64())
         }
     }

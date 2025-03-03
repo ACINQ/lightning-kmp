@@ -153,7 +153,40 @@ sealed class ChannelReadyTlv : Tlv {
     }
 }
 
+sealed class StartBatchTlv : Tlv {
+    /** Type of [LightningMessage] that is included in the batch, when batching a single message type. */
+    data class MessageType(val msg: Int) : StartBatchTlv() {
+        override val tag: Long get() = MessageType.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeU16(msg, out)
+        }
+
+        companion object : TlvValueReader<MessageType> {
+            const val tag: Long = 1
+            override fun read(input: Input): MessageType = MessageType(msg = LightningCodecs.u16(input))
+        }
+    }
+}
+
 sealed class CommitSigTlv : Tlv {
+    /**
+     * While a splice is ongoing and not locked, we have multiple valid commitments.
+     * We send one [CommitSig] message for each valid commitment.
+     *
+     * @param txId the funding transaction spent by this commitment.
+     */
+    data class FundingTx(val txId: TxId) : CommitSigTlv() {
+        override val tag: Long get() = FundingTx.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeTxHash(TxHash(txId), out)
+        }
+
+        companion object : TlvValueReader<FundingTx> {
+            const val tag: Long = 1
+            override fun read(input: Input): FundingTx = FundingTx(txId = TxId(LightningCodecs.txHash(input)))
+        }
+    }
+
     /** Partial signature along with the signer's nonce, which is usually randomly created at signing time (when using taproot channels). */
     data class PartialSignatureWithNonce(val psig: ChannelSpendSignature.PartialSignatureWithNonce) : CommitSigTlv() {
         override val tag: Long get() = PartialSignatureWithNonce.tag
@@ -173,16 +206,6 @@ sealed class CommitSigTlv : Tlv {
                     )
                 )
             }
-        }
-    }
-
-    data class Batch(val size: Int) : CommitSigTlv() {
-        override val tag: Long get() = Batch.tag
-        override fun write(out: Output) = LightningCodecs.writeTU16(size, out)
-
-        companion object : TlvValueReader<Batch> {
-            const val tag: Long = 0x47010005
-            override fun read(input: Input): Batch = Batch(size = LightningCodecs.tu16(input))
         }
     }
 }

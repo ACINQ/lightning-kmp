@@ -731,7 +731,7 @@ data class InteractiveTxSession(
         fundingParams,
         localCommitIndex,
         SharedFundingInputBalances(previousLocalBalance, previousRemoteBalance, localHtlcs.map { it.add.amountMsat }.sum()),
-        fundingContributions.inputs.map { i -> Either.Left<InteractiveTxInput.Outgoing>(i) } + fundingContributions.outputs.map { o -> Either.Right<InteractiveTxOutput.Outgoing>(o) },
+        fundingContributions.inputs.map { i -> Either.Left(i) } + fundingContributions.outputs.map { o -> Either.Right(o) },
         previousTxs,
         localHtlcs,
         localFundingNonce = fundingParams.sharedInput?.let {
@@ -1273,7 +1273,7 @@ data class InteractiveTxSigningSession(
                     val htlcsOut = spec.htlcs.incomings().map { it.id }.joinToString(",")
                     "built remote commit number=$remoteCommitmentIndex toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txId=${firstCommitTx.remoteCommitTx.tx.txid} fundingTxId=${unsignedTx.txid}"
                 }
-                val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteCommitTx, localSigsOfRemoteHtlcTxs, batchSize = 1)
+                val commitSig = CommitSig(channelParams.channelId, unsignedTx.txid, localSigOfRemoteCommitTx, localSigsOfRemoteHtlcTxs)
                 // We haven't received the remote commit_sig: we don't have local htlc txs yet.
                 val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx.tx.txid)
                 val remoteCommit = RemoteCommit(remoteCommitmentIndex, firstCommitTx.remoteSpec, firstCommitTx.remoteCommitTx.tx.txid, remotePerCommitmentPoint)
