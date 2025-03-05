@@ -4,7 +4,10 @@ import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
@@ -63,30 +66,42 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<Syncing>(bob2.state)
         val channelReestablishB = actions1.findOutgoingMessage<ChannelReestablish>()
 
+        val fundingTxId = bob.commitments.latest.fundingTxId
         val bobCommitments = bob.commitments
         val aliceCommitments = alice.commitments
         val bobCurrentPerCommitmentPoint = bobCommitments.params.localParams.channelKeys(bob.ctx.keyManager).commitmentPoint(bobCommitments.localCommitIndex)
         val aliceCurrentPerCommitmentPoint = aliceCommitments.params.localParams.channelKeys(alice.ctx.keyManager).commitmentPoint(aliceCommitments.localCommitIndex)
+        val expectedReestablishTlv = TlvStream(ChannelReestablishTlv.MyCurrentFundingLocked(fundingTxId), ChannelReestablishTlv.YourLastFundingLocked(fundingTxId))
 
         // alice didn't receive any update or sig
         assertEquals(
-            ChannelReestablish(alice.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint),
-            channelReestablishA.copy(tlvStream = TlvStream.empty())
+            ChannelReestablish(alice.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, expectedReestablishTlv),
+            channelReestablishA
         )
         assertEquals(
-            ChannelReestablish(bob.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint),
+            ChannelReestablish(bob.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, expectedReestablishTlv),
             channelReestablishB
         )
 
         val (alice3, actions2) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
         assertEquals(alice, alice3)
-        assertEquals(1, actions2.size)
-        actions2.hasOutgoingMessage<ChannelReady>()
+        assertTrue(actions2.isEmpty())
+
+        // If Bob hadn't received Alice's channel_ready, it would be retransmitted.
+        val (alice3b, actions2b) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB.copy(tlvStream = TlvStream.empty())))
+        assertEquals(alice, alice3b)
+        assertEquals(1, actions2b.size)
+        actions2b.hasOutgoingMessage<ChannelReady>()
 
         val (bob3, actions3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishA))
         assertEquals(bob, bob3)
-        assertEquals(1, actions3.size)
-        actions3.hasOutgoingMessage<ChannelReady>()
+        assertTrue(actions3.isEmpty())
+
+        // If Alice hadn't received Bob's channel_ready, it would be retransmitted.
+        val (bob3b, actions3b) = bob2.process(ChannelCommand.MessageReceived(channelReestablishA.copy(tlvStream = TlvStream.empty())))
+        assertEquals(bob, bob3b)
+        assertEquals(1, actions3b.size)
+        actions3b.hasOutgoingMessage<ChannelReady>()
     }
 
     @Test
@@ -116,25 +131,26 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<Syncing>(bob2.state)
         val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>()
 
+        val fundingTxId = bob0.commitments.latest.fundingTxId
         val bobCommitments = bob0.commitments
         val aliceCommitments = alice0.commitments
         val bobCurrentPerCommitmentPoint = bobCommitments.params.localParams.channelKeys(bob0.ctx.keyManager).commitmentPoint(bobCommitments.localCommitIndex)
         val aliceCurrentPerCommitmentPoint = aliceCommitments.params.localParams.channelKeys(alice0.ctx.keyManager).commitmentPoint(aliceCommitments.localCommitIndex)
+        val expectedReestablishTlv = TlvStream(ChannelReestablishTlv.MyCurrentFundingLocked(fundingTxId), ChannelReestablishTlv.YourLastFundingLocked(fundingTxId))
 
         // alice didn't receive any update or sig
-        assertEquals(channelReestablishA, ChannelReestablish(alice0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
+        assertEquals(channelReestablishA, ChannelReestablish(alice0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, expectedReestablishTlv))
         // bob did not receive alice's sig
-        assertEquals(channelReestablishB, ChannelReestablish(bob0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+        assertEquals(channelReestablishB, ChannelReestablish(bob0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, expectedReestablishTlv))
 
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
-        // alice sends ChannelReady again
-        actionsAlice3.hasOutgoingMessage<ChannelReady>()
+        assertNull(actionsAlice3.findOutgoingMessageOpt<ChannelReady>())
         // alice re-sends the update and the sig
         val add = actionsAlice3.hasOutgoingMessage<UpdateAddHtlc>()
         val sig = actionsAlice3.hasOutgoingMessage<CommitSig>()
 
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishA))
-        actionsBob3.hasOutgoingMessage<ChannelReady>() // bob sends ChannelReady again
+        assertNull(actionsBob3.findOutgoingMessageOpt<ChannelReady>())
         assertNull(actionsBob3.findOutgoingMessageOpt<RevokeAndAck>()) // bob didn't receive the sig, so he cannot send a rev
 
         val (bob4, _) = bob3.process(ChannelCommand.MessageReceived(add))
@@ -189,15 +205,17 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<Syncing>(bob2.state)
         val channelReestablishB = actionsBob2.findOutgoingMessage<ChannelReestablish>()
 
+        val fundingTxId = bob0.commitments.latest.fundingTxId
         val bobCommitments = bob0.commitments
         val aliceCommitments = alice0.commitments
         val bobCurrentPerCommitmentPoint = bobCommitments.params.localParams.channelKeys(bob0.ctx.keyManager).commitmentPoint(bobCommitments.localCommitIndex)
         val aliceCurrentPerCommitmentPoint = aliceCommitments.params.localParams.channelKeys(alice0.ctx.keyManager).commitmentPoint(aliceCommitments.localCommitIndex)
+        val expectedReestablishTlv = TlvStream(ChannelReestablishTlv.MyCurrentFundingLocked(fundingTxId), ChannelReestablishTlv.YourLastFundingLocked(fundingTxId))
 
         // alice didn't receive any update or sig
-        assertEquals(channelReestablishA, ChannelReestablish(alice0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
+        assertEquals(channelReestablishA, ChannelReestablish(alice0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, expectedReestablishTlv))
         // bob did receive alice's sig
-        assertEquals(channelReestablishB, ChannelReestablish(bob0.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+        assertEquals(channelReestablishB, ChannelReestablish(bob0.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, expectedReestablishTlv))
 
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
         // alice does not re-send messages bob already received
