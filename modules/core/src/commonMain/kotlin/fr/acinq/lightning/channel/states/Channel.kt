@@ -323,14 +323,18 @@ sealed class PersistedChannelState : ChannelState() {
                 is Normal -> state.getUnsignedFundingTxId()
                 else -> null
             }
-            val tlvs: TlvStream<ChannelReestablishTlv> = unsignedFundingTxId?.let { TlvStream(ChannelReestablishTlv.NextFunding(it)) } ?: TlvStream.empty()
+            val tlvs: Set<ChannelReestablishTlv> = setOfNotNull(
+                unsignedFundingTxId?.let { ChannelReestablishTlv.NextFunding(it) },
+                state.commitments.lastRemoteLocked?.let { ChannelReestablishTlv.YourLastFundingLocked(it.fundingTxId) },
+                state.commitments.run { lastLocalLocked() }?.let { ChannelReestablishTlv.MyCurrentFundingLocked(it.fundingTxId) },
+            )
             ChannelReestablish(
                 channelId = channelId,
                 nextLocalCommitmentNumber = nextLocalCommitmentNumber,
                 nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                 myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-                tlvStream = tlvs
+                tlvStream = TlvStream(tlvs)
             )
         }
     }

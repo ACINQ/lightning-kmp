@@ -180,6 +180,28 @@ sealed class ChannelReestablishTlv : Tlv {
         }
     }
 
+    /** Latest splice_locked or channel_ready received before disconnecting. */
+    data class YourLastFundingLocked(val txId: TxId) : ChannelReestablishTlv() {
+        override val tag: Long get() = YourLastFundingLocked.tag
+        override fun write(out: Output) = LightningCodecs.writeTxHash(TxHash(txId), out)
+
+        companion object : TlvValueReader<YourLastFundingLocked> {
+            const val tag: Long = 1
+            override fun read(input: Input): YourLastFundingLocked = YourLastFundingLocked(TxId(LightningCodecs.txHash(input)))
+        }
+    }
+
+    /** Latest splice_locked or channel_ready that we're ready to send. */
+    data class MyCurrentFundingLocked(val txId: TxId) : ChannelReestablishTlv() {
+        override val tag: Long get() = MyCurrentFundingLocked.tag
+        override fun write(out: Output) = LightningCodecs.writeTxHash(TxHash(txId), out)
+
+        companion object : TlvValueReader<MyCurrentFundingLocked> {
+            const val tag: Long = 3
+            override fun read(input: Input): MyCurrentFundingLocked = MyCurrentFundingLocked(TxId(LightningCodecs.txHash(input)))
+        }
+    }
+
     // Legacy TLV needed to deserialize old backups
     data class ChannelData(val ecb: EncryptedChannelData) : ChannelReestablishTlv() {
         override val tag: Long get() = ChannelData.tag

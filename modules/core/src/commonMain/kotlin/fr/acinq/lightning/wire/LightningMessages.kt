@@ -1377,6 +1377,8 @@ data class ChannelReestablish(
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
+    val yourLastFundingLocked: TxId? = tlvStream.get<ChannelReestablishTlv.YourLastFundingLocked>()?.txId
+    val myCurrentFundingLocked: TxId? = tlvStream.get<ChannelReestablishTlv.MyCurrentFundingLocked>()?.txId
     // Legacy channel backup present only on old inactive channels, will be replaced by peer storage next time this channel data is updated.
     val legacyChannelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
 
@@ -1396,6 +1398,8 @@ data class ChannelReestablish(
         val readers = mapOf(
             ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.YourLastFundingLocked.tag to ChannelReestablishTlv.YourLastFundingLocked.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.MyCurrentFundingLocked.tag to ChannelReestablishTlv.MyCurrentFundingLocked.Companion as TlvValueReader<ChannelReestablishTlv>,
         )
 
         override fun read(input: Input): ChannelReestablish {
