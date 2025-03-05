@@ -173,6 +173,7 @@ data class NodeParams(
         require(features.hasFeature(Feature.PaymentSecret, FeatureSupport.Mandatory)) { "${Feature.PaymentSecret.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.ChannelType, FeatureSupport.Mandatory)) { "${Feature.ChannelType.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.DualFunding, FeatureSupport.Mandatory)) { "${Feature.DualFunding.rfcName} should be mandatory" }
+        require(features.hasFeature(Feature.Splicing, FeatureSupport.Mandatory)) { "${Feature.Splicing.rfcName} should be mandatory" }
         require(features.hasFeature(Feature.RouteBlinding)) { "${Feature.RouteBlinding.rfcName} should be supported" }
         require(!features.hasFeature(Feature.ZeroConfChannels)) { "${Feature.ZeroConfChannels.rfcName} has been deprecated: use the zeroConfPeers whitelist instead" }
         require(!features.hasFeature(Feature.TrustedSwapInClient)) { "${Feature.TrustedSwapInClient.rfcName} has been deprecated" }
@@ -205,11 +206,11 @@ data class NodeParams(
             Feature.Quiescence to FeatureSupport.Mandatory,
             Feature.ChannelType to FeatureSupport.Mandatory,
             Feature.PaymentMetadata to FeatureSupport.Optional,
+            Feature.Splicing to FeatureSupport.Mandatory,
             Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
             Feature.ZeroReserveChannels to FeatureSupport.Optional,
             Feature.WakeUpNotificationClient to FeatureSupport.Optional,
             Feature.ChannelBackupClient to FeatureSupport.Optional,
-            Feature.ExperimentalSplice to FeatureSupport.Optional,
             Feature.OnTheFlyFunding to FeatureSupport.Optional,
             Feature.FundingFeeCredit to FeatureSupport.Optional,
         ),

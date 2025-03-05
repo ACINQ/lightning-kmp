@@ -59,6 +59,8 @@ data class WaitForChannelReady(
                     Pair(this@WaitForChannelReady, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, commitments.latest.fundingTxId).message))))
                 }
                 is ChannelReady -> {
+                    // We mark the funding transaction as locked by our peer: we won't ask them to retransmit channel_ready.
+                    val commitments1 = commitments.run { updateRemoteFundingStatus(commitments.latest.fundingTxId) }.fold({ it }, { it.first })
                     // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
                     val initialChannelUpdate = Announcements.makeChannelUpdate(
                         staticParams.nodeParams.chainHash,
@@ -66,14 +68,14 @@ data class WaitForChannelReady(
                         staticParams.remoteNodeId,
                         shortChannelId,
                         staticParams.nodeParams.expiryDeltaBlocks,
-                        commitments.params.remoteParams.htlcMinimum,
+                        commitments1.params.remoteParams.htlcMinimum,
                         staticParams.nodeParams.feeBase,
                         staticParams.nodeParams.feeProportionalMillionths.toLong(),
-                        commitments.latest.fundingAmount.toMilliSatoshi(),
-                        enable = Helpers.aboveReserve(commitments)
+                        commitments1.latest.fundingAmount.toMilliSatoshi(),
+                        enable = Helpers.aboveReserve(commitments1)
                     )
                     val nextState = Normal(
-                        commitments,
+                        commitments1,
                         shortChannelId,
                         initialChannelUpdate,
                         null,
@@ -84,7 +86,7 @@ data class WaitForChannelReady(
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),
-                        ChannelAction.Storage.SetLocked(commitments.latest.fundingTxId),
+                        ChannelAction.Storage.SetLocked(commitments1.latest.fundingTxId),
                         ChannelAction.EmitEvent(ChannelEvents.Confirmed(nextState)),
                     )
                     Pair(nextState, actions)

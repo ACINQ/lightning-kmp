@@ -6,7 +6,10 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.SensitiveTaskEvents
-import fr.acinq.lightning.blockchain.*
+import fr.acinq.lightning.blockchain.WatchConfirmed
+import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.WatchSpent
+import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
@@ -336,14 +339,18 @@ sealed class PersistedChannelState : ChannelState() {
                 is Normal -> state.getUnsignedFundingTxId()
                 else -> null
             }
-            val tlvs: TlvStream<ChannelReestablishTlv> = unsignedFundingTxId?.let { TlvStream(ChannelReestablishTlv.NextFunding(it)) } ?: TlvStream.empty()
+            val tlvs: Set<ChannelReestablishTlv> = setOfNotNull(
+                unsignedFundingTxId?.let { ChannelReestablishTlv.NextFunding(it) },
+                state.commitments.lastRemoteLocked?.let { ChannelReestablishTlv.YourLastFundingLocked(it.fundingTxId) },
+                state.commitments.run { lastLocalLocked() }?.let { ChannelReestablishTlv.MyCurrentFundingLocked(it.fundingTxId) },
+            )
             ChannelReestablish(
                 channelId = channelId,
                 nextLocalCommitmentNumber = nextLocalCommitmentNumber,
                 nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                 myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-                tlvStream = tlvs
+                tlvStream = TlvStream(tlvs),
             ).withChannelData(state.commitments.remoteChannelData, logger)
         }
     }

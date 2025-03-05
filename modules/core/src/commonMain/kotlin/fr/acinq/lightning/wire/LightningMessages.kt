@@ -987,7 +987,7 @@ data class SpliceInit(
     }
 
     companion object : LightningMessageReader<SpliceInit> {
-        const val type: Long = 37000
+        const val type: Long = 80
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
@@ -1035,7 +1035,7 @@ data class SpliceAck(
     }
 
     companion object : LightningMessageReader<SpliceAck> {
-        const val type: Long = 37002
+        const val type: Long = 81
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
@@ -1067,7 +1067,7 @@ data class SpliceLocked(
     }
 
     companion object : LightningMessageReader<SpliceLocked> {
-        const val type: Long = 37004
+        const val type: Long = 77
 
         private val readers = emptyMap<Long, TlvValueReader<ChannelTlv>>()
 
@@ -1238,6 +1238,7 @@ data class CommitSig(
 
     val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
     val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
+    val fundingTxId: TxId? = tlvStream.get<CommitSigTlv.Batch>()?.fundingTxId
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1339,6 +1340,9 @@ data class ChannelReestablish(
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
+    val yourLastFundingLocked: TxId? = tlvStream.get<ChannelReestablishTlv.YourLastFundingLocked>()?.txId
+    val myCurrentFundingLocked: TxId? = tlvStream.get<ChannelReestablishTlv.MyCurrentFundingLocked>()?.txId
+
     override val channelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
     override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ChannelReestablish = copy(tlvStream = tlvStream.addOrUpdate(ChannelReestablishTlv.ChannelData(ecd)))
 
@@ -1358,6 +1362,8 @@ data class ChannelReestablish(
         val readers = mapOf(
             ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.YourLastFundingLocked.tag to ChannelReestablishTlv.YourLastFundingLocked.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.MyCurrentFundingLocked.tag to ChannelReestablishTlv.MyCurrentFundingLocked.Companion as TlvValueReader<ChannelReestablishTlv>,
         )
 
         override fun read(input: Input): ChannelReestablish {

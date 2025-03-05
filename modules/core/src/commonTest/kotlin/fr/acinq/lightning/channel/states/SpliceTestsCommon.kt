@@ -1077,29 +1077,33 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         // Alice disconnects before receiving Bob's splice_locked.
         val (alice3, bob4, channelReestablishAlice) = disconnect(alice2, bob3)
+        assertEquals(spliceTx.txid, channelReestablishAlice.myCurrentFundingLocked)
+        assertNotEquals(spliceTx.txid, channelReestablishAlice.yourLastFundingLocked)
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        assertIs<LNChannel<Normal>>(bob5)
         assertEquals(actionsBob5.size, 4)
+        assertEquals(bob5.state.commitments.active.size, 1)
         val channelReestablishBob = actionsBob5.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(spliceTx.txid, channelReestablishBob.myCurrentFundingLocked)
+        assertEquals(spliceTx.txid, channelReestablishBob.yourLastFundingLocked)
         val spliceLockedBob = actionsBob5.findOutgoingMessage<SpliceLocked>()
         assertEquals(htlcs.aliceToBob.map { it.second }.toSet(), actionsBob5.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
 
+        // Alice can lock the latest commitment as soon as she receives channel_reestablish.
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<LNChannel<Normal>>(alice4)
+        assertEquals(alice4.state.commitments.active.size, 1)
         assertEquals(actionsAlice4.size, 3)
-        val spliceLockedAlice2 = actionsAlice4.hasOutgoingMessage<SpliceLocked>()
+        assertNull(actionsAlice4.findOutgoingMessageOpt<SpliceLocked>())
+        actionsAlice4.has<ChannelAction.Storage.SetLocked>()
         assertEquals(htlcs.bobToAlice.map { it.second }.toSet(), actionsAlice4.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
+
+        // Alice receives Bob's splice_locked and settles HTLCs.
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(spliceLockedBob))
         assertIs<LNChannel<Normal>>(alice5)
-        assertEquals(alice5.state.commitments.active.size, 1)
-        assertEquals(2, actionsAlice5.size)
+        assertEquals(1, actionsAlice5.size)
         actionsAlice5.has<ChannelAction.Storage.StoreState>()
-        actionsAlice5.has<ChannelAction.Storage.SetLocked>()
-
-        val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(spliceLockedAlice2))
-        assertIs<LNChannel<Normal>>(bob6)
-        assertEquals(bob6.state.commitments.active.size, 1)
-        assertEquals(actionsBob6.size, 1)
-        actionsBob6.has<ChannelAction.Storage.StoreState>()
-        resolveHtlcs(alice5, bob6, htlcs, commitmentsCount = 1)
+        resolveHtlcs(alice5, bob5, htlcs, commitmentsCount = 1)
     }
 
     @Test
@@ -1111,41 +1115,47 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         // Alice and Bob have not received any remote splice_locked yet.
         assertEquals(alice2.commitments.active.size, 3)
-        alice2.commitments.active.forEach { assertEquals(it.remoteFundingStatus, RemoteFundingStatus.NotLocked) }
+        alice2.commitments.active.filter { it.fundingTxIndex > 0 }.forEach { assertEquals(it.remoteFundingStatus, RemoteFundingStatus.NotLocked) }
         assertEquals(bob2.commitments.active.size, 3)
-        bob2.commitments.active.forEach { assertEquals(it.remoteFundingStatus, RemoteFundingStatus.NotLocked) }
+        bob2.commitments.active.filter { it.fundingTxIndex > 0 }.forEach { assertEquals(it.remoteFundingStatus, RemoteFundingStatus.NotLocked) }
 
-        // On reconnection, Alice and Bob only send splice_locked for the latest commitment.
+        // On reconnection, Alice and Bob only retransmit splice_locked for the latest commitment.
         val (alice3, bob3, channelReestablishAlice) = disconnect(alice2, bob2)
+        assertEquals(alice2.commitments.active.first().fundingTxId, channelReestablishAlice.myCurrentFundingLocked)
+        assertEquals(alice2.commitments.active.last().fundingTxId, channelReestablishAlice.yourLastFundingLocked)
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
-        assertEquals(actionsBob4.size, 4)
+        assertEquals(actionsBob4.size, 6)
+        // Bob immediately applies Alice's last_funding_locked, even though he hasn't received splice_locked yet.
+        assertEquals(bob4.commitments.active.size, 1)
         val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(bob2.commitments.active.first().fundingTxId, channelReestablishBob.myCurrentFundingLocked)
+        assertEquals(bob2.commitments.active.last().fundingTxId, channelReestablishBob.yourLastFundingLocked)
         val spliceLockedBob = actionsBob4.findOutgoingMessage<SpliceLocked>()
         assertEquals(htlcs.aliceToBob.map { it.second }.toSet(), actionsBob4.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         assertEquals(spliceLockedBob.fundingTxId, bob2.commitments.latest.fundingTxId)
+        assertContains(actionsBob4, ChannelAction.Storage.SetLocked(bob1.commitments.latest.fundingTxId))
+        assertContains(actionsBob4, ChannelAction.Storage.SetLocked(bob2.commitments.latest.fundingTxId))
 
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
-        assertEquals(actionsAlice4.size, 3)
+        assertEquals(actionsAlice4.size, 5)
+        // Alice immediately applies Bob's last_funding_locked, even though she hasn't received splice_locked yet.
+        assertEquals(alice4.commitments.active.size, 1)
+        assertEquals(alice4.commitments.latest.fundingTxId, spliceLockedBob.fundingTxId)
         val spliceLockedAlice = actionsAlice4.hasOutgoingMessage<SpliceLocked>()
         assertEquals(htlcs.bobToAlice.map { it.second }.toSet(), actionsAlice4.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         assertEquals(spliceLockedAlice.fundingTxId, spliceLockedBob.fundingTxId)
-        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(spliceLockedBob))
-        assertEquals(actionsAlice5.size, 3)
-        assertEquals(alice5.commitments.active.size, 1)
-        assertEquals(alice5.commitments.latest.fundingTxId, spliceLockedBob.fundingTxId)
-        actionsAlice5.has<ChannelAction.Storage.StoreState>()
-        assertContains(actionsAlice5, ChannelAction.Storage.SetLocked(alice1.commitments.latest.fundingTxId))
-        assertContains(actionsAlice5, ChannelAction.Storage.SetLocked(alice2.commitments.latest.fundingTxId))
+        assertContains(actionsAlice4, ChannelAction.Storage.SetLocked(alice1.commitments.latest.fundingTxId))
+        assertContains(actionsAlice4, ChannelAction.Storage.SetLocked(alice2.commitments.latest.fundingTxId))
 
-        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(spliceLockedAlice))
-        assertEquals(actionsBob5.size, 3)
-        assertEquals(bob5.commitments.active.size, 1)
-        assertEquals(bob5.commitments.latest.fundingTxId, spliceLockedAlice.fundingTxId)
-        actionsBob5.has<ChannelAction.Storage.StoreState>()
-        assertContains(actionsBob5, ChannelAction.Storage.SetLocked(bob1.commitments.latest.fundingTxId))
-        assertContains(actionsBob5, ChannelAction.Storage.SetLocked(bob2.commitments.latest.fundingTxId))
+        // Alice and Bob retransmit splice_locked and resolve HTLCs.
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(spliceLockedBob))
         assertIs<LNChannel<Normal>>(alice5)
+        assertEquals(actionsAlice5.size, 1)
+        actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(spliceLockedAlice))
         assertIs<LNChannel<Normal>>(bob5)
+        assertEquals(actionsBob5.size, 1)
+        actionsBob5.has<ChannelAction.Storage.StoreState>()
         resolveHtlcs(alice5, bob5, htlcs, commitmentsCount = 1)
     }
 
@@ -1161,9 +1171,9 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         // Alice and Bob have not received any remote splice_locked yet.
         assertEquals(alice2.commitments.active.size, 3)
-        alice2.commitments.active.forEach { assertEquals(it.remoteFundingStatus, RemoteFundingStatus.NotLocked) }
+        alice2.commitments.active.filter { it.fundingTxIndex > 0 }.forEach { assertEquals(it.remoteFundingStatus, RemoteFundingStatus.NotLocked) }
         assertEquals(bob2.commitments.active.size, 3)
-        bob2.commitments.active.forEach { assertEquals(it.remoteFundingStatus, RemoteFundingStatus.NotLocked) }
+        bob2.commitments.active.filter { it.fundingTxIndex > 0 }.forEach { assertEquals(it.remoteFundingStatus, RemoteFundingStatus.NotLocked) }
 
         // Alice locks the last commitment.
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ChannelFundingDepthOk, 100, 0, spliceTx2)))
@@ -1184,30 +1194,36 @@ class SpliceTestsCommon : LightningTestSuite() {
         // Alice and Bob disconnect before receiving each other's splice_locked.
         // On reconnection, the latest commitment is still unlocked by Bob so they have two active commitments.
         val (alice4, bob4, channelReestablishAlice) = disconnect(alice3, bob3)
+        assertEquals(spliceTx2.txid, channelReestablishAlice.myCurrentFundingLocked)
+        assertEquals(alice.commitments.latest.fundingTxId, channelReestablishAlice.yourLastFundingLocked)
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(channelReestablishAlice))
-        assertEquals(actionsBob5.size, 4)
+        assertEquals(actionsBob5.size, 5)
+        assertEquals(bob5.commitments.active.map { it.fundingTxId }, listOf(spliceTx2.txid, spliceTx1.txid))
         val channelReestablishBob = actionsBob5.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(spliceTx1.txid, channelReestablishBob.myCurrentFundingLocked)
+        assertEquals(bob.commitments.latest.fundingTxId, channelReestablishBob.yourLastFundingLocked)
         val spliceLockedBob = actionsBob5.findOutgoingMessage<SpliceLocked>()
         assertEquals(htlcs.aliceToBob.map { it.second }.toSet(), actionsBob5.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         assertEquals(spliceLockedBob.fundingTxId, spliceTx1.txid)
+        assertContains(actionsBob5, ChannelAction.Storage.SetLocked(spliceTx1.txid))
 
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(channelReestablishBob))
-        assertEquals(actionsAlice5.size, 3)
+        assertEquals(actionsAlice5.size, 4)
+        assertEquals(alice5.commitments.active.map { it.fundingTxId }, listOf(spliceTx2.txid, spliceTx1.txid))
         val spliceLockedAlice = actionsAlice5.hasOutgoingMessage<SpliceLocked>()
         assertEquals(htlcs.bobToAlice.map { it.second }.toSet(), actionsAlice5.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         assertEquals(spliceLockedAlice.fundingTxId, spliceTx2.txid)
+        actionsAlice5.contains(ChannelAction.Storage.SetLocked(spliceTx1.txid))
+
+        // Alice and Bob retransmit splice_locked and resolve HTLCs.
         val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(spliceLockedBob))
-        assertEquals(actionsAlice6.size, 2)
-        assertEquals(alice6.commitments.active.map { it.fundingTxId }, listOf(spliceTx2.txid, spliceTx1.txid))
+        assertIs<LNChannel<Normal>>(alice6)
+        assertEquals(actionsAlice6.size, 1)
         actionsAlice6.has<ChannelAction.Storage.StoreState>()
-        actionsAlice6.contains(ChannelAction.Storage.SetLocked(spliceTx1.txid))
 
         val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(spliceLockedAlice))
-        assertEquals(actionsBob6.size, 2)
-        assertEquals(bob6.commitments.active.map { it.fundingTxId }, listOf(spliceTx2.txid, spliceTx1.txid))
+        assertEquals(actionsBob6.size, 1)
         actionsBob6.has<ChannelAction.Storage.StoreState>()
-        actionsBob6.contains(ChannelAction.Storage.SetLocked(spliceTx1.txid))
-        assertIs<LNChannel<Normal>>(alice6)
         assertIs<LNChannel<Normal>>(bob6)
         resolveHtlcs(alice6, bob6, htlcs, commitmentsCount = 2)
     }
