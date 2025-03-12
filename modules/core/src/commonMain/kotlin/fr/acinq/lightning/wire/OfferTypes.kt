@@ -629,6 +629,26 @@ object OfferTypes {
         }
     }
 
+    data class CardParams(val params: String) : InvoiceTlv() {
+        override val tag: Long get() = CardParams.tag
+
+        override fun write(out: Output) {
+            val bytes = params.encodeToByteArray()
+            LightningCodecs.writeBytes(bytes, out)
+        }
+
+        companion object : TlvValueReader<CardParams> {
+            // NTAG 424: N(78) + T(84) + A(65) + G(71) = 298
+            const val tag: Long = 1_000_298_424
+
+            override fun read(input: Input): CardParams {
+                val bytes = LightningCodecs.bytes(input, input.availableBytes)
+                val params = bytes.decodeToString()
+                return CardParams(params)
+            }
+        }
+    }
+
     /**
      * Signature from the sender when used in an invoice request.
      * Signature from the recipient when used in an invoice.
@@ -658,7 +678,7 @@ object OfferTypes {
         return tlv.tag in 0..159 || tlv.tag in 1000000000..2999999999
     }
 
-    fun filterOfferFields(tlvs: TlvStream<InvoiceRequestTlv>): TlvStream<OfferTlv> {
+    fun <T : Bolt12Tlv> filterOfferFields(tlvs: TlvStream<T>): TlvStream<OfferTlv> {
         return TlvStream(
             tlvs.records.filterIsInstance<OfferTlv>().toSet(),
             tlvs.unknown.filter { isOfferTlv(it) }.toSet()
@@ -1029,6 +1049,8 @@ object OfferTypes {
                 InvoiceFeatures.tag to InvoiceFeatures as TlvValueReader<InvoiceTlv>,
                 InvoiceNodeId.tag to InvoiceNodeId as TlvValueReader<InvoiceTlv>,
                 Signature.tag to Signature as TlvValueReader<InvoiceTlv>,
+                // Extensions
+                CardParams.tag to CardParams as TlvValueReader<InvoiceTlv>
             )
         )
     }
