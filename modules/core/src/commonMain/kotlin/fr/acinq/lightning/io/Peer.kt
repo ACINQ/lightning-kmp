@@ -712,15 +712,34 @@ class Peer(
             }
     }
 
+    suspend fun mutualClose(channelId: ByteVector32, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelCloseOutgoingPayment? {
+        return channels.values
+            .filterIsInstance<ChannelStateWithCommitments>()
+            .filter { it is Normal || it is ShuttingDown || it is Negotiating }
+            .find { it.channelId == channelId }
+            ?.let {
+                val res = this.async {
+                    nodeParams.nodeEvents
+                        .filterIsInstance<PaymentEvents.PaymentSent>()
+                        .map { it.payment }
+                        .filterIsInstance<ChannelCloseOutgoingPayment>()
+                        .filter { it.channelId == channelId }
+                        .first()
+                }
+                send(WrappedChannelCommand(channelId, ChannelCommand.Close.MutualClose(scriptPubKey, feerate)))
+                res.await()
+            }
+    }
+
     suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
         this.launch {
             res.complete(
                 eventsFlow
-                .filterIsInstance<SendPaymentResult>()
-                .filter { it.request.paymentId == paymentId }
-                .first()
+                    .filterIsInstance<SendPaymentResult>()
+                    .filter { it.request.paymentId == paymentId }
+                    .first()
             )
         }
         send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Normal(paymentRequest)))
@@ -733,9 +752,9 @@ class Peer(
         this.launch {
             res.complete(
                 eventsFlow
-                .filterIsInstance<SendPaymentResult>()
-                .filter { it.request.paymentId == paymentId }
-                .first()
+                    .filterIsInstance<SendPaymentResult>()
+                    .filter { it.request.paymentId == paymentId }
+                    .first()
             )
         }
         send(PayOffer(paymentId, payerKey, payerNote, amount, offer, fetchInvoiceTimeout))
