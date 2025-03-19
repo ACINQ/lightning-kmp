@@ -5,12 +5,14 @@ import fr.acinq.bitcoin.Bitcoin.computeP2PkhAddress
 import fr.acinq.bitcoin.Bitcoin.computeP2ShOfP2WpkhAddress
 import fr.acinq.bitcoin.Bitcoin.computeP2WpkhAddress
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.channel.Helpers.Closing.isValidFinalScriptPubkey
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class HelpersTestsCommon : LightningTestSuite() {
@@ -67,7 +69,26 @@ class HelpersTestsCommon : LightningTestSuite() {
             TxOut(354.sat, Script.pay2tr(randomKey().publicKey().xOnly())),
             TxOut(0.sat, listOf(OP_RETURN, OP_PUSHDATA(Hex.decode("deadbeef")))),
         )
-        outputsAboveDust.forEach { assertTrue { it.amount >= Transactions.dustLimit(it.publicKeyScript) } }
+        outputsAboveDust.forEach { assertTrue(it.amount >= Transactions.dustLimit(it.publicKeyScript)) }
+    }
+
+    @Test
+    fun `check final script validity`() {
+        val validScripts = listOf(
+            Script.write(Script.pay2pkh(randomKey().publicKey())).byteVector(),
+            Script.write(Script.pay2sh(Hex.decode("deadbeef"))).byteVector(),
+            Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector(),
+            Script.write(Script.pay2wsh(Hex.decode("deadbeef"))).byteVector(),
+            Script.write(Script.pay2tr(randomKey().publicKey().xOnly())).byteVector(),
+            Script.write(listOf(OP_RETURN, OP_PUSHDATA(Hex.decode("deadbeefdeadbeef")))).byteVector(),
+        )
+        validScripts.forEach { assertTrue(isValidFinalScriptPubkey(it, allowAnySegwit = true, allowOpReturn = true)) }
+
+        val invalidScripts = listOf(
+            Script.write(listOf(OP_RETURN, OP_PUSHDATA(Hex.decode("deadbeef")))).byteVector(),
+            Script.write(listOf(OP_RETURN, OP_PUSHDATA(ByteArray(81)))).byteVector(),
+        )
+        invalidScripts.forEach { assertFalse(isValidFinalScriptPubkey(it, allowAnySegwit = true, allowOpReturn = true)) }
     }
 
 }

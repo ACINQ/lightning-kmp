@@ -297,7 +297,10 @@ object Helpers {
                     Script.isPay2wsh(script) -> true
                     // option_shutdown_anysegwit doesn't cover segwit v0
                     Script.isNativeWitnessScript(script) && script[0] != OP_0 -> allowAnySegwit
-                    script[0] == OP_RETURN -> allowOpReturn
+                    script.size == 2 && script[0] == OP_RETURN && allowOpReturn -> when (val push = script[1]) {
+                        is OP_PUSHDATA -> OP_PUSHDATA.isMinimal(push.data.toByteArray(), push.code) && push.data.size() >= 6 && push.data.size() <= 80
+                        else -> false
+                    }
                     else -> false
                 }
             }.getOrElse { false }
