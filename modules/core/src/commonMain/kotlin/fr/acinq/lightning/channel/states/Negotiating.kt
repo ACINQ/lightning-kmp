@@ -12,6 +12,8 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.serialization.Transient
 
 data class Negotiating(
     override val commitments: Commitments,
@@ -24,6 +26,8 @@ data class Negotiating(
     // which they sent a signature, and their closing transactions that we signed.
     val publishedClosingTxs: List<ClosingTx>,
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
+    @Transient
+    val replyTo: CompletableDeferred<ChannelCloseResponse>?,
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -79,7 +83,8 @@ data class Negotiating(
                         is Either.Right -> {
                             val signedClosingTx = result.value
                             logger.debug { "received signatures for local mutual close transaction: ${signedClosingTx.tx}" }
-                            val nextState = this@Negotiating.copy(publishedClosingTxs = publishedClosingTxs + signedClosingTx)
+                            replyTo?.complete(ChannelCloseResponse.Success(signedClosingTx.tx.txid, signedClosingTx.fee))
+                            val nextState = this@Negotiating.copy(publishedClosingTxs = publishedClosingTxs + signedClosingTx, replyTo = null)
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
                                 ChannelAction.Blockchain.PublishTx(signedClosingTx),
@@ -138,14 +143,18 @@ data class Negotiating(
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.Close.MutualClose -> {
                 if (lastClosingFeerate?.let { cmd.feerate < it } == true) {
+                    cmd.replyTo.complete(ChannelCloseResponse.Failure.RbfFeerateTooLow(cmd.feerate, lastClosingFeerate * 1.2))
                     handleCommandError(cmd, InvalidRbfFeerate(channelId, cmd.feerate, lastClosingFeerate * 1.2))
                 } else {
                     when (val result = Helpers.Closing.makeClosingTxs(channelKeys(), commitments.latest, cmd.scriptPubKey ?: localScript, remoteScript, cmd.feerate, currentBlockHeight.toLong())) {
-                        is Either.Left -> handleCommandError(cmd, result.value)
+                        is Either.Left -> {
+                            cmd.replyTo.complete(ChannelCloseResponse.Failure.Unknown(result.value))
+                            handleCommandError(cmd, result.value)
+                        }
                         is Either.Right -> {
                             val (closingTxs, closingComplete) = result.value
                             logger.debug { "signing local mutual close transactions: $closingTxs" }
-                            val nextState = this@Negotiating.copy(localScript = closingComplete.closerScriptPubKey, lastClosingFeerate = cmd.feerate, proposedClosingTxs = proposedClosingTxs + closingTxs)
+                            val nextState = this@Negotiating.copy(replyTo = cmd.replyTo, localScript = closingComplete.closerScriptPubKey, lastClosingFeerate = cmd.feerate, proposedClosingTxs = proposedClosingTxs + closingTxs)
                             val actions = buildList {
                                 add(ChannelAction.Storage.StoreState(nextState))
                                 add(ChannelAction.Message.Send(closingComplete))

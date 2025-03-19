@@ -143,7 +143,10 @@ data class WaitForFundingCreated(
                 }
                 else -> unhandled(cmd)
             }
-            is ChannelCommand.Close.MutualClose -> Pair(this@WaitForFundingCreated, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            is ChannelCommand.Close.MutualClose -> {
+                cmd.replyTo.complete(ChannelCloseResponse.Failure.ChannelNotOpenedYet(this::class.toString()))
+                Pair(this@WaitForFundingCreated, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            }
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.Init -> unhandled(cmd)
             is ChannelCommand.Htlc -> unhandled(cmd)

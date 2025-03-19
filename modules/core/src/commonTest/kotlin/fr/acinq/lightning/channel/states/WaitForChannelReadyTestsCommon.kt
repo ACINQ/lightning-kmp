@@ -11,7 +11,9 @@ import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.*
 
 class WaitForChannelReadyTestsCommon : LightningTestSuite() {
@@ -125,12 +127,14 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ChannelCommand_Close_MutualClose`() {
+    fun `recv ChannelCommand_Close_MutualClose`() = runSuspendTest {
         val (alice, _, bob, _) = init()
         listOf(alice, bob).forEach { state ->
-            val (state1, actions1) = state.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+            val cmd = ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw)
+            val (state1, actions1) = state.process(cmd)
             assertEquals(state, state1)
             assertEquals(1, actions1.size)
+            assertEquals(ChannelCloseResponse.Failure.ChannelNotOpenedYet("WaitForChannelReady"), cmd.replyTo.await())
             actions1.hasCommandError<CommandUnavailableInThisState>()
         }
     }

@@ -327,7 +327,10 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
             is ChannelCommand.Htlc -> unhandled(cmd)
             is ChannelCommand.Connected -> unhandled(cmd)
             is ChannelCommand.Disconnected -> Pair(Offline(state), listOf())
-            is ChannelCommand.Close.MutualClose -> Pair(this@Syncing, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            is ChannelCommand.Close.MutualClose -> {
+                cmd.replyTo.complete(ChannelCloseResponse.Failure.ChannelOffline)
+                Pair(this@Syncing, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            }
             is ChannelCommand.Close.ForceClose -> state.run { handleLocalError(cmd, ForcedLocalCommit(channelId)) }
             is ChannelCommand.Init -> unhandled(cmd)
             is ChannelCommand.Funding -> unhandled(cmd)

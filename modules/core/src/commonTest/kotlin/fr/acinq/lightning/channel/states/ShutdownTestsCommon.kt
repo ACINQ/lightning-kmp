@@ -25,6 +25,7 @@ import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.*
 
 class ShutdownTestsCommon : LightningTestSuite() {
@@ -359,7 +360,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (_, bob0) = reachNormal()
         assertTrue(bob0.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
         assertFalse(bob0.commitments.params.channelFeatures.hasFeature(Feature.ChannelBackupClient)) // this isn't a permanent channel feature
-        val (bob1, actions1) = bob0.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (bob1, actions1) = bob0.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(bob1)
         val blob = EncryptedChannelData.from(bob1.staticParams.nodeParams.nodePrivateKey, bob1.state)
         val shutdown = actions1.findOutgoingMessage<Shutdown>()
@@ -428,7 +429,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Closing>>(alice1)
         assertNotNull(alice1.state.nextRemoteCommitPublished)
         aliceActions1.has<ChannelAction.Storage.StoreState>()
-        val rcp = alice1.state.nextRemoteCommitPublished!!
+        val rcp = alice1.state.nextRemoteCommitPublished
         assertNotNull(rcp.claimMainOutputTx)
         assertEquals(2, rcp.claimHtlcTxs.size)
         assertTrue(rcp.claimHtlcSuccessTxs().isEmpty())
@@ -473,7 +474,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val (alice, bob) = init()
 
         // Alice updates our closing feerate.
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw * 1.5))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw * 1.5))
         assertIs<ShuttingDown>(alice1.state)
         assertEquals(TestConstants.feeratePerKw * 1.5, alice1.state.closingFeerate)
         assertEquals(1, actionsAlice1.size)
@@ -481,7 +482,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
 
         // Alice updates her closing script.
         val aliceScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Close.MutualClose(aliceScript, TestConstants.feeratePerKw * 2))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), aliceScript, TestConstants.feeratePerKw * 2))
         assertIs<ShuttingDown>(alice2.state)
         assertEquals(TestConstants.feeratePerKw * 2, alice2.state.closingFeerate)
         assertEquals(2, actionsAlice2.size)
@@ -492,7 +493,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
 
         // Bob updates his closing feerate and script.
         val bobScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
-        val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(bobScript, TestConstants.feeratePerKw * 1.5))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), bobScript, TestConstants.feeratePerKw * 1.5))
         assertIs<ShuttingDown>(bob1.state)
         assertEquals(TestConstants.feeratePerKw * 1.5, bob1.state.closingFeerate)
         assertEquals(2, actionsBob1.size)
@@ -597,7 +598,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
 
         fun shutdown(alice: LNChannel<ChannelState>, bob: LNChannel<ChannelState>): Pair<LNChannel<ShuttingDown>, LNChannel<ShuttingDown>> {
             // Alice initiates a closing
-            val (alice1, actionsAlice) = alice.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+            val (alice1, actionsAlice) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
             val shutdownAlice = actionsAlice.findOutgoingMessage<Shutdown>()
             val (bob1, actionsBob) = bob.process(ChannelCommand.MessageReceived(shutdownAlice))
             val shutdownBob = actionsBob.findOutgoingMessage<Shutdown>()

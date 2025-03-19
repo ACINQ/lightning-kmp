@@ -14,6 +14,8 @@ import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.serialization.Transient
 
 data class Normal(
     override val commitments: Commitments,
@@ -24,6 +26,8 @@ data class Normal(
     val remoteShutdown: Shutdown?,
     val closingFeerate: FeeratePerKw?,
     val spliceStatus: SpliceStatus,
+    @Transient
+    val closingReplyTo: CompletableDeferred<ChannelCloseResponse>? = null,
 ) : ChannelStateWithCommitments() {
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -92,13 +96,25 @@ data class Normal(
                 val allowOpReturn = Features.canUseFeature(commitments.params.localParams.features, commitments.params.remoteParams.features, Feature.SimpleClose)
                 val localScriptPubkey = cmd.scriptPubKey ?: commitments.params.localParams.defaultFinalScriptPubKey
                 when {
-                    localShutdown != null -> handleCommandError(cmd, ClosingAlreadyInProgress(channelId), channelUpdate)
-                    commitments.changes.localHasUnsignedOutgoingHtlcs() -> handleCommandError(cmd, CannotCloseWithUnsignedOutgoingHtlcs(channelId), channelUpdate)
-                    commitments.changes.localHasUnsignedOutgoingUpdateFee() -> handleCommandError(cmd, CannotCloseWithUnsignedOutgoingUpdateFee(channelId), channelUpdate)
-                    !Helpers.Closing.isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit, allowOpReturn) -> handleCommandError(cmd, InvalidFinalScript(channelId), channelUpdate)
+                    localShutdown != null -> {
+                        cmd.replyTo.complete(ChannelCloseResponse.Failure.ClosingAlreadyInProgress)
+                        handleCommandError(cmd, ClosingAlreadyInProgress(channelId), channelUpdate)
+                    }
+                    commitments.changes.localHasUnsignedOutgoingHtlcs() -> {
+                        cmd.replyTo.complete(ChannelCloseResponse.Failure.Unknown(CannotCloseWithUnsignedOutgoingHtlcs(channelId)))
+                        handleCommandError(cmd, CannotCloseWithUnsignedOutgoingHtlcs(channelId), channelUpdate)
+                    }
+                    commitments.changes.localHasUnsignedOutgoingUpdateFee() -> {
+                        cmd.replyTo.complete(ChannelCloseResponse.Failure.Unknown(CannotCloseWithUnsignedOutgoingUpdateFee(channelId)))
+                        handleCommandError(cmd, CannotCloseWithUnsignedOutgoingUpdateFee(channelId), channelUpdate)
+                    }
+                    !Helpers.Closing.isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit, allowOpReturn) -> {
+                        cmd.replyTo.complete(ChannelCloseResponse.Failure.InvalidClosingAddress(localScriptPubkey))
+                        handleCommandError(cmd, InvalidFinalScript(channelId), channelUpdate)
+                    }
                     else -> {
                         val shutdown = Shutdown(channelId, localScriptPubkey)
-                        val newState = this@Normal.copy(localShutdown = shutdown, closingFeerate = cmd.feerate)
+                        val newState = this@Normal.copy(localShutdown = shutdown, closingFeerate = cmd.feerate, closingReplyTo = cmd.replyTo)
                         val actions = listOf(ChannelAction.Storage.StoreState(newState), ChannelAction.Message.Send(shutdown))
                         Pair(newState, actions)
                     }
@@ -237,10 +253,10 @@ data class Normal(
                                 actions.add(ChannelAction.Message.Send(localShutdown))
                                 if (commitments1.latest.remoteCommit.spec.htlcs.isNotEmpty()) {
                                     // we just signed htlcs that need to be resolved now
-                                    ShuttingDown(commitments1, localShutdown, remoteShutdown, closingFeerate)
+                                    ShuttingDown(commitments1, localShutdown, remoteShutdown, closingFeerate, closingReplyTo)
                                 } else {
                                     logger.warning { "we have no htlcs but have not replied with our shutdown yet, this should never happen" }
-                                    Negotiating(commitments1, closingFeerate, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOf(), currentBlockHeight.toLong())
+                                    Negotiating(commitments1, closingFeerate, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOf(), currentBlockHeight.toLong(), closingReplyTo)
                                 }
                             } else {
                                 this@Normal.copy(commitments = commitments1)
@@ -300,10 +316,10 @@ data class Normal(
                                 if (this@Normal.localShutdown == null) actions.add(ChannelAction.Message.Send(localShutdown))
                                 val commitments1 = commitments.copy(remoteChannelData = cmd.message.channelData)
                                 when {
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(commitments1, closingFeerate, localShutdown, cmd.message, actions)
+                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closingReplyTo, commitments1, closingFeerate, localShutdown, cmd.message, actions)
                                     else -> {
                                         // there are some pending changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
-                                        val nextState = ShuttingDown(commitments1, localShutdown, cmd.message, closingFeerate)
+                                        val nextState = ShuttingDown(commitments1, localShutdown, cmd.message, closingFeerate, closingReplyTo)
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         Pair(nextState, actions)
                                     }

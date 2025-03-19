@@ -566,7 +566,8 @@ internal data class ShuttingDown(
         commitments.export(),
         localShutdown,
         remoteShutdown,
-        null
+        null,
+        null,
     )
 }
 
@@ -593,7 +594,8 @@ internal data class Negotiating(
         remoteShutdown.scriptPubKey,
         listOf(),
         listOf(),
-        0
+        0,
+        null
     )
 }
 

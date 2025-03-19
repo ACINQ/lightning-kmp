@@ -14,8 +14,10 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.*
 
 class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
@@ -331,11 +333,13 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ChannelCommand_Close_MutualClose`() {
+    fun `recv ChannelCommand_Close_MutualClose`() = runSuspendTest {
         val (alice, bob) = init(ChannelType.SupportedChannelType.AnchorOutputs)
         listOf(alice, bob).forEach { state ->
-            val (state1, actions1) = state.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+            val cmd = ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw)
+            val (state1, actions1) = state.process(cmd)
             assertEquals(state, state1)
+            assertEquals(ChannelCloseResponse.Failure.ChannelNotOpenedYet("WaitForFundingConfirmed"), cmd.replyTo.await())
             actions1.hasCommandError<CommandUnavailableInThisState>()
         }
     }
@@ -347,8 +351,8 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (state1, actions1) = state.process(ChannelCommand.Close.ForceClose)
             assertIs<Closing>(state1.state)
             assertNotNull(state1.state.localCommitPublished)
-            actions1.hasPublishTx(state1.state.localCommitPublished!!.commitTx)
-            actions1.hasPublishTx(state1.state.localCommitPublished!!.claimMainDelayedOutputTx!!.tx)
+            actions1.hasPublishTx(state1.state.localCommitPublished.commitTx)
+            actions1.hasPublishTx(state1.state.localCommitPublished.claimMainDelayedOutputTx!!.tx)
             assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
         }
     }

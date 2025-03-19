@@ -27,6 +27,7 @@ import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.Clo
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -405,14 +406,14 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         return commitments.all.filter { it.fundingTxIndex > 0 && it.fundingTxIndex > lastLockedBefore && it.fundingTxIndex <= lastLockedAfter }
     }
 
-    internal fun ChannelContext.startClosingNegotiation(commitments: Commitments, closingFeerate: FeeratePerKw?, localShutdown: Shutdown, remoteShutdown: Shutdown, actions: List<ChannelAction>): Pair<Negotiating, List<ChannelAction>> {
+    internal fun ChannelContext.startClosingNegotiation(replyTo: CompletableDeferred<ChannelCloseResponse>?, commitments: Commitments, closingFeerate: FeeratePerKw?, localShutdown: Shutdown, remoteShutdown: Shutdown, actions: List<ChannelAction>): Pair<Negotiating, List<ChannelAction>> {
         val localScript = localShutdown.scriptPubKey
         val remoteScript = remoteShutdown.scriptPubKey
         val currentHeight = currentBlockHeight.toLong()
         return when (closingFeerate) {
             null -> {
                 logger.info { "mutual close was initiated by our peer, waiting for remote closing_complete" }
-                val nextState = Negotiating(commitments, closingFeerate, localScript, remoteScript, listOf(), listOf(), currentHeight)
+                val nextState = Negotiating(commitments, closingFeerate, localScript, remoteScript, listOf(), listOf(), currentHeight, replyTo)
                 val actions1 = listOf(ChannelAction.Storage.StoreState(nextState))
                 Pair(nextState, actions + actions1)
             }
@@ -420,13 +421,14 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 when (val closingResult = Helpers.Closing.makeClosingTxs(channelKeys(), commitments.latest, localScript, remoteScript, closingFeerate, currentHeight)) {
                     is Either.Left -> {
                         logger.warning { "cannot create local closing txs, waiting for remote closing_complete: ${closingResult.value.message}" }
-                        val nextState = Negotiating(commitments, closingFeerate, localScript, remoteScript, listOf(), listOf(), currentHeight)
+                        replyTo?.complete(ChannelCloseResponse.Failure.Unknown(closingResult.value))
+                        val nextState = Negotiating(commitments, closingFeerate, localScript, remoteScript, listOf(), listOf(), currentHeight, replyTo = null)
                         val actions1 = listOf(ChannelAction.Storage.StoreState(nextState))
                         Pair(nextState, actions + actions1)
                     }
                     is Either.Right -> {
                         val (closingTxs, closingComplete) = closingResult.value
-                        val nextState = Negotiating(commitments, closingFeerate, localScript, remoteScript, listOf(closingTxs), listOf(), currentHeight)
+                        val nextState = Negotiating(commitments, closingFeerate, localScript, remoteScript, listOf(closingTxs), listOf(), currentHeight, replyTo)
                         val actions1 = listOf(
                             ChannelAction.Storage.StoreState(nextState),
                             ChannelAction.Message.Send(closingComplete),

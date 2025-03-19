@@ -14,17 +14,33 @@ import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.TestsHelper.fulfillHtlc
 import fr.acinq.lightning.channel.TestsHelper.makeCmdAdd
+import fr.acinq.lightning.channel.TestsHelper.mutualCloseAlice
+import fr.acinq.lightning.channel.TestsHelper.mutualCloseBob
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.db.ChannelCloseOutgoingPayment.ChannelClosingType
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.*
 
 class NegotiatingTestsCommon : LightningTestSuite() {
+
+    @Test
+    fun `basic mutual close -- alice`() = runSuspendTest {
+        val (alice, bob) = reachNormal()
+        mutualCloseAlice(alice, bob, FeeratePerKw(500.sat))
+    }
+
+    @Test
+    fun `basic mutual close -- bob`() = runSuspendTest {
+        val (alice, bob) = reachNormal()
+        mutualCloseBob(alice, bob, FeeratePerKw(500.sat))
+    }
 
     @Test
     fun `recv ChannelCommand_Htlc_Add`() {
@@ -88,9 +104,9 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ClosingComplete -- single output`() {
         val (alice, bob) = reachNormal(bobFundingAmount = 0.sat)
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
-        val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(shutdownAlice))
@@ -127,7 +143,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
         // Bob updates his closing script before receiving Alice's closing_complete and closing_sig.
         val closingScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
-        val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(closingScript, TestConstants.feeratePerKw * 1.5))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), closingScript, TestConstants.feeratePerKw * 1.5))
         assertEquals(2, actionsBob1.size)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
         val closingCompleteBob2 = actionsBob1.findOutgoingMessage<ClosingComplete>()
@@ -391,7 +407,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
             Triple(alice4, bob4, revokedCommit)
         }
 
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(shutdownAlice))
         assertIs<LNChannel<Negotiating>>(bob1)
@@ -416,7 +432,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelCommand_Close_MutualClose to bump feerate`() {
         val (alice, _, closingComplete, _) = init()
-        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw * 1.25))
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw * 1.25))
         assertIs<Negotiating>(alice1.state)
         val closingComplete1 = actions1.hasOutgoingMessage<ClosingComplete>()
         assertTrue(closingComplete.fees < closingComplete1.fees)
@@ -427,9 +443,10 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelCommand_Close_MutualClose with feerate too low`() {
         val (alice, _) = init()
-        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(null, FeeratePerKw(2500.sat)))
+        val cmd = ChannelCommand.Close.MutualClose(CompletableDeferred(), null, FeeratePerKw(2500.sat))
+        val (alice1, actions1) = alice.process(cmd)
         assertEquals(alice1, alice)
-        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(ChannelCommand.Close.MutualClose(null, FeeratePerKw(2500.sat)), InvalidRbfFeerate(alice.channelId, FeeratePerKw(2500.sat), FeeratePerKw(6000.sat)))))
+        assertEquals(actions1, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, InvalidRbfFeerate(alice.channelId, FeeratePerKw(2500.sat), FeeratePerKw(6000.sat)))))
     }
 
     @Test
@@ -454,11 +471,11 @@ class NegotiatingTestsCommon : LightningTestSuite() {
             bobClosingScript: ByteVector? = null,
         ): Fixture {
             val (alice, bob) = reachNormal(channelType = channelType, aliceFundingAmount = aliceFundingAmount, bobFundingAmount = bobFundingAmount)
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(aliceClosingScript, aliceClosingFeerate))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), aliceClosingScript, aliceClosingFeerate))
             val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
             assertNull(actionsAlice1.findOutgoingMessageOpt<ClosingComplete>())
 
-            val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(bobClosingScript, bobClosingFeerate))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), bobClosingScript, bobClosingFeerate))
             val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
             assertNull(actionsBob1.findOutgoingMessageOpt<ClosingComplete>())
 

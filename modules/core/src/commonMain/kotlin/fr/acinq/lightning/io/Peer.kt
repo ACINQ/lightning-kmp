@@ -712,22 +712,19 @@ class Peer(
             }
     }
 
-    suspend fun mutualClose(channelId: ByteVector32, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelCloseOutgoingPayment? {
+    suspend fun mutualClose(channelId: ByteVector32, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelCloseResponse? {
         return channels.values
             .filterIsInstance<ChannelStateWithCommitments>()
             .filter { it is Normal || it is ShuttingDown || it is Negotiating }
             .find { it.channelId == channelId }
             ?.let {
-                val res = this.async {
-                    nodeParams.nodeEvents
-                        .filterIsInstance<PaymentEvents.PaymentSent>()
-                        .map { it.payment }
-                        .filterIsInstance<ChannelCloseOutgoingPayment>()
-                        .filter { it.channelId == channelId }
-                        .first()
-                }
-                send(WrappedChannelCommand(channelId, ChannelCommand.Close.MutualClose(scriptPubKey, feerate)))
-                res.await()
+                val closeCommand = ChannelCommand.Close.MutualClose(
+                    replyTo = CompletableDeferred(),
+                    scriptPubKey = scriptPubKey,
+                    feerate = feerate
+                )
+                send(WrappedChannelCommand(channelId, closeCommand))
+                closeCommand.replyTo.await()
             }
     }
 

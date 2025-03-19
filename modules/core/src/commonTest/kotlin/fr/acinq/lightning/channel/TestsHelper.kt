@@ -12,7 +12,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.KeyManager
-import fr.acinq.lightning.db.ChannelCloseOutgoingPayment
 import fr.acinq.lightning.db.ChannelCloseOutgoingPayment.ChannelClosingType
 import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.logging.MDCLogger
@@ -27,7 +26,6 @@ import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.encodeToString
 import kotlin.test.*
 
 // LN Message
@@ -90,8 +88,8 @@ data class LNChannel<out S : ChannelState>(
     val commitments: Commitments by lazy {
         when {
             state is ChannelStateWithCommitments -> state.commitments
-            state is Offline && state.state is ChannelStateWithCommitments -> (state.state as ChannelStateWithCommitments).commitments
-            state is Syncing && state.state is ChannelStateWithCommitments -> (state.state as ChannelStateWithCommitments).commitments
+            state is Offline && state.state is ChannelStateWithCommitments -> state.state.commitments
+            state is Syncing && state.state is ChannelStateWithCommitments -> state.state.commitments
             else -> error("no commitments in state ${state::class}")
         }
     }
@@ -129,10 +127,17 @@ data class LNChannel<out S : ChannelState>(
             else -> state
         }
 
+        fun removeReplyTo(state: PersistedChannelState): PersistedChannelState = when (state) {
+            is Normal -> state.copy(closingReplyTo = null)
+            is ShuttingDown -> state.copy(replyTo = null)
+            is Negotiating -> state.copy(replyTo = null)
+            else -> state
+        }
+
         val serialized = Serialization.serialize(state)
         val deserialized = Serialization.deserialize(serialized).value
 
-        assertEquals(removeTemporaryStatuses(state), deserialized, "serialization error")
+        assertEquals(removeTemporaryStatuses(removeReplyTo(state)), deserialized, "serialization error")
     }
 
     private fun checkSerialization(actions: List<ChannelAction>) {
@@ -263,8 +268,9 @@ object TestsHelper {
         return Triple(alice1, bob1, fundingTx)
     }
 
-    fun mutualCloseAlice(alice: LNChannel<Normal>, bob: LNChannel<Normal>, closingFeerate: FeeratePerKw, scriptPubKey: ByteVector? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, Transaction> {
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(scriptPubKey, closingFeerate))
+    suspend fun mutualCloseAlice(alice: LNChannel<Normal>, bob: LNChannel<Normal>, closingFeerate: FeeratePerKw, scriptPubKey: ByteVector? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, Transaction> {
+        val cmd = ChannelCommand.Close.MutualClose(CompletableDeferred(), scriptPubKey, closingFeerate)
+        val (alice1, actionsAlice1) = alice.process(cmd)
         assertIs<LNChannel<Normal>>(alice1)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
         assertNull(actionsAlice1.findOutgoingMessageOpt<ClosingComplete>())
@@ -288,11 +294,13 @@ object TestsHelper {
         actionsAlice3.hasWatchConfirmed(closingTx.txid)
         val commitInput = alice1.commitments.latest.commitInput
         Transaction.correctlySpends(closingTx, mapOf(commitInput.outPoint to commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(ChannelCloseResponse.Success(closingTx.txid, closingComplete.fees), cmd.replyTo.await())
         return Triple(alice3, bob2, closingTx)
     }
 
-    fun mutualCloseBob(alice: LNChannel<Normal>, bob: LNChannel<Normal>, closingFeerate: FeeratePerKw, scriptPubKey: ByteVector? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, Transaction> {
-        val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(scriptPubKey, closingFeerate))
+    suspend fun mutualCloseBob(alice: LNChannel<Normal>, bob: LNChannel<Normal>, closingFeerate: FeeratePerKw, scriptPubKey: ByteVector? = null): Triple<LNChannel<Negotiating>, LNChannel<Negotiating>, Transaction> {
+        val cmd = ChannelCommand.Close.MutualClose(CompletableDeferred(), scriptPubKey, closingFeerate)
+        val (bob1, actionsBob1) = bob.process(cmd)
         assertIs<LNChannel<Normal>>(bob1)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingComplete>())
@@ -316,6 +324,7 @@ object TestsHelper {
         actionsBob3.hasWatchConfirmed(closingTx.txid)
         val commitInput = alice1.commitments.latest.commitInput
         Transaction.correctlySpends(closingTx, mapOf(commitInput.outPoint to commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(ChannelCloseResponse.Success(closingTx.txid, closingComplete.fees), cmd.replyTo.await())
         return Triple(alice2, bob3, closingTx)
     }
 
@@ -337,8 +346,8 @@ object TestsHelper {
         assertEquals(commitTx, localCommitPublished.commitTx)
         actions1.hasPublishTx(commitTx)
         assertNotNull(localCommitPublished.claimMainDelayedOutputTx)
-        actions1.hasPublishTx(localCommitPublished.claimMainDelayedOutputTx!!.tx)
-        Transaction.correctlySpends(localCommitPublished.claimMainDelayedOutputTx!!.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        actions1.hasPublishTx(localCommitPublished.claimMainDelayedOutputTx.tx)
+        Transaction.correctlySpends(localCommitPublished.claimMainDelayedOutputTx.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         // all htlcs success/timeout should be published
         localCommitPublished.htlcTxs.values.filterNotNull().forEach { htlcTx ->
             Transaction.correctlySpends(htlcTx.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -350,7 +359,7 @@ object TestsHelper {
         // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
         val expectedWatchConfirmed = buildSet {
             add(localCommitPublished.commitTx.txid)
-            add(localCommitPublished.claimMainDelayedOutputTx!!.tx.txid)
+            add(localCommitPublished.claimMainDelayedOutputTx.tx.txid)
             addAll(localCommitPublished.claimHtlcDelayedTxs.map { it.tx.txid })
         }
         val watchConfirmed = actions1.findWatches<WatchConfirmed>()

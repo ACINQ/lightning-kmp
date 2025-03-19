@@ -297,10 +297,13 @@ data class WaitForFundingConfirmed(
                     Pair(this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.RbfRequested(cmd)), listOf(ChannelAction.Message.Send(txInitRbf)))
                 }
             }
-            is ChannelCommand.Close.MutualClose -> Pair(
-                this@WaitForFundingConfirmed,
-                listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName)))
-            )
+            is ChannelCommand.Close.MutualClose -> {
+                cmd.replyTo.complete(ChannelCloseResponse.Failure.ChannelNotOpenedYet("WaitForFundingConfirmed"))
+                Pair(
+                    this@WaitForFundingConfirmed,
+                    listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName)))
+                )
+            }
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.Commitment.CheckHtlcTimeout -> Pair(this@WaitForFundingConfirmed, listOf())
             is ChannelCommand.Commitment -> unhandled(cmd)

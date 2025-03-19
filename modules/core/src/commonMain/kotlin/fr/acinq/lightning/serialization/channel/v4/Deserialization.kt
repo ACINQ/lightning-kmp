@@ -211,14 +211,16 @@ object Deserialization {
             readNumber()
             readNumber()
             preferred
-        }
+        },
+        replyTo = null,
     )
 
     private fun Input.readShuttingDown(): ShuttingDown = ShuttingDown(
         commitments = readCommitments(),
         localShutdown = readLightningMessage() as Shutdown,
         remoteShutdown = readLightningMessage() as Shutdown,
-        closingFeerate = readNullable { FeeratePerKw(readNumber().sat) }
+        closingFeerate = readNullable { FeeratePerKw(readNumber().sat) },
+        replyTo = null,
     )
 
     private fun Input.readNegotiatingBeforeSimpleClose(): Negotiating {
@@ -241,7 +243,7 @@ object Deserialization {
             readNumber()
             preferred
         }
-        return Negotiating(commitments, closingFeerate, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOfNotNull(bestUnpublishedClosingTx), waitingSinceBlock = 0)
+        return Negotiating(commitments, closingFeerate, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOfNotNull(bestUnpublishedClosingTx), waitingSinceBlock = 0, replyTo = null)
     }
 
     private fun Input.readNegotiating(): Negotiating = Negotiating(
@@ -257,7 +259,8 @@ object Deserialization {
             )
         }.toList(),
         publishedClosingTxs = readCollection { readTransactionWithInputInfo() as ClosingTx }.toList(),
-        waitingSinceBlock = readNumber()
+        waitingSinceBlock = readNumber(),
+        replyTo = null,
     )
 
     private fun Input.readClosing(): Closing = Closing(

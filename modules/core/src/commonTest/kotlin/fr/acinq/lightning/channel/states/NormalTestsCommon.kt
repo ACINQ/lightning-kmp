@@ -31,6 +31,7 @@ import fr.acinq.lightning.transactions.incomings
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.*
 
 class NormalTestsCommon : LightningTestSuite() {
@@ -367,7 +368,7 @@ class NormalTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelCommand_Htlc_Add -- after having sent Shutdown`() {
         val (alice0, _) = reachNormal()
-        val (alice1, actionsAlice1) = alice0.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice1, actionsAlice1) = alice0.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         actionsAlice1.findOutgoingMessage<Shutdown>()
         assertIs<LNChannel<Normal>>(alice1)
         assertTrue(alice1.state.localShutdown != null && alice1.state.remoteShutdown == null)
@@ -387,7 +388,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice1.findOutgoingMessage<UpdateAddHtlc>()
 
         // at the same time bob initiates a closing
-        val (_, actionsBob1) = bob0.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (_, actionsBob1) = bob0.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         val shutdown = actionsBob1.findOutgoingMessage<Shutdown>()
 
         val (alice2, _) = alice1.process(ChannelCommand.MessageReceived(shutdown))
@@ -1500,7 +1501,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv ChannelCommand_Close_MutualClose -- no pending htlcs`() {
         val (alice, _) = reachNormal()
         assertNull(alice.state.localShutdown)
-        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(alice1)
         actions1.hasOutgoingMessage<Shutdown>()
         assertNotNull(alice1.state.localShutdown)
@@ -1511,7 +1512,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (alice1, _) = nodes
-        val (alice2, actions1) = alice1.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice2, actions1) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(alice2)
         actions1.hasCommandError<CannotCloseWithUnsignedOutgoingHtlcs>()
     }
@@ -1521,7 +1522,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (_, bob1) = nodes
-        val (bob2, actions1) = bob1.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (bob2, actions1) = bob1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(bob2)
         actions1.hasOutgoingMessage<Shutdown>()
         assertNotNull(bob2.state.localShutdown)
@@ -1531,7 +1532,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv ChannelCommand_Close_MutualClose -- with invalid final script`() {
         val (alice, _) = reachNormal()
         assertNull(alice.state.localShutdown)
-        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(ByteVector("00112233445566778899"), TestConstants.feeratePerKw))
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), ByteVector("00112233445566778899"), TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(alice1)
         actions1.hasCommandError<InvalidFinalScript>()
     }
@@ -1540,7 +1541,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv ChannelCommand_Close_MutualClose -- with native segwit script`() {
         val (alice, _) = reachNormal()
         assertNull(alice.state.localShutdown)
-        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(ByteVector("51050102030405"), TestConstants.feeratePerKw))
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), ByteVector("51050102030405"), TestConstants.feeratePerKw))
         actions1.hasOutgoingMessage<Shutdown>()
         assertIs<LNChannel<Normal>>(alice1)
         assertNotNull(alice1.state.localShutdown)
@@ -1551,7 +1552,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(1000.msat, payer = alice, payee = bob)
         val (alice1, _) = crossSign(nodes.first, nodes.second)
-        val (alice2, actions1) = alice1.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice2, actions1) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         actions1.hasOutgoingMessage<Shutdown>()
         assertIs<LNChannel<Normal>>(alice2)
         assertNotNull(alice2.state.localShutdown)
@@ -1561,11 +1562,11 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv ChannelCommand_Close_MutualClose -- two in a row`() {
         val (alice, _) = reachNormal()
         assertNull(alice.state.localShutdown)
-        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice1, actions1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(alice1)
         actions1.hasOutgoingMessage<Shutdown>()
         assertNotNull(alice1.state.localShutdown)
-        val (alice2, actions2) = alice1.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice2, actions2) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(alice2)
         actions2.hasCommandError<ClosingAlreadyInProgress>()
     }
@@ -1577,7 +1578,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = nodes.first.process(ChannelCommand.Commitment.Sign)
         assertIs<LNChannel<Normal>>(alice1)
         actions1.hasOutgoingMessage<CommitSig>()
-        val (alice2, actions2) = alice1.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice2, actions2) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(alice2)
         actions2.hasOutgoingMessage<Shutdown>()
     }
@@ -1587,10 +1588,10 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice, _) = reachNormal()
         val (alice1, actions1) = alice.process(ChannelCommand.Commitment.UpdateFee(FeeratePerKw(20_000.sat), false))
         actions1.hasOutgoingMessage<UpdateFee>()
-        val (alice2, actions2) = alice1.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice2, actions2) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         actions2.hasCommandError<CannotCloseWithUnsignedOutgoingUpdateFee>()
         val (alice3, _) = alice2.process(ChannelCommand.Commitment.Sign)
-        val (alice4, actions4) = alice3.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (alice4, actions4) = alice3.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         assertIs<LNChannel<Normal>>(alice4)
         actions4.hasOutgoingMessage<Shutdown>()
     }
@@ -1607,7 +1608,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv Shutdown -- with unacked sent htlcs`() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
-        val (bob1, actions1) = nodes.second.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (bob1, actions1) = nodes.second.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
 
         val shutdown = actions1.findOutgoingMessage<Shutdown>()
         val (alice1, actions2) = nodes.first.process(ChannelCommand.MessageReceived(shutdown))
@@ -1647,7 +1648,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
         // Bob initiates a close before receiving the signature.
         val (bob1, _) = bob.process(ChannelCommand.MessageReceived(updateFee))
-        val (bob2, bobActions2) = bob1.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (bob2, bobActions2) = bob1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         val shutdownBob = bobActions2.hasOutgoingMessage<Shutdown>()
 
         val (bob3, bobActions3) = bob2.process(ChannelCommand.MessageReceived(sigAlice))
@@ -1696,7 +1697,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
         val (_, bob1) = crossSign(nodes.first, nodes.second)
-        val (bob2, actions1) = bob1.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (bob2, actions1) = bob1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         actions1.hasOutgoingMessage<Shutdown>()
 
         // actual test begins
@@ -1725,7 +1726,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (nodes, _, _) = addHtlc(50000000.msat, payer = alice, payee = bob)
         val (alice1, actions1) = nodes.first.process(ChannelCommand.Commitment.Sign)
         actions1.hasOutgoingMessage<CommitSig>()
-        val (_, actions2) = bob.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (_, actions2) = bob.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         val shutdown = actions2.findOutgoingMessage<Shutdown>()
 
         // actual test begins
@@ -1738,7 +1739,7 @@ class NormalTestsCommon : LightningTestSuite() {
     fun `recv Shutdown -- while waiting for a RevokeAndAck with pending outgoing htlc`() {
         val (alice, bob) = reachNormal()
         // let's make bob send a Shutdown message
-        val (bob1, actions1) = bob.process(ChannelCommand.Close.MutualClose(null, TestConstants.feeratePerKw))
+        val (bob1, actions1) = bob.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw))
         val shutdown = actions1.findOutgoingMessage<Shutdown>()
 
         // this is just so we have something to sign
@@ -2017,7 +2018,7 @@ class NormalTestsCommon : LightningTestSuite() {
         assertNotNull(alice3.state.localCommitPublished)
         actions.hasOutgoingMessage<Error>()
         actions.has<ChannelAction.Storage.StoreState>()
-        val lcp = alice3.state.localCommitPublished!!
+        val lcp = alice3.state.localCommitPublished
         actions.hasPublishTx(lcp.commitTx)
         assertEquals(1, lcp.htlcTimeoutTxs().size)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
@@ -2032,16 +2033,16 @@ class NormalTestsCommon : LightningTestSuite() {
         actions.hasOutgoingMessage<Error>()
         actions.has<ChannelAction.Storage.StoreState>()
 
-        val lcp = bob.state.localCommitPublished!!
+        val lcp = bob.state.localCommitPublished
         assertNotNull(lcp.claimMainDelayedOutputTx)
         assertEquals(1, lcp.htlcSuccessTxs().size)
         Transaction.correctlySpends(lcp.htlcSuccessTxs().first().tx, lcp.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assertEquals(1, lcp.claimHtlcDelayedTxs.size)
         Transaction.correctlySpends(lcp.claimHtlcDelayedTxs.first().tx, lcp.htlcSuccessTxs().first().tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-        val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.htlcSuccessTxs().first().tx, lcp.claimHtlcDelayedTxs.first().tx)
+        val txs = setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx.tx, lcp.htlcSuccessTxs().first().tx, lcp.claimHtlcDelayedTxs.first().tx)
         assertEquals(txs, actions.findPublishTxs().toSet())
-        val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx, lcp.claimHtlcDelayedTxs.first().tx).map { it.txid }.toSet()
+        val watchConfirmed = listOf(lcp.commitTx, lcp.claimMainDelayedOutputTx.tx, lcp.claimHtlcDelayedTxs.first().tx).map { it.txid }.toSet()
         assertEquals(watchConfirmed, actions.findWatches<WatchConfirmed>().map { it.txId }.toSet())
         val watchSpent = setOf(lcp.htlcSuccessTxs().first().input.outPoint)
         assertEquals(watchSpent, actions.findWatches<WatchSpent>().map { OutPoint(lcp.commitTx, it.outputIndex.toLong()) }.toSet())
@@ -2163,11 +2164,11 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice4, actions) = alice3.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Closing>>(alice4)
         assertNotNull(alice4.state.localCommitPublished)
-        assertEquals(alice4.state.localCommitPublished!!.commitTx, aliceCommitTx.tx)
-        assertEquals(4, alice4.state.localCommitPublished!!.htlcTxs.size)
-        assertEquals(1, alice4.state.localCommitPublished!!.htlcSuccessTxs().size)
-        assertEquals(2, alice4.state.localCommitPublished!!.htlcTimeoutTxs().size)
-        assertEquals(3, alice4.state.localCommitPublished!!.claimHtlcDelayedTxs.size)
+        assertEquals(alice4.state.localCommitPublished.commitTx, aliceCommitTx.tx)
+        assertEquals(4, alice4.state.localCommitPublished.htlcTxs.size)
+        assertEquals(1, alice4.state.localCommitPublished.htlcSuccessTxs().size)
+        assertEquals(2, alice4.state.localCommitPublished.htlcTimeoutTxs().size)
+        assertEquals(3, alice4.state.localCommitPublished.claimHtlcDelayedTxs.size)
 
         val txs = actions.filterIsInstance<ChannelAction.Blockchain.PublishTx>().map { it.tx }
         assertEquals(8, txs.size)

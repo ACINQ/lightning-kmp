@@ -104,7 +104,7 @@ sealed class ChannelCommand {
     }
 
     sealed class Close : ChannelCommand() {
-        data class MutualClose(val scriptPubKey: ByteVector?, val feerate: FeeratePerKw) : Close(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
+        data class MutualClose(val replyTo: CompletableDeferred<ChannelCloseResponse>, val scriptPubKey: ByteVector?, val feerate: FeeratePerKw) : Close(), ForbiddenDuringSplice, ForbiddenDuringQuiescence
         data object ForceClose : Close()
     }
 
@@ -143,5 +143,19 @@ sealed class ChannelFundingResponse {
         data class AbortedByPeer(val reason: String) : Failure()
         data class UnexpectedMessage(val msg: LightningMessage) : Failure()
         data object Disconnected : Failure()
+    }
+}
+
+sealed class ChannelCloseResponse {
+    /** This response doesn't fully guarantee that the closing transaction will confirm: it can be RBF-ed if necessary. */
+    data class Success(val closingTxId: TxId, val closingFee: Satoshi) : ChannelCloseResponse()
+
+    sealed class Failure : ChannelCloseResponse() {
+        data class ChannelNotOpenedYet(val state: String) : Failure()
+        data object ChannelOffline : Failure()
+        data object ClosingAlreadyInProgress : Failure()
+        data class InvalidClosingAddress(val script: ByteVector) : Failure()
+        data class RbfFeerateTooLow(val proposed: FeeratePerKw, val expected: FeeratePerKw) : Failure()
+        data class Unknown(val reason: ChannelException) : Failure()
     }
 }

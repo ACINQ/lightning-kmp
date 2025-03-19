@@ -136,7 +136,10 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
             }
             is ChannelCommand.Commitment -> unhandled(cmd)
             is ChannelCommand.Htlc -> unhandled(cmd)
-            is ChannelCommand.Close.MutualClose -> Pair(this@Offline, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            is ChannelCommand.Close.MutualClose -> {
+                cmd.replyTo.complete(ChannelCloseResponse.Failure.ChannelOffline)
+                Pair(this@Offline, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            }
             is ChannelCommand.Close.ForceClose -> state.run { handleLocalError(cmd, ForcedLocalCommit(channelId)) }
             is ChannelCommand.Init -> unhandled(cmd)
             is ChannelCommand.Funding -> unhandled(cmd)
