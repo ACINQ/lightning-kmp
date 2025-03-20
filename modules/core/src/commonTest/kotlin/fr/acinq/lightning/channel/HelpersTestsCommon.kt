@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Bitcoin.computeP2PkhAddress
 import fr.acinq.bitcoin.Bitcoin.computeP2ShOfP2WpkhAddress
 import fr.acinq.bitcoin.Bitcoin.computeP2WpkhAddress
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.channel.Helpers.Closing.checkClosingDustAmounts
+import fr.acinq.lightning.channel.Helpers.Closing.isValidFinalScriptPubkey
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
@@ -52,30 +52,43 @@ class HelpersTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check closing tx amounts above dust`() {
-        val p2pkhBelowDust = listOf(TxOut(545.sat, Script.pay2pkh(randomKey().publicKey())))
-        val p2shBelowDust = listOf(TxOut(539.sat, Script.pay2sh(Hex.decode("0000000000000000000000000000000000000000"))))
-        val p2wpkhBelowDust = listOf(TxOut(293.sat, Script.pay2wpkh(randomKey().publicKey())))
-        val p2wshBelowDust = listOf(TxOut(329.sat, Script.pay2wsh(Hex.decode("0000000000000000000000000000000000000000"))))
-        val p2trBelowDust = listOf(TxOut(353.sat, Script.pay2tr(randomKey().publicKey().xOnly())))
-        val allOutputsAboveDust = listOf(
+        val outputsBelowDust = listOf(
+            TxOut(545.sat, Script.pay2pkh(randomKey().publicKey())),
+            TxOut(539.sat, Script.pay2sh(Hex.decode("0000000000000000000000000000000000000000"))),
+            TxOut(293.sat, Script.pay2wpkh(randomKey().publicKey())),
+            TxOut(329.sat, Script.pay2wsh(Hex.decode("0000000000000000000000000000000000000000"))),
+            TxOut(353.sat, Script.pay2tr(randomKey().publicKey().xOnly())),
+        )
+        outputsBelowDust.forEach { assertTrue(it.amount < Transactions.dustLimit(it.publicKeyScript)) }
+
+        val outputsAboveDust = listOf(
             TxOut(546.sat, Script.pay2pkh(randomKey().publicKey())),
             TxOut(540.sat, Script.pay2sh(Hex.decode("0000000000000000000000000000000000000000"))),
             TxOut(294.sat, Script.pay2wpkh(randomKey().publicKey())),
             TxOut(330.sat, Script.pay2wsh(Hex.decode("0000000000000000000000000000000000000000"))),
-            TxOut(354.sat, Script.pay2tr(randomKey().publicKey().xOnly()))
+            TxOut(354.sat, Script.pay2tr(randomKey().publicKey().xOnly())),
+            TxOut(0.sat, listOf(OP_RETURN, OP_PUSHDATA(Hex.decode("deadbeef")))),
         )
+        outputsAboveDust.forEach { assertTrue(it.amount >= Transactions.dustLimit(it.publicKeyScript)) }
+    }
 
-        fun toClosingTx(txOut: List<TxOut>): Transactions.TransactionWithInputInfo.ClosingTx {
-            val input = Transactions.InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000.sat, listOf()), listOf())
-            return Transactions.TransactionWithInputInfo.ClosingTx(input, Transaction(2, listOf(), txOut, 0), null)
-        }
+    @Test
+    fun `check final script validity`() {
+        val validScripts = listOf(
+            Script.write(Script.pay2pkh(randomKey().publicKey())).byteVector(),
+            Script.write(Script.pay2sh(Hex.decode("deadbeef"))).byteVector(),
+            Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector(),
+            Script.write(Script.pay2wsh(Hex.decode("deadbeef"))).byteVector(),
+            Script.write(Script.pay2tr(randomKey().publicKey().xOnly())).byteVector(),
+            Script.write(listOf(OP_RETURN, OP_PUSHDATA(Hex.decode("deadbeefdeadbeef")))).byteVector(),
+        )
+        validScripts.forEach { assertTrue(isValidFinalScriptPubkey(it, allowAnySegwit = true, allowOpReturn = true)) }
 
-        assertTrue(checkClosingDustAmounts(toClosingTx(allOutputsAboveDust)))
-        assertFalse(checkClosingDustAmounts(toClosingTx(p2pkhBelowDust)))
-        assertFalse(checkClosingDustAmounts(toClosingTx(p2shBelowDust)))
-        assertFalse(checkClosingDustAmounts(toClosingTx(p2wpkhBelowDust)))
-        assertFalse(checkClosingDustAmounts(toClosingTx(p2wshBelowDust)))
-        assertFalse(checkClosingDustAmounts(toClosingTx(p2trBelowDust)))
+        val invalidScripts = listOf(
+            Script.write(listOf(OP_RETURN, OP_PUSHDATA(Hex.decode("deadbeef")))).byteVector(),
+            Script.write(listOf(OP_RETURN, OP_PUSHDATA(ByteArray(81)))).byteVector(),
+        )
+        invalidScripts.forEach { assertFalse(isValidFinalScriptPubkey(it, allowAnySegwit = true, allowOpReturn = true)) }
     }
 
 }

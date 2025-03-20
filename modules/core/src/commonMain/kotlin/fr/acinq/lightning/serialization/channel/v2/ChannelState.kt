@@ -15,6 +15,8 @@
     PrivateKeyKSerializer::class,
     ShutdownSerializer::class,
     ClosingSignedSerializer::class,
+    ClosingCompleteSerializer::class,
+    ClosingSigSerializer::class,
     SatoshiKSerializer::class,
     UpdateAddHtlcSerializer::class,
     CommitSigSerializer::class,
@@ -24,6 +26,8 @@
     CommitSigTlvSerializer::class,
     ShutdownTlvSerializer::class,
     ClosingSignedTlvSerializer::class,
+    ClosingCompleteTlvSerializer::class,
+    ClosingSigTlvSerializer::class,
     ChannelReadyTlvSerializer::class,
     ChannelReestablishTlvSerializer::class,
     TlvStreamSerializer::class,
@@ -70,6 +74,12 @@ object ShutdownSerializer
 
 @Serializer(forClass = ClosingSigned::class)
 object ClosingSignedSerializer
+
+@Serializer(forClass = ClosingComplete::class)
+object ClosingCompleteSerializer
+
+@Serializer(forClass = ClosingSig::class)
+object ClosingSigSerializer
 
 @Serializer(forClass = ChannelUpdate::class)
 object ChannelUpdateSerializer
@@ -149,6 +159,12 @@ object CommitSigTlvSerializer
 
 @Serializer(forClass = ClosingSignedTlv::class)
 object ClosingSignedTlvSerializer
+
+@Serializer(forClass = ClosingCompleteTlv::class)
+object ClosingCompleteTlvSerializer
+
+@Serializer(forClass = ClosingSigTlv::class)
+object ClosingSigTlvSerializer
 
 @Serializer(forClass = ChannelReadyTlv::class)
 object ChannelReadyTlvSerializer
@@ -382,9 +398,7 @@ internal data class ChannelVersion(val bits: ByteVector) {
 }
 
 @Serializable
-internal data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned) {
-    fun export() = fr.acinq.lightning.channel.ClosingTxProposed(unsignedTx, localClosingSigned)
-}
+internal data class ClosingTxProposed(val unsignedTx: Transactions.TransactionWithInputInfo.ClosingTx, val localClosingSigned: ClosingSigned)
 
 @Serializable
 internal data class Commitments(
@@ -532,10 +546,10 @@ internal data class Normal(
         shortChannelId,
         channelUpdate,
         remoteChannelUpdate,
+        SpliceStatus.None,
         localShutdown,
         remoteShutdown,
         null,
-        SpliceStatus.None,
     )
 }
 
@@ -552,7 +566,7 @@ internal data class ShuttingDown(
         commitments.export(),
         localShutdown,
         remoteShutdown,
-        null
+        null,
     )
 }
 
@@ -574,10 +588,11 @@ internal data class Negotiating(
 
     override fun export() = Negotiating(
         commitments.export(),
-        localShutdown,
-        remoteShutdown,
-        closingTxProposed.map { x -> x.map { it.export() } },
-        bestUnpublishedClosingTx,
+        localShutdown.scriptPubKey,
+        remoteShutdown.scriptPubKey,
+        listOf(),
+        listOf(),
+        0,
         null
     )
 }

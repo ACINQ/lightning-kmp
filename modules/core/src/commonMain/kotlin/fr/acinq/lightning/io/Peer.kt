@@ -629,6 +629,27 @@ class Peer(
     }
 
     /**
+     * Estimate the actual fee that will be paid when closing the given channel at the target feerate.
+     */
+    fun estimateFeeForMutualClose(channelId: ByteVector32, targetFeerate: FeeratePerKw): ChannelManagementFees? {
+        return channels.values
+            .filterIsInstance<ChannelStateWithCommitments>()
+            .filter { it is Normal || it is ShuttingDown || it is Negotiating }
+            .find { it.channelId == channelId }
+            ?.let { channel ->
+                // We cannot be sure of the scripts that will end up being used, but that shouldn't change the fee too much.
+                Helpers.Closing.makeClosingTxs(
+                    nodeParams.keyManager.channelKeys(channel.commitments.params.localParams.fundingKeyPath),
+                    channel.commitments.latest,
+                    channel.commitments.params.localParams.defaultFinalScriptPubKey,
+                    channel.commitments.params.localParams.defaultFinalScriptPubKey,
+                    targetFeerate,
+                    0
+                ).map { ChannelManagementFees(miningFee = it.second.fees, serviceFee = 0.sat) }.right
+            }
+    }
+
+    /**
      * Do a splice out using any suitable channel.
      *
      * @return [ChannelFundingResponse] if a splice was attempted, or {null} if no suitable channel was found
@@ -691,15 +712,31 @@ class Peer(
             }
     }
 
+    suspend fun mutualClose(channelId: ByteVector32, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelCloseResponse? {
+        return channels.values
+            .filterIsInstance<ChannelStateWithCommitments>()
+            .filter { it is Normal || it is ShuttingDown || it is Negotiating }
+            .find { it.channelId == channelId }
+            ?.let {
+                val closeCommand = ChannelCommand.Close.MutualClose(
+                    replyTo = CompletableDeferred(),
+                    scriptPubKey = scriptPubKey,
+                    feerate = feerate
+                )
+                send(WrappedChannelCommand(channelId, closeCommand))
+                closeCommand.replyTo.await()
+            }
+    }
+
     suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
         this.launch {
             res.complete(
                 eventsFlow
-                .filterIsInstance<SendPaymentResult>()
-                .filter { it.request.paymentId == paymentId }
-                .first()
+                    .filterIsInstance<SendPaymentResult>()
+                    .filter { it.request.paymentId == paymentId }
+                    .first()
             )
         }
         send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Normal(paymentRequest)))
@@ -712,9 +749,9 @@ class Peer(
         this.launch {
             res.complete(
                 eventsFlow
-                .filterIsInstance<SendPaymentResult>()
-                .filter { it.request.paymentId == paymentId }
-                .first()
+                    .filterIsInstance<SendPaymentResult>()
+                    .filter { it.request.paymentId == paymentId }
+                    .first()
             )
         }
         send(PayOffer(paymentId, payerKey, payerNote, amount, offer, fetchInvoiceTimeout))

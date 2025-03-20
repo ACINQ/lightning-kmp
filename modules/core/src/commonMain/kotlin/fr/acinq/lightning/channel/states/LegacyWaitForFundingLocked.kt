@@ -45,10 +45,10 @@ data class LegacyWaitForFundingLocked(
                         shortChannelId,
                         initialChannelUpdate,
                         null,
-                        null,
-                        null,
-                        null,
                         SpliceStatus.None,
+                        null,
+                        null,
+                        null,
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),
@@ -66,7 +66,10 @@ data class LegacyWaitForFundingLocked(
                 }
                 is WatchConfirmedTriggered -> unhandled(cmd)
             }
-            is ChannelCommand.Close.MutualClose -> Pair(this@LegacyWaitForFundingLocked, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))
+            is ChannelCommand.Close.MutualClose -> {
+                cmd.replyTo.complete(ChannelCloseResponse.Failure.ChannelNotOpenedYet(this::class.toString()))
+                Pair(this@LegacyWaitForFundingLocked, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, this::class.toString()))))
+            }
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.Init -> unhandled(cmd)
             is ChannelCommand.Funding -> unhandled(cmd)

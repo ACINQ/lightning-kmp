@@ -251,5 +251,5 @@
             ]
         }
     },
-    "closingFeerates": null
+    "closeCommand": null
 }

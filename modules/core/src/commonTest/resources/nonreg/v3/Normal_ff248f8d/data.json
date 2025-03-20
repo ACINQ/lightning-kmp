@@ -183,8 +183,8 @@
         "feeProportionalMillionths": 150,
         "htlcMaximumMsat": 150000
     },
+    "spliceStatus": "None",
     "localShutdown": null,
     "remoteShutdown": null,
-    "closingFeerates": null,
-    "spliceStatus": "None"
+    "closeCommand": null
 }

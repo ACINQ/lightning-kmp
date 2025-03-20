@@ -77,10 +77,10 @@ data class WaitForChannelReady(
                         shortChannelId,
                         initialChannelUpdate,
                         null,
-                        null,
-                        null,
-                        null,
                         SpliceStatus.None,
+                        null,
+                        null,
+                        null,
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),
@@ -96,7 +96,10 @@ data class WaitForChannelReady(
                 is WatchConfirmedTriggered -> updateFundingTxStatus(cmd.watch)
                 is WatchSpentTriggered -> handlePotentialForceClose(cmd.watch)
             }
-            is ChannelCommand.Close.MutualClose -> Pair(this@WaitForChannelReady, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            is ChannelCommand.Close.MutualClose -> {
+                cmd.replyTo.complete(ChannelCloseResponse.Failure.ChannelNotOpenedYet("WaitForChannelReady"))
+                Pair(this@WaitForChannelReady, listOf(ChannelAction.ProcessCmdRes.NotExecuted(cmd, CommandUnavailableInThisState(channelId, stateName))))
+            }
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.Commitment.CheckHtlcTimeout -> Pair(this@WaitForChannelReady, listOf())
             is ChannelCommand.Commitment -> unhandled(cmd)
