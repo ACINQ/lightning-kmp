@@ -45,10 +45,10 @@ data class LegacyWaitForFundingLocked(
                         shortChannelId,
                         initialChannelUpdate,
                         null,
-                        null,
-                        null,
-                        null,
                         SpliceStatus.None,
+                        null,
+                        null,
+                        null,
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),

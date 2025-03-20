@@ -172,8 +172,8 @@
         "htlcMaximumMsat": 1000000000
     },
     "remoteChannelUpdate": null,
+    "spliceStatus": "None",
     "localShutdown": null,
     "remoteShutdown": null,
-    "closingFeerate": null,
-    "spliceStatus": "None"
+    "closeCommand": null
 }

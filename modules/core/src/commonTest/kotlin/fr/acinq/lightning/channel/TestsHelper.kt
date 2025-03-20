@@ -66,8 +66,6 @@ internal inline fun <reified T : ChannelAction> List<ChannelAction>.find() = fin
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.has() = assertTrue { any { it is T } }
 internal inline fun <reified T : ChannelAction> List<ChannelAction>.doesNotHave() = assertTrue { none { it is T } }
 
-fun <S : ChannelState> LNChannel<S>.updateFeerate(feerate: FeeratePerKw): LNChannel<S> = this.copy(ctx = this.ctx.copy(onChainFeerates = MutableStateFlow(OnChainFeerates(feerate, feerate, feerate, feerate))))
-
 fun Features.add(vararg pairs: Pair<Feature, FeatureSupport>): Features = this.copy(activated = this.activated + mapOf(*pairs))
 fun Features.remove(vararg features: Feature): Features = this.copy(activated = activated.filterKeys { f -> !features.contains(f) })
 
@@ -127,17 +125,18 @@ data class LNChannel<out S : ChannelState>(
             else -> state
         }
 
-        fun removeReplyTo(state: PersistedChannelState): PersistedChannelState = when (state) {
-            is Normal -> state.copy(closingReplyTo = null)
-            is ShuttingDown -> state.copy(replyTo = null)
-            is Negotiating -> state.copy(replyTo = null)
+        val dummyReplyTo = CompletableDeferred<ChannelCloseResponse>()
+        fun ignoreClosingReplyTo(state: PersistedChannelState): PersistedChannelState = when (state) {
+            is Normal -> state.copy(closeCommand = state.closeCommand?.copy(replyTo = dummyReplyTo))
+            is ShuttingDown -> state.copy(closeCommand = state.closeCommand?.copy(replyTo = dummyReplyTo))
+            is Negotiating -> state.copy(closeCommand = state.closeCommand?.copy(replyTo = dummyReplyTo))
             else -> state
         }
 
         val serialized = Serialization.serialize(state)
         val deserialized = Serialization.deserialize(serialized).value
 
-        assertEquals(removeTemporaryStatuses(removeReplyTo(state)), deserialized, "serialization error")
+        assertEquals(removeTemporaryStatuses(ignoreClosingReplyTo(state)), ignoreClosingReplyTo(deserialized), "serialization error")
     }
 
     private fun checkSerialization(actions: List<ChannelAction>) {

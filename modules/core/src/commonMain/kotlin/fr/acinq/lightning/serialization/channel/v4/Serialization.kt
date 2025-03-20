@@ -144,9 +144,6 @@ object Serialization {
         writeNumber(shortChannelId.toLong())
         writeLightningMessage(channelUpdate)
         writeNullable(remoteChannelUpdate) { writeLightningMessage(it) }
-        writeNullable(localShutdown) { writeLightningMessage(it) }
-        writeNullable(remoteShutdown) { writeLightningMessage(it) }
-        writeNullable(closingFeerate) { writeNumber(it.toLong()) }
         when (spliceStatus) {
             is SpliceStatus.WaitingForSigs -> {
                 write(0x01)
@@ -158,18 +155,20 @@ object Serialization {
                 write(0x00)
             }
         }
+        writeNullable(localShutdown) { writeLightningMessage(it) }
+        writeNullable(remoteShutdown) { writeLightningMessage(it) }
+        writeNullable(closeCommand) { writeCloseCommand(it) }
     }
 
     private fun Output.writeShuttingDown(o: ShuttingDown) = o.run {
         writeCommitments(commitments)
         writeLightningMessage(localShutdown)
         writeLightningMessage(remoteShutdown)
-        writeNullable(closingFeerate) { writeNumber(it.toLong()) }
+        writeNullable(closeCommand) { writeCloseCommand(it) }
     }
 
     private fun Output.writeNegotiating(o: Negotiating) = o.run {
         writeCommitments(commitments)
-        writeNullable(lastClosingFeerate) { writeNumber(it.toLong()) }
         writeDelimited(localScript.toByteArray())
         writeDelimited(remoteScript.toByteArray())
         writeCollection(proposedClosingTxs) {
@@ -179,6 +178,7 @@ object Serialization {
         }
         writeCollection(publishedClosingTxs) { writeTransactionWithInputInfo(it) }
         writeNumber(waitingSinceBlock)
+        writeNullable(closeCommand) { writeCloseCommand(it) }
     }
 
     private fun Output.writeClosing(o: Closing) = o.run {
@@ -667,5 +667,10 @@ object Serialization {
                 write(0x0e); writeInputInfo(o.input); writeBtcObject(o.tx)
             }
         }
+    }
+
+    private fun Output.writeCloseCommand(o: ChannelCommand.Close.MutualClose) = o.run {
+        writeNullable(scriptPubKey) { writeDelimited(it.toByteArray()) }
+        writeNumber(feerate.toLong())
     }
 }

@@ -32,6 +32,7 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 
 object Deserialization {
 
@@ -149,78 +150,79 @@ object Deserialization {
         shortChannelId = ShortChannelId(readNumber()),
         channelUpdate = readLightningMessage() as ChannelUpdate,
         remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate },
-        localShutdown = readNullable { readLightningMessage() as Shutdown },
-        remoteShutdown = readNullable { readLightningMessage() as Shutdown },
-        closingFeerate = readNullable { FeeratePerKw(readNumber().sat) },
         spliceStatus = when (val discriminator = read()) {
             0x00 -> SpliceStatus.None
             0x01 -> SpliceStatus.WaitingForSigs(readInteractiveTxSigningSession(), readNullable { readLiquidityPurchase() }, readCollection { readChannelOrigin() }.toList())
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
         },
-    )
-
-    private fun Input.readNormalBeforeSimpleClose(): Normal = Normal(
-        commitments = readCommitments(),
-        shortChannelId = ShortChannelId(readNumber()),
-        channelUpdate = readLightningMessage() as ChannelUpdate,
-        remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate },
         localShutdown = readNullable { readLightningMessage() as Shutdown },
         remoteShutdown = readNullable { readLightningMessage() as Shutdown },
-        closingFeerate = readNullable {
+        closeCommand = readNullable { readCloseCommand() },
+    )
+
+    private fun Input.readNormalBeforeSimpleClose(): Normal {
+        val commitments = readCommitments()
+        val shortChannelId = ShortChannelId(readNumber())
+        val channelUpdate = readLightningMessage() as ChannelUpdate
+        val remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate }
+        val localShutdown = readNullable { readLightningMessage() as Shutdown }
+        val remoteShutdown = readNullable { readLightningMessage() as Shutdown }
+        val closeCommand = readNullable {
             // We used to store three closing feerates for fee range negotiation.
             val preferred = FeeratePerKw(readNumber().sat)
             readNumber()
             readNumber()
-            preferred
-        },
-        spliceStatus = when (val discriminator = read()) {
+            ChannelCommand.Close.MutualClose(CompletableDeferred(), localShutdown?.scriptPubKey, preferred)
+        }
+        val spliceStatus = when (val discriminator = read()) {
             0x00 -> SpliceStatus.None
             0x01 -> SpliceStatus.WaitingForSigs(readInteractiveTxSigningSession(), readNullable { readLiquidityPurchase() }, readCollection { readChannelOrigin() }.toList())
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
-        },
-    )
+        }
+        return Normal(commitments, shortChannelId, channelUpdate, remoteChannelUpdate, spliceStatus, localShutdown, remoteShutdown, closeCommand)
+    }
 
-    private fun Input.readNormalLegacy(): Normal = Normal(
-        commitments = readCommitments(),
-        shortChannelId = ShortChannelId(readNumber()),
-        channelUpdate = readLightningMessage() as ChannelUpdate,
-        remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate },
-        localShutdown = readNullable { readLightningMessage() as Shutdown },
-        remoteShutdown = readNullable { readLightningMessage() as Shutdown },
-        closingFeerate = readNullable {
+    private fun Input.readNormalLegacy(): Normal {
+        val commitments = readCommitments()
+        val shortChannelId = ShortChannelId(readNumber())
+        val channelUpdate = readLightningMessage() as ChannelUpdate
+        val remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate }
+        val localShutdown = readNullable { readLightningMessage() as Shutdown }
+        val remoteShutdown = readNullable { readLightningMessage() as Shutdown }
+        val closeCommand = readNullable {
             // We used to store three closing feerates for fee range negotiation.
             val preferred = FeeratePerKw(readNumber().sat)
             readNumber()
             readNumber()
-            preferred
-        },
-        spliceStatus = when (val discriminator = read()) {
+            ChannelCommand.Close.MutualClose(CompletableDeferred(), localShutdown?.scriptPubKey, preferred)
+        }
+        val spliceStatus = when (val discriminator = read()) {
             0x00 -> SpliceStatus.None
             0x01 -> SpliceStatus.WaitingForSigs(readInteractiveTxSigningSession(), null, readCollection { readChannelOrigin() }.toList())
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
-        },
-    )
+        }
+        return Normal(commitments, shortChannelId, channelUpdate, remoteChannelUpdate, spliceStatus, localShutdown, remoteShutdown, closeCommand)
+    }
 
-    private fun Input.readShuttingDownBeforeSimpleClose(): ShuttingDown = ShuttingDown(
-        commitments = readCommitments(),
-        localShutdown = readLightningMessage() as Shutdown,
-        remoteShutdown = readLightningMessage() as Shutdown,
-        closingFeerate = readNullable {
+    private fun Input.readShuttingDownBeforeSimpleClose(): ShuttingDown {
+        val commitments = readCommitments()
+        val localShutdown = readLightningMessage() as Shutdown
+        val remoteShutdown = readLightningMessage() as Shutdown
+        val closeCommand = readNullable {
             // We used to store three closing feerates for fee range negotiation.
             val preferred = FeeratePerKw(readNumber().sat)
             readNumber()
             readNumber()
-            preferred
-        },
-        replyTo = null,
-    )
+            ChannelCommand.Close.MutualClose(CompletableDeferred(), localShutdown.scriptPubKey, preferred)
+        }
+        return ShuttingDown(commitments, localShutdown, remoteShutdown, closeCommand)
+    }
 
     private fun Input.readShuttingDown(): ShuttingDown = ShuttingDown(
         commitments = readCommitments(),
         localShutdown = readLightningMessage() as Shutdown,
         remoteShutdown = readLightningMessage() as Shutdown,
-        closingFeerate = readNullable { FeeratePerKw(readNumber().sat) },
-        replyTo = null,
+        closeCommand = readNullable { readCloseCommand() },
     )
 
     private fun Input.readNegotiatingBeforeSimpleClose(): Negotiating {
@@ -236,19 +238,18 @@ object Deserialization {
             }.toList()
         }.toList()
         val bestUnpublishedClosingTx = readNullable { readTransactionWithInputInfo() as ClosingTx }
-        val closingFeerate = readNullable {
+        val closeCommand = readNullable {
             // We used to store three closing feerates for fee range negotiation.
             val preferred = FeeratePerKw(readNumber().sat)
             readNumber()
             readNumber()
-            preferred
+            ChannelCommand.Close.MutualClose(CompletableDeferred(), localShutdown.scriptPubKey, preferred)
         }
-        return Negotiating(commitments, closingFeerate, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOfNotNull(bestUnpublishedClosingTx), waitingSinceBlock = 0, replyTo = null)
+        return Negotiating(commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOfNotNull(bestUnpublishedClosingTx), waitingSinceBlock = 0, closeCommand)
     }
 
     private fun Input.readNegotiating(): Negotiating = Negotiating(
         commitments = readCommitments(),
-        lastClosingFeerate = readNullable { FeeratePerKw(readNumber().sat) },
         localScript = readDelimitedByteArray().byteVector(),
         remoteScript = readDelimitedByteArray().byteVector(),
         proposedClosingTxs = readCollection {
@@ -260,7 +261,7 @@ object Deserialization {
         }.toList(),
         publishedClosingTxs = readCollection { readTransactionWithInputInfo() as ClosingTx }.toList(),
         waitingSinceBlock = readNumber(),
-        replyTo = null,
+        closeCommand = readNullable { readCloseCommand() },
     )
 
     private fun Input.readClosing(): Closing = Closing(
@@ -801,4 +802,10 @@ object Deserialization {
         0x0e -> SpliceTx(input = readInputInfo(), tx = readTransaction())
         else -> error("unknown discriminator $discriminator for class ${Transactions.TransactionWithInputInfo::class}")
     }
+
+    private fun Input.readCloseCommand(): ChannelCommand.Close.MutualClose = ChannelCommand.Close.MutualClose(
+        replyTo = CompletableDeferred(),
+        scriptPubKey = readNullable { readDelimitedByteArray().toByteVector() },
+        feerate = FeeratePerKw(readNumber().sat),
+    )
 }

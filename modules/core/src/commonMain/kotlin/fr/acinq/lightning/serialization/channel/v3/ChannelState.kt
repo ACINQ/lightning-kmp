@@ -546,10 +546,10 @@ internal data class Normal(
         shortChannelId,
         channelUpdate,
         remoteChannelUpdate,
+        SpliceStatus.None,
         localShutdown,
         remoteShutdown,
-        closingFeerates?.preferred,
-        SpliceStatus.None,
+        null,
     )
 }
 
@@ -567,7 +567,6 @@ internal data class ShuttingDown(
         commitments.export(),
         localShutdown,
         remoteShutdown,
-        closingFeerates?.preferred,
         null,
     )
 }
@@ -591,7 +590,6 @@ internal data class Negotiating(
 
     override fun export() = Negotiating(
         commitments.export(),
-        closingFeerates?.preferred,
         localShutdown.scriptPubKey,
         remoteShutdown.scriptPubKey,
         listOf(),

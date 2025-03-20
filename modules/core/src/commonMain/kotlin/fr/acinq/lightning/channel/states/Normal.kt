@@ -8,26 +8,21 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.serialization.Transient
 
 data class Normal(
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
     val channelUpdate: ChannelUpdate,
     val remoteChannelUpdate: ChannelUpdate?,
+    val spliceStatus: SpliceStatus,
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?,
-    val closingFeerate: FeeratePerKw?,
-    val spliceStatus: SpliceStatus,
-    @Transient
-    val closingReplyTo: CompletableDeferred<ChannelCloseResponse>? = null,
+    val closeCommand: ChannelCommand.Close.MutualClose?,
 ) : ChannelStateWithCommitments() {
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -114,7 +109,7 @@ data class Normal(
                     }
                     else -> {
                         val shutdown = Shutdown(channelId, localScriptPubkey)
-                        val newState = this@Normal.copy(localShutdown = shutdown, closingFeerate = cmd.feerate, closingReplyTo = cmd.replyTo)
+                        val newState = this@Normal.copy(localShutdown = shutdown, closeCommand = cmd)
                         val actions = listOf(ChannelAction.Storage.StoreState(newState), ChannelAction.Message.Send(shutdown))
                         Pair(newState, actions)
                     }
@@ -253,10 +248,10 @@ data class Normal(
                                 actions.add(ChannelAction.Message.Send(localShutdown))
                                 if (commitments1.latest.remoteCommit.spec.htlcs.isNotEmpty()) {
                                     // we just signed htlcs that need to be resolved now
-                                    ShuttingDown(commitments1, localShutdown, remoteShutdown, closingFeerate, closingReplyTo)
+                                    ShuttingDown(commitments1, localShutdown, remoteShutdown, closeCommand)
                                 } else {
                                     logger.warning { "we have no htlcs but have not replied with our shutdown yet, this should never happen" }
-                                    Negotiating(commitments1, closingFeerate, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOf(), currentBlockHeight.toLong(), closingReplyTo)
+                                    Negotiating(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOf(), currentBlockHeight.toLong(), closeCommand)
                                 }
                             } else {
                                 this@Normal.copy(commitments = commitments1)
@@ -316,10 +311,10 @@ data class Normal(
                                 if (this@Normal.localShutdown == null) actions.add(ChannelAction.Message.Send(localShutdown))
                                 val commitments1 = commitments.copy(remoteChannelData = cmd.message.channelData)
                                 when {
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closingReplyTo, commitments1, closingFeerate, localShutdown, cmd.message, actions)
+                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, cmd.message, actions)
                                     else -> {
                                         // there are some pending changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
-                                        val nextState = ShuttingDown(commitments1, localShutdown, cmd.message, closingFeerate, closingReplyTo)
+                                        val nextState = ShuttingDown(commitments1, localShutdown, cmd.message, closeCommand)
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         Pair(nextState, actions)
                                     }

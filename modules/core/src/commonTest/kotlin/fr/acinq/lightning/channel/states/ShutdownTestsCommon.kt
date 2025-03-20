@@ -476,7 +476,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         // Alice updates our closing feerate.
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw * 1.5))
         assertIs<ShuttingDown>(alice1.state)
-        assertEquals(TestConstants.feeratePerKw * 1.5, alice1.state.closingFeerate)
+        assertEquals(TestConstants.feeratePerKw * 1.5, alice1.state.closeCommand?.feerate)
         assertEquals(1, actionsAlice1.size)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
 
@@ -484,7 +484,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val aliceScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), aliceScript, TestConstants.feeratePerKw * 2))
         assertIs<ShuttingDown>(alice2.state)
-        assertEquals(TestConstants.feeratePerKw * 2, alice2.state.closingFeerate)
+        assertEquals(TestConstants.feeratePerKw * 2, alice2.state.closeCommand?.feerate)
         assertEquals(2, actionsAlice2.size)
         actionsAlice2.has<ChannelAction.Storage.StoreState>()
         val shutdownAlice = actionsAlice2.findOutgoingMessage<Shutdown>()
@@ -495,7 +495,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val bobScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
         val (bob1, actionsBob1) = bob.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), bobScript, TestConstants.feeratePerKw * 1.5))
         assertIs<ShuttingDown>(bob1.state)
-        assertEquals(TestConstants.feeratePerKw * 1.5, bob1.state.closingFeerate)
+        assertEquals(TestConstants.feeratePerKw * 1.5, bob1.state.closeCommand?.feerate)
         assertEquals(2, actionsBob1.size)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()

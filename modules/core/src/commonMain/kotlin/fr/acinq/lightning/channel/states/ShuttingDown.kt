@@ -3,20 +3,15 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.wire.*
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.serialization.Transient
 
 data class ShuttingDown(
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
-    val closingFeerate: FeeratePerKw?,
-    @Transient
-    val replyTo: CompletableDeferred<ChannelCloseResponse>?,
+    val closeCommand: ChannelCommand.Close.MutualClose?,
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -50,7 +45,7 @@ data class ShuttingDown(
                             is Either.Right -> {
                                 val (commitments1, revocation) = result.value
                                 when {
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(replyTo, commitments1, closingFeerate, localShutdown, remoteShutdown, listOf(ChannelAction.Message.Send(revocation)))
+                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, remoteShutdown, listOf(ChannelAction.Message.Send(revocation)))
                                     else -> {
                                         val nextState = this@ShuttingDown.copy(commitments = commitments1)
                                         val actions = buildList {
@@ -73,7 +68,7 @@ data class ShuttingDown(
                         is Either.Right -> {
                             val (commitments1, actions) = result.value
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(replyTo, commitments1, closingFeerate, localShutdown, remoteShutdown, actions)
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, remoteShutdown, actions)
                                 else -> {
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
                                     val actions1 = buildList {
@@ -147,13 +142,14 @@ data class ShuttingDown(
             is ChannelCommand.Close.MutualClose -> {
                 // We may be updating our closing script or feerate.
                 val localShutdown1 = cmd.scriptPubKey?.let { if (it != localShutdown.scriptPubKey) localShutdown.copy(scriptPubKey = it) else null }
+                closeCommand?.replyTo?.complete(ChannelCloseResponse.Failure.ClosingUpdated(cmd.feerate, cmd.scriptPubKey))
                 when (localShutdown1) {
                     null -> {
-                        val nextState = this@ShuttingDown.copy(closingFeerate = cmd.feerate, replyTo = cmd.replyTo)
+                        val nextState = this@ShuttingDown.copy(closeCommand = cmd)
                         Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
                     }
                     else -> {
-                        val nextState = this@ShuttingDown.copy(closingFeerate = cmd.feerate, localShutdown = localShutdown1, replyTo = cmd.replyTo)
+                        val nextState = this@ShuttingDown.copy(closeCommand = cmd, localShutdown = localShutdown1)
                         val actions = listOf(
                             ChannelAction.Storage.StoreState(nextState),
                             ChannelAction.Message.Send(localShutdown1),

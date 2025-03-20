@@ -70,6 +70,7 @@
     JsonSerializers.CommitmentChangesSerializer::class,
     JsonSerializers.LocalFundingStatusSerializer::class,
     JsonSerializers.RemoteFundingStatusSerializer::class,
+    JsonSerializers.CloseCommandSerializer::class,
     JsonSerializers.ShutdownSerializer::class,
     JsonSerializers.ClosingCompleteSerializer::class,
     JsonSerializers.ClosingSigSerializer::class,
@@ -115,9 +116,6 @@ import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.ShaChain
-import fr.acinq.lightning.json.JsonSerializers.LongSerializer
-import fr.acinq.lightning.json.JsonSerializers.StringSerializer
-import fr.acinq.lightning.json.JsonSerializers.SurrogateSerializer
 import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.Bolt11Invoice.TaggedField
 import fr.acinq.lightning.transactions.CommitmentSpec
@@ -298,6 +296,13 @@ object JsonSerializers {
     object RbfStatusSerializer
 
     object SpliceStatusSerializer : StringSerializer<SpliceStatus>({ it::class.simpleName!! })
+
+    @Serializable
+    data class CloseCommandSurrogate(val scriptPubKey: ByteVector?, val feerate: FeeratePerKw)
+    object CloseCommandSerializer : SurrogateSerializer<ChannelCommand.Close.MutualClose, CloseCommandSurrogate>(
+        transform = { CloseCommandSurrogate(it.scriptPubKey, it.feerate) },
+        delegateSerializer = CloseCommandSurrogate.serializer(),
+    )
 
     @Serializer(forClass = LiquidityAds.Fees::class)
     object LiquidityFeesSerializer
@@ -666,6 +671,7 @@ object JsonSerializers {
         val features: Features?,
         val unknownTlvs: List<GenericTlv>?
     )
+
     object OfferSerializer : SurrogateSerializer<OfferTypes.Offer, OfferSurrogate>(
         transform = { o ->
             OfferSurrogate(

@@ -7,17 +7,13 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.wire.*
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.serialization.Transient
 
 data class Negotiating(
     override val commitments: Commitments,
-    val lastClosingFeerate: FeeratePerKw?,
     val localScript: ByteVector,
     val remoteScript: ByteVector,
     // Closing transactions we created, where we pay the fees (unsigned).
@@ -26,8 +22,7 @@ data class Negotiating(
     // which they sent a signature, and their closing transactions that we signed.
     val publishedClosingTxs: List<ClosingTx>,
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
-    @Transient
-    val replyTo: CompletableDeferred<ChannelCloseResponse>?,
+    val closeCommand: ChannelCommand.Close.MutualClose?,
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -83,8 +78,8 @@ data class Negotiating(
                         is Either.Right -> {
                             val signedClosingTx = result.value
                             logger.debug { "received signatures for local mutual close transaction: ${signedClosingTx.tx}" }
-                            replyTo?.complete(ChannelCloseResponse.Success(signedClosingTx.tx.txid, signedClosingTx.fee))
-                            val nextState = this@Negotiating.copy(publishedClosingTxs = publishedClosingTxs + signedClosingTx, replyTo = null)
+                            closeCommand?.replyTo?.complete(ChannelCloseResponse.Success(signedClosingTx.tx.txid, signedClosingTx.fee))
+                            val nextState = this@Negotiating.copy(publishedClosingTxs = publishedClosingTxs + signedClosingTx)
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
                                 ChannelAction.Blockchain.PublishTx(signedClosingTx),
@@ -142,9 +137,9 @@ data class Negotiating(
             is ChannelCommand.Htlc -> unhandled(cmd)
             is ChannelCommand.Close.ForceClose -> handleLocalError(cmd, ForcedLocalCommit(channelId))
             is ChannelCommand.Close.MutualClose -> {
-                if (lastClosingFeerate?.let { cmd.feerate < it } == true) {
-                    cmd.replyTo.complete(ChannelCloseResponse.Failure.RbfFeerateTooLow(cmd.feerate, lastClosingFeerate * 1.2))
-                    handleCommandError(cmd, InvalidRbfFeerate(channelId, cmd.feerate, lastClosingFeerate * 1.2))
+                if (closeCommand?.feerate?.let { cmd.feerate < it } == true) {
+                    cmd.replyTo.complete(ChannelCloseResponse.Failure.RbfFeerateTooLow(cmd.feerate, closeCommand.feerate * 1.2))
+                    handleCommandError(cmd, InvalidRbfFeerate(channelId, cmd.feerate, closeCommand.feerate * 1.2))
                 } else {
                     when (val result = Helpers.Closing.makeClosingTxs(channelKeys(), commitments.latest, cmd.scriptPubKey ?: localScript, remoteScript, cmd.feerate, currentBlockHeight.toLong())) {
                         is Either.Left -> {
@@ -154,7 +149,10 @@ data class Negotiating(
                         is Either.Right -> {
                             val (closingTxs, closingComplete) = result.value
                             logger.debug { "signing local mutual close transactions: $closingTxs" }
-                            val nextState = this@Negotiating.copy(replyTo = cmd.replyTo, localScript = closingComplete.closerScriptPubKey, lastClosingFeerate = cmd.feerate, proposedClosingTxs = proposedClosingTxs + closingTxs)
+                            // If we never received our peer's closing_sig, the previous command was not completed, so we must complete now.
+                            // If it was already completed because we received closing_sig, this will be a no-op.
+                            closeCommand?.replyTo?.complete(ChannelCloseResponse.Failure.ClosingUpdated(cmd.feerate, cmd.scriptPubKey))
+                            val nextState = this@Negotiating.copy(closeCommand = cmd, localScript = closingComplete.closerScriptPubKey, proposedClosingTxs = proposedClosingTxs + closingTxs)
                             val actions = buildList {
                                 add(ChannelAction.Storage.StoreState(nextState))
                                 add(ChannelAction.Message.Send(closingComplete))

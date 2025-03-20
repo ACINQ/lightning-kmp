@@ -154,6 +154,7 @@ sealed class ChannelCloseResponse {
         data class ChannelNotOpenedYet(val state: String) : Failure()
         data object ChannelOffline : Failure()
         data object ClosingAlreadyInProgress : Failure()
+        data class ClosingUpdated(val updatedFeerate: FeeratePerKw, val updatedScript: ByteVector?) : Failure()
         data class InvalidClosingAddress(val script: ByteVector) : Failure()
         data class RbfFeerateTooLow(val proposed: FeeratePerKw, val expected: FeeratePerKw) : Failure()
         data class Unknown(val reason: ChannelException) : Failure()
