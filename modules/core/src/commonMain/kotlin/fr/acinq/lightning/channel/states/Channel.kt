@@ -192,7 +192,7 @@ sealed class ChannelState {
 
     internal fun ChannelContext.doPublish(tx: ClosingTx, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
         ChannelAction.Blockchain.PublishTx(tx),
-        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepth(tx.amountIn), WatchConfirmed.ClosingTxConfirmed))
+        ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed))
     )
 
     internal suspend fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
@@ -458,7 +458,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             is Commitment -> {
                 logger.warning { "a commit tx for an older commitment has been published fundingTxId=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
                 // We try spending our latest commitment but we also watch their commitment: if it confirms, we will react by spending our corresponding outputs.
-                val watch = ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, w.spendingTx, staticParams.nodeParams.minDepth(commitments.capacityMax), WatchConfirmed.AlternativeCommitTxConfirmed))
+                val watch = ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, w.spendingTx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.AlternativeCommitTxConfirmed))
                 spendLocalCurrent().run { copy(second = second + watch) }
             }
             else -> {

@@ -209,7 +209,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
             assertEquals(accept.channelType, channelType)
             when (zeroConf) {
                 true -> assertEquals(0, accept.minimumDepth)
-                false -> assertEquals(3, accept.minimumDepth)
+                false -> assertEquals(bob.staticParams.nodeParams.minDepthBlocks.toLong(), accept.minimumDepth)
             }
             return Triple(alice, bob1, accept)
         }

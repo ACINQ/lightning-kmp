@@ -107,8 +107,7 @@ data class WaitForFundingSigned(
     private fun ChannelContext.sendTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<ChannelState, List<ChannelAction>> {
         logger.info { "funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
-        val fundingMinDepth = staticParams.nodeParams.minDepth(action.fundingTx.fundingParams.fundingAmount)
-        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
+        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
         val commitments = Commitments(
             channelParams,
             CommitmentChanges.init(),
@@ -178,7 +177,7 @@ data class WaitForFundingSigned(
             }
             Pair(nextState, actions)
         } else {
-            logger.info { "will wait for $fundingMinDepth confirmations" }
+            logger.info { "will wait for ${staticParams.nodeParams.minDepthBlocks} confirmations" }
             val nextState = WaitForFundingConfirmed(
                 commitments,
                 currentBlockHeight.toLong(),

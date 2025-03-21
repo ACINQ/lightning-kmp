@@ -8,7 +8,6 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
@@ -156,7 +155,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         val watchConfirmed = listOf(
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, localCommitPublished.commitTx),
-            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, localCommitPublished.claimMainDelayedOutputTx.tx),
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, localCommitPublished.htlcTimeoutTxs().first().tx),
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, localCommitPublished.claimHtlcDelayedTxs.first().tx)
         )
@@ -176,7 +175,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(htlcs, addSettledFail.map { it.htlc }.toSet())
         assertTrue(addSettledFail.all { it.result is ChannelAction.HtlcResult.Fail.OnChainFail })
 
-        val irrevocablySpent = setOf(localCommitPublished.commitTx, localCommitPublished.claimMainDelayedOutputTx!!.tx, localCommitPublished.htlcTimeoutTxs().first().tx)
+        val irrevocablySpent = setOf(localCommitPublished.commitTx, localCommitPublished.claimMainDelayedOutputTx.tx, localCommitPublished.htlcTimeoutTxs().first().tx)
         assertEquals(irrevocablySpent, alice.state.localCommitPublished!!.irrevocablySpent.values.toSet())
 
         val (aliceClosed, actions) = alice.process(ChannelCommand.WatchReceived(watchConfirmed.last()))
@@ -234,7 +233,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         val watchConfirmed = listOf(
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, localCommitPublished.htlcTimeoutTxs()[2].tx),
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, localCommitPublished.commitTx),
-            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, localCommitPublished.claimMainDelayedOutputTx.tx),
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, localCommitPublished.htlcTimeoutTxs()[1].tx),
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 203, 2, localCommitPublished.claimHtlcDelayedTxs[2].tx),
             WatchConfirmedTriggered(alice0.state.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 1, localCommitPublished.htlcTimeoutTxs()[0].tx),
@@ -301,9 +300,9 @@ class ClosingTestsCommon : LightningTestSuite() {
         val (aliceFulfill, actionsFulfill) = aliceClosing.process(fulfill)
         assertIs<LNChannel<Closing>>(aliceFulfill)
         assertEquals(1, aliceFulfill.state.localCommitPublished!!.htlcSuccessTxs().size)
-        assertEquals(1, aliceFulfill.state.localCommitPublished!!.htlcTimeoutTxs().size)
-        assertEquals(2, aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs.size)
-        val htlcSuccess = aliceFulfill.state.localCommitPublished!!.htlcSuccessTxs().first()
+        assertEquals(1, aliceFulfill.state.localCommitPublished.htlcTimeoutTxs().size)
+        assertEquals(2, aliceFulfill.state.localCommitPublished.claimHtlcDelayedTxs.size)
+        val htlcSuccess = aliceFulfill.state.localCommitPublished.htlcSuccessTxs().first()
         actionsFulfill.hasPublishTx(htlcSuccess.tx)
         assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(localCommitPublished.commitTx.txid, htlcSuccess.input.outPoint.index)))
         Transaction.correctlySpends(htlcSuccess.tx, localCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -312,9 +311,9 @@ class ClosingTestsCommon : LightningTestSuite() {
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, localCommitPublished.commitTx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 0, localCommitPublished.htlcTimeoutTxs()[0].tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 1, htlcSuccess.tx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 215, 1, aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs[0].tx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 215, 0, aliceFulfill.state.localCommitPublished!!.claimHtlcDelayedTxs[1].tx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, localCommitPublished.claimMainDelayedOutputTx!!.tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 215, 1, aliceFulfill.state.localCommitPublished.claimHtlcDelayedTxs[0].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 215, 0, aliceFulfill.state.localCommitPublished.claimHtlcDelayedTxs[1].tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, localCommitPublished.claimMainDelayedOutputTx.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
@@ -401,7 +400,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(aliceClosing, alice1)
         assertEquals(3, actions1.size)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobClaimSuccessTx, 3, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobClaimSuccessTx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
         // alice extracts Bob's preimage from his claim-htlc-success tx.
         val addSettled = actions1.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFulfill>().first()
         assertEquals(ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage), addSettled.result)
@@ -410,7 +409,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(aliceClosing, alice2)
         assertEquals(2, actions2.size)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobClaimTimeoutTx, 3, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobClaimTimeoutTx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
 
         val claimHtlcSuccessDelayed = localCommitPublished.claimHtlcDelayedTxs.find { it.input.outPoint.txid == localCommitPublished.htlcSuccessTxs()[1].tx.txid }!!
         val claimHtlcTimeoutDelayed = localCommitPublished.claimHtlcDelayedTxs.find { it.input.outPoint.txid == localCommitPublished.htlcTimeoutTxs()[1].tx.txid }!!
@@ -454,14 +453,14 @@ class ClosingTestsCommon : LightningTestSuite() {
         // We should republish closing transactions
         val txs = listOf(
             localCommitPublished.commitTx,
-            localCommitPublished.claimMainDelayedOutputTx!!.tx,
+            localCommitPublished.claimMainDelayedOutputTx.tx,
             localCommitPublished.htlcTimeoutTxs().first().tx,
             localCommitPublished.claimHtlcDelayedTxs.first().tx,
         )
         assertEquals(actions1.findPublishTxs(), txs)
         val watchConfirmed = listOf(
             localCommitPublished.commitTx.txid,
-            localCommitPublished.claimMainDelayedOutputTx!!.tx.txid,
+            localCommitPublished.claimMainDelayedOutputTx.tx.txid,
             localCommitPublished.claimHtlcDelayedTxs.first().tx.txid,
         )
         assertEquals(actions1.findWatches<WatchConfirmed>().map { it.txId }, watchConfirmed)
@@ -506,7 +505,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         val watchConfirmed = listOf(
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, remoteCommitPublished.claimMainOutputTx.tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs().first().tx),
         )
 
@@ -525,7 +524,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(htlcs[1], dustHtlcFail.htlc)
         assertTrue(dustHtlcFail.result is ChannelAction.HtlcResult.Fail.OnChainFail)
 
-        val irrevocablySpent = setOf(remoteCommitPublished.commitTx, remoteCommitPublished.claimMainOutputTx!!.tx)
+        val irrevocablySpent = setOf(remoteCommitPublished.commitTx, remoteCommitPublished.claimMainOutputTx.tx)
         assertEquals(irrevocablySpent, alice.state.remoteCommitPublished!!.irrevocablySpent.values.toSet())
 
         val (aliceClosed, actions) = alice.process(ChannelCommand.WatchReceived(watchConfirmed.last()))
@@ -581,7 +580,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx.tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
@@ -642,8 +641,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         val (aliceFulfill, actionsFulfill) = aliceClosing.process(fulfill)
         assertIs<LNChannel<Closing>>(aliceFulfill)
         assertEquals(1, aliceFulfill.state.remoteCommitPublished!!.claimHtlcSuccessTxs().size)
-        assertEquals(1, aliceFulfill.state.remoteCommitPublished!!.claimHtlcTimeoutTxs().size)
-        val claimHtlcSuccess = aliceFulfill.state.remoteCommitPublished!!.claimHtlcSuccessTxs().first()
+        assertEquals(1, aliceFulfill.state.remoteCommitPublished.claimHtlcTimeoutTxs().size)
+        val claimHtlcSuccess = aliceFulfill.state.remoteCommitPublished.claimHtlcSuccessTxs().first()
         actionsFulfill.hasPublishTx(claimHtlcSuccess.tx)
         assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(remoteCommitPublished.commitTx.txid, claimHtlcSuccess.input.outPoint.index)))
         Transaction.correctlySpends(claimHtlcSuccess.tx, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -652,7 +651,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 0, claimHtlcSuccess.tx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, remoteCommitPublished.claimMainOutputTx.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
@@ -680,7 +679,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        val claimMain = remoteCommitPublished.claimMainOutputTx!!.tx
+        val claimMain = remoteCommitPublished.claimMainOutputTx.tx
         Transaction.correctlySpends(claimMain, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx)))
@@ -746,7 +745,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(aliceClosing, alice1)
         assertEquals(3, actions1.size)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx, 3, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
         // alice extracts Bob's preimage from his htlc-success tx.
         val addSettled = actions1.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFulfill>().first()
         assertEquals(ChannelAction.HtlcResult.Fulfill.OnChainFulfill(preimage), addSettled.result)
@@ -755,12 +754,12 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(aliceClosing, alice2)
         assertEquals(2, actions2.size)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx, 3, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
 
         val watchConfirmed = listOf(
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, bobHtlcSuccessTx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx.tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcSuccessTxs()[1].tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, bobHtlcTimeoutTx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx)
@@ -795,13 +794,13 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         // We should republish closing transactions
         val txs = listOf(
-            remoteCommitPublished.claimMainOutputTx!!.tx,
+            remoteCommitPublished.claimMainOutputTx.tx,
             remoteCommitPublished.claimHtlcTimeoutTxs().first().tx,
         )
         assertEquals(actions1.findPublishTxs(), txs)
         val watchConfirmed = listOf(
             remoteCommitPublished.commitTx.txid,
-            remoteCommitPublished.claimMainOutputTx!!.tx.txid,
+            remoteCommitPublished.claimMainOutputTx.tx.txid,
         )
         assertEquals(actions1.findWatches<WatchConfirmed>().map { it.txId }, watchConfirmed)
         val watchSpent = listOf(
@@ -872,7 +871,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 201, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimMainOutputTx.tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 204, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx)
         )
         confirmWatchedTxs(aliceClosing, watchConfirmed)
@@ -913,8 +912,8 @@ class ClosingTestsCommon : LightningTestSuite() {
         val (aliceFulfill, actionsFulfill) = aliceClosing.process(fulfill)
         assertIs<LNChannel<Closing>>(aliceFulfill)
         assertEquals(1, aliceFulfill.state.nextRemoteCommitPublished!!.claimHtlcSuccessTxs().size)
-        assertEquals(2, aliceFulfill.state.nextRemoteCommitPublished!!.claimHtlcTimeoutTxs().size)
-        val claimHtlcSuccess = aliceFulfill.state.nextRemoteCommitPublished!!.claimHtlcSuccessTxs().first()
+        assertEquals(2, aliceFulfill.state.nextRemoteCommitPublished.claimHtlcTimeoutTxs().size)
+        val claimHtlcSuccess = aliceFulfill.state.nextRemoteCommitPublished.claimHtlcSuccessTxs().first()
         actionsFulfill.hasPublishTx(claimHtlcSuccess.tx)
         assertTrue(actionsFulfill.findWatches<WatchSpent>().map { Pair(it.txId, it.outputIndex.toLong()) }.contains(Pair(remoteCommitPublished.commitTx.txid, claimHtlcSuccess.input.outPoint.index)))
         Transaction.correctlySpends(claimHtlcSuccess.tx, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -925,7 +924,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[0].tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 1, claimHtlcSuccess.tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 210, 3, remoteCommitPublished.claimHtlcTimeoutTxs()[1].tx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, remoteCommitPublished.claimMainOutputTx!!.tx)
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 250, 0, remoteCommitPublished.claimMainOutputTx.tx)
         )
         confirmWatchedTxs(aliceFulfill, watchConfirmed)
     }
@@ -946,7 +945,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         }
 
         assertNotNull(remoteCommitPublished.claimMainOutputTx)
-        val claimMain = remoteCommitPublished.claimMainOutputTx!!.tx
+        val claimMain = remoteCommitPublished.claimMainOutputTx.tx
         Transaction.correctlySpends(claimMain, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx)))
@@ -1018,18 +1017,18 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertEquals(aliceClosing, alice1)
         assertEquals(2, actions1.size)
         assertTrue(actions1.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx, 3, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions1.findWatch())
 
         val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(10_000.sat), bobHtlcTimeoutTx)))
         assertEquals(aliceClosing, alice2)
         assertEquals(2, actions2.size)
         assertTrue(actions2.contains(ChannelAction.Storage.StoreState(aliceClosing.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx, 3, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions2.findWatch())
 
         val watchConfirmed = listOf(
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, bobHtlcSuccessTx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, remoteCommitPublished.commitTx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 200, 0, remoteCommitPublished.claimMainOutputTx.tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcSuccessTxs()[1].tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, bobHtlcTimeoutTx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 202, 0, remoteCommitPublished.claimHtlcTimeoutTxs()[2].tx),
@@ -1074,14 +1073,14 @@ class ClosingTestsCommon : LightningTestSuite() {
 
         // We should republish closing transactions
         val txs = listOf(
-            remoteCommitPublished.claimMainOutputTx!!.tx,
+            remoteCommitPublished.claimMainOutputTx.tx,
             remoteCommitPublished.claimHtlcTimeoutTxs().first().tx,
             remoteCommitPublished.claimHtlcTimeoutTxs().last().tx,
         )
         assertEquals(actions1.findPublishTxs(), txs)
         val watchConfirmed = listOf(
             remoteCommitPublished.commitTx.txid,
-            remoteCommitPublished.claimMainOutputTx!!.tx.txid,
+            remoteCommitPublished.claimMainOutputTx.tx.txid,
         )
         assertEquals(actions1.findWatches<WatchConfirmed>().map { it.txId }, watchConfirmed)
         val watchSpent = listOf(
@@ -1161,7 +1160,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         // alice is able to claim its main output
         val aliceTxs = aliceActions3.findPublishTxs()
         assertEquals(listOf(futureRemoteCommitPublished.claimMainOutputTx!!.tx), aliceTxs)
-        Transaction.correctlySpends(futureRemoteCommitPublished.claimMainOutputTx!!.tx, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        Transaction.correctlySpends(futureRemoteCommitPublished.claimMainOutputTx.tx, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         // simulate a wallet restart
         run {
@@ -1169,8 +1168,8 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (alice4, actions4) = initState.process(ChannelCommand.Init.Restore(alice3.state))
             assertIs<Closing>(alice4.state)
             assertEquals(alice3, alice4)
-            assertEquals(actions4.findPublishTxs(), listOf(futureRemoteCommitPublished.claimMainOutputTx!!.tx))
-            assertEquals(actions4.findWatches<WatchConfirmed>().map { it.txId }, listOf(bobCommitTx.txid, futureRemoteCommitPublished.claimMainOutputTx!!.tx.txid))
+            assertEquals(actions4.findPublishTxs(), listOf(futureRemoteCommitPublished.claimMainOutputTx.tx))
+            assertEquals(actions4.findWatches<WatchConfirmed>().map { it.txId }, listOf(bobCommitTx.txid, futureRemoteCommitPublished.claimMainOutputTx.tx.txid))
             assertEquals(actions4.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }, listOf(bobCommitTx.txIn.first().outPoint))
             actions4.doesNotHave<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         }
@@ -1215,13 +1214,13 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertNotNull(revokedCommitPublished.mainPenaltyTx)
             assertTrue(revokedCommitPublished.htlcPenaltyTxs.isEmpty())
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
-            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!.tx, bobRevokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx.tx, bobRevokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             // alice publishes txs for the main outputs
-            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx!!.tx, revokedCommitPublished.mainPenaltyTx!!.tx), aliceActions1.findPublishTxs().toSet())
+            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx.tx, revokedCommitPublished.mainPenaltyTx.tx), aliceActions1.findPublishTxs().toSet())
             // alice watches confirmation for the commit tx and her main output
-            assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx!!.tx.txid), aliceActions1.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+            assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx.tx.txid), aliceActions1.findWatches<WatchConfirmed>().map { it.txId }.toSet())
             // alice watches bob's main output
-            assertEquals(setOf(revokedCommitPublished.mainPenaltyTx!!.input.outPoint.index), aliceActions1.findWatches<WatchSpent>().map { it.outputIndex.toLong() }.toSet())
+            assertEquals(setOf(revokedCommitPublished.mainPenaltyTx.input.outPoint.index), aliceActions1.findWatches<WatchSpent>().map { it.outputIndex.toLong() }.toSet())
         }
 
         // alice fetches information about the revoked htlcs
@@ -1247,13 +1246,13 @@ class ClosingTestsCommon : LightningTestSuite() {
         assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
         revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobRevokedTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
         // alice publishes txs for all outputs
-        val aliceTxs = setOf(revokedCommitPublished.claimMainOutputTx!!.tx, revokedCommitPublished.mainPenaltyTx!!.tx) + revokedCommitPublished.htlcPenaltyTxs.map { it.tx }.toSet()
+        val aliceTxs = setOf(revokedCommitPublished.claimMainOutputTx.tx, revokedCommitPublished.mainPenaltyTx.tx) + revokedCommitPublished.htlcPenaltyTxs.map { it.tx }.toSet()
         assertEquals(aliceTxs, aliceActions2.findPublishTxs().toSet())
         // alice watches confirmation for the commit tx and her main output
-        assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx!!.tx.txid), aliceActions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+        assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx.tx.txid), aliceActions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
         // alice watches bob's outputs
         val outputsToWatch = buildSet {
-            add(revokedCommitPublished.mainPenaltyTx!!.input.outPoint)
+            add(revokedCommitPublished.mainPenaltyTx.input.outPoint)
             addAll(revokedCommitPublished.htlcPenaltyTxs.map { it.input.outPoint })
         }
         assertEquals(3, outputsToWatch.size)
@@ -1269,15 +1268,15 @@ class ClosingTestsCommon : LightningTestSuite() {
 
             // alice republishes transactions
             assertEquals(aliceTxs, actions3.findPublishTxs().toSet())
-            assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx!!.tx.txid), actions3.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+            assertEquals(setOf(bobRevokedTx.txid, revokedCommitPublished.claimMainOutputTx.tx.txid), actions3.findWatches<WatchConfirmed>().map { it.txId }.toSet())
             val watchSpent = outputsToWatch + alice3.commitments.latest.commitInput.outPoint
             assertEquals(watchSpent, actions3.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet())
         }
 
         val watchConfirmed = listOf(
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, revokedCommitPublished.commitTx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
-            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx.tx),
+            WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx.tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 1, revokedCommitPublished.htlcPenaltyTxs[1].tx),
             WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 52, 2, revokedCommitPublished.htlcPenaltyTxs[0].tx),
         )
@@ -1346,7 +1345,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertEquals(bobCommitTxs[0].commitTx.tx, revokedCommitPublished.commitTx)
             assertNotNull(revokedCommitPublished.claimMainOutputTx)
             assertNotNull(revokedCommitPublished.mainPenaltyTx)
-            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!.tx, bobCommitTxs[0].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx.tx, bobCommitTxs[0].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             assertTrue(revokedCommitPublished.htlcPenaltyTxs.isEmpty())
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
             // alice publishes txs for all outputs
@@ -1373,7 +1372,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertEquals(bobCommitTxs[1].commitTx.tx, revokedCommitPublished.commitTx)
             assertNotNull(revokedCommitPublished.claimMainOutputTx)
             assertNotNull(revokedCommitPublished.mainPenaltyTx)
-            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx!!.tx, bobCommitTxs[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            Transaction.correctlySpends(revokedCommitPublished.mainPenaltyTx.tx, bobCommitTxs[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             assertEquals(2, revokedCommitPublished.htlcPenaltyTxs.size)
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
             revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobCommitTxs[1].commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
@@ -1385,8 +1384,8 @@ class ClosingTestsCommon : LightningTestSuite() {
             // this revoked transaction is the one to confirm
             val watchConfirmed = listOf(
                 WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, revokedCommitPublished.commitTx),
-                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
-                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx.tx),
                 WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 1, revokedCommitPublished.htlcPenaltyTxs[1].tx),
                 WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 52, 2, revokedCommitPublished.htlcPenaltyTxs[0].tx),
             )
@@ -1509,12 +1508,12 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertTrue(revokedCommitPublished.claimHtlcDelayedPenaltyTxs.isEmpty())
             revokedCommitPublished.htlcPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobRevokedTx.commitTx.tx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
             // alice publishes txs for all outputs
-            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx!!.tx, revokedCommitPublished.mainPenaltyTx!!.tx) + revokedCommitPublished.htlcPenaltyTxs.map { it.tx }.toSet(), aliceActions2.findPublishTxs().toSet())
+            assertEquals(setOf(revokedCommitPublished.claimMainOutputTx.tx, revokedCommitPublished.mainPenaltyTx.tx) + revokedCommitPublished.htlcPenaltyTxs.map { it.tx }.toSet(), aliceActions2.findPublishTxs().toSet())
             // alice watches confirmation for the commit tx and her main output
-            assertEquals(setOf(bobRevokedTx.commitTx.tx.txid, revokedCommitPublished.claimMainOutputTx!!.tx.txid), aliceActions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+            assertEquals(setOf(bobRevokedTx.commitTx.tx.txid, revokedCommitPublished.claimMainOutputTx.tx.txid), aliceActions2.findWatches<WatchConfirmed>().map { it.txId }.toSet())
             // alice watches bob's outputs
             val outputsToWatch = buildSet {
-                add(revokedCommitPublished.mainPenaltyTx!!.input.outPoint.index)
+                add(revokedCommitPublished.mainPenaltyTx.input.outPoint.index)
                 addAll(revokedCommitPublished.htlcPenaltyTxs.map { it.input.outPoint.index })
             }
             assertEquals(5, outputsToWatch.size)
@@ -1532,7 +1531,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertEquals(4, actions3.size)
             assertEquals(1, alice3.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
             assertTrue(actions3.contains(ChannelAction.Storage.StoreState(alice3.state)))
-            assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, 3, WatchConfirmed.ClosingTxConfirmed), actions3.findWatch())
+            assertEquals(WatchConfirmed(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions3.findWatch())
             actions3.hasPublishTx(alice3.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0].tx)
             assertEquals(WatchSpent(alice0.channelId, bobHtlcSuccessTx.txinfo.tx, alice3.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[0].input.outPoint.index.toInt(), WatchSpent.ClosingOutputSpent(bobHtlcSuccessTx.txinfo.tx.txOut[0].amount)), actions3.findWatch())
 
@@ -1542,7 +1541,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertEquals(4, actions4.size)
             assertEquals(2, alice4.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs.size)
             assertTrue(actions4.contains(ChannelAction.Storage.StoreState(alice4.state)))
-            assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, 3, WatchConfirmed.ClosingTxConfirmed), actions4.findWatch())
+            assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions4.findWatch())
             actions4.hasPublishTx(alice4.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1].tx)
             assertEquals(WatchSpent(alice0.channelId, bobHtlcTimeoutTx.txinfo.tx, alice4.state.revokedCommitPublished[0].claimHtlcDelayedPenaltyTxs[1].input.outPoint.index.toInt(), WatchSpent.ClosingOutputSpent(bobHtlcTimeoutTx.txinfo.tx.txOut[0].amount)), actions4.findWatch())
 
@@ -1551,8 +1550,8 @@ class ClosingTestsCommon : LightningTestSuite() {
             assertEquals(2, remainingHtlcPenaltyTxs.size)
             val watchConfirmed = listOf(
                 WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, revokedCommitPublished.commitTx),
-                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx!!.tx),
-                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx!!.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, revokedCommitPublished.claimMainOutputTx.tx),
+                WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 5, revokedCommitPublished.mainPenaltyTx.tx),
                 WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 1, remainingHtlcPenaltyTxs[1].tx),
                 WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 2, bobHtlcSuccessTx.txinfo.tx),
                 WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 50, 3, remainingHtlcPenaltyTxs[0].tx),
@@ -1615,7 +1614,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         claimHtlcDelayedPenaltyTxs.forEach { Transaction.correctlySpends(it.tx, bobHtlcTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
         assertEquals(setOf(OutPoint(bobHtlcTx, 1), OutPoint(bobHtlcTx, 2), OutPoint(bobHtlcTx, 3), OutPoint(bobHtlcTx, 4)), claimHtlcDelayedPenaltyTxs.map { it.input.outPoint }.toSet())
         assertTrue(actions3.contains(ChannelAction.Storage.StoreState(alice3.state)))
-        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTx, 3, WatchConfirmed.ClosingTxConfirmed), actions3.findWatch())
+        assertEquals(WatchConfirmed(alice0.channelId, bobHtlcTx, alice0.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed), actions3.findWatch())
         actions3.hasPublishTx(claimHtlcDelayedPenaltyTxs[0].tx)
         actions3.hasPublishTx(claimHtlcDelayedPenaltyTxs[1].tx)
         actions3.hasPublishTx(claimHtlcDelayedPenaltyTxs[2].tx)

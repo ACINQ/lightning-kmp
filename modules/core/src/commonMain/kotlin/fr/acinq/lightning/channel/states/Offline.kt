@@ -97,7 +97,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                     is WatchSpentTriggered -> when {
                         state is Negotiating && state.publishedClosingTxs.any { it.tx.txid == watch.spendingTx.txid } -> {
                             // This is one of the transactions we already published, we watch for confirmations.
-                            val actions = listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(state.commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed)))
+                            val actions = listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed)))
                             Pair(this@Offline, actions)
                         }
                         state is Negotiating && state.proposedClosingTxs.flatMap { it.all }.any { it.tx.txid == watch.spendingTx.txid } -> {
@@ -107,7 +107,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
                                 ChannelAction.Blockchain.PublishTx(closingTx),
-                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(state.commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed))
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed))
                             )
                             Pair(Offline(nextState), actions)
                         }

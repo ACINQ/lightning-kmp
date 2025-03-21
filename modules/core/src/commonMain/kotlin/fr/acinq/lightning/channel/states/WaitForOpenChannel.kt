@@ -39,7 +39,7 @@ data class WaitForOpenChannel(
                         is Either.Right -> {
                             val channelType = res.value
                             val channelFeatures = ChannelFeatures(channelType, localFeatures = localParams.features, remoteFeatures = remoteInit.features)
-                            val minimumDepth = if (staticParams.useZeroConf) 0 else staticParams.nodeParams.minDepth(open.fundingAmount)
+                            val minimumDepth = if (staticParams.useZeroConf) 0 else staticParams.nodeParams.minDepthBlocks
                             val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
                             val localFundingPubkey = channelKeys.fundingPubKey(0)
                             val fundingScript = Helpers.Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey)
@@ -56,7 +56,7 @@ data class WaitForOpenChannel(
                                 dustLimit = localParams.dustLimit,
                                 maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
                                 htlcMinimum = localParams.htlcMinimum,
-                                minimumDepth = minimumDepth,
+                                minimumDepth = minimumDepth.toLong(),
                                 toSelfDelay = localParams.toSelfDelay,
                                 maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
                                 fundingPubkey = localFundingPubkey,

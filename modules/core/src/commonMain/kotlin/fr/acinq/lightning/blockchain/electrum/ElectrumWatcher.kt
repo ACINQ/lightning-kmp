@@ -247,7 +247,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                                     val parentTxid = tx.txIn[0].outPoint.txid
                                     logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
                                     val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
-                                    addWatch(WatchConfirmed(ByteVector32.Zeroes, parentTxid, parentPublicKeyScript, csvTimeout, WatchConfirmed.ParentTxConfirmed(tx)))
+                                    addWatch(WatchConfirmed(ByteVector32.Zeroes, parentTxid, parentPublicKeyScript, csvTimeout.toInt(), WatchConfirmed.ParentTxConfirmed(tx)))
                                 }
 
                                 cltvTimeout > blockCount -> {

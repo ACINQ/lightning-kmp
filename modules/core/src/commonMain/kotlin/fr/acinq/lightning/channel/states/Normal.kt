@@ -841,8 +841,7 @@ data class Normal(
     ): Pair<Normal, List<ChannelAction>> {
         logger.info { "sending tx_sigs" }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
-        val fundingMinDepth = staticParams.nodeParams.minDepth(action.fundingTx.fundingParams.fundingAmount)
-        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
+        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
         val commitments = commitments.add(action.commitment).copy(remoteChannelData = remoteChannelData)
         val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None)
         val actions = buildList {
