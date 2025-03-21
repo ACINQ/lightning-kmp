@@ -74,7 +74,7 @@ data object WaitForInit : ChannelState() {
                 // There can be multiple funding transactions due to rbf, and they can be unconfirmed in any state due to zero-conf.
                 val fundingTxWatches = when (cmd.state) {
                     is ChannelStateWithCommitments -> cmd.state.commitments.active.map { commitment ->
-                        val fundingMinDepth = staticParams.nodeParams.minDepth(commitment.fundingAmount)
+                        val fundingMinDepth = staticParams.nodeParams.minDepthBlocks
                         when (commitment.localFundingStatus) {
                             is LocalFundingStatus.UnconfirmedFundingTx -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
                             is LocalFundingStatus.ConfirmedFundingTx -> when (commitment.localFundingStatus.shortChannelId) {

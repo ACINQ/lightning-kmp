@@ -157,11 +157,7 @@ object Helpers {
     fun LoggingContext.watchConfirmedIfNeeded(nodeParams: NodeParams, channelId: ByteVector32, txs: List<Transaction>, irrevocablySpent: Map<OutPoint, Transaction>): List<ChannelAction.Blockchain.SendWatch> {
         val (skip, process) = txs.partition { it.inputsAlreadySpent(irrevocablySpent) }
         skip.forEach { tx -> logger.info { "no need to watch txid=${tx.txid}, it has already been confirmed" } }
-        return process.map { tx ->
-            // Those are channel force-close transactions, which don't include a change output: every output is potentially at stake.
-            val minDepth = nodeParams.minDepth(tx.txOut.map { it.amount }.sum())
-            ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, minDepth, WatchConfirmed.ClosingTxConfirmed))
-        }
+        return process.map { tx -> ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx, nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed)) }
     }
 
     /** This helper method will watch txs only if the utxo they spend hasn't already been irrevocably spent. */

@@ -17,12 +17,12 @@ data class WatchConfirmed(
     val txId: TxId,
     // We need a public key script to use electrum apis.
     val publicKeyScript: ByteVector,
-    val minDepth: Long,
+    val minDepth: Int,
     val event: OnChainEvent,
 ) : Watch() {
     // If we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript.
     // We support both p2pkh and p2wpkh scripts.
-    constructor(channelId: ByteVector32, tx: Transaction, minDepth: Long, event: OnChainEvent) : this(
+    constructor(channelId: ByteVector32, tx: Transaction, minDepth: Int, event: OnChainEvent) : this(
         channelId,
         tx.txid,
         if (tx.txOut.isEmpty()) ByteVector.empty else tx.txOut[0].publicKeyScript,
