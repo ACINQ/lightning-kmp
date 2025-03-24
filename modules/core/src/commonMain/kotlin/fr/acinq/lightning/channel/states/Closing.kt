@@ -229,7 +229,7 @@ data class Closing(
                             else -> when (val commitment = commitments.resolveCommitment(watch.spendingTx)) {
                                 is Commitment -> {
                                     logger.warning { "a commit tx for an older commitment has been published fundingTxId=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
-                                    Pair(this@Closing, listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(commitments.capacityMax), WatchConfirmed.AlternativeCommitTxConfirmed))))
+                                    Pair(this@Closing, listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.AlternativeCommitTxConfirmed))))
                                 }
                                 else -> {
                                     logger.warning { "unrecognized tx=${watch.spendingTx.txid}" }
@@ -270,7 +270,7 @@ data class Closing(
                                 add(ChannelAction.Storage.StoreState(nextState))
                                 // one of the outputs of the local/remote/revoked commit was spent
                                 // we just put a watch to be notified when it is confirmed
-                                add(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(commitments.capacityMax), WatchConfirmed.ClosingTxConfirmed)))
+                                add(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed)))
                                 addAll(revokedCommitPublishActions)
                                 addAll(htlcSettledActions)
                             }
@@ -367,14 +367,14 @@ data class Closing(
      */
     private fun isClosed(additionalConfirmedTx: Transaction?): ClosingType? {
         return when {
-            additionalConfirmedTx?.let { tx -> mutualClosePublished.any { it.tx.txid == tx.txid } } ?: false -> {
-                val closingTx = mutualClosePublished.first { it.tx.txid == additionalConfirmedTx!!.txid }.copy(tx = additionalConfirmedTx!!)
+            additionalConfirmedTx?.let { tx -> mutualClosePublished.any { it.tx.txid == tx.txid } } == true -> {
+                val closingTx = mutualClosePublished.first { it.tx.txid == additionalConfirmedTx.txid }.copy(tx = additionalConfirmedTx)
                 MutualClose(closingTx)
             }
-            localCommitPublished?.isDone() ?: false -> LocalClose(commitments.latest.localCommit, localCommitPublished!!)
-            remoteCommitPublished?.isDone() ?: false -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished!!)
-            nextRemoteCommitPublished?.isDone() ?: false -> NextRemoteClose(commitments.latest.nextRemoteCommit!!.commit, nextRemoteCommitPublished!!)
-            futureRemoteCommitPublished?.isDone() ?: false -> RecoveryClose(futureRemoteCommitPublished!!)
+            localCommitPublished?.isDone() == true -> LocalClose(commitments.latest.localCommit, localCommitPublished)
+            remoteCommitPublished?.isDone() == true -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished)
+            nextRemoteCommitPublished?.isDone() == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!.commit, nextRemoteCommitPublished)
+            futureRemoteCommitPublished?.isDone() == true -> RecoveryClose(futureRemoteCommitPublished)
             revokedCommitPublished.any { it.isDone() } -> RevokedClose(revokedCommitPublished.first { it.isDone() })
             else -> null
         }
@@ -382,10 +382,10 @@ data class Closing(
 
     fun closingTypeAlreadyKnown(): ClosingType? {
         return when {
-            localCommitPublished?.isConfirmed() ?: false -> LocalClose(commitments.latest.localCommit, localCommitPublished!!)
-            remoteCommitPublished?.isConfirmed() ?: false -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished!!)
-            nextRemoteCommitPublished?.isConfirmed() ?: false -> NextRemoteClose(commitments.latest.nextRemoteCommit!!.commit, nextRemoteCommitPublished!!)
-            futureRemoteCommitPublished?.isConfirmed() ?: false -> RecoveryClose(futureRemoteCommitPublished!!)
+            localCommitPublished?.isConfirmed() == true -> LocalClose(commitments.latest.localCommit, localCommitPublished)
+            remoteCommitPublished?.isConfirmed() == true -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished)
+            nextRemoteCommitPublished?.isConfirmed() == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!.commit, nextRemoteCommitPublished)
+            futureRemoteCommitPublished?.isConfirmed() == true -> RecoveryClose(futureRemoteCommitPublished)
             revokedCommitPublished.any { it.isConfirmed() } -> RevokedClose(revokedCommitPublished.first { it.isConfirmed() })
             else -> null
         }

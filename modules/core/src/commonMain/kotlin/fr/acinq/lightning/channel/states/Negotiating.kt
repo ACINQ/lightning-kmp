@@ -61,7 +61,7 @@ data class Negotiating(
                                 val actions = listOf(
                                     ChannelAction.Storage.StoreState(nextState),
                                     ChannelAction.Blockchain.PublishTx(signedClosingTx),
-                                    ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepth(signedClosingTx.amountIn), WatchConfirmed.ClosingTxConfirmed)),
+                                    ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed)),
                                     ChannelAction.Message.Send(closingSig)
                                 )
                                 Pair(nextState, actions)
@@ -83,7 +83,7 @@ data class Negotiating(
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
                                 ChannelAction.Blockchain.PublishTx(signedClosingTx),
-                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepth(signedClosingTx.amountIn), WatchConfirmed.ClosingTxConfirmed)),
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, signedClosingTx.tx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed)),
                             )
                             Pair(nextState, actions)
                         }
@@ -111,8 +111,7 @@ data class Negotiating(
                     is WatchSpent.ChannelSpent -> when {
                         publishedClosingTxs.any { it.tx.txid == watch.spendingTx.txid } -> {
                             // This is one of the transactions we already published, we watch for confirmations.
-                            val closingTx = publishedClosingTxs.first { it.tx.txid == watch.spendingTx.txid }
-                            val actions = listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(closingTx.amountIn), WatchConfirmed.ClosingTxConfirmed)))
+                            val actions = listOf(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed)))
                             Pair(this@Negotiating, actions)
                         }
                         proposedClosingTxs.flatMap { it.all }.any { it.tx.txid == watch.spendingTx.txid } -> {
@@ -122,7 +121,7 @@ data class Negotiating(
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
                                 ChannelAction.Blockchain.PublishTx(closingTx),
-                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepth(closingTx.amountIn), WatchConfirmed.ClosingTxConfirmed))
+                                ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed))
                             )
                             Pair(nextState, actions)
                         }

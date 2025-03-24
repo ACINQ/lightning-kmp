@@ -324,9 +324,8 @@ data class WaitForFundingConfirmed(
 
     private fun ChannelContext.sendRbfTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs, remoteChannelData: EncryptedChannelData): Pair<WaitForFundingConfirmed, List<ChannelAction>> {
         logger.info { "rbf funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
-        val fundingMinDepth = staticParams.nodeParams.minDepth(action.fundingTx.fundingParams.fundingAmount)
-        logger.info { "will wait for $fundingMinDepth confirmations" }
-        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
+        logger.info { "will wait for ${staticParams.nodeParams.minDepthBlocks} confirmations" }
+        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
         val nextState = WaitForFundingConfirmed(
             commitments.add(action.commitment).copy(remoteChannelData = remoteChannelData),
             waitingSinceBlock,
