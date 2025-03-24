@@ -11,16 +11,21 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.LightningCodecs
+import fr.acinq.secp256k1.Hex
 import kotlin.experimental.and
 
 data class Bolt11Invoice(
     val prefix: String,
-    override val amount: MilliSatoshi?,
+    val encodedAmount: String,
     val timestampSeconds: Long,
     override val nodeId: PublicKey,
     val tags: List<TaggedField>,
     val signature: ByteVector
 ) : PaymentRequest() {
+    constructor(prefix: String, amount: MilliSatoshi?, timestampSeconds: Long, nodeId: PublicKey, tags: List<TaggedField>, signature: ByteVector): this(prefix, encodeAmount(amount), timestampSeconds, nodeId, tags, signature)
+
+    override val amount: MilliSatoshi? = decodeAmount(encodedAmount)
+
     val chain: Chain? get() = prefixes.entries.firstOrNull { it.value == prefix }?.key
 
     override val paymentHash: ByteVector32 get() = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
@@ -60,7 +65,7 @@ data class Bolt11Invoice(
         else -> timestampSeconds + expirySeconds <= currentTimestampSeconds
     }
 
-    private fun hrp() = prefix + encodeAmount(amount)
+    private fun hrp() = prefix + encodedAmount
 
     private fun rawData(): List<Int5> {
         val data5 = ArrayList<Int5>()
@@ -147,7 +152,7 @@ data class Bolt11Invoice(
 
             return Bolt11Invoice(
                 prefix = prefix,
-                amount = amount,
+                encodedAmount = encodeAmount(amount),
                 timestampSeconds = timestampSeconds,
                 nodeId = privateKey.publicKey(),
                 tags = tags,
@@ -165,7 +170,7 @@ data class Bolt11Invoice(
         fun read(input: String): Try<Bolt11Invoice> = runTrying {
             val (hrp, data) = Bech32.decode(input)
             val prefix = prefixes.values.find { hrp.startsWith(it) } ?: throw IllegalArgumentException("unknown prefix $hrp")
-            val amount = decodeAmount(hrp.drop(prefix.length))
+            val encodedAmount = hrp.drop(prefix.length)
             val timestamp = decodeTimestamp(data.toList())
             // signature and recovery id, encoded on 65 bytes = 5 * 13 bytes = 5 * 13 * 8 bits =  8 * 13 "5-bits integers"
             val sigandrecid = toByteArray(data.copyOfRange(data.size - 8 * 13, data.size).toList())
@@ -203,7 +208,7 @@ data class Bolt11Invoice(
             }
 
             loop(data.drop(7).dropLast(104))
-            val pr = Bolt11Invoice(prefix, amount, timestamp, nodeId, tags, sigandrecid.toByteVector())
+            val pr = Bolt11Invoice(prefix, encodedAmount, timestamp, nodeId, tags, sigandrecid.toByteVector())
             require(pr.signedPreimage().contentEquals(tohash)) { "invoice isn't canonically encoded" }
             pr
         }

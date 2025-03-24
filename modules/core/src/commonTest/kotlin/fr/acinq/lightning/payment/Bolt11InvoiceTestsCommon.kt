@@ -540,6 +540,16 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         assertNull(pr1.description)
     }
 
+    @Test
+    fun `decode and re-encode non-canonically encoded invoice`() {
+        // invoice encoding is not canonical: 5000m should be 5
+        val encodedInvoice = createInvoiceUnsafe(5.btc.toMilliSatoshi()).copy(encodedAmount = "5000m").write()
+        assertTrue { encodedInvoice.startsWith("lnbcrt5000m") }
+        val invoice = Bolt11Invoice.read(encodedInvoice).get()
+        val reencodedInvoice = invoice.write()
+        assertEquals(encodedInvoice, reencodedInvoice)
+    }
+
     companion object {
         fun createInvoiceUnsafe(
             amount: MilliSatoshi? = null,
@@ -576,5 +586,4 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
             ).sign(privateKey)
         }
     }
-
 }
