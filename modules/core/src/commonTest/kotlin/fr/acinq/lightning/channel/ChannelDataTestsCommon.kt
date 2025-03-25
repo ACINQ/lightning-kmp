@@ -46,7 +46,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(2L, 3L, 4L, 5L).map { OutPoint(lcp.commitTx.txid, it) }.toSet())
             val txs = actions.findPublishTxs().toSet()
-            assertEquals(txs, setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx!!.tx) + lcp.htlcTxs.values.filterNotNull().map { it.tx } + lcp.claimHtlcDelayedTxs.map { it.tx }.toSet())
+            assertEquals(txs, setOf(lcp.commitTx, lcp.claimMainDelayedOutputTx.tx) + lcp.htlcTxs.values.filterNotNull().map { it.tx } + lcp.claimHtlcDelayedTxs.map { it.tx }.toSet())
         }
 
         // Commit tx has been confirmed.
@@ -117,7 +117,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(2L, 3L, 4L, 5L).map { OutPoint(rcp.commitTx.txid, it) }.toSet())
             val txs = actions.findPublishTxs().toSet()
-            assertEquals(txs, setOf(rcp.claimMainOutputTx!!.tx) + rcp.claimHtlcTxs.values.filterNotNull().map { it.tx }.toSet())
+            assertEquals(txs, setOf(rcp.claimMainOutputTx.tx) + rcp.claimHtlcTxs.values.filterNotNull().map { it.tx }.toSet())
         }
 
         // Commit tx has been confirmed.
@@ -186,7 +186,7 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
             val watchSpent = actions.findWatches<WatchSpent>().map { OutPoint(it.txId, it.outputIndex.toLong()) }.toSet()
             assertEquals(watchSpent, listOf(1L, 2L, 3L, 4L, 5L).map { OutPoint(rvk.commitTx.txid, it) }.toSet())
             val txs = actions.findPublishTxs().toSet()
-            assertEquals(txs, setOf(rvk.claimMainOutputTx!!.tx, rvk.mainPenaltyTx!!.tx) + rvk.htlcPenaltyTxs.map { it.tx }.toSet())
+            assertEquals(txs, setOf(rvk.claimMainOutputTx.tx, rvk.mainPenaltyTx!!.tx) + rvk.htlcPenaltyTxs.map { it.tx }.toSet())
         }
 
         // Commit tx has been confirmed.
@@ -294,26 +294,6 @@ class ChannelDataTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(2, claimHtlcTimeoutTxs.size)
         val claimHtlcSuccessTxs = rcp.claimHtlcSuccessTxs()
         assertEquals(1, claimHtlcSuccessTxs.size)
-
-        // Valid txs should be detected:
-        htlcTimeoutTxs.forEach { tx -> assertTrue(lcp.isHtlcTimeout(tx.tx)) }
-        htlcSuccessTxs.forEach { tx -> assertTrue(lcp.isHtlcSuccess(tx.tx)) }
-        claimHtlcTimeoutTxs.forEach { tx -> assertTrue(rcp.isClaimHtlcTimeout(tx.tx)) }
-        claimHtlcSuccessTxs.forEach { tx -> assertTrue(rcp.isClaimHtlcSuccess(tx.tx)) }
-
-        // Invalid txs should be rejected:
-        htlcSuccessTxs.forEach { tx -> assertFalse(lcp.isHtlcTimeout(tx.tx)) }
-        claimHtlcTimeoutTxs.forEach { tx -> assertFalse(lcp.isHtlcTimeout(tx.tx)) }
-        claimHtlcSuccessTxs.forEach { tx -> assertFalse(lcp.isHtlcTimeout(tx.tx)) }
-        htlcTimeoutTxs.forEach { tx -> assertFalse(lcp.isHtlcSuccess(tx.tx)) }
-        claimHtlcTimeoutTxs.forEach { tx -> assertFalse(lcp.isHtlcSuccess(tx.tx)) }
-        claimHtlcSuccessTxs.forEach { tx -> assertFalse(lcp.isHtlcSuccess(tx.tx)) }
-        htlcTimeoutTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcTimeout(tx.tx)) }
-        htlcSuccessTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcTimeout(tx.tx)) }
-        claimHtlcSuccessTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcTimeout(tx.tx)) }
-        htlcTimeoutTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcSuccess(tx.tx)) }
-        htlcSuccessTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcSuccess(tx.tx)) }
-        claimHtlcTimeoutTxs.forEach { tx -> assertFalse(rcp.isClaimHtlcSuccess(tx.tx)) }
     }
 
     companion object {

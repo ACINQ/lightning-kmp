@@ -5,11 +5,10 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
+import fr.acinq.lightning.channel.Helpers.Closing.trimmedOrTimedOutHtlcs
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
 import fr.acinq.lightning.channel.TestsHelper.claimHtlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
@@ -64,7 +63,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc0.availableBalanceForReceive(), a)
 
         val currentBlockHeight = 144L
-        val (payment_preimage, cmdAdd) = TestsHelper.makeCmdAdd(p, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (preimage, cmdAdd) = TestsHelper.makeCmdAdd(p, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (ac1, add) = ac0.sendAdd(cmdAdd, UUID.randomUUID(), currentBlockHeight).right!!
         assertEquals(ac1.availableBalanceForSend(), a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
@@ -97,7 +96,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc4.availableBalanceForSend(), b)
         assertEquals(bc4.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val cmdFulfill = ChannelCommand.Htlc.Settlement.Fulfill(0, payment_preimage)
+        val cmdFulfill = ChannelCommand.Htlc.Settlement.Fulfill(0, preimage)
         val (bc5, fulfill) = bc4.sendFulfill(cmdFulfill).right!!
         assertEquals(bc5.availableBalanceForSend(), b + p) // as soon as we have the fulfill, the balance increases
         assertEquals(bc5.availableBalanceForReceive(), a - p - htlcOutputFee)
@@ -245,7 +244,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
         val currentBlockHeight = 144L
 
-        val (payment_preimage1, cmdAdd1) = TestsHelper.makeCmdAdd(p1, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (preimage1, cmdAdd1) = TestsHelper.makeCmdAdd(p1, bob.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (ac1, add1) = ac0.sendAdd(cmdAdd1, UUID.randomUUID(), currentBlockHeight).right!!
         assertEquals(ac1.availableBalanceForSend(), a - p1 - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
@@ -255,7 +254,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac2.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
-        val (payment_preimage3, cmdAdd3) = TestsHelper.makeCmdAdd(p3, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
+        val (preimage3, cmdAdd3) = TestsHelper.makeCmdAdd(p3, alice.staticParams.nodeParams.nodeId, currentBlockHeight)
         val (bc1, add3) = bc0.sendAdd(cmdAdd3, UUID.randomUUID(), currentBlockHeight).right!!
         assertEquals(bc1.availableBalanceForSend(), b - p3) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(bc1.availableBalanceForReceive(), a)
@@ -308,7 +307,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac8.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
         assertEquals(ac8.availableBalanceForReceive(), b - p3)
 
-        val cmdFulfill1 = ChannelCommand.Htlc.Settlement.Fulfill(0, payment_preimage1)
+        val cmdFulfill1 = ChannelCommand.Htlc.Settlement.Fulfill(0, preimage1)
         val (bc8, fulfill1) = bc7.sendFulfill(cmdFulfill1).right!!
         assertEquals(bc8.availableBalanceForSend(), b + p1 - p3) // as soon as we have the fulfill, the balance increases
         assertEquals(bc8.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
@@ -318,7 +317,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc9.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc9.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
-        val cmdFulfill3 = ChannelCommand.Htlc.Settlement.Fulfill(0, payment_preimage3)
+        val cmdFulfill3 = ChannelCommand.Htlc.Settlement.Fulfill(0, preimage3)
         val (ac9, fulfill3) = ac8.sendFulfill(cmdFulfill3).right!!
         assertEquals(ac9.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
         assertEquals(ac9.availableBalanceForReceive(), b - p3)
@@ -461,25 +460,25 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         val claimHtlcSuccessTxs = rcp.claimHtlcSuccessTxs()
 
         val aliceTimedOutHtlcs = htlcTimeoutTxs.map { htlcTimeout ->
-            val htlcs = timedOutHtlcs(localCommit, lcp, dustLimit, htlcTimeout.tx)
+            val htlcs = trimmedOrTimedOutHtlcs(localCommit, lcp, dustLimit, htlcTimeout.tx)
             assertEquals(1, htlcs.size)
             htlcs.first()
         }
         assertEquals(timedOutHtlcs.take(3).toSet(), aliceTimedOutHtlcs.toSet())
 
         val bobTimedOutHtlcs = claimHtlcTimeoutTxs.map { claimHtlcTimeout ->
-            val htlcs = timedOutHtlcs(remoteCommit, rcp, dustLimit, claimHtlcTimeout.tx)
+            val htlcs = trimmedOrTimedOutHtlcs(remoteCommit, rcp, dustLimit, claimHtlcTimeout.tx)
             assertEquals(1, htlcs.size)
             htlcs.first()
         }
         assertEquals(timedOutHtlcs.drop(3).toSet(), bobTimedOutHtlcs.toSet())
 
-        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(timedOutHtlcs(localCommit, lcp, dustLimit, htlcSuccess.tx).isEmpty()) }
-        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(timedOutHtlcs(remoteCommit, rcp, dustLimit, htlcSuccess.tx).isEmpty()) }
-        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(timedOutHtlcs(localCommit, lcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
-        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(timedOutHtlcs(remoteCommit, rcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
-        htlcTimeoutTxs.forEach { htlcTimeout -> assertTrue(timedOutHtlcs(remoteCommit, rcp, dustLimit, htlcTimeout.tx).isEmpty()) }
-        claimHtlcTimeoutTxs.forEach { claimHtlcTimeout -> assertTrue(timedOutHtlcs(localCommit, lcp, dustLimit, claimHtlcTimeout.tx).isEmpty()) }
+        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(trimmedOrTimedOutHtlcs(localCommit, lcp, dustLimit, htlcSuccess.tx).isEmpty()) }
+        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(trimmedOrTimedOutHtlcs(remoteCommit, rcp, dustLimit, htlcSuccess.tx).isEmpty()) }
+        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(trimmedOrTimedOutHtlcs(localCommit, lcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
+        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(trimmedOrTimedOutHtlcs(remoteCommit, rcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
+        htlcTimeoutTxs.forEach { htlcTimeout -> assertTrue(trimmedOrTimedOutHtlcs(remoteCommit, rcp, dustLimit, htlcTimeout.tx).isEmpty()) }
+        claimHtlcTimeoutTxs.forEach { claimHtlcTimeout -> assertTrue(trimmedOrTimedOutHtlcs(localCommit, lcp, dustLimit, claimHtlcTimeout.tx).isEmpty()) }
     }
 
     companion object {

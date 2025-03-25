@@ -478,6 +478,37 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `successful attempt followed by failure`() = runSuspendTest {
+        val (alice, _) = TestsHelper.reachNormal()
+        val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
+        val recipientKey = randomKey()
+        val invoice = makeInvoice(amount = null, supportsTrampoline = true, privKey = recipientKey)
+        val payment = PayInvoice(UUID.randomUUID(), 300_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
+
+        val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertIs<OutgoingPaymentHandler.Progress>(progress)
+        val add = makeUpdateAddHtlc(alice.channelId, findAddHtlcCommand(progress).second)
+
+        // The payment succeeds.
+        val preimage = randomBytes32()
+        val success = outgoingPaymentHandler.processAddSettledFulfilled(createRemoteFulfill(alice.channelId, findAddHtlcCommand(progress).second, preimage))
+        assertIs<OutgoingPaymentHandler.Success>(success)
+
+        // But then we receive a failure command (e.g. a revoked commitment was published for the outgoing channel).
+        val failure = ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(alice.channelId, add))
+        val ignored = outgoingPaymentHandler.processAddSettledFailed(alice.channelId, ChannelAction.ProcessCmdRes.AddSettledFail(payment.paymentId, add, failure), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
+        assertNull(ignored)
+
+        // The payment is successfully settled.
+        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
+        val dbPayment = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
+        assertNotNull(dbPayment)
+        assertIs<LightningOutgoingPayment.Status.Succeeded>(dbPayment.status)
+        assertEquals(1, dbPayment.parts.size)
+        assertTrue(dbPayment.parts.all { it.status is LightningOutgoingPayment.Part.Status.Succeeded })
+    }
+
+    @Test
     fun `insufficient funds when retrying with higher fees`() = runSuspendTest {
         val (alice, _) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 0.sat)
         assertTrue(83_500_000.msat < alice.commitments.availableBalanceForSend())

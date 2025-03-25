@@ -10,7 +10,6 @@ import fr.acinq.lightning.channel.Helpers.watchConfirmedIfNeeded
 import fr.acinq.lightning.channel.Helpers.watchSpentIfNeeded
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.logging.LoggingContext
-import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.utils.toMilliSatoshi
 
@@ -70,7 +69,7 @@ data class LocalCommitPublished(
         // is the commitment tx buried? (we need to check this because we may not have any outputs)
         val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
         // is our main output confirmed (if we have one)?
-        val isMainOutputConfirmed = claimMainDelayedOutputTx?.let { irrevocablySpent.contains(it.input.outPoint) } ?: true
+        val isMainOutputConfirmed = claimMainDelayedOutputTx?.let { irrevocablySpent.contains(it.input.outPoint) } != false
         // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
         val allHtlcsSpent = (htlcTxs.keys - irrevocablySpent.keys).isEmpty()
         // are all outputs from htlc txs spent?
@@ -84,22 +83,6 @@ data class LocalCommitPublished(
 
     fun isConfirmed(): Boolean {
         return irrevocablySpent.values.any { it.txid == commitTx.txid } || irrevocablySpent.keys.any { it.txid == commitTx.txid }
-    }
-
-    fun isHtlcTimeout(tx: Transaction): Boolean {
-        return tx.txIn
-            .filter { htlcTxs[it.outPoint] is HtlcTx.HtlcTimeoutTx }
-            .map { it.witness }
-            .mapNotNull(Scripts.extractPaymentHashFromHtlcTimeout())
-            .isNotEmpty()
-    }
-
-    fun isHtlcSuccess(tx: Transaction): Boolean {
-        return tx.txIn
-            .filter { htlcTxs[it.outPoint] is HtlcTx.HtlcSuccessTx }
-            .map { it.witness }
-            .mapNotNull(Scripts.extractPreimageFromHtlcSuccess())
-            .isNotEmpty()
     }
 
     internal fun LoggingContext.doPublish(nodeParams: NodeParams, channelId: ByteVector32): List<ChannelAction> {
@@ -183,7 +166,7 @@ data class RemoteCommitPublished(
         // is the commitment tx buried? (we need to check this because we may not have any outputs)
         val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
         // is our main output confirmed (if we have one)?
-        val isMainOutputConfirmed = claimMainOutputTx?.let { irrevocablySpent.contains(it.input.outPoint) } ?: true
+        val isMainOutputConfirmed = claimMainOutputTx?.let { irrevocablySpent.contains(it.input.outPoint) } != false
         // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
         val allHtlcsSpent = (claimHtlcTxs.keys - irrevocablySpent.keys).isEmpty()
         return isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent
@@ -191,22 +174,6 @@ data class RemoteCommitPublished(
 
     fun isConfirmed(): Boolean {
         return irrevocablySpent.values.any { it.txid == commitTx.txid } || irrevocablySpent.keys.any { it.txid == commitTx.txid }
-    }
-
-    fun isClaimHtlcTimeout(tx: Transaction): Boolean {
-        return tx.txIn
-            .filter { claimHtlcTxs[it.outPoint] is ClaimHtlcTx.ClaimHtlcTimeoutTx }
-            .map { it.witness }
-            .mapNotNull(Scripts.extractPaymentHashFromClaimHtlcTimeout())
-            .isNotEmpty()
-    }
-
-    fun isClaimHtlcSuccess(tx: Transaction): Boolean {
-        return tx.txIn
-            .filter { claimHtlcTxs[it.outPoint] is ClaimHtlcTx.ClaimHtlcSuccessTx }
-            .map { it.witness }
-            .mapNotNull(Scripts.extractPreimageFromClaimHtlcSuccess())
-            .isNotEmpty()
     }
 
     internal fun LoggingContext.doPublish(nodeParams: NodeParams, channelId: ByteVector32): List<ChannelAction> {
