@@ -11,7 +11,6 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.LightningCodecs
-import fr.acinq.secp256k1.Hex
 import kotlin.experimental.and
 
 data class Bolt11Invoice(
