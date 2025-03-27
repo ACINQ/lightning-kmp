@@ -742,11 +742,10 @@ class Peer(
      * Sends a payment for an unsolicited Bolt12 invoice (offer + invoice, but no invoiceRequest).
      * The given invoice must have an amount.
      */
-    suspend fun payUnsolicitedInvoice(invoice: Bolt12Invoice): SendPaymentResult {
+    suspend fun payUnsolicitedInvoice(invoice: Bolt12Invoice, paymentId: UUID = UUID.randomUUID()): SendPaymentResult {
         val amount = invoice.amount
         require(amount != null) { "invoice.amount must not be null" }
         val res = CompletableDeferred<SendPaymentResult>()
-        val paymentId = UUID.randomUUID()
         this.launch {
             res.complete(
                 eventsFlow
