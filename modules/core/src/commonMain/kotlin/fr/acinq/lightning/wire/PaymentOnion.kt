@@ -401,7 +401,6 @@ object PaymentOnion {
     data class ChannelRelayPayload(val records: TlvStream<OnionPaymentPayloadTlv>) : PerHopPayload() {
         val amountToForward = records.get<OnionPaymentPayloadTlv.AmountToForward>()!!.amount
         val outgoingCltv = records.get<OnionPaymentPayloadTlv.OutgoingCltv>()!!.cltv
-        val outgoingChannelId = records.get<OnionPaymentPayloadTlv.OutgoingChannelId>()!!.shortChannelId
 
         override fun write(out: Output) = tlvSerializer.write(records, out)
 
@@ -420,6 +419,16 @@ object PaymentOnion {
 
             fun create(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry): ChannelRelayPayload =
                 ChannelRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountToForward), OnionPaymentPayloadTlv.OutgoingCltv(outgoingCltv), OnionPaymentPayloadTlv.OutgoingChannelId(outgoingChannelId)))
+        }
+    }
+
+    data class BlindedChannelRelayPayload(val records: TlvStream<OnionPaymentPayloadTlv>) : PerHopPayload() {
+        override fun write(out: Output) = tlvSerializer.write(records, out)
+
+        companion object : PerHopPayloadReader<BlindedChannelRelayPayload> {
+            override fun read(input: Input): Either<InvalidOnionPayload, BlindedChannelRelayPayload> {
+                return PerHopPayload.read(input).map { BlindedChannelRelayPayload(it) }
+            }
         }
     }
 
