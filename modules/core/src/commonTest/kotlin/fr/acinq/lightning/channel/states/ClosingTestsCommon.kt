@@ -1076,7 +1076,7 @@ class ClosingTestsCommon : LightningTestSuite() {
         // Bob receives the preimage for the first two HTLCs.
         val (bob6, actionsBob6) = bob5.process(ChannelCommand.Htlc.Settlement.Fulfill(htlc1.id, preimage))
         assertIs<LNChannel<Closing>>(bob6)
-        assertEquals(setOf(htlc1.id, htlc2.id), bob6.state.localCommitPublished?.htlcSuccessTxs()?.map { it.htlcId }?.toSet() ?: setOf())
+        assertEquals(setOf(htlc1.id, htlc2.id), bob6.state.localCommitPublished?.htlcSuccessTxs().orEmpty().map { it.htlcId }.toSet())
         val htlcSuccessTxs = actionsBob6.filterIsInstance<ChannelAction.Blockchain.PublishTx>().filter { it.txType == ChannelAction.Blockchain.PublishTx.Type.HtlcSuccessTx }
         assertEquals(2, htlcSuccessTxs.size)
         val batchHtlcSuccessTx = Transaction(2, htlcSuccessTxs.flatMap { it.tx.txIn }, htlcSuccessTxs.flatMap { it.tx.txOut }, 0)

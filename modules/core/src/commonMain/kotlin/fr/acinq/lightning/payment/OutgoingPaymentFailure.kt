@@ -74,6 +74,7 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
                     is ForcedLocalCommit -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
                     is FundingTxSpent -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
                     is HtlcOverriddenByLocalCommit -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
+                    is HtlcOverriddenByRemoteCommit -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
                     is HtlcsTimedOutDownstream -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
                     is NoMoreHtlcsClosingInProgress -> LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing
                     else -> LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable(failure.value.message)

@@ -866,7 +866,7 @@ object Helpers {
                 val fromRemote = commitment.remoteCommit.spec.htlcs
                     .filter { it is IncomingHtlc && it.add.paymentHash == paymentHash }
                     .map { it.add to paymentPreimage }
-                val fromNextRemote = (commitment.nextRemoteCommit?.commit?.spec?.htlcs ?: setOf())
+                val fromNextRemote = commitment.nextRemoteCommit?.commit?.spec?.htlcs.orEmpty()
                     .filter { it is IncomingHtlc && it.add.paymentHash == paymentHash }
                     .map { it.add to paymentPreimage }
                 fromLocal + fromRemote + fromNextRemote
@@ -983,7 +983,7 @@ object Helpers {
          */
         fun overriddenOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: RemoteCommit?, revokedCommitPublished: List<RevokedCommitPublished>, tx: Transaction): Set<UpdateAddHtlc> {
             // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs.
-            val outgoingHtlcs = (localCommit.spec.htlcs.outgoings() + remoteCommit.spec.htlcs.incomings() + (nextRemoteCommit?.spec?.htlcs ?: setOf()).incomings()).toSet()
+            val outgoingHtlcs = (localCommit.spec.htlcs.outgoings() + remoteCommit.spec.htlcs.incomings() + nextRemoteCommit?.spec?.htlcs.orEmpty().incomings()).toSet()
             return when {
                 // Our commit got confirmed: any htlc that is *not* in our commit will never reach the chain.
                 localCommit.publishableTxs.commitTx.tx.txid == tx.txid -> outgoingHtlcs - localCommit.spec.htlcs.outgoings().toSet()

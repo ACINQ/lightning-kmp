@@ -1406,7 +1406,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val outgoingHtlcs = htlcs.aliceToBob.map { it.second }.toSet() + setOf(htlcOut1, htlcOut2)
         val addSettled = actionsAlice10.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>()
         assertEquals(outgoingHtlcs, addSettled.map { it.htlc }.toSet())
-        addSettled.forEach { assertTrue(it.result == ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(it.htlc.channelId, it.htlc))) }
+        addSettled.forEach { assertTrue(it.result == ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByRemoteCommit(it.htlc.channelId, it.htlc))) }
         val getHtlcInfos = actionsAlice10.find<ChannelAction.Storage.GetHtlcInfos>()
         assertEquals(bobRevokedCommitTx.txid, getHtlcInfos.revokedCommitTxId)
         // Alice claims every HTLC output from the revoked commitment.
@@ -1510,7 +1510,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val addSettled = actionsAlice13.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>()
         val outgoingHtlcs = htlcs.aliceToBob.map { it.second }.toSet() + setOf(htlcOut1, htlcOut2, htlcOut3)
         assertEquals(outgoingHtlcs, addSettled.map { it.htlc }.toSet())
-        addSettled.forEach { assertTrue(it.result == ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(it.htlc.channelId, it.htlc))) }
+        addSettled.forEach { assertTrue(it.result == ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByRemoteCommit(it.htlc.channelId, it.htlc))) }
         val getHtlcInfos = actionsAlice13.find<ChannelAction.Storage.GetHtlcInfos>()
         assertEquals(bobRevokedCommitTx.txid, getHtlcInfos.revokedCommitTxId)
         // Alice claims every HTLC output from the revoked commitment.

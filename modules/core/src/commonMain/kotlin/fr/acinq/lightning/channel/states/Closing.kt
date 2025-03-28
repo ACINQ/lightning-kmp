@@ -131,11 +131,11 @@ data class Closing(
                                         // outgoing payment handler so the fail command will be a no-op.
                                         val outgoingHtlcs = commitments.latest.localCommit.spec.htlcs.outgoings().toSet() +
                                                 commitments.latest.remoteCommit.spec.htlcs.incomings().toSet() +
-                                                (commitments.latest.nextRemoteCommit?.commit?.spec?.htlcs ?: setOf()).incomings().toSet()
+                                                commitments.latest.nextRemoteCommit?.commit?.spec?.htlcs.orEmpty().incomings().toSet()
                                         val htlcSettledActions = outgoingHtlcs.mapNotNull { add ->
                                             commitments.payments[add.id]?.let { paymentId ->
                                                 logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by revoked remote commit" }
-                                                ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(channelId, add)))
+                                                ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByRemoteCommit(channelId, add)))
                                             }
                                         }
                                         val (nextState, closingActions) = newState.run { handleRemoteSpentOther(watch.tx) }
@@ -188,8 +188,12 @@ data class Closing(
                                         logger.info { "cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
                                     }
                                     else -> {
-                                        logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by local commit" }
-                                        htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(channelId, add)))
+                                        logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by confirmed commit" }
+                                        val failure = when {
+                                            watch.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> HtlcOverriddenByLocalCommit(channelId, add)
+                                            else -> HtlcOverriddenByRemoteCommit(channelId, add)
+                                        }
+                                        htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(failure))
                                     }
                                 }
                             }

@@ -69,7 +69,7 @@ data class LocalCommitPublished(
         // is the commitment tx buried? (we need to check this because we may not have any outputs)
         val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
         // is our main output confirmed (if we have one)?
-        val isMainOutputConfirmed = claimMainDelayedOutputTx?.let { irrevocablySpent.contains(it.input.outPoint) } != false
+        val isMainOutputConfirmed = claimMainDelayedOutputTx == null || irrevocablySpent.contains(claimMainDelayedOutputTx.input.outPoint)
         // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
         val allHtlcsSpent = (htlcTxs.keys - irrevocablySpent.keys).isEmpty()
         // are all outputs from htlc txs spent?
@@ -166,7 +166,7 @@ data class RemoteCommitPublished(
         // is the commitment tx buried? (we need to check this because we may not have any outputs)
         val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
         // is our main output confirmed (if we have one)?
-        val isMainOutputConfirmed = claimMainOutputTx?.let { irrevocablySpent.contains(it.input.outPoint) } != false
+        val isMainOutputConfirmed = claimMainOutputTx == null || irrevocablySpent.contains(claimMainOutputTx.input.outPoint)
         // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
         val allHtlcsSpent = (claimHtlcTxs.keys - irrevocablySpent.keys).isEmpty()
         return isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent
