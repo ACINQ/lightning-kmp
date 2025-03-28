@@ -4,7 +4,9 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.ScriptEltMapping.code2elt
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.transactions.Scripts.htlcOffered
+import fr.acinq.lightning.transactions.Scripts.htlcReceived
+import fr.acinq.lightning.transactions.Scripts.toLocalDelayed
 
 /**
  * Created by PM on 02/12/2016.
@@ -13,22 +15,23 @@ object Scripts {
 
     fun der(sig: ByteVector64, sigHash: Int): ByteVector = Crypto.compact2der(sig).concat(sigHash.toByte())
 
-    fun multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): List<ScriptElt> =
-        if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
-            Script.createMultiSigMofN(2, listOf(pubkey1, pubkey2))
-        } else {
-            Script.createMultiSigMofN(2, listOf(pubkey2, pubkey1))
-        }
+    fun multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): List<ScriptElt> = when {
+        LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value) -> Script.createMultiSigMofN(2, listOf(pubkey1, pubkey2))
+        else -> Script.createMultiSigMofN(2, listOf(pubkey2, pubkey1))
+    }
 
     /**
      * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
      */
-    fun witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness =
-        if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
-            ScriptWitness(listOf(ByteVector.empty, der(sig1, SigHash.SIGHASH_ALL), der(sig2, SigHash.SIGHASH_ALL), ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))))
-        } else {
-            ScriptWitness(listOf(ByteVector.empty, der(sig2, SigHash.SIGHASH_ALL), der(sig1, SigHash.SIGHASH_ALL), ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))))
+    fun witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness {
+        val encodedSig1 = der(sig1, SigHash.SIGHASH_ALL)
+        val encodedSig2 = der(sig2, SigHash.SIGHASH_ALL)
+        val redeemScript = ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))
+        return when {
+            LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value) -> ScriptWitness(listOf(ByteVector.empty, encodedSig1, encodedSig2, redeemScript))
+            else -> ScriptWitness(listOf(ByteVector.empty, encodedSig2, encodedSig1, redeemScript))
         }
+    }
 
     /**
      * minimal encoding of a number into a script element:
@@ -45,14 +48,6 @@ object Scripts {
         else -> OP_PUSHDATA(Script.encodeNumber(n))
     }
 
-    fun applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi): Pair<Satoshi, Satoshi> =
-        when {
-            amount_us >= fee / 2 && amount_them >= fee / 2 -> Pair((amount_us - fee) / 2, (amount_them - fee) / 2)
-            amount_us < fee / 2 -> Pair(0.sat, (amount_them - fee + amount_us).max(0.sat))
-            amount_them < fee / 2 -> Pair((amount_us - fee + amount_them).max(0.sat), 0.sat)
-            else -> error("impossible")
-        }
-
     /**
      * This function interprets the locktime for the given transaction, and returns the block height before which this tx cannot be published.
      * By convention in bitcoin, depending of the value of locktime it might be a number of blocks or a number of seconds since epoch.
@@ -61,16 +56,16 @@ object Scripts {
      *
      * @return the block height before which this tx cannot be published.
      */
-    fun cltvTimeout(tx: Transaction): Long =
-        if (tx.lockTime <= Script.LOCKTIME_THRESHOLD) {
-            // locktime is a number of blocks
-            tx.lockTime
-        } else {
+    fun cltvTimeout(tx: Transaction): Long = when {
+        // locktime is a number of blocks
+        tx.lockTime <= Script.LOCKTIME_THRESHOLD -> tx.lockTime
+        else -> {
             // locktime is a unix epoch timestamp
             require(tx.lockTime <= 0x20FFFFFF) { "locktime should be lesser than 0x20FFFFFF" }
             // since locktime is very well in the past (0x20FFFFFF is in 1987), it is equivalent to no locktime at all
             0
         }
+    }
 
     /**
      * @return the number of confirmations of the tx parent before which it can be published
@@ -83,7 +78,7 @@ object Scripts {
                 sequence and TxIn.SEQUENCE_LOCKTIME_MASK
             }
 
-        return if (tx.version < 2) 0L else tx.txIn.map { it.sequence }.map { sequenceToBlockHeight(it) }.maxOrNull()!!
+        return if (tx.version < 2) 0L else tx.txIn.map { it.sequence }.maxOf { sequenceToBlockHeight(it) }
     }
 
     fun toAnchor(fundingPubkey: PublicKey): List<ScriptElt> =
@@ -160,12 +155,16 @@ object Scripts {
     fun witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
         ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig, SigHash.SIGHASH_ALL), paymentPreimage, htlcOfferedScript))
 
-    /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
-    fun extractPreimageFromHtlcSuccess(): (ScriptWitness) -> ByteVector32? = f@{
-        if (it.stack.size < 5 || !it.stack[0].isEmpty()) return@f null
-        val paymentPreimage = it.stack[3]
-        if (paymentPreimage.size() != 32) return@f null
-        ByteVector32(paymentPreimage)
+    /** Extract payment preimages from a 2nd-stage HTLC Success transaction's witness script. */
+    fun extractPreimagesFromHtlcSuccess(tx: Transaction): Set<ByteVector32> {
+        return tx.txIn.map { it.witness }.mapNotNull {
+            when {
+                it.stack.size < 5 -> null
+                !it.stack[0].isEmpty() -> null
+                it.stack[3].size() != 32 -> null
+                else -> ByteVector32(it.stack[3])
+            }
+        }.toSet()
     }
 
     /**
@@ -175,12 +174,15 @@ object Scripts {
     fun witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector) =
         ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), paymentPreimage, htlcOffered))
 
-    /** Extract the payment preimage from from a fulfilled offered htlc. */
-    fun extractPreimageFromClaimHtlcSuccess(): (ScriptWitness) -> ByteVector32? = f@{
-        if (it.stack.size < 3) return@f null
-        val paymentPreimage = it.stack[1]
-        if (paymentPreimage.size() != 32) return@f null
-        ByteVector32(paymentPreimage)
+    /** Extract payment preimages from a claim-htlc transaction. */
+    fun extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set<ByteVector32> {
+        return tx.txIn.map { it.witness }.mapNotNull {
+            when {
+                it.stack.size < 3 -> null
+                it.stack[1].size() != 32 -> null
+                else -> ByteVector32(it.stack[1])
+            }
+        }.toSet()
     }
 
     fun htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteArray, lockTime: CltvExpiry) = listOf(
@@ -213,26 +215,12 @@ object Scripts {
     fun witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector) =
         ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, htlcOfferedScript))
 
-    /** Extract the payment hash from a 2nd-stage HTLC Timeout transaction's witness script */
-    fun extractPaymentHashFromHtlcTimeout(): (ScriptWitness) -> ByteVector? = f@{
-        if (it.stack.size < 5 || !it.stack[0].isEmpty() || !it.stack[3].isEmpty()) return@f null
-        val htlcOfferedScript = it.stack[4]
-        htlcOfferedScript.slice(109, 109 + 20)
-    }
-
     /**
      * If remote publishes its commit tx where there was a local->remote htlc, then local uses this script to
      * claim its funds after timeout (consumes htlcReceived script from commit tx)
      */
     fun witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector) =
         ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, htlcReceivedScript))
-
-    /** Extract the payment hash from a timed-out received htlc. */
-    fun extractPaymentHashFromClaimHtlcTimeout(): (ScriptWitness) -> ByteVector? = f@{
-        if (it.stack.size < 3 || !it.stack[1].isEmpty()) return@f null
-        val htlcReceivedScript = it.stack[2]
-        htlcReceivedScript.slice(69, 69 + 20)
-    }
 
     /**
      * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment

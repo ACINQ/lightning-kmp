@@ -1476,7 +1476,7 @@ class Peer(
             }
             is AddLiquidityForIncomingPayment -> {
                 val currentFeerates = peerFeeratesFlow.filterNotNull().first()
-                val paymentTypes = remoteFundingRates.value?.paymentTypes ?: setOf()
+                val paymentTypes = remoteFundingRates.value?.paymentTypes.orEmpty()
                 val currentFeeCredit = feeCreditFlow.value
                 when (val available = selectChannelForSplicing()) {
                     is SelectChannelResult.Available -> {

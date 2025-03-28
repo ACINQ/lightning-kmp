@@ -15,8 +15,10 @@ import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxHtlc
 import fr.acinq.lightning.channel.Helpers.Closing.extractPreimages
 import fr.acinq.lightning.channel.Helpers.Closing.onChainOutgoingHtlcs
 import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
-import fr.acinq.lightning.channel.Helpers.Closing.timedOutHtlcs
+import fr.acinq.lightning.channel.Helpers.Closing.trimmedOrTimedOutHtlcs
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
+import fr.acinq.lightning.transactions.incomings
+import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.getValue
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.Error
@@ -106,20 +108,38 @@ data class Closing(
                                 // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
                                 when {
                                     watch.tx.txid == commitments1.latest.localCommit.publishableTxs.commitTx.tx.txid -> {
-                                        // our local commit has been published from the outside, it's unexpected but let's deal with it anyway
+                                        // Our local commit has been published from the outside, it's unexpected but let's deal with it anyway.
                                         newState.run { spendLocalCurrent() }
                                     }
                                     watch.tx.txid == commitments1.latest.remoteCommit.txid && commitments1.remoteCommitIndex == commitments.remoteCommitIndex -> {
-                                        // counterparty may attempt to spend its last commit tx at any time
+                                        // Our counterparty may attempt to spend its last commit tx at any time.
                                         newState.run { handleRemoteSpentCurrent(watch.tx, commitments1.latest) }
                                     }
                                     watch.tx.txid == commitments1.latest.nextRemoteCommit?.commit?.txid && commitments1.remoteCommitIndex == commitments.remoteCommitIndex && commitments.remoteNextCommitInfo.isLeft -> {
-                                        // counterparty may attempt to spend its next commit tx at any time
+                                        // Our counterparty may attempt to spend its next commit tx at any time.
                                         newState.run { handleRemoteSpentNext(watch.tx, commitments1.latest) }
                                     }
                                     else -> {
-                                        // counterparty may attempt to spend a revoked commit tx at any time
-                                        newState.run { handleRemoteSpentOther(watch.tx) }
+                                        // Our counterparty is trying to broadcast a revoked commit tx (cheating attempt).
+                                        // We need to fail pending outgoing HTLCs, otherwise we will never properly settle them.
+                                        // We must do it here because since we're overwriting the commitments data, we will lose all information
+                                        // about HTLCs that are in the current commitments but were not in the revoked one.
+                                        // We fail *all* outgoing HTLCs:
+                                        //  - those that are not in the revoked commitment will never settle on-chain
+                                        //  - those that are in the revoked commitment will be claimed on-chain, so it's as if they were failed
+                                        // Note that if we already received the preimage for some of these HTLCs, we already relayed it to the
+                                        // outgoing payment handler so the fail command will be a no-op.
+                                        val outgoingHtlcs = commitments.latest.localCommit.spec.htlcs.outgoings().toSet() +
+                                                commitments.latest.remoteCommit.spec.htlcs.incomings().toSet() +
+                                                commitments.latest.nextRemoteCommit?.commit?.spec?.htlcs.orEmpty().incomings().toSet()
+                                        val htlcSettledActions = outgoingHtlcs.mapNotNull { add ->
+                                            commitments.payments[add.id]?.let { paymentId ->
+                                                logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by revoked remote commit" }
+                                                ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByRemoteCommit(channelId, add)))
+                                            }
+                                        }
+                                        val (nextState, closingActions) = newState.run { handleRemoteSpentOther(watch.tx) }
+                                        Pair(nextState, closingActions + htlcSettledActions)
                                     }
                                 }
                             }
@@ -141,15 +161,18 @@ data class Closing(
                             // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
                             val htlcSettledActions = mutableListOf<ChannelAction>()
                             val timedOutHtlcs = when (val closingType = closing1.closingTypeAlreadyKnown()) {
-                                is LocalClose -> timedOutHtlcs(closingType.localCommit, closingType.localCommitPublished, commitments.params.localParams.dustLimit, watch.tx)
-                                is RemoteClose -> timedOutHtlcs(closingType.remoteCommit, closingType.remoteCommitPublished, commitments.params.remoteParams.dustLimit, watch.tx)
-                                else -> setOf() // we lose htlc outputs in option_data_loss_protect scenarios (future remote commit)
+                                is LocalClose -> trimmedOrTimedOutHtlcs(closingType.localCommit, closingType.localCommitPublished, commitments.params.localParams.dustLimit, watch.tx)
+                                is RemoteClose -> trimmedOrTimedOutHtlcs(closingType.remoteCommit, closingType.remoteCommitPublished, commitments.params.remoteParams.dustLimit, watch.tx)
+                                is RevokedClose -> setOf() // revoked commitments are handled using [overriddenOutgoingHtlcs] below
+                                is RecoveryClose -> setOf() // we lose htlc outputs in option_data_loss_protect scenarios (future remote commit)
+                                is MutualClose -> setOf()
+                                null -> setOf()
                             }
                             timedOutHtlcs.forEach { add ->
                                 when (val paymentId = commitments.payments[add.id]) {
                                     null -> {
                                         // same as for fulfilling the htlc (no big deal)
-                                        logger.info { "cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
+                                        logger.info { "cannot fail timed-out htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
                                     }
                                     else -> {
                                         logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: htlc timed out" }
@@ -165,8 +188,12 @@ data class Closing(
                                         logger.info { "cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (payment not found)" }
                                     }
                                     else -> {
-                                        logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by local commit" }
-                                        htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByLocalCommit(channelId, add)))
+                                        logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by confirmed commit" }
+                                        val failure = when {
+                                            watch.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> HtlcOverriddenByLocalCommit(channelId, add)
+                                            else -> HtlcOverriddenByRemoteCommit(channelId, add)
+                                        }
+                                        htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(failure))
                                     }
                                 }
                             }
@@ -243,7 +270,7 @@ data class Closing(
                             // we can then use these preimages to fulfill payments
                             logger.info { "processing spent closing output with txid=${watch.spendingTx.txid} tx=${watch.spendingTx}" }
                             val htlcSettledActions = mutableListOf<ChannelAction>()
-                            extractPreimages(commitments.latest.localCommit, watch.spendingTx).forEach { (htlc, preimage) ->
+                            extractPreimages(commitments.latest, watch.spendingTx).forEach { (htlc, preimage) ->
                                 when (val paymentId = commitments.payments[htlc.id]) {
                                     null -> {
                                         // if we don't have a reference to the payment, it means that we already have forwarded the fulfill so that's not a big deal.
