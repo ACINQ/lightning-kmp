@@ -152,7 +152,7 @@ object OnionMessages {
      * @param blindedPrivateKey private key of the blinded node id used in our blinded path.
      * @param pathId path_id that we included in our blinded path for ourselves.
      */
-    data class DecryptedMessage(val content: MessageOnion, val blindedPrivateKey: PrivateKey, val pathId: ByteVector)
+    data class DecryptedMessage(val content: MessageOnion, val blindedPrivateKey: PrivateKey, val pathId: ByteVector?)
 
     fun decryptMessage(privateKey: PrivateKey, msg: OnionMessage, logger: MDCLogger): DecryptedMessage? {
         val blindedPrivateKey = RouteBlinding.derivePrivateKey(privateKey, msg.pathKey)
@@ -182,7 +182,7 @@ object OnionMessages {
                                     val nextMessage = OnionMessage(relayInfo.value.nextPathKeyOverride ?: nextPathKey, decrypted.value.nextPacket)
                                     decryptMessage(privateKey, nextMessage, logger)
                                 }
-                                decrypted.value.isLastPacket -> DecryptedMessage(message, blindedPrivateKey, relayInfo.value.pathId ?: ByteVector32.Zeroes)
+                                decrypted.value.isLastPacket -> DecryptedMessage(message, blindedPrivateKey, relayInfo.value.pathId)
                                 else -> {
                                     logger.warning { "ignoring onion message for which we're not the destination (next_node_id=${relayInfo.value.nextNodeId}, path_id=${relayInfo.value.pathId?.toHex()})" }
                                     null

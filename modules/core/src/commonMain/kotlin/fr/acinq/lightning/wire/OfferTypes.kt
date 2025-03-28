@@ -795,20 +795,29 @@ object OfferTypes {
                 trampolineNodeId: PublicKey,
                 features: Features,
                 blindedPathSessionKey: PrivateKey,
+                pathId: ByteVector? = null,
                 additionalTlvs: Set<OfferTlv> = setOf(),
                 customTlvs: Set<GenericTlv> = setOf()
             ): Pair<Offer, PrivateKey> {
                 if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
-                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(blindedPathSessionKey, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), null))
-                val tlvs: Set<OfferTlv> = setOfNotNull(
+                val tlvs = TlvStream(setOfNotNull(
                     if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
                     amount?.let { OfferAmount(it) },
                     description?.let { OfferDescription(it) },
                     features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it) else null },
-                    // Note that we don't include an offer_node_id since we're using a blinded path.
-                    OfferPaths(listOf(ContactInfo.BlindedPath(blindedRouteDetails.route))),
-                )
-                return Pair(Offer(TlvStream(tlvs + additionalTlvs, customTlvs)), blindedRouteDetails.blindedPrivateKey(nodeParams.nodePrivateKey))
+                ) + additionalTlvs, customTlvs)
+                return createBlindedOffer(tlvs, nodeParams, trampolineNodeId, blindedPathSessionKey, pathId)
+            }
+
+            fun createBlindedOffer(
+                tlvs: TlvStream<OfferTlv>,
+                nodeParams: NodeParams,
+                trampolineNodeId: PublicKey,
+                blindedPathSessionKey: PrivateKey,
+                pathId: ByteVector? = null,
+            ): Pair<Offer, PrivateKey> {
+                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(blindedPathSessionKey, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), pathId))
+                return Pair(Offer(tlvs.copy(records = tlvs.records + OfferPaths(listOf(ContactInfo.BlindedPath(blindedRouteDetails.route))))), blindedRouteDetails.blindedPrivateKey(nodeParams.nodePrivateKey))
             }
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
@@ -881,7 +890,7 @@ object OfferTypes {
                     Features.areCompatible(offer.features, features) &&
                     checkSignature()
 
-        fun requestedAmount(): MilliSatoshi? = amount ?: offer.amount?.let { it * quantity }
+        fun requestedAmount(): MilliSatoshi = amount ?: (offer.amount!! * quantity)
 
         fun checkSignature(): Boolean =
             verifySchnorr(
@@ -951,6 +960,7 @@ object OfferTypes {
                     is Right -> {}
                 }
                 if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0L))
+                if (records.get<InvoiceRequestAmount>() == null && records.get<OfferAmount>() == null) return Left(MissingRequiredTlv(82))
                 if (records.get<InvoiceRequestPayerId>() == null) return Left(MissingRequiredTlv(88))
                 if (records.get<Signature>() == null) return Left(MissingRequiredTlv(240))
                 if (records.unknown.any { !isInvoiceRequestTlv(it) }) return Left(ForbiddenTlv(records.unknown.find { !isInvoiceRequestTlv(it) }!!.tag))
