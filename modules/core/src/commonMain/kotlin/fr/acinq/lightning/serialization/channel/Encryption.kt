@@ -7,6 +7,7 @@ import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.EncryptedChannelData
+import fr.acinq.lightning.wire.EncryptedPeerStorage
 
 /**
  * Utility methods to encrypt/decrypt serialized channel data
@@ -30,17 +31,6 @@ object Encryption {
     }
 
     /**
-     * Convenience method that builds an [EncryptedChannelData] from a [PersistedChannelState]
-     */
-    fun EncryptedChannelData.Companion.from(key: PrivateKey, state: PersistedChannelState): EncryptedChannelData {
-        val bin = Serialization.serialize(state)
-        val encrypted = encrypt(key.value, bin)
-        // we copy the first 2 bytes as meta-info on the serialization version
-        val data = bin.copyOfRange(0, 2) + encrypted
-        return EncryptedChannelData(data.toByteVector())
-    }
-
-    /**
      * Convenience method that decrypts and deserializes a [PersistedChannelState] from an [EncryptedChannelData]
      */
     fun PersistedChannelState.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): Result<Serialization.DeserializationResult> {
@@ -50,4 +40,24 @@ object Encryption {
             .map { Serialization.deserialize(it) }
     }
 
+    /**
+     * Convenience method that builds an [EncryptedPeerStorage] from a list of [PersistedChannelState]
+     */
+    fun EncryptedPeerStorage.Companion.from(key: PrivateKey, states: List<PersistedChannelState>): EncryptedPeerStorage {
+        val bin = Serialization.serializePeerStorage(states)
+        val encrypted = encrypt(key.value, bin)
+        // we copy the first byte as meta-info on the serialization version
+        val data = bin.copyOfRange(0, 1) + encrypted
+        return EncryptedPeerStorage(data.toByteVector())
+    }
+
+    /**
+     * Convenience method that decrypts and deserializes a list of [PersistedChannelState] from an [EncryptedPeerStorage]
+     */
+    fun PersistedChannelState.Companion.fromEncryptedPeerStorage(key: PrivateKey, encryptedPeerStorage: EncryptedPeerStorage): Result<Serialization.PeerStorageDeserializationResult> {
+        // we first assume that data is prefixed by 1 byte of serialization meta-info
+        return runCatching { decrypt(key.value, encryptedPeerStorage.data.drop(1).toByteArray()) }
+            .recoverCatching { decrypt(key.value, encryptedPeerStorage.data.toByteArray()) }
+            .map { Serialization.deserializePeerStorage(it) }
+    }
 }

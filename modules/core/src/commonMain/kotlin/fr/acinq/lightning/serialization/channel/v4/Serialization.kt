@@ -56,6 +56,13 @@ object Serialization {
         return out.toByteArray()
     }
 
+    fun serializePeerStorage(states: List<PersistedChannelState>): ByteArray {
+        val out = ByteArrayOutput()
+        out.write(VERSION_MAGIC)
+        out.writeCollection(states) { out.writePersistedChannelState(it) }
+        return out.toByteArray()
+    }
+
     private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
         is LegacyWaitForFundingConfirmed -> {
             write(0x08); writeLegacyWaitForFundingConfirmed(o)

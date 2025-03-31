@@ -159,6 +159,7 @@ data class NodeParams(
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
     val liquidityPolicy: MutableStateFlow<LiquidityPolicy>,
+    val usePeerStorage: Boolean,
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
     val nodeId get() = keyManager.nodeKeys.nodeKey.publicKey
@@ -258,6 +259,7 @@ data class NodeParams(
                 maxAllowedFeeCredit = 0.msat
             )
         ),
+        usePeerStorage = true,
     )
 
     /**

@@ -305,7 +305,7 @@ class PeerTest : LightningTestSuite() {
             nextRemoteRevocationNumber = commitments.remoteCommitIndex,
             yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
             myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
-        ).withChannelData(commitments.remoteChannelData)
+        ).withNonEmptyChannelData(commitments.remoteChannelData)
 
         peer.send(MessageReceived(connectionId = 0, channelReestablish))
 

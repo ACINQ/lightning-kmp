@@ -43,6 +43,13 @@ object Deserialization {
         return input.readPersistedChannelState()
     }
 
+    fun deserializePeerStorage(bin: ByteArray): List<PersistedChannelState> {
+        val input = ByteArrayInput(bin)
+        val version = input.read()
+        require(version == Serialization.VERSION_MAGIC) { "incorrect version $version, expected ${Serialization.VERSION_MAGIC}" }
+        return input.readCollection { input.readPersistedChannelState() }.toList()
+    }
+
     private fun Input.readPersistedChannelState(): PersistedChannelState = when (val discriminator = read()) {
         0x08 -> readLegacyWaitForFundingConfirmed()
         0x09 -> readLegacyWaitForFundingLocked()
