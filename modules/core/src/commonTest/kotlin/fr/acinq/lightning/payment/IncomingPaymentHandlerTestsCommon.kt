@@ -1768,8 +1768,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
 
         assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
-        val expectedFailure = InvalidOnionBlinding(hash(add.onionRoutingPacket))
-        val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedFailure.onionHash, expectedFailure.code, commit = true)
+        val expectedFailure = IncorrectOrUnknownPaymentDetails(defaultAmount, TestConstants.defaultBlockHeight.toLong())
+        val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(expectedFailure), commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
 
@@ -1819,8 +1819,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
 
         assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
-        val expectedFailure = InvalidOnionBlinding(hash(add.onionRoutingPacket))
-        val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedFailure.onionHash, expectedFailure.code, commit = true)
+        val expectedFailure = IncorrectOrUnknownPaymentDetails(amountTooLow, TestConstants.defaultBlockHeight.toLong())
+        val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(expectedFailure), commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
 
@@ -1835,8 +1835,8 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val result = paymentHandler.process(add, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, remoteFundingRates = null)
 
         assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
-        val expectedFailure = InvalidOnionBlinding(hash(add.onionRoutingPacket))
-        val expected = ChannelCommand.Htlc.Settlement.FailMalformed(add.id, expectedFailure.onionHash, expectedFailure.code, commit = true)
+        val expectedFailure = IncorrectOrUnknownPaymentDetails(metadata.amount, TestConstants.defaultBlockHeight.toLong())
+        val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(expectedFailure), commit = true)
         assertEquals(setOf(WrappedChannelCommand(add.channelId, expected)), result.actions.toSet())
     }
 
