@@ -10,6 +10,7 @@ import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.channel.ChannelCommand
+import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.FailurePacket
 import fr.acinq.lightning.crypto.sphinx.PacketAndSecrets
 import fr.acinq.lightning.crypto.sphinx.Sphinx
@@ -144,9 +145,10 @@ object OutgoingPaymentPacket {
         return Triple(trampolineAmount, trampolineExpiry, paymentOnion)
     }
 
-    fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, reason: ChannelCommand.Htlc.Settlement.Fail.Reason): Either<FailureMessage, ByteVector> {
-        // we need to decrypt the payment onion to obtain the shared secret to build the error packet
-        return when (val result = Sphinx.peel(nodeSecret, paymentHash, onion)) {
+    fun buildHtlcFailure(nodeSecret: PrivateKey, paymentHash: ByteVector32, onion: OnionRoutingPacket, pathKey: PublicKey?, reason: ChannelCommand.Htlc.Settlement.Fail.Reason): Either<FailureMessage, ByteVector> {
+        // We need to decrypt the payment onion to obtain the shared secret to build the error packet.
+        val onionDecryptionKey = pathKey?.let { RouteBlinding.derivePrivateKey(nodeSecret, it) } ?: nodeSecret
+        return when (val result = Sphinx.peel(onionDecryptionKey, paymentHash, onion)) {
             is Either.Right -> {
                 val encryptedReason = when (reason) {
                     is ChannelCommand.Htlc.Settlement.Fail.Reason.Bytes -> FailurePacket.wrap(reason.bytes.toByteArray(), result.value.sharedSecret)
@@ -160,7 +162,7 @@ object OutgoingPaymentPacket {
 
     fun buildWillAddHtlcFailure(nodeSecret: PrivateKey, willAddHtlc: WillAddHtlc, failure: FailureMessage): OnTheFlyFundingMessage {
         val reason = ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(failure)
-        return when (val f = buildHtlcFailure(nodeSecret, willAddHtlc.paymentHash, willAddHtlc.finalPacket, reason)) {
+        return when (val f = buildHtlcFailure(nodeSecret, willAddHtlc.paymentHash, willAddHtlc.finalPacket, willAddHtlc.pathKey, reason)) {
             is Either.Right -> WillFailHtlc(willAddHtlc.id, willAddHtlc.paymentHash, f.value)
             is Either.Left -> WillFailMalformedHtlc(willAddHtlc.id, willAddHtlc.paymentHash, Sphinx.hash(willAddHtlc.finalPacket), f.value.code)
         }

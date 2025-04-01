@@ -575,10 +575,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
         }
 
         private fun rejectPaymentPart(privateKey: PrivateKey, paymentPart: PaymentPart, incomingPayment: LightningIncomingPayment?, currentBlockHeight: Int): ProcessAddResult.Rejected {
-            val failureMsg = when (paymentPart.finalPayload) {
-                is PaymentOnion.FinalPayload.Blinded -> InvalidOnionBlinding(Sphinx.hash(paymentPart.onionPacket))
-                is PaymentOnion.FinalPayload.Standard -> IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
-            }
+            // Note that for blinded payment, the BOLTs say we should always return InvalidOnionBlinding.
+            // However, this is in order to protect against malicious nodes probing the blinded path.
+            // But in our case, the blinded path is simply a private channel between our LSP and us, so there is nothing to probe!
+            // We can thus return normal failures, which are more helpful for the payer than InvalidOnionBlinding.
+            val failureMsg = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
             val rejectedAction = when (paymentPart) {
                 is HtlcPart -> actionForFailureMessage(failureMsg, paymentPart.htlc)
                 is WillAddHtlcPart -> actionForWillAddHtlcFailure(privateKey, failureMsg, paymentPart.htlc)

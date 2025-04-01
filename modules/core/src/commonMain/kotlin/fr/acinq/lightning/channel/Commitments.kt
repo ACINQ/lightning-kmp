@@ -706,7 +706,7 @@ data class Commitments(
             // we have already sent a fail/fulfill for this htlc
             CommitmentChanges.alreadyProposed(changes.localChanges.proposed, htlc.id) -> Either.Left(UnknownHtlcId(channelId, cmd.id))
             else -> {
-                when (val result = OutgoingPaymentPacket.buildHtlcFailure(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, cmd.reason)) {
+                when (val result = OutgoingPaymentPacket.buildHtlcFailure(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket, htlc.pathKey, cmd.reason)) {
                     is Either.Right -> {
                         val fail = UpdateFailHtlc(channelId, cmd.id, result.value)
                         Either.Right(Pair(copy(changes = changes.addLocalProposal(fail)), fail))
