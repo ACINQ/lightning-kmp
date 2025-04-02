@@ -44,8 +44,6 @@ object Deserialization {
     }
 
     private fun Input.readPersistedChannelState(): PersistedChannelState = when (val discriminator = read()) {
-        0x08 -> readLegacyWaitForFundingConfirmed()
-        0x09 -> readLegacyWaitForFundingLocked()
         0x00 -> readWaitForFundingConfirmedWithPushAmount()
         0x01 -> readWaitForChannelReady()
         0x02 -> readNormalLegacy()
@@ -64,23 +62,6 @@ object Deserialization {
         0x11 -> readNegotiating()
         else -> error("unknown discriminator $discriminator for class ${PersistedChannelState::class}")
     }
-
-    private fun Input.readLegacyWaitForFundingConfirmed() = LegacyWaitForFundingConfirmed(
-        commitments = readCommitments(),
-        fundingTx = readNullable { readTransaction() },
-        waitingSinceBlock = readNumber(),
-        deferred = readNullable { readLightningMessage() as ChannelReady },
-        lastSent = readEither(
-            readLeft = { readLightningMessage() as FundingCreated },
-            readRight = { readLightningMessage() as FundingSigned }
-        )
-    )
-
-    private fun Input.readLegacyWaitForFundingLocked() = LegacyWaitForFundingLocked(
-        commitments = readCommitments(),
-        shortChannelId = ShortChannelId(readNumber()),
-        lastSent = readLightningMessage() as ChannelReady
-    )
 
     private fun Input.readWaitForFundingSigned() = WaitForFundingSigned(
         channelParams = readChannelParams(),

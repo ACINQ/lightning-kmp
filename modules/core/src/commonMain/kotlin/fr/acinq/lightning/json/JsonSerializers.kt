@@ -156,8 +156,6 @@ object JsonSerializers {
         serializersModule = SerializersModule {
             // we need to explicitly define a [PolymorphicSerializer] for sealed classes, but not for interfaces
             fun PolymorphicModuleBuilder<ChannelStateWithCommitments>.registerChannelStateWithCommitmentsSubclasses() {
-                subclass(LegacyWaitForFundingConfirmed::class, LegacyWaitForFundingConfirmedSerializer)
-                subclass(LegacyWaitForFundingLocked::class, LegacyWaitForFundingLockedSerializer)
                 subclass(WaitForFundingConfirmed::class, WaitForFundingConfirmedSerializer)
                 subclass(WaitForChannelReady::class, WaitForChannelReadySerializer)
                 subclass(Normal::class, NormalSerializer)
@@ -234,12 +232,6 @@ object JsonSerializers {
 
     @Serializer(forClass = Syncing::class)
     object SyncingSerializer
-
-    @Serializer(forClass = LegacyWaitForFundingConfirmed::class)
-    object LegacyWaitForFundingConfirmedSerializer
-
-    @Serializer(forClass = LegacyWaitForFundingLocked::class)
-    object LegacyWaitForFundingLockedSerializer
 
     @Serializer(forClass = WaitForFundingSigned::class)
     object WaitForFundingSignedSerializer

@@ -147,15 +147,11 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Invoice)
     }
 
-    // We historically used the following feature bit in our invoices.
-    // However, the spec assigned the same feature bit to `option_scid_alias` (https://github.com/lightning/bolts/pull/910).
-    // We're moving this feature bit to 148, but we have to keep supporting it until enough wallet users have migrated, then we can remove it.
-    // We cannot rename that object otherwise we will not be able to read old serialized data.
     @Serializable
     object TrampolinePayment : Feature() {
-        override val rfcName get() = "trampoline_payment_backwards_compat"
-        override val mandatory get() = 50
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
+        override val rfcName get() = "trampoline_routing"
+        override val mandatory get() = 56
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice, FeatureScope.Bolt12)
     }
 
     @Serializable
@@ -175,14 +171,6 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
-    /** DEPRECATED: this feature bit should not be used, it is only kept for serialization backwards-compatibility. */
-    @Serializable
-    object ZeroConfChannels : Feature() {
-        override val rfcName get() = "zero_conf_channels"
-        override val mandatory get() = 130
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
-    }
-
     /** This feature bit should be activated when a mobile node supports waking up via push notifications. */
     @Serializable
     object WakeUpNotificationClient : Feature() {
@@ -196,38 +184,6 @@ sealed class Feature {
     object WakeUpNotificationProvider : Feature() {
         override val rfcName get() = "wake_up_notification_provider"
         override val mandatory get() = 134
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
-    }
-
-    /** DEPRECATED: this feature bit was used for the legacy pay-to-open protocol. */
-    @Serializable
-    object PayToOpenClient : Feature() {
-        override val rfcName get() = "pay_to_open_client"
-        override val mandatory get() = 136
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
-    }
-
-    /** DEPRECATED: this feature bit was used for the legacy pay-to-open protocol. */
-    @Serializable
-    object PayToOpenProvider : Feature() {
-        override val rfcName get() = "pay_to_open_provider"
-        override val mandatory get() = 138
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
-    }
-
-    /** DEPRECATED: this feature bit should not be used, it is only kept for serialization backwards-compatibility. */
-    @Serializable
-    object TrustedSwapInClient : Feature() {
-        override val rfcName get() = "trusted_swap_in_client"
-        override val mandatory get() = 140
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init)
-    }
-
-    /** DEPRECATED: this feature bit should not be used, it is only kept for serialization backwards-compatibility. */
-    @Serializable
-    object TrustedSwapInProvider : Feature() {
-        override val rfcName get() = "trusted_swap_in_provider"
-        override val mandatory get() = 142
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
@@ -245,15 +201,6 @@ sealed class Feature {
         override val rfcName get() = "channel_backup_provider"
         override val mandatory get() = 146
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
-    }
-
-    // The version of trampoline enabled by this feature bit does not match the latest spec PR: once the spec is accepted,
-    // we will introduce a new version of trampoline that will work in parallel to this one, until we can safely deprecate it.
-    @Serializable
-    object ExperimentalTrampolinePayment : Feature() {
-        override val rfcName get() = "trampoline_payment_experimental"
-        override val mandatory get() = 148
-        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node, FeatureScope.Invoice)
     }
 
     @Serializable
@@ -348,15 +295,9 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.PaymentMetadata,
             Feature.TrampolinePayment,
             Feature.SimpleClose,
-            Feature.ExperimentalTrampolinePayment,
             Feature.ZeroReserveChannels,
-            Feature.ZeroConfChannels,
             Feature.WakeUpNotificationClient,
             Feature.WakeUpNotificationProvider,
-            Feature.PayToOpenClient,
-            Feature.PayToOpenProvider,
-            Feature.TrustedSwapInClient,
-            Feature.TrustedSwapInProvider,
             Feature.ChannelBackupClient,
             Feature.ChannelBackupProvider,
             Feature.ExperimentalSplice,
@@ -393,8 +334,6 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.BasicMultiPartPayment to listOf(Feature.PaymentSecret),
             Feature.AnchorOutputs to listOf(Feature.StaticRemoteKey),
             Feature.SimpleClose to listOf(Feature.ShutdownAnySegwit),
-            Feature.TrampolinePayment to listOf(Feature.PaymentSecret),
-            Feature.ExperimentalTrampolinePayment to listOf(Feature.PaymentSecret),
             Feature.OnTheFlyFunding to listOf(Feature.ExperimentalSplice),
             Feature.FundingFeeCredit to listOf(Feature.OnTheFlyFunding)
         )

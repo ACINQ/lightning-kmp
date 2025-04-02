@@ -87,7 +87,7 @@ data class CannotSignDisconnected                  (override val channelId: Byte
 data class UnexpectedRevocation                    (override val channelId: ByteVector32) : ChannelException(channelId, "received unexpected RevokeAndAck message")
 data class InvalidRevocation                       (override val channelId: ByteVector32) : ChannelException(channelId, "invalid revocation")
 data class InvalidFailureCode                      (override val channelId: ByteVector32) : ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
-data class CannotDecryptFailure                    (override val channelId: ByteVector32, val details: String) : ChannelException(channelId, "cannot decrypt failure message: $details")
+data class CannotDecryptFailure                    (override val channelId: ByteVector32) : ChannelException(channelId, "cannot decrypt failure packet")
 data class PleasePublishYourCommitment             (override val channelId: ByteVector32) : ChannelException(channelId, "please publish your local commitment")
 data class CommandUnavailableInThisState           (override val channelId: ByteVector32, val state: String) : ChannelException(channelId, "cannot execute command in state=$state")
 data class ForbiddenDuringSplice                   (override val channelId: ByteVector32, val command: String?) : ChannelException(channelId, "cannot process $command while splicing")
