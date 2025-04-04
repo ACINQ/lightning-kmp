@@ -7,9 +7,11 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
+import fr.acinq.lightning.channel.states.SpliceTestsCommon
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.value
 import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.EncryptedPeerStorage
@@ -102,14 +104,15 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             val (alice1, bob1) = addHtlcs(alice, bob, MilliSatoshi(6000_000), maxOutgoing)
             val (bob2, alice2) = addHtlcs(bob1, alice1, MilliSatoshi(6000_000), maxIncoming)
             val (alice3, bob3) = crossSign(alice2, bob2)
+            val (alice4, _, bob4, _) = SpliceTestsCommon.spliceInAndOutWithoutSigs(alice3, bob3, listOf(50_000.sat), 50_000.sat)
 
-            val bina = EncryptedPeerStorage.from(randomKey(), listOf(alice3.state)).data
-            val binb = EncryptedPeerStorage.from(randomKey(), listOf(bob3.state)).data
+            val bina = EncryptedPeerStorage.from(randomKey(), listOf(alice4.state)).data
+            val binb = EncryptedPeerStorage.from(randomKey(), listOf(bob4.state)).data
             return max(bina.size(), binb.size())
         }
 
-        // with 15 incoming payments and 15 outgoing payments, our encrypted backup stays below the 65k limit for peer storage
-        assertTrue(peerStorageSize(15, 15) <= 65_531)
+        // with 6 incoming payments and 6 outgoing payments, our encrypted backup stays below the 65k limit for peer storage
+        assertTrue(peerStorageSize(6, 6) <= 65_531)
     }
 
     @Test

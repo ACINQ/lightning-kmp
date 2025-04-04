@@ -282,7 +282,6 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features.initFeatures(),
             bobFeatures: Features = TestConstants.Bob.nodeParams.features.initFeatures(),
-            aliceUsePeerStorage: Boolean = false,
             bobUsePeerStorage: Boolean = true,
             currentHeight: Int = TestConstants.defaultBlockHeight,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
@@ -291,7 +290,7 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
             zeroConf: Boolean = false,
             channelOrigin: Origin? = null
         ): Fixture {
-            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, aliceUsePeerStorage, bobUsePeerStorage, currentHeight, aliceFundingAmount, bobFundingAmount, requestRemoteFunding, zeroConf, channelOrigin)
+            val (a, b, open) = TestsHelper.init(channelType, aliceFeatures, bobFeatures, bobUsePeerStorage, currentHeight, aliceFundingAmount, bobFundingAmount, requestRemoteFunding, zeroConf, channelOrigin)
             val (b1, actions) = b.process(ChannelCommand.MessageReceived(open))
             val accept = actions.findOutgoingMessage<AcceptDualFundedChannel>()
             assertIs<LNChannel<WaitForFundingCreated>>(b1)

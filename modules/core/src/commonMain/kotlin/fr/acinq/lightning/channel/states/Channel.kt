@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.SensitiveTaskEvents
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -21,7 +20,6 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelCloseOutgoingPayment.ChannelClosingType
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.logging.MDCLogger
-import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat

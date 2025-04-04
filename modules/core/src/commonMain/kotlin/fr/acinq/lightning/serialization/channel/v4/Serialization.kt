@@ -58,7 +58,6 @@ object Serialization {
 
     fun serializePeerStorage(states: List<PersistedChannelState>): ByteArray {
         val out = ByteArrayOutput()
-        out.write(VERSION_MAGIC)
         out.writeCollection(states) { out.writePersistedChannelState(it) }
         return out.toByteArray()
     }

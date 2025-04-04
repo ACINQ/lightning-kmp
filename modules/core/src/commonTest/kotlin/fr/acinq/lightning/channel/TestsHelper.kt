@@ -152,7 +152,6 @@ object TestsHelper {
         channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
         bobFeatures: Features = TestConstants.Bob.nodeParams.features,
-        aliceUsePeerStorage: Boolean = false,
         bobUsePeerStorage: Boolean = true,
         currentHeight: Int = TestConstants.defaultBlockHeight,
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
@@ -163,11 +162,11 @@ object TestsHelper {
     ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForOpenChannel>, OpenDualFundedChannel> {
         val (aliceNodeParams, bobNodeParams) = when (zeroConf) {
             true -> Pair(
-                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId), usePeerStorage = aliceUsePeerStorage),
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId), usePeerStorage = false),
                 TestConstants.Bob.nodeParams.copy(features = bobFeatures, zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId), usePeerStorage = bobUsePeerStorage)
             )
             false -> Pair(
-                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, usePeerStorage = aliceUsePeerStorage),
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, usePeerStorage = false),
                 TestConstants.Bob.nodeParams.copy(features = bobFeatures, usePeerStorage = bobUsePeerStorage)
             )
         }
@@ -240,7 +239,6 @@ object TestsHelper {
         channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features.initFeatures(),
         bobFeatures: Features = TestConstants.Bob.nodeParams.features.initFeatures(),
-        aliceUsePeerStorage: Boolean = false,
         bobUsePeerStorage: Boolean = true,
         currentHeight: Int = TestConstants.defaultBlockHeight,
         aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
@@ -252,7 +250,6 @@ object TestsHelper {
             channelType,
             aliceFeatures,
             bobFeatures,
-            aliceUsePeerStorage,
             bobUsePeerStorage,
             currentHeight,
             aliceFundingAmount,

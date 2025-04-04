@@ -564,10 +564,9 @@ class ShutdownTestsCommon : LightningTestSuite() {
             currentBlockHeight: Int = TestConstants.defaultBlockHeight,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
-            aliceUsePeerStorage: Boolean = false,
             bobUsePeerStorage: Boolean = true,
         ): Pair<LNChannel<ShuttingDown>, LNChannel<ShuttingDown>> {
-            val (alice, bob) = reachNormal(channelType, aliceFeatures, bobFeatures, aliceUsePeerStorage, bobUsePeerStorage, currentBlockHeight)
+            val (alice, bob) = reachNormal(channelType, aliceFeatures, bobFeatures, bobUsePeerStorage, currentBlockHeight)
             val (_, cmdAdd1) = makeCmdAdd(300_000_000.msat, bob.staticParams.nodeParams.nodeId, currentBlockHeight.toLong(), r1)
             val (alice1, actions) = alice.process(cmdAdd1)
             val htlc1 = actions.findOutgoingMessage<UpdateAddHtlc>()

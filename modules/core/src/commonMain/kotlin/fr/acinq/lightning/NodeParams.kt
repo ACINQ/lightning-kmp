@@ -127,6 +127,7 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param paymentRecipientExpiryParams configure the expiry delta used for the final node when sending payments.
  * @param zeroConfPeers list of peers with whom we use zero-conf (note that this is a strong trust assumption).
  * @param liquidityPolicy fee policy for liquidity events, can be modified at any time.
+ * @param usePeerStorage if true and if our peer advertises the feature "option_provide_storage", we will send them an encrypted backup of our channels to allow restoring a wallet from its seed.
  */
 data class NodeParams(
     val loggerFactory: LoggerFactory,

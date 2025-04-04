@@ -9,8 +9,8 @@ object Serialization {
         return fr.acinq.lightning.serialization.channel.v4.Serialization.serialize(state)
     }
 
-    fun serializePeerStorage(states: List<PersistedChannelState>): ByteArray {
-        return fr.acinq.lightning.serialization.channel.v4.Serialization.serializePeerStorage(states)
+    fun serializePeerStorage(states: List<PersistedChannelState>): Pair<Byte, ByteArray> {
+        return Pair(4, fr.acinq.lightning.serialization.channel.v4.Serialization.serializePeerStorage(states))
     }
 
     fun deserialize(bin: ByteArray): DeserializationResult {
@@ -24,11 +24,10 @@ object Serialization {
         }
     }
 
-    fun deserializePeerStorage(bin: ByteArray): PeerStorageDeserializationResult {
-        return when {
-            // v4 uses a 1-byte version discriminator
-            bin[0].toInt() == 4 -> PeerStorageDeserializationResult.Success(fr.acinq.lightning.serialization.channel.v4.Deserialization.deserializePeerStorage(bin))
-            else -> PeerStorageDeserializationResult.UnknownVersion(bin[0].toInt())
+    fun deserializePeerStorage(versionByte: Byte, bin: ByteArray): PeerStorageDeserializationResult {
+        return when(versionByte.toInt()) {
+            4 -> PeerStorageDeserializationResult.Success(fr.acinq.lightning.serialization.channel.v4.Deserialization.deserializePeerStorage(bin))
+            else -> PeerStorageDeserializationResult.UnknownVersion(versionByte.toInt())
         }
     }
 
