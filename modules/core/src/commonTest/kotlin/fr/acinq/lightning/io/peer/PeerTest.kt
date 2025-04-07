@@ -3,6 +3,7 @@ package fr.acinq.lightning.io.peer
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.Script
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -10,10 +11,7 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.ChannelFlags
-import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.channel.LNChannel
-import fr.acinq.lightning.channel.TestsHelper
+import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.db.InMemoryDatabases
@@ -29,7 +27,9 @@ import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -460,30 +460,34 @@ class PeerTest : LightningTestSuite() {
 
         alice.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, LightningOutgoingPayment.Details.Normal(invoice)))
 
-        val updateHtlc = alice2bob.expect<UpdateAddHtlc>()
-        val aliceCommitSig = alice2bob.expect<CommitSig>()
+        val updateHtlc = alice2bob.expectStrict<UpdateAddHtlc>()
+        val aliceCommitSig = alice2bob.expectStrict<CommitSig>()
         bob.forward(updateHtlc)
         bob.forward(aliceCommitSig)
 
-        val bobRevokeAndAck = bob2alice.expect<RevokeAndAck>()
-        val bobCommitSig = bob2alice.expect<CommitSig>()
+        bob2alice.expectStrict<PeerStorageStore>()
+        val bobRevokeAndAck = bob2alice.expectStrict<RevokeAndAck>()
+        bob2alice.expectStrict<PeerStorageStore>()
+        val bobCommitSig = bob2alice.expectStrict<CommitSig>()
         alice.forward(bobRevokeAndAck)
         alice.forward(bobCommitSig)
 
-        val aliceRevokeAndAck = alice2bob.expect<RevokeAndAck>()
+        val aliceRevokeAndAck = alice2bob.expectStrict<RevokeAndAck>()
         bob.forward(aliceRevokeAndAck)
 
-        val updateFulfillHtlc = bob2alice.expect<UpdateFulfillHtlc>()
-        val bobCommitSig2 = bob2alice.expect<CommitSig>()
+        val updateFulfillHtlc = bob2alice.expectStrict<UpdateFulfillHtlc>()
+        bob2alice.expectStrict<PeerStorageStore>()
+        val bobCommitSig2 = bob2alice.expectStrict<CommitSig>()
         alice.forward(updateFulfillHtlc)
         alice.forward(bobCommitSig2)
 
-        val aliceRevokeAndAck2 = alice2bob.expect<RevokeAndAck>()
-        val aliceCommitSig2 = alice2bob.expect<CommitSig>()
+        val aliceRevokeAndAck2 = alice2bob.expectStrict<RevokeAndAck>()
+        val aliceCommitSig2 = alice2bob.expectStrict<CommitSig>()
         bob.forward(aliceRevokeAndAck2)
         bob.forward(aliceCommitSig2)
 
-        val bobRevokeAndAck2 = bob2alice.expect<RevokeAndAck>()
+        bob2alice.expectStrict<PeerStorageStore>()
+        val bobRevokeAndAck2 = bob2alice.expectStrict<RevokeAndAck>()
         alice.forward(bobRevokeAndAck2)
 
         alice.expectState<Normal> { commitments.availableBalanceForReceive() > alice0.commitments.availableBalanceForReceive() }
@@ -503,13 +507,15 @@ class PeerTest : LightningTestSuite() {
         bob.send(PayInvoice(UUID.randomUUID(), invoice.amount!!, LightningOutgoingPayment.Details.Normal(invoice)))
 
         // Bob sends an HTLC to Alice.
-        alice.forward(bob2alice1.expect<UpdateAddHtlc>())
-        alice.forward(bob2alice1.expect<CommitSig>())
+        alice.forward(bob2alice1.expectStrict<UpdateAddHtlc>())
+        bob2alice1.expectStrict<PeerStorageStore>()
+        alice.forward(bob2alice1.expectStrict<CommitSig>())
 
         // We start cross-signing the HTLC.
-        bob.forward(alice2bob1.expect<RevokeAndAck>())
-        bob.forward(alice2bob1.expect<CommitSig>())
-        bob2alice1.expect<RevokeAndAck>() // Alice doesn't receive Bob's revocation.
+        bob.forward(alice2bob1.expectStrict<RevokeAndAck>())
+        bob.forward(alice2bob1.expectStrict<CommitSig>())
+        bob2alice1.expectStrict<PeerStorageStore>()
+        bob2alice1.expectStrict<RevokeAndAck>() // Alice doesn't receive Bob's revocation.
 
         // We disconnect before Alice receives Bob's revocation.
         alice.disconnect()
@@ -519,13 +525,16 @@ class PeerTest : LightningTestSuite() {
 
         // On reconnection, Bob retransmits its revocation.
         val (_, _, alice2bob2, bob2alice2) = connect(this, connectionId = 1, alice, bob, channelsCount = 1, expectChannelReady = false, automateMessaging = false)
-        alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
+        // The `connect` helper already ignores the `PeerStorageStore` that Bob must send before `RevokeAndAck`.
+        alice.forward(bob2alice2.expectStrict<RevokeAndAck>(), connectionId = 1)
 
         // Alice has now received the complete payment and fulfills it.
-        bob.forward(alice2bob2.expect<UpdateFulfillHtlc>(), connectionId = 1)
-        bob.forward(alice2bob2.expect<CommitSig>(), connectionId = 1)
-        alice.forward(bob2alice2.expect<RevokeAndAck>(), connectionId = 1)
-        bob2alice2.expect<CommitSig>() // Alice doesn't receive Bob's signature.
+        bob.forward(alice2bob2.expectStrict<UpdateFulfillHtlc>(), connectionId = 1)
+        bob.forward(alice2bob2.expectStrict<CommitSig>(), connectionId = 1)
+        bob2alice2.expectStrict<PeerStorageStore>()
+        alice.forward(bob2alice2.expectStrict<RevokeAndAck>(), connectionId = 1)
+        bob2alice2.expectStrict<PeerStorageStore>()
+        bob2alice2.expectStrict<CommitSig>() // Alice doesn't receive Bob's signature.
 
         // We disconnect before Alice receives Bob's signature.
         alice.disconnect()
@@ -535,8 +544,8 @@ class PeerTest : LightningTestSuite() {
 
         // On reconnection, Bob retransmits its signature.
         val (_, _, alice2bob3, bob2alice3) = connect(this, connectionId = 2, alice, bob, channelsCount = 1, expectChannelReady = false, automateMessaging = false)
-        alice.forward(bob2alice3.expect<CommitSig>(), connectionId = 2)
-        bob.forward(alice2bob3.expect<RevokeAndAck>(), connectionId = 2)
+        alice.forward(bob2alice3.expectStrict<CommitSig>(), connectionId = 2)
+        bob.forward(alice2bob3.expectStrict<RevokeAndAck>(), connectionId = 2)
 
         assertEquals(invoice.amount, alice.db.payments.getLightningIncomingPayment(invoice.paymentHash)?.amount)
     }
@@ -559,4 +568,21 @@ class PeerTest : LightningTestSuite() {
         alice.expectState<Normal> { commitments.availableBalanceForReceive() > alice0.commitments.availableBalanceForReceive() }
     }
 
+    @Test
+    fun `update peer storage when closing channel`() = runSuspendTest {
+        val (alice0, bob0) = TestsHelper.reachNormal()
+        val nodeParams = Pair(alice0.staticParams.nodeParams, bob0.staticParams.nodeParams)
+        val walletParams = Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams)
+        val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
+
+        val replyTo = CompletableDeferred<ChannelCloseResponse>()
+        alice.send(WrappedChannelCommand(alice0.channelId, ChannelCommand.Close.MutualClose(replyTo, Script.write(Script.pay2pkh(randomKey().publicKey())).toByteVector(), FeeratePerKw.CommitmentFeerate)))
+
+        bob.forward(alice2bob.expectStrict<Shutdown>())
+        bob2alice.expectStrict<PeerStorageStore>()
+        alice.forward(bob2alice.expectStrict<Shutdown>())
+        bob.forward(alice2bob.expectStrict<ClosingComplete>())
+        bob2alice.expectStrict<PeerStorageStore>()
+        alice.forward(bob2alice.expectStrict<ClosingSig>())
+    }
 }
