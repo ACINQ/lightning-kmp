@@ -525,7 +525,7 @@ class PeerTest : LightningTestSuite() {
 
         // On reconnection, Bob retransmits its revocation.
         val (_, _, alice2bob2, bob2alice2) = connect(this, connectionId = 1, alice, bob, channelsCount = 1, expectChannelReady = false, automateMessaging = false)
-        // The `connect` helper already ignores the `PeerStorageStore` that Bob must send before `RevokeAndAck`.
+        bob2alice2.expectStrict<PeerStorageStore>()
         alice.forward(bob2alice2.expectStrict<RevokeAndAck>(), connectionId = 1)
 
         // Alice has now received the complete payment and fulfills it.
@@ -544,6 +544,7 @@ class PeerTest : LightningTestSuite() {
 
         // On reconnection, Bob retransmits its signature.
         val (_, _, alice2bob3, bob2alice3) = connect(this, connectionId = 2, alice, bob, channelsCount = 1, expectChannelReady = false, automateMessaging = false)
+        bob2alice3.expectStrict<PeerStorageStore>()
         alice.forward(bob2alice3.expectStrict<CommitSig>(), connectionId = 2)
         bob.forward(alice2bob3.expectStrict<RevokeAndAck>(), connectionId = 2)
 

@@ -257,24 +257,11 @@ class Peer(
             )
         )
         return state.run { ctx.process(cmd) }
-            .let { (state1, actions) -> updatePeerStorage(state1, actions) }
             .also { (state1, _) ->
                 if (state1::class != state::class) {
                     ctx.logger.info { "${state.stateName} -> ${state1.stateName}" }
                 }
             }
-    }
-
-    private fun updatePeerStorage(state: ChannelState, actions: List<ChannelAction>): Pair<ChannelState, List<ChannelAction>> {
-        return if (nodeParams.usePeerStorage &&
-            theirInit?.features?.hasFeature(Feature.ProvideStorage) == true &&
-            state is PersistedChannelState &&
-            actions.any { it is ChannelAction.Message.Send && it.message is RequirePeerStorageStore }) {
-            val persistedChannelStates = (channels + (state.channelId to state)).values.filterIsInstance<PersistedChannelState>()
-            Pair(state, listOf(ChannelAction.Message.Send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))) + actions)
-        } else {
-            Pair(state, actions)
-        }
     }
 
     val finalWallet = (client as? IElectrumClient)?.let { electrumClient -> FinalWallet(nodeParams.chain, nodeParams.keyManager.finalOnChainWallet, electrumClient, scope, nodeParams.loggerFactory) }
@@ -339,7 +326,7 @@ class Peer(
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
                 val (state1, actions) = state.process(ChannelCommand.Init.Restore(it))
-                processActions(it.channelId, peerConnection, actions)
+                processActions(it.channelId, peerConnection, actions, state1)
                 _channels = _channels + (it.channelId to state1)
                 it.channelId
             }
@@ -852,13 +839,21 @@ class Peer(
         }
     }
 
-    private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>) {
+    private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>, state: ChannelState) {
         // we peek into the actions to see if the id of the channel is going to change, but we're not processing it yet
         val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
         logger.withMDC(mapOf("channelId" to actualChannelId)) { logger ->
             actions.forEach { action ->
                 when (action) {
-                    is ChannelAction.Message.Send -> peerConnection?.send(action.message) // ignore if disconnected
+                    is ChannelAction.Message.Send -> {
+                        if (action.message is RequirePeerStorageStore &&
+                            nodeParams.usePeerStorage &&
+                            theirInit?.features?.hasFeature(Feature.ProvideStorage) == true) {
+                            val persistedChannelStates = (channels + (channelId to state)).values.filterIsInstance<PersistedChannelState>()
+                            peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
+                        }
+                        peerConnection?.send(action.message) // ignore if disconnected
+                    }
                     // sometimes channel actions include "self" command (such as ChannelCommand.Commitment.Sign)
                     is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, action.command))
                     is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
@@ -1110,11 +1105,11 @@ class Peer(
         val state = WaitForInit
         val event1 = ChannelCommand.Init.Restore(recovered)
         val (state1, actions1) = state.process(event1)
-        processActions(recovered.channelId, peerConnection, actions1)
+        processActions(recovered.channelId, peerConnection, actions1, state1)
 
         val event2 = ChannelCommand.Connected(ourInit, theirInit!!)
         val (state2, actions2) = state1.process(event2)
-        processActions(recovered.channelId, peerConnection, actions2)
+        processActions(recovered.channelId, peerConnection, actions2, state2)
         _channels = _channels + (recovered.channelId to state2)
 
         return state2
@@ -1171,7 +1166,7 @@ class Peer(
                                 remoteFundingRates.value = msg.liquidityRates
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, msg))
-                                    processActions(entry.key, peerConnection, actions)
+                                    processActions(entry.key, peerConnection, actions, state1)
                                     state1
                                 }
                             }
@@ -1219,7 +1214,7 @@ class Peer(
                             val (state1, actions1) = state.process(initCommand)
                             val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
                             _channels = _channels + (msg.temporaryChannelId to state2)
-                            processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2)
+                            processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2, state2)
                         }
                     }
                     is PeerStorageRetrieval -> {
@@ -1276,7 +1271,7 @@ class Peer(
                             peerConnection?.send(Error(msg.channelId, "unknown channel"))
                         } else {
                             val (state1, actions1) = state.process(ChannelCommand.MessageReceived(msg))
-                            processActions(msg.channelId, peerConnection, actions1)
+                            processActions(msg.channelId, peerConnection, actions1, state1)
                             _channels = _channels + (msg.channelId to state1)
                         }
                     }
@@ -1286,7 +1281,7 @@ class Peer(
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)
                             _channels = _channels + (msg.temporaryChannelId to state1)
-                            processActions(msg.temporaryChannelId, peerConnection, actions)
+                            processActions(msg.temporaryChannelId, peerConnection, actions, state1)
                         } ?: run {
                             logger.error { "received ${msg::class.simpleName} for unknown temporary channel ${msg.temporaryChannelId}" }
                             peerConnection?.send(Error(msg.temporaryChannelId, "unknown channel"))
@@ -1299,7 +1294,7 @@ class Peer(
                             _channels[msg.channelId]?.let { state ->
                                 val event1 = ChannelCommand.MessageReceived(msg)
                                 val (state1, actions) = state.process(event1)
-                                processActions(msg.channelId, peerConnection, actions)
+                                processActions(msg.channelId, peerConnection, actions, state1)
                                 _channels = _channels + (msg.channelId to state1)
                             } ?: run {
                                 logger.error { "received ${msg::class.simpleName} for unknown channel ${msg.channelId}" }
@@ -1311,7 +1306,7 @@ class Peer(
                         _channels.values.filterIsInstance<Normal>().find { it.matchesShortChannelId(msg.shortChannelId) }?.let { state ->
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)
-                            processActions(state.channelId, peerConnection, actions)
+                            processActions(state.channelId, peerConnection, actions, state1)
                             _channels = _channels + (state.channelId to state1)
                         }
                     }
@@ -1383,7 +1378,7 @@ class Peer(
                     val state = _channels[cmd.watch.channelId] ?: error("channel ${cmd.watch.channelId} not found")
                     val event1 = ChannelCommand.WatchReceived(cmd.watch)
                     val (state1, actions) = state.process(event1)
-                    processActions(cmd.watch.channelId, peerConnection, actions)
+                    processActions(cmd.watch.channelId, peerConnection, actions, state1)
                     _channels = _channels + (cmd.watch.channelId to state1)
                 }
             }
@@ -1408,7 +1403,7 @@ class Peer(
                 )
                 val msg = actions1.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                 _channels = _channels + (msg.temporaryChannelId to state1)
-                processActions(msg.temporaryChannelId, peerConnection, actions1)
+                processActions(msg.temporaryChannelId, peerConnection, actions1, state1)
             }
             is AddWalletInputsToChannel -> {
                 when (val available = selectChannelForSplicing()) {
@@ -1518,7 +1513,7 @@ class Peer(
                                             val (state, actions) = WaitForInit.process(initCommand)
                                             val msg = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                                             _channels = _channels + (msg.temporaryChannelId to state)
-                                            processActions(msg.temporaryChannelId, peerConnection, actions)
+                                            processActions(msg.temporaryChannelId, peerConnection, actions, state)
                                             nodeParams._nodeEvents.emit(SwapInEvents.Requested(cmd.walletInputs))
                                         }
                                     }
@@ -1582,7 +1577,7 @@ class Peer(
                                 )
                                 val (state, actions) = available.channel.process(spliceCommand)
                                 _channels = _channels + (available.channel.channelId to state)
-                                processActions(available.channel.channelId, peerConnection, actions)
+                                processActions(available.channel.channelId, peerConnection, actions, state)
                             }
                         }
                     }
@@ -1628,7 +1623,7 @@ class Peer(
                                 )
                                 val msg = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                                 _channels = _channels + (msg.temporaryChannelId to state)
-                                processActions(msg.temporaryChannelId, peerConnection, actions)
+                                processActions(msg.temporaryChannelId, peerConnection, actions, state)
                             }
                         }
                     }
@@ -1665,13 +1660,13 @@ class Peer(
                     // this is for all channels
                     _channels.forEach { (key, value) ->
                         val (state1, actions) = value.process(cmd.channelCommand)
-                        processActions(key, peerConnection, actions)
+                        processActions(key, peerConnection, actions, state1)
                         _channels = _channels + (key to state1)
                     }
                 } else {
                     _channels[cmd.channelId]?.let { state ->
                         val (state1, actions) = state.process(cmd.channelCommand)
-                        processActions(cmd.channelId, peerConnection, actions)
+                        processActions(cmd.channelId, peerConnection, actions, state1)
                         _channels = _channels + (cmd.channelId to state1)
                     } ?: logger.error { "received ${cmd.channelCommand::class.simpleName} for an unknown channel ${cmd.channelId}" }
                 }
@@ -1685,7 +1680,7 @@ class Peer(
                         _channels.forEach { (key, value) ->
                             val (state1, actions) = value.process(ChannelCommand.Disconnected)
                             _channels = _channels + (key to state1)
-                            processActions(key, peerConnection, actions)
+                            processActions(key, peerConnection, actions, state1)
                         }
                         // We must purge pending incoming payments: incoming HTLCs that aren't settled yet will be
                         // re-processed on reconnection, and we must not keep HTLCs pending in the payment handler since
