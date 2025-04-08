@@ -419,7 +419,6 @@ data class Bolt11Invoice(
             }
         }
 
-
         data class Features(val bits: ByteVector) : TaggedField() {
             override val tag: Int5 = Features.tag
 
