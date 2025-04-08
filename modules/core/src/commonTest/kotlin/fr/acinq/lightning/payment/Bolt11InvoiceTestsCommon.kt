@@ -408,6 +408,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
             "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq0lzc236j96a95uv0m3umg28gclm5lqxtqqwk32uuk4k6673k6n5kfvx3d2h8s295fad45fdhmusm8sjudfhlf6dcsxmfvkeywmjdkxcp99202x",
             // Missing payment secret.
             "lnbc1qqygh9qpp5s7zxqqqqqqqqqqqqpjqqqqqqqqqqqqqqqqqqcqpjqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqquqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzxqqqqqqqqqqqqqqqy6f523d",
+            "lnbc20m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfpr6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp49qdkj",
             // Invalid signature public key recovery id.
             "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a"
         )
@@ -464,6 +465,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `feature bits to minimally-encoded feature bytes`() {
+        // Invoice features are encoded as 5-bits chunks, which we decode to bytes.
         val testCases = listOf(
             // 01000 01000 00101
             Pair(listOf<Int5>(8, 8, 5), ByteVector("2105")),
@@ -483,8 +485,31 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
             Pair(listOf<Int5>(9, 24, 0, 6), ByteVector("04e006"))
         )
 
-        testCases.forEach {
-            assertEquals(it.second, Bolt11Invoice.TaggedField.Features.decode(it.first).bits)
+        testCases.forEach { (invoiceFeatureBits, featureBytes) ->
+            assertEquals(featureBytes, Bolt11Invoice.TaggedField.Features.decode(invoiceFeatureBits).bits)
+        }
+    }
+
+    @Test
+    fun `feature bytes to minimally-encoded feature bits`() {
+        // When encoding features into 5-bits chunks, we want to get rid of leading zeroes.
+        val testCases = listOf(
+            // 00010000 -> 10000
+            Pair(ByteVector("10"), listOf<Int5>(16)),
+            // 00100000 -> 00001 00000
+            Pair(ByteVector("20"), listOf<Int5>(1, 0)),
+            // 10010000 -> 00100 10000
+            Pair(ByteVector("90"), listOf<Int5>(4, 16)),
+            // 00000001 00000000 -> 01000 00000
+            Pair(ByteVector("0100"), listOf<Int5>(8, 0)),
+            // 00000010 00000000 -> 10000 00000
+            Pair(ByteVector("0200"), listOf<Int5>(16, 0)),
+            // 00000100 00000000 -> 00001 00000 00000
+            Pair(ByteVector("0400"), listOf<Int5>(1, 0, 0)),
+        )
+
+        testCases.forEach { (featureBytes, invoiceFeatureBits) ->
+            assertEquals(invoiceFeatureBits, Bolt11Invoice.TaggedField.Features(featureBytes).encode())
         }
     }
 
