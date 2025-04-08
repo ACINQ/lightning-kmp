@@ -548,7 +548,6 @@ data class TxSignatures(
             TxSignaturesTlv.SwapInServerSigs.tag to TxSignaturesTlv.SwapInServerSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInUserPartialSigs.tag to TxSignaturesTlv.SwapInUserPartialSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInServerPartialSigs.tag to TxSignaturesTlv.SwapInServerPartialSigs.Companion as TlvValueReader<TxSignaturesTlv>,
-            TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>,
         )
 
         override fun read(input: Input): TxSignatures {
@@ -1248,7 +1247,6 @@ data class CommitSig(
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
-            CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.AlternativeFeerateSigs.tag to CommitSigTlv.AlternativeFeerateSigs.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
         )
@@ -1284,8 +1282,7 @@ data class RevokeAndAck(
     companion object : LightningMessageReader<RevokeAndAck> {
         const val type: Long = 133
 
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(RevokeAndAckTlv.ChannelData.tag to RevokeAndAckTlv.ChannelData.Companion as TlvValueReader<RevokeAndAckTlv>)
+        val readers: Map<Long, TlvValueReader<RevokeAndAckTlv>> = mapOf()
 
         override fun read(input: Input): RevokeAndAck {
             return RevokeAndAck(
@@ -1592,7 +1589,6 @@ data class ClosingSigned(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             ClosingSignedTlv.FeeRange.tag to ClosingSignedTlv.FeeRange.Companion as TlvValueReader<ClosingSignedTlv>,
-            ClosingSignedTlv.ChannelData.tag to ClosingSignedTlv.ChannelData.Companion as TlvValueReader<ClosingSignedTlv>
         )
 
         override fun read(input: Input): ClosingSigned {
@@ -1639,7 +1635,6 @@ data class ClosingComplete(
             ClosingCompleteTlv.CloserOutputOnly.tag to ClosingCompleteTlv.CloserOutputOnly.Companion as TlvValueReader<ClosingCompleteTlv>,
             ClosingCompleteTlv.CloseeOutputOnly.tag to ClosingCompleteTlv.CloseeOutputOnly.Companion as TlvValueReader<ClosingCompleteTlv>,
             ClosingCompleteTlv.CloserAndCloseeOutputs.tag to ClosingCompleteTlv.CloserAndCloseeOutputs.Companion as TlvValueReader<ClosingCompleteTlv>,
-            ClosingCompleteTlv.ChannelData.tag to ClosingCompleteTlv.ChannelData.Companion as TlvValueReader<ClosingCompleteTlv>
         )
 
         override fun read(input: Input): ClosingComplete {
@@ -1688,7 +1683,6 @@ data class ClosingSig(
             ClosingSigTlv.CloserOutputOnly.tag to ClosingSigTlv.CloserOutputOnly.Companion as TlvValueReader<ClosingSigTlv>,
             ClosingSigTlv.CloseeOutputOnly.tag to ClosingSigTlv.CloseeOutputOnly.Companion as TlvValueReader<ClosingSigTlv>,
             ClosingSigTlv.CloserAndCloseeOutputs.tag to ClosingSigTlv.CloserAndCloseeOutputs.Companion as TlvValueReader<ClosingSigTlv>,
-            ClosingSigTlv.ChannelData.tag to ClosingSigTlv.ChannelData.Companion as TlvValueReader<ClosingSigTlv>
         )
 
         override fun read(input: Input): ClosingSig {
