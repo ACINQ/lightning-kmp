@@ -148,6 +148,9 @@ object ChannelReadyTlvShortChannelIdTlvSerializer
 @Serializer(forClass = ClosingSignedTlv.FeeRange::class)
 object ClosingSignedTlvFeeRangeSerializer
 
+@Serializer(forClass = ShutdownTlv.ChannelData::class)
+object ShutdownTlvChannelDataSerializer
+
 @Serializer(forClass = ShutdownTlv::class)
 object ShutdownTlvSerializer
 

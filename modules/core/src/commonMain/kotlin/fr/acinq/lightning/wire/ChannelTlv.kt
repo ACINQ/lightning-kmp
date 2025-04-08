@@ -115,6 +115,17 @@ sealed class ChannelReadyTlv : Tlv {
 }
 
 sealed class CommitSigTlv : Tlv {
+    // Legacy TLV needed to deserialize old backups
+    data class ChannelData(val ecb: EncryptedChannelData) : CommitSigTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+
     data class AlternativeFeerateSig(val feerate: FeeratePerKw, val sig: ByteVector64)
 
     /**
@@ -157,7 +168,18 @@ sealed class CommitSigTlv : Tlv {
     }
 }
 
-sealed class RevokeAndAckTlv : Tlv
+sealed class RevokeAndAckTlv : Tlv {
+    // Legacy TLV needed to deserialize old backups
+    data class ChannelData(val ecb: EncryptedChannelData) : RevokeAndAckTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
 
 sealed class ChannelReestablishTlv : Tlv {
     data class NextFunding(val txId: TxId) : ChannelReestablishTlv() {
@@ -182,7 +204,18 @@ sealed class ChannelReestablishTlv : Tlv {
     }
 }
 
-sealed class ShutdownTlv : Tlv
+sealed class ShutdownTlv : Tlv {
+    // Legacy TLV needed to deserialize old backups
+    data class ChannelData(val ecb: EncryptedChannelData) : ShutdownTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
+}
 
 sealed class ClosingSignedTlv : Tlv {
     data class FeeRange(val min: Satoshi, val max: Satoshi) : ClosingSignedTlv() {
@@ -196,6 +229,17 @@ sealed class ClosingSignedTlv : Tlv {
         companion object : TlvValueReader<FeeRange> {
             const val tag: Long = 1
             override fun read(input: Input): FeeRange = FeeRange(Satoshi(LightningCodecs.u64(input)), Satoshi(LightningCodecs.u64(input)))
+        }
+    }
+
+    // Legacy TLV needed to deserialize old backups
+    data class ChannelData(val ecb: EncryptedChannelData) : ClosingSignedTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
         }
     }
 }
@@ -233,6 +277,16 @@ sealed class ClosingCompleteTlv : Tlv {
             override fun read(input: Input): CloserAndCloseeOutputs = CloserAndCloseeOutputs(LightningCodecs.bytes(input, 64).toByteVector64())
         }
     }
+
+    data class ChannelData(val ecb: EncryptedChannelData) : ClosingCompleteTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
+        }
+    }
 }
 
 sealed class ClosingSigTlv : Tlv {
@@ -266,6 +320,16 @@ sealed class ClosingSigTlv : Tlv {
         companion object : TlvValueReader<CloserAndCloseeOutputs> {
             const val tag: Long = 3
             override fun read(input: Input): CloserAndCloseeOutputs = CloserAndCloseeOutputs(LightningCodecs.bytes(input, 64).toByteVector64())
+        }
+    }
+
+    data class ChannelData(val ecb: EncryptedChannelData) : ClosingSigTlv() {
+        override val tag: Long get() = ChannelData.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
+
+        companion object : TlvValueReader<ChannelData> {
+            const val tag: Long = 0x47010000
+            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
         }
     }
 }
