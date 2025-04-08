@@ -732,7 +732,8 @@ class NormalTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Normal>>(bob1)
 
         val (_, bob2) = signAndRevack(alice1, bob1)
-        val (bob3, _) = bob2.process(ChannelCommand.Commitment.Sign)
+        val (bob3, actions3) = bob2.process(ChannelCommand.Commitment.Sign)
+        actions3.hasOutgoingMessage<CommitSig>()
         assertIs<LNChannel<Normal>>(bob3)
         assertTrue(bob3.commitments.latest.localCommit.spec.htlcs.incomings().any { it.id == htlc.id })
         assertEquals(1, bob3.commitments.latest.localCommit.publishableTxs.htlcTxsAndSigs.size)

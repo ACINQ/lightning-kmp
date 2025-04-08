@@ -3,13 +3,17 @@ package fr.acinq.lightning.serialization.channel
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.crossSign
+import fr.acinq.lightning.channel.states.Negotiating
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.SpliceTestsCommon
 import fr.acinq.lightning.serialization.channel.Encryption.from
+import fr.acinq.lightning.serialization.channel.Encryption.fromEncryptedPeerStorage
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.value
@@ -155,4 +159,22 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         }
     }
 
+    @Test
+    fun `trim channel data if needed`() = runSuspendTest {
+        val (alice, bob) = TestsHelper.reachNormal()
+        val normalState = alice.state
+        val (alice1, _, _) = TestsHelper.mutualCloseAlice(alice, bob, FeeratePerKw.CommitmentFeerate)
+        val negotatingState = alice1.state
+
+        // 20 Normal and 20 Negotiating mixed together
+        val states = (1..9).map { normalState } + (1..7).map { negotatingState } + (1..5).map { normalState } + (1..10).map { negotatingState } + (1..6).map { normalState } + (1..3).map { negotatingState }
+        assertEquals(20, states.filterIsInstance<Normal>().size)
+        assertEquals(20, states.filterIsInstance<Negotiating>().size)
+
+        val key = randomKey()
+        val eps = EncryptedPeerStorage.from(key, states)
+        val storedStates = assertIs<Serialization.PeerStorageDeserializationResult.Success>(PersistedChannelState.fromEncryptedPeerStorage(key, eps).getOrNull()!!).states
+        assertEquals(20, storedStates.filterIsInstance<Normal>().size) // All Normal states are preserved.
+        assertTrue(storedStates.filterIsInstance<Negotiating>().size < 20) // Some Negotiating states are dropped.
+    }
 }
