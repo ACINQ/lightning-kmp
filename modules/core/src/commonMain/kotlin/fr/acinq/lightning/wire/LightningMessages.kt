@@ -10,7 +10,6 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelFlags
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
@@ -97,6 +96,8 @@ interface LightningMessage {
                 SpliceInit.type -> SpliceInit.read(stream)
                 SpliceAck.type -> SpliceAck.read(stream)
                 SpliceLocked.type -> SpliceLocked.read(stream)
+                PeerStorageStore.type -> PeerStorageStore.read(stream)
+                PeerStorageRetrieval.type -> PeerStorageRetrieval.read(stream)
                 else -> UnknownMessage(code.toLong())
             }
         }
@@ -155,6 +156,10 @@ interface HasChainHash : LightningMessage {
 
 interface ForbiddenMessageDuringSplice : LightningMessage
 
+/**
+ * Legacy format to backup channel state.
+ * It is only kept to restore old channels. New backups now use EncryptedPeerStorage.
+ */
 data class EncryptedChannelData(val data: ByteVector) {
     /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
     override fun toString(): String {
@@ -169,25 +174,20 @@ data class EncryptedChannelData(val data: ByteVector) {
     }
 }
 
-interface HasEncryptedChannelData : HasChannelId {
-    val channelData: EncryptedChannelData
-    fun withNonEmptyChannelData(ecd: EncryptedChannelData): HasEncryptedChannelData
-    fun withChannelData(data: ByteVector, logger: MDCLogger? = null): HasEncryptedChannelData = withChannelData(EncryptedChannelData(data), logger)
-    fun withChannelData(ecd: EncryptedChannelData, logger: MDCLogger? = null): HasEncryptedChannelData {
-        // The maximum size for lightning messages is 65535 bytes, so we only include a channel backup when we have enough space available.
-        // Our peer needs to be able to send the backup back in their channel_reestablish message, and we don't know the size of that message.
-        // We use an upper bound of 60000 bytes, hoping that it will be enough to make it work in all cases.
-        val sizeWithoutBackup = write().size
-        return when {
-            ecd.isEmpty() -> this
-            ecd.data.size() + sizeWithoutBackup <= 60_000 -> withNonEmptyChannelData(ecd)
-            else -> {
-                logger?.warning { "c:${this.channelId} could not include encrypted backup in ${this::class.simpleName}: too large (${ecd.data.size()} bytes)" }
-                this
-            }
-        }
+data class EncryptedPeerStorage(val data: ByteVector) {
+    /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
+    override fun toString(): String {
+        val bytes = data.take(min(data.size(), 10))
+        return if (bytes.isEmpty()) "" else "$bytes (truncated)"
+    }
+
+    companion object {
+        val empty: EncryptedPeerStorage = EncryptedPeerStorage(ByteVector.empty)
     }
 }
+
+/** Messages that require sending a PeerStorageStore before sending them so that we don't risk restoring a wallet with obsolete data. */
+interface RequirePeerStorageStore
 
 interface ChannelMessage
 
@@ -492,7 +492,7 @@ data class TxSignatures(
     val txId: TxId,
     val witnesses: List<ScriptWitness>,
     val tlvs: TlvStream<TxSignaturesTlv> = TlvStream.empty()
-) : InteractiveTxMessage(), HasChannelId, HasEncryptedChannelData {
+) : InteractiveTxMessage(), HasChannelId, RequirePeerStorageStore {
     constructor(
         channelId: ByteVector32,
         tx: Transaction,
@@ -525,9 +525,6 @@ data class TxSignatures(
     val swapInUserPartialSigs: List<TxSignaturesTlv.PartialSignature> = tlvs.get<TxSignaturesTlv.SwapInUserPartialSigs>()?.psigs ?: listOf()
     val swapInServerPartialSigs: List<TxSignaturesTlv.PartialSignature> = tlvs.get<TxSignaturesTlv.SwapInServerPartialSigs>()?.psigs ?: listOf()
 
-    override val channelData: EncryptedChannelData get() = tlvs.get<TxSignaturesTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): TxSignatures = copy(tlvs = tlvs.addOrUpdate(TxSignaturesTlv.ChannelData(ecd)))
-
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
         // Note that we encode the tx_hash instead of the tx_id to be consistent with other lightning messages.
@@ -551,7 +548,6 @@ data class TxSignatures(
             TxSignaturesTlv.SwapInServerSigs.tag to TxSignaturesTlv.SwapInServerSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInUserPartialSigs.tag to TxSignaturesTlv.SwapInUserPartialSigs.Companion as TlvValueReader<TxSignaturesTlv>,
             TxSignaturesTlv.SwapInServerPartialSigs.tag to TxSignaturesTlv.SwapInServerPartialSigs.Companion as TlvValueReader<TxSignaturesTlv>,
-            TxSignaturesTlv.ChannelData.tag to TxSignaturesTlv.ChannelData.Companion as TlvValueReader<TxSignaturesTlv>,
         )
 
         override fun read(input: Input): TxSignatures {
@@ -1232,11 +1228,8 @@ data class CommitSig(
     val signature: ByteVector64,
     val htlcSignatures: List<ByteVector64>,
     val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
-) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
+) : HtlcMessage, HasChannelId, RequirePeerStorageStore {
     override val type: Long get() = CommitSig.type
-
-    override val channelData: EncryptedChannelData get() = tlvStream.get<CommitSigTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): CommitSig = copy(tlvStream = tlvStream.addOrUpdate(CommitSigTlv.ChannelData(ecd)))
 
     val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
     val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
@@ -1254,7 +1247,6 @@ data class CommitSig(
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
-            CommitSigTlv.ChannelData.tag to CommitSigTlv.ChannelData.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.AlternativeFeerateSigs.tag to CommitSigTlv.AlternativeFeerateSigs.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
         )
@@ -1277,11 +1269,8 @@ data class RevokeAndAck(
     val perCommitmentSecret: PrivateKey,
     val nextPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<RevokeAndAckTlv> = TlvStream.empty()
-) : HtlcMessage, HasChannelId, HasEncryptedChannelData {
+) : HtlcMessage, HasChannelId, RequirePeerStorageStore {
     override val type: Long get() = RevokeAndAck.type
-
-    override val channelData: EncryptedChannelData get() = tlvStream.get<RevokeAndAckTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): RevokeAndAck = copy(tlvStream = tlvStream.addOrUpdate(RevokeAndAckTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1293,8 +1282,7 @@ data class RevokeAndAck(
     companion object : LightningMessageReader<RevokeAndAck> {
         const val type: Long = 133
 
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(RevokeAndAckTlv.ChannelData.tag to RevokeAndAckTlv.ChannelData.Companion as TlvValueReader<RevokeAndAckTlv>)
+        val readers: Map<Long, TlvValueReader<RevokeAndAckTlv>> = mapOf()
 
         override fun read(input: Input): RevokeAndAck {
             return RevokeAndAck(
@@ -1337,12 +1325,12 @@ data class ChannelReestablish(
     val yourLastCommitmentSecret: PrivateKey,
     val myCurrentPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelReestablishTlv> = TlvStream.empty()
-) : HasChannelId, HasEncryptedChannelData {
+) : HasChannelId {
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
-    override val channelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ChannelReestablish = copy(tlvStream = tlvStream.addOrUpdate(ChannelReestablishTlv.ChannelData(ecd)))
+    // Legacy channel backup present only on old inactive channels, will be replaced by peer storage next time this channel data is updated.
+    val legacyChannelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1554,11 +1542,8 @@ data class Shutdown(
     override val channelId: ByteVector32,
     val scriptPubKey: ByteVector,
     val tlvStream: TlvStream<ShutdownTlv> = TlvStream.empty()
-) : ChannelMessage, HasChannelId, HasEncryptedChannelData, ForbiddenMessageDuringSplice {
+) : ChannelMessage, HasChannelId, RequirePeerStorageStore, ForbiddenMessageDuringSplice {
     override val type: Long get() = Shutdown.type
-
-    override val channelData: EncryptedChannelData get() = tlvStream.get<ShutdownTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): Shutdown = copy(tlvStream = tlvStream.addOrUpdate(ShutdownTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1588,11 +1573,8 @@ data class ClosingSigned(
     val feeSatoshis: Satoshi,
     val signature: ByteVector64,
     val tlvStream: TlvStream<ClosingSignedTlv> = TlvStream.empty()
-) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
+) : ChannelMessage, HasChannelId, RequirePeerStorageStore {
     override val type: Long get() = ClosingSigned.type
-
-    override val channelData: EncryptedChannelData get() = tlvStream.get<ClosingSignedTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ClosingSigned = copy(tlvStream = tlvStream.addOrUpdate(ClosingSignedTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1607,7 +1589,6 @@ data class ClosingSigned(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             ClosingSignedTlv.FeeRange.tag to ClosingSignedTlv.FeeRange.Companion as TlvValueReader<ClosingSignedTlv>,
-            ClosingSignedTlv.ChannelData.tag to ClosingSignedTlv.ChannelData.Companion as TlvValueReader<ClosingSignedTlv>
         )
 
         override fun read(input: Input): ClosingSigned {
@@ -1628,15 +1609,12 @@ data class ClosingComplete(
     val fees: Satoshi,
     val lockTime: Long,
     val tlvStream: TlvStream<ClosingCompleteTlv> = TlvStream.empty()
-) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
+) : ChannelMessage, HasChannelId, RequirePeerStorageStore {
     override val type: Long get() = ClosingComplete.type
 
     val closerOutputOnlySig: ByteVector64? = tlvStream.get<ClosingCompleteTlv.CloserOutputOnly>()?.sig
     val closeeOutputOnlySig: ByteVector64? = tlvStream.get<ClosingCompleteTlv.CloseeOutputOnly>()?.sig
     val closerAndCloseeOutputsSig: ByteVector64? = tlvStream.get<ClosingCompleteTlv.CloserAndCloseeOutputs>()?.sig
-
-    override val channelData: EncryptedChannelData get() = tlvStream.get<ClosingCompleteTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ClosingComplete = copy(tlvStream = tlvStream.addOrUpdate(ClosingCompleteTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1657,7 +1635,6 @@ data class ClosingComplete(
             ClosingCompleteTlv.CloserOutputOnly.tag to ClosingCompleteTlv.CloserOutputOnly.Companion as TlvValueReader<ClosingCompleteTlv>,
             ClosingCompleteTlv.CloseeOutputOnly.tag to ClosingCompleteTlv.CloseeOutputOnly.Companion as TlvValueReader<ClosingCompleteTlv>,
             ClosingCompleteTlv.CloserAndCloseeOutputs.tag to ClosingCompleteTlv.CloserAndCloseeOutputs.Companion as TlvValueReader<ClosingCompleteTlv>,
-            ClosingCompleteTlv.ChannelData.tag to ClosingCompleteTlv.ChannelData.Companion as TlvValueReader<ClosingCompleteTlv>
         )
 
         override fun read(input: Input): ClosingComplete {
@@ -1680,15 +1657,12 @@ data class ClosingSig(
     val fees: Satoshi,
     val lockTime: Long,
     val tlvStream: TlvStream<ClosingSigTlv> = TlvStream.empty()
-) : ChannelMessage, HasChannelId, HasEncryptedChannelData {
+) : ChannelMessage, HasChannelId, RequirePeerStorageStore {
     override val type: Long get() = ClosingSig.type
 
     val closerOutputOnlySig: ByteVector64? = tlvStream.get<ClosingSigTlv.CloserOutputOnly>()?.sig
     val closeeOutputOnlySig: ByteVector64? = tlvStream.get<ClosingSigTlv.CloseeOutputOnly>()?.sig
     val closerAndCloseeOutputsSig: ByteVector64? = tlvStream.get<ClosingSigTlv.CloserAndCloseeOutputs>()?.sig
-
-    override val channelData: EncryptedChannelData get() = tlvStream.get<ClosingSigTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
-    override fun withNonEmptyChannelData(ecd: EncryptedChannelData): ClosingSig = copy(tlvStream = tlvStream.addOrUpdate(ClosingSigTlv.ChannelData(ecd)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1709,7 +1683,6 @@ data class ClosingSig(
             ClosingSigTlv.CloserOutputOnly.tag to ClosingSigTlv.CloserOutputOnly.Companion as TlvValueReader<ClosingSigTlv>,
             ClosingSigTlv.CloseeOutputOnly.tag to ClosingSigTlv.CloseeOutputOnly.Companion as TlvValueReader<ClosingSigTlv>,
             ClosingSigTlv.CloserAndCloseeOutputs.tag to ClosingSigTlv.CloserAndCloseeOutputs.Companion as TlvValueReader<ClosingSigTlv>,
-            ClosingSigTlv.ChannelData.tag to ClosingSigTlv.ChannelData.Companion as TlvValueReader<ClosingSigTlv>
         )
 
         override fun read(input: Input): ClosingSig {
@@ -2055,6 +2028,40 @@ data class RecommendedFeerates(
             commitmentFeerate = FeeratePerKw(LightningCodecs.u32(input).sat),
             tlvStream = TlvStreamSerializer(false, readers).read(input)
         )
+    }
+}
+
+data class PeerStorageStore(val eps: EncryptedPeerStorage) : LightningMessage {
+    override val type: Long get() = PeerStorageStore.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeU16(eps.data.size(), out)
+        LightningCodecs.writeBytes(eps.data, out)
+    }
+
+    companion object : LightningMessageReader<PeerStorageStore> {
+        const val type: Long = 7
+
+        override fun read(input: Input): PeerStorageStore {
+            return PeerStorageStore(EncryptedPeerStorage(LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector()))
+        }
+    }
+}
+
+data class PeerStorageRetrieval(val eps: EncryptedPeerStorage) : LightningMessage {
+    override val type: Long get() = PeerStorageRetrieval.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeU16(eps.data.size(), out)
+        LightningCodecs.writeBytes(eps.data, out)
+    }
+
+    companion object : LightningMessageReader<PeerStorageRetrieval> {
+        const val type: Long = 9
+
+        override fun read(input: Input): PeerStorageRetrieval {
+            return PeerStorageRetrieval(EncryptedPeerStorage(LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector()))
+        }
     }
 }
 

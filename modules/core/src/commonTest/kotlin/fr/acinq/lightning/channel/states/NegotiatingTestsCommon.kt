@@ -220,18 +220,6 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv ClosingComplete and ClosingSig with encrypted channel data`() {
-        val (alice, bob, closingCompleteAlice, closingCompleteBob) = init()
-        assertTrue(alice.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupProvider))
-        assertTrue(bob.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
-        assertTrue(closingCompleteAlice.channelData.isEmpty())
-        assertFalse(closingCompleteBob.channelData.isEmpty())
-        val (_, actions1) = bob.process(ChannelCommand.MessageReceived(closingCompleteAlice))
-        val closingSigBob = actions1.hasOutgoingMessage<ClosingSig>()
-        assertFalse(closingSigBob.channelData.isEmpty())
-    }
-
-    @Test
     fun `recv ClosingTxConfirmed -- signed mutual close`() {
         val (alice, bob, closingComplete, _) = init()
 

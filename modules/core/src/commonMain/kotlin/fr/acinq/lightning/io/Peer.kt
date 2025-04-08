@@ -21,6 +21,8 @@ import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.logging.withMDC
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.channel.Encryption.from
+import fr.acinq.lightning.serialization.channel.Encryption.fromEncryptedPeerStorage
+import fr.acinq.lightning.serialization.channel.Serialization.PeerStorageDeserializationResult
 import fr.acinq.lightning.serialization.channel.Serialization.DeserializationResult
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
@@ -324,7 +326,7 @@ class Peer(
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
                 val (state1, actions) = state.process(ChannelCommand.Init.Restore(it))
-                processActions(it.channelId, peerConnection, actions)
+                processActions(it.channelId, peerConnection, actions, state1)
                 _channels = _channels + (it.channelId to state1)
                 it.channelId
             }
@@ -837,13 +839,21 @@ class Peer(
         }
     }
 
-    private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>) {
+    private suspend fun processActions(channelId: ByteVector32, peerConnection: PeerConnection?, actions: List<ChannelAction>, state: ChannelState) {
         // we peek into the actions to see if the id of the channel is going to change, but we're not processing it yet
         val actualChannelId = actions.filterIsInstance<ChannelAction.ChannelId.IdAssigned>().firstOrNull()?.channelId ?: channelId
         logger.withMDC(mapOf("channelId" to actualChannelId)) { logger ->
             actions.forEach { action ->
                 when (action) {
-                    is ChannelAction.Message.Send -> peerConnection?.send(action.message) // ignore if disconnected
+                    is ChannelAction.Message.Send -> {
+                        if (action.message is RequirePeerStorageStore &&
+                            nodeParams.usePeerStorage &&
+                            theirInit?.features?.hasFeature(Feature.ProvideStorage) == true) {
+                            val persistedChannelStates = (channels + (channelId to state)).values.filterIsInstance<PersistedChannelState>()
+                            peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
+                        }
+                        peerConnection?.send(action.message) // ignore if disconnected
+                    }
                     // sometimes channel actions include "self" command (such as ChannelCommand.Commitment.Sign)
                     is ChannelAction.Message.SendToSelf -> input.send(WrappedChannelCommand(actualChannelId, action.command))
                     is ChannelAction.Blockchain.SendWatch -> watcher.watch(action.watch)
@@ -1089,6 +1099,41 @@ class Peer(
     private val peerConnection: PeerConnection?
         get() = _peerConnection.value
 
+    private suspend fun recoverChannel(recovered: PersistedChannelState): ChannelState {
+        db.channels.addOrUpdateChannel(recovered)
+
+        val state = WaitForInit
+        val event1 = ChannelCommand.Init.Restore(recovered)
+        val (state1, actions1) = state.process(event1)
+        processActions(recovered.channelId, peerConnection, actions1, state1)
+
+        val event2 = ChannelCommand.Connected(ourInit, theirInit!!)
+        val (state2, actions2) = state1.process(event2)
+        processActions(recovered.channelId, peerConnection, actions2, state2)
+        _channels = _channels + (recovered.channelId to state2)
+
+        return state2
+    }
+
+    private suspend fun maybeRestoreBackup(backup: PersistedChannelState): ChannelState {
+        val local: ChannelState? = _channels[backup.channelId]
+        return when {
+            local == null -> {
+                logger.warning { "recovering channel from peer backup" }
+                recoverChannel(backup)
+            }
+            local is Syncing && local.state is Negotiating && backup is Negotiating && backup.proposedClosingTxs.size > local.state.proposedClosingTxs.size -> {
+                logger.warning { "recovering Negotiating channel from peer backup (it is more recent)" }
+                recoverChannel(backup)
+            }
+            local is Syncing && local.state is ChannelStateWithCommitments && backup is ChannelStateWithCommitments && backup.commitments.isMoreRecent(local.state.commitments) -> {
+                logger.warning { "recovering channel from peer backup (it is more recent)" }
+                recoverChannel(backup)
+            }
+            else -> local
+        }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun processEvent(cmd: PeerCommand, logger: MDCLogger) {
         when (cmd) {
@@ -1121,7 +1166,7 @@ class Peer(
                                 remoteFundingRates.value = msg.liquidityRates
                                 _channels = _channels.mapValues { entry ->
                                     val (state1, actions) = entry.value.process(ChannelCommand.Connected(ourInit, msg))
-                                    processActions(entry.key, peerConnection, actions)
+                                    processActions(entry.key, peerConnection, actions, state1)
                                     state1
                                 }
                             }
@@ -1169,61 +1214,65 @@ class Peer(
                             val (state1, actions1) = state.process(initCommand)
                             val (state2, actions2) = state1.process(ChannelCommand.MessageReceived(msg))
                             _channels = _channels + (msg.temporaryChannelId to state2)
-                            processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2)
+                            processActions(msg.temporaryChannelId, peerConnection, actions1 + actions2, state2)
+                        }
+                    }
+                    is PeerStorageRetrieval -> {
+                        if (nodeParams.usePeerStorage) {
+                            val backup: PeerStorageDeserializationResult? =
+                                PersistedChannelState
+                                    .fromEncryptedPeerStorage(nodeParams.nodePrivateKey, msg.eps)
+                                    .onFailure { logger.warning(it) { "unreadable peer storage" } }
+                                    .getOrNull()
+                            when (backup) {
+                                null -> {}
+                                is PeerStorageDeserializationResult.UnknownVersion -> {
+                                    logger.warning { "peer sent a peer storage retrieval with a backup generated by a more recent version of phoenix: version=${backup.version}." }
+                                    // In this corner case, we do not want to return an error to the peer, because they will force-close and we will be unable to
+                                    // do anything as we can't read the data. Best thing is to not answer, and tell the user to upgrade the app.
+                                    logger.error { "need to upgrade your app!" }
+                                    nodeParams._nodeEvents.emit(UpgradeRequired)
+                                }
+                                is PeerStorageDeserializationResult.Success -> {
+                                    backup.states.forEach { maybeRestoreBackup(it) }
+                                }
+                            }
+                        } else {
+                            logger.warning { "received unwanted peer storage" }
                         }
                     }
                     is ChannelReestablish -> {
-                        val local: ChannelState? = _channels[msg.channelId]
-                        val backup: DeserializationResult? = msg.channelData.takeIf { !it.isEmpty() }?.let { channelData ->
+                        val backup: DeserializationResult? = msg.legacyChannelData.takeIf { !it.isEmpty() }?.let { channelData ->
                             PersistedChannelState
                                 .from(nodeParams.nodePrivateKey, channelData)
                                 .onFailure { logger.warning(it) { "unreadable backup" } }
                                 .getOrNull()
                         }
-
-                        suspend fun recoverChannel(recovered: PersistedChannelState) {
-                            db.channels.addOrUpdateChannel(recovered)
-
-                            val state = WaitForInit
-                            val event1 = ChannelCommand.Init.Restore(recovered)
-                            val (state1, actions1) = state.process(event1)
-                            processActions(msg.channelId, peerConnection, actions1)
-
-                            val event2 = ChannelCommand.Connected(ourInit, theirInit!!)
-                            val (state2, actions2) = state1.process(event2)
-                            processActions(msg.channelId, peerConnection, actions2)
-
-                            val event3 = ChannelCommand.MessageReceived(msg)
-                            val (state3, actions3) = state2.process(event3)
-                            processActions(msg.channelId, peerConnection, actions3)
-                            _channels = _channels + (msg.channelId to state3)
-                        }
-
-                        when {
+                        val state: ChannelState? = when {
+                            backup == null -> _channels[msg.channelId]
                             backup is DeserializationResult.UnknownVersion -> {
-                                logger.warning { "peer sent a reestablish with a backup generated by a more recent of phoenix: version=${backup.version}." }
+                                logger.warning { "peer sent a reestablish with a backup generated by a more recent version of phoenix: version=${backup.version}." }
                                 // In this corner case, we do not want to return an error to the peer, because they will force-close and we will be unable to
                                 // do anything as we can't read the data. Best thing is to not answer, and tell the user to upgrade the app.
                                 logger.error { "need to upgrade your app!" }
                                 nodeParams._nodeEvents.emit(UpgradeRequired)
+                                null
                             }
-                            local == null && backup == null -> {
-                                logger.warning { "peer sent a reestablish for a unknown channel with no or undecipherable backup" }
-                                peerConnection?.send(Error(msg.channelId, "unknown channel"))
+                            backup is DeserializationResult.Success && backup.state.channelId == msg.channelId -> {
+                                maybeRestoreBackup(backup.state)
                             }
-                            local == null && backup is DeserializationResult.Success -> {
-                                logger.warning { "recovering channel from peer backup" }
-                                recoverChannel(backup.state)
+                            else -> {
+                                logger.warning { "peer sent a reestablish with a backup for a different channel" }
+                                _channels[msg.channelId]
                             }
-                            local is Syncing && local.state is ChannelStateWithCommitments && backup is DeserializationResult.Success && backup.state is ChannelStateWithCommitments && backup.state.commitments.isMoreRecent(local.state.commitments) -> {
-                                logger.warning { "recovering channel from peer backup (it is more recent)" }
-                                recoverChannel(backup.state)
-                            }
-                            local is ChannelState -> {
-                                val (state1, actions1) = local.process(ChannelCommand.MessageReceived(msg))
-                                processActions(msg.channelId, peerConnection, actions1)
-                                _channels = _channels + (msg.channelId to state1)
-                            }
+                        }
+                        if (state == null) {
+                            logger.warning { "peer sent a reestablish for an unknown channel with no or undecipherable backup" }
+                            peerConnection?.send(Error(msg.channelId, "unknown channel"))
+                        } else {
+                            val (state1, actions1) = state.process(ChannelCommand.MessageReceived(msg))
+                            processActions(msg.channelId, peerConnection, actions1, state1)
+                            _channels = _channels + (msg.channelId to state1)
                         }
                     }
                     is HasTemporaryChannelId -> {
@@ -1232,7 +1281,7 @@ class Peer(
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)
                             _channels = _channels + (msg.temporaryChannelId to state1)
-                            processActions(msg.temporaryChannelId, peerConnection, actions)
+                            processActions(msg.temporaryChannelId, peerConnection, actions, state1)
                         } ?: run {
                             logger.error { "received ${msg::class.simpleName} for unknown temporary channel ${msg.temporaryChannelId}" }
                             peerConnection?.send(Error(msg.temporaryChannelId, "unknown channel"))
@@ -1245,7 +1294,7 @@ class Peer(
                             _channels[msg.channelId]?.let { state ->
                                 val event1 = ChannelCommand.MessageReceived(msg)
                                 val (state1, actions) = state.process(event1)
-                                processActions(msg.channelId, peerConnection, actions)
+                                processActions(msg.channelId, peerConnection, actions, state1)
                                 _channels = _channels + (msg.channelId to state1)
                             } ?: run {
                                 logger.error { "received ${msg::class.simpleName} for unknown channel ${msg.channelId}" }
@@ -1257,7 +1306,7 @@ class Peer(
                         _channels.values.filterIsInstance<Normal>().find { it.matchesShortChannelId(msg.shortChannelId) }?.let { state ->
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)
-                            processActions(state.channelId, peerConnection, actions)
+                            processActions(state.channelId, peerConnection, actions, state1)
                             _channels = _channels + (state.channelId to state1)
                         }
                     }
@@ -1329,7 +1378,7 @@ class Peer(
                     val state = _channels[cmd.watch.channelId] ?: error("channel ${cmd.watch.channelId} not found")
                     val event1 = ChannelCommand.WatchReceived(cmd.watch)
                     val (state1, actions) = state.process(event1)
-                    processActions(cmd.watch.channelId, peerConnection, actions)
+                    processActions(cmd.watch.channelId, peerConnection, actions, state1)
                     _channels = _channels + (cmd.watch.channelId to state1)
                 }
             }
@@ -1354,7 +1403,7 @@ class Peer(
                 )
                 val msg = actions1.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                 _channels = _channels + (msg.temporaryChannelId to state1)
-                processActions(msg.temporaryChannelId, peerConnection, actions1)
+                processActions(msg.temporaryChannelId, peerConnection, actions1, state1)
             }
             is AddWalletInputsToChannel -> {
                 when (val available = selectChannelForSplicing()) {
@@ -1464,7 +1513,7 @@ class Peer(
                                             val (state, actions) = WaitForInit.process(initCommand)
                                             val msg = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                                             _channels = _channels + (msg.temporaryChannelId to state)
-                                            processActions(msg.temporaryChannelId, peerConnection, actions)
+                                            processActions(msg.temporaryChannelId, peerConnection, actions, state)
                                             nodeParams._nodeEvents.emit(SwapInEvents.Requested(cmd.walletInputs))
                                         }
                                     }
@@ -1528,7 +1577,7 @@ class Peer(
                                 )
                                 val (state, actions) = available.channel.process(spliceCommand)
                                 _channels = _channels + (available.channel.channelId to state)
-                                processActions(available.channel.channelId, peerConnection, actions)
+                                processActions(available.channel.channelId, peerConnection, actions, state)
                             }
                         }
                     }
@@ -1574,7 +1623,7 @@ class Peer(
                                 )
                                 val msg = actions.filterIsInstance<ChannelAction.Message.Send>().map { it.message }.filterIsInstance<OpenDualFundedChannel>().first()
                                 _channels = _channels + (msg.temporaryChannelId to state)
-                                processActions(msg.temporaryChannelId, peerConnection, actions)
+                                processActions(msg.temporaryChannelId, peerConnection, actions, state)
                             }
                         }
                     }
@@ -1611,13 +1660,13 @@ class Peer(
                     // this is for all channels
                     _channels.forEach { (key, value) ->
                         val (state1, actions) = value.process(cmd.channelCommand)
-                        processActions(key, peerConnection, actions)
+                        processActions(key, peerConnection, actions, state1)
                         _channels = _channels + (key to state1)
                     }
                 } else {
                     _channels[cmd.channelId]?.let { state ->
                         val (state1, actions) = state.process(cmd.channelCommand)
-                        processActions(cmd.channelId, peerConnection, actions)
+                        processActions(cmd.channelId, peerConnection, actions, state1)
                         _channels = _channels + (cmd.channelId to state1)
                     } ?: logger.error { "received ${cmd.channelCommand::class.simpleName} for an unknown channel ${cmd.channelId}" }
                 }
@@ -1631,7 +1680,7 @@ class Peer(
                         _channels.forEach { (key, value) ->
                             val (state1, actions) = value.process(ChannelCommand.Disconnected)
                             _channels = _channels + (key to state1)
-                            processActions(key, peerConnection, actions)
+                            processActions(key, peerConnection, actions, state1)
                         }
                         // We must purge pending incoming payments: incoming HTLCs that aren't settled yet will be
                         // re-processed on reconnection, and we must not keep HTLCs pending in the payment handler since

@@ -3,7 +3,6 @@ package fr.acinq.lightning.channel.states
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiryDelta
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.SensitiveTaskEvents
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -21,7 +20,6 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelCloseOutgoingPayment.ChannelClosingType
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.logging.MDCLogger
-import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -67,27 +65,10 @@ sealed class ChannelState {
     suspend fun ChannelContext.process(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return try {
             processInternal(cmd)
-                .let { (newState, actions) -> Pair(newState, newState.run { maybeAddBackupToMessages(actions) }) }
                 .let { (newState, actions) -> Pair(newState, actions + onTransition(newState)) }
         } catch (t: Throwable) {
             handleLocalError(cmd, t)
         }
-    }
-
-    /** Update outgoing messages to include an encrypted backup when necessary. */
-    private fun ChannelContext.maybeAddBackupToMessages(actions: List<ChannelAction>): List<ChannelAction> = when {
-        this@ChannelState is PersistedChannelState && staticParams.nodeParams.features.hasFeature(Feature.ChannelBackupClient) -> actions.map {
-            when {
-                it is ChannelAction.Message.Send && it.message is TxSignatures -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
-                it is ChannelAction.Message.Send && it.message is CommitSig -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
-                it is ChannelAction.Message.Send && it.message is RevokeAndAck -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
-                it is ChannelAction.Message.Send && it.message is Shutdown -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
-                it is ChannelAction.Message.Send && it.message is ClosingComplete -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
-                it is ChannelAction.Message.Send && it.message is ClosingSig -> it.copy(message = it.message.withChannelData(EncryptedChannelData.from(privateKey, this@ChannelState), logger))
-                else -> it
-            }
-        }
-        else -> actions
     }
 
     /** Add actions for some transitions */
@@ -300,7 +281,7 @@ sealed class ChannelState {
 sealed class PersistedChannelState : ChannelState() {
     abstract val channelId: ByteVector32
 
-    internal fun ChannelContext.createChannelReestablish(): HasEncryptedChannelData = when (val state = this@PersistedChannelState) {
+    internal fun ChannelContext.createChannelReestablish(): ChannelReestablish = when (val state = this@PersistedChannelState) {
         is WaitForFundingSigned -> {
             val myFirstPerCommitmentPoint = keyManager.channelKeys(state.channelParams.localParams.fundingKeyPath).commitmentPoint(0)
             ChannelReestablish(
@@ -310,7 +291,7 @@ sealed class PersistedChannelState : ChannelState() {
                 yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
                 myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
                 TlvStream(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTx.txId))
-            ).withChannelData(state.remoteChannelData, logger)
+            )
         }
         is ChannelStateWithCommitments -> {
             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
@@ -341,7 +322,7 @@ sealed class PersistedChannelState : ChannelState() {
                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                 myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
                 tlvStream = tlvs
-            ).withChannelData(state.commitments.remoteChannelData, logger)
+            )
         }
     }
 

@@ -3,18 +3,22 @@ package fr.acinq.lightning.serialization.channel
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.crossSign
+import fr.acinq.lightning.channel.states.Negotiating
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.SpliceTestsCommon
 import fr.acinq.lightning.serialization.channel.Encryption.from
+import fr.acinq.lightning.serialization.channel.Encryption.fromEncryptedPeerStorage
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.value
 import fr.acinq.lightning.wire.EncryptedChannelData
-import fr.acinq.lightning.wire.LightningMessage
+import fr.acinq.lightning.wire.EncryptedPeerStorage
 import fr.acinq.secp256k1.Hex
 import kotlin.math.max
 import kotlin.test.*
@@ -91,7 +95,6 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     @Test
     fun `maximum number of HTLCs that is safe to use`() {
         val (alice, bob) = TestsHelper.reachNormal()
-        assertTrue(bob.commitments.params.localParams.features.hasFeature(Feature.ChannelBackupClient))
 
         tailrec fun addHtlcs(sender: LNChannel<Normal>, receiver: LNChannel<Normal>, amount: MilliSatoshi, count: Int): Pair<LNChannel<Normal>, LNChannel<Normal>> = if (count == 0) Pair(sender, receiver) else {
             val (p, _) = TestsHelper.addHtlc(amount, sender, receiver)
@@ -101,24 +104,19 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             addHtlcs(alice1, bob1, amount, count - 1)
         }
 
-        fun commitSigSize(maxIncoming: Int, maxOutgoing: Int): Int {
+        fun peerStorageSize(maxIncoming: Int, maxOutgoing: Int): Int {
             val (alice1, bob1) = addHtlcs(alice, bob, MilliSatoshi(6000_000), maxOutgoing)
             val (bob2, alice2) = addHtlcs(bob1, alice1, MilliSatoshi(6000_000), maxIncoming)
             val (alice3, bob3) = crossSign(alice2, bob2)
+            val (alice4, _, bob4, _) = SpliceTestsCommon.spliceInAndOutWithoutSigs(alice3, bob3, listOf(50_000.sat), 50_000.sat)
 
-            assertIs<LNChannel<Normal>>(alice3)
-            assertIs<LNChannel<Normal>>(bob3)
-            val (_, commitSig0, _, commitSig1) = SpliceTestsCommon.spliceInAndOutWithoutSigs(alice3, bob3, listOf(50_000.sat), 50_000.sat)
-            assertFalse(commitSig1.channelData.isEmpty())
-
-            val bina = LightningMessage.encode(commitSig0)
-            val binb = LightningMessage.encode(commitSig1)
+            val bina = Serialization.serializePeerStorage(listOf(alice4.state)).second
+            val binb = Serialization.serializePeerStorage(listOf(bob4.state)).second
             return max(bina.size, binb.size)
         }
 
-        // with 5 incoming payments and 5 outgoing payments, we can still add our encrypted backup to commig_sig messages
-        // and stay below the 65k limit for a future channel_reestablish message of unknown size
-        assertTrue(commitSigSize(5, 5) < 60_000)
+        // with 6 incoming payments and 6 outgoing payments, our encrypted backup stays below the 65k limit for peer storage
+        assertTrue(peerStorageSize(6, 6) <= 65_000)
     }
 
     @Test
@@ -161,4 +159,22 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         }
     }
 
+    @Test
+    fun `trim channel data if needed`() = runSuspendTest {
+        val (alice, bob) = TestsHelper.reachNormal()
+        val normalState = alice.state
+        val (alice1, _, _) = TestsHelper.mutualCloseAlice(alice, bob, FeeratePerKw.CommitmentFeerate)
+        val negotatingState = alice1.state
+
+        // 20 Normal and 20 Negotiating mixed together
+        val states = (1..9).map { normalState } + (1..7).map { negotatingState } + (1..5).map { normalState } + (1..10).map { negotatingState } + (1..6).map { normalState } + (1..3).map { negotatingState }
+        assertEquals(20, states.filterIsInstance<Normal>().size)
+        assertEquals(20, states.filterIsInstance<Negotiating>().size)
+
+        val key = randomKey()
+        val eps = EncryptedPeerStorage.from(key, states)
+        val storedStates = assertIs<Serialization.PeerStorageDeserializationResult.Success>(PersistedChannelState.fromEncryptedPeerStorage(key, eps).getOrNull()!!).states
+        assertEquals(20, storedStates.filterIsInstance<Normal>().size) // All Normal states are preserved.
+        assertTrue(storedStates.filterIsInstance<Negotiating>().size < 20) // Some Negotiating states are dropped.
+    }
 }

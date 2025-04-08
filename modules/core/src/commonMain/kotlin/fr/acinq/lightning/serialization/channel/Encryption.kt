@@ -3,10 +3,12 @@ package fr.acinq.lightning.serialization.channel
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
-import fr.acinq.lightning.channel.states.PersistedChannelState
+import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.ChaCha20Poly1305
+import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.EncryptedChannelData
+import fr.acinq.lightning.wire.EncryptedPeerStorage
 
 /**
  * Utility methods to encrypt/decrypt serialized channel data
@@ -50,4 +52,52 @@ object Encryption {
             .map { Serialization.deserialize(it) }
     }
 
+    /**
+     * Convenience method that builds an [EncryptedPeerStorage] from a list of [PersistedChannelState]
+     */
+    fun EncryptedPeerStorage.Companion.from(key: PrivateKey, states: List<PersistedChannelState>, logger: MDCLogger? = null): EncryptedPeerStorage {
+        val sortedChannelStates = states.filterNot { it is Closed }.sortedBy { channelPriority(it) }
+        return encryptChannelStates(key, sortedChannelStates, logger)
+    }
+
+    // when we run out of space in the backup, channels with the lowest values will be dropped from the backup
+    private fun channelPriority(state: PersistedChannelState): Int = when (state) {
+        is Closed -> 0
+        is WaitForRemotePublishFutureCommitment -> 0
+        is Closing -> 1
+        is Negotiating -> 2
+        is ShuttingDown -> 3
+        is WaitForFundingSigned -> 4
+        is WaitForFundingConfirmed -> 5
+        is LegacyWaitForFundingConfirmed -> 5
+        is WaitForChannelReady -> 6
+        is LegacyWaitForFundingLocked -> 6
+        is Normal -> 7
+    }
+
+    private fun encryptChannelStates(key: PrivateKey, states: List<PersistedChannelState>, logger: MDCLogger?): EncryptedPeerStorage {
+        val (versionByte, bin) = Serialization.serializePeerStorage(states)
+        val encrypted = encrypt(key.value, bin)
+        val data = byteArrayOf(versionByte) + encrypted
+        return when {
+            data.size <= 65531 -> EncryptedPeerStorage(data.toByteVector())
+            states.size > 1 -> {
+                logger?.warning { "dropping channel_id=${states[0].channelId} from peer storage as it does not fit" }
+                EncryptedPeerStorage.from(key, states.drop(1))
+            }
+            else -> {
+                logger?.warning { "channel_id=${states[0].channelId} is too large to fit in peer storage: no channels will be stored" }
+                EncryptedPeerStorage.empty
+            }
+        }
+    }
+
+    /**
+     * Convenience method that decrypts and deserializes a list of [PersistedChannelState] from an [EncryptedPeerStorage]
+     */
+    fun PersistedChannelState.Companion.fromEncryptedPeerStorage(key: PrivateKey, encryptedPeerStorage: EncryptedPeerStorage): Result<Serialization.PeerStorageDeserializationResult> {
+        // we first assume that data is prefixed by 1 byte of serialization meta-info
+        return runCatching { decrypt(key.value, encryptedPeerStorage.data.drop(1).toByteArray()) }
+            .map { Serialization.deserializePeerStorage(encryptedPeerStorage.data[0], it) }
+    }
 }

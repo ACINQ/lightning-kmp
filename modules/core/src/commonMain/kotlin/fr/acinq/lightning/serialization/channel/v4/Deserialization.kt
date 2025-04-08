@@ -43,6 +43,11 @@ object Deserialization {
         return input.readPersistedChannelState()
     }
 
+    fun deserializePeerStorage(bin: ByteArray): List<PersistedChannelState> {
+        val input = ByteArrayInput(bin)
+        return input.readCollection { input.readPersistedChannelState() }.toList()
+    }
+
     private fun Input.readPersistedChannelState(): PersistedChannelState = when (val discriminator = read()) {
         0x08 -> readLegacyWaitForFundingConfirmed()
         0x09 -> readLegacyWaitForFundingLocked()
@@ -738,8 +743,8 @@ object Deserialization {
             }.toMap(),
             lastIndex = readNullable { readNumber() }
         )
-        val remoteChannelData = EncryptedChannelData(readDelimitedByteArray().toByteVector())
-        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, remoteChannelData)
+        readDelimitedByteArray() // ignored legacy remoteChannelData
+        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets)
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {
