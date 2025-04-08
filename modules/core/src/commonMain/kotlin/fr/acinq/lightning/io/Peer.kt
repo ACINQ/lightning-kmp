@@ -1272,12 +1272,12 @@ class Peer(
                             }
                         }
                         if (state == null) {
-                            logger.warning { "peer sent a reestablish for a unknown channel with no or undecipherable backup" }
+                            logger.warning { "peer sent a reestablish for an unknown channel with no or undecipherable backup" }
                             peerConnection?.send(Error(msg.channelId, "unknown channel"))
                         } else {
                             val (state1, actions1) = state.process(ChannelCommand.MessageReceived(msg))
-                                processActions(msg.channelId, peerConnection, actions1)
-                                _channels = _channels + (msg.channelId to state1)
+                            processActions(msg.channelId, peerConnection, actions1)
+                            _channels = _channels + (msg.channelId to state1)
                         }
                     }
                     is HasTemporaryChannelId -> {

@@ -60,16 +60,17 @@ object Encryption {
         return encryptChannelStates(key, sortedChannelStates, logger)
     }
 
+    // when we run out of space in the backup, channels with the lowest values will be dropped from the backup
     private fun channelPriority(state: PersistedChannelState): Int = when (state) {
         is Closed -> 0
         is WaitForRemotePublishFutureCommitment -> 0
         is Closing -> 1
         is Negotiating -> 2
         is ShuttingDown -> 3
-        is WaitForChannelReady -> 4
+        is WaitForFundingSigned -> 4
         is WaitForFundingConfirmed -> 5
         is LegacyWaitForFundingConfirmed -> 5
-        is WaitForFundingSigned -> 6
+        is WaitForChannelReady -> 6
         is LegacyWaitForFundingLocked -> 6
         is Normal -> 7
     }
@@ -81,11 +82,11 @@ object Encryption {
         return when {
             data.size <= 65531 -> EncryptedPeerStorage(data.toByteVector())
             states.size > 1 -> {
-                logger?.warning { "dropping c:${states[0].channelId} from peer storage as it does not fit" }
+                logger?.warning { "dropping channel_id=${states[0].channelId} from peer storage as it does not fit" }
                 EncryptedPeerStorage.from(key, states.drop(1))
             }
             else -> {
-                logger?.warning { "empty peer storage" }
+                logger?.warning { "channel_id=${states[0].channelId} is too large to fit in peer storage: no channels will be stored" }
                 EncryptedPeerStorage.empty
             }
         }

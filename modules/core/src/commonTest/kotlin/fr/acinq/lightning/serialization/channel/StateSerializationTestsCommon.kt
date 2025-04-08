@@ -106,13 +106,13 @@ class StateSerializationTestsCommon : LightningTestSuite() {
             val (alice3, bob3) = crossSign(alice2, bob2)
             val (alice4, _, bob4, _) = SpliceTestsCommon.spliceInAndOutWithoutSigs(alice3, bob3, listOf(50_000.sat), 50_000.sat)
 
-            val bina = EncryptedPeerStorage.from(randomKey(), listOf(alice4.state)).data
-            val binb = EncryptedPeerStorage.from(randomKey(), listOf(bob4.state)).data
-            return max(bina.size(), binb.size())
+            val bina = Serialization.serializePeerStorage(listOf(alice4.state)).second
+            val binb = Serialization.serializePeerStorage(listOf(bob4.state)).second
+            return max(bina.size, binb.size)
         }
 
         // with 6 incoming payments and 6 outgoing payments, our encrypted backup stays below the 65k limit for peer storage
-        assertTrue(peerStorageSize(6, 6) <= 65_531)
+        assertTrue(peerStorageSize(6, 6) <= 65_000)
     }
 
     @Test
