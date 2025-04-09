@@ -1,5 +1,6 @@
 package fr.acinq.lightning.payment
 
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
@@ -179,13 +180,32 @@ class OfferManagerTestsCommon : LightningTestSuite() {
     fun `receive invalid invoice request`() = runSuspendTest {
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, null).first
 
-        // Bob sends an invalid invoice request to Alice.
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
-        val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
-        val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
-        assertNull(aliceOfferManager.receiveMessage(messageForAlice.copy(pathKey = randomKey().publicKey()), listOf(), 0))
+        run {
+            // Bob sends an invalid invoice request to Alice.
+            val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, null).first
+            val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
+            val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
+            val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
+            assertNull(aliceOfferManager.receiveMessage(messageForAlice.copy(pathKey = randomKey().publicKey()), listOf(), 0))
+        }
+        run {
+            // Bob sends an invoice request to Alice for an offer that she didn't generate using the deterministic scheme.
+            val offer = OfferTypes.Offer.createBlindedOffer(
+                Block.RegtestGenesisBlock.hash,
+                TestConstants.Alice.nodeParams.nodePrivateKey,
+                aliceWalletParams.trampolineNode.id,
+                amount = null,
+                description = null,
+                Features.empty,
+                blindedPathSessionKey = randomKey(),
+                pathId = randomBytes32()
+            ).first
+            val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
+            val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
+            val (messageForAlice, _) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
+            assertNull(aliceOfferManager.receiveMessage(messageForAlice, listOf(), 0))
+        }
     }
 
     @Test
@@ -282,7 +302,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // Alice and Bob use the same trampoline node.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), 1000.msat, "tea").first
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, "tea").first
 
         // Bob sends an invoice request to Alice.
         val payerNote = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
@@ -304,7 +324,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // The payer note is truncated in the payment metadata.
         val metadata = decryptPathId(payInvoice.invoice, aliceTrampolineKey)
         assertEquals(64, metadata.payerNote!!.length)
-        assertEquals(payerNote.take(63), metadata.payerNote!!.take(63))
+        assertEquals(payerNote.take(63), metadata.payerNote.take(63))
     }
 
 }

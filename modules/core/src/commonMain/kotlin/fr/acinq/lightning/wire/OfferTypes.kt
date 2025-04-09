@@ -9,8 +9,11 @@ import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
-import fr.acinq.lightning.*
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.EncodedNodeId
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.message.OnionMessages
 
@@ -781,43 +784,38 @@ object OfferTypes {
             /**
              * Create an offer using a single-hop blinded path going through our trampoline node.
              *
+             * @param nodePrivateKey node private key
              * @param amount amount if it can be determined at offer creation time.
              * @param description description of the offer (may be null if [amount] is also null).
-             * @param nodeParams our node parameters.
              * @param trampolineNodeId our trampoline node.
              * @param features features that should be advertised in the offer.
              * @param blindedPathSessionKey session key used for the blinded path included in the offer, the corresponding public key will be the first path key.
              */
             fun createBlindedOffer(
+                chainHash: BlockHash,
+                nodePrivateKey: PrivateKey,
+                trampolineNodeId: PublicKey,
                 amount: MilliSatoshi?,
                 description: String?,
-                nodeParams: NodeParams,
-                trampolineNodeId: PublicKey,
                 features: Features,
                 blindedPathSessionKey: PrivateKey,
                 pathId: ByteVector? = null,
-                additionalTlvs: Set<OfferTlv> = setOf(),
-                customTlvs: Set<GenericTlv> = setOf()
             ): Pair<Offer, PrivateKey> {
-                if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
-                val tlvs = TlvStream(setOfNotNull(
-                    if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
+                require(amount == null || description != null) { "an offer description must be provided if the amount isn't null" }
+                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(
+                    blindedPathSessionKey,
+                    listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))),
+                    OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodePrivateKey.publicKey()), pathId)
+                )
+                val tlvs = setOfNotNull(
+                    if (chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chainHash)) else null,
                     amount?.let { OfferAmount(it) },
                     description?.let { OfferDescription(it) },
                     features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it) else null },
-                ) + additionalTlvs, customTlvs)
-                return createBlindedOffer(tlvs, nodeParams, trampolineNodeId, blindedPathSessionKey, pathId)
-            }
-
-            fun createBlindedOffer(
-                tlvs: TlvStream<OfferTlv>,
-                nodeParams: NodeParams,
-                trampolineNodeId: PublicKey,
-                blindedPathSessionKey: PrivateKey,
-                pathId: ByteVector? = null,
-            ): Pair<Offer, PrivateKey> {
-                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(blindedPathSessionKey, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), pathId))
-                return Pair(Offer(tlvs.copy(records = tlvs.records + OfferPaths(listOf(ContactInfo.BlindedPath(blindedRouteDetails.route))))), blindedRouteDetails.blindedPrivateKey(nodeParams.nodePrivateKey))
+                    // Note that we don't include an offer_node_id since we're using a blinded path.
+                    OfferPaths(listOf(ContactInfo.BlindedPath(blindedRouteDetails.route))),
+                )
+                return Pair(Offer(TlvStream(tlvs)), blindedRouteDetails.blindedPrivateKey(nodePrivateKey))
             }
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
