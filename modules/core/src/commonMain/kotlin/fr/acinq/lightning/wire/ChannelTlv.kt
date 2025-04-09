@@ -182,18 +182,7 @@ sealed class ChannelReestablishTlv : Tlv {
     }
 }
 
-sealed class ShutdownTlv : Tlv {
-    // Legacy TLV needed to deserialize old backups
-    data class ChannelData(val ecb: EncryptedChannelData) : ShutdownTlv() {
-        override val tag: Long get() = ChannelData.tag
-        override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
-
-        companion object : TlvValueReader<ChannelData> {
-            const val tag: Long = 0x47010000
-            override fun read(input: Input): ChannelData = ChannelData(EncryptedChannelData(LightningCodecs.bytes(input, input.availableBytes).toByteVector()))
-        }
-    }
-}
+sealed class ShutdownTlv : Tlv
 
 sealed class ClosingSignedTlv : Tlv {
     data class FeeRange(val min: Satoshi, val max: Satoshi) : ClosingSignedTlv() {
