@@ -143,8 +143,6 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val request = InvoiceRequest(offer, 500.msat, 1, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
         assertEquals(offer, request.offer)
-        val withoutAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filterNot { it is InvoiceRequestAmount }.toSet())), payerKey)
-        assertFalse(withoutAmount.isValid())
     }
 
     @Test
@@ -217,7 +215,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val tlvsWithoutSignature = setOf(
             InvoiceRequestMetadata(ByteVector.fromHex("abcdef")),
             OfferIssuerId(nodeId),
-            InvoiceRequestAmount(10000.msat),
+            InvoiceRequestAmount(10_000.msat),
             InvoiceRequestPayerId(payerKey.publicKey()),
         )
         val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvsWithoutSignature)), payerKey)
@@ -234,6 +232,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         for (tlv in tlvs) {
             val incomplete = TlvStream(tlvs.filterNot { it == tlv }.toSet())
             assertTrue(InvoiceRequest.validate(incomplete).isLeft)
+            assertEquals(MissingRequiredTlv(tlv.tag), InvoiceRequest.validate(incomplete).left)
             val incompleteEncoded = Bech32.encodeBytes(InvoiceRequest.hrp, InvoiceRequest.tlvSerializer.write(incomplete), Bech32.Encoding.Beck32WithoutChecksum)
             assertTrue(InvoiceRequest.decode(incompleteEncoded).isFailure)
         }

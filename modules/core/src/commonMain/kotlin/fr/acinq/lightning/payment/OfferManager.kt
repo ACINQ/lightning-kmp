@@ -141,12 +141,12 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     logger.warning { "offerId:${request.offer.offerId} ignoring invalid invoice request" }
                     sendInvoiceError("ignoring invalid invoice request", replyPath)
                 }
-                request.requestedAmount() < minHtlc -> {
-                    logger.warning { "offerId:${request.offer.offerId} amount too low (amount=${request.requestedAmount()} minHtlc=$minHtlc)" }
+                request.requestedAmount < minHtlc -> {
+                    logger.warning { "offerId:${request.offer.offerId} amount too low (amount=${request.requestedAmount} minHtlc=$minHtlc)" }
                     sendInvoiceError("amount too low, minimum amount = $minHtlc", replyPath)
                 }
                 else -> {
-                    val amount = request.requestedAmount()
+                    val amount = request.requestedAmount
                     val preimage = randomBytes32()
                     val truncatedPayerNote = request.payerNote?.let {
                         if (it.length <= 64) {

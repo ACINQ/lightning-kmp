@@ -878,6 +878,8 @@ object OfferTypes {
         val features: Features = records.get<InvoiceRequestFeatures>()?.features ?: Features.empty
         val quantity_opt: Long? = records.get<InvoiceRequestQuantity>()?.quantity
         val quantity: Long = quantity_opt ?: 1
+        // A valid invoice_request must either specify an amount, or the offer itself must specify an amount.
+        val requestedAmount: MilliSatoshi = amount ?: (offer.amount!! * quantity)
         val payerId: PublicKey = records.get<InvoiceRequestPayerId>()!!.publicKey
         val payerNote: String? = records.get<InvoiceRequestPayerNote>()?.note
         private val signature: ByteVector64 = records.get<Signature>()!!.signature
@@ -889,8 +891,6 @@ object OfferTypes {
                     ((offer.quantityMax == null && quantity_opt == null) || (offer.quantityMax != null && quantity_opt != null && quantity <= offer.quantityMax)) &&
                     Features.areCompatible(offer.features, features) &&
                     checkSignature()
-
-        fun requestedAmount(): MilliSatoshi = amount ?: (offer.amount!! * quantity)
 
         fun checkSignature(): Boolean =
             verifySchnorr(
@@ -959,7 +959,7 @@ object OfferTypes {
                     is Left -> return Left(offer.value)
                     is Right -> {}
                 }
-                if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0L))
+                if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0))
                 if (records.get<InvoiceRequestAmount>() == null && records.get<OfferAmount>() == null) return Left(MissingRequiredTlv(82))
                 if (records.get<InvoiceRequestPayerId>() == null) return Left(MissingRequiredTlv(88))
                 if (records.get<Signature>() == null) return Left(MissingRequiredTlv(240))
