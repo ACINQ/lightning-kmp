@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.sphinx.DecryptedPacket
@@ -63,7 +64,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // Alice and Bob use the same trampoline node.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeAnonymousOffer(1000.msat, "test offer")
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), 1000.msat, "test offer").first
 
         // Bob sends an invoice request to Alice.
         val currentBlockHeight = 0
@@ -98,7 +99,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // Alice and Bob use different trampoline nodes.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, bobWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeDeterministicOffer(null, null)
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, null).first
 
         // Bob sends an invoice request to Alice.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
@@ -131,7 +132,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
     fun `invoice request timed out`() = runSuspendTest {
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeAnonymousOffer(null, "amountless offer")
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, "amountless offer").first
 
         // Bob sends an invoice request to Alice.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
@@ -153,7 +154,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
     fun `duplicate invoice request`() = runSuspendTest {
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeDeterministicOffer(null, "deterministic amountless offer")
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, "deterministic amountless offer").first
 
         // Bob sends two invoice requests to Alice.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
@@ -178,7 +179,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
     fun `receive invalid invoice request`() = runSuspendTest {
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeAnonymousOffer(null, null)
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, null).first
 
         // Bob sends an invalid invoice request to Alice.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
@@ -192,7 +193,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // Alice and Bob use the same trampoline node.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeAnonymousOffer(null, "tip")
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, "tip").first
 
         // Bob sends an invoice request to Alice.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 5500.msat, offer, 20.seconds)
@@ -210,7 +211,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // Alice and Bob use the same trampoline node.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeAnonymousOffer(50_000.msat, "coffee")
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), 50_000.msat, "coffee").first
 
         // Bob sends an invoice request to Alice that pays less than the offer amount.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 40_000.msat, offer, 20.seconds)
@@ -231,7 +232,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // Alice and Bob use the same trampoline node.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeAnonymousOffer(null, null)
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, null).first
 
         // Bob sends an invoice request to Alice that pays less than the minimum htlc amount.
         val payOffer = PayOffer(UUID.randomUUID(), randomKey(), null, 10.msat, offer, 20.seconds)
@@ -252,7 +253,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // Alice and Bob use the same trampoline node.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeAnonymousOffer(1000.msat, "tea")
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), 1000.msat, "tea").first
 
         // Bob sends an invoice request to Alice.
         val payerNote = "Thanks for all the fish"
@@ -281,7 +282,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         // Alice and Bob use the same trampoline node.
         val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
         val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = aliceOfferManager.makeDeterministicOffer(1000.msat, "tea")
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), 1000.msat, "tea").first
 
         // Bob sends an invoice request to Alice.
         val payerNote = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."

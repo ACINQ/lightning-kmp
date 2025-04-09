@@ -3,6 +3,7 @@ package fr.acinq.lightning
 import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.Lightning.nodeFee
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
@@ -11,7 +12,10 @@ import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
+import fr.acinq.lightning.wire.GenericTlv
 import fr.acinq.lightning.wire.OfferTypes
+import fr.acinq.lightning.wire.OfferTypes.OfferTlv
+import fr.acinq.lightning.wire.TlvStream
 import io.ktor.utils.io.charsets.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -260,19 +264,70 @@ data class NodeParams(
         ),
     )
 
+    private fun offerTlvs(
+        amount: MilliSatoshi?,
+        description: String?,
+        features: Features = Features.empty,
+        additionalTlvs: Set<OfferTlv>,
+        customTlvs: Set<GenericTlv>
+    ): TlvStream<OfferTlv> =
+        TlvStream(setOfNotNull(
+            if (chainHash != Block.LivenetGenesisBlock.hash) OfferTypes.OfferChains(listOf(chainHash)) else null,
+            amount?.let { OfferTypes.OfferAmount(it) },
+            description?.let { OfferTypes.OfferDescription(it) },
+            features.bolt12Features().let { if (it != Features.empty) OfferTypes.OfferFeatures(it) else null },
+        ) + additionalTlvs, customTlvs)
+
+    private fun offerHash(tlvs: TlvStream<OfferTlv>): ByteVector {
+        val withoutBlindedPaths = tlvs.copy(records = tlvs.records.filterNot { it is OfferTypes.OfferPaths }.toSet())
+        return if (withoutBlindedPaths == TlvStream(setOfNotNull(if (chainHash != Block.LivenetGenesisBlock.hash) OfferTypes.OfferChains(listOf(chainHash)) else null))) {
+            // for backward compatibility
+            "bolt 12 default offer".toByteArray(Charsets.UTF_8).byteVector()
+        } else {
+            OfferTypes.rootHash(withoutBlindedPaths)
+        }
+    }
+
+    private fun generateOfferAndKey(trampolineNodeId: PublicKey, nonce: ByteVector32?, tlvs: TlvStream<OfferTlv>): Pair<OfferTypes.Offer, PrivateKey> {
+        val secret = PrivateKey(Crypto.sha256((nonce ?: ByteVector.empty) + offerHash(tlvs) + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
+        return OfferTypes.Offer.createBlindedOffer(tlvs, this, trampolineNodeId, blindedPathSessionKey = secret, pathId = nonce)
+    }
+
+    /**
+     * Generate an offer deterministically.
+     * Will generate the same offer if called twice with the same parameters.
+     */
+    private fun makeDeterministicOffer(
+        trampolineNodeId: PublicKey,
+        nonce: ByteVector32?,
+        amount: MilliSatoshi?,
+        description: String?,
+        features: Features = Features.empty,
+        additionalTlvs: Set<OfferTlv> = setOf(),
+        customTlvs: Set<GenericTlv> = setOf()
+    ): Pair<OfferTypes.Offer, PrivateKey> {
+        if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
+        val tlvs = offerTlvs(amount, description, features, additionalTlvs, customTlvs)
+        return generateOfferAndKey(trampolineNodeId, nonce, tlvs)
+    }
+
     /**
      * We generate a default, deterministic Bolt 12 offer based on the node's seed and its trampoline node.
      * This offer will stay valid after restoring the seed on a different device.
      * @return the default offer and the private key that will sign invoices for this offer.
      */
-    fun defaultOffer(trampolineNodeId: PublicKey): Pair<OfferTypes.Offer, PrivateKey> {
-        // We generate a deterministic session key based on:
-        //  - a custom tag indicating that this is used in the Bolt 12 context
-        //  - our trampoline node, which is used as an introduction node for the offer's blinded path
-        //  - our private key, which ensures that nobody else can generate the same path key secret
-        val sessionKey = PrivateKey(Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8).byteVector() + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
-        // We don't use our currently activated features, otherwise the offer would change when we add support for new features.
-        // If we add a new feature that we would like to use by default, we will need to explicitly create a new offer.
-        return OfferTypes.Offer.createBlindedOffer(amount = null, description = null, this, trampolineNodeId, Features.empty, sessionKey)
-    }
+    fun defaultOffer(trampolineNodeId: PublicKey): Pair<OfferTypes.Offer, PrivateKey> = makeDeterministicOffer(trampolineNodeId, null, null, null)
+
+    fun randomOffer(
+        trampolineNodeId: PublicKey,
+        amount: MilliSatoshi?,
+        description: String?,
+        features: Features = Features.empty,
+        additionalTlvs: Set<OfferTlv> = setOf(),
+        customTlvs: Set<GenericTlv> = setOf()
+    ): Pair<OfferTypes.Offer, PrivateKey> =
+        makeDeterministicOffer(trampolineNodeId, randomBytes32(), amount, description, features, additionalTlvs, customTlvs)
+
+    fun isOurOffer(trampolineNodeId: PublicKey, offer: OfferTypes.Offer, pathId: ByteVector?, blindedPrivateKey: PrivateKey): Boolean =
+        (pathId == null || pathId.size() == 32) && generateOfferAndKey(trampolineNodeId, pathId?.let { ByteVector32(it) }, offer.records) == Pair(offer, blindedPrivateKey)
 }

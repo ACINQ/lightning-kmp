@@ -133,7 +133,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     logger.warning { "offerId:${request.offer.offerId} ignoring invoice request: no reply path" }
                     null
                 }
-                !isOurs(request.offer, pathId, blindedPrivateKey) -> {
+                !nodeParams.isOurOffer(walletParams.trampolineNode.id, request.offer, pathId, blindedPrivateKey) -> {
                     logger.warning { "ignoring invoice request for offer that is not ours" }
                     null
                 }
@@ -222,73 +222,5 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             is Destination.Recipient -> destination.nodeId.publicKey != remoteNodeId
         }
         return if (needIntermediateHop) listOf(IntermediateNode(EncodedNodeId.WithPublicKey.Plain(remoteNodeId))) else listOf()
-    }
-
-    private fun offerTlvs(
-        amount: MilliSatoshi?,
-        description: String?,
-        features: Features = Features.empty,
-        additionalTlvs: Set<OfferTlv>,
-        customTlvs: Set<GenericTlv>
-    ): TlvStream<OfferTlv> =
-        TlvStream(setOfNotNull(
-            if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferTypes.OfferChains(listOf(nodeParams.chainHash)) else null,
-            amount?.let { OfferTypes.OfferAmount(it) },
-            description?.let { OfferTypes.OfferDescription(it) },
-            features.bolt12Features().let { if (it != Features.empty) OfferTypes.OfferFeatures(it) else null },
-        ) + additionalTlvs, customTlvs)
-
-    private fun offerSecret(randomSeed: ByteVector, tlvs: TlvStream<OfferTlv>): PrivateKey {
-        val withoutBlindedPaths = tlvs.copy(records = tlvs.records.filterNot { it is OfferTypes.OfferPaths }.toSet())
-        return PrivateKey(Crypto.sha256(randomSeed + OfferTypes.rootHash(withoutBlindedPaths) + walletParams.trampolineNode.id.value + nodeParams.nodePrivateKey.value).byteVector32())
-    }
-
-    private fun generateOfferAndKey(randomSeed: ByteVector32?, tlvs: TlvStream<OfferTlv>): Pair<OfferTypes.Offer, PrivateKey> {
-        val secret = offerSecret(randomSeed ?: ByteVector.empty, tlvs)
-        return OfferTypes.Offer.createBlindedOffer(tlvs, nodeParams, walletParams.trampolineNode.id, blindedPathSessionKey = secret, pathId = randomSeed)
-    }
-
-    /**
-     * Generate an anonymous offer.
-     * Every offer generated is unique and can't be linked to other offers.
-     */
-    fun makeAnonymousOffer(
-        amount: MilliSatoshi?,
-        description: String?,
-        features: Features = Features.empty,
-        additionalTlvs: Set<OfferTlv> = setOf(),
-        customTlvs: Set<GenericTlv> = setOf()
-    ): OfferTypes.Offer {
-        if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
-        val tlvs = offerTlvs(amount, description, features, additionalTlvs, customTlvs)
-        return generateOfferAndKey(randomBytes32(), tlvs).first
-    }
-
-    /**
-     * Generate an offer deterministically.
-     * Will generate the same offer if called twice with the same parameters.
-     */
-    fun makeDeterministicOffer(
-        amount: MilliSatoshi?,
-        description: String?,
-        features: Features = Features.empty,
-        additionalTlvs: Set<OfferTlv> = setOf(),
-        customTlvs: Set<GenericTlv> = setOf()
-    ): OfferTypes.Offer {
-        if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
-        val tlvs = offerTlvs(amount, description, features, additionalTlvs, customTlvs)
-        return generateOfferAndKey(null, tlvs).first
-    }
-
-    private fun isOurs(offer: OfferTypes.Offer, pathId: ByteVector?, blindedPrivateKey: PrivateKey): Boolean {
-        val (defaultOffer, defaultKey) = nodeParams.defaultOffer(walletParams.trampolineNode.id)
-        return when {
-            pathId == null && offer == defaultOffer && blindedPrivateKey == defaultKey -> true
-            pathId == null || pathId.size() == 32 -> {
-                val (ourOffer, ourKey) = generateOfferAndKey(pathId?.let { ByteVector32(it) }, offer.records)
-                offer == ourOffer && blindedPrivateKey == ourKey
-            }
-            else -> false
-        }
     }
 }
