@@ -130,7 +130,7 @@ class OnionMessagesTestsCommon {
         assertEquals(Either.Right(EncodedNodeId(dave.publicKey())), nextNodeId3)
         val decrypted = decryptMessage(dave, onionForDave, logger)!!
         assertNotNull(decrypted)
-        assertEquals("01234567", decrypted.pathId.toHex())
+        assertEquals("01234567", decrypted.pathId?.toHex())
     }
 
     @Test
@@ -220,7 +220,7 @@ class OnionMessagesTestsCommon {
         assertEquals(Either.Right(EncodedNodeId(destination.publicKey())), nextNodeId)
         val decrypted = decryptMessage(destination, message2, logger)!!
         assertNotNull(decrypted)
-        assertEquals("01234567", decrypted.pathId.toHex())
+        assertEquals("01234567", decrypted.pathId?.toHex())
     }
 
     @Test

@@ -1,7 +1,7 @@
 package fr.acinq.lightning.payment
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
 import fr.acinq.lightning.*
@@ -44,15 +44,6 @@ sealed class Bolt12InvoiceRequestFailure {
 class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, val eventsFlow: MutableSharedFlow<PeerEvent>, private val logger: MDCLogger) {
     val remoteNodeId: PublicKey = walletParams.trampolineNode.id
     private val pendingInvoiceRequests: HashMap<ByteVector32, PendingInvoiceRequest> = HashMap()
-    private val localOffers: HashMap<ByteVector32, OfferTypes.Offer> = HashMap()
-
-    init {
-        registerOffer(nodeParams.defaultOffer(walletParams.trampolineNode.id).first, null)
-    }
-
-    fun registerOffer(offer: OfferTypes.Offer, pathId: ByteVector32?) {
-        localOffers[pathId ?: ByteVector32.Zeroes] = offer
-    }
 
     /**
      * @return invoice requests that must be sent and the corresponding path_id that must be used in case of a timeout.
@@ -62,7 +53,11 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         val replyPathId = randomBytes32()
         pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, request)
         // We add dummy hops to the reply path: this way the receiver only learns that we're at most 3 hops away from our peer.
-        val replyPathHops = listOf(IntermediateNode(EncodedNodeId.WithPublicKey.Plain(remoteNodeId)), IntermediateNode(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)), IntermediateNode(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)))
+        val replyPathHops = listOf(
+            IntermediateNode(EncodedNodeId.WithPublicKey.Plain(remoteNodeId)),
+            IntermediateNode(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
+            IntermediateNode(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
+        )
         val lastHop = Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), replyPathId)
         val replyPath = OnionMessages.buildRoute(randomKey(), replyPathHops, lastHop)
         val messageContent = TlvStream(OnionMessagePayloadTlv.ReplyPath(replyPath), OnionMessagePayloadTlv.InvoiceRequest(request.records))
@@ -84,40 +79,49 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
 
     suspend fun receiveMessage(msg: OnionMessage, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction? {
         return OnionMessages.decryptMessage(nodeParams.nodePrivateKey, msg, logger)?.let { decrypted ->
+            val invoiceRequestTlvs = decrypted.content.records.get<OnionMessagePayloadTlv.InvoiceRequest>()?.tlvs
             when {
-                pendingInvoiceRequests.containsKey(decrypted.pathId) -> receiveInvoiceResponse(decrypted)
-                localOffers.containsKey(decrypted.pathId) -> receiveInvoiceRequest(decrypted, remoteChannelUpdates, currentBlockHeight)
+                invoiceRequestTlvs != null -> when (val invoiceRequest = OfferTypes.InvoiceRequest.validate(invoiceRequestTlvs)) {
+                    is Left -> {
+                        logger.warning { "received invalid invoice_request: ${invoiceRequest.value}" }
+                        null
+                    }
+                    is Right -> receiveInvoiceRequest(invoiceRequest.value, decrypted.pathId, decrypted.blindedPrivateKey, decrypted.content.replyPath, remoteChannelUpdates, currentBlockHeight)
+                }
+                pendingInvoiceRequests.containsKey(decrypted.pathId) -> {
+                    val (payOffer, request) = pendingInvoiceRequests[decrypted.pathId]!!
+                    pendingInvoiceRequests.remove(decrypted.pathId)
+                    receiveInvoiceResponse(decrypted.content, payOffer, request)
+                }
                 else -> {
-                    logger.warning { "pathId:${decrypted.pathId} ignoring onion message (could be a duplicate invoice response)" }
+                    logger.warning { "ignoring onion message without invoice request (could be a duplicate invoice response)" }
                     null
                 }
             }
         }
     }
 
-    private suspend fun receiveInvoiceResponse(decrypted: OnionMessages.DecryptedMessage): OnionMessageAction.PayInvoice? {
-        val (payOffer, request) = pendingInvoiceRequests[decrypted.pathId]!!
-        pendingInvoiceRequests.remove(decrypted.pathId)
-        return when (val res = Bolt12Invoice.extract(decrypted.content.records)) {
+    private suspend fun receiveInvoiceResponse(content: MessageOnion, payOffer: PayOffer, request: OfferTypes.InvoiceRequest): OnionMessageAction.PayInvoice? {
+        return when (val res = Bolt12Invoice.extract(content.records)) {
             is Bolt12Invoice.Companion.Bolt12ParsingResult.Failure.Malformed -> {
-                logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} malformed response: invalid_tlv=${res.invalidTlvPayload}" }
+                logger.warning { "paymentId:${payOffer.paymentId} malformed response: invalid_tlv=${res.invalidTlvPayload}" }
                 eventsFlow.emit(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.MalformedResponse(request, res)))
                 null
             }
             is Bolt12Invoice.Companion.Bolt12ParsingResult.Failure.RecipientError -> {
-                logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} response did not contain an invoice: invoice_error=${res.invoiceError.error}" }
+                logger.warning { "paymentId:${payOffer.paymentId} response did not contain an invoice: invoice_error=${res.invoiceError.error}" }
                 eventsFlow.emit(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.ErrorFromRecipient(request, res)))
                 null
             }
             is Bolt12Invoice.Companion.Bolt12ParsingResult.Success -> {
                 when (val reason = res.invoice.validateFor(request)) {
                     is Left -> {
-                        logger.warning { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} invoice does not match request: ${reason.value}" }
+                        logger.warning { "paymentId:${payOffer.paymentId} invoice does not match request: ${reason.value}" }
                         eventsFlow.emit(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.InvoiceMismatch(request, reason.value)))
                         null
                     }
                     is Right -> {
-                        logger.info { "paymentId:${payOffer.paymentId} pathId=${decrypted.pathId} received valid invoice: ${res.invoice}" }
+                        logger.info { "paymentId:${payOffer.paymentId} received valid invoice: ${res.invoice}" }
                         eventsFlow.emit(OfferInvoiceReceived(payOffer, res.invoice))
                         OnionMessageAction.PayInvoice(payOffer, res.invoice)
                     }
@@ -126,34 +130,28 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         }
     }
 
-    private fun receiveInvoiceRequest(decrypted: OnionMessages.DecryptedMessage, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction.SendMessage? {
-        val offer = localOffers[decrypted.pathId]!!
-        val request = decrypted.content.records.get<OnionMessagePayloadTlv.InvoiceRequest>()?.let { OfferTypes.InvoiceRequest.validate(it.tlvs).right }
+    private fun receiveInvoiceRequest(request: OfferTypes.InvoiceRequest, pathId: ByteVector?, blindedPrivateKey: PrivateKey, replyPath: RouteBlinding.BlindedRoute?, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction.SendMessage? {
         // We must use the most restrictive minimum HTLC value between local and remote.
         val minHtlc = (listOf(nodeParams.htlcMinimum) + remoteChannelUpdates.map { it.htlcMinimumMsat }).max()
         return when {
-            request == null -> {
-                logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} ignoring onion message: missing or invalid invoice request" }
+            replyPath == null -> {
+                logger.warning { "offerId:${request.offer.offerId} ignoring invoice request: no reply path" }
                 null
             }
-            decrypted.content.replyPath == null -> {
-                logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} ignoring invoice request: no reply path ($request)" }
+            !isOurOffer(request.offer, pathId, blindedPrivateKey) -> {
+                logger.warning { "ignoring invoice request for offer that is not ours" }
                 null
-            }
-            request.offer != offer -> {
-                logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} ignoring invoice request: wrong offer (expected=$offer actual=${request.offer})" }
-                sendInvoiceError("ignoring invoice request for wrong offer", decrypted.content.replyPath)
             }
             !request.isValid() -> {
-                logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} ignoring invalid invoice request ($request)" }
-                sendInvoiceError("ignoring invalid invoice request", decrypted.content.replyPath)
+                logger.warning { "offerId:${request.offer.offerId} ignoring invalid invoice request" }
+                sendInvoiceError("ignoring invalid invoice request", replyPath)
             }
-            request.requestedAmount()?.let { it < minHtlc } ?: false -> {
-                logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} amount too low (amount=${request.requestedAmount()} minHtlc=$minHtlc)" }
-                sendInvoiceError("amount too low, minimum amount = $minHtlc", decrypted.content.replyPath)
+            request.requestedAmount < minHtlc -> {
+                logger.warning { "offerId:${request.offer.offerId} amount too low (amount=${request.requestedAmount} minHtlc=$minHtlc)" }
+                sendInvoiceError("amount too low, minimum amount = $minHtlc", replyPath)
             }
             else -> {
-                val amount = request.requestedAmount()!!
+                val amount = request.requestedAmount
                 val preimage = randomBytes32()
                 val truncatedPayerNote = request.payerNote?.let {
                     if (it.length <= 64) {
@@ -162,8 +160,8 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                         it.take(63) + "…"
                     }
                 }
-                val pathId = OfferPaymentMetadata.V1(ByteVector32(decrypted.pathId), amount, preimage, request.payerId, truncatedPayerNote, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
-                val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId))).write().toByteVector()
+                val metadata = OfferPaymentMetadata.V1(request.offer.offerId, amount, preimage, request.payerId, truncatedPayerNote, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
+                val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(metadata))).write().toByteVector()
                 val cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
                 val paymentInfo = OfferTypes.PaymentInfo(
                     feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
@@ -193,12 +191,12 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 ).write().toByteVector()
                 val blindedRoute = RouteBlinding.create(randomKey(), listOf(remoteNodeId, nodeParams.nodeId), listOf(remoteNodePayload, recipientPayload)).route
                 val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
-                val invoice = Bolt12Invoice(request, preimage, decrypted.blindedPrivateKey, nodeParams.bolt12InvoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
-                val destination = Destination.BlindedPath(decrypted.content.replyPath)
+                val invoice = Bolt12Invoice(request, preimage, blindedPrivateKey, nodeParams.bolt12InvoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
+                val destination = Destination.BlindedPath(replyPath)
                 when (val invoiceMessage = buildMessage(randomKey(), randomKey(), intermediateNodes(destination), destination, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)))) {
                     is Left -> {
-                        logger.warning { "offerId:${offer.offerId} pathId:${decrypted.pathId} ignoring invoice request, could not build onion message: ${invoiceMessage.value}" }
-                        sendInvoiceError("failed to build onion message", decrypted.content.replyPath)
+                        logger.warning { "offerId:${request.offer.offerId} ignoring invoice request, could not build onion message: ${invoiceMessage.value}" }
+                        sendInvoiceError("failed to build onion message", replyPath)
                     }
                     is Right -> {
                         logger.info { "sending BOLT 12 invoice with amount=${invoice.amount}, paymentHash=${invoice.paymentHash}, payerId=${invoice.invoiceRequest.payerId} to introduction node ${destination.route.firstNodeId}" }
@@ -228,5 +226,46 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             is Destination.Recipient -> destination.nodeId.publicKey != remoteNodeId
         }
         return if (needIntermediateHop) listOf(IntermediateNode(EncodedNodeId.WithPublicKey.Plain(remoteNodeId))) else listOf()
+    }
+
+    /** This function verifies that the offer provided was generated by us. */
+    private fun isOurOffer(offer: OfferTypes.Offer, pathId: ByteVector?, blindedPrivateKey: PrivateKey): Boolean = when {
+        pathId != null && pathId.size() != 32 -> false
+        else -> {
+            val expected = deterministicOffer(nodeParams.chainHash, nodeParams.nodePrivateKey, walletParams.trampolineNode.id, offer.amount, offer.description, pathId?.let { ByteVector32(it) })
+            expected == Pair(offer, blindedPrivateKey)
+        }
+    }
+
+    companion object {
+        /**
+         * We always generate offers deterministically, based on a secret derived from our node's private key and (optionally) a random nonce.
+         * This way we never need to persist our offers: we can instead simply verify, when we receive an invoice_request, that the offer it contains was generated by us.
+         */
+        fun deterministicOffer(
+            chainHash: BlockHash,
+            nodePrivateKey: PrivateKey,
+            trampolineNodeId: PublicKey,
+            amount: MilliSatoshi?,
+            description: String?,
+            pathId: ByteVector32?,
+        ): Pair<OfferTypes.Offer, PrivateKey> {
+            // We generate a deterministic session key based on:
+            //  - a custom tag indicating that this is used in the Bolt 12 context
+            //  - the offer parameters (amount, description and pathId)
+            //  - our trampoline node, which is used as an introduction node for the offer's blinded path
+            //  - our private key, which ensures that nobody else can generate the same path key secret
+            val tweak = when {
+                amount == null && description == null && pathId == null -> "bolt 12 default offer".encodeToByteArray().byteVector()
+                else -> {
+                    "bolt 12 deterministic offer".encodeToByteArray().byteVector() +
+                            Crypto.sha256("offer amount".encodeToByteArray() + (amount?.let { Pack.writeInt64BE(it.msat) } ?: ByteArray(0))) +
+                            Crypto.sha256("offer description".encodeToByteArray() + (description?.encodeToByteArray() ?: ByteArray(0))) +
+                            Crypto.sha256("offer path_id".encodeToByteArray().byteVector() + (pathId ?: ByteVector.empty))
+                }
+            }
+            val sessionKey = PrivateKey(Crypto.sha256(tweak + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
+            return OfferTypes.Offer.createBlindedOffer(chainHash, nodePrivateKey, trampolineNodeId, amount, description, Features.empty, sessionKey, pathId)
+        }
     }
 }

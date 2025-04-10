@@ -143,8 +143,6 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val request = InvoiceRequest(offer, 500.msat, 1, Features.empty, payerKey, null, Block.LivenetGenesisBlock.hash)
         assertTrue(request.isValid())
         assertEquals(offer, request.offer)
-        val withoutAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filterNot { it is InvoiceRequestAmount }.toSet())), payerKey)
-        assertFalse(withoutAmount.isValid())
     }
 
     @Test
@@ -217,12 +215,13 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val tlvsWithoutSignature = setOf(
             InvoiceRequestMetadata(ByteVector.fromHex("abcdef")),
             OfferIssuerId(nodeId),
+            InvoiceRequestAmount(10_000.msat),
             InvoiceRequestPayerId(payerKey.publicKey()),
         )
         val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvsWithoutSignature)), payerKey)
         val tlvs = tlvsWithoutSignature + Signature(signature)
         val invoiceRequest = InvoiceRequest(TlvStream(tlvs))
-        val encoded = "lnr1qqp6hn00zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupetqssynwewhp70gwlp4chhm53g90jt9fpnx7rpmrzla3zd0nvxymm8e0p7pq06rwacy8756zgl3hdnsyfepq573astyz94rgn9uhxlyqj4gdyk6q8q0yrv6al909v3435amuvjqvkuq6k8fyld78r8srdyx7wnmwsdu"
+        val encoded = "lnr1qqp6hn00zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe2gpzwyzcyypymkt4c0n6rhcdw9a7ay2ptuje2gvehscwcchlvgntump3x7e7tc0sgzhxcvjdh925x0jyyxzrdc5s2mwqtmpf4zezd7mg094lmcwqh3xyw2n6jdzkl80jj2euh48s00wtgad9j7wyt67rnth3dqq0fa0usrxm"
         assertEquals(invoiceRequest, InvoiceRequest.decode(encoded).get())
         assertNull(invoiceRequest.offer.amount)
         assertNull(invoiceRequest.offer.description)
@@ -233,6 +232,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         for (tlv in tlvs) {
             val incomplete = TlvStream(tlvs.filterNot { it == tlv }.toSet())
             assertTrue(InvoiceRequest.validate(incomplete).isLeft)
+            assertEquals(MissingRequiredTlv(tlv.tag), InvoiceRequest.validate(incomplete).left)
             val incompleteEncoded = Bech32.encodeBytes(InvoiceRequest.hrp, InvoiceRequest.tlvSerializer.write(incomplete), Bech32.Encoding.Beck32WithoutChecksum)
             assertTrue(InvoiceRequest.decode(incompleteEncoded).isFailure)
         }

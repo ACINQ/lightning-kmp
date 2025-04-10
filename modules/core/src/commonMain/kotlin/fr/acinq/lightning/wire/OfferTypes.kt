@@ -9,8 +9,11 @@ import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
-import fr.acinq.lightning.*
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.EncodedNodeId
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.message.OnionMessages
 
@@ -781,34 +784,38 @@ object OfferTypes {
             /**
              * Create an offer using a single-hop blinded path going through our trampoline node.
              *
+             * @param nodePrivateKey node private key
              * @param amount amount if it can be determined at offer creation time.
              * @param description description of the offer (may be null if [amount] is also null).
-             * @param nodeParams our node parameters.
              * @param trampolineNodeId our trampoline node.
              * @param features features that should be advertised in the offer.
              * @param blindedPathSessionKey session key used for the blinded path included in the offer, the corresponding public key will be the first path key.
              */
             fun createBlindedOffer(
+                chainHash: BlockHash,
+                nodePrivateKey: PrivateKey,
+                trampolineNodeId: PublicKey,
                 amount: MilliSatoshi?,
                 description: String?,
-                nodeParams: NodeParams,
-                trampolineNodeId: PublicKey,
                 features: Features,
                 blindedPathSessionKey: PrivateKey,
-                additionalTlvs: Set<OfferTlv> = setOf(),
-                customTlvs: Set<GenericTlv> = setOf()
+                pathId: ByteVector? = null,
             ): Pair<Offer, PrivateKey> {
-                if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
-                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(blindedPathSessionKey, listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))), OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId), null))
-                val tlvs: Set<OfferTlv> = setOfNotNull(
-                    if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(nodeParams.chainHash)) else null,
+                require(amount == null || description != null) { "an offer description must be provided if the amount isn't null" }
+                val blindedRouteDetails = OnionMessages.buildRouteToRecipient(
+                    blindedPathSessionKey,
+                    listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))),
+                    OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodePrivateKey.publicKey()), pathId)
+                )
+                val tlvs = setOfNotNull(
+                    if (chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chainHash)) else null,
                     amount?.let { OfferAmount(it) },
                     description?.let { OfferDescription(it) },
                     features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it) else null },
                     // Note that we don't include an offer_node_id since we're using a blinded path.
                     OfferPaths(listOf(ContactInfo.BlindedPath(blindedRouteDetails.route))),
                 )
-                return Pair(Offer(TlvStream(tlvs + additionalTlvs, customTlvs)), blindedRouteDetails.blindedPrivateKey(nodeParams.nodePrivateKey))
+                return Pair(Offer(TlvStream(tlvs)), blindedRouteDetails.blindedPrivateKey(nodePrivateKey))
             }
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
@@ -869,6 +876,8 @@ object OfferTypes {
         val features: Features = records.get<InvoiceRequestFeatures>()?.features ?: Features.empty
         val quantity_opt: Long? = records.get<InvoiceRequestQuantity>()?.quantity
         val quantity: Long = quantity_opt ?: 1
+        // A valid invoice_request must either specify an amount, or the offer itself must specify an amount.
+        val requestedAmount: MilliSatoshi = amount ?: (offer.amount!! * quantity)
         val payerId: PublicKey = records.get<InvoiceRequestPayerId>()!!.publicKey
         val payerNote: String? = records.get<InvoiceRequestPayerNote>()?.note
         private val signature: ByteVector64 = records.get<Signature>()!!.signature
@@ -880,8 +889,6 @@ object OfferTypes {
                     ((offer.quantityMax == null && quantity_opt == null) || (offer.quantityMax != null && quantity_opt != null && quantity <= offer.quantityMax)) &&
                     Features.areCompatible(offer.features, features) &&
                     checkSignature()
-
-        fun requestedAmount(): MilliSatoshi? = amount ?: offer.amount?.let { it * quantity }
 
         fun checkSignature(): Boolean =
             verifySchnorr(
@@ -950,7 +957,8 @@ object OfferTypes {
                     is Left -> return Left(offer.value)
                     is Right -> {}
                 }
-                if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0L))
+                if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0))
+                if (records.get<InvoiceRequestAmount>() == null && records.get<OfferAmount>() == null) return Left(MissingRequiredTlv(82))
                 if (records.get<InvoiceRequestPayerId>() == null) return Left(MissingRequiredTlv(88))
                 if (records.get<Signature>() == null) return Left(MissingRequiredTlv(240))
                 if (records.unknown.any { !isInvoiceRequestTlv(it) }) return Left(ForbiddenTlv(records.unknown.find { !isInvoiceRequestTlv(it) }!!.tag))

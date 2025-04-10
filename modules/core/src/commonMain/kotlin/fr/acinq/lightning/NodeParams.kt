@@ -1,24 +1,26 @@
 package fr.acinq.lightning
 
 import co.touchlab.kermit.Logger
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Chain
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.Lightning.nodeFee
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.payment.LiquidityPolicy
+import fr.acinq.lightning.payment.OfferManager
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.OfferTypes
-import io.ktor.utils.io.charsets.*
-import io.ktor.utils.io.core.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlin.math.max
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -264,17 +266,24 @@ data class NodeParams(
 
     /**
      * We generate a default, deterministic Bolt 12 offer based on the node's seed and its trampoline node.
-     * This offer will stay valid after restoring the seed on a different device.
+     * After restoring the seed on a different device, this function will still return the same offer.
+     * This should be used for example in a BIP353 DNS address.
+     *
      * @return the default offer and the private key that will sign invoices for this offer.
      */
-    fun defaultOffer(trampolineNodeId: PublicKey): Pair<OfferTypes.Offer, PrivateKey> {
-        // We generate a deterministic session key based on:
-        //  - a custom tag indicating that this is used in the Bolt 12 context
-        //  - our trampoline node, which is used as an introduction node for the offer's blinded path
-        //  - our private key, which ensures that nobody else can generate the same path key secret
-        val sessionKey = PrivateKey(Crypto.sha256("bolt 12 default offer".toByteArray(Charsets.UTF_8).byteVector() + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
-        // We don't use our currently activated features, otherwise the offer would change when we add support for new features.
-        // If we add a new feature that we would like to use by default, we will need to explicitly create a new offer.
-        return OfferTypes.Offer.createBlindedOffer(amount = null, description = null, this, trampolineNodeId, Features.empty, sessionKey)
+    fun defaultOffer(trampolineNodeId: PublicKey): Pair<OfferTypes.Offer, PrivateKey> = OfferManager.deterministicOffer(chainHash, nodePrivateKey, trampolineNodeId, null, null, null)
+
+    /**
+     * Generate a random Bolt 12 offer based on the node's seed and its trampoline node.
+     * This offer will stay valid after restoring the seed on a different device: we will
+     * automatically keep accepting payments for this offer.
+     *
+     * @return a random offer and the private key that will sign invoices for this offer.
+     */
+    fun randomOffer(trampolineNodeId: PublicKey, amount: MilliSatoshi?, description: String?): Pair<OfferTypes.Offer, PrivateKey> {
+        // We generate a random nonce to ensure that this offer is unique.
+        val nonce = randomBytes32()
+        return OfferManager.deterministicOffer(chainHash, nodePrivateKey, trampolineNodeId, amount, description, nonce)
     }
+
 }
