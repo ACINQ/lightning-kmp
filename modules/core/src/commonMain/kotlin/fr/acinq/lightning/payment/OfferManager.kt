@@ -153,7 +153,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             else -> {
                 val amount = request.requestedAmount
                 val preimage = randomBytes32()
-                val truncatedPayerNote = request.payerNote?.let {
+                val truncatedPayerNote = (request.payerNote ?: request.offer.description)?.let {
                     if (it.length <= 64) {
                         it
                     } else {
