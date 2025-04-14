@@ -21,6 +21,7 @@ for i in lightning-kmp-core \
 		lightning-kmp-core-iossimulatorarm64 \
 		lightning-kmp-core-iosx64 \
 		lightning-kmp-core-jvm \
+		lightning-kmp-core-linuxarm64 \
 		lightning-kmp-core-linuxx64 \
 		lightning-kmp-core-macosarm64 \
 		lightning-kmp-core-macosx64
