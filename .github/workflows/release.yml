@@ -29,11 +29,6 @@ jobs:
           path: ~/.gradle
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}-${{ hashFiles('**/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
-      - name: Install curl
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update -y
-          sudo apt install -y libcurl4-gnutls-dev
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
