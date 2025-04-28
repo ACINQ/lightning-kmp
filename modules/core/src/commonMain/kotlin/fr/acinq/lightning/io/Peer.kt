@@ -1020,6 +1020,12 @@ class Peer(
                         disconnect()
                     }
                 }
+                if (state is Closed &&
+                    nodeParams.usePeerStorage &&
+                    theirInit?.features?.hasFeature(Feature.ProvideStorage) == true) {
+                    val persistedChannelStates = (channels - channelId).values.filterIsInstance<PersistedChannelState>()
+                    peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
+                }
             }
         }
     }
@@ -1119,7 +1125,7 @@ class Peer(
         val local: ChannelState? = _channels[backup.channelId]
         return when {
             local == null -> {
-                logger.warning { "recovering channel from peer backup" }
+                logger.warning { "recovering ${backup.stateName} channel from peer backup" }
                 recoverChannel(backup)
             }
             local is Syncing && local.state is Negotiating && backup is Negotiating && backup.proposedClosingTxs.size > local.state.proposedClosingTxs.size -> {
@@ -1127,7 +1133,7 @@ class Peer(
                 recoverChannel(backup)
             }
             local is Syncing && local.state is ChannelStateWithCommitments && backup is ChannelStateWithCommitments && backup.commitments.isMoreRecent(local.state.commitments) -> {
-                logger.warning { "recovering channel from peer backup (it is more recent)" }
+                logger.warning { "recovering ${backup.stateName} channel from peer backup (it is more recent)" }
                 recoverChannel(backup)
             }
             else -> local
