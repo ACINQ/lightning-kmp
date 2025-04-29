@@ -78,12 +78,15 @@ sealed class ChannelState {
             is Syncing -> this@ChannelState.state
             else -> this@ChannelState
         }
-        maybeSignalSensitiveTask(oldState, newState)
-        return when {
-            // we only want to fire the PaymentSent event when we transition to Closing for the first time
-            oldState is ChannelStateWithCommitments && oldState !is Closing && newState is Closing -> emitClosingEvents(oldState, newState)
-            else -> emptyList()
+        @Suppress("NAME_SHADOWING")
+        val newState = when (newState) {
+            is Offline -> newState.state
+            is Syncing -> newState.state
+            is Closed -> newState.state
+            else -> newState
         }
+        maybeSignalSensitiveTask(oldState, newState)
+        return maybeEmitClosingEvents(oldState, newState)
     }
 
     /** Some transitions imply that we are in the middle of tasks that may require some time. */
@@ -101,57 +104,68 @@ sealed class ChannelState {
         }
     }
 
-    internal fun ChannelContext.emitClosingEvents(oldState: ChannelStateWithCommitments, newState: Closing): List<ChannelAction> {
-        val channelBalance = oldState.commitments.latest.localCommit.spec.toLocal
-        return if (channelBalance > 0.msat) {
-            when {
-                newState.mutualClosePublished.isNotEmpty() -> {
-                    // this code is only executed for the first transition to Closing, so there can only be one transaction here
-                    val closingTx = newState.mutualClosePublished.first()
-                    val finalAmount = closingTx.toLocalOutput?.amount ?: 0.sat
-                    val address = closingTx.toLocalOutput?.publicKeyScript?.let { Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, it.toByteArray()).right } ?: "unknown"
-                    listOf(
-                        ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
-                            amount = finalAmount,
-                            miningFee = channelBalance.truncateToSatoshi() - finalAmount,
-                            address = address,
-                            txId = closingTx.tx.txid,
-                            isSentToDefaultAddress = closingTx.toLocalOutput?.publicKeyScript == oldState.commitments.params.localParams.defaultFinalScriptPubKey,
-                            closingType = ChannelClosingType.Mutual
-                        )
+    private fun ChannelContext.maybeEmitClosingEvents(oldState: ChannelState, newState: ChannelState): List<ChannelAction> {
+        return when {
+            // ignore channel init transitions
+            oldState !is ChannelStateWithCommitments -> emptyList()
+            // normal mutual close flow
+            oldState is Negotiating && oldState.publishedClosingTxs.isEmpty() && newState is Negotiating && newState.publishedClosingTxs.isNotEmpty() -> emitMutualCloseEvents(newState, newState.publishedClosingTxs.first())
+            // we have been notified of a confirmed mutual close tx that we didn't see before
+            oldState is Negotiating && oldState.publishedClosingTxs.isEmpty() && newState is Closing && newState.mutualClosePublished.isNotEmpty() -> emitMutualCloseEvents(newState, newState.mutualClosePublished.first())
+            // force closes
+            oldState !is Closing && newState is Closing && newState.localCommitPublished is LocalCommitPublished -> emitForceCloseEvents(newState, newState.localCommitPublished.commitTx, ChannelClosingType.Local)
+            oldState !is Closing && newState is Closing && newState.remoteCommitPublished is RemoteCommitPublished -> emitForceCloseEvents(newState, newState.remoteCommitPublished.commitTx, ChannelClosingType.Remote)
+            oldState !is Closing && newState is Closing && newState.nextRemoteCommitPublished is RemoteCommitPublished -> emitForceCloseEvents(newState, newState.nextRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
+            oldState !is Closing && newState is Closing && newState.futureRemoteCommitPublished is RemoteCommitPublished -> emitForceCloseEvents(newState, newState.futureRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
+            oldState !is Closing && newState is Closing && newState.revokedCommitPublished.isNotEmpty() -> emitForceCloseEvents(newState, newState.revokedCommitPublished.first().commitTx, ChannelClosingType.Revoked)
+
+            else -> emptyList()
+        }
+    }
+
+    private fun ChannelContext.emitMutualCloseEvents(state: ChannelStateWithCommitments, mutualCloseTx: ClosingTx): List<ChannelAction> {
+        val channelBalance = state.commitments.latest.localCommit.spec.toLocal
+        val finalAmount = mutualCloseTx.toLocalOutput?.amount ?: 0.sat
+        val address = mutualCloseTx.toLocalOutput?.publicKeyScript?.let { Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, it.toByteArray()).right } ?: "unknown"
+        return buildList {
+            if (channelBalance > 0.msat) {
+                add(
+                    ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
+                        amount = finalAmount,
+                        miningFee = channelBalance.truncateToSatoshi() - finalAmount,
+                        address = address,
+                        txId = mutualCloseTx.tx.txid,
+                        isSentToDefaultAddress = mutualCloseTx.toLocalOutput?.publicKeyScript == state.commitments.params.localParams.defaultFinalScriptPubKey,
+                        closingType = ChannelClosingType.Mutual
                     )
-                }
-                else -> {
-                    // this is a force close, the closing tx is a commit tx
-                    // since force close scenarios may be complicated with multiple layers of transactions, we estimate global fees by listing all the final outputs
-                    // going to us, and subtracting that from the current balance
-                    val (commitTx, type) = when {
-                        newState.localCommitPublished is LocalCommitPublished -> Pair(newState.localCommitPublished.commitTx, ChannelClosingType.Local)
-                        newState.remoteCommitPublished is RemoteCommitPublished -> Pair(newState.remoteCommitPublished.commitTx, ChannelClosingType.Remote)
-                        newState.nextRemoteCommitPublished is RemoteCommitPublished -> Pair(newState.nextRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
-                        newState.futureRemoteCommitPublished is RemoteCommitPublished -> Pair(newState.futureRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
-                        else -> {
-                            val revokedCommitPublished = newState.revokedCommitPublished.first() // must be there
-                            Pair(revokedCommitPublished.commitTx, ChannelClosingType.Revoked)
-                        }
-                    }
-                    val address = Bitcoin.addressFromPublicKeyScript(
-                        chainHash = staticParams.nodeParams.chainHash,
-                        pubkeyScript = oldState.commitments.params.localParams.defaultFinalScriptPubKey.toByteArray() // force close always send to the default script
-                    ).right ?: "unknown"
-                    listOf(
-                        ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
-                            amount = channelBalance.truncateToSatoshi(),
-                            miningFee = 0.sat, // TODO: mining fees are tricky in force close scenario, we just lump everything in the amount field
-                            address = address,
-                            txId = commitTx.txid,
-                            isSentToDefaultAddress = true, // force close always send to the default script
-                            closingType = type
-                        )
-                    )
-                }
+                )
             }
-        } else emptyList() // balance == 0
+        }
+    }
+
+    private fun ChannelContext.emitForceCloseEvents(state: ChannelStateWithCommitments, commitTx: Transaction, closingType: ChannelClosingType): List<ChannelAction> {
+        val channelBalance = state.commitments.latest.localCommit.spec.toLocal
+        val address = Bitcoin.addressFromPublicKeyScript(
+            chainHash = staticParams.nodeParams.chainHash,
+            pubkeyScript = state.commitments.params.localParams.defaultFinalScriptPubKey.toByteArray() // force close always send to the default script
+        ).right ?: "unknown"
+        return buildList {
+            if (channelBalance > 0.msat) {
+                // this is a force close, the closing tx is a commit tx
+                // since force close scenarios may be complicated with multiple layers of transactions, we estimate global fees by listing all the final outputs
+                // going to us, and subtracting that from the current balance
+                add(
+                    ChannelAction.Storage.StoreOutgoingPayment.ViaClose(
+                        amount = channelBalance.truncateToSatoshi(),
+                        miningFee = 0.sat, // TODO: mining fees are tricky in force close scenario, we just lump everything in the amount field
+                        address = address,
+                        txId = commitTx.txid,
+                        isSentToDefaultAddress = true, // force close always send to the default script
+                        closingType = closingType
+                    )
+                )
+            }
+        }
     }
 
     internal fun ChannelContext.unhandled(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
