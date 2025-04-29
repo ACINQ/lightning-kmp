@@ -189,6 +189,14 @@ class Peer(
     companion object {
         private const val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
+
+        fun updatePeerStorage(nodeParams: NodeParams, channelStates: Map<ByteVector32, ChannelState>, peerConnection: PeerConnection?, remoteFeatures: Features?, logger: MDCLogger?) {
+            if (nodeParams.usePeerStorage &&
+                remoteFeatures?.hasFeature(Feature.ProvideStorage) == true) {
+                val persistedChannelStates = channelStates.values.filterIsInstance<PersistedChannelState>().filterNot { it is Closed }
+                peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
+            }
+        }
     }
 
     var socketBuilder: TcpSocket.Builder? = socketBuilder
@@ -846,11 +854,8 @@ class Peer(
             actions.forEach { action ->
                 when (action) {
                     is ChannelAction.Message.Send -> {
-                        if (action.message is RequirePeerStorageStore &&
-                            nodeParams.usePeerStorage &&
-                            theirInit?.features?.hasFeature(Feature.ProvideStorage) == true) {
-                            val persistedChannelStates = (channels + (channelId to state)).values.filterIsInstance<PersistedChannelState>()
-                            peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
+                        if (action.message is RequirePeerStorageStore) {
+                            updatePeerStorage(nodeParams, channels + (channelId to state), peerConnection, theirInit?.features, logger)
                         }
                         peerConnection?.send(action.message) // ignore if disconnected
                     }
@@ -888,6 +893,9 @@ class Peer(
                     is ChannelAction.Storage.StoreState -> {
                         logger.info { "storing state=${action.data::class.simpleName}" }
                         db.channels.addOrUpdateChannel(action.data)
+                        if (action.data is Closed) {
+                            updatePeerStorage(nodeParams, channels - channelId, peerConnection, theirInit?.features, logger)
+                        }
                     }
                     is ChannelAction.Storage.RemoveChannel -> {
                         logger.info { "removing channelId=${action.data.channelId} state=${action.data::class.simpleName}" }
@@ -1119,7 +1127,7 @@ class Peer(
         val local: ChannelState? = _channels[backup.channelId]
         return when {
             local == null -> {
-                logger.warning { "recovering channel from peer backup" }
+                logger.warning { "recovering ${backup.stateName} channel from peer backup" }
                 recoverChannel(backup)
             }
             local is Syncing && local.state is Negotiating && backup is Negotiating && backup.proposedClosingTxs.size > local.state.proposedClosingTxs.size -> {
@@ -1127,7 +1135,7 @@ class Peer(
                 recoverChannel(backup)
             }
             local is Syncing && local.state is ChannelStateWithCommitments && backup is ChannelStateWithCommitments && backup.commitments.isMoreRecent(local.state.commitments) -> {
-                logger.warning { "recovering channel from peer backup (it is more recent)" }
+                logger.warning { "recovering ${backup.stateName} channel from peer backup (it is more recent)" }
                 recoverChannel(backup)
             }
             else -> local
