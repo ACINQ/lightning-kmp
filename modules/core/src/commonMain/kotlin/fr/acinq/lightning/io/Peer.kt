@@ -189,6 +189,14 @@ class Peer(
     companion object {
         private const val prefix: Byte = 0x00
         private val prologue = "lightning".encodeToByteArray()
+
+        fun updatePeerStorage(nodeParams: NodeParams, channelStates: Map<ByteVector32, ChannelState>, peerConnection: PeerConnection?, remoteFeatures: Features?, logger: MDCLogger?) {
+            if (nodeParams.usePeerStorage &&
+                remoteFeatures?.hasFeature(Feature.ProvideStorage) == true) {
+                val persistedChannelStates = channelStates.values.filterIsInstance<PersistedChannelState>().filterNot { it is Closed }
+                peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
+            }
+        }
     }
 
     var socketBuilder: TcpSocket.Builder? = socketBuilder
@@ -847,7 +855,7 @@ class Peer(
                 when (action) {
                     is ChannelAction.Message.Send -> {
                         if (action.message is RequirePeerStorageStore) {
-                            updatePeerStorage(channels + (channelId to state), peerConnection)
+                            updatePeerStorage(nodeParams, channels + (channelId to state), peerConnection, theirInit?.features, logger)
                         }
                         peerConnection?.send(action.message) // ignore if disconnected
                     }
@@ -886,7 +894,7 @@ class Peer(
                         logger.info { "storing state=${action.data::class.simpleName}" }
                         db.channels.addOrUpdateChannel(action.data)
                         if (action.data is Closed) {
-                            updatePeerStorage(channels - channelId, peerConnection)
+                            updatePeerStorage(nodeParams, channels - channelId, peerConnection, theirInit?.features, logger)
                         }
                     }
                     is ChannelAction.Storage.RemoveChannel -> {
@@ -1098,14 +1106,6 @@ class Peer(
     private val _peerConnection = MutableStateFlow<PeerConnection?>(null)
     private val peerConnection: PeerConnection?
         get() = _peerConnection.value
-
-    private fun updatePeerStorage(channelStates: Map<ByteVector32, ChannelState>, peerConnection: PeerConnection?) {
-        if (nodeParams.usePeerStorage &&
-            theirInit?.features?.hasFeature(Feature.ProvideStorage) == true) {
-            val persistedChannelStates = channelStates.values.filterIsInstance<PersistedChannelState>()
-            peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
-        }
-    }
 
     private suspend fun recoverChannel(recovered: PersistedChannelState): ChannelState {
         db.channels.addOrUpdateChannel(recovered)
