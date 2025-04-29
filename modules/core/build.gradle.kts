@@ -22,9 +22,11 @@ kotlin {
         }
     }
 
-    linuxX64()
+    if (currentOs.isLinux) {
+        linuxX64()
 
-    linuxArm64()
+        linuxArm64()
+    }
 
     if (currentOs.isMacOsX) {
         macosX64()
@@ -116,9 +118,11 @@ kotlin {
             }
         }
 
-        linuxMain {
-            dependencies {
-                api("io.ktor:ktor-client-curl:${libs.versions.ktor.get()}")
+        if (currentOs.isLinux) {
+            linuxMain {
+                dependencies {
+                    api("io.ktor:ktor-client-curl:${libs.versions.ktor.get()}")
+                }
             }
         }
 
