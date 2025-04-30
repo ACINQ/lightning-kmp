@@ -106,7 +106,7 @@ sealed class ChannelState {
 
     private fun ChannelContext.maybeEmitClosingEvents(oldState: ChannelState, newState: ChannelState): List<ChannelAction> {
         return when {
-            // ignore channel init transitions
+            // ignore init transitions from init or without a commitment
             oldState !is ChannelStateWithCommitments -> emptyList()
             // normal mutual close flow
             oldState is Negotiating && oldState.publishedClosingTxs.isEmpty() && newState is Negotiating && newState.publishedClosingTxs.isNotEmpty() -> emitMutualCloseEvents(newState, newState.publishedClosingTxs.first())
@@ -118,7 +118,6 @@ sealed class ChannelState {
             oldState !is Closing && newState is Closing && newState.nextRemoteCommitPublished is RemoteCommitPublished -> emitForceCloseEvents(newState, newState.nextRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
             oldState !is Closing && newState is Closing && newState.futureRemoteCommitPublished is RemoteCommitPublished -> emitForceCloseEvents(newState, newState.futureRemoteCommitPublished.commitTx, ChannelClosingType.Remote)
             oldState !is Closing && newState is Closing && newState.revokedCommitPublished.isNotEmpty() -> emitForceCloseEvents(newState, newState.revokedCommitPublished.first().commitTx, ChannelClosingType.Revoked)
-
             else -> emptyList()
         }
     }
