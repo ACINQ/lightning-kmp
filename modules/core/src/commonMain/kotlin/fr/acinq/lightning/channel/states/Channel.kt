@@ -78,13 +78,6 @@ sealed class ChannelState {
             is Syncing -> this@ChannelState.state
             else -> this@ChannelState
         }
-        @Suppress("NAME_SHADOWING")
-        val newState = when (newState) {
-            is Offline -> newState.state
-            is Syncing -> newState.state
-            is Closed -> newState.state
-            else -> newState
-        }
         maybeSignalSensitiveTask(oldState, newState)
         return maybeEmitClosingEvents(oldState, newState)
     }
@@ -110,8 +103,11 @@ sealed class ChannelState {
             oldState !is ChannelStateWithCommitments -> emptyList()
             // normal mutual close flow
             oldState is Negotiating && oldState.publishedClosingTxs.isEmpty() && newState is Negotiating && newState.publishedClosingTxs.isNotEmpty() -> emitMutualCloseEvents(newState, newState.publishedClosingTxs.first())
-            // we have been notified of a confirmed mutual close tx that we didn't see before
-            oldState is Negotiating && oldState.publishedClosingTxs.isEmpty() && newState is Closing && newState.mutualClosePublished.isNotEmpty() -> emitMutualCloseEvents(newState, newState.mutualClosePublished.first())
+            // we have been notified of a published mutual close tx that we didn't see before, while disconnected
+            oldState is Negotiating && oldState.publishedClosingTxs.isEmpty() && newState is Offline && newState.state is Negotiating && newState.state.publishedClosingTxs.isNotEmpty() -> emitMutualCloseEvents(newState.state, newState.state.publishedClosingTxs.first())
+            oldState is Negotiating && oldState.publishedClosingTxs.isEmpty() && newState is Syncing && newState.state is Negotiating && newState.state.publishedClosingTxs.isNotEmpty() -> emitMutualCloseEvents(newState.state, newState.state.publishedClosingTxs.first())
+            // we have been notified of a confirmed mutual close tx that we didn't see before, while disconnected
+            oldState is Negotiating && oldState.publishedClosingTxs.isEmpty() && newState is Closed && newState.state.mutualClosePublished.isNotEmpty() -> emitMutualCloseEvents(newState, newState.state.mutualClosePublished.first())
             // force closes
             oldState !is Closing && newState is Closing && newState.localCommitPublished is LocalCommitPublished -> emitForceCloseEvents(newState, newState.localCommitPublished.commitTx, ChannelClosingType.Local)
             oldState !is Closing && newState is Closing && newState.remoteCommitPublished is RemoteCommitPublished -> emitForceCloseEvents(newState, newState.remoteCommitPublished.commitTx, ChannelClosingType.Remote)
