@@ -57,14 +57,14 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (alice, bob, closingCompleteAlice, closingCompleteBob) = init()
 
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(closingCompleteBob))
-        assertEquals(4, actionsAlice1.size)
+        assertEquals(5, actionsAlice1.size)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
         val closingTxBob = actionsAlice1.findPublishTxs().first()
         actionsAlice1.hasWatchConfirmed(closingTxBob.txid)
         val closingSigAlice = actionsAlice1.findOutgoingMessage<ClosingSig>()
 
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(closingCompleteAlice))
-        assertEquals(4, actionsBob1.size)
+        assertEquals(5, actionsBob1.size)
         actionsBob1.has<ChannelAction.Storage.StoreState>()
         val closingTxAlice = actionsBob1.findPublishTxs().first()
         actionsBob1.hasWatchConfirmed(closingTxAlice.txid)
@@ -135,8 +135,9 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
         // Alice sends closing_sig in response to Bob's first closing_complete.
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(closingCompleteBob1))
-        assertEquals(4, actionsAlice1.size)
+        assertEquals(5, actionsAlice1.size)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        actionsAlice1.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         val closingTx1 = actionsAlice1.findPublishTxs().first()
         actionsAlice1.hasWatchConfirmed(closingTx1.txid)
         val closingSigAlice1 = actionsAlice1.hasOutgoingMessage<ClosingSig>()
@@ -170,8 +171,9 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         // Bob receives Alice's closing_sig for his updated closing_complete.
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(closingSigAlice2))
         assertIs<Negotiating>(bob4.state)
-        assertEquals(3, actionsBob4.size)
+        assertEquals(4, actionsBob4.size)
         actionsBob4.has<ChannelAction.Storage.StoreState>()
+        actionsBob4.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         assertEquals(closingTx2, actionsBob4.findPublishTxs().first())
         actionsBob4.hasWatchConfirmed(closingTx2.txid)
     }
@@ -225,33 +227,33 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(closingComplete))
         val closingTx = actionsBob1.findPublishTxs().first()
+        actionsBob1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
+            assertEquals(closingTx.txid, it.txId)
+            assertEquals(ChannelClosingType.Mutual, it.closingType)
+            assertEquals(150_000.sat, it.amount)
+        }
         val closingSig = actionsBob1.findOutgoingMessage<ClosingSig>()
 
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(closingSig))
         assertTrue(actionsAlice1.findPublishTxs().contains(closingTx))
-        actionsAlice1.hasWatchConfirmed(closingTx.txid)
-
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ClosingTxConfirmed, 0, 0, closingTx)))
-        assertIs<Closed>(alice2.state)
-        assertEquals(3, actionsAlice2.size)
-        actionsAlice2.has<ChannelAction.Storage.StoreState>()
-        actionsAlice2.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
+        actionsAlice1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
             assertEquals(closingTx.txid, it.txId)
             assertEquals(ChannelClosingType.Mutual, it.closingType)
             assertTrue(it.miningFee > 0.sat)
             assertEquals(850_000.sat, it.amount + it.miningFee)
         }
+        actionsAlice1.hasWatchConfirmed(closingTx.txid)
+
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ClosingTxConfirmed, 0, 0, closingTx)))
+        assertIs<Closed>(alice2.state)
+        assertEquals(2, actionsAlice2.size)
+        actionsAlice2.has<ChannelAction.Storage.StoreState>()
         actionsAlice2.find<ChannelAction.Storage.SetLocked>().also { assertEquals(closingTx.txid, it.txId) }
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.channelId, WatchConfirmed.ClosingTxConfirmed, 0, 0, closingTx)))
         assertIs<Closed>(bob2.state)
-        assertEquals(3, actionsBob2.size)
+        assertEquals(2, actionsBob2.size)
         actionsBob2.has<ChannelAction.Storage.StoreState>()
-        actionsBob2.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
-            assertEquals(closingTx.txid, it.txId)
-            assertEquals(ChannelClosingType.Mutual, it.closingType)
-            assertEquals(150_000.sat, it.amount)
-        }
         actionsBob2.find<ChannelAction.Storage.SetLocked>().also { assertEquals(closingTx.txid, it.txId) }
     }
 
@@ -261,6 +263,11 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(closingComplete))
         val closingTx = actionsBob1.findPublishTxs().first()
+        actionsBob1.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
+            assertEquals(closingTx.txid, it.txId)
+            assertEquals(ChannelClosingType.Mutual, it.closingType)
+            assertEquals(150_000.sat, it.amount)
+        }
         actionsBob1.findOutgoingMessage<ClosingSig>()
 
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ClosingTxConfirmed, 0, 0, closingTx)))
@@ -277,13 +284,8 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.channelId, WatchConfirmed.ClosingTxConfirmed, 0, 0, closingTx)))
         assertIs<Closed>(bob2.state)
-        assertEquals(3, actionsBob2.size)
+        assertEquals(2, actionsBob2.size)
         actionsBob2.has<ChannelAction.Storage.StoreState>()
-        actionsBob2.find<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>().also {
-            assertEquals(closingTx.txid, it.txId)
-            assertEquals(ChannelClosingType.Mutual, it.closingType)
-            assertEquals(150_000.sat, it.amount)
-        }
         actionsBob2.find<ChannelAction.Storage.SetLocked>().also { assertEquals(closingTx.txid, it.txId) }
     }
 
@@ -292,20 +294,21 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (alice, bob, closingComplete, _) = init()
         val (_, actionsBob1) = bob.process(ChannelCommand.MessageReceived(closingComplete))
         val closingTx = actionsBob1.findPublishTxs().first()
+        actionsBob1.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         actionsBob1.findOutgoingMessage<ClosingSig>()
 
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), closingTx)))
         assertIs<Negotiating>(alice1.state)
-        assertEquals(3, actionsAlice1.size)
+        assertEquals(4, actionsAlice1.size)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        actionsAlice1.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         actionsAlice1.hasPublishTx(closingTx)
         actionsAlice1.hasWatchConfirmed(closingTx.txid)
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ClosingTxConfirmed, 0, 0, closingTx)))
         assertIs<Closed>(alice2.state)
-        assertEquals(3, actionsAlice2.size)
+        assertEquals(2, actionsAlice2.size)
         actionsAlice2.has<ChannelAction.Storage.StoreState>()
-        actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         actionsAlice2.find<ChannelAction.Storage.SetLocked>().also { assertEquals(closingTx.txid, it.txId) }
     }
 
@@ -316,22 +319,23 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val closingTx = actionsBob1.findPublishTxs().first()
         actionsBob1.findOutgoingMessage<ClosingSig>()
 
+
         val (aliceOffline, actionsAliceOffline) = alice.process(ChannelCommand.Disconnected)
         assertIs<Offline>(aliceOffline.state)
         assertTrue(actionsAliceOffline.isEmpty())
 
         val (alice1, actionsAlice1) = aliceOffline.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), closingTx)))
         assertIs<Offline>(alice1.state)
-        assertEquals(3, actionsAlice1.size)
+        assertEquals(4, actionsAlice1.size)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        actionsAlice1.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         actionsAlice1.hasPublishTx(closingTx)
         actionsAlice1.hasWatchConfirmed(closingTx.txid)
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ClosingTxConfirmed, 0, 0, closingTx)))
         assertIs<Closed>(alice2.state)
-        assertEquals(3, actionsAlice2.size)
+        assertEquals(2, actionsAlice2.size)
         actionsAlice2.has<ChannelAction.Storage.StoreState>()
-        actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         actionsAlice2.find<ChannelAction.Storage.SetLocked>().also { assertEquals(closingTx.txid, it.txId) }
     }
 
@@ -352,16 +356,16 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
         val (alice1, actionsAlice1) = aliceSyncing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), closingTx)))
         assertIs<Syncing>(alice1.state)
-        assertEquals(3, actionsAlice1.size)
+        assertEquals(4, actionsAlice1.size)
         actionsAlice1.has<ChannelAction.Storage.StoreState>()
+        actionsAlice1.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         actionsAlice1.hasPublishTx(closingTx)
         actionsAlice1.hasWatchConfirmed(closingTx.txid)
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ClosingTxConfirmed, 0, 0, closingTx)))
         assertIs<Closed>(alice2.state)
-        assertEquals(3, actionsAlice2.size)
+        assertEquals(2, actionsAlice2.size)
         actionsAlice2.has<ChannelAction.Storage.StoreState>()
-        actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
         actionsAlice2.find<ChannelAction.Storage.SetLocked>().also { assertEquals(closingTx.txid, it.txId) }
     }
 
@@ -414,7 +418,6 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         actionsAlice4.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.MainPenaltyTx)
         actionsAlice4.hasWatchConfirmed(revokedCommit.txid)
         actionsAlice4.hasWatchConfirmed(claimMain.txid)
-        actionsAlice4.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
     }
 
     @Test

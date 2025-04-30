@@ -188,7 +188,6 @@ data class Negotiating(
         )
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            addAll(emitClosingEvents(this@Negotiating, nextState.state))
             add(ChannelAction.Storage.SetLocked(signedClosingTx.tx.txid))
         }
         return Pair(nextState, actions)
