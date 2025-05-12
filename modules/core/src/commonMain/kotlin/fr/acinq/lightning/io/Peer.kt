@@ -593,7 +593,7 @@ class Peer(
     suspend fun estimateFeeForSpliceOut(amount: Satoshi, scriptPubKey: ByteVector, targetFeerate: FeeratePerKw): Pair<FeeratePerKw, ChannelManagementFees>? {
         return channels.values
             .filterIsInstance<Normal>()
-            .firstOrNull { it.commitments.availableBalanceForSend() > amount }
+            .firstOrNull { it.commitments.availableBalanceForSend() >= amount }
             ?.let { channel ->
                 val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
@@ -667,7 +667,7 @@ class Peer(
     suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelFundingResponse? {
         return channels.values
             .filterIsInstance<Normal>()
-            .firstOrNull { it.commitments.availableBalanceForSend() > amount }
+            .firstOrNull { it.commitments.availableBalanceForSend() >= amount }
             ?.let { channel ->
                 val spliceCommand = ChannelCommand.Commitment.Splice.Request(
                     replyTo = CompletableDeferred(),
