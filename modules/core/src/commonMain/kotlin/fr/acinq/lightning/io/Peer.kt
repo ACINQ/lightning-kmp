@@ -1156,7 +1156,7 @@ class Peer(
                     return
                 }
                 val msg = cmd.msg
-                msg.let { if (it !is Ping && it !is Pong) logger.info { "received $it" } }
+                msg.let { if (it !is Ping && it !is Pong && it !is RecommendedFeerates) logger.info { "received $it" } }
                 when (msg) {
                     is UnknownMessage -> {
                         logger.warning { "unhandled code=${msg.type}" }
