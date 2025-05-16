@@ -674,22 +674,6 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             }
         }
     }
-
-    // in Normal and Shutdown we aggregate sigs for splices before processing
-    var sigStash = emptyList<CommitSig>()
-
-    /** For splices we will send one commit_sig per active commitments. */
-    internal fun ChannelContext.aggregateSigs(commit: CommitSig): List<CommitSig>? {
-        sigStash = sigStash + commit
-        logger.debug { "received sig for batch of size=${commit.batchSize}" }
-        return if (sigStash.size == commit.batchSize) {
-            val sigs = sigStash
-            sigStash = emptyList()
-            sigs
-        } else {
-            null
-        }
-    }
 }
 
 object Channel {
