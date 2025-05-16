@@ -22,8 +22,8 @@ import fr.acinq.lightning.logging.withMDC
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.serialization.channel.Encryption.fromEncryptedPeerStorage
-import fr.acinq.lightning.serialization.channel.Serialization.PeerStorageDeserializationResult
 import fr.acinq.lightning.serialization.channel.Serialization.DeserializationResult
+import fr.acinq.lightning.serialization.channel.Serialization.PeerStorageDeserializationResult
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
@@ -103,7 +103,7 @@ data class AddLiquidityForIncomingPayment(val paymentAmount: MilliSatoshi, val r
 }
 
 data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, val logger: MDCLogger) {
-    fun send(msg: LightningMessage) {
+    private fun sendInternal(msg: LightningMessage) {
         // We can safely use trySend because we use unlimited channel buffers.
         // If the connection was closed, the message will automatically be dropped.
         val result = output.trySend(msg)
@@ -112,6 +112,16 @@ data class PeerConnection(val id: Long, val output: Channel<LightningMessage>, v
                 is Ping -> logger.warning { "cannot send $msg: ${failure?.message}" } // no need to display the full stack trace for pings, they will spam the logs when user is disconnected
                 else -> logger.warning(failure) { "cannot send $msg" }
             }
+        }
+    }
+
+    fun send(msg: LightningMessage) {
+        when (msg) {
+            is CommitSigBatch -> {
+                sendInternal(StartBatch(msg.channelId, msg.batchSize))
+                msg.messages.map { sendInternal(it) }
+            }
+            else -> sendInternal(msg)
         }
     }
 }
@@ -191,8 +201,7 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
 
         fun updatePeerStorage(nodeParams: NodeParams, channelStates: Map<ByteVector32, ChannelState>, peerConnection: PeerConnection?, remoteFeatures: Features?, logger: MDCLogger?) {
-            if (nodeParams.usePeerStorage &&
-                remoteFeatures?.hasFeature(Feature.ProvideStorage) == true) {
+            if (nodeParams.usePeerStorage && remoteFeatures?.hasFeature(Feature.ProvideStorage) == true) {
                 val persistedChannelStates = channelStates.values.filterIsInstance<PersistedChannelState>().filterNot { it is Closed }
                 peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
             }
@@ -473,14 +482,26 @@ class Peer(
             }
 
             suspend fun receiveLoop() {
+                suspend fun receiveMessage(): LightningMessage? {
+                    val received = session.receive { size -> socket.receiveFully(size) }
+                    return try {
+                        LightningMessage.decode(received)
+                    } catch (_: Throwable) {
+                        logger.warning { "cannot deserialize message: ${received.byteVector().toHex()}" }
+                        null
+                    }
+                }
+
                 try {
                     while (isActive) {
-                        val received = session.receive { size -> socket.receiveFully(size) }
-                        try {
-                            val msg = LightningMessage.decode(received)
-                            input.send(MessageReceived(peerConnection.id, msg))
-                        } catch (e: Throwable) {
-                            logger.warning { "cannot deserialize message: ${received.byteVector().toHex()}" }
+                        val msg = receiveMessage()
+                        when (msg) {
+                            is StartBatch -> {
+                                val sigs = (0 until msg.batchSize).mapNotNull { receiveMessage() as CommitSig }
+                                input.send(MessageReceived(peerConnection.id, CommitSigs.fromSigs(sigs)))
+                            }
+                            is LightningMessage -> input.send(MessageReceived(peerConnection.id, msg))
+                            else -> {}
                         }
                     }
                     closeSocket(null)
