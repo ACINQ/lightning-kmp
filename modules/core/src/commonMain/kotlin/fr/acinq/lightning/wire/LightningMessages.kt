@@ -1213,12 +1213,22 @@ data class UpdateFailMalformedHtlc(
     }
 }
 
+/**
+ * [CommitSig] can either be sent individually or as part of a batch. When sent in a batch (which happens when there
+ * are pending splice transactions), we treat the whole batch as a single lightning message and group them on the wire.
+ */
+sealed class CommitSigs : HtlcMessage, HasChannelId, RequirePeerStorageStore {
+    companion object {
+        fun fromSigs(sigs: List<CommitSig>): CommitSigs = if (sigs.size == 1) sigs.first() else CommitSigBatch(sigs)
+    }
+}
+
 data class CommitSig(
     override val channelId: ByteVector32,
     val signature: ByteVector64,
     val htlcSignatures: List<ByteVector64>,
     val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
-) : HtlcMessage, HasChannelId, RequirePeerStorageStore {
+) : CommitSigs() {
     override val type: Long get() = CommitSig.type
 
     val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
@@ -1251,6 +1261,21 @@ data class CommitSig(
             }
             return CommitSig(channelId, sig, htlcSigs.toList(), TlvStreamSerializer(false, readers).read(input))
         }
+    }
+}
+
+data class CommitSigBatch(val messages: List<CommitSig>) : CommitSigs() {
+    // The read/write functions and the type field are meant for individual lightning messages.
+    // While we treat a commit_sig batch as one logical message, we will actually encode each messages individually.
+    // That's why the read/write functions are no-op.
+    override val type: Long get() = 0
+    override val channelId: ByteVector32 = messages.first().channelId
+    val batchSize: Int = messages.size
+
+    override fun write(out: Output) = Unit
+
+    companion object : LightningMessageReader<CommitSigBatch> {
+        override fun read(input: Input): CommitSigBatch = CommitSigBatch(listOf())
     }
 }
 

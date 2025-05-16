@@ -413,29 +413,29 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 val signedUpdates = commitments.changes.localChanges.signed
                                 val channelParams = commitments.params
                                 val batchSize = commitments.active.size
-                                val commitSigs = commitments.active.mapNotNull { c ->
+                                val commitSigs = CommitSigs.fromSigs(commitments.active.mapNotNull { c ->
                                     val commitInput = c.commitInput
                                     // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
                                     // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
                                     // case, we simply won't send back our commit_sig until they fix their node.
                                     c.nextRemoteCommit?.commit?.sign(channelKeys, channelParams, c.fundingTxIndex, c.remoteFundingPubkey, commitInput, batchSize)
-                                }
+                                })
                                 val retransmit = when (retransmitRevocation) {
                                     null -> buildList {
                                         addAll(signedUpdates)
-                                        addAll(commitSigs)
+                                        add(commitSigs)
                                     }
                                     else -> if (commitments.localCommitIndex > rnci.value.sentAfterLocalCommitIndex) {
                                         buildList {
                                             addAll(signedUpdates)
-                                            addAll(commitSigs)
+                                            add(commitSigs)
                                             add(retransmitRevocation)
                                         }
                                     } else {
                                         buildList {
                                             add(retransmitRevocation)
                                             addAll(signedUpdates)
-                                            addAll(commitSigs)
+                                            add(commitSigs)
                                         }
                                     }
                                 }
