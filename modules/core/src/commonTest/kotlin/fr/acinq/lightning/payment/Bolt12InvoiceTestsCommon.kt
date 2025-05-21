@@ -381,17 +381,17 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val invoice = Bolt12Invoice(tlvs.copy(records = tlvs.records + Signature(signature)))
         assertTrue(invoice.toString() == "lni1qqx2n6mw2fh2ckwdnwylkgqzypp5jl7hlqnf2ugg7j3slkwwcwht57vhyzzwjr4dq84rxzgqqqqqqzqrq83yqzscd9h8vmmfvdjjqamfw35zqmtpdeujqenfv4kxgucvqqfq2ctvd93k293pq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmc5pqgdyhl4lcy62hzz855v8annkr46a8n9eqsn5satgpagesjqqqqqq9yqcpufq9vqfetqssyj5djm6dz0zzr8eprw9gu762k75f3lgm96gzwn994peh48k6xalctyr5jfmdyppx7cneqvqsyqaq5qpugee7xc8qa0pf3jxe9k0976dvzuqu8eaedk0pcpg2dr5qx3gh00qzn8pc426xsh6l6ekdhr2hdpge0euhhp9frv6w04zjcqhhf6ru2wrqzqnjsxh8zmlm0gkeuq8qyxcy28uzhzljqkq22epc4mmdrx6vtm0eyyqr4agrvpkfuutftvf7f6paqewk3ysql3h8ukfz3phgmap5we4wsq3c97205a96r6f3hsd705jl29xt8yj3cu8vpm6z8lztjw3pcqqqpy5sqqqzl5q5gqqqqqqqqqqraqqqqqqqqqq7ysqqqzjqgc4qq6l2vqswzz5zq5v4r4x98jgyqd0sk2fae803crnevusngv9wq7jl8cf5e5eny56p4gpsrcjq4sfqgqqyzg74d7qxqqywkwkudz29aasp4cqtqggrc3nnudswp67znrydjtv7ta56c9cpc0nmjmv7rszs568gqdz3w770qsx3axhvq3e7npme2pwslgxa8kfcnqjqyeztg5r5wgzjpufjswx4crvd6kzlqjzukq5e707kp9ez98mj0zkckeggkm8cp6g6vgzh3j2q0lgp8ypt4ws")
         val codedDecoded = Bolt12Invoice.fromString(invoice.toString()).get()
-        assertEquals(codedDecoded.invoiceRequest.chain, chain)
+        assertEquals(codedDecoded.invoiceRequest?.chain, chain)
         assertEquals(codedDecoded.amount, amount)
         assertEquals(codedDecoded.description, description)
         assertEquals(codedDecoded.features, features)
-        assertEquals(codedDecoded.invoiceRequest.offer.issuer, issuer)
+        assertEquals(codedDecoded.offer.issuer, issuer)
         assertEquals(codedDecoded.nodeId.value.drop(1), nodeKey.publicKey().value.drop(1))
         assertEquals(codedDecoded.blindedPaths, listOf(path))
-        assertEquals(codedDecoded.invoiceRequest.quantity, quantity)
-        assertEquals(codedDecoded.invoiceRequest.payerId, payerKey)
-        assertEquals(codedDecoded.invoiceRequest.payerNote, payerNote)
-        assertEquals(codedDecoded.invoiceRequest.metadata, payerInfo)
+        assertEquals(codedDecoded.invoiceRequest?.quantity, quantity)
+        assertEquals(codedDecoded.invoiceRequest?.payerId, payerKey)
+        assertEquals(codedDecoded.invoiceRequest?.payerNote, payerNote)
+        assertEquals(codedDecoded.invoiceRequest?.metadata, payerInfo)
         assertEquals(codedDecoded.createdAtSeconds, createdAt)
         assertEquals(codedDecoded.paymentHash, paymentHash)
         assertEquals(codedDecoded.relativeExpirySeconds, relativeExpiry)
@@ -434,7 +434,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         assertEquals(decodedInvoice.nodeId, invoice.nodeId)
         assertEquals(decodedInvoice.paymentHash, invoice.paymentHash)
         assertEquals(decodedInvoice.description, invoice.description)
-        assertEquals(decodedInvoice.invoiceRequest.unsigned(), invoice.invoiceRequest.unsigned())
+        assertEquals(decodedInvoice.invoiceRequest?.unsigned(), invoice.invoiceRequest?.unsigned())
     }
 
     @Test
@@ -472,7 +472,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         assertEquals(decodedInvoice.nodeId, invoice.nodeId)
         assertEquals(decodedInvoice.paymentHash, invoice.paymentHash)
         assertEquals(decodedInvoice.description, invoice.description)
-        assertEquals(decodedInvoice.invoiceRequest.unsigned(), invoice.invoiceRequest.unsigned())
+        assertEquals(decodedInvoice.invoiceRequest?.unsigned(), invoice.invoiceRequest?.unsigned())
     }
 
     @Test
@@ -519,7 +519,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         assertEquals(decodedInvoice.nodeId, invoice.nodeId)
         assertEquals(decodedInvoice.paymentHash, invoice.paymentHash)
         assertEquals(decodedInvoice.description, invoice.description)
-        assertEquals(decodedInvoice.invoiceRequest.unsigned(), invoice.invoiceRequest.unsigned())
+        assertEquals(decodedInvoice.invoiceRequest?.unsigned(), invoice.invoiceRequest?.unsigned())
     }
 
     @Test

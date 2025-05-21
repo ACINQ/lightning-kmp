@@ -327,4 +327,23 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertEquals(payerNote.take(63), metadata.payerNote.take(63))
     }
 
+    @Test
+    fun `unsolictedInvoice`() = runSuspendTest {
+        val currentBlockHeight = 0
+        val offerManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val blindingSecret = randomKey()
+        val pathId = randomBytes32()
+        val (offer, _) = OfferTypes.Offer.createBlindedOffer(
+            chainHash = offerManager.nodeParams.chainHash,
+            nodePrivateKey = offerManager.nodeParams.nodePrivateKey,
+            trampolineNodeId = offerManager.walletParams.trampolineNode.id,
+            amount = 1_000_000.msat,
+            description = "card payment",
+            features = offerManager.nodeParams.features,
+            blindedPathSessionKey = blindingSecret,
+            pathId = pathId,
+        )
+        val invoice = offerManager.createUnsolicitedInvoice(offer, blindingSecret, listOf(), currentBlockHeight)
+        assertNotNull(invoice)
+    }
 }
