@@ -410,7 +410,11 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
             "lnbc1qqygh9qpp5s7zxqqqqqqqqqqqqpjqqqqqqqqqqqqqqqqqqcqpjqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqquqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzxqqqqqqqqqqqqqqqy6f523d",
             "lnbc20m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfpr6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp49qdkj",
             // Invalid signature public key recovery id.
-            "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a"
+            "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a",
+            // Empty routing hint field.
+            "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0dysusdqqcqzzsxqrrs0fppqy6uew5229e67r9xzzm9mjyfwseclstdgsp5rnanj9x5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6qqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttnqqqqqqqqq8849gwfhvnp9rqpe0cy97",
+            // Invalid min_final_expiry_delta_blocks.
+            "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0d5susdqqcqg3vrywwwjsppqy6uew5229e67rzxzzm9mjyfwseclstdgsp5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttn2yu5ha6m98cpda2rtwu08849gwfhvnp9rqpqqqqqqqqqg58lts",
         )
         refs.forEach {
             assertTrue(Bolt11Invoice.read(it).isFailure)
@@ -524,12 +528,10 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         assertEquals(pr1.paymentSecret, pr.paymentSecret)
 
         // An invoice without the payment secret feature should be rejected
-        assertIs<Try.Failure<Throwable>>((Bolt11Invoice.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")))
-            .let { failure -> assertContains(failure.error.message ?: "", "var_onion_optin must be supported") }
+        assertContains(assertIs<Try.Failure<Throwable>>((Bolt11Invoice.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl"))).error.message ?: "", "var_onion_optin must be supported")
 
         // An invoice that sets the payment secret feature bit must provide a payment secret.
-        assertIs<Try.Failure<Throwable>>(Bolt11Invoice.read("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7"))
-            .let { failure -> assertContains(failure.error.message ?: "", "there must be exactly one payment secret tag") }
+        assertContains(assertIs<Try.Failure<Throwable>>(Bolt11Invoice.read("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7")).error.message ?: "", "there must be exactly one payment secret tag")
 
         // Invoices must use a payment secret.
         assertFails {
@@ -592,7 +594,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
             val tags = mutableListOf(
                 Bolt11Invoice.TaggedField.PaymentHash(paymentHash),
                 Bolt11Invoice.TaggedField.Description(description),
-                Bolt11Invoice.TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toLong()),
+                Bolt11Invoice.TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt()),
                 Bolt11Invoice.TaggedField.PaymentSecret(paymentSecret),
                 Bolt11Invoice.TaggedField.Features(features.toByteArray().toByteVector())
             )
