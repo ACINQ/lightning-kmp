@@ -170,7 +170,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         }
 
         fun createBlindedPaymentInfo(u: ChannelUpdate): OfferTypes.PaymentInfo {
-            return OfferTypes.PaymentInfo(u.feeBaseMsat, u.feeProportionalMillionths, u.cltvExpiryDelta, u.htlcMinimumMsat, u.htlcMaximumMsat!!, Features.empty)
+            return OfferTypes.PaymentInfo(u.feeBaseMsat, u.feeProportionalMillionths, u.cltvExpiryDelta, u.htlcMinimumMsat, u.htlcMaximumMsat!!, ByteVector.empty)
         }
     }
 

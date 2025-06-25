@@ -7,8 +7,10 @@ import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
+import fr.acinq.lightning.Features.Companion.invoke
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.utils.currentTimestampSeconds
+import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.OfferTypes.ContactInfo.BlindedPath
 import fr.acinq.lightning.wire.OfferTypes.FallbackAddress
@@ -42,7 +44,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
     val createdAtSeconds: Long = records.get<InvoiceCreatedAt>()!!.timestampSeconds
     val relativeExpirySeconds: Long = records.get<InvoiceRelativeExpiry>()?.seconds ?: DEFAULT_EXPIRY_SECONDS
 
-    override val features: Features = records.get<InvoiceFeatures>()?.features?.invoiceFeatures() ?: Features.empty
+    override val features: Features = records.get<InvoiceFeatures>()?.features?.let { Features(it).invoiceFeatures() } ?: Features.empty
 
     val blindedPaths: List<PaymentBlindedContactInfo> = records.get<InvoicePaths>()!!.paths.zip(records.get<InvoiceBlindedPay>()!!.paymentInfos).map { PaymentBlindedContactInfo(it.first, it.second) }
     val fallbacks: List<FallbackAddress>? = records.get<InvoiceFallbacks>()?.addresses
@@ -115,7 +117,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
                 InvoiceRelativeExpiry(invoiceExpirySeconds),
                 InvoicePaymentHash(ByteVector32(Crypto.sha256(preimage))),
                 InvoiceAmount(amount),
-                if (features != Features.empty) InvoiceFeatures(features) else null,
+                if (features != Features.empty) InvoiceFeatures(features.toByteArray().toByteVector()) else null,
                 InvoiceNodeId(nodeKey.publicKey()),
             ) + additionalTlvs
             val signature = signSchnorr(

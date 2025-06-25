@@ -174,7 +174,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     minHtlc = minHtlc,
                     // Payments are allowed to overpay at most two times the invoice amount.
                     maxHtlc = amount * 2,
-                    allowedFeatures = Features.empty
+                    allowedFeatures = ByteVector.empty
                 )
                 // Once the invoice expires, the blinded path shouldn't be usable anymore.
                 // We assume 10 minutes between each block to convert the invoice expiry to a cltv_expiry_delta.
