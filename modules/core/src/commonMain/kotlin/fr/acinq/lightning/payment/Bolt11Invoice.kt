@@ -25,25 +25,21 @@ data class Bolt11Invoice(
     val tags: List<TaggedField>,
     val signature: ByteVector
 ) : PaymentRequest() {
-    constructor(prefix: String, amount: MilliSatoshi?, timestampSeconds: Long, nodeId: PublicKey, tags: List<TaggedField>, signature: ByteVector): this(prefix, encodeAmount(amount), timestampSeconds, nodeId, tags, signature)
+    constructor(prefix: String, amount: MilliSatoshi?, timestampSeconds: Long, nodeId: PublicKey, tags: List<TaggedField>, signature: ByteVector) : this(prefix, encodeAmount(amount), timestampSeconds, nodeId, tags, signature)
 
     override val amount: MilliSatoshi? = decodeAmount(encodedAmount)
 
     val chain: Chain? get() = prefixes.entries.firstOrNull { it.value == prefix }?.key
 
     override val paymentHash: ByteVector32 get() = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
-
     val paymentSecret: ByteVector32 get() = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
-
     val paymentMetadata: ByteVector? get() = tags.find { it is TaggedField.PaymentMetadata }?.run { (this as TaggedField.PaymentMetadata).data }
 
     val description: String? get() = tags.find { it is TaggedField.Description }?.run { (this as TaggedField.Description).description }
-
     val descriptionHash: ByteVector32? get() = tags.find { it is TaggedField.DescriptionHash }?.run { (this as TaggedField.DescriptionHash).hash }
 
     val expirySeconds: Long? get() = tags.find { it is TaggedField.Expiry }?.run { (this as TaggedField.Expiry).expirySeconds }
-
-    val minFinalExpiryDelta: CltvExpiryDelta? get() = tags.find { it is TaggedField.MinFinalCltvExpiry }?.run { CltvExpiryDelta((this as TaggedField.MinFinalCltvExpiry).cltvExpiry.toInt()) }
+    val minFinalExpiryDelta: CltvExpiryDelta? get() = tags.find { it is TaggedField.MinFinalCltvExpiry }?.run { CltvExpiryDelta((this as TaggedField.MinFinalCltvExpiry).cltvExpiryDelta) }
 
     val fallbackAddress: String? = tags.find { it is TaggedField.FallbackAddress }?.run { (this as TaggedField.FallbackAddress).toAddress(prefix) }
 
@@ -61,6 +57,7 @@ data class Bolt11Invoice(
         require(tags.filterIsInstance<TaggedField.PaymentHash>().size == 1) { "there must be exactly one payment hash tag" }
         require(tags.filterIsInstance<TaggedField.PaymentSecret>().size == 1) { "there must be exactly one payment secret tag" }
         require(description != null || descriptionHash != null) { "there must be exactly one description tag or one description hash tag" }
+        routingInfo.forEach { require(it.hints.isNotEmpty()) { "routing hint must contain one or more entries" } }
     }
 
     override fun isExpired(currentTimestampSeconds: Long): Boolean = when (val expirySeconds = expirySeconds) {
@@ -140,7 +137,7 @@ data class Bolt11Invoice(
             val prefix = prefixes[chain] ?: error("unknown chain hash")
             val tags = mutableListOf(
                 TaggedField.PaymentHash(paymentHash),
-                TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toLong()),
+                TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt()),
                 TaggedField.PaymentSecret(paymentSecret),
                 // We remove unknown features which could make the invoice too big.
                 TaggedField.Features(features.invoiceFeatures().copy(unknown = setOf()).toByteArray().toByteVector())
@@ -152,7 +149,6 @@ data class Bolt11Invoice(
             if (extraHops.isNotEmpty()) {
                 extraHops.forEach { tags.add(TaggedField.RoutingInfo(it)) }
             }
-
             return Bolt11Invoice(
                 prefix = prefix,
                 encodedAmount = encodeAmount(amount),
@@ -223,11 +219,10 @@ data class Bolt11Invoice(
                     require(input.endsWith("0p")) { "invalid sub-millisatoshi precision" }
                     MilliSatoshi(input.dropLast(1).toLong() / 10L)
                 }
-
                 input.last() == 'n' -> MilliSatoshi(input.dropLast(1).toLong() * 100L)
-                input.last() == 'u' -> MilliSatoshi(input.dropLast(1).toLong() * 100000L)
-                input.last() == 'm' -> MilliSatoshi(input.dropLast(1).toLong() * 100000000L)
-                else -> MilliSatoshi(input.toLong() * 100000000000L)
+                input.last() == 'u' -> MilliSatoshi(input.dropLast(1).toLong() * 100_000L)
+                input.last() == 'm' -> MilliSatoshi(input.dropLast(1).toLong() * 100_000_000L)
+                else -> MilliSatoshi(input.toLong() * 100_000_000_000L)
             }
             return if (amount == MilliSatoshi(0)) null else amount
         }
@@ -338,7 +333,7 @@ data class Bolt11Invoice(
             }
         }
 
-
+        /** @param data metadata about the payment (see option_payment_metadata). */
         data class PaymentMetadata(val data: ByteVector) : TaggedField() {
             override val tag: Int5 = PaymentMetadata.tag
             override fun encode(): List<Int5> = Bech32.eight2five(data.toByteArray()).toList()
@@ -369,20 +364,20 @@ data class Bolt11Invoice(
             }
         }
 
-        /** @param cltvExpiry minimum final expiry delta */
-        data class MinFinalCltvExpiry(val cltvExpiry: Long) : TaggedField() {
+        /** @param cltvExpiryDelta minimum final expiry delta */
+        data class MinFinalCltvExpiry(val cltvExpiryDelta: Int) : TaggedField() {
             override val tag: Int5 = MinFinalCltvExpiry.tag
             override fun encode(): List<Int5> {
-                tailrec fun loop(value: Long, acc: List<Int5>): List<Int5> = if (value == 0L) acc.reversed() else {
+                tailrec fun loop(value: Int, acc: List<Int5>): List<Int5> = if (value == 0) acc.reversed() else {
                     loop(value / 32, acc + (value.rem(32)).toByte())
                 }
-                return loop(cltvExpiry, listOf())
+                return loop(cltvExpiryDelta, listOf())
             }
 
             companion object {
                 const val tag: Int5 = 24
                 fun decode(input: List<Int5>): MinFinalCltvExpiry {
-                    var expiry = 0L
+                    var expiry = 0
                     input.forEach { expiry = expiry * 32 + it }
                     return MinFinalCltvExpiry(expiry)
                 }
@@ -399,12 +394,10 @@ data class Bolt11Invoice(
                     "lnbc" -> Base58Check.encode(Base58.Prefix.PubkeyAddress, data)
                     else -> Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data)
                 }
-
                 18 -> when (prefix) {
                     "lnbc" -> Base58Check.encode(Base58.Prefix.ScriptAddress, data)
                     else -> Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data)
                 }
-
                 else -> when (prefix) {
                     "lnbc" -> Bech32.encodeWitnessAddress("bc", version, data.toByteArray())
                     "lntb" -> Bech32.encodeWitnessAddress("tb", version, data.toByteArray())
@@ -415,7 +408,7 @@ data class Bolt11Invoice(
 
             companion object {
                 const val tag: Int5 = 9
-                fun decode(input: List<Int5>): FallbackAddress = FallbackAddress(input.first().toByte(), Bech32.five2eight(input.tail().toTypedArray(), 0).toByteVector())
+                fun decode(input: List<Int5>): FallbackAddress = FallbackAddress(input.first(), Bech32.five2eight(input.tail().toTypedArray(), 0).toByteVector())
             }
         }
 
