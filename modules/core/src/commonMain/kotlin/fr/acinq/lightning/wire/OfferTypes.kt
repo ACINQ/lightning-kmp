@@ -16,6 +16,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.message.OnionMessages
+import fr.acinq.lightning.utils.toByteVector
 
 /**
  * Lightning Bolt 12 offers
@@ -168,7 +169,7 @@ object OfferTypes {
     /**
      * Features supported to pay the offer.
      */
-    data class OfferFeatures(val features: Features) : OfferTlv() {
+    data class OfferFeatures(val features: ByteVector) : OfferTlv() {
         override val tag: Long get() = OfferFeatures.tag
 
         override fun write(out: Output) {
@@ -178,7 +179,7 @@ object OfferTypes {
         companion object : TlvValueReader<OfferFeatures> {
             const val tag: Long = 12
             override fun read(input: Input): OfferFeatures {
-                return OfferFeatures(Features(LightningCodecs.bytes(input, input.availableBytes)))
+                return OfferFeatures(LightningCodecs.bytes(input, input.availableBytes).toByteVector())
             }
         }
     }
@@ -341,7 +342,7 @@ object OfferTypes {
     /**
      * Features supported by the sender to pay the offer.
      */
-    data class InvoiceRequestFeatures(val features: Features) : InvoiceRequestTlv() {
+    data class InvoiceRequestFeatures(val features: ByteVector) : InvoiceRequestTlv() {
         override val tag: Long get() = InvoiceRequestFeatures.tag
 
         override fun write(out: Output) {
@@ -351,7 +352,7 @@ object OfferTypes {
         companion object : TlvValueReader<InvoiceRequestFeatures> {
             const val tag: Long = 84
             override fun read(input: Input): InvoiceRequestFeatures {
-                return InvoiceRequestFeatures(Features(LightningCodecs.bytes(input, input.availableBytes)))
+                return InvoiceRequestFeatures(LightningCodecs.bytes(input, input.availableBytes).toByteVector())
             }
         }
     }
@@ -442,7 +443,7 @@ object OfferTypes {
         val cltvExpiryDelta: CltvExpiryDelta,
         val minHtlc: MilliSatoshi,
         val maxHtlc: MilliSatoshi,
-        val allowedFeatures: Features
+        val allowedFeatures: ByteVector
     ) {
         fun fee(amount: MilliSatoshi): MilliSatoshi {
             return feeBase + amount * feeProportionalMillionths / 1_000_000L
@@ -466,7 +467,7 @@ object OfferTypes {
         val cltvExpiryDelta = CltvExpiryDelta(LightningCodecs.u16(input))
         val minHtlc = MilliSatoshi(LightningCodecs.u64(input))
         val maxHtlc = MilliSatoshi(LightningCodecs.u64(input))
-        val allowedFeatures = Features(LightningCodecs.bytes(input, LightningCodecs.u16(input)))
+        val allowedFeatures = LightningCodecs.bytes(input, LightningCodecs.u16(input)).toByteVector()
         return PaymentInfo(feeBase, feeProportionalMillionths.toLong(), cltvExpiryDelta, minHtlc, maxHtlc, allowedFeatures)
     }
 
@@ -599,7 +600,7 @@ object OfferTypes {
     /**
      * Features supported to pay the invoice.
      */
-    data class InvoiceFeatures(val features: Features) : InvoiceTlv() {
+    data class InvoiceFeatures(val features: ByteVector) : InvoiceTlv() {
         override val tag: Long get() = InvoiceFeatures.tag
 
         override fun write(out: Output) {
@@ -609,7 +610,7 @@ object OfferTypes {
         companion object : TlvValueReader<InvoiceFeatures> {
             const val tag: Long = 174
             override fun read(input: Input): InvoiceFeatures {
-                return InvoiceFeatures(Features(LightningCodecs.bytes(input, input.availableBytes)))
+                return InvoiceFeatures(LightningCodecs.bytes(input, input.availableBytes).toByteVector())
             }
         }
     }
@@ -730,7 +731,7 @@ object OfferTypes {
             null // TODO: add exchange rates
         }
         val description: String? = records.get<OfferDescription>()?.description
-        val features: Features = records.get<OfferFeatures>()?.features ?: Features.empty
+        val features: Features = records.get<OfferFeatures>()?.features?.let { Features(it) } ?: Features.empty
         val expirySeconds: Long? = records.get<OfferAbsoluteExpiry>()?.absoluteExpirySeconds
         val paths: List<ContactInfo.BlindedPath>? = records.get<OfferPaths>()?.paths
         val issuer: String? = records.get<OfferIssuer>()?.issuer
@@ -775,7 +776,7 @@ object OfferTypes {
                     if (chain != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chain)) else null,
                     amount?.let { OfferAmount(it) },
                     description?.let { OfferDescription(it) },
-                    features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it) else null },
+                    features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it.toByteArray().toByteVector()) else null },
                     OfferIssuerId(nodeId)
                 )
                 return Offer(TlvStream(tlvs + additionalTlvs, customTlvs))
@@ -811,7 +812,7 @@ object OfferTypes {
                     if (chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chainHash)) else null,
                     amount?.let { OfferAmount(it) },
                     description?.let { OfferDescription(it) },
-                    features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it) else null },
+                    features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it.toByteArray().toByteVector()) else null },
                     // Note that we don't include an offer_node_id since we're using a blinded path.
                     OfferPaths(listOf(ContactInfo.BlindedPath(blindedRouteDetails.route))),
                 )
@@ -873,7 +874,7 @@ object OfferTypes {
         val metadata: ByteVector = records.get<InvoiceRequestMetadata>()!!.data
         val chain: BlockHash = records.get<InvoiceRequestChain>()?.hash ?: Block.LivenetGenesisBlock.hash
         val amount: MilliSatoshi? = records.get<InvoiceRequestAmount>()?.amount
-        val features: Features = records.get<InvoiceRequestFeatures>()?.features ?: Features.empty
+        val features: Features = records.get<InvoiceRequestFeatures>()?.features?.let { Features(it) } ?: Features.empty
         val quantity_opt: Long? = records.get<InvoiceRequestQuantity>()?.quantity
         val quantity: Long = quantity_opt ?: 1
         // A valid invoice_request must either specify an amount, or the offer itself must specify an amount.
@@ -940,7 +941,7 @@ object OfferTypes {
                     InvoiceRequestChain(chain),
                     InvoiceRequestAmount(amount),
                     if (offer.quantityMax != null) InvoiceRequestQuantity(quantity) else null,
-                    if (features != Features.empty) InvoiceRequestFeatures(features) else null,
+                    if (features != Features.empty) InvoiceRequestFeatures(features.toByteArray().toByteVector()) else null,
                     InvoiceRequestPayerId(payerKey.publicKey()),
                     payerNote?.let { InvoiceRequestPayerNote(it) },
                 ) + additionalTlvs
