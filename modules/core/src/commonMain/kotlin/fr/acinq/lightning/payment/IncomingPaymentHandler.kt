@@ -6,7 +6,6 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.crypto.sphinx.Sphinx
 import fr.acinq.lightning.db.Bolt11IncomingPayment
 import fr.acinq.lightning.db.Bolt12IncomingPayment
 import fr.acinq.lightning.db.LightningIncomingPayment
@@ -412,6 +411,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
 
     private suspend fun validatePaymentPart(paymentPart: PaymentPart, currentBlockHeight: Int): Either<ProcessAddResult.Rejected, LightningIncomingPayment> {
         val logger = MDCLogger(logger.logger, staticMdc = paymentPart.mdc())
+        val paysPreviousOnTheFlyFunding = paymentPart is HtlcPart && paymentPart.htlc.usesOnTheFlyFunding
         when (val finalPayload = paymentPart.finalPayload) {
             is PaymentOnion.FinalPayload.Standard -> {
                 val incomingPayment = db.getLightningIncomingPayment(paymentPart.paymentHash)
@@ -420,9 +420,11 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         logger.warning { "payment for which we don't have a preimage" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, null, currentBlockHeight))
                     }
-                    // Payments are rejected for expired invoices UNLESS invoice has already been paid
-                    // We must accept payments for already paid invoices, because it could be the channel replaying HTLCs that we already fulfilled
-                    incomingPayment.isExpired() && incomingPayment.parts.isEmpty() -> {
+                    // Payments are rejected for expired invoices UNLESS invoice has already been paid: we must accept payments for already paid
+                    // invoices, because it could be the channel replaying HTLCs that we already fulfilled.
+                    // Similarly, we must accept payment for expired invoices if we accepted an on-the-fly funding before the invoice expired,
+                    // because we must pay fees for the inbound liquidity we received.
+                    incomingPayment.isExpired() && incomingPayment.parts.isEmpty() && !paysPreviousOnTheFlyFunding -> {
                         logger.warning { "the invoice is expired" }
                         Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                     }
@@ -495,7 +497,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                 logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment, currentBlockHeight)}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
-                            metadata.createdAtMillis + nodeParams.bolt12InvoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.parts.isEmpty() -> {
+                            metadata.createdAtMillis + nodeParams.bolt12InvoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.parts.isEmpty() && !paysPreviousOnTheFlyFunding -> {
                                 logger.warning { "the invoice is expired" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
