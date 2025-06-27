@@ -345,7 +345,10 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                 // We must round up to the nearest satoshi value instead of rounding down.
                 val requestedAmount = (willAddHtlcAmount + 999.msat).truncateToSatoshi() + additionalInboundLiquidity
                 when (val fundingRate = remoteFundingRates?.findRate(requestedAmount)) {
-                    null -> Either.Left(LiquidityEvents.Rejected(requestedAmount.toMilliSatoshi(), 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.NoMatchingFundingRate))
+                    null -> {
+                        logger.warning { "cannot find funding rate to purchase $requestedAmount inbound liquidity (will_add_htlc=$willAddHtlcAmount, additional_inbound=$additionalInboundLiquidity, rates=$remoteFundingRates)" }
+                        Either.Left(LiquidityEvents.Rejected(requestedAmount.toMilliSatoshi(), 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.NoMatchingFundingRate))
+                    }
                     else -> {
                         // We don't know at that point if we'll need a channel or if we already have one.
                         // We must use the worst case fees that applies to channel creation.
