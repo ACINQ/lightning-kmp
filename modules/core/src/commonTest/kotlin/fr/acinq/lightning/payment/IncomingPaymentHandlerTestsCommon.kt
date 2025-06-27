@@ -950,6 +950,60 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `receive payment with liquidity purchase -- expired invoice`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val amount = 175_000_000.msat
+        val (paymentHandler, incomingPayment, paymentSecret) = createFixture(amount)
+        assertIs<Bolt11IncomingPayment>(incomingPayment)
+        checkDbPayment(incomingPayment, paymentHandler.db)
+
+        // Step 1 of 2:
+        //  - Alice sends will_add_htlc to Bob
+        //  - Bob triggers an open/splice
+        val purchase = run {
+            val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, amount, paymentSecret))
+            val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertEquals(1, result.actions.size)
+            val splice = result.actions.first() as AddLiquidityForIncomingPayment
+            // The splice transaction is successfully signed and stored in the DB.
+            val purchase = LiquidityAds.Purchase.Standard(
+                splice.requestedAmount,
+                splice.fees(TestConstants.feeratePerKw, isChannelCreation = false),
+                LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(incomingPayment.paymentHash)),
+            )
+            // Additional mining fee will be paid from our channel balance during the splice.
+            val miningFee = purchase.fees.miningFee + 250.sat
+            val payment = AutomaticLiquidityPurchasePayment(UUID.randomUUID(), miningFee, channelId, TxId(randomBytes32()), purchase, 0, null, null, null)
+            paymentHandler.db.addOutgoingPayment(payment)
+            payment
+        }
+
+        // Step 2 of 2:
+        //  - After the splice completes, Alice sends an HTLC to Bob with the funding fee deduced
+        //  - Bob accepts the HTLC even if the invoice has expired since then
+        run {
+            val fundingFee = purchase.liquidityPurchaseDetails.htlcFundingFee
+            assertNotNull(fundingFee)
+            // The invoice has expired since then.
+            assertFalse(incomingPayment.isExpired())
+            val expiredPayment = incomingPayment.copy(paymentRequest = incomingPayment.paymentRequest.copy(timestampSeconds = incomingPayment.paymentRequest.timestampSeconds - 7200))
+            assertTrue(expiredPayment.isExpired())
+            paymentHandler.db.removeLightningIncomingPayment(incomingPayment.paymentHash)
+            paymentHandler.db.addIncomingPayment(expiredPayment)
+            val htlc = makeUpdateAddHtlc(7, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount, amount, paymentSecret), fundingFee = fundingFee)
+            assertTrue(htlc.amountMsat < amount)
+            val result = paymentHandler.process(htlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Accepted>(result)
+            assertEquals(1, result.actions.size)
+            assertEquals(result.actions.first(), WrappedChannelCommand(channelId, ChannelCommand.Htlc.Settlement.Fulfill(7, incomingPayment.paymentPreimage, commit = true)))
+            assertEquals(amount - fundingFee.amount, result.amount)
+            assertEquals(result.incomingPayment.liquidityPurchaseDetails, purchase.liquidityPurchaseDetails)
+            checkDbPayment(result.incomingPayment, paymentHandler.db)
+        }
+    }
+
+    @Test
     fun `receive payment with funding fee -- unknown transaction`() = runSuspendTest {
         val channelId = randomBytes32()
         val (paymentHandler, incomingPayment, paymentSecret) = createFixture(defaultAmount)
