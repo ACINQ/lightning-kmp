@@ -46,7 +46,7 @@ suspend fun newPeers(
     val bob = buildPeer(scope, nodeParams.second, walletParams.second, databases = InMemoryDatabases().apply {
         initChannels.forEach { channels.addOrUpdateChannel(it.second.state) }
     })
-    return connect(scope, 0, alice, bob, initChannels.size, expectChannelReady = true, automateMessaging)
+    return connect(scope, 0, alice, bob, initChannels.size, expectChannelReady = false, automateMessaging)
 }
 
 suspend fun connect(
@@ -55,7 +55,7 @@ suspend fun connect(
     alice: Peer,
     bob: Peer,
     channelsCount: Int,
-    expectChannelReady: Boolean = true,
+    expectChannelReady: Boolean = false,
     automateMessaging: Boolean = true
 ): PeerTuple {
     val logger = MDCLogger(testLoggerFactory.newLogger("PeerConnection"))

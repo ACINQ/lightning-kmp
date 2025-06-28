@@ -99,9 +99,11 @@ data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcT
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
 data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs) {
     companion object {
-        fun fromCommitSig(keyManager: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long,
-                          remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo, commit: CommitSig,
-                          localCommitIndex: Long, spec: CommitmentSpec, localPerCommitmentPoint: PublicKey, log: MDCLogger): Either<ChannelException, LocalCommit> {
+        fun fromCommitSig(
+            keyManager: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long,
+            remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo, commit: CommitSig,
+            localCommitIndex: Long, spec: CommitmentSpec, localPerCommitmentPoint: PublicKey, log: MDCLogger
+        ): Either<ChannelException, LocalCommit> {
             val (localCommitTx, sortedHtlcTxs) = Commitments.makeLocalTxs(
                 keyManager,
                 commitTxNumber = localCommitIndex,
@@ -497,14 +499,24 @@ data class Commitment(
             if (spec.htlcs.isEmpty()) {
                 val alternativeSigs = Commitments.alternativeFeerates.map { feerate ->
                     val alternativeSpec = spec.copy(feerate = feerate)
-                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitInput, remotePerCommitmentPoint = remoteNextPerCommitmentPoint, alternativeSpec)
+                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(
+                        channelKeys,
+                        commitTxNumber = remoteCommit.index + 1,
+                        params.localParams,
+                        params.remoteParams,
+                        fundingTxIndex = fundingTxIndex,
+                        remoteFundingPubKey = remoteFundingPubkey,
+                        commitInput,
+                        remotePerCommitmentPoint = remoteNextPerCommitmentPoint,
+                        alternativeSpec
+                    )
                     val alternativeSig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
                     CommitSigTlv.AlternativeFeerateSig(feerate, alternativeSig)
                 }
                 add(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs))
             }
             if (batchSize > 1) {
-                add(CommitSigTlv.Batch(batchSize))
+                add(CommitSigTlv.FundingTx(fundingTxId))
             }
         }
         val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList(), TlvStream(tlvs))
@@ -590,6 +602,9 @@ data class Commitments(
 
     // We always use the last commitment that was created, to make sure we never go back in time.
     val latest = active.first().let { c -> FullCommitment(params, changes, c.fundingTxIndex, c.remoteFundingPubkey, c.localFundingStatus, c.remoteFundingStatus, c.localCommit, c.remoteCommit, c.nextRemoteCommit) }
+
+    fun ChannelContext.lastLocalLocked(): Commitment? = active.find { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
+    val lastRemoteLocked: Commitment? = active.find { it.remoteFundingStatus == RemoteFundingStatus.Locked }
 
     val all = buildList {
         addAll(active)
@@ -759,7 +774,7 @@ data class Commitments(
         return failure?.let { Either.Left(it) } ?: Either.Right(copy(changes = changes1))
     }
 
-    fun sendCommit(channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, List<CommitSig>>> {
+    fun sendCommit(channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, CommitSigs>> {
         val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Either.Left(CannotSignBeforeRevocation(channelId))
         if (!changes.localHasChanges()) return Either.Left(CannotSignWithoutChanges(channelId))
         val (active1, sigs) = active.map { it.sendCommit(channelKeys, params, changes, remoteNextPerCommitmentPoint, active.size, log) }.unzip()
@@ -771,19 +786,33 @@ data class Commitments(
                 remoteChanges = changes.remoteChanges.copy(acked = emptyList(), signed = changes.remoteChanges.acked)
             )
         )
-        return Either.Right(Pair(commitments1, sigs))
+        return Either.Right(Pair(commitments1, CommitSigs.fromSigs(sigs)))
     }
 
-    fun receiveCommit(commits: List<CommitSig>, channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
+    fun receiveCommit(commits: CommitSigs, channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
         // We may receive more commit_sig than the number of active commitments, because there can be a race where we send splice_locked
         // while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard the commit_sig that belong
         // to commitments we deactivated.
-        if (commits.size < active.size) {
-            return Either.Left(CommitSigCountMismatch(channelId, active.size, commits.size))
+        val sigs = when (commits) {
+            is CommitSigBatch -> {
+                if (commits.batchSize < active.size) {
+                    return Either.Left(CommitSigCountMismatch(channelId, active.size, commits.batchSize))
+                }
+                commits.messages
+            }
+            is CommitSig -> {
+                if (active.size > 1) {
+                    return Either.Left(CommitSigCountMismatch(channelId, active.size, 1))
+                }
+                listOf(commits)
+            }
         }
-        // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
-        val active1 = active.zip(commits).map {
-            when (val commitment1 = it.first.receiveCommit(channelKeys, params, changes, it.second, log)) {
+        val active1 = active.withIndex().map { (i, c) ->
+            // If the funding_txid isn't provided, we assume that signatures are sent in order (most recent first).
+            // This ensures that the case where we have a batch of a single element (no pending splice) works correctly.
+            // This also ensures that we get a signature failure when our set of funding txs doesn't match with our peer.
+            val commit = sigs.find { it.fundingTxId == c.fundingTxId } ?: sigs[i]
+            when (val commitment1 = c.receiveCommit(channelKeys, params, changes, commit, log)) {
                 is Either.Left -> return Either.Left(commitment1.value)
                 is Either.Right -> commitment1.value
             }
@@ -926,8 +955,7 @@ data class Commitments(
         // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
         // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
         // That's why we look at locked commitments separately and then select the one with the oldest fundingTxIndex.
-        val lastLocalLocked = active.find { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
-        val lastRemoteLocked = active.find { it.remoteFundingStatus == RemoteFundingStatus.Locked }
+        val lastLocal = lastLocalLocked()
         return when {
             // We select the locked commitment with the smaller value for fundingTxIndex, but both have to be defined.
             // If both have the same fundingTxIndex, they must actually be the same commitment, because:
@@ -935,9 +963,9 @@ data class Commitments(
             //  - transactions with the same fundingTxIndex double-spend each other, so only one of them can confirm
             //  - we don't allow creating a splice on top of an unconfirmed transaction that has RBF attempts (because it
             //    would become invalid if another of the RBF attempts end up being confirmed)
-            lastLocalLocked != null && lastRemoteLocked != null -> listOf(lastLocalLocked, lastRemoteLocked).minByOrNull { it.fundingTxIndex }
+            lastLocal != null && lastRemoteLocked != null -> listOf(lastLocal, lastRemoteLocked).minByOrNull { it.fundingTxIndex }
             // Special case for the initial funding tx, we only require a local lock because channel_ready doesn't explicitly reference a funding tx.
-            lastLocalLocked != null && lastLocalLocked.fundingTxIndex == 0L -> lastLocalLocked
+            lastLocal != null && lastLocal.fundingTxIndex == 0L -> lastLocal
             else -> null
         }
     }
@@ -1020,7 +1048,17 @@ data class Commitments(
             }.flatMap { remoteCommit ->
                 alternativeFeerates.map { feerate ->
                     val alternativeSpec = remoteCommit.spec.copy(feerate = feerate)
-                    val (alternativeRemoteCommitTx, _) = makeRemoteTxs(channelKeys, remoteCommit.index, commitments.params.localParams, commitments.params.remoteParams, commitments.latest.fundingTxIndex, commitments.latest.remoteFundingPubkey, commitments.latest.commitInput, remoteCommit.remotePerCommitmentPoint, alternativeSpec)
+                    val (alternativeRemoteCommitTx, _) = makeRemoteTxs(
+                        channelKeys,
+                        remoteCommit.index,
+                        commitments.params.localParams,
+                        commitments.params.remoteParams,
+                        commitments.latest.fundingTxIndex,
+                        commitments.latest.remoteFundingPubkey,
+                        commitments.latest.commitInput,
+                        remoteCommit.remotePerCommitmentPoint,
+                        alternativeSpec
+                    )
                     RemoteCommit(remoteCommit.index, alternativeSpec, alternativeRemoteCommitTx.tx.txid, remoteCommit.remotePerCommitmentPoint)
                 }
             }
