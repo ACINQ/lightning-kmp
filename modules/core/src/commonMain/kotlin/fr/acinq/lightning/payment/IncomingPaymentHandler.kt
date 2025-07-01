@@ -361,7 +361,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                             canAddToFeeCredit -> null
                             // We only initiate on-the-fly funding if the missing amount is greater than the fees paid.
                             // Otherwise our peer may not be able to claim the funding fees from the relayed HTLCs.
-                            (willAddHtlcAmount + currentFeeCredit) < fees.total * 2 -> LiquidityEvents.Rejected(
+                            (willAddHtlcAmount + currentFeeCredit) < (fees.miningFee * 1.5 + fees.serviceFee) -> LiquidityEvents.Rejected(
                                 requestedAmount.toMilliSatoshi(),
                                 fees.total.toMilliSatoshi(),
                                 LiquidityEvents.Source.OffChainPayment,
