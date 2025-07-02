@@ -86,11 +86,13 @@
     JsonSerializers.ShutdownTlvSerializer::class,
     JsonSerializers.ClosingCompleteTlvSerializer::class,
     JsonSerializers.ClosingSigTlvSerializer::class,
+    JsonSerializers.MyCurrentFundingLockedTlvSerializer::class,
+    JsonSerializers.YourLastFundingLockedTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvSerializer::class,
     JsonSerializers.ChannelReadyTlvSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigsSerializer::class,
-    JsonSerializers.CommitSigTlvBatchSerializer::class,
+    JsonSerializers.CommitSigTlvFundingTxSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
     JsonSerializers.ClosingSerializer::class,
@@ -201,9 +203,11 @@ object JsonSerializers {
                 subclass(UpdateFee::class, UpdateFeeSerializer)
             }
             polymorphic(Tlv::class) {
+                subclass(ChannelReestablishTlv.MyCurrentFundingLocked::class, MyCurrentFundingLockedTlvSerializer)
+                subclass(ChannelReestablishTlv.YourLastFundingLocked::class, YourLastFundingLockedTlvSerializer)
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
-                subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
+                subclass(CommitSigTlv.FundingTx::class, CommitSigTlvFundingTxSerializer)
                 subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
             }
@@ -536,8 +540,8 @@ object JsonSerializers {
     @Serializer(forClass = CommitSigTlv.AlternativeFeerateSigs::class)
     object CommitSigTlvAlternativeFeerateSigsSerializer
 
-    @Serializer(forClass = CommitSigTlv.Batch::class)
-    object CommitSigTlvBatchSerializer
+    @Serializer(forClass = CommitSigTlv.FundingTx::class)
+    object CommitSigTlvFundingTxSerializer
 
     @Serializer(forClass = CommitSigTlv::class)
     object CommitSigTlvSerializer
@@ -550,6 +554,12 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReadyTlv::class)
     object ChannelReadyTlvSerializer
+
+    @Serializer(forClass = ChannelReestablishTlv.MyCurrentFundingLocked::class)
+    object MyCurrentFundingLockedTlvSerializer
+
+    @Serializer(forClass = ChannelReestablishTlv.YourLastFundingLocked::class)
+    object YourLastFundingLockedTlvSerializer
 
     @Serializer(forClass = ChannelReestablishTlv::class)
     object ChannelReestablishTlvSerializer

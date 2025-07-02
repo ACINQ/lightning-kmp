@@ -58,6 +58,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             Feature.RouteBlinding to FeatureSupport.Optional,
             Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,
             Feature.SimpleClose to FeatureSupport.Mandatory,
+            Feature.Splicing to FeatureSupport.Mandatory,
         )
         // The following invoice requires payment_metadata.
         val invoice1 = run {
