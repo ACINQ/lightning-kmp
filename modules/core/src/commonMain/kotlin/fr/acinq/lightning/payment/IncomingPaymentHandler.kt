@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.db.Bolt11IncomingPayment
@@ -355,13 +356,15 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         val fees = fundingRate.fees(currentFeerate, requestedAmount, requestedAmount, isChannelCreation = true)
                             .let { ChannelManagementFees(miningFee = it.miningFee, serviceFee = it.serviceFee) }
                         val canAddToFeeCredit = Features.canUseFeature(nodeParams.features, remoteFeatures, Feature.FundingFeeCredit) && (willAddHtlcAmount + currentFeeCredit) <= liquidityPolicy.maxAllowedFeeCredit
-                        logger.info { "on-the-fly assessment: amount=$requestedAmount feerate=$currentFeerate fees=$fees" }
+                        val worstCaseFees = fees.miningFee * miningFeeFactor(currentFeerate) + fees.serviceFee
+                        logger.info { "on-the-fly assessment: amount=$requestedAmount feerate=$currentFeerate fees=$fees worstCaseFees=$worstCaseFees" }
                         val rejected = when {
                             // We never reject if we can add payments to our fee credit until making an on-chain operation becomes acceptable.
                             canAddToFeeCredit -> null
-                            // We only initiate on-the-fly funding if the missing amount is greater than the fees paid.
+                            // We only initiate on-the-fly funding if the missing amount is greater than a worst case
+                            // estimate of fees paid.
                             // Otherwise our peer may not be able to claim the funding fees from the relayed HTLCs.
-                            (willAddHtlcAmount + currentFeeCredit) < (fees.miningFee * 1.5 + fees.serviceFee) -> LiquidityEvents.Rejected(
+                            (willAddHtlcAmount + currentFeeCredit) < worstCaseFees -> LiquidityEvents.Rejected(
                                 requestedAmount.toMilliSatoshi(),
                                 fees.total.toMilliSatoshi(),
                                 LiquidityEvents.Source.OffChainPayment,
@@ -621,6 +624,20 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                     overrideFinalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
                 }
                 else -> minFinalExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
+            }
+        }
+
+        /**
+         * Liquidity fees depend on mining fees which are volatile, and may increase between the time
+         * when a user accepts otf liquidity, and the time when the LSP allocates the liquidity. We
+         * need to make sure that the user is able to afford a cost increase, so we take a margin.
+         */
+        private fun miningFeeFactor(feerate: FeeratePerKw): Double {
+            return when {
+                feerate <= FeeratePerKw(FeeratePerByte(5.sat)) -> 8.0
+                feerate <= FeeratePerKw(FeeratePerByte(10.sat)) -> 4.0
+                feerate <= FeeratePerKw(FeeratePerByte(20.sat)) -> 2.0
+                else -> 1.5
             }
         }
     }
