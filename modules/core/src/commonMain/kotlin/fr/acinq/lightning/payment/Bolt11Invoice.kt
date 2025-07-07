@@ -31,17 +31,17 @@ data class Bolt11Invoice(
 
     val chain: Chain? get() = prefixes.entries.firstOrNull { it.value == prefix }?.key
 
-    override val paymentHash: ByteVector32 get() = tags.find { it is TaggedField.PaymentHash }!!.run { (this as TaggedField.PaymentHash).hash }
-    val paymentSecret: ByteVector32 get() = tags.find { it is TaggedField.PaymentSecret }!!.run { (this as TaggedField.PaymentSecret).secret }
-    val paymentMetadata: ByteVector? get() = tags.find { it is TaggedField.PaymentMetadata }?.run { (this as TaggedField.PaymentMetadata).data }
+    override val paymentHash: ByteVector32 get() = tags.filterIsInstance<TaggedField.PaymentHash>().first().run { this.hash }
+    val paymentSecret: ByteVector32 get() = tags.filterIsInstance<TaggedField.PaymentSecret>().first().run { this.secret }
+    val paymentMetadata: ByteVector? get() = tags.filterIsInstance<TaggedField.PaymentMetadata>().firstOrNull()?.run { this.data }
 
-    val description: String? get() = tags.find { it is TaggedField.Description }?.run { (this as TaggedField.Description).description }
-    val descriptionHash: ByteVector32? get() = tags.find { it is TaggedField.DescriptionHash }?.run { (this as TaggedField.DescriptionHash).hash }
+    val description: String? get() = tags.filterIsInstance<TaggedField.Description>().firstOrNull()?.run { this.description }
+    val descriptionHash: ByteVector32? get() = tags.filterIsInstance<TaggedField.DescriptionHash>().firstOrNull()?.run { this.hash }
 
-    val expirySeconds: Long? get() = tags.find { it is TaggedField.Expiry }?.run { (this as TaggedField.Expiry).expirySeconds }
-    val minFinalExpiryDelta: CltvExpiryDelta? get() = tags.find { it is TaggedField.MinFinalCltvExpiry }?.run { CltvExpiryDelta((this as TaggedField.MinFinalCltvExpiry).cltvExpiryDelta) }
+    val expirySeconds: Long? get() = tags.filterIsInstance<TaggedField.Expiry>().firstOrNull()?.run { this.expirySeconds }
+    val minFinalExpiryDelta: CltvExpiryDelta? get() = tags.filterIsInstance<TaggedField.MinFinalCltvExpiry>().firstOrNull()?.run { CltvExpiryDelta(this.cltvExpiryDelta) }
 
-    val fallbackAddress: String? = tags.find { it is TaggedField.FallbackAddress }?.run { (this as TaggedField.FallbackAddress).toAddress(prefix) }
+    val fallbackAddress: String? = tags.filterIsInstance<TaggedField.FallbackAddress>().firstOrNull { it.version < 19 }?.run { this.toAddress(prefix) }
 
     override val features: Features get() = tags.filterIsInstance<TaggedField.Features>().firstOrNull()?.run { Features(this.bits) } ?: Features.empty
 

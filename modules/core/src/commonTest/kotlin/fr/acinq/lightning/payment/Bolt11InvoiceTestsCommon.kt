@@ -577,6 +577,30 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         assertEquals(encodedInvoice, reencodedInvoice)
     }
 
+    @Test
+    fun `ignore invalid fallback address field`() {
+        val s = "lnbc100n1p5x4tkxpp5pxpzs4s3d02s8x44j5x2eavhdzzkt7xptrhskgauvnlh3qnd9avssp5kmunu4w5fq2j0m8fymn84fn05mfwfg4rzep4pufc5zfea48xutlsxq9z0rgqnp4qvyndeaqzman7h898jxm98dzkm0mlrsx36s93smrur7h0azyyuxc5rzjq25carzepgd4vqsyn44jrk85ezrpju92xyrk9apw4cdjh6yrwt5jgqqqqrt49lmtcqqqqqqqqqqq86qq9qrzjqwghf7zxvfkxq5a6sr65g0gdkv768p83mhsnt0msszapamzx2qvuxqqqqrt49lmtcqqqqqqqqqqq86qq9qcqzpghp5jr3y6ssyqxw33tj8qfmhf2gvugjuevk6u68z6f36xepne32yry8qfpml2dgykq3nsm929a282xwa4lryq5yfsxj6d8m6yge3yj387jpj6uhgyc9d0y9qyyssqv09p0awxd36jmx3snve2urf7e4snxjt9k8j665jpkvrewfu0zlt90ah7r3wg97ywg30xktdtt6rr848vk0evwyc3htclva63h7t35vsq38rrkw"
+        val invoice = Bolt11Invoice.read(s).get()
+        assertEquals(1, invoice.tags.filterIsInstance<Bolt11Invoice.TaggedField.FallbackAddress>().size)
+        assertNull(invoice.fallbackAddress)
+        assertEquals(s, invoice.write())
+
+        val fallbackAddress1 = "1RustyRX2oai4EYYDpQGWvEL62BBGqN9T"
+        val (_, data1) = Base58Check.decode(fallbackAddress1)
+        // manually add the field, this will invalidate the sig but it doesn't matter
+        val invoice1 = invoice.copy(tags = invoice.tags + Bolt11Invoice.TaggedField.FallbackAddress(17, data1.toByteVector()))
+        assertEquals(2, invoice1.tags.filterIsInstance<Bolt11Invoice.TaggedField.FallbackAddress>().size)
+        assertEquals(fallbackAddress1, invoice1.fallbackAddress)
+
+        val fallbackAddress2 = "3EktnHQD7RiAE6uzMj2ZifT9YgRrkSgzQX"
+        val (_, data2) = Base58Check.decode(fallbackAddress2)
+        // manually add the field, this will invalidate the sig but it doesn't matter
+        val invoice2 = invoice1.copy(tags = invoice1.tags + Bolt11Invoice.TaggedField.FallbackAddress(18, data2.toByteVector()))
+        assertEquals(3, invoice2.tags.filterIsInstance<Bolt11Invoice.TaggedField.FallbackAddress>().size)
+        // NB: the *first* valid address is returned
+        assertEquals(fallbackAddress1, invoice2.fallbackAddress)
+    }
+
     companion object {
         fun createInvoiceUnsafe(
             amount: MilliSatoshi? = null,
