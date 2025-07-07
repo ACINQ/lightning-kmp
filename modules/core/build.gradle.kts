@@ -18,6 +18,8 @@ kotlin {
     jvm {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8) // For compatibility with Android 8
+            // See https://jakewharton.com/kotlins-jdk-release-compatibility-flag/ and https://youtrack.jetbrains.com/issue/KT-49746/
+            freeCompilerArgs.add("-Xjdk-release=1.8")
         }
     }
 
