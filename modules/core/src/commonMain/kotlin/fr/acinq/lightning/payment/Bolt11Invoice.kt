@@ -41,7 +41,7 @@ data class Bolt11Invoice(
     val expirySeconds: Long? get() = tags.find { it is TaggedField.Expiry }?.run { (this as TaggedField.Expiry).expirySeconds }
     val minFinalExpiryDelta: CltvExpiryDelta? get() = tags.find { it is TaggedField.MinFinalCltvExpiry }?.run { CltvExpiryDelta((this as TaggedField.MinFinalCltvExpiry).cltvExpiryDelta) }
 
-    val fallbackAddress: String? = tags.find { it is TaggedField.FallbackAddress }?.run { (this as TaggedField.FallbackAddress).toAddress(prefix) }
+    val fallbackAddress: String? = tags.find { it is TaggedField.FallbackAddress }?.runCatching { (this as TaggedField.FallbackAddress).toAddress(prefix) }?.getOrNull()
 
     override val features: Features get() = tags.filterIsInstance<TaggedField.Features>().firstOrNull()?.run { Features(this.bits) } ?: Features.empty
 
