@@ -420,6 +420,26 @@ object Serialization {
         }
     }
 
+    private fun Output.writeLocalCommitWithoutHtlcs(localCommit: LocalCommit) = localCommit.run {
+        writeNumber(index)
+        writeCommitmentSpecWithoutHtlcs(spec)
+        publishableTxs.run {
+            writeTransactionWithInputInfo(commitTx)
+            writeCollection(htlcTxsAndSigs) { htlc ->
+                writeTransactionWithInputInfo(htlc.txinfo)
+                writeByteVector64(htlc.localSig)
+                writeByteVector64(htlc.remoteSig)
+            }
+        }
+    }
+
+    private fun Output.writeRemoteCommitWithoutHtlcs(remoteCommit: RemoteCommit) = remoteCommit.run {
+        writeNumber(index)
+        writeCommitmentSpecWithoutHtlcs(spec)
+        writeTxId(txid)
+        writePublicKey(remotePerCommitmentPoint)
+    }
+
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
@@ -527,24 +547,8 @@ object Serialization {
             is RemoteFundingStatus.NotLocked -> write(0x00)
             is RemoteFundingStatus.Locked -> write(0x01)
         }
-        localCommit.run {
-            writeNumber(index)
-            writeCommitmentSpecWithoutHtlcs(spec)
-            publishableTxs.run {
-                writeTransactionWithInputInfo(commitTx)
-                writeCollection(htlcTxsAndSigs) { htlc ->
-                    writeTransactionWithInputInfo(htlc.txinfo)
-                    writeByteVector64(htlc.localSig)
-                    writeByteVector64(htlc.remoteSig)
-                }
-            }
-        }
-        remoteCommit.run {
-            writeNumber(index)
-            writeCommitmentSpecWithoutHtlcs(spec)
-            writeTxId(txid)
-            writePublicKey(remotePerCommitmentPoint)
-        }
+        writeLocalCommitWithoutHtlcs(localCommit)
+        writeRemoteCommitWithoutHtlcs(remoteCommit)
         writeNullable(nextRemoteCommit) {
             writeLightningMessage(it.sig)
             writeNumber(it.commit.index)
