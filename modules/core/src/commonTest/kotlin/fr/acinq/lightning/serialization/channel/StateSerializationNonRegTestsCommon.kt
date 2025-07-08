@@ -8,6 +8,7 @@ import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readString
+import kotlinx.io.writeString
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,7 +28,7 @@ class StateSerializationNonRegTestsCommon {
             val json = JsonSerializers.json.encodeToString(state)
             val tmpFile = Path(it, "actual.json")
             if (debug) {
-                SystemFileSystem.sink(tmpFile).buffered().write(json.encodeToByteArray())
+                SystemFileSystem.sink(tmpFile).buffered().use { sink -> sink.writeString(json) }
             }
             // deserialized data must match static json reference file
             assertEquals(ref, json, it.toString())
@@ -47,5 +48,10 @@ class StateSerializationNonRegTestsCommon {
     @Test
     fun `non-reg test with v3 serialization`() {
         regtest("v3", debug = false)
+    }
+
+    @Test
+    fun `non-reg test with v4 serialization`() {
+        regtest("v4", debug = false)
     }
 }
