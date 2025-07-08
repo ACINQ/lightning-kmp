@@ -567,20 +567,19 @@ object Deserialization {
         val fundingParams = readInteractiveTxParams()
         val fundingTxIndex = readNumber()
         val fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction
-        val localCommit = when (val discriminator = read()) {
-            0 -> Either.Left(readUnsignedLocalCommitWithHtlcs())
-            1 -> Either.Right(readLocalCommitWithHtlcs())
+        val (localCommit, remoteCommit) = when (val discriminator = read()) {
+            0 -> Pair(Either.Left(readUnsignedLocalCommitWithHtlcs()), readRemoteCommitWithHtlcs())
+            1 -> Pair(Either.Right(readLocalCommitWithHtlcs()), readRemoteCommitWithHtlcs())
             2 -> {
                 skipLegacyLiquidityLease()
-                Either.Left(readUnsignedLocalCommitWithHtlcs())
+                Pair(Either.Left(readUnsignedLocalCommitWithHtlcs()), readRemoteCommitWithHtlcs())
             }
             3 -> {
                 skipLegacyLiquidityLease()
-                Either.Right(readLocalCommitWithHtlcs())
+                Pair(Either.Right(readLocalCommitWithHtlcs()), readRemoteCommitWithHtlcs())
             }
             else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
         }
-        val remoteCommit = readRemoteCommitWithHtlcs()
         return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommit, remoteCommit)
     }
 

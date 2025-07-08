@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.ScriptWitness
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
@@ -446,12 +447,27 @@ object Serialization {
         writeSignedSharedTransaction(fundingTx)
         // Note that we don't bother removing the duplication across HTLCs in the local commit: this is a short-lived
         // state during which the channel cannot be used for payments.
-        writeEither(localCommit, { localCommit -> writeUnsignedLocalCommitWithHtlcs(localCommit) }, { localCommit -> writeLocalCommitWithHtlcs(localCommit) })
-        remoteCommit.run {
-            writeNumber(index)
-            writeCommitmentSpecWithHtlcs(spec)
-            writeTxId(txid)
-            writePublicKey(remotePerCommitmentPoint)
+        when(localCommit) {
+            is Either.Left -> {
+                write(0)
+                writeUnsignedLocalCommitWithHtlcs(localCommit.value)
+                remoteCommit.run {
+                    writeNumber(index)
+                    writeCommitmentSpecWithHtlcs(spec)
+                    writeTxId(txid)
+                    writePublicKey(remotePerCommitmentPoint)
+                }
+            }
+            is Either.Right -> {
+                write(1)
+                writeLocalCommitWithHtlcs(localCommit.value)
+                remoteCommit.run {
+                    writeNumber(index)
+                    writeCommitmentSpecWithHtlcs(spec)
+                    writeTxId(txid)
+                    writePublicKey(remotePerCommitmentPoint)
+                }
+            }
         }
     }
 
