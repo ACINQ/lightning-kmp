@@ -522,6 +522,35 @@ object Deserialization {
         )
     )
 
+    private fun Input.readLocalCommitWithoutHtlcs(htlcs: Set<DirectedHtlc>): LocalCommit = LocalCommit(
+        index = readNumber(),
+        spec = readCommitmentSpecWithoutHtlcs(htlcs),
+        publishableTxs = PublishableTxs(
+            commitTx = readTransactionWithInputInfo() as CommitTx,
+            htlcTxsAndSigs = readCollection {
+                HtlcTxAndSigs(
+                    txinfo = readTransactionWithInputInfo() as HtlcTx,
+                    localSig = readByteVector64(),
+                    remoteSig = readByteVector64()
+                )
+            }.toList()
+        )
+    )
+
+    private fun Input.readRemoteCommitWithHtlcs(): RemoteCommit = RemoteCommit(
+        index = readNumber(),
+        spec = readCommitmentSpecWithHtlcs(),
+        txid = readTxId(),
+        remotePerCommitmentPoint = readPublicKey()
+    )
+
+    private fun Input.readRemoteCommitWithoutHtlcs(htlcs: Set<DirectedHtlc>): RemoteCommit = RemoteCommit(
+        index = readNumber(),
+        spec = readCommitmentSpecWithoutHtlcs(htlcs.map { it.opposite() }.toSet()),
+        txid = readTxId(),
+        remotePerCommitmentPoint = readPublicKey()
+    )
+
     private fun Input.skipLegacyLiquidityLease() {
         readNumber() // amount
         readNumber() // mining fee
@@ -551,12 +580,7 @@ object Deserialization {
             }
             else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
         }
-        val remoteCommit = RemoteCommit(
-            index = readNumber(),
-            spec = readCommitmentSpecWithHtlcs(),
-            txid = readTxId(),
-            remotePerCommitmentPoint = readPublicKey()
-        )
+        val remoteCommit = readRemoteCommitWithHtlcs()
         return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommit, remoteCommit)
     }
 
@@ -689,35 +713,12 @@ object Deserialization {
             0x01 -> RemoteFundingStatus.Locked
             else -> error("unknown discriminator $discriminator for class ${RemoteFundingStatus::class}")
         },
-        localCommit = LocalCommit(
-            index = readNumber(),
-            spec = readCommitmentSpecWithoutHtlcs(htlcs),
-            publishableTxs = PublishableTxs(
-                commitTx = readTransactionWithInputInfo() as CommitTx,
-                htlcTxsAndSigs = readCollection {
-                    HtlcTxAndSigs(
-                        txinfo = readTransactionWithInputInfo() as HtlcTx,
-                        localSig = readByteVector64(),
-                        remoteSig = readByteVector64()
-                    )
-                }.toList()
-            )
-        ),
-        remoteCommit = RemoteCommit(
-            index = readNumber(),
-            spec = readCommitmentSpecWithoutHtlcs(htlcs.map { it.opposite() }.toSet()),
-            txid = readTxId(),
-            remotePerCommitmentPoint = readPublicKey()
-        ),
+        localCommit = readLocalCommitWithoutHtlcs(htlcs),
+        remoteCommit = readRemoteCommitWithoutHtlcs(htlcs),
         nextRemoteCommit = readNullable {
             NextRemoteCommit(
                 sig = readLightningMessage() as CommitSig,
-                commit = RemoteCommit(
-                    index = readNumber(),
-                    spec = readCommitmentSpecWithoutHtlcs(htlcs.map { it.opposite() }.toSet()),
-                    txid = readTxId(),
-                    remotePerCommitmentPoint = readPublicKey()
-                )
+                commit = readRemoteCommitWithoutHtlcs(htlcs)
             )
         }
     )
