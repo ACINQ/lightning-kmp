@@ -227,7 +227,7 @@ data class NodeParams(
             feerateTolerance = FeerateTolerance(ratioLow = 0.01, ratioHigh = 100.0)
         ),
         maxHtlcValueInFlightMsat = 20_000_000_000L,
-        maxAcceptedHtlcs = 6,
+        maxAcceptedHtlcs = 12,
         expiryDeltaBlocks = CltvExpiryDelta(144),
         // We use a long expiry delta here for a few reasons:
         //  - we want to ensure we're able to get HTLC-success txs confirmed if our peer ignores our preimage
