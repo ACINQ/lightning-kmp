@@ -194,29 +194,28 @@ object TestsHelper {
         val bobChannelParams = TestConstants.Bob.channelParams(payCommitTxFees = channelFlags.nonInitiatorPaysCommitFees).copy(features = bobFeatures.initFeatures())
         val aliceInit = Init(aliceFeatures)
         val bobInit = Init(bobFeatures)
-        val (alice1, actionsAlice1) = alice.process(
-            ChannelCommand.Init.Initiator(
-                CompletableDeferred(),
-                aliceFundingAmount,
-                createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
-                FeeratePerKw.CommitmentFeerate,
-                TestConstants.feeratePerKw,
-                aliceChannelParams,
-                bobInit,
-                channelFlags,
-                ChannelConfig.standard,
-                channelType,
-                requestRemoteFunding?.let {
-                    when (channelOrigin) {
-                        is Origin.OffChainPayment -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(channelOrigin.paymentHash)))
-                        else -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromChannelBalance)
-                    }
-                },
-                channelOrigin,
-            )
+        val cmd = ChannelCommand.Init.Initiator(
+            CompletableDeferred(),
+            aliceFundingAmount,
+            createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
+            FeeratePerKw.CommitmentFeerate,
+            TestConstants.feeratePerKw,
+            aliceChannelParams,
+            bobInit,
+            channelFlags,
+            ChannelConfig.standard,
+            channelType,
+            requestRemoteFunding?.let {
+                when (channelOrigin) {
+                    is Origin.OffChainPayment -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(channelOrigin.paymentHash)))
+                    else -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromChannelBalance)
+                }
+            },
+            channelOrigin,
         )
+        val (alice1, actionsAlice1) = alice.process(cmd)
         assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
-        val temporaryChannelId = aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId
+        val temporaryChannelId = cmd.temporaryChannelId(aliceChannelParams.channelKeys(alice.ctx.keyManager))
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else listOf()
         val (bob1, _) = bob.process(
             ChannelCommand.Init.NonInitiator(
@@ -433,24 +432,23 @@ object TestsHelper {
 
     fun useAlternativeCommitSig(s: LNChannel<ChannelState>, commitment: Commitment, alternative: CommitSigTlv.AlternativeFeerateSig): Transaction {
         val channelKeys = s.commitments.params.localParams.channelKeys(s.ctx.keyManager)
+        val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
+        val commitKeys = channelKeys.localCommitmentKeys(s.commitments.params, commitment.localCommit.index)
         val alternativeSpec = commitment.localCommit.spec.copy(feerate = alternative.feerate)
         val fundingTxIndex = commitment.fundingTxIndex
         val commitInput = commitment.commitInput
         val remoteFundingPubKey = commitment.remoteFundingPubkey
-        val localPerCommitmentPoint = channelKeys.commitmentPoint(commitment.localCommit.index)
         val (localCommitTx, _) = Commitments.makeLocalTxs(
-            channelKeys,
-            commitment.localCommit.index,
-            s.commitments.params.localParams,
-            s.commitments.params.remoteParams,
-            fundingTxIndex,
-            remoteFundingPubKey,
-            commitInput,
-            localPerCommitmentPoint,
-            alternativeSpec
+            channelParams = s.commitments.params,
+            commitKeys = commitKeys,
+            commitTxNumber = commitment.localCommit.index,
+            localFundingKey = fundingKey,
+            remoteFundingPubKey = remoteFundingPubKey,
+            commitmentInput = commitInput,
+            spec = alternativeSpec
         )
         val localSig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
-        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubKey, localSig, alternative.sig)
+        val signedCommitTx = Transactions.addSigs(localCommitTx, fundingKey.publicKey(), remoteFundingPubKey, localSig, alternative.sig)
         assertTrue(Transactions.checkSpendable(signedCommitTx).isSuccess)
         return signedCommitTx.tx
     }
