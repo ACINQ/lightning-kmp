@@ -1738,7 +1738,7 @@ class SpliceTestsCommon : LightningTestSuite() {
             response.fundingTxId
         }
 
-        private fun exchangeSpliceSigs(alice: LNChannel<Normal>, commitSigAlice: CommitSig, bob: LNChannel<Normal>, commitSigBob: CommitSig): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+        fun exchangeSpliceSigs(alice: LNChannel<Normal>, commitSigAlice: CommitSig, bob: LNChannel<Normal>, commitSigBob: CommitSig): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             val aliceSpliceStatus = alice.state.spliceStatus
             assertIs<SpliceStatus.WaitingForSigs>(aliceSpliceStatus)
             val bobSpliceStatus = bob.state.spliceStatus

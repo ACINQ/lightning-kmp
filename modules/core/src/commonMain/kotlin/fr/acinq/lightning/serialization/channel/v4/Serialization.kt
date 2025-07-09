@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.ScriptWitness
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.channel.*
@@ -23,6 +24,7 @@ import fr.acinq.lightning.serialization.OutputExtensions.writeNumber
 import fr.acinq.lightning.serialization.OutputExtensions.writePublicKey
 import fr.acinq.lightning.serialization.OutputExtensions.writeString
 import fr.acinq.lightning.serialization.OutputExtensions.writeTxId
+import fr.acinq.lightning.serialization.channel.allHtlcs
 import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeLiquidityPurchase
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
@@ -400,17 +402,17 @@ object Serialization {
         }
     }
 
-    private fun Output.writeUnsignedLocalCommitWithHtlcs(localCommit: InteractiveTxSigningSession.Companion.UnsignedLocalCommit) {
+    private fun Output.writeUnsignedLocalCommitWithoutHtlcs(localCommit: InteractiveTxSigningSession.Companion.UnsignedLocalCommit) {
         writeNumber(localCommit.index)
-        writeCommitmentSpecWithHtlcs(localCommit.spec)
+        writeCommitmentSpecWithoutHtlcs(localCommit.spec)
         writeTransactionWithInputInfo(localCommit.commitTx)
         writeCollection(localCommit.htlcTxs) { writeTransactionWithInputInfo(it) }
     }
 
-    private fun Output.writeLocalCommitWithHtlcs(localCommit: LocalCommit) {
-        writeNumber(localCommit.index)
-        writeCommitmentSpecWithHtlcs(localCommit.spec)
-        localCommit.publishableTxs.run {
+    private fun Output.writeLocalCommitWithoutHtlcs(localCommit: LocalCommit) = localCommit.run {
+        writeNumber(index)
+        writeCommitmentSpecWithoutHtlcs(spec)
+        publishableTxs.run {
             writeTransactionWithInputInfo(commitTx)
             writeCollection(htlcTxsAndSigs) { htlc ->
                 writeTransactionWithInputInfo(htlc.txinfo)
@@ -420,18 +422,28 @@ object Serialization {
         }
     }
 
+    private fun Output.writeRemoteCommitWithoutHtlcs(remoteCommit: RemoteCommit) = remoteCommit.run {
+        writeNumber(index)
+        writeCommitmentSpecWithoutHtlcs(spec)
+        writeTxId(txid)
+        writePublicKey(remotePerCommitmentPoint)
+    }
+
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
-        // Note that we don't bother removing the duplication across HTLCs in the local commit: this is a short-lived
-        // state during which the channel cannot be used for payments.
-        writeEither(localCommit, { localCommit -> writeUnsignedLocalCommitWithHtlcs(localCommit) }, { localCommit -> writeLocalCommitWithHtlcs(localCommit) })
-        remoteCommit.run {
-            writeNumber(index)
-            writeCommitmentSpecWithHtlcs(spec)
-            writeTxId(txid)
-            writePublicKey(remotePerCommitmentPoint)
+        when(localCommit) {
+            is Either.Left -> {
+                write(4)
+                writeUnsignedLocalCommitWithoutHtlcs(localCommit.value)
+                writeRemoteCommitWithoutHtlcs(remoteCommit)
+            }
+            is Either.Right -> {
+                write(5)
+                writeLocalCommitWithoutHtlcs(localCommit.value)
+                writeRemoteCommitWithoutHtlcs(remoteCommit)
+            }
         }
     }
 
@@ -527,24 +539,8 @@ object Serialization {
             is RemoteFundingStatus.NotLocked -> write(0x00)
             is RemoteFundingStatus.Locked -> write(0x01)
         }
-        localCommit.run {
-            writeNumber(index)
-            writeCommitmentSpecWithoutHtlcs(spec)
-            publishableTxs.run {
-                writeTransactionWithInputInfo(commitTx)
-                writeCollection(htlcTxsAndSigs) { htlc ->
-                    writeTransactionWithInputInfo(htlc.txinfo)
-                    writeByteVector64(htlc.localSig)
-                    writeByteVector64(htlc.remoteSig)
-                }
-            }
-        }
-        remoteCommit.run {
-            writeNumber(index)
-            writeCommitmentSpecWithoutHtlcs(spec)
-            writeTxId(txid)
-            writePublicKey(remotePerCommitmentPoint)
-        }
+        writeLocalCommitWithoutHtlcs(localCommit)
+        writeRemoteCommitWithoutHtlcs(remoteCommit)
         writeNullable(nextRemoteCommit) {
             writeLightningMessage(it.sig)
             writeNumber(it.commit.index)
@@ -557,21 +553,9 @@ object Serialization {
     private fun Output.writeCommitments(o: Commitments) = o.run {
         writeChannelParams(params)
         writeCommitmentChanges(changes)
-        // When multiple commitments are active, htlcs are shared between all of these commitments, so we serialize them separately.
+        // When multiple commitments are active, htlcs are shared between all of these commitments, so we serialize the htlcs separately to save space.
         // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
-        val htlcs = buildSet {
-            // All active commitments have the same htlc set, so we only consider the first one
-            addAll(active.first().localCommit.spec.htlcs)
-            addAll(active.first().remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
-            active.first().nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
-            // Each inactive commitment may have a distinct htlc set
-            inactive.forEach { c ->
-                addAll(c.localCommit.spec.htlcs)
-                addAll(c.remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
-                c.nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
-            }
-        }
-        writeCollection(htlcs) { writeDirectedHtlc(it) }
+        writeCollection(o.allHtlcs) { writeDirectedHtlc(it) }
         writeCollection(active) { writeCommitment(it) }
         writeCollection(inactive) { writeCommitment(it) }
         writeCollection(payments.entries) { entry ->
@@ -599,13 +583,6 @@ object Serialization {
             is OutgoingHtlc -> write(1)
         }
         writeLightningMessage(add)
-    }
-
-    private fun Output.writeCommitmentSpecWithHtlcs(spec: CommitmentSpec) = spec.run {
-        writeCollection(htlcs) { writeDirectedHtlc(it) }
-        writeNumber(feerate.toLong())
-        writeNumber(toLocal.toLong())
-        writeNumber(toRemote.toLong())
     }
 
     private fun Output.writeCommitmentSpecWithoutHtlcs(spec: CommitmentSpec) = spec.run {

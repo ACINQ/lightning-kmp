@@ -1,0 +1,1052 @@
+{
+    "type": "fr.acinq.lightning.channel.states.Normal",
+    "commitments": {
+        "params": {
+            "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+            "channelConfig": [
+                "funding_pubkey_based_channel_keypath"
+            ],
+            "channelFeatures": [
+                "option_static_remotekey",
+                "option_anchor_outputs",
+                "option_dual_fund"
+            ],
+            "localParams": {
+                "nodeId": "0362b19a83930389b4468be40308efb3f352b23142ae25e6aba0465a8220f95b06",
+                "fundingKeyPath": "m/1142459463'/2108219405'/1315441450/809265161'/2018794703'/588334649'/420596645'/1350775054/0'",
+                "dustLimit": 1000,
+                "maxHtlcValueInFlightMsat": 1500000000,
+                "htlcMinimum": 1000,
+                "toSelfDelay": 144,
+                "maxAcceptedHtlcs": 100,
+                "isChannelOpener": false,
+                "paysCommitTxFees": false,
+                "defaultFinalScriptPubKey": "001434947cfb2e8f6054ddf12daed4308cbe342580d1",
+                "features": {
+                    "activated": {
+                        "option_data_loss_protect": "Optional",
+                        "var_onion_optin": "Mandatory",
+                        "option_static_remotekey": "Mandatory",
+                        "payment_secret": "Mandatory",
+                        "basic_mpp": "Optional",
+                        "option_support_large_channel": "Optional",
+                        "option_anchor_outputs": "Optional",
+                        "option_route_blinding": "Optional",
+                        "option_shutdown_anysegwit": "Mandatory",
+                        "option_dual_fund": "Mandatory",
+                        "option_quiescence": "Mandatory",
+                        "option_channel_type": "Mandatory",
+                        "option_simple_close": "Mandatory",
+                        "zero_reserve_channels": "Optional",
+                        "wake_up_notification_client": "Optional",
+                        "trampoline_payment_experimental": "Optional",
+                        "splice_experimental": "Optional",
+                        "on_the_fly_funding": "Optional",
+                        "funding_fee_credit": "Optional"
+                    },
+                    "unknown": []
+                }
+            },
+            "remoteParams": {
+                "nodeId": "037108815ff0128f7ed22640485c226d9ad64a9fd6d8b41b6623565aed6b34812c",
+                "dustLimit": 1100,
+                "maxHtlcValueInFlightMsat": 1500000000,
+                "htlcMinimum": 100,
+                "toSelfDelay": 144,
+                "maxAcceptedHtlcs": 100,
+                "revocationBasepoint": "020abca8b0807e5d080dab37c3acf903e0427d23e7d9fa4bd0e5690e18fcd3f814",
+                "paymentBasepoint": "0386435198ac1b025324942098a40a4f68a66f429eaad3237166fc44c9f4c39f7b",
+                "delayedPaymentBasepoint": "031302c7e4b8ffac75a8b33869061b0fc5084d62e2c36adddaba47c822461bf910",
+                "htlcBasepoint": "024641aba15928bcacf48ff6a066dc3497cd69b610150fd00e5e1ed467a4029854",
+                "features": {
+                    "activated": {
+                        "option_data_loss_protect": "Optional",
+                        "var_onion_optin": "Mandatory",
+                        "option_static_remotekey": "Mandatory",
+                        "payment_secret": "Mandatory",
+                        "basic_mpp": "Optional",
+                        "option_support_large_channel": "Optional",
+                        "option_anchor_outputs": "Mandatory",
+                        "option_route_blinding": "Optional",
+                        "option_shutdown_anysegwit": "Mandatory",
+                        "option_dual_fund": "Mandatory",
+                        "option_quiescence": "Mandatory",
+                        "option_provide_storage": "Optional",
+                        "option_channel_type": "Mandatory",
+                        "option_simple_close": "Mandatory",
+                        "wake_up_notification_provider": "Optional",
+                        "trampoline_payment_experimental": "Optional",
+                        "splice_experimental": "Optional",
+                        "on_the_fly_funding": "Optional"
+                    },
+                    "unknown": []
+                }
+            },
+            "channelFlags": {
+                "announceChannel": false,
+                "nonInitiatorPaysCommitFees": false
+            }
+        },
+        "changes": {
+            "localChanges": {
+                "proposed": [],
+                "signed": [],
+                "acked": []
+            },
+            "remoteChanges": {
+                "proposed": [],
+                "acked": [],
+                "signed": []
+            },
+            "localNextHtlcId": 6,
+            "remoteNextHtlcId": 6
+        },
+        "active": [
+            {
+                "fundingTxIndex": 1,
+                "remoteFundingPubkey": "02a75222c92bc2d0a86273f438605733432d493d4ee6e2d0ee10052b60ae59919b",
+                "localFundingStatus": {
+                    "status": "unconfirmed",
+                    "txId": "cbba20bf8295e9f3dfa16c566f4ce7c24529fc3493b5b17151cb55a30efb161c"
+                },
+                "remoteFundingStatus": {
+                    "status": "not-locked"
+                },
+                "localCommit": {
+                    "index": 2,
+                    "spec": {
+                        "htlcsIn": [
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 0,
+                                "amountMsat": 6000000,
+                                "paymentHash": "44365288ddbebf5f87cff9564103333802e3c317d3da4ba7c21f7e03dde75b0d",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 1,
+                                "amountMsat": 6000000,
+                                "paymentHash": "7054a5038cc0aadf346ae72a03c8447eee5e99183a98b00c84c87bc5ed4a32b4",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 2,
+                                "amountMsat": 6000000,
+                                "paymentHash": "f0cdc25d0320482e52be55570a8a1ddaf76d70a960d9ad3100e5e71371db2622",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 3,
+                                "amountMsat": 6000000,
+                                "paymentHash": "f60a26e96193bc41dbbe266c12cec8443703d0c8dbbefd781911a62b54741f73",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 4,
+                                "amountMsat": 6000000,
+                                "paymentHash": "13c4adec65b394ff42db34e35869e7c06be06a6f0774a7243ed2e118bc29d0db",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 5,
+                                "amountMsat": 6000000,
+                                "paymentHash": "5b311ca6f8e3df3d22c9741b8eff42925c34e1c8d83757a888a7218b9914ff3d",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "htlcsOut": [
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 0,
+                                "amountMsat": 6000000,
+                                "paymentHash": "7ff1540c3804ba4e649e2b3f93f4937bff5eb17728fe4d97dfd41c004f35c4e8",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 1,
+                                "amountMsat": 6000000,
+                                "paymentHash": "e3f12f06b6b178bb67a3ff7f5822a79e0460c8b3a9c9f4d40a295b751e3ad82a",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 2,
+                                "amountMsat": 6000000,
+                                "paymentHash": "0cc62921bfc8fdd4d54eb680d4909f36e4f1245d91fbe09c0e5fc1b4879166c5",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 3,
+                                "amountMsat": 6000000,
+                                "paymentHash": "61c4a8d652f9beacf38ac411d57357ac341ef55258a753ce38f3876721ac0530",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 4,
+                                "amountMsat": 6000000,
+                                "paymentHash": "1ccb207cd44b9d9d5f526f549a4eced6df310d71e49d7766674ace7987a8fb22",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 5,
+                                "amountMsat": 6000000,
+                                "paymentHash": "579adc70007690718a4f1e00593936f6769b672e175dc30bc6ba15c47640d8f8",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "feerate": 5000,
+                        "toLocal": 114000000,
+                        "toRemote": 813718000
+                    },
+                    "publishableTxs": {
+                        "commitTx": {
+                            "input": {
+                                "outPoint": "cbba20bf8295e9f3dfa16c566f4ce7c24529fc3493b5b17151cb55a30efb161c:0",
+                                "txOut": {
+                                    "amount": 999718,
+                                    "publicKeyScript": "0020d4224e31e577a1454732f40e829d22ad058f515158690b36e8136ff63925ff58"
+                                },
+                                "redeemScript": "522102a75222c92bc2d0a86273f438605733432d493d4ee6e2d0ee10052b60ae59919b2102c9c50f0cc5483cefa52a789eaa508dde154e0fa20fd8c826ee455b1e6df11c4252ae"
+                            },
+                            "tx": "020000000001011c16fb0ea355cb5171b1b59334fc2945c2e74c6f566ca1dff3e99582bf20bacb000000000018cd6080104a010000000000002200203ee39fa6b07ace779112e47c7207c12f5dac0287b74dc2f2b5ee821562a0ffc24a01000000000000220020cacff39916a5c22536dfc8b470f2b87b1bed4bf2725fc232da671e52061c2cb370170000000000002200201b1285c3f547efe59007aa7893f551b7e2a3150f7de8081da2b6e5b32206bdc57017000000000000220020215d17ce5fdf6f92ed501e72d013eb52e8f6cc88ed6ae5bd880a6b4820b9a8227017000000000000220020276c2981da3809b5aa79313a3646da6afc53dbbea5d6f6f1ba04c3320cc4c9317017000000000000220020475e212a25c5be55395be9f0fe6a25863c4b6997c3588bac8653d44c48d98da2701700000000000022002050a2fd62a4b20eb0fdd1b5c1c07f45b96ef8ff145fed7223dfdccc267ced6ea970170000000000002200206e165030f8a1e8a8daac207a43302a0f834284349c122b6a569e10150d6fd829701700000000000022002084f1d5fa2614671661d7d4faa992939280e64b688f80c7e9a401d87ddb5196927017000000000000220020a0d32e984c2d9790165b3b1c8fc426ba6f3ebeb066879561184cfe34032c31137017000000000000220020a6cd1e408296f9717d423c942a72bb96edc570a6f795c5c3a004905b6b81c4547017000000000000220020c04e8ba0a096777552a15d0bffd3e8b3e5ca25e8c205f693c6c8e082d82147f97017000000000000220020c72184dac180911bebc44365a7c2d496fa3bd61788fe29b8c810646ee5b9e4ee7017000000000000220020e65a8e5c40a36330ef15774d15d2093d30b73e7f3c7e7560a2fe49abaeb82ee850bd010000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578ebe290c00000000002200201a9ff85d351568615c9602aef7cf8e4b9c8aa4da3816339c82c1a7544394e5410400473044022030b7c66f20b7ac100387047a159c1045364fc1fce5f1996f1230618a7688197602202f4d20baf053ab8058fcb9b8e81e931a7d4f9c31f5f1cd0b16791af1e54046c00147304402205d439e55e1a8ce57bd909b62bcd4bbced484e97412e0f7748e8e07abcad2fa8d0220646ea58cea10853dca45461ee41a21d5cdd65da7590b035de77b525af044b2b20147522102a75222c92bc2d0a86273f438605733432d493d4ee6e2d0ee10052b60ae59919b2102c9c50f0cc5483cefa52a789eaa508dde154e0fa20fd8c826ee455b1e6df11c4252ae6d0ac920"
+                        },
+                        "htlcTxsAndSigs": [
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:2",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "00201b1285c3f547efe59007aa7893f551b7e2a3150f7de8081da2b6e5b32206bdc5"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a9142a86feb35c99a59ca5a5524eab9cad4441806cb388527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb02000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "7054a5038cc0aadf346ae72a03c8447eee5e99183a98b00c84c87bc5ed4a32b4",
+                                    "htlcId": 1
+                                },
+                                "localSig": "b3a53f5ca43492a2e185cd3ed9533424297a18cb187bbe95d60b6d34e6d02ce65c1c6a7f5524d8ce0db8e5fbace75526af4b3600d1e36ffa3c51d5fda2de776b",
+                                "remoteSig": "700471e0f8758cb5fde4c66a365feb2864ee80cb7946abfc2c1a15c94c9f6e9d00796b8f818a4e263112b4a04c6a904e8db076960549c22c8e9eb728367c24fb"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:3",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020215d17ce5fdf6f92ed501e72d013eb52e8f6cc88ed6ae5bd880a6b4820b9a822"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a9148c5b3deafcd847295ac9e6bc169a743f9b27657388ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb030000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 0
+                                },
+                                "localSig": "551ac72758de51b031963999d04f9649be446dac99a55b343026293c1f6b3aa90dbcf6ccdc19576c1a6da22f50e480504b9d2989fe2f3924698682139104ccf4",
+                                "remoteSig": "87192d1a30b8257a8caaea09a84ca25979479c3adb964da8900a18dfbf5692c634f5e6582eb2f163a310e4105728dfc38b70135dd8675190b59f1f54a91bb158"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:4",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020276c2981da3809b5aa79313a3646da6afc53dbbea5d6f6f1ba04c3320cc4c931"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a9147400ce9668d9f3a266f86cf6ede338b785e6867d88527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb04000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "13c4adec65b394ff42db34e35869e7c06be06a6f0774a7243ed2e118bc29d0db",
+                                    "htlcId": 4
+                                },
+                                "localSig": "2005453f20fb2e167a6745329519b1db34c352601fac6437ab805b4fd936a91c67a5b4d6e16f25d460abfc3bdc9bdc9c9aa89ae5db4612d8f86d81da7fc5acab",
+                                "remoteSig": "314222697c092f53573d3b13b234d35b37fc644e1a4c26da7cf2198c3c7720f22ebdf64b0a7eb53cf3c672561c63458be6e06b73fb61f865e9c97d4e1a33704a"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:5",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020475e212a25c5be55395be9f0fe6a25863c4b6997c3588bac8653d44c48d98da2"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a914d2fe82fcd7b7f93cad23949a1b3b6dad55af35f588ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb050000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 3
+                                },
+                                "localSig": "e4d0672bf25efaea67653c10f6567e4526b7741a7160f21852b52f116a4c499c3306a4d29e399da220e9cccb7993c00e87ba7df07fe04b69a77f74fc41e695fd",
+                                "remoteSig": "62fabac6a07e9100f65293572a1d20deb99d451f002d3931d6872ca0833101f805cb4c8703253130060a40d764ba33ece1fd7ead253d968da4cfe3dc93cf5f60"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:6",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "002050a2fd62a4b20eb0fdd1b5c1c07f45b96ef8ff145fed7223dfdccc267ced6ea9"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a91404749a395f5829563c37f3597c5d78bb9e8f975688ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb060000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 4
+                                },
+                                "localSig": "4d869f14c0e2064670ae2f290a4cff7f5691a5248ccdce6c132b0cf930f4835f04d2974334aef647a1efdce637aa805e633af8a93731c2b314bf9a1bfa3686d7",
+                                "remoteSig": "d0e25ede01e9db0b3e0be85aa4e2685b23763c6cbfeeb52e276e38898e8108645a0bba747fca6fc32c8b8518b26ceec03a75871b706e46075fb21c20731c6fd9"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:7",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "00206e165030f8a1e8a8daac207a43302a0f834284349c122b6a569e10150d6fd829"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a91476ecf44091d89fa0ef49d2cc0accc1856e07bac888ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb070000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 1
+                                },
+                                "localSig": "f65c1e5a2a71997e9b23cde77762678bcb28b7d616954920468fc45b8e08505a27a66efe01e11871895cca6c02cd62704299332a9c6a635aedfb8d0a18d4760f",
+                                "remoteSig": "6b01b12563d6af66ba56995732919d23315b53c56e39cb4057f290c98deedf355737f7df1342ccae8aec8906e5dece5fa0574ea99d250298042f676d14386d6a"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:8",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "002084f1d5fa2614671661d7d4faa992939280e64b688f80c7e9a401d87ddb519692"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a914d64799a281d6f8adaaf37633f51d36e0549b51de88527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb08000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "f60a26e96193bc41dbbe266c12cec8443703d0c8dbbefd781911a62b54741f73",
+                                    "htlcId": 3
+                                },
+                                "localSig": "8953aac0857146bd494176eb68fc318f789d93928c3388dad07c23d5f2f37803333543ebea3a22d74e92a6e684014a2f12a6e482cb28e13ffda550dfb886076b",
+                                "remoteSig": "3e650dc3fc131b7c6252db7cc4aa243dafbee496e14ed56a0c4358b6c651a6350b9b76629be47a5fa6e722aa60341990ea2febc12097780dfede11772e6d01cf"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:9",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020a0d32e984c2d9790165b3b1c8fc426ba6f3ebeb066879561184cfe34032c3113"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a91488c876c0915ebcd773556335728a5a48876264a288527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb09000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "44365288ddbebf5f87cff9564103333802e3c317d3da4ba7c21f7e03dde75b0d",
+                                    "htlcId": 0
+                                },
+                                "localSig": "2459644ed739fb9f82b2d92207e69ec68136600eb1e36cc64603c109ca2831075fd099bcc68900201c7ca66efd2e26918afb2f6ec200de77ac158b86e36909be",
+                                "remoteSig": "c96e97b3e98700fe1f9996c16f26d853f5ef0b4f70c8dc8928c835a35cb29ed71fbd520dc35e8498e18dc7fe3914cfd835c4895f90796f661f9e7c10e973eb35"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:10",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020a6cd1e408296f9717d423c942a72bb96edc570a6f795c5c3a004905b6b81c454"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a914cf6cc07931ac7ac7331d67b32b3e34ec1ea8a5ec88ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb0a0000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 2
+                                },
+                                "localSig": "b36822940556665e28cb93906b0e8434ad3547e6f1cacbd811e278fff8d4d04f192f985a754f898dcadbd88f02744d7baa04946032fae9cff14e93c3441d965b",
+                                "remoteSig": "4df6539e5e528215a36bbd77a4173124a62cecef65235caa06f2a05d6fc8a94b5c81212aca22b14f5eb3e50253d448bdf7c9d28b7825856b1ecd21a4ee02b73f"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:11",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020c04e8ba0a096777552a15d0bffd3e8b3e5ca25e8c205f693c6c8e082d82147f9"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a91480e8d3c674125d9f2fc2f0e665b6d54c6f1a9bf088ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb0b0000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 5
+                                },
+                                "localSig": "9053b8b9d3dc5a446b28cf2b981ad5f85d5968eac94de69861caff8dbc46b5ae1d01a8ca62686a83440e081aa75252463fddd784a7e7916fdd2d0044e3327f48",
+                                "remoteSig": "74fa7ea8f71c574c7cec00751f82086426425fe014aecdd29395db6610f0a80c052e9ae21eedfbbbad56d6be3539b3666ececcce8273c5763846bd6f8443fb33"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:12",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020c72184dac180911bebc44365a7c2d496fa3bd61788fe29b8c810646ee5b9e4ee"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a914eca8f44ad64db75fe9bda836657d60586c862d2788527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb0c000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "f0cdc25d0320482e52be55570a8a1ddaf76d70a960d9ad3100e5e71371db2622",
+                                    "htlcId": 2
+                                },
+                                "localSig": "44bceeca29f6f87be5888225716a2ec83db4fa21cfef5ad0a8b7cbab549b813d433dabd78fb759dcf429bbe4d003e251c7d5fd32f3eb2190196ebd58b8bcc7cc",
+                                "remoteSig": "566fdb58af5335265b0fd710538fa40e9f19baa4df9877c86ec43e6aac7039dd28f8e318153e260354cc2b0268b8fcd132bb70a6423071a4546cc3b0e60fd460"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff:13",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020e65a8e5c40a36330ef15774d15d2093d30b73e7f3c7e7560a2fe49abaeb82ee8"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a914a17a9f109c95c5874dd632bd3358bc24200a61ea88527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001ff1177181c7768c441a2b3ebd0716909be2da70ce0334cf7a39c14ea64fa7ebb0d000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "5b311ca6f8e3df3d22c9741b8eff42925c34e1c8d83757a888a7218b9914ff3d",
+                                    "htlcId": 5
+                                },
+                                "localSig": "986453ea20acd4105e5b92de4ba4f48f6cdc1e848c4de33e6d68ccfab15254d1418831b6aced7fe4eaa80a853838bd586ed03d0d80d0ab4f112d097eaec9507e",
+                                "remoteSig": "e657b0a16c7dc5f08ea1f63e88b7759315882d81cb31a25a59a58f88430df1a07aaae269cf80465a729da35b90e7a328a2d332a4c84cb90d66fb7f735862fe16"
+                            }
+                        ]
+                    }
+                },
+                "remoteCommit": {
+                    "index": 1,
+                    "spec": {
+                        "htlcsIn": [
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 0,
+                                "amountMsat": 6000000,
+                                "paymentHash": "7ff1540c3804ba4e649e2b3f93f4937bff5eb17728fe4d97dfd41c004f35c4e8",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 1,
+                                "amountMsat": 6000000,
+                                "paymentHash": "e3f12f06b6b178bb67a3ff7f5822a79e0460c8b3a9c9f4d40a295b751e3ad82a",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 2,
+                                "amountMsat": 6000000,
+                                "paymentHash": "0cc62921bfc8fdd4d54eb680d4909f36e4f1245d91fbe09c0e5fc1b4879166c5",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 3,
+                                "amountMsat": 6000000,
+                                "paymentHash": "61c4a8d652f9beacf38ac411d57357ac341ef55258a753ce38f3876721ac0530",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 4,
+                                "amountMsat": 6000000,
+                                "paymentHash": "1ccb207cd44b9d9d5f526f549a4eced6df310d71e49d7766674ace7987a8fb22",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 5,
+                                "amountMsat": 6000000,
+                                "paymentHash": "579adc70007690718a4f1e00593936f6769b672e175dc30bc6ba15c47640d8f8",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "htlcsOut": [
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 0,
+                                "amountMsat": 6000000,
+                                "paymentHash": "44365288ddbebf5f87cff9564103333802e3c317d3da4ba7c21f7e03dde75b0d",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 1,
+                                "amountMsat": 6000000,
+                                "paymentHash": "7054a5038cc0aadf346ae72a03c8447eee5e99183a98b00c84c87bc5ed4a32b4",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 2,
+                                "amountMsat": 6000000,
+                                "paymentHash": "f0cdc25d0320482e52be55570a8a1ddaf76d70a960d9ad3100e5e71371db2622",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 3,
+                                "amountMsat": 6000000,
+                                "paymentHash": "f60a26e96193bc41dbbe266c12cec8443703d0c8dbbefd781911a62b54741f73",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 4,
+                                "amountMsat": 6000000,
+                                "paymentHash": "13c4adec65b394ff42db34e35869e7c06be06a6f0774a7243ed2e118bc29d0db",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 5,
+                                "amountMsat": 6000000,
+                                "paymentHash": "5b311ca6f8e3df3d22c9741b8eff42925c34e1c8d83757a888a7218b9914ff3d",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "feerate": 5000,
+                        "toLocal": 813718000,
+                        "toRemote": 114000000
+                    },
+                    "txid": "0e72130b42308e7c6f1b9ff1c9a6db14a68147af269476495bc058d49314cd24",
+                    "remotePerCommitmentPoint": "02d595f7640a2c7b6fd057dd7f4b3d5ab68c2a02871ae9db97de21c5d958e1f1df"
+                },
+                "nextRemoteCommit": null
+            },
+            {
+                "fundingTxIndex": 0,
+                "remoteFundingPubkey": "03af266b0697e34895ba6f9f66fa172b50b45599b8bc6368db67deeb39a3195170",
+                "localFundingStatus": {
+                    "status": "confirmed",
+                    "txId": "0c6d552e83b50a317c4d8f04ef1ff07011d690ea53c10a2cce52d6e662ff3915"
+                },
+                "remoteFundingStatus": {
+                    "status": "not-locked"
+                },
+                "localCommit": {
+                    "index": 2,
+                    "spec": {
+                        "htlcsIn": [
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 0,
+                                "amountMsat": 6000000,
+                                "paymentHash": "44365288ddbebf5f87cff9564103333802e3c317d3da4ba7c21f7e03dde75b0d",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 1,
+                                "amountMsat": 6000000,
+                                "paymentHash": "7054a5038cc0aadf346ae72a03c8447eee5e99183a98b00c84c87bc5ed4a32b4",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 2,
+                                "amountMsat": 6000000,
+                                "paymentHash": "f0cdc25d0320482e52be55570a8a1ddaf76d70a960d9ad3100e5e71371db2622",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 3,
+                                "amountMsat": 6000000,
+                                "paymentHash": "f60a26e96193bc41dbbe266c12cec8443703d0c8dbbefd781911a62b54741f73",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 4,
+                                "amountMsat": 6000000,
+                                "paymentHash": "13c4adec65b394ff42db34e35869e7c06be06a6f0774a7243ed2e118bc29d0db",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 5,
+                                "amountMsat": 6000000,
+                                "paymentHash": "5b311ca6f8e3df3d22c9741b8eff42925c34e1c8d83757a888a7218b9914ff3d",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "htlcsOut": [
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 0,
+                                "amountMsat": 6000000,
+                                "paymentHash": "7ff1540c3804ba4e649e2b3f93f4937bff5eb17728fe4d97dfd41c004f35c4e8",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 1,
+                                "amountMsat": 6000000,
+                                "paymentHash": "e3f12f06b6b178bb67a3ff7f5822a79e0460c8b3a9c9f4d40a295b751e3ad82a",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 2,
+                                "amountMsat": 6000000,
+                                "paymentHash": "0cc62921bfc8fdd4d54eb680d4909f36e4f1245d91fbe09c0e5fc1b4879166c5",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 3,
+                                "amountMsat": 6000000,
+                                "paymentHash": "61c4a8d652f9beacf38ac411d57357ac341ef55258a753ce38f3876721ac0530",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 4,
+                                "amountMsat": 6000000,
+                                "paymentHash": "1ccb207cd44b9d9d5f526f549a4eced6df310d71e49d7766674ace7987a8fb22",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 5,
+                                "amountMsat": 6000000,
+                                "paymentHash": "579adc70007690718a4f1e00593936f6769b672e175dc30bc6ba15c47640d8f8",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "feerate": 5000,
+                        "toLocal": 114000000,
+                        "toRemote": 814000000
+                    },
+                    "publishableTxs": {
+                        "commitTx": {
+                            "input": {
+                                "outPoint": "0c6d552e83b50a317c4d8f04ef1ff07011d690ea53c10a2cce52d6e662ff3915:0",
+                                "txOut": {
+                                    "amount": 1000000,
+                                    "publicKeyScript": "0020a8f38fd6f321a6755966bcb34a0f8a990e22343d39e8795b69e459d3909b6949"
+                                },
+                                "redeemScript": "522102e50c061be524d3af336e859fc753c8eb8a195e85554a0c56ab88f34772e48deb2103af266b0697e34895ba6f9f66fa172b50b45599b8bc6368db67deeb39a319517052ae"
+                            },
+                            "tx": "020000000001011539ff62e6d652ce2c0ac153ea90d61170f01fef048f4d7c310ab5832e556d0c000000000018cd6080104a010000000000002200200129e12f46364d431e08e7ce22b6dd2868e2398fa9d37910e600126eb1839e284a01000000000000220020e44463d678ddfca33a5603e563e4b8d129e21201badc0fffff53cbdf3854e1a970170000000000002200201b1285c3f547efe59007aa7893f551b7e2a3150f7de8081da2b6e5b32206bdc57017000000000000220020215d17ce5fdf6f92ed501e72d013eb52e8f6cc88ed6ae5bd880a6b4820b9a8227017000000000000220020276c2981da3809b5aa79313a3646da6afc53dbbea5d6f6f1ba04c3320cc4c9317017000000000000220020475e212a25c5be55395be9f0fe6a25863c4b6997c3588bac8653d44c48d98da2701700000000000022002050a2fd62a4b20eb0fdd1b5c1c07f45b96ef8ff145fed7223dfdccc267ced6ea970170000000000002200206e165030f8a1e8a8daac207a43302a0f834284349c122b6a569e10150d6fd829701700000000000022002084f1d5fa2614671661d7d4faa992939280e64b688f80c7e9a401d87ddb5196927017000000000000220020a0d32e984c2d9790165b3b1c8fc426ba6f3ebeb066879561184cfe34032c31137017000000000000220020a6cd1e408296f9717d423c942a72bb96edc570a6f795c5c3a004905b6b81c4547017000000000000220020c04e8ba0a096777552a15d0bffd3e8b3e5ca25e8c205f693c6c8e082d82147f97017000000000000220020c72184dac180911bebc44365a7c2d496fa3bd61788fe29b8c810646ee5b9e4ee7017000000000000220020e65a8e5c40a36330ef15774d15d2093d30b73e7f3c7e7560a2fe49abaeb82ee850bd010000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578ed82a0c00000000002200201a9ff85d351568615c9602aef7cf8e4b9c8aa4da3816339c82c1a7544394e5410400483045022100d51dc0c1e8760eed830c001147a3e15f87805ba81a900aeb219df29275d320a4022019cd34b73850ca6d9756324b96560c1675c245b50a2d3102a8cf73f5b40588f3014730440220182390e02cd28be5673c229bc99c39033e9dbd1942616d30b69efa9cd4fc256902204df27bd1aa9c2fe5e2901e6ecab2479417ddb277d201880968c0f46212e16c740147522102e50c061be524d3af336e859fc753c8eb8a195e85554a0c56ab88f34772e48deb2103af266b0697e34895ba6f9f66fa172b50b45599b8bc6368db67deeb39a319517052ae6d0ac920"
+                        },
+                        "htlcTxsAndSigs": [
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:2",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "00201b1285c3f547efe59007aa7893f551b7e2a3150f7de8081da2b6e5b32206bdc5"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a9142a86feb35c99a59ca5a5524eab9cad4441806cb388527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc02000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "7054a5038cc0aadf346ae72a03c8447eee5e99183a98b00c84c87bc5ed4a32b4",
+                                    "htlcId": 1
+                                },
+                                "localSig": "61a778ac338671f1b4345187a46ea84eee1779f2b6c8a7433ac130dda46fae222d1f70c59d112bc772f444857507f4b3c653a5537638a53aa423a0d63ab4e7cb",
+                                "remoteSig": "3229c56a2efa5d18d72805abfd61bbc0f6dfcd3cbbbaa1bf9e64061468518af86959a247ae8e3e60f964cc5e9d824bc7c35f24c8e0e40aabd36e0642806615e1"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:3",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020215d17ce5fdf6f92ed501e72d013eb52e8f6cc88ed6ae5bd880a6b4820b9a822"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a9148c5b3deafcd847295ac9e6bc169a743f9b27657388ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc030000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 0
+                                },
+                                "localSig": "0fcd82c60e36c5174fcbd27350086f733347a052c34e4f423c38f043c2bbd85a30c15350fa67130b013a424b3d69472c77688460cc669b76867664dbea5b289e",
+                                "remoteSig": "de14327aab5553f478e7d89cb58fcd2e2d2070fca8780ad8e1387c8ffad393d350a2a99598c4cff3dae259c5080cc20deea723413a87ed30694dd33990abfdd3"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:4",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020276c2981da3809b5aa79313a3646da6afc53dbbea5d6f6f1ba04c3320cc4c931"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a9147400ce9668d9f3a266f86cf6ede338b785e6867d88527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc04000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "13c4adec65b394ff42db34e35869e7c06be06a6f0774a7243ed2e118bc29d0db",
+                                    "htlcId": 4
+                                },
+                                "localSig": "ebda05866e6198094438699c82e848e8c992273bf6306a8b755a0fa6ad76c0ad0b4943e388437e88ae209bc9125572fed6fcf593dc02dfa337b247c860cca792",
+                                "remoteSig": "1bbd6a513bdae2aa70b0953ec1b1a54c849f59ae6fc7890f7eaa99c42da70dec015d5f90aec18e717711265c074ab14d8668cbe7fe08d498ebe2cf229b053eed"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:5",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020475e212a25c5be55395be9f0fe6a25863c4b6997c3588bac8653d44c48d98da2"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a914d2fe82fcd7b7f93cad23949a1b3b6dad55af35f588ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc050000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 3
+                                },
+                                "localSig": "f043fb8d73d062b2e1dfaf04aec170a548dc5c4ce8d239cfd6b449d0fccf167039fcad79be1cc495c8179e1ecdccff9b2d304e655b6bc3ad6a7221bd16f35637",
+                                "remoteSig": "e6adaf8de1b8db9b005af625cfc2b7ac337bb95f3a87ac6f7468dd96149916ed776e6b900fd32c80708827a45ee22561c5bb2d922e3c29e40b314d94f4dd38df"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:6",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "002050a2fd62a4b20eb0fdd1b5c1c07f45b96ef8ff145fed7223dfdccc267ced6ea9"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a91404749a395f5829563c37f3597c5d78bb9e8f975688ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc060000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 4
+                                },
+                                "localSig": "6bc8cf71358ff642b79541869c585d8629c3bdd84e678f7b40a283cd05fdcec46d6e5a03e2dc668db2d521b22c1d0ef5203f30e066f2819784cb17d45e6539e5",
+                                "remoteSig": "3b47f36698acb540a4a953012e2aa418e5fabae2fd673823b070837e919ba4d64b7817b087094e5c0111777d078d9c2fc481281c3f2020ef8329159d99ff4647"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:7",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "00206e165030f8a1e8a8daac207a43302a0f834284349c122b6a569e10150d6fd829"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a91476ecf44091d89fa0ef49d2cc0accc1856e07bac888ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc070000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 1
+                                },
+                                "localSig": "657dae2f1ae28625b7131405284f0930fd9c24385ee4a48761da436a1c60eb996dac762ffc977504fe0562fadc84222b5a78c052f1688241cac78eab3b2ba631",
+                                "remoteSig": "874e20962e914f8262dbc154148d938b757d06979c2f7cac146da120dc60736d753efb27a398df56f472a98437d1fc2169dd7451f93bf87e03eeccfe6936853b"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:8",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "002084f1d5fa2614671661d7d4faa992939280e64b688f80c7e9a401d87ddb519692"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a914d64799a281d6f8adaaf37633f51d36e0549b51de88527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc08000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "f60a26e96193bc41dbbe266c12cec8443703d0c8dbbefd781911a62b54741f73",
+                                    "htlcId": 3
+                                },
+                                "localSig": "c82b27f670983db07b17e21ec92d3d78edc10e3dc854ea74f29ee883f0eb34a4655d6500a030a841ae13ec5d83d7c577d77217e4a9f71894d471b6174945ebb9",
+                                "remoteSig": "7f61d1ac74b2903264b3abb2ed9023d8c43d7a34cbb97cd3ff26235253ab23ae4843d900164bb42b55f0b6438a858fbdac1d445d98172e0d518af6d2a21fd737"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:9",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020a0d32e984c2d9790165b3b1c8fc426ba6f3ebeb066879561184cfe34032c3113"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a91488c876c0915ebcd773556335728a5a48876264a288527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc09000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "44365288ddbebf5f87cff9564103333802e3c317d3da4ba7c21f7e03dde75b0d",
+                                    "htlcId": 0
+                                },
+                                "localSig": "d99c61ef05db0761c607b31e4d098dafb14ef735841954ad7039fba340a8c0b80a45aa42320079f73bcb56521341183c28ad2e84d1074769b75b8eaefe267201",
+                                "remoteSig": "b9dd93a03db61aebeb5ccfaf9121996d69545ba8e21cc0424df80b5953f8f50c2015c5267b858bfa93eb5322ef77a28611037b8266317dfe3a9cb573fa920c70"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:10",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020a6cd1e408296f9717d423c942a72bb96edc570a6f795c5c3a004905b6b81c454"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a914cf6cc07931ac7ac7331d67b32b3e34ec1ea8a5ec88ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc0a0000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 2
+                                },
+                                "localSig": "02d17d0f4d7a35e05a7c2fc37b9e6c1936d71ae56c6a41757a0df510d5fc1e3777534c1580338fe3bba558fa144d21e98dce5aa68367c00f419bebc6315edbc6",
+                                "remoteSig": "6c672b28066111bb135ece54f4e78b938d38657c33eb9e83b4acee0b09aa517f0e0e78272badf06c0dcdd46605d6519ad4fede9c411399bc37f7e3cebfb4b6f5"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:11",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020c04e8ba0a096777552a15d0bffd3e8b3e5ca25e8c205f693c6c8e082d82147f9"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c820120876475527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae67a91480e8d3c674125d9f2fc2f0e665b6d54c6f1a9bf088ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc0b0000000001000000016e0a000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e101b0600",
+                                    "htlcId": 5
+                                },
+                                "localSig": "4367afd8021512733092ee116f5794c967fe27ecd28e21707741c02821e3a9d428eef3b35ce6621f6c0033c515ac5b65017ca2efa55362fe5187dc44aa03fa35",
+                                "remoteSig": "39214f82af81d41da5c09f204eb192ada71a5bdddd5d5913fd32793e4f4587ff2e74da9328e876e9057f6344aec453f60b3b947ef5dead6d6c3facb28906ec0c"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:12",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020c72184dac180911bebc44365a7c2d496fa3bd61788fe29b8c810646ee5b9e4ee"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a914eca8f44ad64db75fe9bda836657d60586c862d2788527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc0c000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "f0cdc25d0320482e52be55570a8a1ddaf76d70a960d9ad3100e5e71371db2622",
+                                    "htlcId": 2
+                                },
+                                "localSig": "3b16bc78a690163adfb49a4e61a476cf337164f1e548c5aef9989bf0c16302d040f14894639623bff5520db468929761fdb5ce8ef65752c3eaddcd53e576bf09",
+                                "remoteSig": "bda2aee299506be5bb34f3fc5bda4f5c6e47de453caed23c3cc5cd30f048147309a2439b3ec12763fc19e8ca6a28f938d7e5726d9f7afe194ee171fe64706921"
+                            },
+                            {
+                                "txinfo": {
+                                    "type": "fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx",
+                                    "input": {
+                                        "outPoint": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266:13",
+                                        "txOut": {
+                                            "amount": 6000,
+                                            "publicKeyScript": "0020e65a8e5c40a36330ef15774d15d2093d30b73e7f3c7e7560a2fe49abaeb82ee8"
+                                        },
+                                        "redeemScript": "76a914a722f2303496be25d72a0563960a3ea25f56c36b8763ac67210369425a0154c0b8217b3506c775431e3abe93d112709c2c528c75b15dfb3ce4e07c8201208763a914a17a9f109c95c5874dd632bd3358bc24200a61ea88527c2103b4d2ca8e9acaf7b8f36696588c616347f0dd3e54c5e417a9a77d67052885375852ae677503101b06b175ac6851b27568"
+                                    },
+                                    "tx": "0200000001662287464194fd5642196169bebd6491d9a388fd7a409a8058301753f80efbdc0d000000000100000001a609000000000000220020ad64b0094b2f2f03192d321309fb5b1320a8ee90bd8b34737c8a69e716b0578e00000000",
+                                    "paymentHash": "5b311ca6f8e3df3d22c9741b8eff42925c34e1c8d83757a888a7218b9914ff3d",
+                                    "htlcId": 5
+                                },
+                                "localSig": "60b43bba26497c66264b627c665d1528e243b634ab4e3842f179c33bcf05d5e067efc44edf3948cda69b8fddd1969652f28a6570d1065dabf0902a8a36c1ec13",
+                                "remoteSig": "e09c9ffc6935280a4f10e59bd2b5e93106db170d72927af8bbc33f7701396f4602273b9ee917134f3336f446e722a21c7b7301127379d5a6b42f647d05738e77"
+                            }
+                        ]
+                    }
+                },
+                "remoteCommit": {
+                    "index": 1,
+                    "spec": {
+                        "htlcsIn": [
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 0,
+                                "amountMsat": 6000000,
+                                "paymentHash": "7ff1540c3804ba4e649e2b3f93f4937bff5eb17728fe4d97dfd41c004f35c4e8",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 1,
+                                "amountMsat": 6000000,
+                                "paymentHash": "e3f12f06b6b178bb67a3ff7f5822a79e0460c8b3a9c9f4d40a295b751e3ad82a",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 2,
+                                "amountMsat": 6000000,
+                                "paymentHash": "0cc62921bfc8fdd4d54eb680d4909f36e4f1245d91fbe09c0e5fc1b4879166c5",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 3,
+                                "amountMsat": 6000000,
+                                "paymentHash": "61c4a8d652f9beacf38ac411d57357ac341ef55258a753ce38f3876721ac0530",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 4,
+                                "amountMsat": 6000000,
+                                "paymentHash": "1ccb207cd44b9d9d5f526f549a4eced6df310d71e49d7766674ace7987a8fb22",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 5,
+                                "amountMsat": 6000000,
+                                "paymentHash": "579adc70007690718a4f1e00593936f6769b672e175dc30bc6ba15c47640d8f8",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "htlcsOut": [
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 0,
+                                "amountMsat": 6000000,
+                                "paymentHash": "44365288ddbebf5f87cff9564103333802e3c317d3da4ba7c21f7e03dde75b0d",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 1,
+                                "amountMsat": 6000000,
+                                "paymentHash": "7054a5038cc0aadf346ae72a03c8447eee5e99183a98b00c84c87bc5ed4a32b4",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 2,
+                                "amountMsat": 6000000,
+                                "paymentHash": "f0cdc25d0320482e52be55570a8a1ddaf76d70a960d9ad3100e5e71371db2622",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 3,
+                                "amountMsat": 6000000,
+                                "paymentHash": "f60a26e96193bc41dbbe266c12cec8443703d0c8dbbefd781911a62b54741f73",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 4,
+                                "amountMsat": 6000000,
+                                "paymentHash": "13c4adec65b394ff42db34e35869e7c06be06a6f0774a7243ed2e118bc29d0db",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "77f198a3b7e0e391aad094aaa0dd33e19a8aabdeaed43835faa0c8863b539980",
+                                "id": 5,
+                                "amountMsat": 6000000,
+                                "paymentHash": "5b311ca6f8e3df3d22c9741b8eff42925c34e1c8d83757a888a7218b9914ff3d",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "feerate": 5000,
+                        "toLocal": 814000000,
+                        "toRemote": 114000000
+                    },
+                    "txid": "b51e0a8ca4306b64164106071bf0ea0c888af31ce71e41802bd7fcdf408cab21",
+                    "remotePerCommitmentPoint": "02d595f7640a2c7b6fd057dd7f4b3d5ab68c2a02871ae9db97de21c5d958e1f1df"
+                },
+                "nextRemoteCommit": null
+            }
+        ],
+        "inactive": [],
+        "payments": {
+            "0": "7e5e3d57-8ff6-40fb-9895-bace15937701",
+            "1": "d25407d1-02ed-49ce-9304-b01075393425",
+            "2": "227b8a2f-74fc-4002-9c77-bd7b9a7833a6",
+            "3": "03d53f39-9a49-4c9e-8371-5522af54c306",
+            "4": "f2701877-953d-443e-8b97-56b4aa9f0a8a",
+            "5": "98960a3f-3012-40b6-a020-3d89fedebae9"
+        },
+        "remoteNextCommitInfo": {
+            "left": null,
+            "right": "03c7a6c9298d8d0cebab9d785afa00a42c3b7f97b7c36c53c92ba34c6a77a0e8d1"
+        },
+        "remotePerCommitmentSecrets": "<redacted>"
+    },
+    "shortChannelId": "42x0x0",
+    "channelUpdate": {
+        "signature": "6e9bd75886e3aa18389c5f5419bb2acf003c949be1b72c47c725e6705cf3b68e6387bab8a47da2bdf9e2f530debc375a0dc9f3d4700a7cde1ddc1cd3eb393fcd",
+        "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+        "shortChannelId": "42x0x0",
+        "timestampSeconds": 1751983308,
+        "messageFlags": 1,
+        "channelFlags": 0,
+        "cltvExpiryDelta": 144,
+        "htlcMinimumMsat": 100,
+        "feeBaseMsat": 10,
+        "feeProportionalMillionths": 10,
+        "htlcMaximumMsat": 1000000000
+    },
+    "remoteChannelUpdate": null,
+    "spliceStatus": {
+        "status": "None"
+    },
+    "localShutdown": null,
+    "remoteShutdown": null,
+    "closeCommand": null
+}

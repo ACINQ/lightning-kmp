@@ -10,6 +10,7 @@
     JsonSerializers.LocalParamsSerializer::class,
     JsonSerializers.RemoteParamsSerializer::class,
     JsonSerializers.LocalCommitSerializer::class,
+    JsonSerializers.UnsignedLocalCommitSerializer::class,
     JsonSerializers.RemoteCommitSerializer::class,
     JsonSerializers.NextRemoteCommitSerializer::class,
     JsonSerializers.LocalChangesSerializer::class,
@@ -60,6 +61,7 @@
     JsonSerializers.SignedSharedTransactionSerializer::class,
     JsonSerializers.InteractiveTxSigningSessionSerializer::class,
     JsonSerializers.RbfStatusSerializer::class,
+    JsonSerializers.SpliceStatusWaitingForSigsSerializer::class,
     JsonSerializers.SpliceStatusSerializer::class,
     JsonSerializers.LiquidityFeesSerializer::class,
     JsonSerializers.LiquidityPaymentDetailsSerializer::class,
@@ -112,6 +114,7 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.InteractiveTxSigningSession.Companion.UnsignedLocalCommit
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.RouteBlinding
@@ -286,16 +289,24 @@ object JsonSerializers {
     object SignedSharedTransactionSerializer
 
     @Serializable
-    data class InteractiveTxSigningSessionSurrogate(val fundingParams: InteractiveTxParams, val fundingTxId: TxId)
+    data class InteractiveTxSigningSessionSurrogate(val fundingParams: InteractiveTxParams, val fundingTxId: TxId, val localCommit: Either<UnsignedLocalCommit, LocalCommit>, val remoteCommit: RemoteCommit)
     object InteractiveTxSigningSessionSerializer : SurrogateSerializer<InteractiveTxSigningSession, InteractiveTxSigningSessionSurrogate>(
-        transform = { s -> InteractiveTxSigningSessionSurrogate(s.fundingParams, s.fundingTx.txId) },
+        transform = { s -> InteractiveTxSigningSessionSurrogate(s.fundingParams, s.fundingTx.txId, s.localCommit, s.remoteCommit) },
         delegateSerializer = InteractiveTxSigningSessionSurrogate.serializer()
     )
 
     @Serializer(forClass = RbfStatus::class)
     object RbfStatusSerializer
 
-    object SpliceStatusSerializer : StringSerializer<SpliceStatus>({ it::class.simpleName!! })
+    @Serializer(forClass = SpliceStatus.WaitingForSigs::class)
+    object SpliceStatusWaitingForSigsSerializer
+
+    @Serializable
+    data class SpliceStatusSurrogate(val status: String, val waitingForSigs: SpliceStatus.WaitingForSigs? = null)
+    object SpliceStatusSerializer : SurrogateSerializer<SpliceStatus, SpliceStatusSurrogate>(
+        transform = { s -> SpliceStatusSurrogate(s::class.simpleName!!, s as? SpliceStatus.WaitingForSigs) },
+        delegateSerializer = SpliceStatusSurrogate.serializer()
+    )
 
     @Serializable
     data class CloseCommandSurrogate(val scriptPubKey: ByteVector?, val feerate: FeeratePerKw)
@@ -363,6 +374,9 @@ object JsonSerializers {
 
     @Serializer(forClass = LocalCommit::class)
     object LocalCommitSerializer
+
+    @Serializer(forClass = UnsignedLocalCommit::class)
+    object UnsignedLocalCommitSerializer
 
     @Serializer(forClass = RemoteCommit::class)
     object RemoteCommitSerializer
