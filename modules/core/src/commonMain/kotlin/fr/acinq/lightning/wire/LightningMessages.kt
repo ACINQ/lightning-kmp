@@ -67,6 +67,7 @@ interface LightningMessage {
                 TxAbort.type -> TxAbort.read(stream)
                 CommitSig.type -> CommitSig.read(stream)
                 RevokeAndAck.type -> RevokeAndAck.read(stream)
+                StartBatch.type -> StartBatch.read(stream)
                 UpdateAddHtlc.type -> UpdateAddHtlc.read(stream)
                 UpdateFailHtlc.type -> UpdateFailHtlc.read(stream)
                 UpdateFailMalformedHtlc.type -> UpdateFailMalformedHtlc.read(stream)
@@ -985,7 +986,7 @@ data class SpliceInit(
     }
 
     companion object : LightningMessageReader<SpliceInit> {
-        const val type: Long = 37000
+        const val type: Long = 80
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
@@ -1033,7 +1034,7 @@ data class SpliceAck(
     }
 
     companion object : LightningMessageReader<SpliceAck> {
-        const val type: Long = 37002
+        const val type: Long = 81
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
@@ -1065,13 +1066,35 @@ data class SpliceLocked(
     }
 
     companion object : LightningMessageReader<SpliceLocked> {
-        const val type: Long = 37004
+        const val type: Long = 77
 
         private val readers = emptyMap<Long, TlvValueReader<ChannelTlv>>()
 
         override fun read(input: Input): SpliceLocked = SpliceLocked(
             channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
             fundingTxId = TxId(LightningCodecs.txHash(input)),
+            tlvStream = TlvStreamSerializer(false, readers).read(input)
+        )
+    }
+}
+
+data class StartBatch(override val channelId: ByteVector32, val batchSize: Int, val tlvStream: TlvStream<StartBatchTlv> = TlvStream.empty()): ChannelMessage, HasChannelId {
+    override val type: Long get() = StartBatch.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeU16(batchSize, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
+    }
+
+    companion object : LightningMessageReader<StartBatch> {
+        const val type: Long = 127
+
+        val readers: Map<Long, TlvValueReader<StartBatchTlv>> = mapOf()
+
+        override fun read(input: Input): StartBatch = StartBatch(
+            channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
+            batchSize = LightningCodecs.u16(input),
             tlvStream = TlvStreamSerializer(false, readers).read(input)
         )
     }
@@ -1223,16 +1246,26 @@ data class UpdateFailMalformedHtlc(
     }
 }
 
+/**
+ * [CommitSig] can either be sent individually or as part of a batch. When sent in a batch (which happens when there
+ * are pending splice transactions), we treat the whole batch as a single lightning message and group them on the wire.
+ */
+sealed class CommitSigs : HtlcMessage, HasChannelId, RequirePeerStorageStore {
+    companion object {
+        fun fromSigs(sigs: List<CommitSig>): CommitSigs = if (sigs.size == 1) sigs.first() else CommitSigBatch(sigs)
+    }
+}
+
 data class CommitSig(
     override val channelId: ByteVector32,
     val signature: ByteVector64,
     val htlcSignatures: List<ByteVector64>,
     val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
-) : HtlcMessage, HasChannelId, RequirePeerStorageStore {
+) : CommitSigs() {
     override val type: Long get() = CommitSig.type
 
     val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
-    val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
+    val fundingTxId: TxId? = tlvStream.get<CommitSigTlv.FundingTx>()?.txId
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1247,8 +1280,8 @@ data class CommitSig(
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
+            CommitSigTlv.FundingTx.tag to CommitSigTlv.FundingTx.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.AlternativeFeerateSigs.tag to CommitSigTlv.AlternativeFeerateSigs.Companion as TlvValueReader<CommitSigTlv>,
-            CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
         )
 
         override fun read(input: Input): CommitSig {
@@ -1261,6 +1294,21 @@ data class CommitSig(
             }
             return CommitSig(channelId, sig, htlcSigs.toList(), TlvStreamSerializer(false, readers).read(input))
         }
+    }
+}
+
+data class CommitSigBatch(val messages: List<CommitSig>) : CommitSigs() {
+    // The read/write functions and the type field are meant for individual lightning messages.
+    // While we treat a commit_sig batch as one logical message, we will actually encode each messages individually.
+    // That's why the read/write functions are no-op.
+    override val type: Long get() = 0
+    override val channelId: ByteVector32 = messages.first().channelId
+    val batchSize: Int = messages.size
+
+    override fun write(out: Output) = Unit
+
+    companion object : LightningMessageReader<CommitSigBatch> {
+        override fun read(input: Input): CommitSigBatch = CommitSigBatch(listOf())
     }
 }
 
@@ -1329,6 +1377,8 @@ data class ChannelReestablish(
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
+    val yourLastFundingLocked: TxId? = tlvStream.get<ChannelReestablishTlv.YourLastFundingLocked>()?.txId
+    val myCurrentFundingLocked: TxId? = tlvStream.get<ChannelReestablishTlv.MyCurrentFundingLocked>()?.txId
     // Legacy channel backup present only on old inactive channels, will be replaced by peer storage next time this channel data is updated.
     val legacyChannelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
 
@@ -1348,6 +1398,8 @@ data class ChannelReestablish(
         val readers = mapOf(
             ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.YourLastFundingLocked.tag to ChannelReestablishTlv.YourLastFundingLocked.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.MyCurrentFundingLocked.tag to ChannelReestablishTlv.MyCurrentFundingLocked.Companion as TlvValueReader<ChannelReestablishTlv>,
         )
 
         override fun read(input: Input): ChannelReestablish {
