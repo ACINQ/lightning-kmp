@@ -7,7 +7,7 @@ import fr.acinq.lightning.blockchain.WatchTriggered
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.states.PersistedChannelState
-import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.ChannelKeys
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.LightningMessage
@@ -36,7 +36,7 @@ sealed class ChannelCommand {
             val requestRemoteFunding: LiquidityAds.RequestFunding?,
             val channelOrigin: Origin?,
         ) : Init() {
-            fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = keyManager.channelKeys(localParams.fundingKeyPath).temporaryChannelId
+            fun temporaryChannelId(channelKeys: ChannelKeys): ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + channelKeys.revocationBasePoint.value).sha256()
         }
 
         data class NonInitiator(

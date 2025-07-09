@@ -8,7 +8,9 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.crypto.ChannelKeys
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.SwapInOnChainKeys
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.transactions.Scripts
@@ -778,7 +780,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `cannot contribute unusable or invalid inputs`() {
-        val channelKeys = TestConstants.Alice.keyManager.run { channelKeys(newFundingKeyPath(isInitiator = true)) }
+        val channelKeys = TestConstants.Alice.keyManager.run { channelKeys(newFundingKeyPath(isChannelOpener = true)) }
         val swapInKeys = TestConstants.Alice.keyManager.swapInOnChainWallet
         val privKey = randomKey()
         val pubKey = privKey.publicKey()
@@ -811,7 +813,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
 
     @Test
     fun `cannot pay liquidity ads fees`() {
-        val channelKeys = TestConstants.Alice.keyManager.run { channelKeys(newFundingKeyPath(isInitiator = true)) }
+        val channelKeys = TestConstants.Alice.keyManager.run { channelKeys(newFundingKeyPath(isChannelOpener = true)) }
         val swapInKeys = TestConstants.Alice.keyManager.swapInOnChainWallet
         val walletKey = randomKey().publicKey()
         val fundingParams = InteractiveTxParams(randomBytes32(), true, 0.sat, 250_000.sat, walletKey, 0, 660.sat, FeeratePerKw(2500.sat))
@@ -1268,12 +1270,12 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         data class Fixture(
             val channelId: ByteVector32,
             val keyManagerA: KeyManager,
-            val channelKeysA: KeyManager.ChannelKeys,
+            val channelKeysA: ChannelKeys,
             val localParamsA: LocalParams,
             val fundingParamsA: InteractiveTxParams,
             val fundingContributionsA: FundingContributions,
             val keyManagerB: KeyManager,
-            val channelKeysB: KeyManager.ChannelKeys,
+            val channelKeysB: ChannelKeys,
             val localParamsB: LocalParams,
             val fundingParamsB: InteractiveTxParams,
             val fundingContributionsB: FundingContributions
@@ -1302,8 +1304,8 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet
             val swapInKeysB = TestConstants.Bob.keyManager.swapInOnChainWallet
-            val fundingPubkeyA = channelKeysA.fundingPubKey(fundingTxIndex)
-            val fundingPubkeyB = channelKeysB.fundingPubKey(fundingTxIndex)
+            val fundingPubkeyA = channelKeysA.fundingKey(fundingTxIndex).publicKey()
+            val fundingPubkeyB = channelKeysB.fundingKey(fundingTxIndex).publicKey()
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingAmountA, fundingAmountB, fundingPubkeyB, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingAmountB, fundingAmountA, fundingPubkeyA, lockTime, dustLimit, targetFeerate)
             val walletA = createWallet(swapInKeysA, utxosA, legacyUtxosA)
@@ -1333,15 +1335,15 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val channelKeysA = localParamsA.channelKeys(TestConstants.Alice.keyManager)
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet
-            val fundingPubkeyA = channelKeysA.fundingPubKey(fundingTxIndex)
-            val fundingPubkeyB = channelKeysB.fundingPubKey(fundingTxIndex)
+            val fundingPubkeyA = channelKeysA.fundingKey(fundingTxIndex).publicKey()
+            val fundingPubkeyB = channelKeysB.fundingKey(fundingTxIndex).publicKey()
             val redeemScript = Scripts.multiSig2of2(fundingPubkeyA, fundingPubkeyB)
             val fundingScript = Script.write(Script.pay2wsh(redeemScript)).byteVector()
             val previousFundingAmount = (balanceA + balanceB).truncateToSatoshi()
             val previousFundingTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)), listOf(TxOut(previousFundingAmount, fundingScript)), 0)
             val inputInfo = Transactions.InputInfo(OutPoint(previousFundingTx, 0), previousFundingTx.txOut[0], redeemScript)
-            val sharedInputA = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, channelKeysB.fundingPubKey(fundingTxIndex))
-            val nextFundingPubkeyB = channelKeysB.fundingPubKey(fundingTxIndex + 1)
+            val sharedInputA = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, fundingPubkeyB)
+            val nextFundingPubkeyB = channelKeysB.fundingKey(fundingTxIndex + 1).publicKey()
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingContributionA, fundingContributionB, sharedInputA, nextFundingPubkeyB, outputsA, lockTime, dustLimit, targetFeerate)
             return FundingContributions.create(channelKeysA, swapInKeysA, fundingParamsA, Pair(sharedInputA, SharedFundingInputBalances(balanceA, balanceB, 0.msat)), listOf(), outputsA, null, randomKey().publicKey())
         }
@@ -1368,17 +1370,17 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             val channelKeysB = localParamsB.channelKeys(TestConstants.Bob.keyManager)
             val swapInKeysA = TestConstants.Alice.keyManager.swapInOnChainWallet
             val swapInKeysB = TestConstants.Bob.keyManager.swapInOnChainWallet
-            val fundingPubkeyA = channelKeysA.fundingPubKey(fundingTxIndex)
-            val fundingPubkeyB = channelKeysB.fundingPubKey(fundingTxIndex)
+            val fundingPubkeyA = channelKeysA.fundingKey(fundingTxIndex).publicKey()
+            val fundingPubkeyB = channelKeysB.fundingKey(fundingTxIndex).publicKey()
             val redeemScript = Scripts.multiSig2of2(fundingPubkeyA, fundingPubkeyB)
             val fundingScript = Script.write(Script.pay2wsh(redeemScript)).byteVector()
             val previousFundingAmount = (balanceA + balanceB).truncateToSatoshi()
             val previousFundingTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 0), 0)), listOf(TxOut(previousFundingAmount, fundingScript)), 0)
             val inputInfo = Transactions.InputInfo(OutPoint(previousFundingTx, 0), previousFundingTx.txOut[0], redeemScript)
-            val sharedInputA = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, channelKeysB.fundingPubKey(fundingTxIndex))
-            val sharedInputB = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, channelKeysA.fundingPubKey(fundingTxIndex))
-            val nextFundingPubkeyA = channelKeysA.fundingPubKey(fundingTxIndex + 1)
-            val nextFundingPubkeyB = channelKeysB.fundingPubKey(fundingTxIndex + 1)
+            val sharedInputA = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, fundingPubkeyB)
+            val sharedInputB = SharedFundingInput.Multisig2of2(inputInfo, fundingTxIndex, fundingPubkeyA)
+            val nextFundingPubkeyA = channelKeysA.fundingKey(fundingTxIndex + 1).publicKey()
+            val nextFundingPubkeyB = channelKeysB.fundingKey(fundingTxIndex + 1).publicKey()
             val fundingParamsA = InteractiveTxParams(channelId, true, fundingContributionA, fundingContributionB, sharedInputA, nextFundingPubkeyB, outputsA, lockTime, dustLimit, targetFeerate)
             val fundingParamsB = InteractiveTxParams(channelId, false, fundingContributionB, fundingContributionA, sharedInputB, nextFundingPubkeyA, outputsB, lockTime, dustLimit, targetFeerate)
             val walletA = createWallet(swapInKeysA, utxosA)
@@ -1417,7 +1419,7 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
             return action1
         }
 
-        private fun createWallet(onChainKeys: KeyManager.SwapInOnChainKeys, amounts: List<Satoshi>, legacyAmounts: List<Satoshi> = listOf()): List<WalletState.Utxo> {
+        private fun createWallet(onChainKeys: SwapInOnChainKeys, amounts: List<Satoshi>, legacyAmounts: List<Satoshi> = listOf()): List<WalletState.Utxo> {
             return amounts.withIndex().map { amount ->
                 val txIn = listOf(TxIn(OutPoint(TxId(randomBytes32()), 2), 0))
                 val txOut = listOf(TxOut(amount.value, onChainKeys.getSwapInProtocol(amount.index).pubkeyScript), TxOut(150.sat, Script.pay2wpkh(randomKey().publicKey())))

@@ -37,7 +37,6 @@
     JsonSerializers.ChannelFeaturesSerializer::class,
     JsonSerializers.FeaturesSerializer::class,
     JsonSerializers.ShortChannelIdSerializer::class,
-    JsonSerializers.ChannelKeysSerializer::class,
     JsonSerializers.TransactionSerializer::class,
     JsonSerializers.OutPointSerializer::class,
     JsonSerializers.TxOutSerializer::class,
@@ -116,7 +115,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.InteractiveTxSigningSession.Companion.UnsignedLocalCommit
 import fr.acinq.lightning.channel.states.*
-import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.payment.Bolt11Invoice
@@ -466,11 +464,6 @@ object JsonSerializers {
     object CltvExpirySerializer : LongSerializer<CltvExpiry>({ it.toLong() })
     object CltvExpiryDeltaSerializer : LongSerializer<CltvExpiryDelta>({ it.toLong() })
     object FeeratePerKwSerializer : LongSerializer<FeeratePerKw>({ it.toLong() })
-
-    object ChannelKeysSerializer : SurrogateSerializer<KeyManager.ChannelKeys, KeyPath>(
-        transform = { it.fundingKeyPath },
-        delegateSerializer = KeyPathSerializer
-    )
 
     @Serializer(forClass = LocalCommitPublished::class)
     object LocalCommitPublishedSerializer
