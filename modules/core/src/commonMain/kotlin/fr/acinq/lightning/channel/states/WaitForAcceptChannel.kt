@@ -127,7 +127,7 @@ data class WaitForAcceptChannel(
                         is Either.Left -> {
                             logger.error(res.value) { "invalid ${cmd.message::class} in state ${this::class}" }
                             init.replyTo.complete(ChannelFundingResponse.Failure.InvalidChannelParameters(res.value))
-                            return Pair(Aborted, listOf(ChannelAction.Message.Send(Error(init.temporaryChannelId(keyManager), res.value.message))))
+                            return Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, res.value.message))))
                         }
                     }
                 }
