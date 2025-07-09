@@ -1,5 +1,6 @@
 package fr.acinq.lightning.serialization.channel
 
+import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.lightning.channel.states.PersistedChannelState
 
 object Serialization {
@@ -16,6 +17,9 @@ object Serialization {
         return when {
             // v4 uses a 1-byte version discriminator
             bin[0].toInt() == 4 -> DeserializationResult.Success(fr.acinq.lightning.serialization.channel.v4.Deserialization.deserialize(bin))
+            // v2/v3 used a 4-bytes version discriminator and are now unsupported
+            Pack.int32BE(bin) == 3 -> DeserializationResult.UnknownVersion(3)
+            Pack.int32BE(bin) == 2 -> DeserializationResult.UnknownVersion(2)
             else -> DeserializationResult.UnknownVersion(bin[0].toInt())
         }
     }
