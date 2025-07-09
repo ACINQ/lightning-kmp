@@ -1,0 +1,224 @@
+{
+    "type": "fr.acinq.lightning.channel.states.Negotiating",
+    "commitments": {
+        "params": {
+            "channelId": "6757ef5a110b55598548ef487267023694da8d0d18717d6483021c3d711e8f09",
+            "channelConfig": [
+                "funding_pubkey_based_channel_keypath"
+            ],
+            "channelFeatures": [
+                "option_static_remotekey",
+                "option_anchor_outputs",
+                "option_dual_fund"
+            ],
+            "localParams": {
+                "nodeId": "037108815ff0128f7ed22640485c226d9ad64a9fd6d8b41b6623565aed6b34812c",
+                "fundingKeyPath": "m/546955352/1084351973'/1988732683'/878120005/2080028567/525315766'/2072496838/2011076179'/1'",
+                "dustLimit": 1100,
+                "maxHtlcValueInFlightMsat": 1500000000,
+                "htlcMinimum": 100,
+                "toSelfDelay": 144,
+                "maxAcceptedHtlcs": 100,
+                "isChannelOpener": true,
+                "paysCommitTxFees": true,
+                "defaultFinalScriptPubKey": "001405e0104aa726e34ff5cd3a6320d05c0862b5b01c",
+                "features": {
+                    "activated": {
+                        "option_data_loss_protect": "Optional",
+                        "var_onion_optin": "Mandatory",
+                        "option_static_remotekey": "Mandatory",
+                        "payment_secret": "Mandatory",
+                        "basic_mpp": "Optional",
+                        "option_support_large_channel": "Optional",
+                        "option_anchor_outputs": "Mandatory",
+                        "option_route_blinding": "Optional",
+                        "option_shutdown_anysegwit": "Mandatory",
+                        "option_dual_fund": "Mandatory",
+                        "option_quiescence": "Mandatory",
+                        "option_provide_storage": "Optional",
+                        "option_channel_type": "Mandatory",
+                        "option_simple_close": "Mandatory",
+                        "wake_up_notification_provider": "Optional",
+                        "trampoline_payment_experimental": "Optional",
+                        "splice_experimental": "Optional",
+                        "on_the_fly_funding": "Optional"
+                    },
+                    "unknown": []
+                }
+            },
+            "remoteParams": {
+                "nodeId": "0362b19a83930389b4468be40308efb3f352b23142ae25e6aba0465a8220f95b06",
+                "dustLimit": 1000,
+                "maxHtlcValueInFlightMsat": 1500000000,
+                "htlcMinimum": 1000,
+                "toSelfDelay": 144,
+                "maxAcceptedHtlcs": 100,
+                "revocationBasepoint": "03f90bd70f015e8254f2a8849fea8db440c84a3a9171593ba50d11e3fd8d23c8c7",
+                "paymentBasepoint": "03f83f37d769d6e867fee337539ce3c4ed2454b09076442f9624b8de6cea1fcc3a",
+                "delayedPaymentBasepoint": "026226d9d3a530de8e918136c0686a6c89681cf8c3b890e826defb401b6cb1c1ad",
+                "htlcBasepoint": "032f78ca35cace5ab3555a3bfc74cb07d838e0e279b733dd965027859e0f534453",
+                "features": {
+                    "activated": {
+                        "option_data_loss_protect": "Optional",
+                        "var_onion_optin": "Mandatory",
+                        "option_static_remotekey": "Mandatory",
+                        "payment_secret": "Mandatory",
+                        "basic_mpp": "Optional",
+                        "option_support_large_channel": "Optional",
+                        "option_anchor_outputs": "Optional",
+                        "option_route_blinding": "Optional",
+                        "option_shutdown_anysegwit": "Mandatory",
+                        "option_dual_fund": "Mandatory",
+                        "option_quiescence": "Mandatory",
+                        "option_channel_type": "Mandatory",
+                        "option_simple_close": "Mandatory",
+                        "zero_reserve_channels": "Optional",
+                        "wake_up_notification_client": "Optional",
+                        "trampoline_payment_experimental": "Optional",
+                        "splice_experimental": "Optional",
+                        "on_the_fly_funding": "Optional",
+                        "funding_fee_credit": "Optional"
+                    },
+                    "unknown": []
+                }
+            },
+            "channelFlags": {
+                "announceChannel": false,
+                "nonInitiatorPaysCommitFees": false
+            }
+        },
+        "changes": {
+            "localChanges": {
+                "proposed": [],
+                "signed": [],
+                "acked": []
+            },
+            "remoteChanges": {
+                "proposed": [],
+                "acked": [],
+                "signed": []
+            },
+            "localNextHtlcId": 0,
+            "remoteNextHtlcId": 0
+        },
+        "active": [
+            {
+                "fundingTxIndex": 0,
+                "remoteFundingPubkey": "03441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c611",
+                "localFundingStatus": {
+                    "status": "confirmed",
+                    "txId": "5d9347f6e9298b5eb18c7647fec1373b127ec4ae02c63affb221acb3f91dba17"
+                },
+                "remoteFundingStatus": {
+                    "status": "not-locked"
+                },
+                "localCommit": {
+                    "index": 0,
+                    "spec": {
+                        "htlcsIn": [],
+                        "htlcsOut": [],
+                        "feerate": 5000,
+                        "toLocal": 850000000,
+                        "toRemote": 150000000
+                    },
+                    "publishableTxs": {
+                        "commitTx": {
+                            "input": {
+                                "outPoint": "5d9347f6e9298b5eb18c7647fec1373b127ec4ae02c63affb221acb3f91dba17:0",
+                                "txOut": {
+                                    "amount": 1000000,
+                                    "publicKeyScript": "002065cf56cc050f23840574a042319fb16a3e1f5c01a778776b23935f4dd3ac4bec"
+                                },
+                                "redeemScript": "52210224d74c9af107db3c470af70997980868c5f903f36a3cc9afbfd966e1097b92922103441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c61152ae"
+                            },
+                            "tx": "0200000000010117ba1df9b3ac21b2ff3ac602aec47e123b37c1fe47768cb15e8b29e9f647935d000000000026d3b180044a01000000000000220020744905c5179f9a00982fb5fc86cdd360d2426d116639891515d40948b4536f364a01000000000000220020875bdfa81e22db83e7cfc9fcddd2835844d3c611712eb5938e4e47d4657cd77bf0490200000000002200206bb6c3968afb5d2c68afe9a41020d6cb888490ce808cfee385884eb4b0ea840ac8df0c0000000000220020aec0e8dee761c27f97eb743e976dd3cd93c239ff53f7663c14cdbd0b6314fc53040047304402205af40a1429ae8a01cb76051aac6904e3fab1f0031aa9d5e5e129aaf202ebe43802202bb40423348487e97153a1f2eba466af3ce5cbefcae582672318ba3dc0e3069d0147304402201d69ef3d27a4ee4ea170b827e40255df0d335573bd4a856e702f6beefefd0b2702203dd8c5438bf26f5888efbd8917f4b9d94bc1fd769cd7d5dc844f9bad4c0174f7014752210224d74c9af107db3c470af70997980868c5f903f36a3cc9afbfd966e1097b92922103441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c61152ae395ba520"
+                        },
+                        "htlcTxsAndSigs": []
+                    }
+                },
+                "remoteCommit": {
+                    "index": 0,
+                    "spec": {
+                        "htlcsIn": [],
+                        "htlcsOut": [],
+                        "feerate": 5000,
+                        "toLocal": 150000000,
+                        "toRemote": 850000000
+                    },
+                    "txid": "35d3434878075bffb0459e15af89db13f3a81a58f159e1e41633c3542c4fe2fe",
+                    "remotePerCommitmentPoint": "036cc9496658af7dce8b5a50551deef144b12c820db912b0688ee51bb35d8b6ec2"
+                },
+                "nextRemoteCommit": null
+            }
+        ],
+        "inactive": [],
+        "payments": {},
+        "remoteNextCommitInfo": {
+            "left": null,
+            "right": "02d4716dad2e1dfe66ebfd504a7a2eefbfb8d7de62e8c50a72908d24f92b133fef"
+        },
+        "remotePerCommitmentSecrets": "<redacted>"
+    },
+    "localScript": "001405e0104aa726e34ff5cd3a6320d05c0862b5b01c",
+    "remoteScript": "001434947cfb2e8f6054ddf12daed4308cbe342580d1",
+    "proposedClosingTxs": [
+        {
+            "localAndRemote": {
+                "input": {
+                    "outPoint": "5d9347f6e9298b5eb18c7647fec1373b127ec4ae02c63affb221acb3f91dba17:0",
+                    "txOut": {
+                        "amount": 1000000,
+                        "publicKeyScript": "002065cf56cc050f23840574a042319fb16a3e1f5c01a778776b23935f4dd3ac4bec"
+                    },
+                    "redeemScript": "52210224d74c9af107db3c470af70997980868c5f903f36a3cc9afbfd966e1097b92922103441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c61152ae"
+                },
+                "tx": "020000000117ba1df9b3ac21b2ff3ac602aec47e123b37c1fe47768cb15e8b29e9f647935d0000000000fdffffff02f04902000000000016001434947cfb2e8f6054ddf12daed4308cbe342580d126eb0c000000000016001405e0104aa726e34ff5cd3a6320d05c0862b5b01c801a0600",
+                "toLocalIndex": 1
+            },
+            "localOnly": {
+                "input": {
+                    "outPoint": "5d9347f6e9298b5eb18c7647fec1373b127ec4ae02c63affb221acb3f91dba17:0",
+                    "txOut": {
+                        "amount": 1000000,
+                        "publicKeyScript": "002065cf56cc050f23840574a042319fb16a3e1f5c01a778776b23935f4dd3ac4bec"
+                    },
+                    "redeemScript": "52210224d74c9af107db3c470af70997980868c5f903f36a3cc9afbfd966e1097b92922103441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c61152ae"
+                },
+                "tx": "020000000117ba1df9b3ac21b2ff3ac602aec47e123b37c1fe47768cb15e8b29e9f647935d0000000000fdffffff0126eb0c000000000016001405e0104aa726e34ff5cd3a6320d05c0862b5b01c801a0600",
+                "toLocalIndex": 0
+            },
+            "remoteOnly": null
+        }
+    ],
+    "publishedClosingTxs": [
+        {
+            "input": {
+                "outPoint": "5d9347f6e9298b5eb18c7647fec1373b127ec4ae02c63affb221acb3f91dba17:0",
+                "txOut": {
+                    "amount": 1000000,
+                    "publicKeyScript": "002065cf56cc050f23840574a042319fb16a3e1f5c01a778776b23935f4dd3ac4bec"
+                },
+                "redeemScript": "52210224d74c9af107db3c470af70997980868c5f903f36a3cc9afbfd966e1097b92922103441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c61152ae"
+            },
+            "tx": "0200000000010117ba1df9b3ac21b2ff3ac602aec47e123b37c1fe47768cb15e8b29e9f647935d0000000000fdffffff02c63c02000000000016001434947cfb2e8f6054ddf12daed4308cbe342580d150f80c000000000016001405e0104aa726e34ff5cd3a6320d05c0862b5b01c040047304402207297468cbcd9413a6dcba4c237000f70c791bdf2709cbe6d59be4c451141d95a02202c025e230df2234c16914976b798787c7d9efc6b7fc62bc391f4d9bd85bc6db801483045022100cbd75c5a9bf58e11d323ad0bcd2e64e59f665b04e27a854a6dbc0a5a92ea250d022046a626184954a8bdcc14a15d6eaa961bfe262c31fc006674e7bdbea893ac3f95014752210224d74c9af107db3c470af70997980868c5f903f36a3cc9afbfd966e1097b92922103441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c61152ae801a0600",
+            "toLocalIndex": 1
+        },
+        {
+            "input": {
+                "outPoint": "5d9347f6e9298b5eb18c7647fec1373b127ec4ae02c63affb221acb3f91dba17:0",
+                "txOut": {
+                    "amount": 1000000,
+                    "publicKeyScript": "002065cf56cc050f23840574a042319fb16a3e1f5c01a778776b23935f4dd3ac4bec"
+                },
+                "redeemScript": "52210224d74c9af107db3c470af70997980868c5f903f36a3cc9afbfd966e1097b92922103441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c61152ae"
+            },
+            "tx": "0200000000010117ba1df9b3ac21b2ff3ac602aec47e123b37c1fe47768cb15e8b29e9f647935d0000000000fdffffff02f04902000000000016001434947cfb2e8f6054ddf12daed4308cbe342580d126eb0c000000000016001405e0104aa726e34ff5cd3a6320d05c0862b5b01c0400473044022035d816dc7a9421db14298f4c95479fde441aba3ad1205736d88fe8626c9add1902204f5fa4f51dcde6d6ef333d5f2cf1092cd3d35bea11683ee0270f95e30087a7be014730440220426bd871033060ce0bfc9d10384243d199a1c9aae149a184b41678996f6eba9d0220144dc180d3bf05bc1d10e8c57d55b30f3fc5ac7bdfbd1e975a7ca59a18734d75014752210224d74c9af107db3c470af70997980868c5f903f36a3cc9afbfd966e1097b92922103441263f4dff5cceec2c817cc00ab6b27e65128259b4d1aa018189d5ac779c61152ae801a0600",
+            "toLocalIndex": 1
+        }
+    ],
+    "waitingSinceBlock": 400000,
+    "closeCommand": {
+        "scriptPubKey": null,
+        "feerate": 5000
+    }
+}
