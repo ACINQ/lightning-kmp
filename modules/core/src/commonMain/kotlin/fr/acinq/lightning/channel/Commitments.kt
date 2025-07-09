@@ -13,9 +13,9 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.channel.states.Channel
 import fr.acinq.lightning.channel.states.ChannelContext
-import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForCommitment
-import fr.acinq.lightning.crypto.Bolt3Derivation.deriveForRevocation
-import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.ChannelKeys
+import fr.acinq.lightning.crypto.LocalCommitmentKeys
+import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.payment.OutgoingPaymentPacket
@@ -99,50 +99,54 @@ data class PublishableTxs(val commitTx: CommitTx, val htlcTxsAndSigs: List<HtlcT
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
 data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishableTxs: PublishableTxs) {
     companion object {
-        fun fromCommitSig(keyManager: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long,
-                          remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo, commit: CommitSig,
-                          localCommitIndex: Long, spec: CommitmentSpec, localPerCommitmentPoint: PublicKey, log: MDCLogger): Either<ChannelException, LocalCommit> {
+        fun fromCommitSig(
+            channelParams: ChannelParams,
+            commitKeys: LocalCommitmentKeys,
+            fundingKey: PrivateKey,
+            remoteFundingPubKey: PublicKey,
+            commitInput: Transactions.InputInfo,
+            commit: CommitSig,
+            localCommitIndex: Long,
+            spec: CommitmentSpec,
+            log: MDCLogger
+        ): Either<ChannelException, LocalCommit> {
             val (localCommitTx, sortedHtlcTxs) = Commitments.makeLocalTxs(
-                keyManager,
+                channelParams = channelParams,
+                commitKeys = commitKeys,
                 commitTxNumber = localCommitIndex,
-                params.localParams,
-                params.remoteParams,
-                fundingTxIndex = fundingTxIndex,
+                localFundingKey = fundingKey,
                 remoteFundingPubKey = remoteFundingPubKey,
-                commitInput,
-                localPerCommitmentPoint = localPerCommitmentPoint,
-                spec
+                commitmentInput = commitInput,
+                spec = spec,
             )
-            val sig = Transactions.sign(localCommitTx, keyManager.fundingKey(fundingTxIndex))
-
+            val sig = Transactions.sign(localCommitTx, fundingKey)
             // no need to compute htlc sigs if commit sig doesn't check out
-            val signedCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPubKey(fundingTxIndex), remoteFundingPubKey, sig, commit.signature)
+            val signedCommitTx = Transactions.addSigs(localCommitTx, fundingKey.publicKey(), remoteFundingPubKey, sig, commit.signature)
             when (val check = Transactions.checkSpendable(signedCommitTx)) {
                 is Try.Failure -> {
                     log.error(check.error) { "remote signature $commit is invalid" }
-                    return Either.Left(InvalidCommitmentSignature(params.channelId, signedCommitTx.tx.txid))
+                    return Either.Left(InvalidCommitmentSignature(channelParams.channelId, signedCommitTx.tx.txid))
                 }
                 else -> {}
             }
             if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
-                return Either.Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
+                return Either.Left(HtlcSigCountMismatch(channelParams.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
             }
-            val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, keyManager.htlcKey.deriveForCommitment(localPerCommitmentPoint), SigHash.SIGHASH_ALL) }
-            val remoteHtlcPubkey = params.remoteParams.htlcBasepoint.deriveForCommitment(localPerCommitmentPoint)
+            val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, commitKeys.ourHtlcKey, SigHash.SIGHASH_ALL) }
             // combine the sigs to make signed txs
             val htlcTxsAndSigs = Triple(sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped().map { (htlcTx, localSig, remoteSig) ->
                 when (htlcTx) {
                     is HtlcTx.HtlcTimeoutTx -> {
                         if (Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isFailure) {
-                            return Either.Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
+                            return Either.Left(InvalidHtlcSignature(channelParams.channelId, htlcTx.tx.txid))
                         }
                         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
                     }
                     is HtlcTx.HtlcSuccessTx -> {
                         // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
                         // which was created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-                        if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)) {
-                            return Either.Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
+                        if (!Transactions.checkSig(htlcTx, remoteSig, commitKeys.theirHtlcPublicKey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY)) {
+                            return Either.Left(InvalidHtlcSignature(channelParams.channelId, htlcTx.tx.txid))
                         }
                         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
                     }
@@ -155,29 +159,30 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val publishabl
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxId, val remotePerCommitmentPoint: PublicKey) {
-    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo, batchSize: Int): CommitSig {
+    fun sign(channelParams: ChannelParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: Transactions.InputInfo, batchSize: Int): CommitSig {
+        val fundingKey = channelKeys.fundingKey(fundingTxIndex)
+        val commitKeys = channelKeys.remoteCommitmentKeys(channelParams, remotePerCommitmentPoint)
         val (remoteCommitTx, sortedHtlcsTxs) = Commitments.makeRemoteTxs(
-            channelKeys,
-            index,
-            params.localParams,
-            params.remoteParams,
-            fundingTxIndex = fundingTxIndex,
+            channelParams = channelParams,
+            commitKeys = commitKeys,
+            commitTxNumber = index,
+            localFundingKey = fundingKey,
             remoteFundingPubKey = remoteFundingPubKey,
-            commitInput,
-            remotePerCommitmentPoint = remotePerCommitmentPoint,
-            spec
+            commitmentInput = commitInput,
+            spec = spec
         )
-        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+        val sig = Transactions.sign(remoteCommitTx, fundingKey)
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-        val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remotePerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+        val htlcSigs = sortedHtlcsTxs.map { Transactions.sign(it, commitKeys.ourHtlcKey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
         val tlvs = buildSet<CommitSigTlv> {
             if (batchSize > 1) add(CommitSigTlv.Batch(batchSize))
         }
-        return CommitSig(params.channelId, sig, htlcSigs.toList(), TlvStream(tlvs))
+        return CommitSig(channelParams.channelId, sig, htlcSigs.toList(), TlvStream(tlvs))
     }
 
-    fun sign(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, signingSession: InteractiveTxSigningSession): CommitSig =
-        sign(channelKeys, params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubkey, signingSession.commitInput, batchSize = 1)
+    fun sign(channelParams: ChannelParams, channelKeys: ChannelKeys, signingSession: InteractiveTxSigningSession): CommitSig {
+        return sign(channelParams, channelKeys, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubkey, signingSession.commitInput, batchSize = 1)
+    }
 }
 
 /** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */
@@ -208,8 +213,11 @@ sealed class RemoteFundingStatus {
 data class Commitment(
     val fundingTxIndex: Long,
     val remoteFundingPubkey: PublicKey,
-    val localFundingStatus: LocalFundingStatus, val remoteFundingStatus: RemoteFundingStatus,
-    val localCommit: LocalCommit, val remoteCommit: RemoteCommit, val nextRemoteCommit: NextRemoteCommit?
+    val localFundingStatus: LocalFundingStatus,
+    val remoteFundingStatus: RemoteFundingStatus,
+    val localCommit: LocalCommit,
+    val remoteCommit: RemoteCommit,
+    val nextRemoteCommit: NextRemoteCommit?
 ) {
     val commitInput = localCommit.publishableTxs.commitTx.input
     val fundingTxId: TxId = commitInput.outPoint.txid
@@ -470,24 +478,23 @@ data class Commitment(
         }
     }
 
-    fun sendCommit(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, batchSize: Int, log: MDCLogger): Pair<Commitment, CommitSig> {
+    fun sendCommit(params: ChannelParams, channelKeys: ChannelKeys, commitKeys: RemoteCommitmentKeys, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, batchSize: Int, log: MDCLogger): Pair<Commitment, CommitSig> {
+        val fundingKey = channelKeys.fundingKey(fundingTxIndex)
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
         val (remoteCommitTx, sortedHtlcTxs) = Commitments.makeRemoteTxs(
-            channelKeys,
+            channelParams = params,
+            commitKeys = commitKeys,
             commitTxNumber = remoteCommit.index + 1,
-            params.localParams,
-            params.remoteParams,
-            fundingTxIndex = fundingTxIndex,
+            localFundingKey = fundingKey,
             remoteFundingPubKey = remoteFundingPubkey,
-            commitInput,
-            remotePerCommitmentPoint = remoteNextPerCommitmentPoint,
-            spec
+            commitmentInput = commitInput,
+            spec = spec
         )
-        val sig = Transactions.sign(remoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+        val sig = Transactions.sign(remoteCommitTx, fundingKey)
 
         // we sign our peer's HTLC txs with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
-        val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, channelKeys.htlcKey.deriveForCommitment(remoteNextPerCommitmentPoint), SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
+        val htlcSigs = sortedHtlcTxs.map { Transactions.sign(it, commitKeys.ourHtlcKey, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY) }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         log.info {
@@ -500,8 +507,16 @@ data class Commitment(
             if (spec.htlcs.isEmpty()) {
                 val alternativeSigs = Commitments.alternativeFeerates.map { feerate ->
                     val alternativeSpec = spec.copy(feerate = feerate)
-                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(channelKeys, commitTxNumber = remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex = fundingTxIndex, remoteFundingPubKey = remoteFundingPubkey, commitInput, remotePerCommitmentPoint = remoteNextPerCommitmentPoint, alternativeSpec)
-                    val alternativeSig = Transactions.sign(alternativeRemoteCommitTx, channelKeys.fundingKey(fundingTxIndex))
+                    val (alternativeRemoteCommitTx, _) = Commitments.makeRemoteTxs(
+                        channelParams = params,
+                        commitKeys = commitKeys,
+                        commitTxNumber = remoteCommit.index + 1,
+                        localFundingKey = fundingKey,
+                        remoteFundingPubKey = remoteFundingPubkey,
+                        commitmentInput = commitInput,
+                        spec = alternativeSpec
+                    )
+                    val alternativeSig = Transactions.sign(alternativeRemoteCommitTx, fundingKey)
                     CommitSigTlv.AlternativeFeerateSig(feerate, alternativeSig)
                 }
                 add(CommitSigTlv.AlternativeFeerateSigs(alternativeSigs))
@@ -515,7 +530,7 @@ data class Commitment(
         return Pair(commitment1, commitSig)
     }
 
-    fun receiveCommit(channelKeys: KeyManager.ChannelKeys, params: ChannelParams, changes: CommitmentChanges, commit: CommitSig, log: MDCLogger): Either<ChannelException, Commitment> {
+    fun receiveCommit(params: ChannelParams, channelKeys: ChannelKeys, commitKeys: LocalCommitmentKeys, changes: CommitmentChanges, commit: CommitSig, log: MDCLogger): Either<ChannelException, Commitment> {
         // they sent us a signature for *their* view of *our* next commit tx
         // so in terms of rev.hashes and indexes we have:
         // ourCommit.index -> our current revocation hash, which is about to become our old revocation hash
@@ -524,14 +539,9 @@ data class Commitment(
         // ourCommit.index + 2 -> which is about to become our next revocation hash
         // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
         // and will increment our index
-
-        // check that their signature is valid
-        // signatures are now optional in the commit message, and will be sent only if the other party is actually
-        // receiving money i.e its commit tx has one output for them
+        val fundingKey = channelKeys.fundingKey(fundingTxIndex)
         val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
-        val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommit.index + 1)
-
-        return LocalCommit.fromCommitSig(channelKeys, params, fundingTxIndex, remoteFundingPubkey, commitInput, commit, localCommit.index + 1, spec, localPerCommitmentPoint, log).map { localCommit1 ->
+        return LocalCommit.fromCommitSig(params, commitKeys, fundingKey, remoteFundingPubkey, commitInput, commit, localCommit.index + 1, spec, log).map { localCommit1 ->
             log.info {
                 val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
                 val htlcsOut = spec.htlcs.outgoings().map { it.id }.joinToString(",")
@@ -762,10 +772,11 @@ data class Commitments(
         return failure?.let { Either.Left(it) } ?: Either.Right(copy(changes = changes1))
     }
 
-    fun sendCommit(channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, CommitSigs>> {
+    fun sendCommit(channelKeys: ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, CommitSigs>> {
         val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Either.Left(CannotSignBeforeRevocation(channelId))
+        val commitKeys = channelKeys.remoteCommitmentKeys(params, remoteNextPerCommitmentPoint)
         if (!changes.localHasChanges()) return Either.Left(CannotSignWithoutChanges(channelId))
-        val (active1, sigs) = active.map { it.sendCommit(channelKeys, params, changes, remoteNextPerCommitmentPoint, active.size, log) }.unzip()
+        val (active1, sigs) = active.map { it.sendCommit(params, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, log) }.unzip()
         val commitments1 = copy(
             active = active1,
             remoteNextCommitInfo = Either.Left(WaitingForRevocation(localCommitIndex)),
@@ -777,7 +788,7 @@ data class Commitments(
         return Either.Right(Pair(commitments1, CommitSigs.fromSigs(sigs)))
     }
 
-    fun receiveCommit(commits: CommitSigs, channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
+    fun receiveCommit(commits: CommitSigs, channelKeys: ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
         // We may receive more commit_sig than the number of active commitments, because there can be a race where we send splice_locked
         // while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard the commit_sig that belong
         // to commitments we deactivated.
@@ -795,10 +806,10 @@ data class Commitments(
                 listOf(commits)
             }
         }
-
+        val commitKeys = channelKeys.localCommitmentKeys(params, localCommitIndex + 1)
         // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
         val active1 = active.zip(sigs).map {
-            when (val commitment1 = it.first.receiveCommit(channelKeys, params, changes, it.second, log)) {
+            when (val commitment1 = it.first.receiveCommit(params, channelKeys, commitKeys, changes, it.second, log)) {
                 is Either.Left -> return Either.Left(commitment1.value)
                 is Either.Right -> commitment1.value
             }
@@ -1026,7 +1037,8 @@ data class Commitments(
          * Our peer may publish an alternative version of their commitment using a different feerate.
          * This function lists all the alternative commitments they have signatures for.
          */
-        fun alternativeFeerateCommits(commitments: Commitments, channelKeys: KeyManager.ChannelKeys): List<RemoteCommit> {
+        fun alternativeFeerateCommits(commitments: Commitments, channelKeys: ChannelKeys): List<RemoteCommit> {
+            val localFundingKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex)
             return buildList {
                 add(commitments.latest.remoteCommit)
                 commitments.latest.nextRemoteCommit?.let { add(it.commit) }
@@ -1035,79 +1047,57 @@ data class Commitments(
             }.flatMap { remoteCommit ->
                 alternativeFeerates.map { feerate ->
                     val alternativeSpec = remoteCommit.spec.copy(feerate = feerate)
-                    val (alternativeRemoteCommitTx, _) = makeRemoteTxs(channelKeys, remoteCommit.index, commitments.params.localParams, commitments.params.remoteParams, commitments.latest.fundingTxIndex, commitments.latest.remoteFundingPubkey, commitments.latest.commitInput, remoteCommit.remotePerCommitmentPoint, alternativeSpec)
+                    val commitKeys = channelKeys.remoteCommitmentKeys(commitments.params, remoteCommit.remotePerCommitmentPoint)
+                    val (alternativeRemoteCommitTx, _) = makeRemoteTxs(commitments.params, commitKeys, remoteCommit.index, localFundingKey, commitments.latest.remoteFundingPubkey, commitments.latest.commitInput, alternativeSpec)
                     RemoteCommit(remoteCommit.index, alternativeSpec, alternativeRemoteCommitTx.tx.txid, remoteCommit.remotePerCommitmentPoint)
                 }
             }
         }
 
         fun makeLocalTxs(
-            channelKeys: KeyManager.ChannelKeys,
+            channelParams: ChannelParams,
+            commitKeys: LocalCommitmentKeys,
             commitTxNumber: Long,
-            localParams: LocalParams,
-            remoteParams: RemoteParams,
-            fundingTxIndex: Long,
+            localFundingKey: PrivateKey,
             remoteFundingPubKey: PublicKey,
             commitmentInput: Transactions.InputInfo,
-            localPerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
-            val localDelayedPaymentPubkey = channelKeys.delayedPaymentBasepoint.deriveForCommitment(localPerCommitmentPoint)
-            val localHtlcPubkey = channelKeys.htlcBasepoint.deriveForCommitment(localPerCommitmentPoint)
-            val remotePaymentPubkey = remoteParams.paymentBasepoint
-            val remoteHtlcPubkey = remoteParams.htlcBasepoint.deriveForCommitment(localPerCommitmentPoint)
-            val localRevocationPubkey = remoteParams.revocationBasepoint.deriveForRevocation(localPerCommitmentPoint)
-            val localPaymentBasepoint = channelKeys.paymentBasepoint
             val outputs = makeCommitTxOutputs(
-                channelKeys.fundingPubKey(fundingTxIndex),
-                remoteFundingPubKey,
-                localParams.paysCommitTxFees,
-                localParams.dustLimit,
-                localRevocationPubkey,
-                remoteParams.toSelfDelay,
-                localDelayedPaymentPubkey,
-                remotePaymentPubkey,
-                localHtlcPubkey,
-                remoteHtlcPubkey,
-                spec
+                localFundingPubkey = localFundingKey.publicKey(),
+                remoteFundingPubkey = remoteFundingPubKey,
+                commitKeys = commitKeys.publicKeys,
+                payCommitTxFees = channelParams.localParams.paysCommitTxFees,
+                dustLimit = channelParams.localParams.dustLimit,
+                toSelfDelay = channelParams.remoteParams.toSelfDelay,
+                spec = spec
             )
-            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isChannelOpener, outputs)
-            val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feerate, outputs)
+            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, commitKeys.ourPaymentBasePoint, channelParams.remoteParams.paymentBasepoint, channelParams.localParams.isChannelOpener, outputs)
+            val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, commitKeys.publicKeys, channelParams.localParams.dustLimit, channelParams.remoteParams.toSelfDelay, spec.feerate, outputs)
             return Pair(commitTx, htlcTxs)
         }
 
         fun makeRemoteTxs(
-            channelKeys: KeyManager.ChannelKeys,
+            channelParams: ChannelParams,
+            commitKeys: RemoteCommitmentKeys,
             commitTxNumber: Long,
-            localParams: LocalParams,
-            remoteParams: RemoteParams,
-            fundingTxIndex: Long,
+            localFundingKey: PrivateKey,
             remoteFundingPubKey: PublicKey,
             commitmentInput: Transactions.InputInfo,
-            remotePerCommitmentPoint: PublicKey,
             spec: CommitmentSpec
         ): Pair<CommitTx, List<HtlcTx>> {
-            val localPaymentPubkey = channelKeys.paymentBasepoint
-            val localHtlcPubkey = channelKeys.htlcBasepoint.deriveForCommitment(remotePerCommitmentPoint)
-            val remoteDelayedPaymentPubkey = remoteParams.delayedPaymentBasepoint.deriveForCommitment(remotePerCommitmentPoint)
-            val remoteHtlcPubkey = remoteParams.htlcBasepoint.deriveForCommitment(remotePerCommitmentPoint)
-            val remoteRevocationPubkey = channelKeys.revocationBasepoint.deriveForRevocation(remotePerCommitmentPoint)
             val outputs = makeCommitTxOutputs(
-                remoteFundingPubKey,
-                channelKeys.fundingPubKey(fundingTxIndex),
-                !localParams.paysCommitTxFees,
-                remoteParams.dustLimit,
-                remoteRevocationPubkey,
-                localParams.toSelfDelay,
-                remoteDelayedPaymentPubkey,
-                localPaymentPubkey,
-                remoteHtlcPubkey,
-                localHtlcPubkey,
-                spec
+                localFundingPubkey = remoteFundingPubKey,
+                remoteFundingPubkey = localFundingKey.publicKey(),
+                commitKeys = commitKeys.publicKeys,
+                payCommitTxFees = !channelParams.localParams.paysCommitTxFees,
+                dustLimit = channelParams.remoteParams.dustLimit,
+                toSelfDelay = channelParams.localParams.toSelfDelay,
+                spec = spec
             )
             // NB: we are creating the remote commit tx, so local/remote parameters are inverted.
-            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentPubkey, !localParams.isChannelOpener, outputs)
-            val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feerate, outputs)
+            val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, channelParams.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !channelParams.localParams.isChannelOpener, outputs)
+            val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, commitKeys.publicKeys, channelParams.remoteParams.dustLimit, channelParams.localParams.toSelfDelay, spec.feerate, outputs)
             return Pair(commitTx, htlcTxs)
         }
     }

@@ -2,7 +2,7 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.Bip84OnChainKeys
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.logging.info
 import fr.acinq.lightning.transactions.Transactions
@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 
 class FinalWallet(
     private val chain: Chain,
-    private val finalWalletKeys: KeyManager.Bip84OnChainKeys,
+    private val finalWalletKeys: Bip84OnChainKeys,
     electrum: IElectrumClient,
     scope: CoroutineScope,
     loggerFactory: LoggerFactory
