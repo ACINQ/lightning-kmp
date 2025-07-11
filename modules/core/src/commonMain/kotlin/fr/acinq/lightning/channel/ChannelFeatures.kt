@@ -3,6 +3,7 @@ package fr.acinq.lightning.channel
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.secp256k1.Hex
 
 /**
@@ -42,6 +43,7 @@ sealed class ChannelType {
 
     abstract val name: String
     abstract val features: Set<Feature>
+    abstract val commitmentFormat: Transactions.CommitmentFormat
 
     override fun toString(): String = name
 
@@ -52,11 +54,13 @@ sealed class ChannelType {
         object AnchorOutputs : SupportedChannelType() {
             override val name: String get() = "anchor_outputs"
             override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs)
+            override val commitmentFormat: Transactions.CommitmentFormat get() = Transactions.CommitmentFormat.AnchorOutputs
         }
 
         object AnchorOutputsZeroReserve : SupportedChannelType() {
             override val name: String get() = "anchor_outputs_zero_reserve"
             override val features: Set<Feature> get() = setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels)
+            override val commitmentFormat: Transactions.CommitmentFormat get() = Transactions.CommitmentFormat.AnchorOutputs
         }
 
     }
@@ -64,6 +68,7 @@ sealed class ChannelType {
     data class UnsupportedChannelType(val featureBits: Features) : ChannelType() {
         override val name: String get() = "0x${Hex.encode(featureBits.toByteArray())}"
         override val features: Set<Feature> get() = featureBits.activated.keys
+        override val commitmentFormat: Transactions.CommitmentFormat get() = Transactions.CommitmentFormat.AnchorOutputs
     }
 
     companion object {

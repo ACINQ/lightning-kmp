@@ -4,6 +4,8 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.ScriptEltMapping.code2elt
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.crypto.CommitmentPublicKeys
+import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.transactions.Scripts.htlcOffered
 import fr.acinq.lightning.transactions.Scripts.htlcReceived
 import fr.acinq.lightning.transactions.Scripts.toLocalDelayed
@@ -81,65 +83,61 @@ object Scripts {
         return if (tx.version < 2) 0L else tx.txIn.map { it.sequence }.maxOf { sequenceToBlockHeight(it) }
     }
 
-    fun toAnchor(fundingPubkey: PublicKey): List<ScriptElt> =
+    fun toAnchor(anchorKey: PublicKey): List<ScriptElt> = listOf(
         // @formatter:off
-        listOf(
-            OP_PUSHDATA(fundingPubkey),
-            OP_CHECKSIG,
-            OP_IFDUP,
-            OP_NOTIF,
-                OP_16, OP_CHECKSEQUENCEVERIFY,
-            OP_ENDIF
-        )
+        OP_PUSHDATA(anchorKey), OP_CHECKSIG, OP_IFDUP,
+        OP_NOTIF,
+            OP_16, OP_CHECKSEQUENCEVERIFY,
+        OP_ENDIF
         // @formatter:on
+    )
 
-    fun toLocalDelayed(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): List<ScriptElt> =
+    fun toLocalDelayed(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): List<ScriptElt> = listOf(
         // @formatter:off
-        listOf(
-            OP_IF,
-                OP_PUSHDATA(revocationPubkey),
-            OP_ELSE,
-                encodeNumber(toSelfDelay.toLong()), OP_CHECKSEQUENCEVERIFY, OP_DROP,
-                OP_PUSHDATA(localDelayedPaymentPubkey),
-            OP_ENDIF,
-            OP_CHECKSIG
-        )
+        OP_IF,
+            OP_PUSHDATA(keys.revocationPublicKey),
+        OP_ELSE,
+            encodeNumber(toSelfDelay.toLong()), OP_CHECKSEQUENCEVERIFY, OP_DROP,
+            OP_PUSHDATA(keys.localDelayedPaymentPublicKey),
+        OP_ENDIF,
+        OP_CHECKSIG
         // @formatter:on
+    )
 
-    fun toRemoteDelayed(pub: PublicKey): List<ScriptElt> = listOf(OP_PUSHDATA(pub), OP_CHECKSIGVERIFY, OP_1, OP_CHECKSEQUENCEVERIFY)
+    fun toRemoteDelayed(keys: CommitmentPublicKeys): List<ScriptElt> = listOf(OP_PUSHDATA(keys.remotePaymentPublicKey), OP_CHECKSIGVERIFY, OP_1, OP_CHECKSEQUENCEVERIFY)
 
     /**
-     * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
+     * This witness script spends a [toLocalDelayed] output using a local sig after a delay
      */
     fun witnessToRemoteDelayedAfterDelay(localSig: ByteVector64, toRemoteDelayedScript: ByteVector) =
         ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), toRemoteDelayedScript))
 
     /**
-     * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
+     * This witness script spends a [toLocalDelayed] output using a local sig after a delay
      */
     fun witnessToLocalDelayedAfterDelay(localSig: ByteVector64, toLocalDelayedScript: ByteVector) =
         ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, toLocalDelayedScript))
 
     /**
-     * This witness script spends (steals) a [[toLocalDelayed]] output using a revocation key as a punishment
+     * This witness script spends (steals) a [toLocalDelayed] output using a revocation key as a punishment
      * for having published a revoked transaction
      */
     fun witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector64, toLocalScript: ByteVector) =
         ScriptWitness(listOf(der(revocationSig, SigHash.SIGHASH_ALL), ByteVector(byteArrayOf(1)), toLocalScript))
 
-    fun htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteArray): List<ScriptElt> = listOf(
+    fun htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32): List<ScriptElt> = listOf(
         // @formatter:off
         // To you with revocation key
-        OP_DUP, OP_HASH160, OP_PUSHDATA(revocationPubKey.hash160()), OP_EQUAL,
+        OP_DUP, OP_HASH160, OP_PUSHDATA(keys.revocationPublicKey.hash160()), OP_EQUAL,
         OP_IF,
             OP_CHECKSIG,
         OP_ELSE,
-            OP_PUSHDATA(remoteHtlcPubkey), OP_SWAP, OP_SIZE, encodeNumber(32), OP_EQUAL,
+            OP_PUSHDATA(keys.remoteHtlcPublicKey), OP_SWAP, OP_SIZE, encodeNumber(32), OP_EQUAL,
             OP_NOTIF,
                 // To me via HTLC-timeout transaction (timelocked).
-                OP_DROP, OP_2, OP_SWAP, OP_PUSHDATA(localHtlcPubkey), OP_2, OP_CHECKMULTISIG,
+                OP_DROP, OP_2, OP_SWAP, OP_PUSHDATA(keys.localHtlcPublicKey), OP_2, OP_CHECKMULTISIG,
             OP_ELSE,
-                OP_HASH160, OP_PUSHDATA(paymentHash), OP_EQUALVERIFY,
+                OP_HASH160, OP_PUSHDATA(Crypto.ripemd160(paymentHash)), OP_EQUALVERIFY,
                 OP_CHECKSIG,
             OP_ENDIF,
             OP_1, OP_CHECKSEQUENCEVERIFY, OP_DROP,
@@ -152,8 +150,8 @@ object Scripts {
      * local signature is created with SIGHASH_ALL flag
      * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
-    fun witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
-        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig, SigHash.SIGHASH_ALL), paymentPreimage, htlcOfferedScript))
+    fun witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, preimage: ByteVector32, htlcOfferedScript: ByteVector) =
+        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig, SigHash.SIGHASH_ALL), preimage, htlcOfferedScript))
 
     /** Extract payment preimages from a 2nd-stage HTLC Success transaction's witness script. */
     fun extractPreimagesFromHtlcSuccess(tx: Transaction): Set<ByteVector32> {
@@ -171,8 +169,8 @@ object Scripts {
      * If remote publishes its commit tx where there was a remote->local htlc, then local uses this script to
      * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
      */
-    fun witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), paymentPreimage, htlcOffered))
+    fun witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, preimage: ByteVector32, htlcOffered: ByteVector) =
+        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), preimage, htlcOffered))
 
     /** Extract payment preimages from a claim-htlc transaction. */
     fun extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set<ByteVector32> {
@@ -185,18 +183,18 @@ object Scripts {
         }.toSet()
     }
 
-    fun htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteArray, lockTime: CltvExpiry) = listOf(
+    fun htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry) = listOf(
         // @formatter:off
         // To you with revocation key
-        OP_DUP, OP_HASH160, OP_PUSHDATA(revocationPubKey.hash160()), OP_EQUAL,
+        OP_DUP, OP_HASH160, OP_PUSHDATA(keys.revocationPublicKey.hash160()), OP_EQUAL,
         OP_IF,
             OP_CHECKSIG,
         OP_ELSE,
-            OP_PUSHDATA(remoteHtlcPubkey), OP_SWAP, OP_SIZE, encodeNumber(32), OP_EQUAL,
+            OP_PUSHDATA(keys.remoteHtlcPublicKey), OP_SWAP, OP_SIZE, encodeNumber(32), OP_EQUAL,
             OP_IF,
                 // To me via HTLC-success transaction.
-                OP_HASH160, OP_PUSHDATA(paymentHash), OP_EQUALVERIFY,
-                OP_2, OP_SWAP, OP_PUSHDATA(localHtlcPubkey), OP_2, OP_CHECKMULTISIG,
+                OP_HASH160, OP_PUSHDATA(Crypto.ripemd160(paymentHash)), OP_EQUALVERIFY,
+                OP_2, OP_SWAP, OP_PUSHDATA(keys.localHtlcPublicKey), OP_2, OP_CHECKMULTISIG,
             OP_ELSE,
                 // To you after timeout.
                 OP_DROP, encodeNumber(lockTime.toLong()), OP_CHECKLOCKTIMEVERIFY, OP_DROP,
@@ -226,7 +224,7 @@ object Scripts {
      * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
      * for having published a revoked transaction
      */
-    fun witnessHtlcWithRevocationSig(revocationSig: ByteVector64, revocationPubkey: PublicKey, htlcScript: ByteVector) =
-        ScriptWitness(listOf(der(revocationSig, SigHash.SIGHASH_ALL), revocationPubkey.value, htlcScript))
+    fun witnessHtlcWithRevocationSig(commitKeys: RemoteCommitmentKeys, revocationSig: ByteVector64, htlcScript: ByteVector) =
+        ScriptWitness(listOf(der(revocationSig, SigHash.SIGHASH_ALL), commitKeys.revocationPublicKey.value, htlcScript))
 
 }

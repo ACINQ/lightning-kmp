@@ -27,18 +27,18 @@ data object WaitForInit : ChannelState() {
                 Pair(nextState, listOf())
             }
             is ChannelCommand.Init.Initiator -> {
-                val channelKeys = keyManager.channelKeys(cmd.localParams.fundingKeyPath)
+                val channelKeys = keyManager.channelKeys(cmd.localChannelParams.fundingKeyPath)
                 val open = OpenDualFundedChannel(
                     chainHash = staticParams.nodeParams.chainHash,
                     temporaryChannelId = cmd.temporaryChannelId(channelKeys),
                     fundingFeerate = cmd.fundingTxFeerate,
                     commitmentFeerate = cmd.commitTxFeerate,
                     fundingAmount = cmd.fundingAmount,
-                    dustLimit = cmd.localParams.dustLimit,
-                    maxHtlcValueInFlightMsat = cmd.localParams.maxHtlcValueInFlightMsat,
-                    htlcMinimum = cmd.localParams.htlcMinimum,
-                    toSelfDelay = cmd.localParams.toSelfDelay,
-                    maxAcceptedHtlcs = cmd.localParams.maxAcceptedHtlcs,
+                    dustLimit = cmd.dustLimit,
+                    maxHtlcValueInFlightMsat = cmd.maxHtlcValueInFlightMsat,
+                    htlcMinimum = cmd.htlcMinimum,
+                    toSelfDelay = cmd.toRemoteDelay,
+                    maxAcceptedHtlcs = cmd.maxAcceptedHtlcs,
                     lockTime = currentBlockHeight.toLong(),
                     fundingPubkey = channelKeys.fundingKey(0).publicKey(),
                     revocationBasepoint = channelKeys.revocationBasePoint,
@@ -75,12 +75,13 @@ data object WaitForInit : ChannelState() {
                 val fundingTxWatches = when (cmd.state) {
                     is ChannelStateWithCommitments -> cmd.state.commitments.active.map { commitment ->
                         val fundingMinDepth = staticParams.nodeParams.minDepthBlocks
+                        val commitInput = commitment.commitInput(cmd.state.run { channelKeys() })
                         when (commitment.localFundingStatus) {
-                            is LocalFundingStatus.UnconfirmedFundingTx -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
+                            is LocalFundingStatus.UnconfirmedFundingTx -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
                             is LocalFundingStatus.ConfirmedFundingTx -> when (commitment.localFundingStatus.shortChannelId) {
                                 // If the short_channel_id isn't correctly set, we put a watch on the funding transaction to compute it.
-                                ShortChannelId(0) -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
-                                else -> WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
+                                ShortChannelId(0) -> WatchConfirmed(cmd.state.channelId, commitment.fundingTxId, commitInput.txOut.publicKeyScript, fundingMinDepth, WatchConfirmed.ChannelFundingDepthOk)
+                                else -> WatchSpent(cmd.state.channelId, commitment.fundingTxId, commitInput.outPoint.index.toInt(), commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
                             }
                         }
                     }

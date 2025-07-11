@@ -32,14 +32,11 @@ data class WaitForAcceptChannel(
                     when (val res = Helpers.validateParamsInitiator(staticParams.nodeParams, init, lastSent, accept)) {
                         is Either.Right -> {
                             val channelType = res.value
-                            val channelFeatures = ChannelFeatures(channelType, localFeatures = init.localParams.features, remoteFeatures = init.remoteInit.features)
-                            val remoteParams = RemoteParams(
+                            val channelFeatures = ChannelFeatures(channelType, localFeatures = init.localChannelParams.features, remoteFeatures = init.remoteInit.features)
+                            val localCommitParams = CommitParams(init.dustLimit, init.maxHtlcValueInFlightMsat, init.htlcMinimum, accept.toSelfDelay, init.maxAcceptedHtlcs)
+                            val remoteCommitParams = CommitParams(accept.dustLimit, accept.maxHtlcValueInFlightMsat, accept.htlcMinimum, init.toRemoteDelay, accept.maxAcceptedHtlcs)
+                            val remoteChannelParams = RemoteChannelParams(
                                 nodeId = staticParams.remoteNodeId,
-                                dustLimit = accept.dustLimit,
-                                maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-                                htlcMinimum = accept.htlcMinimum,
-                                toSelfDelay = accept.toSelfDelay,
-                                maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
                                 revocationBasepoint = accept.revocationBasepoint,
                                 paymentBasepoint = accept.paymentBasepoint,
                                 delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
@@ -47,10 +44,10 @@ data class WaitForAcceptChannel(
                                 features = init.remoteInit.features
                             )
                             val channelId = computeChannelId(lastSent, accept)
-                            val channelKeys = keyManager.channelKeys(init.localParams.fundingKeyPath)
+                            val channelKeys = keyManager.channelKeys(init.localChannelParams.fundingKeyPath)
                             val remoteFundingPubkey = accept.fundingPubkey
-                            val dustLimit = accept.dustLimit.max(init.localParams.dustLimit)
-                            val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, remoteFundingPubkey, lastSent.lockTime, dustLimit, lastSent.fundingFeerate)
+                            val dustLimit = localCommitParams.dustLimit.max(remoteCommitParams.dustLimit)
+                            val fundingParams = InteractiveTxParams(channelId, true, init.fundingAmount, accept.fundingAmount, remoteFundingPubkey, lastSent.lockTime, dustLimit, channelType.commitmentFormat, lastSent.fundingFeerate)
                             when (val liquidityPurchase = LiquidityAds.validateRemoteFunding(
                                 lastSent.requestFunding,
                                 staticParams.remoteNodeId,
@@ -95,8 +92,10 @@ data class WaitForAcceptChannel(
                                             is InteractiveTxSessionAction.SendMessage -> {
                                                 val nextState = WaitForFundingCreated(
                                                     init.replyTo,
-                                                    init.localParams,
-                                                    remoteParams,
+                                                    init.localChannelParams,
+                                                    localCommitParams,
+                                                    remoteChannelParams,
+                                                    remoteCommitParams,
                                                     interactiveTxSession,
                                                     lastSent.commitmentFeerate,
                                                     accept.firstPerCommitmentPoint,
