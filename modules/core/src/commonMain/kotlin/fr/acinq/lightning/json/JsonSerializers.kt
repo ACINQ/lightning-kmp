@@ -7,8 +7,9 @@
     // serialization code in this file.
     JsonSerializers.CommitmentSerializer::class,
     JsonSerializers.CommitmentsSerializer::class,
-    JsonSerializers.LocalParamsSerializer::class,
-    JsonSerializers.RemoteParamsSerializer::class,
+    JsonSerializers.LocalChannelParamsSerializer::class,
+    JsonSerializers.RemoteChannelParamsSerializer::class,
+    JsonSerializers.CommitParamsSerializer::class,
     JsonSerializers.LocalCommitSerializer::class,
     JsonSerializers.UnsignedLocalCommitSerializer::class,
     JsonSerializers.RemoteCommitSerializer::class,
@@ -31,8 +32,6 @@
     JsonSerializers.CltvExpiryDeltaSerializer::class,
     JsonSerializers.FeeratePerKwSerializer::class,
     JsonSerializers.CommitmentSpecSerializer::class,
-    JsonSerializers.PublishableTxsSerializer::class,
-    JsonSerializers.HtlcTxAndSigsSerializer::class,
     JsonSerializers.ChannelConfigSerializer::class,
     JsonSerializers.ChannelFeaturesSerializer::class,
     JsonSerializers.FeaturesSerializer::class,
@@ -354,11 +353,14 @@ object JsonSerializers {
     @Serializer(forClass = Commitments::class)
     object CommitmentsSerializer
 
-    @Serializer(forClass = LocalParams::class)
-    object LocalParamsSerializer
+    @Serializer(forClass = LocalChannelParams::class)
+    object LocalChannelParamsSerializer
 
-    @Serializer(forClass = RemoteParams::class)
-    object RemoteParamsSerializer
+    @Serializer(forClass = RemoteChannelParams::class)
+    object RemoteChannelParamsSerializer
+
+    @Serializer(forClass = CommitParams::class)
+    object CommitParamsSerializer
 
     @Serializer(forClass = LocalCommit::class)
     object LocalCommitSerializer
@@ -406,9 +408,6 @@ object JsonSerializers {
     object OutPointSerializer : StringSerializer<OutPoint>({ "${it.txid}:${it.index}" })
     object TransactionSerializer : StringSerializer<Transaction>()
 
-    @Serializer(forClass = PublishableTxs::class)
-    object PublishableTxsSerializer
-
     @Serializable
     data class CommitmentsSpecSurrogate(val htlcsIn: List<UpdateAddHtlc>, val htlcsOut: List<UpdateAddHtlc>, val feerate: FeeratePerKw, val toLocal: MilliSatoshi, val toRemote: MilliSatoshi)
     object CommitmentSpecSerializer : SurrogateSerializer<CommitmentSpec, CommitmentsSpecSurrogate>(
@@ -421,9 +420,6 @@ object JsonSerializers {
         },
         delegateSerializer = CommitmentsSpecSurrogate.serializer()
     )
-
-    @Serializer(forClass = HtlcTxAndSigs::class)
-    object HtlcTxAndSigsSerializer
 
     object ChannelConfigSerializer : SurrogateSerializer<ChannelConfig, List<String>>(
         transform = { o -> o.options.map { it.name } },
