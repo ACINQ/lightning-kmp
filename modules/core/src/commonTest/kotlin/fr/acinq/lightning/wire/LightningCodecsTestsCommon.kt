@@ -12,10 +12,10 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelFlags
 import fr.acinq.lightning.channel.ChannelType
-import fr.acinq.lightning.channel.Helpers
 import fr.acinq.lightning.message.OnionMessages
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
@@ -379,9 +379,11 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val nodeKey = PrivateKey.fromHex("57ac961f1b80ebfb610037bf9c96c6333699bde42257919a53974811c34649e3")
         val fundingLease = LiquidityAds.FundingRate(500_000.sat, 5_000_000.sat, 1100, 75, 0.sat, 1_500.sat)
         val requestFunds = LiquidityAds.RequestFunding(750_000.sat, fundingLease, LiquidityAds.PaymentDetails.FromChannelBalance)
-        val fundingScript = Helpers.Funding.makeFundingPubKeyScript(publicKey(1), publicKey(1))
-        val willFund =
-            LiquidityAds.WillFundRates(listOf(fundingLease), setOf(LiquidityAds.PaymentType.FromChannelBalance)).validateRequest(nodeKey, fundingScript, FeeratePerKw(5000.sat), requestFunds, isChannelCreation = true, 0.msat)!!.willFund
+        val fundingScript = Transactions.makeFundingScript(publicKey(1), publicKey(1), Transactions.CommitmentFormat.AnchorOutputs).pubkeyScript
+        val willFund = LiquidityAds.WillFundRates(
+            fundingRates = listOf(fundingLease),
+            paymentTypes = setOf(LiquidityAds.PaymentType.FromChannelBalance),
+        ).validateRequest(nodeKey, fundingScript, FeeratePerKw(5000.sat), requestFunds, isChannelCreation = true, 0.msat)!!.willFund
         // @formatter:off
         val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000.sat, 473.sat, 100_000_000, 1.msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), publicKey(7))
         val defaultEncoded = ByteVector("0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
@@ -430,7 +432,6 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             CommitSigTlv.AlternativeFeerateSig(FeeratePerKw(500.sat), ByteVector64.fromValidHex("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5")),
             CommitSigTlv.AlternativeFeerateSig(FeeratePerKw(750.sat), ByteVector64.fromValidHex("83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58")),
         )
-        val backup = EncryptedChannelData(ByteVector.fromHex("fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691"))
         val testCases = listOf(
             // @formatter:off
             CommitSig(channelId, signature, listOf(), TlvStream(CommitSigTlv.AlternativeFeerateSigs(alternateSigs))) to "00842dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed70000fe47010001cd03000000fdc49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3000001f42dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5000002ee83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58",

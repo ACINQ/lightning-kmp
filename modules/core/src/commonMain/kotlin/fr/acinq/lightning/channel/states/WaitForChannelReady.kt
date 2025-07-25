@@ -66,7 +66,7 @@ data class WaitForChannelReady(
                         staticParams.remoteNodeId,
                         shortChannelId,
                         staticParams.nodeParams.expiryDeltaBlocks,
-                        commitments.params.remoteParams.htlcMinimum,
+                        commitments.latest.remoteCommitParams.htlcMinimum,
                         staticParams.nodeParams.feeBase,
                         staticParams.nodeParams.feeProportionalMillionths.toLong(),
                         commitments.latest.fundingAmount.toMilliSatoshi(),
