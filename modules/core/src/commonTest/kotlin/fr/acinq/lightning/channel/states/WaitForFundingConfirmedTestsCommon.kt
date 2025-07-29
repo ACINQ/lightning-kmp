@@ -1,7 +1,6 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -44,7 +43,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val watch = actionsAlice1.hasWatch<WatchSpent>()
             assertIs<WatchSpent.ChannelSpent>(watch.event)
             assertEquals(watch.txId, fundingTx.txid)
-            assertEquals(watch.outputIndex.toLong(), alice.state.commitments.latest.commitInput.outPoint.index)
+            assertEquals(watch.outputIndex.toLong(), alice.state.commitments.latest.fundingInput.index)
         }
         run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.state.channelId, WatchConfirmed.ChannelFundingDepthOk, 42, 0, fundingTx)))
@@ -55,7 +54,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val watch = actionsBob1.hasWatch<WatchSpent>()
             assertIs<WatchSpent.ChannelSpent>(watch.event)
             assertEquals(watch.txId, fundingTx.txid)
-            assertEquals(watch.outputIndex.toLong(), bob.state.commitments.latest.commitInput.outPoint.index)
+            assertEquals(watch.outputIndex.toLong(), bob.state.commitments.latest.fundingInput.index)
         }
     }
 
@@ -73,7 +72,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val watch = actionsBob2.hasWatch<WatchSpent>()
         assertIs<WatchSpent.ChannelSpent>(watch.event)
         assertEquals(watch.txId, fundingTx.txid)
-        assertEquals(watch.outputIndex.toLong(), bob.state.commitments.latest.commitInput.outPoint.index)
+        assertEquals(watch.outputIndex.toLong(), bob.state.commitments.latest.fundingInput.index)
     }
 
     @Test
@@ -90,7 +89,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val watch = actionsBob2.hasWatch<WatchSpent>()
             assertIs<WatchSpent.ChannelSpent>(watch.event)
             assertEquals(watch.txId, previousFundingTx.txid)
-            assertEquals(watch.outputIndex.toLong(), bob.state.commitments.latest.commitInput.outPoint.index)
+            assertEquals(watch.outputIndex.toLong(), bob.state.commitments.latest.fundingInput.index)
         }
         run {
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.state.channelId, WatchConfirmed.ChannelFundingDepthOk, 42, 0, previousFundingTx)))
@@ -101,7 +100,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val watch = actionsAlice2.hasWatch<WatchSpent>()
             assertIs<WatchSpent.ChannelSpent>(watch.event)
             assertEquals(watch.txId, previousFundingTx.txid)
-            assertEquals(watch.outputIndex.toLong(), bob.state.commitments.latest.commitInput.outPoint.index)
+            assertEquals(watch.outputIndex.toLong(), bob.state.commitments.latest.fundingInput.index)
         }
     }
 
@@ -265,18 +264,26 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
         val (bob1, actions1) = bob.process(ChannelCommand.MessageReceived(Error(bob.state.channelId, "oops")))
         assertIs<Closing>(bob1.state)
         assertNotNull(bob1.state.localCommitPublished)
-        actions1.hasPublishTx(bob.state.commitments.latest.localCommit.publishableTxs.commitTx.tx)
-        assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
+        val commitTx = actions1.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.CommitTx)
+        Transaction.correctlySpends(commitTx, mapOf(bob.commitments.latest.fundingInput to bob.commitments.latest.localFundingStatus.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val mainTx = actions1.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimLocalDelayedOutputTx)
+        Transaction.correctlySpends(mainTx, listOf(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assertEquals(setOf(commitTx.txid), actions1.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+        actions1.hasWatchOutputSpent(mainTx.txIn.first().outPoint)
     }
 
     @Test
     fun `recv Error -- previous funding tx confirms`() {
         val (alice, bob, previousFundingTx, walletAlice) = init(ChannelType.SupportedChannelType.AnchorOutputs)
-        val commitTxAlice1 = alice.state.commitments.latest.localCommit.publishableTxs.commitTx.tx
-        val commitTxBob1 = bob.state.commitments.latest.localCommit.publishableTxs.commitTx.tx
+        val commitTxAlice1 = alice.signCommitTx()
+        Transaction.correctlySpends(commitTxAlice1, listOf(previousFundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val commitTxBob1 = bob.signCommitTx()
+        Transaction.correctlySpends(commitTxBob1, listOf(previousFundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val (alice1, bob1, fundingTx) = rbf(alice, bob, walletAlice)
-        val commitTxAlice2 = alice1.state.commitments.latest.localCommit.publishableTxs.commitTx.tx
-        val commitTxBob2 = bob1.state.commitments.latest.localCommit.publishableTxs.commitTx.tx
+        val commitTxAlice2 = alice1.signCommitTx()
+        Transaction.correctlySpends(commitTxAlice2, listOf(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val commitTxBob2 = bob1.signCommitTx()
+        Transaction.correctlySpends(commitTxBob2, listOf(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assertNotEquals(previousFundingTx.txid, fundingTx.txid)
         assertNotEquals(commitTxAlice1.txid, commitTxAlice2.txid)
         assertNotEquals(commitTxBob1.txid, commitTxBob2.txid)
@@ -351,9 +358,12 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (state1, actions1) = state.process(ChannelCommand.Close.ForceClose)
             assertIs<Closing>(state1.state)
             assertNotNull(state1.state.localCommitPublished)
-            actions1.hasPublishTx(state1.state.localCommitPublished.commitTx)
-            actions1.hasPublishTx(state1.state.localCommitPublished.claimMainDelayedOutputTx!!.tx)
-            assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
+            val commitTx = state1.state.localCommitPublished.commitTx
+            actions1.hasPublishTx(commitTx)
+            val mainTx = actions1.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimLocalDelayedOutputTx)
+            Transaction.correctlySpends(mainTx, listOf(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            assertEquals(setOf(commitTx.txid), actions1.findWatches<WatchConfirmed>().map { it.txId }.toSet())
+            actions1.hasWatchOutputSpent(mainTx.txIn.first().outPoint)
         }
     }
 

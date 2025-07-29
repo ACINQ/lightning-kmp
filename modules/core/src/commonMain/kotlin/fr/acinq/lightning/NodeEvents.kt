@@ -7,7 +7,6 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.channel.ChannelManagementFees
 import fr.acinq.lightning.channel.InteractiveTxParams
-import fr.acinq.lightning.channel.SharedFundingInput
 import fr.acinq.lightning.channel.states.ChannelStateWithCommitments
 import fr.acinq.lightning.channel.states.Normal
 import fr.acinq.lightning.channel.states.WaitForFundingCreated
@@ -58,7 +57,7 @@ sealed interface LiquidityEvents : NodeEvents {
 sealed interface SensitiveTaskEvents : NodeEvents {
     sealed class TaskIdentifier {
         data class InteractiveTx(val channelId: ByteVector32, val fundingTxIndex: Long) : TaskIdentifier() {
-            constructor(fundingParams: InteractiveTxParams) : this(fundingParams.channelId, (fundingParams.sharedInput as? SharedFundingInput.Multisig2of2)?.fundingTxIndex?.let { it + 1 } ?: 0)
+            constructor(fundingParams: InteractiveTxParams) : this(fundingParams.channelId, fundingParams.sharedInput?.fundingTxIndex?.let { it + 1 } ?: 0)
         }
         data class IncomingMultiPartPayment(val paymentHash: ByteVector32) : TaskIdentifier()
     }

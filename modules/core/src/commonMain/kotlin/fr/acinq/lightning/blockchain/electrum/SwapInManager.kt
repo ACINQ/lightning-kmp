@@ -66,14 +66,13 @@ class SwapInManager(private var reservedUtxos: Set<OutPoint>, private val logger
                         else -> {}
                     }
                     // Add all inputs from previously broadcast funding txs.
-                    // We include confirmed transactions as well, in case our electrum server (and thus our wallet) isn't up-to-date.
                     when (channel) {
                         is ChannelStateWithCommitments -> channel.commitments.all
                             .map { it.localFundingStatus }
                             .forEach { fundingStatus ->
                                 when (fundingStatus) {
                                     is LocalFundingStatus.UnconfirmedFundingTx -> addAll(fundingStatus.sharedTx.tx.localInputs.map { it.outPoint })
-                                    is LocalFundingStatus.ConfirmedFundingTx -> addAll(fundingStatus.signedTx.txIn.map { it.outPoint })
+                                    is LocalFundingStatus.ConfirmedFundingTx -> Unit
                                 }
                             }
                         else -> {}
