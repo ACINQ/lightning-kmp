@@ -113,11 +113,18 @@ data class ShuttingDown(
                         is Either.Left -> handleCommandError(cmd, result.value)
                         is Either.Right -> {
                             val commitments1 = result.value.first
-                            val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.commit.spec
+                            val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.spec
                             // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
                             // counterparty, so only htlcs above remote's dust_limit matter
-                            val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec) + Transactions.trimReceivedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec)
-                            val htlcInfos = trimmedHtlcs.map { it.add }.map {
+                            val trimmedOfferedHtlcs = commitments.active
+                                .flatMap { c -> Transactions.trimOfferedHtlcs(c.remoteCommitParams.dustLimit, nextRemoteSpec, c.commitmentFormat) }
+                                .map { it.add }
+                                .toSet()
+                            val trimmedReceivedHtlcs = commitments.active
+                                .flatMap { c -> Transactions.trimReceivedHtlcs(c.remoteCommitParams.dustLimit, nextRemoteSpec, c.commitmentFormat) }
+                                .map { it.add }
+                                .toSet()
+                            val htlcInfos = (trimmedOfferedHtlcs + trimmedReceivedHtlcs).map {
                                 logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=${commitments1.nextRemoteCommitIndex}" }
                                 ChannelAction.Storage.HtlcInfo(channelId, commitments1.nextRemoteCommitIndex, it.paymentHash, it.cltvExpiry)
                             }

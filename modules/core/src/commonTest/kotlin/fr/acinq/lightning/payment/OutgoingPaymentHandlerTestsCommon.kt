@@ -104,7 +104,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertEquals(100_000.msat, dbPayment.recipientAmount)
         assertEquals(invoice.nodeId, dbPayment.recipient)
         assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Failed)
-        assertEquals(FinalFailure.ChannelNotConnected, (dbPayment.status as LightningOutgoingPayment.Status.Failed).reason)
+        assertEquals(FinalFailure.ChannelNotConnected, dbPayment.status.reason)
         assertTrue(dbPayment.parts.isEmpty())
     }
 
@@ -123,7 +123,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         assertNotNull(dbPayment)
         assertEquals(amount, dbPayment.recipientAmount)
         assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Failed)
-        assertEquals(FinalFailure.InsufficientBalance, (dbPayment.status as LightningOutgoingPayment.Status.Failed).reason)
+        assertEquals(FinalFailure.InsufficientBalance, dbPayment.status.reason)
         assertTrue(dbPayment.parts.isEmpty())
     }
 
@@ -158,7 +158,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `channel restrictions -- maxAcceptedHtlcs`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
-        alice = alice.copy(state = alice.state.copy(commitments = alice.commitments.copy(params = alice.commitments.params.copy(remoteParams = alice.commitments.params.remoteParams.copy(maxAcceptedHtlcs = 1)))))
+        val remoteCommitParams = alice.state.commitments.latest.remoteCommitParams.copy(maxAcceptedHtlcs = 1)
+        alice = alice.copy(state = alice.state.copy(commitments = alice.state.commitments.copy(active = alice.state.commitments.active.map { it.copy(remoteCommitParams = remoteCommitParams) })))
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
@@ -205,10 +206,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `channel restrictions -- maxHtlcValueInFlight`() = runSuspendTest {
         var (alice, _) = TestsHelper.reachNormal()
-        val maxHtlcValueInFlightMsat = 150_000L
-        alice = alice.copy(
-            state = alice.state.copy(commitments = alice.commitments.copy(params = alice.commitments.params.copy(remoteParams = alice.commitments.params.remoteParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat))))
-        )
+        val remoteCommitParams = alice.state.commitments.latest.remoteCommitParams.copy(maxHtlcValueInFlightMsat = 150_000L)
+        alice = alice.copy(state = alice.state.copy(commitments = alice.state.commitments.copy(active = alice.state.commitments.active.map { it.copy(remoteCommitParams = remoteCommitParams) })))
         val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
 
         run {
@@ -244,7 +243,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertNotNull(addFailure)
             // Now the channel error gets sent back to the OutgoingPaymentHandler.
             val failure = outgoingPaymentHandler.processAddFailed(alice.channelId, addFailure)
-            val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, maxHtlcValueInFlightMsat.toULong(), 200_000.msat)))))
+            val expected = OutgoingPaymentHandler.Failure(payment, OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Left(HtlcValueTooHighInFlight(alice.channelId, 150_000UL, 200_000.msat)))))
             assertFailureEquals(failure as OutgoingPaymentHandler.Failure, expected)
 
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))

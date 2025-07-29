@@ -8,15 +8,8 @@ import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
-import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
-import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedHtlcTxOutputs
-import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxHtlcOutputs
-import fr.acinq.lightning.channel.Helpers.Closing.extractPreimages
-import fr.acinq.lightning.channel.Helpers.Closing.onChainOutgoingHtlcs
-import fr.acinq.lightning.channel.Helpers.Closing.overriddenOutgoingHtlcs
-import fr.acinq.lightning.channel.Helpers.Closing.trimmedOrTimedOutHtlcs
-import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
+import fr.acinq.lightning.channel.Helpers.Closing
+import fr.acinq.lightning.transactions.Transactions.ClosingTx
 import fr.acinq.lightning.transactions.incomings
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.getValue
@@ -107,7 +100,7 @@ data class Closing(
                                 val newState = this@Closing.copy(commitments = commitments1)
                                 // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
                                 when {
-                                    watch.tx.txid == commitments1.latest.localCommit.publishableTxs.commitTx.tx.txid -> {
+                                    watch.tx.txid == commitments1.latest.localCommit.txId -> {
                                         // Our local commit has been published from the outside, it's unexpected but let's deal with it anyway.
                                         newState.run { spendLocalCurrent() }
                                     }
@@ -115,7 +108,7 @@ data class Closing(
                                         // Our counterparty may attempt to spend its last commit tx at any time.
                                         newState.run { handleRemoteSpentCurrent(watch.tx, commitments1.latest) }
                                     }
-                                    watch.tx.txid == commitments1.latest.nextRemoteCommit?.commit?.txid && commitments1.remoteCommitIndex == commitments.remoteCommitIndex && commitments.remoteNextCommitInfo.isLeft -> {
+                                    watch.tx.txid == commitments1.latest.nextRemoteCommit?.txid && commitments1.remoteCommitIndex == commitments.remoteCommitIndex && commitments.remoteNextCommitInfo.isLeft -> {
                                         // Our counterparty may attempt to spend its next commit tx at any time.
                                         newState.run { handleRemoteSpentNext(watch.tx, commitments1.latest) }
                                     }
@@ -131,7 +124,7 @@ data class Closing(
                                         // outgoing payment handler so the fail command will be a no-op.
                                         val outgoingHtlcs = commitments.latest.localCommit.spec.htlcs.outgoings().toSet() +
                                                 commitments.latest.remoteCommit.spec.htlcs.incomings().toSet() +
-                                                commitments.latest.nextRemoteCommit?.commit?.spec?.htlcs.orEmpty().incomings().toSet()
+                                                commitments.latest.nextRemoteCommit?.spec?.htlcs.orEmpty().incomings().toSet()
                                         val htlcSettledActions = outgoingHtlcs.mapNotNull { add ->
                                             commitments.payments[add.id]?.let { paymentId ->
                                                 logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by revoked remote commit" }
@@ -150,19 +143,36 @@ data class Closing(
                         }
                         WatchConfirmed.ClosingTxConfirmed -> {
                             logger.info { "txid=${watch.tx.txid} has reached mindepth, updating closing state" }
-                            // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
+                            val channelKeys = channelKeys()
+                            val onChainActions = mutableListOf<ChannelAction>()
+                            // First we check if this tx belongs to one of the current local/remote commits and update it status.
                             val closing1 = this@Closing.copy(
-                                localCommitPublished = localCommitPublished?.update(watch.tx),
-                                remoteCommitPublished = remoteCommitPublished?.update(watch.tx),
-                                nextRemoteCommitPublished = nextRemoteCommitPublished?.update(watch.tx),
-                                futureRemoteCommitPublished = futureRemoteCommitPublished?.update(watch.tx),
-                                revokedCommitPublished = revokedCommitPublished.map { it.update(watch.tx) }
+                                localCommitPublished = localCommitPublished?.let { lcp ->
+                                    // If the tx is one of our HTLC txs, we now publish a 3rd-stage transaction that claims its output.
+                                    val (lcp1, htlcDelayedTxs) = Closing.LocalClose.run { claimHtlcDelayedOutput(lcp, channelKeys, commitments.latest, watch.tx, currentOnChainFeerates()) }
+                                    onChainActions.addAll(lcp1.run { doPublish(channelId, htlcDelayedTxs) })
+                                    lcp1.updateIrrevocablySpent(watch.tx)
+                                },
+                                remoteCommitPublished = remoteCommitPublished?.updateIrrevocablySpent(watch.tx),
+                                nextRemoteCommitPublished = nextRemoteCommitPublished?.updateIrrevocablySpent(watch.tx),
+                                futureRemoteCommitPublished = futureRemoteCommitPublished?.updateIrrevocablySpent(watch.tx),
+                                revokedCommitPublished = revokedCommitPublished.map { rvk ->
+                                    // If the tx is one of our peer's HTLC txs, they were able to claim the output before us.
+                                    // In that case, we immediately publish a penalty transaction spending their HTLC tx to steal their funds.
+                                    // TODO: once we allow changing the commitment format or to_self_delay during a splice, those values may be incorrect.
+                                    val toSelfDelay = commitments.latest.remoteCommitParams.toSelfDelay
+                                    val commitmentFormat = commitments.latest.commitmentFormat
+                                    val dustLimit = commitments.latest.localCommitParams.dustLimit
+                                    val (rvk1, penaltyTxs) = Closing.RevokedClose.run { claimHtlcTxOutputs(commitments.channelParams, channelKeys, rvk, watch.tx, dustLimit, toSelfDelay, commitmentFormat, currentOnChainFeerates()) }
+                                    onChainActions.addAll(rvk1.run { doPublish(channelId, penaltyTxs) })
+                                    rvk1.updateIrrevocablySpent(watch.tx)
+                                }
                             )
                             // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
                             val htlcSettledActions = mutableListOf<ChannelAction>()
                             val timedOutHtlcs = when (val closingType = closing1.closingTypeAlreadyKnown()) {
-                                is LocalClose -> trimmedOrTimedOutHtlcs(closingType.localCommit, closingType.localCommitPublished, commitments.params.localParams.dustLimit, watch.tx)
-                                is RemoteClose -> trimmedOrTimedOutHtlcs(closingType.remoteCommit, closingType.remoteCommitPublished, commitments.params.remoteParams.dustLimit, watch.tx)
+                                is LocalClose -> Closing.run { trimmedOrTimedOutHtlcs(channelKeys, commitments.latest, closingType.localCommit, watch.tx) }
+                                is RemoteClose -> Closing.run { trimmedOrTimedOutHtlcs(channelKeys, commitments.latest, closingType.remoteCommit, watch.tx) }
                                 is RevokedClose -> setOf() // revoked commitments are handled using [overriddenOutgoingHtlcs] below
                                 is RecoveryClose -> setOf() // we lose htlc outputs in option_data_loss_protect scenarios (future remote commit)
                                 is MutualClose -> setOf()
@@ -181,7 +191,7 @@ data class Closing(
                                 }
                             }
                             // we also need to fail outgoing htlcs that we know will never reach the blockchain
-                            overriddenOutgoingHtlcs(commitments.latest.localCommit, commitments.latest.remoteCommit, commitments.latest.nextRemoteCommit?.commit, closing1.revokedCommitPublished, watch.tx).forEach { add ->
+                            Closing.overriddenOutgoingHtlcs(commitments.latest.localCommit, commitments.latest.remoteCommit, commitments.latest.nextRemoteCommit, closing1.revokedCommitPublished, watch.tx).forEach { add ->
                                 when (val paymentId = commitments.payments[add.id]) {
                                     null -> {
                                         // same as for fulfilling the htlc (no big deal)
@@ -190,7 +200,7 @@ data class Closing(
                                     else -> {
                                         logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by confirmed commit" }
                                         val failure = when {
-                                            watch.tx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> HtlcOverriddenByLocalCommit(channelId, add)
+                                            watch.tx.txid == commitments.latest.localCommit.txId -> HtlcOverriddenByLocalCommit(channelId, add)
                                             else -> HtlcOverriddenByRemoteCommit(channelId, add)
                                         }
                                         htlcSettledActions += ChannelAction.ProcessCmdRes.AddSettledFail(paymentId, add, ChannelAction.HtlcResult.Fail.OnChainFail(failure))
@@ -198,7 +208,7 @@ data class Closing(
                                 }
                             }
                             // for our outgoing payments, let's log something if we know that they will settle on chain
-                            onChainOutgoingHtlcs(commitments.latest.localCommit, commitments.latest.remoteCommit, commitments.latest.nextRemoteCommit?.commit, watch.tx).forEach { add ->
+                            Closing.onChainOutgoingHtlcs(commitments.latest.localCommit, commitments.latest.remoteCommit, commitments.latest.nextRemoteCommit, watch.tx).forEach { add ->
                                 commitments.payments[add.id]?.let { paymentId -> logger.info { "paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
                             }
                             val (nextState, closedActions) = when (val closingType = closing1.isClosed(watch.tx)) {
@@ -210,6 +220,7 @@ data class Closing(
                             }
                             val actions = buildList {
                                 add(ChannelAction.Storage.StoreState(nextState))
+                                addAll(onChainActions)
                                 addAll(htlcSettledActions)
                                 addAll(closedActions)
                             }
@@ -242,11 +253,11 @@ data class Closing(
                                 // counterparty may attempt to spend its last commit tx at any time
                                 handleRemoteSpentCurrent(watch.spendingTx, commitments.latest)
                             }
-                            watch.spendingTx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> {
+                            watch.spendingTx.txid == commitments.latest.nextRemoteCommit?.txid -> {
                                 // counterparty may attempt to spend its next commit tx at any time
                                 handleRemoteSpentNext(watch.spendingTx, commitments.latest)
                             }
-                            watch.spendingTx.txIn.map { it.outPoint }.contains(commitments.latest.commitInput.outPoint) -> {
+                            watch.spendingTx.txIn.map { it.outPoint }.contains(commitments.latest.fundingInput) -> {
                                 // counterparty may attempt to spend a revoked commit tx at any time
                                 handleRemoteSpentOther(watch.spendingTx)
                             }
@@ -262,12 +273,11 @@ data class Closing(
                             }
                         }
                         is WatchSpent.ClosingOutputSpent -> {
-                            // when a remote or local commitment tx containing outgoing htlcs is published on the network,
-                            // we watch it in order to extract payment preimage if funds are pulled by the counterparty
-                            // we can then use these preimages to fulfill payments
+                            // One of the outputs of the local/remote/revoked commit transaction or of an HTLC transaction was spent.
+                            // We put a watch to be notified when the transaction confirms: it may double-spend one of our transactions.
                             logger.info { "processing spent closing output with txid=${watch.spendingTx.txid} tx=${watch.spendingTx}" }
                             val htlcSettledActions = mutableListOf<ChannelAction>()
-                            extractPreimages(commitments.latest, watch.spendingTx).forEach { (htlc, preimage) ->
+                            Closing.run { extractPreimages(commitments.latest, watch.spendingTx) }.forEach { (htlc, preimage) ->
                                 when (val paymentId = commitments.payments[htlc.id]) {
                                     null -> {
                                         // if we don't have a reference to the payment, it means that we already have forwarded the fulfill so that's not a big deal.
@@ -280,25 +290,11 @@ data class Closing(
                                     }
                                 }
                             }
-                            val revokedCommitPublishActions = mutableListOf<ChannelAction>()
-                            val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
-                                val (newRevokedCommitPublished, penaltyTxs) = claimRevokedHtlcTxOutputs(commitments.params, channelKeys(), rev, watch.spendingTx, currentOnChainFeerates())
-                                penaltyTxs.forEach {
-                                    revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
-                                    revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.spendingTx, it.input.outPoint.index.toInt(), WatchSpent.ClosingOutputSpent(it.amountIn)))
-                                }
-                                newRevokedCommitPublished
-                            }
-                            val nextState = copy(revokedCommitPublished = revokedCommitPublished1)
                             val actions = buildList {
-                                add(ChannelAction.Storage.StoreState(nextState))
-                                // one of the outputs of the local/remote/revoked commit was spent
-                                // we just put a watch to be notified when it is confirmed
                                 add(ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, watch.spendingTx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed)))
-                                addAll(revokedCommitPublishActions)
                                 addAll(htlcSettledActions)
                             }
-                            Pair(nextState, actions)
+                            Pair(this@Closing, actions)
                         }
                     }
                 }
@@ -306,11 +302,17 @@ data class Closing(
             is ChannelCommand.Closing.GetHtlcInfosResponse -> {
                 val index = revokedCommitPublished.indexOfFirst { it.commitTx.txid == cmd.revokedCommitTxId }
                 if (index >= 0) {
-                    val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(commitments.params, channelKeys(), revokedCommitPublished[index], currentOnChainFeerates(), cmd.htlcInfos)
+                    // TODO: once we allow changing the commitment format during a splice, the value below may be incorrect.
+                    val commitmentFormat = commitments.latest.commitmentFormat
+                    val dustLimit = commitments.latest.localCommitParams.dustLimit
+                    val htlcPenaltyTxs = Closing.RevokedClose.run {
+                        claimHtlcOutputs(commitments.channelParams, channelKeys(), revokedCommitPublished[index], dustLimit, commitmentFormat, currentOnChainFeerates(), cmd.htlcInfos)
+                    }
+                    val revokedCommitPublished1 = revokedCommitPublished[index].copy(htlcOutputs = htlcPenaltyTxs.map { it.input.outPoint }.toSet())
                     val nextState = copy(revokedCommitPublished = revokedCommitPublished.updated(index, revokedCommitPublished1))
                     val actions = buildList {
                         add(ChannelAction.Storage.StoreState(nextState))
-                        addAll(revokedCommitPublished1.run { doPublish(staticParams.nodeParams, channelId) })
+                        addAll(revokedCommitPublished1.run { doPublish(staticParams.nodeParams, channelId, RevokedCommitSecondStageTransactions(null, null, htlcPenaltyTxs)) })
                     }
                     Pair(nextState, actions)
                 } else {
@@ -342,38 +344,54 @@ data class Closing(
             }
             is ChannelCommand.Htlc.Settlement.Fulfill -> when (val result = commitments.sendFulfill(cmd)) {
                 is Either.Right -> {
-                    logger.info { "got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain" }
+                    logger.info { "htlc #${cmd.id} with payment_hash=${cmd.r.sha256()} is fulfilled, recalculating htlc-success transactions" }
+                    // We may be able to publish HTLC-success transactions for which we didn't have the preimage.
+                    // We are already watching the corresponding outputs: no need to set additional watches.
                     val commitments1 = result.value.first
-                    val localCommitPublished1 = localCommitPublished?.let {
-                        claimCurrentLocalCommitTxOutputs(channelKeys(), commitments1.latest, it.commitTx, currentOnChainFeerates())
+                    val channelKeys = channelKeys()
+                    val publishActions = mutableListOf<ChannelAction>()
+                    localCommitPublished?.let {
+                        val commitKeys = commitments1.latest.localKeys(channelKeys)
+                        val htlcTxs = Closing.LocalClose.run { claimHtlcsWithPreimage(channelKeys, commitKeys, commitments1.latest, cmd.r) }
+                        publishActions.addAll(htlcTxs.map { tx -> ChannelAction.Blockchain.PublishTx(tx) })
                     }
-                    val remoteCommitPublished1 = remoteCommitPublished?.let {
-                        claimRemoteCommitTxOutputs(channelKeys(), commitments1.latest, commitments1.latest.remoteCommit, it.commitTx, currentOnChainFeerates())
+                    remoteCommitPublished?.let { rcp ->
+                        val remoteCommit = commitments1.latest.remoteCommit
+                        val htlcTxs = Closing.RemoteClose.run { claimHtlcsWithPreimage(channelKeys, rcp, commitments1.latest, remoteCommit, cmd.r, currentOnChainFeerates()) }
+                        publishActions.addAll(htlcTxs.map { tx -> ChannelAction.Blockchain.PublishTx(tx) })
                     }
-                    val nextRemoteCommitPublished1 = nextRemoteCommitPublished?.let {
-                        val remoteCommit = commitments1.latest.nextRemoteCommit?.commit ?: error("next remote commit must be defined")
-                        claimRemoteCommitTxOutputs(channelKeys(), commitments1.latest, remoteCommit, it.commitTx, currentOnChainFeerates())
+                    nextRemoteCommitPublished?.let { rcp ->
+                        val remoteCommit = commitments1.latest.nextRemoteCommit ?: error("next remote commit must be defined")
+                        val htlcTxs = Closing.RemoteClose.run { claimHtlcsWithPreimage(channelKeys, rcp, commitments1.latest, remoteCommit, cmd.r, currentOnChainFeerates()) }
+                        publishActions.addAll(htlcTxs.map { tx -> ChannelAction.Blockchain.PublishTx(tx) })
                     }
-                    val republishList = buildList {
-                        localCommitPublished1?.run { addAll(doPublish(staticParams.nodeParams, channelId)) }
-                        remoteCommitPublished1?.run { addAll(doPublish(staticParams.nodeParams, channelId)) }
-                        nextRemoteCommitPublished1?.run { addAll(doPublish(staticParams.nodeParams, channelId)) }
-                    }
-                    val nextState = copy(
-                        commitments = commitments1,
-                        localCommitPublished = localCommitPublished1,
-                        remoteCommitPublished = remoteCommitPublished1,
-                        nextRemoteCommitPublished = nextRemoteCommitPublished1
-                    )
+                    val nextState = copy(commitments = commitments1)
                     val actions = buildList {
                         add(ChannelAction.Storage.StoreState(nextState))
-                        addAll(republishList)
+                        addAll(publishActions)
                     }
                     Pair(nextState, actions)
                 }
                 is Either.Left -> handleCommandError(cmd, result.value)
             }
-            is ChannelCommand.Htlc.Settlement -> unhandled(cmd)
+            is ChannelCommand.Htlc.Settlement.Fail -> {
+                logger.info { "htlc #${cmd.id} was failed by us, recalculating watched htlc outputs" }
+                val nextState = copy(
+                    localCommitPublished = localCommitPublished?.let { Closing.LocalClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest) },
+                    remoteCommitPublished = remoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.remoteCommit) },
+                    nextRemoteCommitPublished = nextRemoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.nextRemoteCommit!!) },
+                )
+                Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
+            }
+            is ChannelCommand.Htlc.Settlement.FailMalformed -> {
+                logger.info { "htlc #${cmd.id} was failed by us, recalculating watched htlc outputs" }
+                val nextState = copy(
+                    localCommitPublished = localCommitPublished?.let { Closing.LocalClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest) },
+                    remoteCommitPublished = remoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.remoteCommit) },
+                    nextRemoteCommitPublished = nextRemoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.nextRemoteCommit!!) },
+                )
+                Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
+            }
             is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
             is ChannelCommand.Commitment -> unhandled(cmd)
             is ChannelCommand.Init -> unhandled(cmd)
@@ -395,22 +413,22 @@ data class Closing(
                 val closingTx = mutualClosePublished.first { it.tx.txid == additionalConfirmedTx.txid }.copy(tx = additionalConfirmedTx)
                 MutualClose(closingTx)
             }
-            localCommitPublished?.isDone() == true -> LocalClose(commitments.latest.localCommit, localCommitPublished)
-            remoteCommitPublished?.isDone() == true -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished)
-            nextRemoteCommitPublished?.isDone() == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!.commit, nextRemoteCommitPublished)
-            futureRemoteCommitPublished?.isDone() == true -> RecoveryClose(futureRemoteCommitPublished)
-            revokedCommitPublished.any { it.isDone() } -> RevokedClose(revokedCommitPublished.first { it.isDone() })
+            localCommitPublished?.isDone == true -> LocalClose(commitments.latest.localCommit, localCommitPublished)
+            remoteCommitPublished?.isDone == true -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished)
+            nextRemoteCommitPublished?.isDone == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!, nextRemoteCommitPublished)
+            futureRemoteCommitPublished?.isDone == true -> RecoveryClose(futureRemoteCommitPublished)
+            revokedCommitPublished.any { it.isDone } -> RevokedClose(revokedCommitPublished.first { it.isDone })
             else -> null
         }
     }
 
     fun closingTypeAlreadyKnown(): ClosingType? {
         return when {
-            localCommitPublished?.isConfirmed() == true -> LocalClose(commitments.latest.localCommit, localCommitPublished)
-            remoteCommitPublished?.isConfirmed() == true -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished)
-            nextRemoteCommitPublished?.isConfirmed() == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!.commit, nextRemoteCommitPublished)
-            futureRemoteCommitPublished?.isConfirmed() == true -> RecoveryClose(futureRemoteCommitPublished)
-            revokedCommitPublished.any { it.isConfirmed() } -> RevokedClose(revokedCommitPublished.first { it.isConfirmed() })
+            localCommitPublished?.isConfirmed == true -> LocalClose(commitments.latest.localCommit, localCommitPublished)
+            remoteCommitPublished?.isConfirmed == true -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished)
+            nextRemoteCommitPublished?.isConfirmed == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!, nextRemoteCommitPublished)
+            futureRemoteCommitPublished?.isConfirmed == true -> RecoveryClose(futureRemoteCommitPublished)
+            revokedCommitPublished.any { it.isConfirmed } -> RevokedClose(revokedCommitPublished.first { it.isConfirmed })
             else -> null
         }
     }
@@ -424,7 +442,7 @@ data class Closing(
         private fun setClosingStatus(closingType: ClosingType): ChannelAction.Storage.SetLocked {
             val txId = when (closingType) {
                 is MutualClose -> closingType.tx.tx.txid
-                is LocalClose -> closingType.localCommit.publishableTxs.commitTx.tx.txid
+                is LocalClose -> closingType.localCommit.txId
                 is RemoteClose -> closingType.remoteCommit.txid
                 is RecoveryClose -> closingType.remoteCommitPublished.commitTx.txid
                 is RevokedClose -> closingType.revokedCommitPublished.commitTx.txid

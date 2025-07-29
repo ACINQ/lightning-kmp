@@ -60,8 +60,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
         assertIs<ChannelFundingResponse.Success>(alice.state.replyTo.await()).also { assertEquals(0, it.fundingTxIndex) }
         assertIs<ChannelFundingResponse.Success>(bob.state.replyTo.await()).also { assertEquals(0, it.fundingTxIndex) }
         verifyCommits(alice2.state.signingSession, bob3.state.signingSession, TestConstants.aliceFundingAmount.toMilliSatoshi(), 0.msat)
@@ -87,8 +87,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
         verifyCommits(
             alice2.state.signingSession,
             bob3.state.signingSession,
@@ -118,8 +118,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
         verifyCommits(alice2.state.signingSession, bob3.state.signingSession, balanceAlice = 10_000_000.msat, balanceBob = 1_500_000_000.msat)
     }
 
@@ -143,8 +143,8 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
         actionsBob3.has<ChannelAction.Storage.StoreState>()
         assertIs<WaitForFundingSigned>(alice2.state)
         assertIs<WaitForFundingSigned>(bob3.state)
-        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
-        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
+        assertEquals(alice2.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.ZeroReserveChannels, Feature.DualFunding)))
+        assertEquals(bob3.state.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.ZeroReserveChannels, Feature.DualFunding)))
         verifyCommits(alice2.state.signingSession, bob3.state.signingSession, TestConstants.aliceFundingAmount.toMilliSatoshi(), TestConstants.bobFundingAmount.toMilliSatoshi())
     }
 
@@ -170,12 +170,12 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     fun `recv CommitSig`() {
         val (alice, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputs, bobFundingAmount = 0.sat)
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(CommitSig(alice.channelId, ByteVector64.Zeroes, listOf())))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(CommitSig(alice.channelId, ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes), listOf())))
             assertEquals(actionsAlice1.findOutgoingMessage<Error>().toAscii(), UnexpectedCommitSig(alice.channelId).message)
             assertIs<Aborted>(alice1.state)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(CommitSig(bob.channelId, ByteVector64.Zeroes, listOf())))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(CommitSig(bob.channelId, ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes), listOf())))
             assertEquals(actionsBob1.findOutgoingMessage<Error>().toAscii(), UnexpectedCommitSig(bob.channelId).message)
             assertIs<Aborted>(bob1.state)
         }

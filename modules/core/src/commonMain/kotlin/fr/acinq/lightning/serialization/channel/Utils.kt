@@ -13,12 +13,12 @@ internal val Commitments.allHtlcs: Set<DirectedHtlc> get() = this.run {
         // All active commitments have the same htlc set, so we only consider the first one
         addAll(active.first().localCommit.spec.htlcs)
         addAll(active.first().remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
-        active.first().nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
+        active.first().nextRemoteCommit?.let { addAll(it.spec.htlcs.map { htlc -> htlc.opposite() }) }
         // Each inactive commitment may have a distinct htlc set
         inactive.forEach { c ->
             addAll(c.localCommit.spec.htlcs)
             addAll(c.remoteCommit.spec.htlcs.map { htlc -> htlc.opposite() })
-            c.nextRemoteCommit?.let { addAll(it.commit.spec.htlcs.map { htlc -> htlc.opposite() }) }
+            c.nextRemoteCommit?.let { addAll(it.spec.htlcs.map { htlc -> htlc.opposite() }) }
         }
     }
 }

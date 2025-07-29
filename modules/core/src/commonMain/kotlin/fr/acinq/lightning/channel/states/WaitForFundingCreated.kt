@@ -31,8 +31,10 @@ import kotlinx.coroutines.CompletableDeferred
  */
 data class WaitForFundingCreated(
     val replyTo: CompletableDeferred<ChannelFundingResponse>,
-    val localParams: LocalParams,
-    val remoteParams: RemoteParams,
+    val localChannelParams: LocalChannelParams,
+    val localCommitParams: CommitParams,
+    val remoteChannelParams: RemoteChannelParams,
+    val remoteCommitParams: CommitParams,
     val interactiveTxSession: InteractiveTxSession,
     val commitTxFeerate: FeeratePerKw,
     val remoteFirstPerCommitmentPoint: PublicKey,
@@ -53,11 +55,13 @@ data class WaitForFundingCreated(
                     when (interactiveTxAction) {
                         is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingCreated.copy(interactiveTxSession = interactiveTxSession1), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
                         is InteractiveTxSessionAction.SignSharedTx -> {
-                            val channelParams = ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
+                            val channelParams = ChannelParams(channelId, channelConfig, channelFeatures, localChannelParams, remoteChannelParams, channelFlags)
                             val signingSession = InteractiveTxSigningSession.create(
                                 interactiveTxSession1,
                                 keyManager,
                                 channelParams,
+                                localCommitParams,
+                                remoteCommitParams,
                                 interactiveTxSession.fundingParams,
                                 fundingTxIndex = 0,
                                 interactiveTxAction.sharedTx,

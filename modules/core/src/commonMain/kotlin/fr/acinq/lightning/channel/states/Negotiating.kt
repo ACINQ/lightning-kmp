@@ -9,7 +9,6 @@ import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
-import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.wire.*
 
 data class Negotiating(
@@ -20,7 +19,7 @@ data class Negotiating(
     val proposedClosingTxs: List<Transactions.ClosingTxs>,
     // Closing transactions we published: this contains our local transactions for
     // which they sent a signature, and their closing transactions that we signed.
-    val publishedClosingTxs: List<ClosingTx>,
+    val publishedClosingTxs: List<Transactions.ClosingTx>,
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
     val closeCommand: ChannelCommand.Close.MutualClose?,
 ) : ChannelStateWithCommitments() {
@@ -170,13 +169,13 @@ data class Negotiating(
     }
 
     /** Return full information about a closing tx that we proposed and they then published. */
-    internal fun getMutualClosePublished(tx: Transaction): ClosingTx {
+    internal fun getMutualClosePublished(tx: Transaction): Transactions.ClosingTx {
         // They can publish a closing tx with any sig we sent them, even if we are not done negotiating.
         // They added their signature, so we use their version of the transaction.
         return proposedClosingTxs.flatMap { it.all }.first { it.tx.txid == tx.txid }.copy(tx = tx)
     }
 
-    internal fun ChannelContext.completeMutualClose(signedClosingTx: ClosingTx): Pair<ChannelState, List<ChannelAction>> {
+    internal fun ChannelContext.completeMutualClose(signedClosingTx: Transactions.ClosingTx): Pair<ChannelState, List<ChannelAction>> {
         logger.info { "channel was closed with txId=${signedClosingTx.tx.txid}" }
         val nextState = Closed(
             Closing(
