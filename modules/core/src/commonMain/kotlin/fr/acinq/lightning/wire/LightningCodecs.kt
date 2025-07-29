@@ -186,11 +186,9 @@ object LightningCodecs {
 
     @JvmStatic
     fun bytes(input: Input, size: Int): ByteArray {
+        require(size <= input.availableBytes) { "cannot read $size bytes from stream containing only ${input.availableBytes} bytes" }
         val blob = ByteArray(size)
-        if (size > 0) {
-            val count = input.read(blob, 0, blob.size)
-            require(count >= size) { "unexpected EOF" }
-        }
+        if (size > 0) input.read(blob, 0, blob.size)
         return blob
     }
 
