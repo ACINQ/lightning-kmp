@@ -1,11 +1,14 @@
 package fr.acinq.lightning.tests
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Chain
+import fr.acinq.bitcoin.MnemonicCode
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
-import fr.acinq.lightning.channel.LocalParams
+import fr.acinq.lightning.channel.LocalChannelParams
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.msat
@@ -103,7 +106,7 @@ object TestConstants {
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        fun channelParams(payCommitTxFees: Boolean): LocalParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = payCommitTxFees)
+        fun channelParams(payCommitTxFees: Boolean): LocalChannelParams = LocalChannelParams(nodeParams, isChannelOpener = true, payCommitTxFees = payCommitTxFees)
     }
 
     object Bob {
@@ -126,16 +129,16 @@ object TestConstants {
                 feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 5.0)
             ),
             minDepthBlocks = 3,
-            maxHtlcValueInFlightMsat = 1_500_000_000L,
-            maxAcceptedHtlcs = 100,
-            toRemoteDelayBlocks = CltvExpiryDelta(144),
+            maxHtlcValueInFlightMsat = 2_000_000_000L,
+            maxAcceptedHtlcs = 80,
+            toRemoteDelayBlocks = CltvExpiryDelta(72),
             maxToLocalDelayBlocks = CltvExpiryDelta(1024),
             feeBase = 10.msat,
             feeProportionalMillionths = 10,
             paymentRecipientExpiryParams = RecipientCltvExpiryParams(CltvExpiryDelta(0), CltvExpiryDelta(0)),
         )
 
-        fun channelParams(payCommitTxFees: Boolean): LocalParams = LocalParams(nodeParams, isChannelOpener = false, payCommitTxFees = payCommitTxFees)
+        fun channelParams(payCommitTxFees: Boolean): LocalChannelParams = LocalChannelParams(nodeParams, isChannelOpener = false, payCommitTxFees = payCommitTxFees)
     }
 
 }

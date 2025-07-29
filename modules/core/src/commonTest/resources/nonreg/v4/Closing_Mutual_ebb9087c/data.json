@@ -1,7 +1,7 @@
 {
     "type": "fr.acinq.lightning.channel.states.Closing",
     "commitments": {
-        "params": {
+        "channelParams": {
             "channelId": "d469132750e7d041f2fd990e8f9da39810e931c6e43a74d9cd4fe462a8376627",
             "channelConfig": [
                 "funding_pubkey_based_channel_keypath"
@@ -14,11 +14,6 @@
             "localParams": {
                 "nodeId": "037108815ff0128f7ed22640485c226d9ad64a9fd6d8b41b6623565aed6b34812c",
                 "fundingKeyPath": "m/464799359'/1844920236/1205338618'/1049864060'/776185252'/1994944773'/188152197/1162311989'/1'",
-                "dustLimit": 1100,
-                "maxHtlcValueInFlightMsat": 1500000000,
-                "htlcMinimum": 0,
-                "toSelfDelay": 144,
-                "maxAcceptedHtlcs": 100,
                 "isChannelOpener": true,
                 "paysCommitTxFees": false,
                 "defaultFinalScriptPubKey": "001405e0104aa726e34ff5cd3a6320d05c0862b5b01c",
@@ -45,11 +40,6 @@
             },
             "remoteParams": {
                 "nodeId": "0362b19a83930389b4468be40308efb3f352b23142ae25e6aba0465a8220f95b06",
-                "dustLimit": 1000,
-                "maxHtlcValueInFlightMsat": 1500000000,
-                "htlcMinimum": 1000,
-                "toSelfDelay": 144,
-                "maxAcceptedHtlcs": 100,
                 "revocationBasepoint": "033d473f96bd80933245a7b9ff4c3ee3045b9293b7bf5b98eb72197057ed8ec34a",
                 "paymentBasepoint": "034584173fcd85590bb878bc0833c8b0b200ea2fb0f353d8046ad37717f1a783c4",
                 "delayedPaymentBasepoint": "02a5764c14a0371a53391d3d7a84faaa0b0922cb8fb1194e67482a6467be37d004",
@@ -101,6 +91,8 @@
         "active": [
             {
                 "fundingTxIndex": 0,
+                "fundingInput": "fb3eaf9e0d57440b02c0a7f8b221e5628c567651e14912ad32f478d795c4e33b:0",
+                "fundingAmount": 1000000,
                 "remoteFundingPubkey": "02a73d5523148f33b473419816e41c58bfec5cb332ec86b9a80ce6f1825bca170c",
                 "localFundingStatus": {
                     "status": "confirmed",
@@ -108,6 +100,16 @@
                 },
                 "remoteFundingStatus": {
                     "status": "not-locked"
+                },
+                "commitmentFormat": {
+                    "rfcName": "anchor_outputs"
+                },
+                "localCommitParams": {
+                    "dustLimit": 1100,
+                    "maxHtlcValueInFlightMsat": 1500000000,
+                    "htlcMinimum": 0,
+                    "toSelfDelay": 144,
+                    "maxAcceptedHtlcs": 100
                 },
                 "localCommit": {
                     "index": 0,
@@ -118,20 +120,18 @@
                         "toLocal": 800000000,
                         "toRemote": 200000000
                     },
-                    "publishableTxs": {
-                        "commitTx": {
-                            "input": {
-                                "outPoint": "fb3eaf9e0d57440b02c0a7f8b221e5628c567651e14912ad32f478d795c4e33b:0",
-                                "txOut": {
-                                    "amount": 1000000,
-                                    "publicKeyScript": "002057ca65f637bc83aaa046335b1aa7ef3b5347c2b40aef1c83c7831202a32cf73e"
-                                },
-                                "redeemScript": "522102a73d5523148f33b473419816e41c58bfec5cb332ec86b9a80ce6f1825bca170c2102ef967c443519718449a9c9b60a85def8c99e0ea8a0da33273a7c18775e7eb91b52ae"
-                            },
-                            "tx": "020000000001013be3c495d778f432ad1249e15176568c62e521b2f8a7c0020b44570d9eaf3efb00000000000abbb380044a01000000000000220020a0ca67609d8f4d1c580f41451ac9f40ac8e4942f2ee1fb39253c89dec7f830f34a01000000000000220020c8809c3b9a97354b8c155d027966ef185e86c19bde823ab9429b5d02b2000650400d0300000000002200205311eef80c15717d4dbd16822f8bee49d1ddc5707f9240f1ff20c11091c1dfa3781c0c0000000000220020c1f2b1ac55b4bd727e85af80fdcdbfff0ea17156126175034b784878cb0bb80f0400483045022100dc0d6153f56f4fb1238325ce8b38de8d2196f015e337502198ffaa43e15c3ff602205ac254766dcab049e16bbd40bac3438fc3e0274c853bfc1eb88e7260b0f7fe1101473044022006483d50cd4ea6ada8d6bb059cfeba406d5ba0c8e2edfe6b56996ef1ab61cacf022019ece48b729dc967c7c20c3299781641f3c38e1870b82ec3f17efd6fbe4221570147522102a73d5523148f33b473419816e41c58bfec5cb332ec86b9a80ce6f1825bca170c2102ef967c443519718449a9c9b60a85def8c99e0ea8a0da33273a7c18775e7eb91b52ae106ace20"
-                        },
-                        "htlcTxsAndSigs": []
-                    }
+                    "txId": "0f9ad08d4eddee3c7d91464eb1dcca37548f48d95863ff67a0ef11b5ef8cd312",
+                    "remoteSig": {
+                        "sig": "dc0d6153f56f4fb1238325ce8b38de8d2196f015e337502198ffaa43e15c3ff65ac254766dcab049e16bbd40bac3438fc3e0274c853bfc1eb88e7260b0f7fe11"
+                    },
+                    "htlcRemoteSigs": []
+                },
+                "remoteCommitParams": {
+                    "dustLimit": 1000,
+                    "maxHtlcValueInFlightMsat": 1500000000,
+                    "htlcMinimum": 1000,
+                    "toSelfDelay": 144,
+                    "maxAcceptedHtlcs": 100
                 },
                 "remoteCommit": {
                     "index": 0,
@@ -164,11 +164,10 @@
                 "txOut": {
                     "amount": 1000000,
                     "publicKeyScript": "002057ca65f637bc83aaa046335b1aa7ef3b5347c2b40aef1c83c7831202a32cf73e"
-                },
-                "redeemScript": "522102a73d5523148f33b473419816e41c58bfec5cb332ec86b9a80ce6f1825bca170c2102ef967c443519718449a9c9b60a85def8c99e0ea8a0da33273a7c18775e7eb91b52ae"
+                }
             },
             "tx": "02000000013be3c495d778f432ad1249e15176568c62e521b2f8a7c0020b44570d9eaf3efb0000000000ffffffff02400d03000000000016001434947cfb2e8f6054ddf12daed4308cbe342580d1d6270c000000000016001405e0104aa726e34ff5cd3a6320d05c0862b5b01c00000000",
-            "toLocalIndex": 1
+            "toLocalOutputIndex": 1
         }
     ],
     "mutualClosePublished": [
@@ -178,11 +177,10 @@
                 "txOut": {
                     "amount": 1000000,
                     "publicKeyScript": "002057ca65f637bc83aaa046335b1aa7ef3b5347c2b40aef1c83c7831202a32cf73e"
-                },
-                "redeemScript": "522102a73d5523148f33b473419816e41c58bfec5cb332ec86b9a80ce6f1825bca170c2102ef967c443519718449a9c9b60a85def8c99e0ea8a0da33273a7c18775e7eb91b52ae"
+                }
             },
             "tx": "020000000001013be3c495d778f432ad1249e15176568c62e521b2f8a7c0020b44570d9eaf3efb0000000000ffffffff02400d03000000000016001434947cfb2e8f6054ddf12daed4308cbe342580d1d6270c000000000016001405e0104aa726e34ff5cd3a6320d05c0862b5b01c0400483045022100832a2fef23d4aa781be1ccd6658a49265bac6b70698e21ec675229ae3c0c2f2e02205510f59e68438fe94ec559917bceae19456af6c65609f4f8c4e435374515f3e9014730440220169b63c09d0f0e6ea76740fa024c327886e6f4b4c19c7ec79e535523e71bbc55022061d9ac0db36cbd6af8703846f49a2d5850d4a8a68e6eef306e5bdb1ab3d31b280147522102a73d5523148f33b473419816e41c58bfec5cb332ec86b9a80ce6f1825bca170c2102ef967c443519718449a9c9b60a85def8c99e0ea8a0da33273a7c18775e7eb91b52ae00000000",
-            "toLocalIndex": 1
+            "toLocalOutputIndex": 1
         }
     ]
 }
