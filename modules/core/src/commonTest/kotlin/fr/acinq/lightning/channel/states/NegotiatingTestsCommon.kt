@@ -1,7 +1,6 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -374,7 +373,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (alice, bob, closingComplete, _) = init()
         val (alice1, bob1) = signClosingTxAlice(alice, bob, closingComplete)
 
-        val bobCommitTx = bob1.commitments.latest.localCommit.publishableTxs.commitTx.tx
+        val bobCommitTx = bob1.signCommitTx()
         val (alice2, actions2) = alice1.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
         assertIs<LNChannel<Closing>>(alice2)
         assertEquals(5, actions2.size)
@@ -383,7 +382,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         actions2.has<ChannelAction.Storage.StoreState>()
         val claimMain = actions2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimRemoteDelayedOutputTx)
         actions2.hasWatchConfirmed(bobCommitTx.txid)
-        actions2.hasWatchConfirmed(claimMain.txid)
+        actions2.hasWatchOutputSpent(claimMain.txIn.first().outPoint)
         actions2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
     }
 
@@ -391,7 +390,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     fun `recv ChannelSpent -- revoked tx`() {
         val (alice, bob, revokedCommit) = run {
             val (alice0, bob0) = reachNormal()
-            val revokedCommit = bob0.commitments.latest.localCommit.publishableTxs.commitTx.tx
+            val revokedCommit = bob0.signCommitTx()
             val (nodes1, r, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
             val (alice2, bob2) = crossSign(nodes1.first, nodes1.second)
             val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
@@ -417,7 +416,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val claimMain = actionsAlice4.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimRemoteDelayedOutputTx)
         actionsAlice4.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.MainPenaltyTx)
         actionsAlice4.hasWatchConfirmed(revokedCommit.txid)
-        actionsAlice4.hasWatchConfirmed(claimMain.txid)
+        actionsAlice4.hasWatchOutputSpent(claimMain.txIn.first().outPoint)
     }
 
     @Test
@@ -445,8 +444,9 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (alice, _) = init()
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
         assertIs<LNChannel<Closing>>(alice1)
-        actions1.hasPublishTx(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx)
-        assertTrue(actions1.findWatches<WatchConfirmed>().map { it.txId }.contains(alice.commitments.latest.localCommit.publishableTxs.commitTx.tx.txid))
+        val commitTx = alice.signCommitTx()
+        actions1.hasPublishTx(commitTx)
+        actions1.hasWatchConfirmed(commitTx.txid)
     }
 
     companion object {

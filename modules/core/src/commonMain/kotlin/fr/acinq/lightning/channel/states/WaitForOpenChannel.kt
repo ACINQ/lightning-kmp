@@ -4,9 +4,12 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
+import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Funding.computeChannelId
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
@@ -25,7 +28,12 @@ data class WaitForOpenChannel(
     val temporaryChannelId: ByteVector32,
     val fundingAmount: Satoshi,
     val walletInputs: List<WalletState.Utxo>,
-    val localParams: LocalParams,
+    val localChannelParams: LocalChannelParams,
+    val dustLimit: Satoshi,
+    val htlcMinimum: MilliSatoshi,
+    val maxHtlcValueInFlightMsat: Long,
+    val maxAcceptedHtlcs: Int,
+    val toRemoteDelay: CltvExpiryDelta,
     val channelConfig: ChannelConfig,
     val remoteInit: Init,
     val fundingRates: LiquidityAds.WillFundRates?
@@ -38,11 +46,11 @@ data class WaitForOpenChannel(
                     when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open)) {
                         is Either.Right -> {
                             val channelType = res.value
-                            val channelFeatures = ChannelFeatures(channelType, localFeatures = localParams.features, remoteFeatures = remoteInit.features)
+                            val channelFeatures = ChannelFeatures(channelType, localFeatures = localChannelParams.features, remoteFeatures = remoteInit.features)
                             val minimumDepth = if (staticParams.useZeroConf) 0 else staticParams.nodeParams.minDepthBlocks
-                            val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
+                            val channelKeys = keyManager.channelKeys(localChannelParams.fundingKeyPath)
                             val localFundingPubkey = channelKeys.fundingKey(0).publicKey()
-                            val fundingScript = Helpers.Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey)
+                            val fundingScript = Transactions.makeFundingScript(localFundingPubkey, open.fundingPubkey, channelType.commitmentFormat).pubkeyScript
                             val requestFunding = open.requestFunding
                             val willFund = when {
                                 fundingRates == null -> null
@@ -53,12 +61,12 @@ data class WaitForOpenChannel(
                             val accept = AcceptDualFundedChannel(
                                 temporaryChannelId = open.temporaryChannelId,
                                 fundingAmount = fundingAmount,
-                                dustLimit = localParams.dustLimit,
-                                maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-                                htlcMinimum = localParams.htlcMinimum,
+                                dustLimit = dustLimit,
+                                maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
+                                htlcMinimum = htlcMinimum,
                                 minimumDepth = minimumDepth.toLong(),
-                                toSelfDelay = localParams.toSelfDelay,
-                                maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
+                                toSelfDelay = toRemoteDelay,
+                                maxAcceptedHtlcs = maxAcceptedHtlcs,
                                 fundingPubkey = localFundingPubkey,
                                 revocationBasepoint = channelKeys.revocationBasePoint,
                                 paymentBasepoint = channelKeys.paymentBasePoint,
@@ -73,13 +81,10 @@ data class WaitForOpenChannel(
                                     }
                                 ),
                             )
-                            val remoteParams = RemoteParams(
+                            val localCommitParams = CommitParams(dustLimit, maxHtlcValueInFlightMsat, htlcMinimum, open.toSelfDelay, maxAcceptedHtlcs)
+                            val remoteCommitParams = CommitParams(open.dustLimit, open.maxHtlcValueInFlightMsat, open.htlcMinimum, toRemoteDelay, open.maxAcceptedHtlcs)
+                            val remoteChannelParams = RemoteChannelParams(
                                 nodeId = staticParams.remoteNodeId,
-                                dustLimit = open.dustLimit,
-                                maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
-                                htlcMinimum = open.htlcMinimum,
-                                toSelfDelay = open.toSelfDelay,
-                                maxAcceptedHtlcs = open.maxAcceptedHtlcs,
                                 revocationBasepoint = open.revocationBasepoint,
                                 paymentBasepoint = open.paymentBasepoint,
                                 delayedPaymentBasepoint = open.delayedPaymentBasepoint,
@@ -88,8 +93,8 @@ data class WaitForOpenChannel(
                             )
                             val channelId = computeChannelId(open, accept)
                             val remoteFundingPubkey = open.fundingPubkey
-                            val dustLimit = open.dustLimit.max(localParams.dustLimit)
-                            val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, remoteFundingPubkey, open.lockTime, dustLimit, open.fundingFeerate)
+                            val dustLimit = localCommitParams.dustLimit.max(remoteCommitParams.dustLimit)
+                            val fundingParams = InteractiveTxParams(channelId, false, fundingAmount, open.fundingAmount, remoteFundingPubkey, open.lockTime, dustLimit, channelType.commitmentFormat, open.fundingFeerate)
                             when (val fundingContributions = FundingContributions.create(channelKeys, keyManager.swapInOnChainWallet, fundingParams, walletInputs, null)) {
                                 is Either.Left -> {
                                     logger.error { "could not fund channel: ${fundingContributions.value}" }
@@ -101,8 +106,10 @@ data class WaitForOpenChannel(
                                     val nextState = WaitForFundingCreated(
                                         replyTo,
                                         // If our peer asks us to pay the commit tx fees, we accept (only used in tests, as we're otherwise always the channel opener).
-                                        localParams.copy(paysCommitTxFees = open.channelFlags.nonInitiatorPaysCommitFees),
-                                        remoteParams,
+                                        localChannelParams.copy(paysCommitTxFees = open.channelFlags.nonInitiatorPaysCommitFees),
+                                        localCommitParams,
+                                        remoteChannelParams,
+                                        remoteCommitParams,
                                         interactiveTxSession,
                                         open.commitmentFeerate,
                                         open.firstPerCommitmentPoint,
