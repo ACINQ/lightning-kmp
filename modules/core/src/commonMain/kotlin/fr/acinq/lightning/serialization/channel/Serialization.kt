@@ -6,16 +6,17 @@ import fr.acinq.lightning.channel.states.PersistedChannelState
 object Serialization {
 
     fun serialize(state: PersistedChannelState): ByteArray {
-        return fr.acinq.lightning.serialization.channel.v4.Serialization.serialize(state)
+        return fr.acinq.lightning.serialization.channel.v5.Serialization.serialize(state)
     }
 
     fun serializePeerStorage(states: List<PersistedChannelState>): Pair<Byte, ByteArray> {
-        return Pair(4, fr.acinq.lightning.serialization.channel.v4.Serialization.serializePeerStorage(states))
+        return Pair(5, fr.acinq.lightning.serialization.channel.v5.Serialization.serializePeerStorage(states))
     }
 
     fun deserialize(bin: ByteArray): DeserializationResult {
         return when {
-            // v4 uses a 1-byte version discriminator
+            // We started using a 1-byte version discriminator in v4
+            bin[0].toInt() == 5 -> DeserializationResult.Success(fr.acinq.lightning.serialization.channel.v5.Deserialization.deserialize(bin))
             bin[0].toInt() == 4 -> DeserializationResult.Success(fr.acinq.lightning.serialization.channel.v4.Deserialization.deserialize(bin))
             // v2/v3 used a 4-bytes version discriminator and are now unsupported
             Pack.int32BE(bin) == 3 -> DeserializationResult.UnknownVersion(3)
@@ -26,6 +27,7 @@ object Serialization {
 
     fun deserializePeerStorage(versionByte: Byte, bin: ByteArray): PeerStorageDeserializationResult {
         return when(versionByte.toInt()) {
+            5 -> PeerStorageDeserializationResult.Success(fr.acinq.lightning.serialization.channel.v5.Deserialization.deserializePeerStorage(bin))
             4 -> PeerStorageDeserializationResult.Success(fr.acinq.lightning.serialization.channel.v4.Deserialization.deserializePeerStorage(bin))
             else -> PeerStorageDeserializationResult.UnknownVersion(versionByte.toInt())
         }

@@ -31,12 +31,15 @@ suspend fun IClient.computeSpliceCpfpFeerate(commitments: Commitments, targetFee
     val (parentsWeight, parentsFees) = commitments.all
         .takeWhile { getConfirmations(it.fundingTxId).let { confirmations -> confirmations == null || confirmations == 0 } } // we check for null in case the tx has been evicted
         .fold(Pair(0, 0.sat)) { (parentsWeight, parentsFees), commitment ->
-            val weight = when (commitment.localFundingStatus) {
-                // weight will be underestimated if the transaction is not fully signed
-                is LocalFundingStatus.UnconfirmedFundingTx -> commitment.localFundingStatus.signedTx?.weight() ?: commitment.localFundingStatus.sharedTx.tx.buildUnsignedTx().weight()
-                is LocalFundingStatus.ConfirmedFundingTx -> commitment.localFundingStatus.signedTx.weight()
+            when (commitment.localFundingStatus) {
+                is LocalFundingStatus.UnconfirmedFundingTx -> {
+                    // Note that the weight will be underestimated if the transaction is not fully signed.
+                    val weight = commitment.localFundingStatus.signedTx?.weight() ?: commitment.localFundingStatus.sharedTx.tx.buildUnsignedTx().weight()
+                    Pair(parentsWeight + weight, parentsFees + commitment.localFundingStatus.fee)
+                }
+                // We filtered confirmed transactions before, so this case shouldn't happen.
+                is LocalFundingStatus.ConfirmedFundingTx -> Pair(parentsWeight, parentsFees)
             }
-            Pair(parentsWeight + weight, parentsFees + commitment.localFundingStatus.fee)
         }
     val totalWeight = parentsWeight + spliceWeight
     val totalFees = Transactions.weight2fee(targetFeerate, totalWeight)

@@ -1,4 +1,4 @@
-package fr.acinq.lightning.serialization.channel.v4
+package fr.acinq.lightning.serialization.channel.v5
 
 import fr.acinq.bitcoin.BtcSerializer
 import fr.acinq.bitcoin.OutPoint
@@ -27,7 +27,6 @@ import fr.acinq.lightning.serialization.OutputExtensions.writeTxId
 import fr.acinq.lightning.serialization.channel.allHtlcs
 import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeLiquidityPurchase
 import fr.acinq.lightning.transactions.*
-import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.*
 import fr.acinq.lightning.wire.LightningCodecs
 
 /**
@@ -49,7 +48,7 @@ import fr.acinq.lightning.wire.LightningCodecs
  */
 object Serialization {
 
-    const val VERSION_MAGIC = 4
+    const val VERSION_MAGIC = 5
 
     fun serialize(o: PersistedChannelState): ByteArray {
         val out = ByteArrayOutput()
@@ -65,32 +64,32 @@ object Serialization {
     }
 
     private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
-        is WaitForChannelReady -> {
-            write(0x01); writeWaitForChannelReady(o)
-        }
-        is Normal -> {
-            write(0x0f); writeNormal(o)
-        }
-        is ShuttingDown -> {
-            write(0x10); writeShuttingDown(o)
-        }
-        is Negotiating -> {
-            write(0x11); writeNegotiating(o)
-        }
-        is Closing -> {
-            write(0x05); writeClosing(o)
-        }
-        is WaitForRemotePublishFutureCommitment -> {
-            write(0x06); writeWaitForRemotePublishFutureCommitment(o)
-        }
-        is Closed -> {
-            write(0x07); writeClosed(o)
-        }
         is WaitForFundingSigned -> {
-            write(0x0d); writeWaitForFundingSigned(o)
+            write(0x00); writeWaitForFundingSigned(o)
         }
         is WaitForFundingConfirmed -> {
-            write(0x0e); writeWaitForFundingConfirmed(o)
+            write(0x10); writeWaitForFundingConfirmed(o)
+        }
+        is WaitForChannelReady -> {
+            write(0x20); writeWaitForChannelReady(o)
+        }
+        is Normal -> {
+            write(0x30); writeNormal(o)
+        }
+        is ShuttingDown -> {
+            write(0x40); writeShuttingDown(o)
+        }
+        is Negotiating -> {
+            write(0x50); writeNegotiating(o)
+        }
+        is Closing -> {
+            write(0x60); writeClosing(o)
+        }
+        is WaitForRemotePublishFutureCommitment -> {
+            write(0x70); writeWaitForRemotePublishFutureCommitment(o)
+        }
+        is Closed -> {
+            write(0x80); writeClosed(o)
         }
     }
 
@@ -156,11 +155,11 @@ object Serialization {
         writeDelimited(localScript.toByteArray())
         writeDelimited(remoteScript.toByteArray())
         writeCollection(proposedClosingTxs) {
-            writeNullable(it.localAndRemote) { tx -> writeTransactionWithInputInfo(tx) }
-            writeNullable(it.localOnly) { tx -> writeTransactionWithInputInfo(tx) }
-            writeNullable(it.remoteOnly) { tx -> writeTransactionWithInputInfo(tx) }
+            writeNullable(it.localAndRemote) { tx -> writeClosingTx(tx) }
+            writeNullable(it.localOnly) { tx -> writeClosingTx(tx) }
+            writeNullable(it.remoteOnly) { tx -> writeClosingTx(tx) }
         }
-        writeCollection(publishedClosingTxs) { writeTransactionWithInputInfo(it) }
+        writeCollection(publishedClosingTxs) { writeClosingTx(it) }
         writeNumber(waitingSinceBlock)
         writeNullable(closeCommand) { writeCloseCommand(it) }
     }
@@ -168,8 +167,8 @@ object Serialization {
     private fun Output.writeClosing(o: Closing) = o.run {
         writeCommitments(commitments)
         writeNumber(waitingSinceBlock)
-        writeCollection(mutualCloseProposed) { writeTransactionWithInputInfo(it) }
-        writeCollection(mutualClosePublished) { writeTransactionWithInputInfo(it) }
+        writeCollection(mutualCloseProposed) { writeClosingTx(it) }
+        writeCollection(mutualClosePublished) { writeClosingTx(it) }
         writeNullable(localCommitPublished) { writeLocalCommitPublished(it) }
         writeNullable(remoteCommitPublished) { writeRemoteCommitPublished(it) }
         writeNullable(nextRemoteCommitPublished) { writeRemoteCommitPublished(it) }
@@ -177,36 +176,51 @@ object Serialization {
         writeCollection(revokedCommitPublished) { writeRevokedCommitPublished(it) }
     }
 
+    private fun Output.writeClosingTx(o: Transactions.ClosingTx) = o.run {
+        write(0x01)
+        writeInputInfo(input)
+        writeBtcObject(tx)
+        writeNullable(toLocalOutputIndex) { writeNumber(it) }
+    }
+
     private fun Output.writeLocalCommitPublished(o: LocalCommitPublished) = o.run {
         writeBtcObject(commitTx)
-        writeNullable(claimMainDelayedOutputTx) { writeTransactionWithInputInfo(it) }
-        writeCollection(htlcTxs.entries) {
+        writeNullable(localOutput) { writeBtcObject(it) }
+        writeNullable(anchorOutput) { writeBtcObject(it) }
+        writeCollection(incomingHtlcs.entries) {
             writeBtcObject(it.key)
-            writeNullable(it.value) { htlcTx -> writeTransactionWithInputInfo(htlcTx) }
+            writeNumber(it.value)
         }
-        writeCollection(claimHtlcDelayedTxs) { writeTransactionWithInputInfo(it) }
-        writeCollection(claimAnchorTxs) { writeTransactionWithInputInfo(it) }
+        writeCollection(outgoingHtlcs.entries) {
+            writeBtcObject(it.key)
+            writeNumber(it.value)
+        }
+        writeCollection(htlcDelayedOutputs) { writeBtcObject(it) }
         writeIrrevocablySpent(irrevocablySpent)
     }
 
     private fun Output.writeRemoteCommitPublished(o: RemoteCommitPublished) = o.run {
         writeBtcObject(commitTx)
-        writeNullable(claimMainOutputTx) { writeTransactionWithInputInfo(it) }
-        writeCollection(claimHtlcTxs.entries) {
+        writeNullable(localOutput) { writeBtcObject(it) }
+        writeNullable(anchorOutput) { writeBtcObject(it) }
+        writeCollection(incomingHtlcs.entries) {
             writeBtcObject(it.key)
-            writeNullable(it.value) { claimHtlcTx -> writeTransactionWithInputInfo(claimHtlcTx) }
+            writeNumber(it.value)
         }
-        writeCollection(claimAnchorTxs) { writeTransactionWithInputInfo(it) }
+        writeCollection(outgoingHtlcs.entries) {
+            writeBtcObject(it.key)
+            writeNumber(it.value)
+        }
         writeIrrevocablySpent(irrevocablySpent)
     }
 
     private fun Output.writeRevokedCommitPublished(o: RevokedCommitPublished) = o.run {
         writeBtcObject(commitTx)
         writeByteVector32(remotePerCommitmentSecret.value)
-        writeNullable(claimMainOutputTx) { writeTransactionWithInputInfo(it) }
-        writeNullable(mainPenaltyTx) { writeTransactionWithInputInfo(it) }
-        writeCollection(htlcPenaltyTxs) { writeTransactionWithInputInfo(it) }
-        writeCollection(claimHtlcDelayedPenaltyTxs) { writeTransactionWithInputInfo(it) }
+        writeNullable(localOutput) { writeBtcObject(it) }
+        writeNullable(remoteOutput) { writeBtcObject(it) }
+        writeCollection(htlcOutputs) { writeBtcObject(it) }
+        writeCollection(htlcDelayedOutputs) { writeBtcObject(it) }
         writeIrrevocablySpent(irrevocablySpent)
     }
 
@@ -224,13 +238,12 @@ object Serialization {
         writeClosing(state)
     }
 
-    private fun Output.writeSharedFundingInput(i: SharedFundingInput) = when (i) {
-        is SharedFundingInput.Multisig2of2 -> {
-            write(0x01)
-            writeInputInfo(i.info)
-            writeNumber(i.fundingTxIndex)
-            writePublicKey(i.remoteFundingPubkey)
-        }
+    private fun Output.writeSharedFundingInput(i: SharedFundingInput) = i.run {
+        write(0x01)
+        writeInputInfo(info)
+        writeNumber(fundingTxIndex)
+        writePublicKey(remoteFundingPubkey)
+        writeCommitmentFormat(commitmentFormat)
     }
 
     private fun Output.writeInteractiveTxParams(o: InteractiveTxParams) = o.run {
@@ -241,13 +254,14 @@ object Serialization {
         writeNullable(sharedInput) { writeSharedFundingInput(it) }
         writePublicKey(remoteFundingPubkey)
         writeCollection(localOutputs) { writeBtcObject(it) }
+        writeCommitmentFormat(commitmentFormat)
         writeNumber(lockTime)
         writeNumber(dustLimit.toLong())
         writeNumber(targetFeerate.toLong())
     }
 
     private fun Output.writeSharedInteractiveTxInput(i: InteractiveTxInput.Shared) = i.run {
-        write(0x03)
+        write(0x01)
         writeNumber(serialId)
         writeBtcObject(outPoint)
         writeDelimited(publicKeyScript.toByteArray())
@@ -321,7 +335,7 @@ object Serialization {
     }
 
     private fun Output.writeSharedInteractiveTxOutput(o: InteractiveTxOutput.Shared) = o.run {
-        write(0x02)
+        write(0x01)
         writeNumber(serialId)
         writeDelimited(pubkeyScript.toByteArray())
         writeNumber(localAmount.toLong())
@@ -381,21 +395,15 @@ object Serialization {
     private fun Output.writeUnsignedLocalCommitWithoutHtlcs(localCommit: InteractiveTxSigningSession.Companion.UnsignedLocalCommit) {
         writeNumber(localCommit.index)
         writeCommitmentSpecWithoutHtlcs(localCommit.spec)
-        writeTransactionWithInputInfo(localCommit.commitTx)
-        writeCollection(localCommit.htlcTxs) { writeTransactionWithInputInfo(it) }
+        writeTxId(localCommit.txId)
     }
 
     private fun Output.writeLocalCommitWithoutHtlcs(localCommit: LocalCommit) = localCommit.run {
         writeNumber(index)
         writeCommitmentSpecWithoutHtlcs(spec)
-        publishableTxs.run {
-            writeTransactionWithInputInfo(commitTx)
-            writeCollection(htlcTxsAndSigs) { htlc ->
-                writeTransactionWithInputInfo(htlc.txinfo)
-                writeByteVector64(htlc.localSig)
-                writeByteVector64(htlc.remoteSig)
-            }
-        }
+        writeTxId(txId)
+        writeChannelSpendSignature(remoteSig)
+        writeCollection(htlcRemoteSigs) { writeByteVector64(it) }
     }
 
     private fun Output.writeRemoteCommitWithoutHtlcs(remoteCommit: RemoteCommit) = remoteCommit.run {
@@ -409,30 +417,31 @@ object Serialization {
         writeInteractiveTxParams(fundingParams)
         writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
-        when(localCommit) {
+        writeCommitParams(localCommitParams)
+        when (localCommit) {
             is Either.Left -> {
-                write(4)
+                write(0x01)
                 writeUnsignedLocalCommitWithoutHtlcs(localCommit.value)
-                writeRemoteCommitWithoutHtlcs(remoteCommit)
             }
             is Either.Right -> {
-                write(5)
+                write(0x02)
                 writeLocalCommitWithoutHtlcs(localCommit.value)
-                writeRemoteCommitWithoutHtlcs(remoteCommit)
             }
         }
+        writeCommitParams(remoteCommitParams)
+        writeRemoteCommitWithoutHtlcs(remoteCommit)
     }
 
     private fun Output.writeChannelOrigin(o: Origin) = when (o) {
         is Origin.OffChainPayment -> {
-            write(0x03)
+            write(0x01)
             writeByteVector32(o.paymentPreimage)
             writeNumber(o.amountBeforeFees.toLong())
             writeNumber(o.fees.miningFee.toLong())
             writeNumber(o.fees.serviceFee.toLong())
         }
         is Origin.OnChainWallet -> {
-            write(0x04)
+            write(0x02)
             writeCollection(o.inputs) { writeBtcObject(it) }
             writeNumber(o.amountBeforeFees.toLong())
             writeNumber(o.fees.miningFee.toLong())
@@ -447,11 +456,6 @@ object Serialization {
         localParams.run {
             writePublicKey(nodeId)
             writeCollection(fundingKeyPath.path) { writeNumber(it) }
-            writeNumber(dustLimit.toLong())
-            writeNumber(maxHtlcValueInFlightMsat)
-            writeNumber(htlcMinimum.toLong())
-            writeNumber(toSelfDelay.toLong())
-            writeNumber(maxAcceptedHtlcs)
             // We encode those two booleans in the same byte.
             val isOpenerFlag = if (isChannelOpener) 1 else 0
             val payCommitTxFeesFlag = if (paysCommitTxFees) 2 else 0
@@ -461,11 +465,6 @@ object Serialization {
         }
         remoteParams.run {
             writePublicKey(nodeId)
-            writeNumber(dustLimit.toLong())
-            writeNumber(maxHtlcValueInFlightMsat)
-            writeNumber(htlcMinimum.toLong())
-            writeNumber(toSelfDelay.toLong())
-            writeNumber(maxAcceptedHtlcs)
             writePublicKey(revocationBasepoint)
             writePublicKey(paymentBasepoint)
             writePublicKey(delayedPaymentBasepoint)
@@ -476,6 +475,14 @@ object Serialization {
         val announceChannelFlag = if (channelFlags.announceChannel) 1 else 0
         val nonInitiatorPaysCommitFeesFlag = if (channelFlags.nonInitiatorPaysCommitFees) 2 else 0
         writeNumber(announceChannelFlag + nonInitiatorPaysCommitFeesFlag)
+    }
+
+    private fun Output.writeCommitParams(o: CommitParams) = o.run {
+        writeNumber(dustLimit.toLong())
+        writeNumber(maxHtlcValueInFlightMsat)
+        writeNumber(htlcMinimum.toLong())
+        writeNumber(toSelfDelay.toLong())
+        writeNumber(maxAcceptedHtlcs)
     }
 
     private fun Output.writeCommitmentChanges(o: CommitmentChanges) = o.run {
@@ -495,6 +502,8 @@ object Serialization {
 
     private fun Output.writeCommitment(o: Commitment) = o.run {
         writeNumber(fundingTxIndex)
+        writeBtcObject(fundingInput)
+        writeNumber(fundingAmount.toLong())
         writePublicKey(remoteFundingPubkey)
         when (localFundingStatus) {
             is LocalFundingStatus.UnconfirmedFundingTx -> {
@@ -504,8 +513,9 @@ object Serialization {
                 writeNumber(localFundingStatus.createdAt)
             }
             is LocalFundingStatus.ConfirmedFundingTx -> {
-                write(0x03)
-                writeBtcObject(localFundingStatus.signedTx)
+                write(0x01)
+                writeCollection(localFundingStatus.spentInputs) { writeBtcObject(it) }
+                writeBtcObject(localFundingStatus.txOut)
                 writeNumber(localFundingStatus.fee.toLong())
                 writeLightningMessage(localFundingStatus.localSigs)
                 writeNumber(localFundingStatus.shortChannelId.toLong())
@@ -515,19 +525,16 @@ object Serialization {
             is RemoteFundingStatus.NotLocked -> write(0x00)
             is RemoteFundingStatus.Locked -> write(0x01)
         }
+        writeCommitmentFormat(commitmentFormat)
+        writeCommitParams(localCommitParams)
         writeLocalCommitWithoutHtlcs(localCommit)
+        writeCommitParams(remoteCommitParams)
         writeRemoteCommitWithoutHtlcs(remoteCommit)
-        writeNullable(nextRemoteCommit) {
-            writeLightningMessage(it.sig)
-            writeNumber(it.commit.index)
-            writeCommitmentSpecWithoutHtlcs(it.commit.spec)
-            writeTxId(it.commit.txid)
-            writePublicKey(it.commit.remotePerCommitmentPoint)
-        }
+        writeNullable(nextRemoteCommit) { writeRemoteCommitWithoutHtlcs(it) }
     }
 
     private fun Output.writeCommitments(o: Commitments) = o.run {
-        writeChannelParams(params)
+        writeChannelParams(channelParams)
         writeCommitmentChanges(changes)
         // When multiple commitments are active, htlcs are shared between all of these commitments, so we serialize the htlcs separately to save space.
         // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
@@ -550,7 +557,6 @@ object Serialization {
             }
             writeNullable(lastIndex) { writeNumber(it) }
         }
-        writeNumber(0) // ignored legacy remoteChannelData
     }
 
     private fun Output.writeDirectedHtlc(htlc: DirectedHtlc) = htlc.run {
@@ -578,53 +584,16 @@ object Serialization {
     private fun Output.writeInputInfo(o: Transactions.InputInfo): Unit = o.run {
         writeBtcObject(outPoint)
         writeBtcObject(txOut)
-        writeDelimited(redeemScript.toByteArray())
     }
 
-    private fun Output.writeTransactionWithInputInfo(o: Transactions.TransactionWithInputInfo) {
-        when (o) {
-            is CommitTx -> {
-                write(0x00); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
-            is HtlcTx.HtlcSuccessTx -> {
-                write(0x01); writeInputInfo(o.input); writeBtcObject(o.tx); writeByteVector32(o.paymentHash); writeNumber(o.htlcId)
-            }
-            is HtlcTx.HtlcTimeoutTx -> {
-                write(0x02); writeInputInfo(o.input); writeBtcObject(o.tx); writeNumber(o.htlcId)
-            }
-            is ClaimHtlcTx.ClaimHtlcSuccessTx -> {
-                write(0x03); writeInputInfo(o.input); writeBtcObject(o.tx); writeNumber(o.htlcId)
-            }
-            is ClaimHtlcTx.ClaimHtlcTimeoutTx -> {
-                write(0x04); writeInputInfo(o.input); writeBtcObject(o.tx); writeNumber(o.htlcId)
-            }
-            is ClaimAnchorOutputTx.ClaimLocalAnchorOutputTx -> {
-                write(0x05); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
-            is ClaimAnchorOutputTx.ClaimRemoteAnchorOutputTx -> {
-                write(0x06); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
-            is ClaimLocalDelayedOutputTx -> {
-                write(0x07); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
-            is ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx -> {
-                write(0x09); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
-            is MainPenaltyTx -> {
-                write(0x0a); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
-            is HtlcPenaltyTx -> {
-                write(0x0b); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
-            is ClaimHtlcDelayedOutputPenaltyTx -> {
-                write(0x0c); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
-            is ClosingTx -> {
-                write(0x0d); writeInputInfo(o.input); writeBtcObject(o.tx); writeNullable(o.toLocalIndex) { writeNumber(it) }
-            }
-            is SpliceTx -> {
-                write(0x0e); writeInputInfo(o.input); writeBtcObject(o.tx)
-            }
+    private fun Output.writeCommitmentFormat(o: Transactions.CommitmentFormat) = when (o) {
+        Transactions.CommitmentFormat.AnchorOutputs -> write(0x00)
+    }
+
+    private fun Output.writeChannelSpendSignature(sig: ChannelSpendSignature) = when (sig) {
+        is ChannelSpendSignature.IndividualSignature -> {
+            write(0x00)
+            writeByteVector64(sig.sig)
         }
     }
 
@@ -632,4 +601,5 @@ object Serialization {
         writeNullable(scriptPubKey) { writeDelimited(it.toByteArray()) }
         writeNumber(feerate.toLong())
     }
+
 }

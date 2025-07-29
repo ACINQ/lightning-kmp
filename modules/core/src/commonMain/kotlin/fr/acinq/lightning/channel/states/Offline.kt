@@ -24,7 +24,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                         // there isn't much to do except asking them again to publish their current commitment by sending an error
                         val exc = PleasePublishYourCommitment(channelId)
                         val error = Error(channelId, exc.message)
-                        val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
+                        val nextState = state.updateCommitments(state.commitments.copy(channelParams = state.commitments.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         Pair(nextState, listOf(ChannelAction.Message.Send(error)))
                     }
                     is WaitForFundingSigned -> {
@@ -48,7 +48,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                                 add(ChannelAction.Message.Send(channelReestablish))
                             }
                         }
-                        val nextState = state.updateCommitments(state.commitments.copy(params = state.commitments.params.updateFeatures(cmd.localInit, cmd.remoteInit)))
+                        val nextState = state.updateCommitments(state.commitments.copy(channelParams = state.commitments.channelParams.updateFeatures(cmd.localInit, cmd.remoteInit)))
                         Pair(Syncing(nextState, channelReestablishSent = sendChannelReestablish), actions)
                     }
                 }
@@ -66,9 +66,9 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                                     val nextState = when (state) {
                                         is WaitForFundingConfirmed -> {
                                             logger.info { "was confirmed while offline at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with funding txid=${watch.tx.txid}" }
-                                            val nextPerCommitmentPoint = commitments1.params.localParams.channelKeys(keyManager).commitmentPoint(1)
+                                            val nextPerCommitmentPoint = commitments1.channelParams.localParams.channelKeys(keyManager).commitmentPoint(1)
                                             val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
-                                            val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.commitInput.outPoint.index.toInt())
+                                            val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.fundingInput.index.toInt())
                                             WaitForChannelReady(commitments1, shortChannelId, channelReady)
                                         }
                                         else -> state
