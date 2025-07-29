@@ -346,7 +346,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `generate valid commitment and htlc transactions (anchor outputs)`() {
+    fun `generate valid commitment and htlc transactions -- anchor outputs`() {
         testCommitAndHtlcTxs(Transactions.CommitmentFormat.AnchorOutputs)
     }
 
