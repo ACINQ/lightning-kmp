@@ -196,6 +196,29 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `bytes serialization`() {
+        val validTestCases = listOf(
+            Pair(ByteVector("deadbeef"), 0) to ByteVector.empty,
+            Pair(ByteVector("deadbeef"), 1) to ByteVector("de"),
+            Pair(ByteVector("deadbeef"), 2) to ByteVector("dead"),
+            Pair(ByteVector("deadbeef"), 3) to ByteVector("deadbe"),
+            Pair(ByteVector("deadbeef"), 4) to ByteVector("deadbeef"),
+        )
+        validTestCases.forEach {
+            val expected = it.second
+            val (encoded, size) = it.first
+            assertEquals(expected, LightningCodecs.bytes(ByteArrayInput(encoded.toByteArray()), size).byteVector())
+        }
+        val invalidTestCases = listOf(
+            Pair(ByteVector("deadbeef"), 5L),
+            Pair(ByteVector("deadbeef"), 0xffffffffL),
+        )
+        invalidTestCases.forEach { (encoded, size) ->
+            assertFails { LightningCodecs.bytes(ByteArrayInput(encoded.toByteArray()), size) }
+        }
+    }
+
+    @Test
     fun `encode - decode init message`() {
         data class TestCase(val encoded: ByteVector, val decoded: Init?, val reEncoded: ByteVector? = null)
 
@@ -430,7 +453,6 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             CommitSigTlv.AlternativeFeerateSig(FeeratePerKw(500.sat), ByteVector64.fromValidHex("2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5")),
             CommitSigTlv.AlternativeFeerateSig(FeeratePerKw(750.sat), ByteVector64.fromValidHex("83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58")),
         )
-        val backup = EncryptedChannelData(ByteVector.fromHex("fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691"))
         val testCases = listOf(
             // @formatter:off
             CommitSig(channelId, signature, listOf(), TlvStream(CommitSigTlv.AlternativeFeerateSigs(alternateSigs))) to "00842dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed70000fe47010001cd03000000fdc49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3000001f42dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5000002ee83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58",
@@ -898,4 +920,5 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val msg = DNSAddressResponse(Chain.Testnet3.chainHash, "foo@bar.baz")
         assertEquals(msg, LightningMessage.decode(LightningMessage.encode(msg)))
     }
+
 }
