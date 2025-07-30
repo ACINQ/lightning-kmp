@@ -320,6 +320,7 @@ object JsonSerializers {
         transform = { f ->
             when (f) {
                 Transactions.CommitmentFormat.AnchorOutputs -> CommitmentFormatSurrogate("anchor_outputs")
+                Transactions.CommitmentFormat.SimpleTaprootChannels -> CommitmentFormatSurrogate("simple_taproot_channels")
             }
         },
         delegateSerializer = CommitmentFormatSurrogate.serializer()
@@ -337,6 +338,7 @@ object JsonSerializers {
         transform = { s ->
             when (s) {
                 is ChannelSpendSignature.IndividualSignature -> ChannelSpendSignatureSurrogate(s.sig)
+                is ChannelSpendSignature.PartialSignatureWithNonce -> ChannelSpendSignatureSurrogate(ByteVector64.Zeroes) // FIXME
             }
         },
         delegateSerializer = ChannelSpendSignatureSurrogate.serializer()

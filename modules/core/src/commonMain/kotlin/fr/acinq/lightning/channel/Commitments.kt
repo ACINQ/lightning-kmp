@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
@@ -97,6 +98,9 @@ data class CommitmentChanges(val localChanges: LocalChanges, val remoteChanges: 
 sealed class ChannelSpendSignature {
     /** When using a 2-of-2 multisig, we need two individual ECDSA signatures. */
     data class IndividualSignature(val sig: ByteVector64) : ChannelSpendSignature()
+
+    /** When using Musig2, we need two partial signatures and the signer's nonce. */
+    data class PartialSignatureWithNonce(val partialSig: ByteVector32, val nonce: IndividualNonce) : ChannelSpendSignature()
 }
 
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
@@ -252,6 +256,7 @@ data class Commitment(
                 val localSig = unsignedCommitTx.sign(fundingKey, remoteFundingPubkey)
                 unsignedCommitTx.aggregateSigs(fundingKey.publicKey(), remoteFundingPubkey, localSig, remoteSig)
             }
+            else -> throw IllegalArgumentException("not implemented") // FIXME
         }
     }
 
