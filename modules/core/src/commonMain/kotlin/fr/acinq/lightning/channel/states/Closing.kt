@@ -282,7 +282,7 @@ data class Closing(
                             }
                             val revokedCommitPublishActions = mutableListOf<ChannelAction>()
                             val revokedCommitPublished1 = revokedCommitPublished.map { rev ->
-                                val (newRevokedCommitPublished, penaltyTxs) = claimRevokedHtlcTxOutputs(channelKeys(), commitments.params, rev, watch.spendingTx, currentOnChainFeerates())
+                                val (newRevokedCommitPublished, penaltyTxs) = claimRevokedHtlcTxOutputs(commitments.params, channelKeys(), rev, watch.spendingTx, currentOnChainFeerates())
                                 penaltyTxs.forEach {
                                     revokedCommitPublishActions += ChannelAction.Blockchain.PublishTx(it)
                                     revokedCommitPublishActions += ChannelAction.Blockchain.SendWatch(WatchSpent(channelId, watch.spendingTx, it.input.outPoint.index.toInt(), WatchSpent.ClosingOutputSpent(it.amountIn)))
@@ -306,7 +306,7 @@ data class Closing(
             is ChannelCommand.Closing.GetHtlcInfosResponse -> {
                 val index = revokedCommitPublished.indexOfFirst { it.commitTx.txid == cmd.revokedCommitTxId }
                 if (index >= 0) {
-                    val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(channelKeys(), commitments.params, revokedCommitPublished[index], currentOnChainFeerates(), cmd.htlcInfos)
+                    val revokedCommitPublished1 = claimRevokedRemoteCommitTxHtlcOutputs(commitments.params, channelKeys(), revokedCommitPublished[index], currentOnChainFeerates(), cmd.htlcInfos)
                     val nextState = copy(revokedCommitPublished = revokedCommitPublished.updated(index, revokedCommitPublished1))
                     val actions = buildList {
                         add(ChannelAction.Storage.StoreState(nextState))
