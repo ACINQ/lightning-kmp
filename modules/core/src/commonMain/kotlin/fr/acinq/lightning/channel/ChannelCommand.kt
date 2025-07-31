@@ -2,12 +2,13 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.WatchTriggered
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.states.PersistedChannelState
-import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.ChannelKeys
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.FailureMessage
 import fr.acinq.lightning.wire.LightningMessage
@@ -28,7 +29,12 @@ sealed class ChannelCommand {
             val walletInputs: List<WalletState.Utxo>,
             val commitTxFeerate: FeeratePerKw,
             val fundingTxFeerate: FeeratePerKw,
-            val localParams: LocalParams,
+            val localChannelParams: LocalChannelParams,
+            val dustLimit: Satoshi,
+            val htlcMinimum: MilliSatoshi,
+            val maxHtlcValueInFlightMsat: Long,
+            val maxAcceptedHtlcs: Int,
+            val toRemoteDelay: CltvExpiryDelta,
             val remoteInit: InitMessage,
             val channelFlags: ChannelFlags,
             val channelConfig: ChannelConfig,
@@ -36,7 +42,7 @@ sealed class ChannelCommand {
             val requestRemoteFunding: LiquidityAds.RequestFunding?,
             val channelOrigin: Origin?,
         ) : Init() {
-            fun temporaryChannelId(keyManager: KeyManager): ByteVector32 = keyManager.channelKeys(localParams.fundingKeyPath).temporaryChannelId
+            fun temporaryChannelId(channelKeys: ChannelKeys): ByteVector32 = (ByteVector(ByteArray(33) { 0 }) + channelKeys.revocationBasePoint.value).sha256()
         }
 
         data class NonInitiator(
@@ -44,7 +50,12 @@ sealed class ChannelCommand {
             val temporaryChannelId: ByteVector32,
             val fundingAmount: Satoshi,
             val walletInputs: List<WalletState.Utxo>,
-            val localParams: LocalParams,
+            val localParams: LocalChannelParams,
+            val dustLimit: Satoshi,
+            val htlcMinimum: MilliSatoshi,
+            val maxHtlcValueInFlightMsat: Long,
+            val maxAcceptedHtlcs: Int,
+            val toRemoteDelay: CltvExpiryDelta,
             val channelConfig: ChannelConfig,
             val remoteInit: InitMessage,
             val fundingRates: LiquidityAds.WillFundRates?
