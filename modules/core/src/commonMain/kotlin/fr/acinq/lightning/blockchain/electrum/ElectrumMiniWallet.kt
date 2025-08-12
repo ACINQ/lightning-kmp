@@ -21,6 +21,10 @@ import kotlinx.coroutines.launch
 data class WalletState(val addresses: Map<String, AddressState>) {
     val utxos: List<Utxo> = addresses.flatMap { it.value.utxos }
     val totalBalance = utxos.map { it.amount }.sum()
+    val firstUnusedDerivedAddress: Pair<String, AddressMeta.Derived>? = addresses
+        .filterNot { entry -> entry.value.alreadyUsed }
+        .mapNotNull { entry -> (entry.value.meta as? AddressMeta.Derived)?.let { entry.key to it } }
+        .minByOrNull { it.second.index }
     val lastDerivedAddress: Pair<String, AddressMeta.Derived>? = addresses
         .mapNotNull { entry -> (entry.value.meta as? AddressMeta.Derived)?.let { entry.key to it } }
         .maxByOrNull { it.second.index }
@@ -133,7 +137,8 @@ class ElectrumMiniWallet(
     val chainHash: BlockHash,
     private val client: IElectrumClient,
     private val scope: CoroutineScope,
-    private val logger: Logger
+    private val logger: Logger,
+    val lookAhead: UInt = 3u
 ) : CoroutineScope by scope {
 
     // state flow with the current balance
@@ -236,10 +241,13 @@ class ElectrumMiniWallet(
         }
 
         suspend fun WalletState.maybeGenerateNext(generator: WalletCommand.Companion.AddressGenerator): WalletState {
-            val lastDerivedAddressState = this.lastDerivedAddress?.let { this.addresses[it.first] }
+            val lastDerivedAddressIndex = this.lastDerivedAddress?.second?.index
+            val firstUnusedDerivedAddressIndex = this.firstUnusedDerivedAddress?.second?.index
+            logger.info { "lastDerivedAddressIndex=$lastDerivedAddressIndex firstUnusedDerivedAddressIndex=$firstUnusedDerivedAddressIndex" }
             return when {
-                lastDerivedAddressState == null -> this.addAddress(generator, 0).maybeGenerateNext(generator) // there is no existing derived address: initialization
-                lastDerivedAddressState.alreadyUsed -> this.addAddress(generator, lastDerivedAddressState.meta.indexOrNull!! + 1).maybeGenerateNext(generator) // most recent derived address is used, need to generate a new one
+                lastDerivedAddressIndex == null -> this.addAddress(generator, 0).maybeGenerateNext(generator) // there is no existing derived address: initialization
+                firstUnusedDerivedAddressIndex == null -> this.addAddress(generator, lastDerivedAddressIndex + 1).maybeGenerateNext(generator) // most recent derived address is used, need to generate a new one
+                lastDerivedAddressIndex < firstUnusedDerivedAddressIndex + lookAhead.toInt() - 1 -> this.addAddress(generator, lastDerivedAddressIndex + 1).maybeGenerateNext(generator) // need to maintain the lookead interval
                 else -> this // nothing to do
             }
         }

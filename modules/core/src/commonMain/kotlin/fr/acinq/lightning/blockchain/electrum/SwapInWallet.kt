@@ -31,7 +31,7 @@ class SwapInWallet(
         scope.launch {
             // address rotation
             wallet.walletStateFlow
-                .map { it.lastDerivedAddress }
+                .map { it.firstUnusedDerivedAddress }
                 .filterNotNull()
                 .distinctUntilChanged()
                 .collect { (address, derived) ->
