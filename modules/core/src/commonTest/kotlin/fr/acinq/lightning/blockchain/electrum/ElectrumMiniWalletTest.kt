@@ -1,16 +1,17 @@
 package fr.acinq.lightning.blockchain.electrum
 
-import fr.acinq.bitcoin.Bitcoin
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
+import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toByteVector
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -175,7 +176,7 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @Test
     fun `multiple addresses with generator`() = runSuspendTest(timeout = 15.seconds) {
         val client = connectToMainnetServer()
-        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger)
+        val wallet = ElectrumMiniWallet(Block.LivenetGenesisBlock.hash, client, this, logger, lookAhead = 1u)
         wallet.addAddressGenerator {
             when (it) {
                 0 -> "16MmJT8VqW465GEyckWae547jKVfMB14P8" // has utxos
@@ -372,5 +373,49 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         wallet1.stop()
         wallet2.stop()
         client.stop()
+    }
+
+    @OptIn(FlowPreview::class)
+    @Test
+    fun `derived addresses with gaps`() = runSuspendTest(timeout = 15.seconds) {
+        val client = connectToTestnet3Server()
+        val chain = Chain.Testnet3
+        val wallet = ElectrumMiniWallet(chain.chainHash, client, this, logger)
+
+        val mnemonics = "bullet umbrella fringe token whip negative menu drill solid keep vacuum prepare".split(" ")
+        val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), chain, TestConstants.aliceSwapInServerXpub)
+        wallet.addAddressGenerator(generator = { index -> keyManager.swapInOnChainWallet.getSwapInProtocol(index).address(chain) })
+
+        // This wallet has:
+        // index=0: 10000 sat + 11000 sat
+        // index=1: nothing
+        // index=2: 12000 sat
+        // index=3: nothing <-- will stop there
+
+        val walletState = wallet.walletStateFlow.debounce(5.seconds).first()
+        assertEquals(1, walletState.firstUnusedDerivedAddress?.second?.index)
+        assertEquals(3, walletState.lastDerivedAddress?.second?.index)
+    }
+
+    @OptIn(FlowPreview::class)
+    @Test
+    fun `derived addresses with gaps and no look-ahead`() = runSuspendTest(timeout = 15.seconds) {
+        val client = connectToTestnet3Server()
+        val chain = Chain.Testnet3
+        val wallet = ElectrumMiniWallet(chain.chainHash, client, this, logger, lookAhead = 1u)
+
+        val mnemonics = "bullet umbrella fringe token whip negative menu drill solid keep vacuum prepare".split(" ")
+        val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), chain, TestConstants.aliceSwapInServerXpub)
+        wallet.addAddressGenerator(generator = { index -> keyManager.swapInOnChainWallet.getSwapInProtocol(index).address(chain) })
+
+        // This wallet has:
+        // index=0: 10000 sat + 11000 sat
+        // index=1: nothing <-- will stop there
+        // index=2: 12000 sat
+        // index=3: nothing
+
+        val walletState = wallet.walletStateFlow.debounce(5.seconds).first()
+        assertEquals(1, walletState.firstUnusedDerivedAddress?.second?.index)
+        assertEquals(1, walletState.lastDerivedAddress?.second?.index)
     }
 }
