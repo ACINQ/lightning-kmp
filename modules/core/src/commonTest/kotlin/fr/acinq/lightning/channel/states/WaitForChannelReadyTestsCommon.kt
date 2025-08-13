@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.Features
@@ -84,28 +85,34 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         val (alice, _, bob, _) = init()
         // bob publishes his commitment tx
         run {
-            val bobCommitTx = bob.commitments.latest.localCommit.publishableTxs.commitTx.tx
+            val bobCommitTx = bob.signCommitTx()
             val (alice1, actions1) = alice.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
             assertIs<Closing>(alice1.state)
             assertNotNull(alice1.state.remoteCommitPublished)
-            assertEquals(1, actions1.findPublishTxs().size)
-            assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
+            assertNotNull(alice1.state.remoteCommitPublished.localOutput)
+            val mainTx = actions1.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimRemoteDelayedOutputTx)
+            Transaction.correctlySpends(mainTx, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            actions1.hasWatchConfirmed(bobCommitTx.txid)
+            actions1.hasWatchOutputSpent(mainTx.txIn.first().outPoint)
         }
         // alice publishes her commitment tx
         run {
-            val aliceCommitTx = alice.commitments.latest.localCommit.publishableTxs.commitTx.tx
+            val aliceCommitTx = alice.signCommitTx()
             val (bob1, actions1) = bob.process(ChannelCommand.WatchReceived(WatchSpentTriggered(bob.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), aliceCommitTx)))
             assertIs<Closing>(bob1.state)
             assertNotNull(bob1.state.remoteCommitPublished)
-            assertEquals(1, actions1.findPublishTxs().size)
-            assertEquals(2, actions1.findWatches<WatchConfirmed>().size) // commit tx + main output
+            assertNotNull(bob1.state.remoteCommitPublished.localOutput)
+            val mainTx = actions1.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimRemoteDelayedOutputTx)
+            Transaction.correctlySpends(mainTx, listOf(aliceCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            actions1.hasWatchConfirmed(aliceCommitTx.txid)
+            actions1.hasWatchOutputSpent(mainTx.txIn.first().outPoint)
         }
     }
 
     @Test
     fun `recv ChannelSpent -- other commit`() {
         val (alice, _, _) = init()
-        val aliceCommitTx = alice.commitments.latest.localCommit.publishableTxs.commitTx.tx
+        val aliceCommitTx = alice.signCommitTx()
         val unknownTx = Transaction(2, aliceCommitTx.txIn, listOf(), 0)
         val (alice1, actions1) = alice.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), unknownTx)))
         assertEquals(alice.state, alice1.state)
@@ -116,13 +123,13 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     fun `recv Error`() {
         val (alice, _, bob, _) = init()
         listOf(alice, bob).forEach { state ->
-            val commitTx = state.commitments.latest.localCommit.publishableTxs.commitTx.tx
+            val commitTx = state.signCommitTx()
             val (state1, actions1) = state.process(ChannelCommand.MessageReceived(Error(state.channelId, "no lightning for you sir")))
             assertIs<Closing>(state1.state)
             assertNotNull(state1.state.localCommitPublished)
             assertNull(actions1.findOutgoingMessageOpt<Error>())
             actions1.hasPublishTx(commitTx)
-            actions1.hasWatch<WatchConfirmed>()
+            actions1.hasWatchConfirmed(commitTx.txid)
         }
     }
 
@@ -143,14 +150,14 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     fun `recv ChannelCommand_Close_ForceClose`() {
         val (alice, _, bob, _) = init()
         listOf(alice, bob).forEach { state ->
-            val commitTx = state.commitments.latest.localCommit.publishableTxs.commitTx.tx
+            val commitTx = state.signCommitTx()
             val (state1, actions1) = state.process(ChannelCommand.Close.ForceClose)
             assertIs<Closing>(state1.state)
             assertNotNull(state1.state.localCommitPublished)
             val error = actions1.hasOutgoingMessage<Error>()
             assertEquals(ForcedLocalCommit(bob.channelId).message, error.toAscii())
             actions1.hasPublishTx(commitTx)
-            actions1.hasWatch<WatchConfirmed>()
+            actions1.hasWatchConfirmed(commitTx.txid)
         }
     }
 

@@ -1,19 +1,22 @@
 package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.crypto.CommitmentPublicKeys
 import fr.acinq.lightning.crypto.LocalKeyManager
+import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
-import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector32
 import kotlin.test.Test
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class RecoveryTestsCommon {
+
     @Test
     fun `use funding pubkeys from published commitment to spend our output`() {
         // Alice creates and uses a LN channel to Bob
@@ -39,25 +42,28 @@ class RecoveryTestsCommon {
         val keyManager = LocalKeyManager(seed, Chain.Regtest, TestConstants.aliceSwapInServerXpub)
 
         // recompute our channel keys from the extracted funding pubkey and see if we can find and spend our output
+        // we only need our payment key and basepoint for our main output
         fun findAndSpend(fundingKey: PublicKey): Transaction? {
             val channelKeys = keyManager.recoverChannelKeys(fundingKey)
-            val localPaymentPoint = channelKeys.paymentBasepoint
-            val mainTx = Transactions.makeClaimRemoteDelayedOutputTx(
+            val commitKeys = RemoteCommitmentKeys(
+                ourPaymentKey = channelKeys.paymentKey,
+                theirDelayedPaymentPublicKey = randomKey().publicKey(),
+                ourPaymentBasePoint = channelKeys.paymentBasepoint,
+                ourHtlcKey = randomKey(),
+                theirHtlcPublicKey = randomKey().publicKey(),
+                revocationPublicKey = randomKey().publicKey()
+            )
+            val finalScript = Script.write(Script.pay2wpkh(fundingKey)).byteVector()
+            val mainTx = Transactions.ClaimRemoteDelayedOutputTx.createUnsignedTx(
+                commitKeys,
                 commitTx,
                 TestConstants.Bob.nodeParams.dustLimit,
-                localPaymentPoint,
-                Script.write(Script.pay2wpkh(fundingKey)).toByteVector(),
-                FeeratePerKw(Satoshi(750))
-            )
-            return when (mainTx) {
-                is Transactions.TxResult.Success -> {
-                    val sig = Transactions.sign(mainTx.result, channelKeys.paymentKey)
-                    val signedTx = Transactions.addSigs(mainTx.result, sig).tx
-                    Transaction.correctlySpends(signedTx, commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-                    signedTx
-                }
-                else -> null
-            }
+                finalScript,
+                FeeratePerKw(750.sat()),
+                Transactions.CommitmentFormat.AnchorOutputs
+            ).map { it.sign().tx }.right
+            mainTx?.let { Transaction.correctlySpends(it, commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
+            return mainTx
         }
 
         // this is the script of the output that we're spending
@@ -69,9 +75,17 @@ class RecoveryTestsCommon {
         // this is what our main output script should be
         fun ourDelayedOutputScript(pub: PublicKey): List<ScriptElt> {
             val channelKeys = keyManager.recoverChannelKeys(pub)
-            return Script.pay2wsh(Scripts.toRemoteDelayed(channelKeys.paymentBasepoint))
+            val commitKeys = CommitmentPublicKeys(
+                localDelayedPaymentPublicKey = randomKey().publicKey(),
+                remotePaymentPublicKey = channelKeys.paymentBasepoint,
+                localHtlcPublicKey = randomKey().publicKey(),
+                remoteHtlcPublicKey = randomKey().publicKey(),
+                revocationPublicKey = randomKey().publicKey()
+            )
+            return Script.pay2wsh(Scripts.toRemoteDelayed(commitKeys))
         }
 
         assertTrue(outputScript == ourDelayedOutputScript(pub1) || outputScript == ourDelayedOutputScript(pub2))
     }
+
 }

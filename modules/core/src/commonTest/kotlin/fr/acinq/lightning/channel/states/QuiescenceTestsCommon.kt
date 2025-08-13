@@ -7,7 +7,6 @@ import fr.acinq.lightning.Lightning
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.tests.TestConstants
@@ -339,7 +338,7 @@ class QuiescenceTestsCommon : LightningTestSuite() {
             UpdateFailHtlc(bob3.channelId, htlc.id, Lightning.randomBytes32()),
             UpdateFee(bob3.channelId, FeeratePerKw(500.sat)),
             UpdateAddHtlc(Lightning.randomBytes32(), htlc.id + 1, 50000000.msat, Lightning.randomBytes32(), CltvExpiry(alice.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket),
-            Shutdown(alice.channelId, alice.commitments.params.localParams.defaultFinalScriptPubKey),
+            Shutdown(alice.channelId, alice.commitments.channelParams.localParams.defaultFinalScriptPubKey),
         ).forEach {
             // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
             val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(it))
@@ -453,11 +452,11 @@ class QuiescenceTestsCommon : LightningTestSuite() {
         assertIs<Closing>(alice4.state)
         val lcp = alice4.state.localCommitPublished
         assertNotNull(lcp)
-        assertEquals(1, lcp.htlcTxs.size)
-        val htlcTimeoutTxs = lcp.htlcTimeoutTxs()
+        assertEquals(1, lcp.htlcOutputs.size)
+        val htlcTimeoutTxs = alice4.signHtlcTimeoutTxs()
         assertEquals(1, htlcTimeoutTxs.size)
         actionsAlice4.hasPublishTx(lcp.commitTx)
-        actionsAlice4.hasPublishTx(lcp.htlcTimeoutTxs().first().tx)
+        actionsAlice4.hasPublishTx(htlcTimeoutTxs.first().tx)
     }
 
     @Test
@@ -574,8 +573,8 @@ class QuiescenceTestsCommon : LightningTestSuite() {
         data class PostReconnectionState(val alice: LNChannel<Normal>, val bob: LNChannel<Normal>, val actionsAlice: List<ChannelAction>, val actionsBob: List<ChannelAction>)
 
         fun reconnect(alice: LNChannel<Offline>, bob: LNChannel<Offline>): PostReconnectionState {
-            val aliceInit = Init(alice.commitments.params.localParams.features)
-            val bobInit = Init(bob.commitments.params.localParams.features)
+            val aliceInit = Init(alice.commitments.channelParams.localParams.features)
+            val bobInit = Init(bob.commitments.channelParams.localParams.features)
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.Connected(aliceInit, bobInit))
             assertIs<LNChannel<Syncing>>(alice1)
             val channelReestablishA = actionsAlice1.findOutgoingMessage<ChannelReestablish>()
