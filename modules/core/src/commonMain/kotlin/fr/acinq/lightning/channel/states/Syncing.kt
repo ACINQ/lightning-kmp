@@ -408,23 +408,23 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 // we just sent a new commit_sig but they didn't receive it
                                 // we resend the same updates and the same sig, and preserve the same ordering
                                 val signedUpdates = commitments.changes.localChanges.signed
-                                val commitSigs = commitments.active.map { it.nextRemoteCommit }.filterIsInstance<NextRemoteCommit>().map { it.sig }
+                                val commitSigs = CommitSigs.fromSigs(commitments.active.mapNotNull { it.nextRemoteCommit?.sig })
                                 val retransmit = when (retransmitRevocation) {
                                     null -> buildList {
                                         addAll(signedUpdates)
-                                        addAll(commitSigs)
+                                        add(commitSigs)
                                     }
                                     else -> if (commitments.localCommitIndex > rnci.value.sentAfterLocalCommitIndex) {
                                         buildList {
                                             addAll(signedUpdates)
-                                            addAll(commitSigs)
+                                            add(commitSigs)
                                             add(retransmitRevocation)
                                         }
                                     } else {
                                         buildList {
                                             add(retransmitRevocation)
                                             addAll(signedUpdates)
-                                            addAll(commitSigs)
+                                            add(commitSigs)
                                         }
                                     }
                                 }

@@ -80,7 +80,7 @@ data class Normal(
                         val actions = buildList {
                             add(ChannelAction.Storage.StoreHtlcInfos(htlcInfos))
                             add(ChannelAction.Storage.StoreState(nextState))
-                            addAll(result.value.second.map { ChannelAction.Message.Send(it) })
+                            add(ChannelAction.Message.Send(result.value.second))
                         }
                         Pair(nextState, actions)
                     }
@@ -173,12 +173,12 @@ data class Normal(
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@Normal.copy(commitments = result.value), listOf())
                     }
-                    is CommitSig -> when {
+                    is CommitSigs -> when {
                         spliceStatus == SpliceStatus.Aborted -> {
                             logger.warning { "received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring..." }
                             Pair(this@Normal, listOf())
                         }
-                        spliceStatus is SpliceStatus.WaitingForSigs -> {
+                        spliceStatus is SpliceStatus.WaitingForSigs && cmd.message is CommitSig -> {
                             val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong(), logger)
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
@@ -193,7 +193,7 @@ data class Normal(
                                 is InteractiveTxSigningSessionAction.SendTxSigs -> sendSpliceTxSigs(spliceStatus.origins, action, spliceStatus.liquidityPurchase)
                             }
                         }
-                        ignoreRetransmittedCommitSig(cmd.message) -> {
+                        cmd.message is CommitSig && ignoreRetransmittedCommitSig(cmd.message) -> {
                             // We haven't received our peer's tx_signatures for the latest funding transaction and asked them to resend it on reconnection.
                             // They also resend their corresponding commit_sig, but we have already received it so we should ignore it.
                             // Note that the funding transaction may have confirmed while we were offline.
@@ -202,34 +202,29 @@ data class Normal(
                         }
                         // NB: in all other cases we process the commit_sig normally. We could do a full pattern matching on all splice statuses, but it would force us to handle
                         // corner cases like race condition between splice_init and a non-splice commit_sig
-                        else -> {
-                            when (val sigs = aggregateSigs(cmd.message)) {
-                                is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, channelKeys(), logger)) {
-                                    is Either.Left -> handleLocalError(cmd, result.value)
-                                    is Either.Right -> {
-                                        val commitments1 = result.value.first
-                                        val spliceStatus1 = when {
-                                            spliceStatus is SpliceStatus.QuiescenceRequested && commitments1.localIsQuiescent() -> SpliceStatus.InitiatorQuiescent(spliceStatus.command)
-                                            spliceStatus is SpliceStatus.ReceivedStfu && commitments1.localIsQuiescent() -> SpliceStatus.NonInitiatorQuiescent
-                                            else -> spliceStatus
-                                        }
-                                        val nextState = this@Normal.copy(commitments = commitments1, spliceStatus = spliceStatus1)
-                                        val actions = mutableListOf<ChannelAction>()
-                                        actions.add(ChannelAction.Storage.StoreState(nextState))
-                                        actions.add(ChannelAction.Message.Send(result.value.second))
-                                        if (commitments1.changes.localHasChanges()) {
-                                            actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
-                                        }
-                                        // If we're now quiescent, we may send our stfu message.
-                                        when {
-                                            spliceStatus is SpliceStatus.QuiescenceRequested && commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = true)))
-                                            spliceStatus is SpliceStatus.ReceivedStfu && commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = false)))
-                                            else -> {}
-                                        }
-                                        Pair(nextState, actions)
-                                    }
+                        else -> when (val result = commitments.receiveCommit(cmd.message, channelKeys(), logger)) {
+                            is Either.Left -> handleLocalError(cmd, result.value)
+                            is Either.Right -> {
+                                val commitments1 = result.value.first
+                                val spliceStatus1 = when {
+                                    spliceStatus is SpliceStatus.QuiescenceRequested && commitments1.localIsQuiescent() -> SpliceStatus.InitiatorQuiescent(spliceStatus.command)
+                                    spliceStatus is SpliceStatus.ReceivedStfu && commitments1.localIsQuiescent() -> SpliceStatus.NonInitiatorQuiescent
+                                    else -> spliceStatus
                                 }
-                                else -> Pair(this@Normal, listOf())
+                                val nextState = this@Normal.copy(commitments = commitments1, spliceStatus = spliceStatus1)
+                                val actions = mutableListOf<ChannelAction>()
+                                actions.add(ChannelAction.Storage.StoreState(nextState))
+                                actions.add(ChannelAction.Message.Send(result.value.second))
+                                if (commitments1.changes.localHasChanges()) {
+                                    actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
+                                }
+                                // If we're now quiescent, we may send our stfu message.
+                                when {
+                                    spliceStatus is SpliceStatus.QuiescenceRequested && commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = true)))
+                                    spliceStatus is SpliceStatus.ReceivedStfu && commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = false)))
+                                    else -> {}
+                                }
+                                Pair(nextState, actions)
                             }
                         }
                     }
@@ -822,8 +817,6 @@ data class Normal(
                         SpliceStatus.None
                     }
                 }
-                // reset the commit_sig batch
-                sigStash = emptyList()
                 Pair(Offline(this@Normal.copy(spliceStatus = spliceStatus1)), failedHtlcs)
             }
             is ChannelCommand.Connected -> unhandled(cmd)
