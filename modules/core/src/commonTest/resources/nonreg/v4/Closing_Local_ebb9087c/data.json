@@ -1,0 +1,212 @@
+{
+    "type": "fr.acinq.lightning.channel.states.Closing",
+    "commitments": {
+        "channelParams": {
+            "channelId": "abd6f05f60a686f8e2754cd4a5e293e3b99b0cf9dda7fed87190d3b04b5b2c1e",
+            "channelConfig": [
+                "funding_pubkey_based_channel_keypath"
+            ],
+            "channelFeatures": [
+                "option_static_remotekey",
+                "option_anchor_outputs",
+                "option_dual_fund"
+            ],
+            "localParams": {
+                "nodeId": "037108815ff0128f7ed22640485c226d9ad64a9fd6d8b41b6623565aed6b34812c",
+                "fundingKeyPath": "m/1025482412/1929474787/987346171'/931237647'/659857586/1516206615'/128221046'/2067467114/1'",
+                "isChannelOpener": true,
+                "paysCommitTxFees": false,
+                "defaultFinalScriptPubKey": "001405e0104aa726e34ff5cd3a6320d05c0862b5b01c",
+                "features": {
+                    "activated": {
+                        "option_data_loss_protect": "Optional",
+                        "var_onion_optin": "Mandatory",
+                        "option_static_remotekey": "Mandatory",
+                        "payment_secret": "Mandatory",
+                        "basic_mpp": "Optional",
+                        "option_support_large_channel": "Optional",
+                        "option_anchor_outputs": "Mandatory",
+                        "option_route_blinding": "Optional",
+                        "option_dual_fund": "Mandatory",
+                        "option_channel_type": "Mandatory",
+                        "wake_up_notification_provider": "Optional",
+                        "trampoline_payment_experimental": "Optional"
+                    },
+                    "unknown": [
+                        139,
+                        147
+                    ]
+                }
+            },
+            "remoteParams": {
+                "nodeId": "0362b19a83930389b4468be40308efb3f352b23142ae25e6aba0465a8220f95b06",
+                "revocationBasepoint": "021a7f0907f923519d4da0e4bdcb344107ee2d4b47b5e93f27014e3a5aefb187b4",
+                "paymentBasepoint": "02f1c20fe4c931170a0c17f4991727ebf6b3c48738f0fe0dbb463eac3a58512566",
+                "delayedPaymentBasepoint": "03c23a68c8cfe4b551ffaaa6a4edeee0ac20c7ddb5e5db8711b9b20620b3dd7018",
+                "htlcBasepoint": "0218e048efae86ff1cb0184dae9a95367d37549c6258ed364e37cb08647701d3fd",
+                "features": {
+                    "activated": {
+                        "option_data_loss_protect": "Optional",
+                        "var_onion_optin": "Mandatory",
+                        "option_static_remotekey": "Mandatory",
+                        "payment_secret": "Mandatory",
+                        "basic_mpp": "Optional",
+                        "option_support_large_channel": "Optional",
+                        "option_anchor_outputs": "Optional",
+                        "option_route_blinding": "Optional",
+                        "option_shutdown_anysegwit": "Mandatory",
+                        "option_dual_fund": "Mandatory",
+                        "option_quiescence": "Mandatory",
+                        "option_channel_type": "Mandatory",
+                        "zero_reserve_channels": "Optional",
+                        "wake_up_notification_client": "Optional",
+                        "trampoline_payment_experimental": "Optional",
+                        "splice_experimental": "Optional"
+                    },
+                    "unknown": [
+                        137,
+                        145
+                    ]
+                }
+            },
+            "channelFlags": {
+                "announceChannel": false,
+                "nonInitiatorPaysCommitFees": false
+            }
+        },
+        "changes": {
+            "localChanges": {
+                "proposed": [],
+                "signed": [],
+                "acked": []
+            },
+            "remoteChanges": {
+                "proposed": [],
+                "acked": [],
+                "signed": []
+            },
+            "localNextHtlcId": 2,
+            "remoteNextHtlcId": 0
+        },
+        "active": [
+            {
+                "fundingTxIndex": 0,
+                "fundingInput": "9b2a64072912064cdbfbc9f79a36d47af48b458f9ea133c4588f53f59d3cc307:0",
+                "fundingAmount": 1000000,
+                "remoteFundingPubkey": "0262927c7f186107ea2b04522abda2e12dad48ff5d58646dda882b61f65cf6678f",
+                "localFundingStatus": {
+                    "status": "confirmed",
+                    "txId": "9b2a64072912064cdbfbc9f79a36d47af48b458f9ea133c4588f53f59d3cc307"
+                },
+                "remoteFundingStatus": {
+                    "status": "not-locked"
+                },
+                "commitmentFormat": {
+                    "rfcName": "anchor_outputs"
+                },
+                "localCommitParams": {
+                    "dustLimit": 1100,
+                    "maxHtlcValueInFlightMsat": 1500000000,
+                    "htlcMinimum": 0,
+                    "toSelfDelay": 144,
+                    "maxAcceptedHtlcs": 100
+                },
+                "localCommit": {
+                    "index": 1,
+                    "spec": {
+                        "htlcsIn": [],
+                        "htlcsOut": [
+                            {
+                                "channelId": "abd6f05f60a686f8e2754cd4a5e293e3b99b0cf9dda7fed87190d3b04b5b2c1e",
+                                "id": 0,
+                                "amountMsat": 50000000,
+                                "paymentHash": "632721426509eaa886c3e2adae52e45f1dd04fcb85a8190f9387db16f2ffb6af",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "abd6f05f60a686f8e2754cd4a5e293e3b99b0cf9dda7fed87190d3b04b5b2c1e",
+                                "id": 1,
+                                "amountMsat": 1099900,
+                                "paymentHash": "e7e10459c06c2ce4e68f0d7a31df2fc564c67a68ab5dff97984ac32d272bee99",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "feerate": 5000,
+                        "toLocal": 748900100,
+                        "toRemote": 200000000
+                    },
+                    "txId": "24f0d946a87c12c7fa345d04f2f2e9623074bd093d44229e8d00e1422257e015",
+                    "remoteSig": {
+                        "sig": "58555dff0574ce320e281e1ff9d945674f710e5a33aeffcd2c0a105bbe1c2bad7389c84098615ab0f12dd7e9f951ede0000f205fda0f03fe958a42bfb59c9726"
+                    },
+                    "htlcRemoteSigs": [
+                        "29503e87f9b949d66cdbaef5a011d52d3f01fda29912c342f2e6ed69d74755bd029544a42cae34e45aaf92628b9eca98ae2441ec4433f8bf8714224f82cc852c"
+                    ]
+                },
+                "remoteCommitParams": {
+                    "dustLimit": 1000,
+                    "maxHtlcValueInFlightMsat": 1500000000,
+                    "htlcMinimum": 1000,
+                    "toSelfDelay": 144,
+                    "maxAcceptedHtlcs": 100
+                },
+                "remoteCommit": {
+                    "index": 1,
+                    "spec": {
+                        "htlcsIn": [
+                            {
+                                "channelId": "abd6f05f60a686f8e2754cd4a5e293e3b99b0cf9dda7fed87190d3b04b5b2c1e",
+                                "id": 0,
+                                "amountMsat": 50000000,
+                                "paymentHash": "632721426509eaa886c3e2adae52e45f1dd04fcb85a8190f9387db16f2ffb6af",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            },
+                            {
+                                "channelId": "abd6f05f60a686f8e2754cd4a5e293e3b99b0cf9dda7fed87190d3b04b5b2c1e",
+                                "id": 1,
+                                "amountMsat": 1099900,
+                                "paymentHash": "e7e10459c06c2ce4e68f0d7a31df2fc564c67a68ab5dff97984ac32d272bee99",
+                                "cltvExpiry": 400144,
+                                "onionRoutingPacket": "<redacted>"
+                            }
+                        ],
+                        "htlcsOut": [],
+                        "feerate": 5000,
+                        "toLocal": 200000000,
+                        "toRemote": 748900100
+                    },
+                    "txid": "a5a0a814029bd641a3ecb0e0bebd899d4d70548f8b1871b76084a61da84f9080",
+                    "remotePerCommitmentPoint": "0301cb095962c34e028958d65ecee6abd111724e3135b33e8ead4df798fe67e9a2"
+                },
+                "nextRemoteCommit": null
+            }
+        ],
+        "inactive": [],
+        "payments": {
+            "0": "2d1c5af8-3432-451f-8163-96f24a34dcfb",
+            "1": "d83f5bb4-9dd5-4828-afd0-e382bdb31228"
+        },
+        "remoteNextCommitInfo": {
+            "left": null,
+            "right": "037a75bcb1e54d9696851e4447b928c60f34d226913ca95c882eec2e30262614ba"
+        },
+        "remotePerCommitmentSecrets": "<redacted>"
+    },
+    "waitingSinceBlock": 400000,
+    "localCommitPublished": {
+        "commitTx": "0200000000010107c33c9df5538f58c433a19e8f458bf47ad4369af7c9fbdb4c06122907642a9b0000000000d1489680054a01000000000000220020cca63a05053e3136be80fdff0b910964921e9a86abf2f6c8a5a2572c0b9ec0874a01000000000000220020f6c0da7bcacad5eae05b637a064e0b50b9509ae8605b7935529abfbda3d5d02150c30000000000002200203b089cd6e67ed390b14fc4f427e31096e57d0255970f2a320711324cb978b86d400d03000000000022002027e4847ebe39f77ddb74b6f8db707dddc0bb390c67a87ad2650a128b7d500bc680510b0000000000220020698a6b11e81fdaa28e0efff32d4d93e781e4075e1c6c381e7ae35ab16a6a40260400473044022058555dff0574ce320e281e1ff9d945674f710e5a33aeffcd2c0a105bbe1c2bad02207389c84098615ab0f12dd7e9f951ede0000f205fda0f03fe958a42bfb59c9726014730440220256b21466dd455baaf05e9d650e1e0e2f6af821f40a6ad60af6792473cb277fa022068944c1ec29b2a7d08ec497258472474e292ab1dfaaf3d4abc5a1b409604c2d4014752210262927c7f186107ea2b04522abda2e12dad48ff5d58646dda882b61f65cf6678f2103b34007686c9f4652ecce8495a1d47591f322289903749e03f902ef741106bafc52ae12ef0320",
+        "localOutput": "24f0d946a87c12c7fa345d04f2f2e9623074bd093d44229e8d00e1422257e015:4",
+        "anchorOutput": null,
+        "incomingHtlcs": {},
+        "outgoingHtlcs": {
+            "24f0d946a87c12c7fa345d04f2f2e9623074bd093d44229e8d00e1422257e015:2": 0
+        },
+        "htlcDelayedOutputs": [
+            "4ed5f44594cb4afd61028a65555aa68ac19f11e87f757e8dbcf3a83e31f9deeb:0"
+        ],
+        "irrevocablySpent": {}
+    }
+}
