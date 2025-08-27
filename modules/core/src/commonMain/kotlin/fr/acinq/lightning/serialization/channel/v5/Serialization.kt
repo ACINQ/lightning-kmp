@@ -1,0 +1,607 @@
+package fr.acinq.lightning.serialization.channel.v5
+
+import fr.acinq.bitcoin.BtcSerializer
+import fr.acinq.bitcoin.OutPoint
+import fr.acinq.bitcoin.ScriptWitness
+import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.io.ByteArrayOutput
+import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.utils.Either
+import fr.acinq.lightning.FeatureSupport
+import fr.acinq.lightning.Features
+import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.states.*
+import fr.acinq.lightning.serialization.OutputExtensions.writeBoolean
+import fr.acinq.lightning.serialization.OutputExtensions.writeBtcObject
+import fr.acinq.lightning.serialization.OutputExtensions.writeByteVector32
+import fr.acinq.lightning.serialization.OutputExtensions.writeByteVector64
+import fr.acinq.lightning.serialization.OutputExtensions.writeCollection
+import fr.acinq.lightning.serialization.OutputExtensions.writeDelimited
+import fr.acinq.lightning.serialization.OutputExtensions.writeEither
+import fr.acinq.lightning.serialization.OutputExtensions.writeLightningMessage
+import fr.acinq.lightning.serialization.OutputExtensions.writeNullable
+import fr.acinq.lightning.serialization.OutputExtensions.writeNumber
+import fr.acinq.lightning.serialization.OutputExtensions.writePublicKey
+import fr.acinq.lightning.serialization.OutputExtensions.writeString
+import fr.acinq.lightning.serialization.OutputExtensions.writeTxId
+import fr.acinq.lightning.serialization.channel.allHtlcs
+import fr.acinq.lightning.serialization.common.liquidityads.Serialization.writeLiquidityPurchase
+import fr.acinq.lightning.transactions.*
+import fr.acinq.lightning.wire.LightningCodecs
+
+/**
+ * Serialization for [ChannelStateWithCommitments].
+ *
+ * This is a large file, but it's just repetition of the same pattern
+ *
+ * We define extension methods on the class [Output] to serialize various types
+ * from primitives to structures:
+ * ```
+ *  private fun Output.write(o: MyType): Unit
+ * ```
+ *
+ * Then we just iterate over all fields of the top level class we want to serialize, and call the
+ * write method on all of them.
+ *
+ * We defer serialization of Bitcoin and Lightning protocol messages to the respective [BtcSerializer]
+ * and [LightningCodecs].
+ */
+object Serialization {
+
+    const val VERSION_MAGIC = 5
+
+    fun serialize(o: PersistedChannelState): ByteArray {
+        val out = ByteArrayOutput()
+        out.write(VERSION_MAGIC)
+        out.writePersistedChannelState(o)
+        return out.toByteArray()
+    }
+
+    fun serializePeerStorage(states: List<PersistedChannelState>): ByteArray {
+        val out = ByteArrayOutput()
+        out.writeCollection(states) { out.writePersistedChannelState(it) }
+        return out.toByteArray()
+    }
+
+    private fun Output.writePersistedChannelState(o: PersistedChannelState) = when (o) {
+        is WaitForFundingSigned -> {
+            write(0x00); writeWaitForFundingSigned(o)
+        }
+        is WaitForFundingConfirmed -> {
+            write(0x10); writeWaitForFundingConfirmed(o)
+        }
+        is WaitForChannelReady -> {
+            write(0x20); writeWaitForChannelReady(o)
+        }
+        is Normal -> {
+            write(0x30); writeNormal(o)
+        }
+        is ShuttingDown -> {
+            write(0x40); writeShuttingDown(o)
+        }
+        is Negotiating -> {
+            write(0x50); writeNegotiating(o)
+        }
+        is Closing -> {
+            write(0x60); writeClosing(o)
+        }
+        is WaitForRemotePublishFutureCommitment -> {
+            write(0x70); writeWaitForRemotePublishFutureCommitment(o)
+        }
+        is Closed -> {
+            write(0x80); writeClosed(o)
+        }
+    }
+
+    private fun Output.writeWaitForFundingSigned(o: WaitForFundingSigned) = o.run {
+        writeChannelParams(channelParams)
+        writeInteractiveTxSigningSession(signingSession)
+        writePublicKey(remoteSecondPerCommitmentPoint)
+        writeNullable(liquidityPurchase) { writeLiquidityPurchase(it) }
+        writeNullable(channelOrigin) { writeChannelOrigin(it) }
+    }
+
+    private fun Output.writeWaitForFundingConfirmed(o: WaitForFundingConfirmed) = o.run {
+        writeCommitments(commitments)
+        writeNumber(waitingSinceBlock)
+        writeNullable(deferred) { writeLightningMessage(it) }
+        when (rbfStatus) {
+            is RbfStatus.WaitingForSigs -> {
+                write(0x01)
+                writeInteractiveTxSigningSession(rbfStatus.session)
+            }
+            else -> {
+                write(0x00)
+            }
+        }
+    }
+
+    private fun Output.writeWaitForChannelReady(o: WaitForChannelReady) = o.run {
+        writeCommitments(commitments)
+        writeNumber(shortChannelId.toLong())
+        writeLightningMessage(lastSent)
+    }
+
+    private fun Output.writeNormal(o: Normal) = o.run {
+        writeCommitments(commitments)
+        writeNumber(shortChannelId.toLong())
+        writeLightningMessage(channelUpdate)
+        writeNullable(remoteChannelUpdate) { writeLightningMessage(it) }
+        when (spliceStatus) {
+            is SpliceStatus.WaitingForSigs -> {
+                write(0x01)
+                writeInteractiveTxSigningSession(spliceStatus.session)
+                writeNullable(spliceStatus.liquidityPurchase) { writeLiquidityPurchase(it) }
+                writeCollection(spliceStatus.origins) { writeChannelOrigin(it) }
+            }
+            else -> {
+                write(0x00)
+            }
+        }
+        writeNullable(localShutdown) { writeLightningMessage(it) }
+        writeNullable(remoteShutdown) { writeLightningMessage(it) }
+        writeNullable(closeCommand) { writeCloseCommand(it) }
+    }
+
+    private fun Output.writeShuttingDown(o: ShuttingDown) = o.run {
+        writeCommitments(commitments)
+        writeLightningMessage(localShutdown)
+        writeLightningMessage(remoteShutdown)
+        writeNullable(closeCommand) { writeCloseCommand(it) }
+    }
+
+    private fun Output.writeNegotiating(o: Negotiating) = o.run {
+        writeCommitments(commitments)
+        writeDelimited(localScript.toByteArray())
+        writeDelimited(remoteScript.toByteArray())
+        writeCollection(proposedClosingTxs) {
+            writeNullable(it.localAndRemote) { tx -> writeClosingTx(tx) }
+            writeNullable(it.localOnly) { tx -> writeClosingTx(tx) }
+            writeNullable(it.remoteOnly) { tx -> writeClosingTx(tx) }
+        }
+        writeCollection(publishedClosingTxs) { writeClosingTx(it) }
+        writeNumber(waitingSinceBlock)
+        writeNullable(closeCommand) { writeCloseCommand(it) }
+    }
+
+    private fun Output.writeClosing(o: Closing) = o.run {
+        writeCommitments(commitments)
+        writeNumber(waitingSinceBlock)
+        writeCollection(mutualCloseProposed) { writeClosingTx(it) }
+        writeCollection(mutualClosePublished) { writeClosingTx(it) }
+        writeNullable(localCommitPublished) { writeLocalCommitPublished(it) }
+        writeNullable(remoteCommitPublished) { writeRemoteCommitPublished(it) }
+        writeNullable(nextRemoteCommitPublished) { writeRemoteCommitPublished(it) }
+        writeNullable(futureRemoteCommitPublished) { writeRemoteCommitPublished(it) }
+        writeCollection(revokedCommitPublished) { writeRevokedCommitPublished(it) }
+    }
+
+    private fun Output.writeClosingTx(o: Transactions.ClosingTx) = o.run {
+        write(0x01)
+        writeInputInfo(input)
+        writeBtcObject(tx)
+        writeNullable(toLocalOutputIndex) { writeNumber(it) }
+    }
+
+    private fun Output.writeLocalCommitPublished(o: LocalCommitPublished) = o.run {
+        writeBtcObject(commitTx)
+        writeNullable(localOutput) { writeBtcObject(it) }
+        writeNullable(anchorOutput) { writeBtcObject(it) }
+        writeCollection(incomingHtlcs.entries) {
+            writeBtcObject(it.key)
+            writeNumber(it.value)
+        }
+        writeCollection(outgoingHtlcs.entries) {
+            writeBtcObject(it.key)
+            writeNumber(it.value)
+        }
+        writeCollection(htlcDelayedOutputs) { writeBtcObject(it) }
+        writeIrrevocablySpent(irrevocablySpent)
+    }
+
+    private fun Output.writeRemoteCommitPublished(o: RemoteCommitPublished) = o.run {
+        writeBtcObject(commitTx)
+        writeNullable(localOutput) { writeBtcObject(it) }
+        writeNullable(anchorOutput) { writeBtcObject(it) }
+        writeCollection(incomingHtlcs.entries) {
+            writeBtcObject(it.key)
+            writeNumber(it.value)
+        }
+        writeCollection(outgoingHtlcs.entries) {
+            writeBtcObject(it.key)
+            writeNumber(it.value)
+        }
+        writeIrrevocablySpent(irrevocablySpent)
+    }
+
+    private fun Output.writeRevokedCommitPublished(o: RevokedCommitPublished) = o.run {
+        writeBtcObject(commitTx)
+        writeByteVector32(remotePerCommitmentSecret.value)
+        writeNullable(localOutput) { writeBtcObject(it) }
+        writeNullable(remoteOutput) { writeBtcObject(it) }
+        writeCollection(htlcOutputs) { writeBtcObject(it) }
+        writeCollection(htlcDelayedOutputs) { writeBtcObject(it) }
+        writeIrrevocablySpent(irrevocablySpent)
+    }
+
+    private fun Output.writeIrrevocablySpent(o: Map<OutPoint, Transaction>) = writeCollection(o.entries) {
+        writeBtcObject(it.key)
+        writeBtcObject(it.value)
+    }
+
+    private fun Output.writeWaitForRemotePublishFutureCommitment(o: WaitForRemotePublishFutureCommitment) = o.run {
+        writeCommitments(commitments)
+        writeLightningMessage(remoteChannelReestablish)
+    }
+
+    private fun Output.writeClosed(o: Closed) = o.run {
+        writeClosing(state)
+    }
+
+    private fun Output.writeSharedFundingInput(i: SharedFundingInput) = i.run {
+        write(0x01)
+        writeInputInfo(info)
+        writeNumber(fundingTxIndex)
+        writePublicKey(remoteFundingPubkey)
+        writeCommitmentFormat(commitmentFormat)
+    }
+
+    private fun Output.writeInteractiveTxParams(o: InteractiveTxParams) = o.run {
+        writeByteVector32(channelId)
+        writeBoolean(isInitiator)
+        writeNumber(localContribution.toLong())
+        writeNumber(remoteContribution.toLong())
+        writeNullable(sharedInput) { writeSharedFundingInput(it) }
+        writePublicKey(remoteFundingPubkey)
+        writeCollection(localOutputs) { writeBtcObject(it) }
+        writeCommitmentFormat(commitmentFormat)
+        writeNumber(lockTime)
+        writeNumber(dustLimit.toLong())
+        writeNumber(targetFeerate.toLong())
+    }
+
+    private fun Output.writeSharedInteractiveTxInput(i: InteractiveTxInput.Shared) = i.run {
+        write(0x01)
+        writeNumber(serialId)
+        writeBtcObject(outPoint)
+        writeDelimited(publicKeyScript.toByteArray())
+        writeNumber(sequence.toLong())
+        writeNumber(localAmount.toLong())
+        writeNumber(remoteAmount.toLong())
+        writeNumber(htlcAmount.toLong())
+    }
+
+    private fun Output.writeLocalInteractiveTxInput(i: InteractiveTxInput.Local) = when (i) {
+        is InteractiveTxInput.LocalOnly -> i.run {
+            write(0x01)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+        }
+        is InteractiveTxInput.LocalLegacySwapIn -> i.run {
+            write(0x02)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writeNumber(refundDelay)
+        }
+        is InteractiveTxInput.LocalSwapIn -> i.run {
+            write(0x03)
+            writeNumber(serialId)
+            writeBtcObject(previousTx)
+            writeNumber(previousTxOutput)
+            writeNumber(sequence.toLong())
+            writeNumber(addressIndex)
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writePublicKey(userRefundKey)
+            writeNumber(refundDelay)
+        }
+    }
+
+    private fun Output.writeRemoteInteractiveTxInput(i: InteractiveTxInput.Remote) = when (i) {
+        is InteractiveTxInput.RemoteOnly -> i.run {
+            write(0x01)
+            writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
+            writeNumber(sequence.toLong())
+        }
+        is InteractiveTxInput.RemoteLegacySwapIn -> i.run {
+            write(0x02)
+            writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writeNumber(refundDelay)
+        }
+        is InteractiveTxInput.RemoteSwapIn -> i.run {
+            write(0x03)
+            writeNumber(serialId)
+            writeBtcObject(outPoint)
+            writeBtcObject(txOut)
+            writeNumber(sequence.toLong())
+            writePublicKey(userKey)
+            writePublicKey(serverKey)
+            writePublicKey(userRefundKey)
+            writeNumber(refundDelay)
+        }
+    }
+
+    private fun Output.writeSharedInteractiveTxOutput(o: InteractiveTxOutput.Shared) = o.run {
+        write(0x01)
+        writeNumber(serialId)
+        writeDelimited(pubkeyScript.toByteArray())
+        writeNumber(localAmount.toLong())
+        writeNumber(remoteAmount.toLong())
+        writeNumber(htlcAmount.toLong())
+    }
+
+    private fun Output.writeLocalInteractiveTxOutput(o: InteractiveTxOutput.Local) = when (o) {
+        is InteractiveTxOutput.Local.Change -> o.run {
+            write(0x01)
+            writeNumber(serialId)
+            writeNumber(amount.toLong())
+            writeDelimited(pubkeyScript.toByteArray())
+        }
+        is InteractiveTxOutput.Local.NonChange -> o.run {
+            write(0x02)
+            writeNumber(serialId)
+            writeNumber(amount.toLong())
+            writeDelimited(pubkeyScript.toByteArray())
+        }
+    }
+
+    private fun Output.writeRemoteInteractiveTxOutput(o: InteractiveTxOutput.Remote) = o.run {
+        write(0x01)
+        writeNumber(serialId)
+        writeNumber(amount.toLong())
+        writeDelimited(pubkeyScript.toByteArray())
+    }
+
+    private fun Output.writeSharedTransaction(tx: SharedTransaction) = tx.run {
+        writeNullable(sharedInput) { writeSharedInteractiveTxInput(it) }
+        writeSharedInteractiveTxOutput(sharedOutput)
+        writeCollection(localInputs) { writeLocalInteractiveTxInput(it) }
+        writeCollection(remoteInputs) { writeRemoteInteractiveTxInput(it) }
+        writeCollection(localOutputs) { writeLocalInteractiveTxOutput(it) }
+        writeCollection(remoteOutputs) { writeRemoteInteractiveTxOutput(it) }
+        writeNumber(lockTime)
+    }
+
+    private fun Output.writeScriptWitness(w: ScriptWitness) = writeCollection(w.stack) { writeDelimited(it.toByteArray()) }
+
+    private fun Output.writeSignedSharedTransaction(o: SignedSharedTransaction) = when (o) {
+        is PartiallySignedSharedTransaction -> o.run {
+            write(0x01)
+            writeSharedTransaction(tx)
+            writeLightningMessage(localSigs)
+        }
+        is FullySignedSharedTransaction -> o.run {
+            write(0x02)
+            writeSharedTransaction(tx)
+            writeLightningMessage(localSigs)
+            writeLightningMessage(remoteSigs)
+            writeNullable(sharedSigs) { writeScriptWitness(it) }
+        }
+    }
+
+    private fun Output.writeUnsignedLocalCommitWithoutHtlcs(localCommit: InteractiveTxSigningSession.Companion.UnsignedLocalCommit) {
+        writeNumber(localCommit.index)
+        writeCommitmentSpecWithoutHtlcs(localCommit.spec)
+        writeTxId(localCommit.txId)
+    }
+
+    private fun Output.writeLocalCommitWithoutHtlcs(localCommit: LocalCommit) = localCommit.run {
+        writeNumber(index)
+        writeCommitmentSpecWithoutHtlcs(spec)
+        writeTxId(txId)
+        writeChannelSpendSignature(remoteSig)
+        writeCollection(htlcRemoteSigs) { writeByteVector64(it) }
+    }
+
+    private fun Output.writeRemoteCommitWithoutHtlcs(remoteCommit: RemoteCommit) = remoteCommit.run {
+        writeNumber(index)
+        writeCommitmentSpecWithoutHtlcs(spec)
+        writeTxId(txid)
+        writePublicKey(remotePerCommitmentPoint)
+    }
+
+    private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
+        writeInteractiveTxParams(fundingParams)
+        writeNumber(s.fundingTxIndex)
+        writeSignedSharedTransaction(fundingTx)
+        writeCommitParams(localCommitParams)
+        when (localCommit) {
+            is Either.Left -> {
+                write(0x01)
+                writeUnsignedLocalCommitWithoutHtlcs(localCommit.value)
+            }
+            is Either.Right -> {
+                write(0x02)
+                writeLocalCommitWithoutHtlcs(localCommit.value)
+            }
+        }
+        writeCommitParams(remoteCommitParams)
+        writeRemoteCommitWithoutHtlcs(remoteCommit)
+    }
+
+    private fun Output.writeChannelOrigin(o: Origin) = when (o) {
+        is Origin.OffChainPayment -> {
+            write(0x01)
+            writeByteVector32(o.paymentPreimage)
+            writeNumber(o.amountBeforeFees.toLong())
+            writeNumber(o.fees.miningFee.toLong())
+            writeNumber(o.fees.serviceFee.toLong())
+        }
+        is Origin.OnChainWallet -> {
+            write(0x02)
+            writeCollection(o.inputs) { writeBtcObject(it) }
+            writeNumber(o.amountBeforeFees.toLong())
+            writeNumber(o.fees.miningFee.toLong())
+            writeNumber(o.fees.serviceFee.toLong())
+        }
+    }
+
+    private fun Output.writeChannelParams(o: ChannelParams) = o.run {
+        writeByteVector32(channelId)
+        writeDelimited(channelConfig.toByteArray())
+        writeDelimited(Features(channelFeatures.features.associateWith { FeatureSupport.Mandatory }).toByteArray())
+        localParams.run {
+            writePublicKey(nodeId)
+            writeCollection(fundingKeyPath.path) { writeNumber(it) }
+            // We encode those two booleans in the same byte.
+            val isOpenerFlag = if (isChannelOpener) 1 else 0
+            val payCommitTxFeesFlag = if (paysCommitTxFees) 2 else 0
+            writeNumber(isOpenerFlag + payCommitTxFeesFlag)
+            writeDelimited(defaultFinalScriptPubKey.toByteArray())
+            writeDelimited(features.toByteArray())
+        }
+        remoteParams.run {
+            writePublicKey(nodeId)
+            writePublicKey(revocationBasepoint)
+            writePublicKey(paymentBasepoint)
+            writePublicKey(delayedPaymentBasepoint)
+            writePublicKey(htlcBasepoint)
+            writeDelimited(features.toByteArray())
+        }
+        // We encode channel flags in the same byte.
+        val announceChannelFlag = if (channelFlags.announceChannel) 1 else 0
+        val nonInitiatorPaysCommitFeesFlag = if (channelFlags.nonInitiatorPaysCommitFees) 2 else 0
+        writeNumber(announceChannelFlag + nonInitiatorPaysCommitFeesFlag)
+    }
+
+    private fun Output.writeCommitParams(o: CommitParams) = o.run {
+        writeNumber(dustLimit.toLong())
+        writeNumber(maxHtlcValueInFlightMsat)
+        writeNumber(htlcMinimum.toLong())
+        writeNumber(toSelfDelay.toLong())
+        writeNumber(maxAcceptedHtlcs)
+    }
+
+    private fun Output.writeCommitmentChanges(o: CommitmentChanges) = o.run {
+        localChanges.run {
+            writeCollection(proposed) { writeLightningMessage(it) }
+            writeCollection(signed) { writeLightningMessage(it) }
+            writeCollection(acked) { writeLightningMessage(it) }
+        }
+        remoteChanges.run {
+            writeCollection(proposed) { writeLightningMessage(it) }
+            writeCollection(acked) { writeLightningMessage(it) }
+            writeCollection(signed) { writeLightningMessage(it) }
+        }
+        writeNumber(localNextHtlcId)
+        writeNumber(remoteNextHtlcId)
+    }
+
+    private fun Output.writeCommitment(o: Commitment) = o.run {
+        writeNumber(fundingTxIndex)
+        writeBtcObject(fundingInput)
+        writeNumber(fundingAmount.toLong())
+        writePublicKey(remoteFundingPubkey)
+        when (localFundingStatus) {
+            is LocalFundingStatus.UnconfirmedFundingTx -> {
+                write(0x00)
+                writeSignedSharedTransaction(localFundingStatus.sharedTx)
+                writeInteractiveTxParams(localFundingStatus.fundingParams)
+                writeNumber(localFundingStatus.createdAt)
+            }
+            is LocalFundingStatus.ConfirmedFundingTx -> {
+                write(0x01)
+                writeBtcObject(localFundingStatus.txOut)
+                writeNumber(localFundingStatus.fee.toLong())
+                writeLightningMessage(localFundingStatus.localSigs)
+                writeNumber(localFundingStatus.shortChannelId.toLong())
+            }
+        }
+        when (remoteFundingStatus) {
+            is RemoteFundingStatus.NotLocked -> write(0x00)
+            is RemoteFundingStatus.Locked -> write(0x01)
+        }
+        writeCommitmentFormat(commitmentFormat)
+        writeCommitParams(localCommitParams)
+        writeLocalCommitWithoutHtlcs(localCommit)
+        writeCommitParams(remoteCommitParams)
+        writeRemoteCommitWithoutHtlcs(remoteCommit)
+        writeNullable(nextRemoteCommit) {
+            writeLightningMessage(it.sig)
+            writeRemoteCommitWithoutHtlcs(it.commit)
+        }
+    }
+
+    private fun Output.writeCommitments(o: Commitments) = o.run {
+        writeChannelParams(channelParams)
+        writeCommitmentChanges(changes)
+        // When multiple commitments are active, htlcs are shared between all of these commitments, so we serialize the htlcs separately to save space.
+        // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both local and remote commitments.
+        writeCollection(o.allHtlcs) { writeDirectedHtlc(it) }
+        writeCollection(active) { writeCommitment(it) }
+        writeCollection(inactive) { writeCommitment(it) }
+        writeCollection(payments.entries) { entry ->
+            writeNumber(entry.key)
+            writeString(entry.value.toString())
+        }
+        writeEither(
+            remoteNextCommitInfo,
+            writeLeft = { writeNumber(it.sentAfterLocalCommitIndex) },
+            writeRight = { writePublicKey(it) }
+        )
+        remotePerCommitmentSecrets.run {
+            writeCollection(knownHashes.entries) { entry ->
+                writeCollection(entry.key) { writeBoolean(it) }
+                writeByteVector32(entry.value)
+            }
+            writeNullable(lastIndex) { writeNumber(it) }
+        }
+    }
+
+    private fun Output.writeDirectedHtlc(htlc: DirectedHtlc) = htlc.run {
+        when (htlc) {
+            is IncomingHtlc -> write(0)
+            is OutgoingHtlc -> write(1)
+        }
+        writeLightningMessage(add)
+    }
+
+    private fun Output.writeCommitmentSpecWithoutHtlcs(spec: CommitmentSpec) = spec.run {
+        writeCollection(htlcs) {
+            when (it) {
+                is IncomingHtlc -> write(0)
+                is OutgoingHtlc -> write(1)
+            }
+            // To avoid duplication, HTLCs are serialized separately.
+            writeNumber(it.add.id)
+        }
+        writeNumber(feerate.toLong())
+        writeNumber(toLocal.toLong())
+        writeNumber(toRemote.toLong())
+    }
+
+    private fun Output.writeInputInfo(o: Transactions.InputInfo): Unit = o.run {
+        writeBtcObject(outPoint)
+        writeBtcObject(txOut)
+    }
+
+    private fun Output.writeCommitmentFormat(o: Transactions.CommitmentFormat) = when (o) {
+        Transactions.CommitmentFormat.AnchorOutputs -> write(0x00)
+    }
+
+    private fun Output.writeChannelSpendSignature(sig: ChannelSpendSignature) = when (sig) {
+        is ChannelSpendSignature.IndividualSignature -> {
+            write(0x00)
+            writeByteVector64(sig.sig)
+        }
+    }
+
+    private fun Output.writeCloseCommand(o: ChannelCommand.Close.MutualClose) = o.run {
+        writeNullable(scriptPubKey) { writeDelimited(it.toByteArray()) }
+        writeNumber(feerate.toLong())
+    }
+
+}

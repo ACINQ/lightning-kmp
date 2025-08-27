@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
@@ -29,7 +30,8 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val txAddInput = actions1.findOutgoingMessage<TxAddInput>()
         assertNotEquals(txAddInput.channelId, accept.temporaryChannelId)
         assertEquals(alice1.channelId, txAddInput.channelId)
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
     }
 
     @Test
@@ -51,7 +53,8 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
         assertEquals(ChannelEvents.Creating(alice1.state), actions1.find<ChannelAction.EmitEvent>().event)
     }
 
@@ -65,7 +68,8 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(alice1.state), actions1.find<ChannelAction.EmitEvent>().event)
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.ZeroReserveChannels, Feature.DualFunding)))
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
     }
 
     @Test

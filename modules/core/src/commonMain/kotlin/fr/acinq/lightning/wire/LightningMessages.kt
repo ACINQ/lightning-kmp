@@ -9,6 +9,7 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelFlags
+import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
@@ -1225,7 +1226,7 @@ data class UpdateFailMalformedHtlc(
 
 data class CommitSig(
     override val channelId: ByteVector32,
-    val signature: ByteVector64,
+    val signature: ChannelSpendSignature.IndividualSignature,
     val htlcSignatures: List<ByteVector64>,
     val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
 ) : HtlcMessage, HasChannelId, RequirePeerStorageStore {
@@ -1236,7 +1237,7 @@ data class CommitSig(
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
-        LightningCodecs.writeBytes(signature, out)
+        LightningCodecs.writeBytes(signature.sig, out)
         LightningCodecs.writeU16(htlcSignatures.size, out)
         htlcSignatures.forEach { LightningCodecs.writeBytes(it, out) }
         TlvStreamSerializer(false, readers).write(tlvStream, out)
@@ -1253,7 +1254,7 @@ data class CommitSig(
 
         override fun read(input: Input): CommitSig {
             val channelId = ByteVector32(LightningCodecs.bytes(input, 32))
-            val sig = ByteVector64(LightningCodecs.bytes(input, 64))
+            val sig = ChannelSpendSignature.IndividualSignature(ByteVector64(LightningCodecs.bytes(input, 64)))
             val numHtlcs = LightningCodecs.u16(input)
             val htlcSigs = ArrayList<ByteVector64>(numHtlcs)
             for (i in 1..numHtlcs) {
@@ -1555,8 +1556,7 @@ data class Shutdown(
     companion object : LightningMessageReader<Shutdown> {
         const val type: Long = 38
 
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(ShutdownTlv.ChannelData.tag to ShutdownTlv.ChannelData.Companion as TlvValueReader<ShutdownTlv>)
+        val readers: Map<Long, TlvValueReader<ShutdownTlv>> = mapOf()
 
         override fun read(input: Input): Shutdown {
             return Shutdown(
