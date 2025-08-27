@@ -73,7 +73,7 @@ data class WaitForChannelReady(
                         enable = Helpers.aboveReserve(commitments)
                     )
                     val nextState = Normal(
-                        commitments,
+                        commitments.addRemoteCommitNonce(commitments.latest.fundingTxId, cmd.message.nextLocalNonce),
                         shortChannelId,
                         initialChannelUpdate,
                         null,

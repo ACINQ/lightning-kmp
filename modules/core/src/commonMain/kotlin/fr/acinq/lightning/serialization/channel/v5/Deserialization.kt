@@ -1,6 +1,7 @@
 package fr.acinq.lightning.serialization.channel.v5
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.utils.Either
@@ -17,6 +18,7 @@ import fr.acinq.lightning.serialization.InputExtensions.readByteVector64
 import fr.acinq.lightning.serialization.InputExtensions.readCollection
 import fr.acinq.lightning.serialization.InputExtensions.readDelimitedByteArray
 import fr.acinq.lightning.serialization.InputExtensions.readEither
+import fr.acinq.lightning.serialization.InputExtensions.readIndividualNonce
 import fr.acinq.lightning.serialization.InputExtensions.readLightningMessage
 import fr.acinq.lightning.serialization.InputExtensions.readNullable
 import fr.acinq.lightning.serialization.InputExtensions.readNumber
@@ -65,7 +67,8 @@ object Deserialization {
         signingSession = readInteractiveTxSigningSession(emptySet()),
         remoteSecondPerCommitmentPoint = readPublicKey(),
         liquidityPurchase = readNullable { readLiquidityPurchase() },
-        channelOrigin = readNullable { readChannelOrigin() }
+        channelOrigin = readNullable { readChannelOrigin() },
+        remoteCommitNonces = mapOf()
     )
 
     private fun Input.readWaitForFundingConfirmed() = WaitForFundingConfirmed(
@@ -377,7 +380,8 @@ object Deserialization {
             else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
         },
         remoteCommitParams = readCommitParams(),
-        remoteCommit = readRemoteCommitWithoutHtlcs(htlcs)
+        remoteCommit = readRemoteCommitWithoutHtlcs(htlcs),
+        nextRemoteNonce = null
     )
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
@@ -505,7 +509,7 @@ object Deserialization {
             }.toMap(),
             lastIndex = readNullable { readNumber() }
         )
-        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets)
+        return Commitments(params, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, mapOf(), localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {
@@ -544,11 +548,13 @@ object Deserialization {
 
     private fun Input.readCommitmentFormat(): Transactions.CommitmentFormat = when (val discriminator = read()) {
         0x00 -> Transactions.CommitmentFormat.AnchorOutputs
+        0x01 -> Transactions.CommitmentFormat.SimpleTaprootChannels
         else -> error("invalid discriminator $discriminator for class ${Transactions.CommitmentFormat::class}")
     }
 
     private fun Input.readChannelSpendSignature(): ChannelSpendSignature = when (val discriminator = read()) {
         0x00 -> ChannelSpendSignature.IndividualSignature(readByteVector64())
+        0x01 -> ChannelSpendSignature.PartialSignatureWithNonce(readByteVector32(), readIndividualNonce())
         else -> error("invalid discriminator $discriminator for class ${ChannelSpendSignature::class}")
     }
 

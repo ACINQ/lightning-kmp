@@ -217,6 +217,13 @@ sealed class Feature {
         override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
     }
 
+    // README: this is not the feature bit specified in the BOLT, this one is specific to Phoenix
+    @Serializable
+    object SimpleTaprootChannels : Feature() {
+        override val rfcName get() = "simple_taproot_channels"
+        override val mandatory get() = 564
+        override val scopes: Set<FeatureScope> get() = setOf(FeatureScope.Init, FeatureScope.Node)
+    }
 }
 
 @Serializable
@@ -294,7 +301,8 @@ data class Features(val activated: Map<Feature, FeatureSupport>, val unknown: Se
             Feature.WakeUpNotificationProvider,
             Feature.ExperimentalSplice,
             Feature.OnTheFlyFunding,
-            Feature.FundingFeeCredit
+            Feature.FundingFeeCredit,
+            Feature.SimpleTaprootChannels
         )
 
         operator fun invoke(bytes: ByteVector): Features = invoke(bytes.toByteArray())

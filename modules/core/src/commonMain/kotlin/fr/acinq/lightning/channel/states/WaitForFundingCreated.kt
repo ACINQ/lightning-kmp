@@ -98,7 +98,8 @@ data class WaitForFundingCreated(
                                         session,
                                         remoteSecondPerCommitmentPoint,
                                         liquidityPurchase,
-                                        channelOrigin
+                                        channelOrigin,
+                                        remoteCommitNonces = session.nextRemoteNonce?.let { mapOf(session.fundingTx.txId to it) } ?: mapOf()
                                     )
                                     val actions = buildList {
                                         interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }

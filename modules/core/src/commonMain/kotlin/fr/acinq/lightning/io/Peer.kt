@@ -672,7 +672,8 @@ class Peer(
                     channel.commitments.channelParams.localParams.defaultFinalScriptPubKey,
                     channel.commitments.channelParams.localParams.defaultFinalScriptPubKey,
                     targetFeerate,
-                    0
+                    0,
+                    channel.commitments.remoteCloseeNonce
                 ).map { ChannelManagementFees(miningFee = it.second.fees, serviceFee = 0.sat) }.right
             }
     }
@@ -1529,6 +1530,11 @@ class Peer(
                                             swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                                         }
                                         else -> {
+                                            val channelType = if (Features.canUseFeature(ourInit.features, theirInit!!.features, Feature.SimpleTaprootChannels)) {
+                                                ChannelType.SupportedChannelType.SimpleTaprootChannels
+                                            } else {
+                                                ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
+                                            }
                                             // We ask our peer to pay the commit tx fees.
                                             val localParams = LocalChannelParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
                                             val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
@@ -1547,7 +1553,7 @@ class Peer(
                                                 remoteInit = theirInit!!,
                                                 channelFlags = channelFlags,
                                                 channelConfig = ChannelConfig.standard,
-                                                channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+                                                channelType = channelType,
                                                 requestRemoteFunding = requestRemoteFunding,
                                                 channelOrigin = Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), fees),
                                             )
