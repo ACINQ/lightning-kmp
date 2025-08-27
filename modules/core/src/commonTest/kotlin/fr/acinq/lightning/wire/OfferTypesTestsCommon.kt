@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
@@ -71,7 +72,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         val offer = Offer(
             TlvStream(
                 OfferChains(listOf(Block.Testnet3GenesisBlock.hash)),
-                OfferAmount(50.msat),
+                OfferAmount(50),
                 OfferDescription("offer with quantity"),
                 OfferIssuer("alice@bigshop.com"),
                 OfferQuantityMax(0),
@@ -80,7 +81,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         )
         val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968jys3v9kxjcm9gp3xjemndphhqtnrdak3gqqkyypsmuhrtwfzm85mht4a3vcp0yrlgua3u3m5uqpc6kf7nqjz6v70qwg"
         assertEquals(offer, Offer.decode(encoded).get())
-        assertEquals(50.msat, offer.amount)
+        assertEquals(Either.Left(50.msat), offer.amount)
         assertEquals("offer with quantity", offer.description)
         assertEquals(nodeId, offer.issuerId)
         assertEquals("alice@bigshop.com", offer.issuer)
@@ -147,7 +148,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
 
     @Test
     fun `check that invoice request matches offer - without chain`() {
-        val offer = Offer(TlvStream(OfferAmount(100.msat), OfferDescription("offer without chains"), OfferIssuerId(randomKey().publicKey())))
+        val offer = Offer(TlvStream(OfferAmount(100), OfferDescription("offer without chains"), OfferIssuerId(randomKey().publicKey())))
         val payerKey = randomKey()
         val tlvs: Set<InvoiceRequestTlv> = offer.records.records + setOf(
             InvoiceRequestMetadata(ByteVector.fromHex("012345")),
@@ -169,7 +170,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     fun `check that invoice request matches offer - with chains`() {
         val chain1 = BlockHash(randomBytes32())
         val chain2 = BlockHash(randomBytes32())
-        val offer = Offer(TlvStream(OfferChains(listOf(chain1, chain2)), OfferAmount(100.msat), OfferDescription("offer with chains"), OfferIssuerId(randomKey().publicKey())))
+        val offer = Offer(TlvStream(OfferChains(listOf(chain1, chain2)), OfferAmount(100), OfferDescription("offer with chains"), OfferIssuerId(randomKey().publicKey())))
         val payerKey = randomKey()
         val request1 = InvoiceRequest(offer, 100.msat, 1, Features.empty, payerKey, null, chain1)
         assertTrue(request1.isValid())
@@ -192,7 +193,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
     fun `check that invoice request matches offer - multiple items`() {
         val offer = Offer(
             TlvStream(
-                OfferAmount(500.msat),
+                OfferAmount(500),
                 OfferDescription("offer for multiple items"),
                 OfferIssuerId(randomKey().publicKey()),
                 OfferQuantityMax(10),
