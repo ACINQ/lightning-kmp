@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -11,6 +12,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Transient
 
 data class Normal(
     override val commitments: Commitments,
@@ -21,9 +23,15 @@ data class Normal(
     val localShutdown: Shutdown?,
     val remoteShutdown: Shutdown?,
     val closeCommand: ChannelCommand.Close.MutualClose?,
+    @Transient override val remoteCommitNonces: Map<TxId, IndividualNonce>,
+    @Transient val localCloseeNonce: Transactions.LocalNonce?,
+    @Transient val remoteCloseeNonce: IndividualNonce?,
+    @Transient val localCloserNonces: Transactions.CloserNonces?,
 ) : ChannelStateWithCommitments() {
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
+
+    fun addRemoteCommitNonce(fundingTxId: TxId, nonce: IndividualNonce?): Normal = nonce?.let { this.copy(remoteCommitNonces = this.remoteCommitNonces + (fundingTxId to it)) } ?: this
 
     override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         val forbiddenPreSplice = cmd is ChannelCommand.ForbiddenDuringQuiescence && spliceStatus is QuiescenceNegotiation
@@ -62,7 +70,7 @@ data class Normal(
                     logger.debug { "already in the process of signing, will sign again as soon as possible" }
                     Pair(this@Normal, listOf())
                 }
-                else -> when (val result = commitments.sendCommit(channelKeys(), logger)) {
+                else -> when (val result = commitments.sendCommit(channelKeys(), remoteCommitNonces, logger)) {
                     is Either.Left -> handleCommandError(cmd, result.value, channelUpdate)
                     is Either.Right -> {
                         val commitments1 = result.value.first
@@ -113,8 +121,8 @@ data class Normal(
                         handleCommandError(cmd, InvalidFinalScript(channelId), channelUpdate)
                     }
                     else -> {
-                        val shutdown = Shutdown(channelId, localScriptPubkey)
-                        val newState = this@Normal.copy(localShutdown = shutdown, closeCommand = cmd)
+                        val (localCloseeNonce, shutdown) = this@Normal.commitments.createShutdown(channelKeys(), localScriptPubkey)
+                        val newState = this@Normal.copy(localCloseeNonce = localCloseeNonce, localShutdown = shutdown, closeCommand = cmd)
                         val actions = listOf(ChannelAction.Storage.StoreState(newState), ChannelAction.Message.Send(shutdown))
                         Pair(newState, actions)
                     }
@@ -237,17 +245,29 @@ data class Normal(
                             }
                             val nextState = if (remoteShutdown != null && !commitments1.changes.localHasUnsignedOutgoingHtlcs()) {
                                 // we were waiting for our pending htlcs to be signed before replying with our local shutdown
-                                val localShutdown = Shutdown(channelId, commitments.channelParams.localParams.defaultFinalScriptPubKey)
+                                val (localCloseeNonce, localShutdown) = commitments1.createShutdown(channelKeys(), commitments.channelParams.localParams.defaultFinalScriptPubKey)
                                 actions.add(ChannelAction.Message.Send(localShutdown))
                                 if (commitments1.latest.remoteCommit.spec.htlcs.isNotEmpty()) {
                                     // we just signed htlcs that need to be resolved now
-                                    ShuttingDown(commitments1, localShutdown, remoteShutdown, closeCommand)
+                                    ShuttingDown(commitments, localShutdown, remoteShutdown, closeCommand, remoteCommitNonces = cmd.message.nextCommitNonces, localCloseeNonce = localCloseeNonce)
                                 } else {
                                     logger.warning { "we have no htlcs but have not replied with our shutdown yet, this should never happen" }
-                                    Negotiating(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOf(), currentBlockHeight.toLong(), closeCommand)
+                                    Negotiating(
+                                        commitments,
+                                        cmd.message.nextCommitNonces,
+                                        localShutdown.scriptPubKey,
+                                        remoteShutdown.scriptPubKey,
+                                        listOf(),
+                                        listOf(),
+                                        currentBlockHeight.toLong(),
+                                        closeCommand,
+                                        localCloseeNonce = localCloseeNonce,
+                                        remoteCloseeNonce = localShutdown.closeeNonce,
+                                        localCloserNonces = this@Normal.localCloserNonces
+                                    )
                                 }
                             } else {
-                                this@Normal.copy(commitments = commitments1)
+                                this@Normal.copy(commitments = commitments1, remoteCommitNonces = cmd.message.nextCommitNonces)
                             }
                             actions.add(0, ChannelAction.Storage.StoreState(nextState))
                             Pair(nextState, actions)
@@ -288,11 +308,11 @@ data class Normal(
                                 when (commitments.remoteNextCommitInfo) {
                                     is Either.Left -> {
                                         // we already have a signature in progress, will resign when we receive the revocation
-                                        Pair(this@Normal.copy(remoteShutdown = cmd.message), listOf())
+                                        Pair(this@Normal.copy(remoteShutdown = cmd.message, remoteCloseeNonce = cmd.message.closeeNonce), listOf())
                                     }
                                     is Either.Right -> {
                                         // no, let's sign right away
-                                        val newState = this@Normal.copy(remoteShutdown = cmd.message)
+                                        val newState = this@Normal.copy(remoteShutdown = cmd.message, remoteCloseeNonce = cmd.message.closeeNonce)//.updateCloseeNonce(cmd.message.closeeNonce)
                                         Pair(newState, listOf(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign)))
                                     }
                                 }
@@ -300,13 +320,25 @@ data class Normal(
                             else -> {
                                 // so we don't have any unsigned outgoing changes
                                 val actions = mutableListOf<ChannelAction>()
-                                val localShutdown = this@Normal.localShutdown ?: Shutdown(channelId, commitments.channelParams.localParams.defaultFinalScriptPubKey)
+                                val (localCloseeNonce, localShutdown) = when (this@Normal.localShutdown) {
+                                    null -> commitments.createShutdown(channelKeys(), commitments.channelParams.localParams.defaultFinalScriptPubKey)
+                                    else -> this@Normal.localCloseeNonce to this@Normal.localShutdown
+                                }
                                 if (this@Normal.localShutdown == null) actions.add(ChannelAction.Message.Send(localShutdown))
                                 when {
-                                    commitments.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments, localShutdown, cmd.message, actions)
+                                    commitments.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
+                                        closeCommand,
+                                        commitments,
+                                        localShutdown,
+                                        cmd.message,
+                                        actions,
+                                        this@Normal.remoteCommitNonces,
+                                        localCloseeNonce,
+                                        cmd.message.closeeNonce
+                                    )
                                     else -> {
                                         // there are some pending changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
-                                        val nextState = ShuttingDown(commitments, localShutdown, cmd.message, closeCommand)
+                                        val nextState = ShuttingDown(commitments, localShutdown, cmd.message, closeCommand, remoteCommitNonces = remoteCommitNonces, localCloseeNonce = localCloseeNonce)
                                         actions.add(ChannelAction.Storage.StoreState(nextState))
                                         Pair(nextState, actions)
                                     }
@@ -393,6 +425,7 @@ data class Normal(
                                                 feerate = spliceStatus.command.feerate,
                                                 fundingPubkey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey(),
                                                 requestFunding = spliceStatus.command.requestRemoteFunding,
+                                                channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
                                             )
                                             logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution}" }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(spliceStatus.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
@@ -428,11 +461,21 @@ data class Normal(
                                 val channelKeys = channelKeys()
                                 logger.info { "accepting splice with remote.amount=${cmd.message.fundingContribution}" }
                                 val parentCommitment = commitments.active.first()
+
+                                val (nextCommitmentFormat, channelType) = when {
+                                    cmd.message.channelType == ChannelType.SupportedChannelType.SimpleTaprootChannels && parentCommitment.commitmentFormat == Transactions.CommitmentFormat.AnchorOutputs -> {
+                                        Pair(Transactions.CommitmentFormat.SimpleTaprootChannels, cmd.message.channelType)
+                                    }
+
+                                    else -> Pair(parentCommitment.commitmentFormat, null)
+                                }
+
                                 val spliceAck = SpliceAck(
                                     channelId,
                                     fundingContribution = 0.sat, // only remote contributes to the splice
                                     fundingPubkey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey(),
                                     willFund = null,
+                                    channelType = channelType
                                 )
                                 val fundingParams = InteractiveTxParams(
                                     channelId = channelId,
@@ -442,7 +485,7 @@ data class Normal(
                                     sharedInput = SharedFundingInput(channelKeys, parentCommitment),
                                     remoteFundingPubkey = cmd.message.fundingPubkey,
                                     localOutputs = emptyList(),
-                                    commitmentFormat = commitments.latest.commitmentFormat,
+                                    commitmentFormat = nextCommitmentFormat,
                                     lockTime = cmd.message.lockTime,
                                     dustLimit = commitments.latest.localCommitParams.dustLimit.max(commitments.latest.remoteCommitParams.dustLimit),
                                     targetFeerate = cmd.message.feerate
@@ -456,7 +499,9 @@ data class Normal(
                                     previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
                                     localHtlcs = parentCommitment.localCommit.spec.htlcs,
                                     fundingContributions = FundingContributions(emptyList(), emptyList()), // as non-initiator we don't contribute to this splice for now
-                                    previousTxs = emptyList()
+                                    previousTxs = emptyList(),
+                                    commitTxIndex = parentCommitment.localCommit.index,
+                                    fundingTxIndex = parentCommitment.fundingTxIndex + 1
                                 )
                                 val nextState = this@Normal.copy(
                                     spliceStatus = SpliceStatus.InProgress(
@@ -511,10 +556,10 @@ data class Normal(
                                         sharedInput = sharedInput,
                                         remoteFundingPubkey = cmd.message.fundingPubkey,
                                         localOutputs = spliceStatus.command.spliceOutputs,
-                                        commitmentFormat = commitments.latest.commitmentFormat,
+                                        commitmentFormat = Transactions.CommitmentFormat.SimpleTaprootChannels,
                                         lockTime = spliceStatus.spliceInit.lockTime,
                                         dustLimit = commitments.latest.localCommitParams.dustLimit.max(commitments.latest.remoteCommitParams.dustLimit),
-                                        targetFeerate = spliceStatus.spliceInit.feerate
+                                        targetFeerate = spliceStatus.spliceInit.feerate,
                                     )
                                     when (val fundingContributions = FundingContributions.create(
                                         channelKeys = channelKeys,
@@ -549,7 +594,9 @@ data class Normal(
                                                 previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
                                                 localHtlcs = parentCommitment.localCommit.spec.htlcs,
                                                 fundingContributions = fundingContributions.value,
-                                                previousTxs = emptyList()
+                                                previousTxs = emptyList(),
+                                                commitTxIndex = parentCommitment.localCommit.index,
+                                                fundingTxIndex = parentCommitment.fundingTxIndex + 1
                                             ).send()
                                             when (interactiveTxAction) {
                                                 is InteractiveTxSessionAction.SendMessage -> {
@@ -841,7 +888,7 @@ data class Normal(
         val fundingScript = action.commitment.commitInput(channelKeys()).txOut.publicKeyScript
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, fundingScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
         val commitments = commitments.add(action.commitment)
-        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None)
+        val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None).addRemoteCommitNonce(action.commitment.fundingTxId, action.nextRemoteCommitNonce)
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }

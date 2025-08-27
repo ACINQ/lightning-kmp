@@ -1,5 +1,7 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.Commitments
@@ -9,6 +11,8 @@ import fr.acinq.lightning.channel.Commitments
  */
 data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val commitments: Commitments get() = state.commitments
+
+    override val remoteCommitNonces: Map<TxId, IndividualNonce> get() = state.remoteCommitNonces
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
         return this.copy(state = state.updateCommitments(input) as Closing)

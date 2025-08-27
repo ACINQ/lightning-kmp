@@ -1,15 +1,19 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.wire.ChannelReestablish
+import kotlinx.serialization.Transient
 
 data class WaitForRemotePublishFutureCommitment(
     override val commitments: Commitments,
-    val remoteChannelReestablish: ChannelReestablish
+    val remoteChannelReestablish: ChannelReestablish,
+    @Transient override val remoteCommitNonces: Map<TxId, IndividualNonce>
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 

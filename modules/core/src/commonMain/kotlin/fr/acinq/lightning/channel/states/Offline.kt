@@ -69,7 +69,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                                             val nextPerCommitmentPoint = commitments1.channelParams.localParams.channelKeys(keyManager).commitmentPoint(1)
                                             val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
                                             val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.fundingInput.index.toInt())
-                                            WaitForChannelReady(commitments1, shortChannelId, channelReady)
+                                            WaitForChannelReady(commitments1, shortChannelId, channelReady, state.remoteCommitNonces)
                                         }
                                         else -> state
                                     }

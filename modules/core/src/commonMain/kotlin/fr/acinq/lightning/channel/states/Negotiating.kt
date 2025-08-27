@@ -2,6 +2,8 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
@@ -10,9 +12,11 @@ import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Transient
 
 data class Negotiating(
     override val commitments: Commitments,
+    @Transient override val remoteCommitNonces: Map<TxId, IndividualNonce>,
     val localScript: ByteVector,
     val remoteScript: ByteVector,
     // Closing transactions we created, where we pay the fees (unsigned).
@@ -22,6 +26,9 @@ data class Negotiating(
     val publishedClosingTxs: List<Transactions.ClosingTx>,
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
     val closeCommand: ChannelCommand.Close.MutualClose?,
+    @Transient val localCloseeNonce: Transactions.LocalNonce?,
+    @Transient val remoteCloseeNonce: IndividualNonce?,
+    @Transient val localCloserNonces: Transactions.CloserNonces?,
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -32,11 +39,11 @@ data class Negotiating(
                     if (cmd.message.scriptPubKey != remoteScript) {
                         // This may lead to a signature mismatch: peers must use closing_complete to update their closing script.
                         logger.warning { "received shutdown changing remote script, this may lead to a signature mismatch (previous=$remoteScript, current=${cmd.message.scriptPubKey})" }
-                        val nextState = this@Negotiating.copy(remoteScript = cmd.message.scriptPubKey)
+                        val nextState = this@Negotiating.copy(remoteScript = cmd.message.scriptPubKey, remoteCloseeNonce = cmd.message.closeeNonce)
                         Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
                     } else {
                         // This is a retransmission of their previous shutdown, we can ignore it.
-                        Pair(this@Negotiating, listOf())
+                        Pair(this@Negotiating.copy(remoteCloseeNonce = cmd.message.closeeNonce), listOf())
                     }
                 }
                 is ClosingComplete -> {
@@ -48,15 +55,16 @@ data class Negotiating(
                         val nextState = this@Negotiating.copy(remoteScript = cmd.message.closerScriptPubKey)
                         Pair(nextState, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidCloseeScript(channelId, cmd.message.closeeScriptPubKey, localScript).message))))
                     } else {
-                        when (val result = Helpers.Closing.signClosingTx(channelKeys(), commitments.latest, cmd.message.closeeScriptPubKey, cmd.message.closerScriptPubKey, cmd.message)) {
+                        when (val result = Helpers.Closing.signClosingTx(channelKeys(), commitments.latest, cmd.message.closeeScriptPubKey, cmd.message.closerScriptPubKey, cmd.message, this@Negotiating.localCloseeNonce)) {
                             is Either.Left -> {
                                 logger.warning { "invalid closing_complete: ${result.value.message}" }
                                 Pair(this@Negotiating, listOf(ChannelAction.Message.Send(Warning(channelId, result.value.message))))
                             }
                             is Either.Right -> {
-                                val (signedClosingTx, closingSig) = result.value
+                                val (signedClosingTx, closingSig, localNonce) = result.value
                                 logger.debug { "signing remote mutual close transaction: ${signedClosingTx.tx}" }
-                                val nextState = this@Negotiating.copy(remoteScript = cmd.message.closerScriptPubKey, publishedClosingTxs = publishedClosingTxs + signedClosingTx)
+                                val nextState = this@Negotiating
+                                    .copy(remoteScript = cmd.message.closerScriptPubKey, publishedClosingTxs = publishedClosingTxs + signedClosingTx, localCloseeNonce = localNonce)
                                 val actions = listOf(
                                     ChannelAction.Storage.StoreState(nextState),
                                     ChannelAction.Blockchain.PublishTx(signedClosingTx),
@@ -69,7 +77,7 @@ data class Negotiating(
                     }
                 }
                 is ClosingSig -> {
-                    when (val result = Helpers.Closing.receiveClosingSig(channelKeys(), commitments.latest, proposedClosingTxs.last(), cmd.message)) {
+                    when (val result = Helpers.Closing.receiveClosingSig(channelKeys(), commitments.latest, proposedClosingTxs.last(), cmd.message, this@Negotiating.localCloserNonces, this@Negotiating.remoteCloseeNonce)) {
                         is Either.Left -> {
                             logger.warning { "invalid closing_sig: ${result.value.message}" }
                             Pair(this@Negotiating, listOf(ChannelAction.Message.Send(Warning(channelId, result.value.message))))
@@ -78,7 +86,8 @@ data class Negotiating(
                             val signedClosingTx = result.value
                             logger.debug { "received signatures for local mutual close transaction: ${signedClosingTx.tx}" }
                             closeCommand?.replyTo?.complete(ChannelCloseResponse.Success(signedClosingTx.tx.txid, signedClosingTx.fee))
-                            val nextState = this@Negotiating.copy(publishedClosingTxs = publishedClosingTxs + signedClosingTx)
+                            val nextState = this@Negotiating
+                                .copy(publishedClosingTxs = publishedClosingTxs + signedClosingTx, remoteCloseeNonce = cmd.message.nextCloseeNonce)
                             val actions = listOf(
                                 ChannelAction.Storage.StoreState(nextState),
                                 ChannelAction.Blockchain.PublishTx(signedClosingTx),
@@ -139,7 +148,7 @@ data class Negotiating(
                     cmd.replyTo.complete(ChannelCloseResponse.Failure.RbfFeerateTooLow(cmd.feerate, closeCommand.feerate * 1.2))
                     handleCommandError(cmd, InvalidRbfFeerate(channelId, cmd.feerate, closeCommand.feerate * 1.2))
                 } else {
-                    when (val result = Helpers.Closing.makeClosingTxs(channelKeys(), commitments.latest, cmd.scriptPubKey ?: localScript, remoteScript, cmd.feerate, currentBlockHeight.toLong())) {
+                    when (val result = Helpers.Closing.makeClosingTxs(channelKeys(), commitments.latest, cmd.scriptPubKey ?: localScript, remoteScript, cmd.feerate, currentBlockHeight.toLong(), this@Negotiating.remoteCloseeNonce)) {
                         is Either.Left -> {
                             cmd.replyTo.complete(ChannelCloseResponse.Failure.Unknown(result.value))
                             handleCommandError(cmd, result.value)

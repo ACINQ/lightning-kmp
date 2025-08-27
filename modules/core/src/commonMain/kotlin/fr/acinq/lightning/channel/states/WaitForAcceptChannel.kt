@@ -86,7 +86,9 @@ data class WaitForAcceptChannel(
                                             0.msat,
                                             0.msat,
                                             emptySet(),
-                                            fundingContributions.value
+                                            fundingContributions.value,
+                                            commitTxIndex = 0,
+                                            fundingTxIndex = 0
                                         ).send()
                                         when (interactiveTxAction) {
                                             is InteractiveTxSessionAction.SendMessage -> {

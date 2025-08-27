@@ -4,8 +4,8 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
+import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.utils.toByteVector64
 
 sealed class TxAddInputTlv : Tlv {
@@ -71,20 +71,59 @@ sealed class TxRemoveInputTlv : Tlv
 sealed class TxRemoveOutputTlv : Tlv
 
 sealed class TxCompleteTlv : Tlv {
+    /**
+     * Musig2 nonces for the commitment transaction(s), exchanged during an interactive tx session, when using a taproot
+     * channel or upgrading a channel to use taproot.
+     *
+     * @param commitNonce     the sender's verification nonce for the current commit tx spending the interactive tx.
+     * @param nextCommitNonce the sender's verification nonce for the next commit tx spending the interactive tx.
+     */
+    data class CommitNonces(val commitNonce: IndividualNonce, val nextCommitNonce: IndividualNonce) : TxCompleteTlv() {
+        override val tag: Long get() = CommitNonces.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(commitNonce.toByteArray(), out)
+            LightningCodecs.writeBytes(nextCommitNonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<CommitNonces> {
+            const val tag: Long = 4
+            override fun read(input: Input): CommitNonces {
+                return CommitNonces(IndividualNonce(LightningCodecs.bytes(input, 66)), IndividualNonce(LightningCodecs.bytes(input, 66)))
+            }
+        }
+    }
+
+    /** When splicing a taproot channel, the sender's random signing nonce for the previous funding output. */
+    data class FundingInputNonce(val nonce: IndividualNonce) : TxCompleteTlv() {
+        override val tag: Long get() = FundingInputNonce.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<FundingInputNonce> {
+            const val tag: Long = 6
+            override fun read(input: Input): FundingInputNonce {
+                return FundingInputNonce(IndividualNonce(LightningCodecs.bytes(input, 66)))
+            }
+        }
+    }
+
     /** Public nonces for all Musig2 swap-in inputs (local and remote), ordered by serial id. */
-    data class Nonces(val nonces: List<IndividualNonce>) : TxCompleteTlv() {
-        override val tag: Long get() = Nonces.tag
+    data class SwapInNonces(val nonces: List<IndividualNonce>) : TxCompleteTlv() {
+        override val tag: Long get() = SwapInNonces.tag
 
         override fun write(out: Output) {
             nonces.forEach { LightningCodecs.writeBytes(it.toByteArray(), out) }
         }
 
-        companion object : TlvValueReader<Nonces> {
+        companion object : TlvValueReader<SwapInNonces> {
             const val tag: Long = 101
-            override fun read(input: Input): Nonces {
+            override fun read(input: Input): SwapInNonces {
                 val count = input.availableBytes / 66
                 val nonces = (0 until count).map { IndividualNonce(LightningCodecs.bytes(input, 66)) }
-                return Nonces(nonces)
+                return SwapInNonces(nonces)
             }
         }
     }
@@ -99,6 +138,25 @@ sealed class TxSignaturesTlv : Tlv {
         companion object : TlvValueReader<PreviousFundingTxSig> {
             const val tag: Long = 601
             override fun read(input: Input): PreviousFundingTxSig = PreviousFundingTxSig(LightningCodecs.bytes(input, 64).toByteVector64())
+        }
+    }
+
+    /** When doing a splice for a taproot channel, each peer must provide their partial signature for the previous musig2 funding output. */
+    data class PreviousFundingTxPartialSig(val psig: ChannelSpendSignature.PartialSignatureWithNonce) : TxSignaturesTlv() {
+        override val tag: Long get() = PreviousFundingTxPartialSig.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(psig.partialSig.toByteArray(), out)
+            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<PreviousFundingTxPartialSig> {
+            const val tag: Long = 2
+            override fun read(input: Input): PreviousFundingTxPartialSig = PreviousFundingTxPartialSig(
+                ChannelSpendSignature.PartialSignatureWithNonce(
+                    LightningCodecs.bytes(input, 32).byteVector32(),
+                    IndividualNonce(LightningCodecs.bytes(input, 66))
+                )
+            )
         }
     }
 

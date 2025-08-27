@@ -1,13 +1,16 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.channel.ChannelType
+import fr.acinq.lightning.serialization.InputExtensions.readIndividualNonce
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector64
@@ -52,6 +55,30 @@ sealed class ChannelTlv : Tlv {
                 val len = input.availableBytes
                 val features = LightningCodecs.bytes(input, len)
                 return ChannelTypeTlv(ChannelType.fromFeatures(Features(features)))
+            }
+        }
+    }
+
+    // TLV used to upgrade to "simple taproot channels" format during splices.
+    // We cannot reuse the channel_type TLV defined above because the tag is different
+    data class SpliceChannelTypeTlv(val channelType: ChannelType) : ChannelTlv() {
+        override val tag: Long get() = SpliceChannelTypeTlv.tag
+
+        override fun write(out: Output) {
+            val features = when (channelType) {
+                is ChannelType.SupportedChannelType -> channelType.toFeatures()
+                is ChannelType.UnsupportedChannelType -> channelType.featureBits
+            }
+            LightningCodecs.writeBytes(features.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<SpliceChannelTypeTlv> {
+            const val tag: Long = 0x47000011
+
+            override fun read(input: Input): SpliceChannelTypeTlv {
+                val len = input.availableBytes
+                val features = LightningCodecs.bytes(input, len)
+                return SpliceChannelTypeTlv(ChannelType.fromFeatures(Features(features)))
             }
         }
     }
@@ -111,9 +138,40 @@ sealed class ChannelReadyTlv : Tlv {
             override fun read(input: Input): ShortChannelIdTlv = ShortChannelIdTlv(ShortChannelId(LightningCodecs.u64(input)))
         }
     }
+
+    data class NextLocalNonce(val nonce: IndividualNonce) : ChannelReadyTlv() {
+        override val tag: Long get() = NextLocalNonce.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(nonce.toByteArray(), out)
+
+        companion object : TlvValueReader<NextLocalNonce> {
+            const val tag: Long = 4
+            override fun read(input: Input): NextLocalNonce = NextLocalNonce(IndividualNonce(LightningCodecs.bytes(input, 66)))
+        }
+    }
 }
 
 sealed class CommitSigTlv : Tlv {
+    data class PartialSignatureWithNonce(val psig: ChannelSpendSignature.PartialSignatureWithNonce) : CommitSigTlv() {
+        override val tag: Long get() = PartialSignatureWithNonce.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(psig.partialSig, out)
+            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<CommitSigTlv> {
+            const val tag: Long = 2
+            override fun read(input: Input): PartialSignatureWithNonce {
+                return PartialSignatureWithNonce(
+                    ChannelSpendSignature.PartialSignatureWithNonce(
+                        LightningCodecs.bytes(input, 32).byteVector32(),
+                        IndividualNonce(LightningCodecs.bytes(input, 66))
+                    )
+                )
+            }
+        }
+    }
+
     data class AlternativeFeerateSig(val feerate: FeeratePerKw, val sig: ByteVector64)
 
     /**
@@ -145,6 +203,41 @@ sealed class CommitSigTlv : Tlv {
         }
     }
 
+    data class AlternativeFeeratePartialSig(val feerate: FeeratePerKw, val psig: ChannelSpendSignature.PartialSignatureWithNonce)
+
+    /**
+     * When there are no pending HTLCs, we provide a list of signatures for the commitment transaction signed at various feerates.
+     * This gives more options to the remote node to recover their funds if the user disappears without closing channels.
+     */
+    data class AlternativeFeeratePartialSigs(val psigs: List<AlternativeFeeratePartialSig>) : CommitSigTlv() {
+        override val tag: Long get() = AlternativeFeeratePartialSigs.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeByte(psigs.size, out)
+            psigs.forEach {
+                LightningCodecs.writeU32(it.feerate.toLong().toInt(), out)
+                LightningCodecs.writeBytes(it.psig.partialSig, out)
+                LightningCodecs.writeBytes(it.psig.nonce.toByteArray(), out)
+            }
+        }
+
+        companion object : TlvValueReader<AlternativeFeeratePartialSigs> {
+            const val tag: Long = 0x47010003
+            override fun read(input: Input): AlternativeFeeratePartialSigs {
+                val count = LightningCodecs.byte(input)
+                val sigs = (0 until count).map {
+                    AlternativeFeeratePartialSig(
+                        FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
+                        ChannelSpendSignature.PartialSignatureWithNonce(
+                            LightningCodecs.bytes(input, 32).byteVector32(),
+                            IndividualNonce(LightningCodecs.bytes(input, 66))
+                        )
+                    )
+                }
+                return AlternativeFeeratePartialSigs(sigs)
+            }
+        }
+    }
+
     data class Batch(val size: Int) : CommitSigTlv() {
         override val tag: Long get() = Batch.tag
         override fun write(out: Output) = LightningCodecs.writeTU16(size, out)
@@ -156,7 +249,29 @@ sealed class CommitSigTlv : Tlv {
     }
 }
 
-sealed class RevokeAndAckTlv : Tlv
+sealed class RevokeAndAckTlv : Tlv {
+    /**
+     * Verification nonces used for the next commitment transaction, when using taproot channels.
+     * There must be a nonce for each active commitment (when there are pending splices or RBF attempts), indexed by the
+     * corresponding fundingTxId.
+     */
+    data class NextLocalNonces(val nonces: List<Pair<TxId, IndividualNonce>>) : RevokeAndAckTlv() {
+        override val tag: Long get() = NextLocalNonces.tag
+        override fun write(out: Output) = nonces.forEach {
+            LightningCodecs.writeTxHash(TxHash(it.first), out)
+            out.write(it.second.toByteArray())
+        }
+
+        companion object : TlvValueReader<NextLocalNonces> {
+            const val tag: Long = 22
+            override fun read(input: Input): NextLocalNonces {
+                val count = input.availableBytes / (32 + 66)
+                val nonces = (0 until count).map { TxId(LightningCodecs.txHash(input)) to input.readIndividualNonce() }
+                return NextLocalNonces(nonces)
+            }
+        }
+    }
+}
 
 sealed class ChannelReestablishTlv : Tlv {
     data class NextFunding(val txId: TxId) : ChannelReestablishTlv() {
@@ -168,9 +283,62 @@ sealed class ChannelReestablishTlv : Tlv {
             override fun read(input: Input): NextFunding = NextFunding(TxId(LightningCodecs.txHash(input)))
         }
     }
+
+    /**
+     * Verification nonces used for the next commitment transaction, when using taproot channels.
+     * There must be a nonce for each active commitment (when there are pending splices or RBF attempts), indexed by the
+     * corresponding fundingTxId.
+     */
+    data class NextLocalNonces(val nonces: List<Pair<TxId, IndividualNonce>>) : ChannelReestablishTlv() {
+        override val tag: Long get() = NextLocalNonces.tag
+        override fun write(out: Output) = nonces.forEach {
+            LightningCodecs.writeTxHash(TxHash(it.first), out)
+            out.write(it.second.toByteArray())
+        }
+
+        companion object : TlvValueReader<NextLocalNonces> {
+            const val tag: Long = 22
+            override fun read(input: Input): NextLocalNonces {
+                val count = input.availableBytes / (32 + 66)
+                val nonces = (0 until count).map { TxId(LightningCodecs.txHash(input)) to input.readIndividualNonce() }
+                return NextLocalNonces(nonces)
+            }
+        }
+    }
+
+    /**
+     * When disconnected during an interactive tx session, we'll include a verification nonce for our *current* commitment
+     * which our peer will need to re-send a commit sig for our current commitment transaction spending the interactive tx.
+     */
+    data class CurrentCommitNonce(val nonce: IndividualNonce) : ChannelReestablishTlv() {
+        override val tag: Long get() = CurrentCommitNonce.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<CurrentCommitNonce> {
+            const val tag: Long = 24
+            override fun read(input: Input): CurrentCommitNonce {
+                return CurrentCommitNonce(input.readIndividualNonce())
+            }
+        }
+    }
 }
 
-sealed class ShutdownTlv : Tlv
+sealed class ShutdownTlv : Tlv {
+    data class ShutdownNonce(val nonce: IndividualNonce) : ShutdownTlv() {
+        override val tag: Long get() = ShutdownNonce.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<ShutdownNonce> {
+            const val tag: Long = 8
+            override fun read(input: Input): ShutdownNonce = ShutdownNonce(IndividualNonce(LightningCodecs.bytes(input, 66)))
+        }
+    }
+}
 
 sealed class ClosingSignedTlv : Tlv {
     data class FeeRange(val min: Satoshi, val max: Satoshi) : ClosingSignedTlv() {
@@ -221,6 +389,63 @@ sealed class ClosingCompleteTlv : Tlv {
             override fun read(input: Input): CloserAndCloseeOutputs = CloserAndCloseeOutputs(LightningCodecs.bytes(input, 64).toByteVector64())
         }
     }
+
+    /** When closing taproot channels, partial signature for a closing transaction containing only the closer's output. */
+    data class CloserOutputOnlyPartialSignature(val psig: ChannelSpendSignature.PartialSignatureWithNonce) : ClosingCompleteTlv() {
+        override val tag: Long get() = CloserOutputOnlyPartialSignature.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(psig.partialSig, out)
+            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<CloserOutputOnlyPartialSignature> {
+            const val tag: Long = 5
+            override fun read(input: Input): CloserOutputOnlyPartialSignature = CloserOutputOnlyPartialSignature(
+                ChannelSpendSignature.PartialSignatureWithNonce(
+                    LightningCodecs.bytes(input, 32).byteVector32(),
+                    IndividualNonce(LightningCodecs.bytes(input, 66))
+                )
+            )
+        }
+    }
+
+    /** When closing taproot channels, partial signature for a closing transaction containing only the closee's output. */
+    data class CloseeOutputOnlyPartialSignature(val psig: ChannelSpendSignature.PartialSignatureWithNonce) : ClosingCompleteTlv() {
+        override val tag: Long get() = CloseeOutputOnlyPartialSignature.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(psig.partialSig, out)
+            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<CloseeOutputOnlyPartialSignature> {
+            const val tag: Long = 6
+            override fun read(input: Input): CloseeOutputOnlyPartialSignature = CloseeOutputOnlyPartialSignature(
+                ChannelSpendSignature.PartialSignatureWithNonce(
+                    LightningCodecs.bytes(input, 32).byteVector32(),
+                    IndividualNonce(LightningCodecs.bytes(input, 66))
+                )
+            )
+        }
+    }
+
+    /** When closing taproot channels, partial signature for a closing transaction containing the closer and closee's outputs. */
+    data class CloserAndCloseeOutputsPartialSignature(val psig: ChannelSpendSignature.PartialSignatureWithNonce) : ClosingCompleteTlv() {
+        override val tag: Long get() = CloserAndCloseeOutputsPartialSignature.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(psig.partialSig, out)
+            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<CloserAndCloseeOutputsPartialSignature> {
+            const val tag: Long = 7
+            override fun read(input: Input): CloserAndCloseeOutputsPartialSignature = CloserAndCloseeOutputsPartialSignature(
+                ChannelSpendSignature.PartialSignatureWithNonce(
+                    LightningCodecs.bytes(input, 32).byteVector32(),
+                    IndividualNonce(LightningCodecs.bytes(input, 66))
+                )
+            )
+        }
+    }
 }
 
 sealed class ClosingSigTlv : Tlv {
@@ -256,4 +481,55 @@ sealed class ClosingSigTlv : Tlv {
             override fun read(input: Input): CloserAndCloseeOutputs = CloserAndCloseeOutputs(LightningCodecs.bytes(input, 64).toByteVector64())
         }
     }
+
+    /** When closing taproot channels, partial signature for a closing transaction containing only the closer's output. */
+    data class CloserOutputOnlyPartialSignature(val psig: ByteVector32) : ClosingSigTlv() {
+        override val tag: Long get() = CloserOutputOnlyPartialSignature.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(psig, out)
+
+        companion object : TlvValueReader<CloserOutputOnlyPartialSignature> {
+            const val tag: Long = 5
+            override fun read(input: Input): CloserOutputOnlyPartialSignature = CloserOutputOnlyPartialSignature(
+                LightningCodecs.bytes(input, 32).byteVector32()
+            )
+        }
+    }
+
+    /** When closing taproot channels, partial signature for a closing transaction containing only the closee's output. */
+    data class CloseeOutputOnlyPartialSignature(val psig: ByteVector32) : ClosingSigTlv() {
+        override val tag: Long get() = CloseeOutputOnlyPartialSignature.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(psig, out)
+
+        companion object : TlvValueReader<CloseeOutputOnlyPartialSignature> {
+            const val tag: Long = 6
+            override fun read(input: Input): CloseeOutputOnlyPartialSignature = CloseeOutputOnlyPartialSignature(
+                LightningCodecs.bytes(input, 32).byteVector32()
+            )
+        }
+    }
+
+    /** When closing taproot channels, partial signature for a closing transaction containing the closer and closee's outputs. */
+    data class CloserAndCloseeOutputsPartialSignature(val psig: ByteVector32) : ClosingSigTlv() {
+        override val tag: Long get() = CloserAndCloseeOutputsPartialSignature.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(psig, out)
+
+        companion object : TlvValueReader<CloserAndCloseeOutputsPartialSignature> {
+            const val tag: Long = 7
+            override fun read(input: Input): CloserAndCloseeOutputsPartialSignature = CloserAndCloseeOutputsPartialSignature(
+                LightningCodecs.bytes(input, 32).byteVector32()
+            )
+        }
+    }
+
+    /** When closing taproot channels, local nonce that will be used to sign the next remote closing transaction. */
+    data class NextCloseeNonce(val nonce: IndividualNonce) : ClosingSigTlv() {
+        override val tag: Long get() = NextCloseeNonce.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(nonce.toByteArray(), out)
+
+        companion object : TlvValueReader<NextCloseeNonce> {
+            const val tag: Long = 22
+            override fun read(input: Input): NextCloseeNonce = NextCloseeNonce(IndividualNonce(LightningCodecs.bytes(input, 66)))
+        }
+    }
+
 }

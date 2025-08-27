@@ -31,6 +31,7 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.crypto.CommitmentPublicKeys
 import fr.acinq.lightning.crypto.LocalCommitmentKeys
+import fr.acinq.lightning.crypto.NonceGenerator
 import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.transactions.CommitmentOutput.InHtlc
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
@@ -103,7 +104,7 @@ object Transactions {
             // weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and
             // not in variable length DER format (around 72 bytes)
             override val fundingInputWeight = 230
-            override val commitWeight = 960
+            override val commitWeight = 968
             override val htlcOutputWeight = 172
             override val htlcTimeoutWeight = 645
             override val htlcSuccessWeight = 705
@@ -283,6 +284,26 @@ object Transactions {
             val redeemScript = Script.write(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey)).byteVector()
             return checkSig(remoteSig.sig, remoteFundingPubkey, SigHash.SIGHASH_ALL, RedeemInfo.P2wsh(redeemScript))
         }
+
+        fun checkRemotePartialSignature(
+            localFundingPubKey: PublicKey,
+            remoteFundingPubKey: PublicKey,
+            remoteSig: ChannelSpendSignature.PartialSignatureWithNonce,
+            localNonce: IndividualNonce
+        ): Boolean {
+            return Musig2.verify(
+                remoteSig.partialSig,
+                remoteSig.nonce,
+                remoteFundingPubKey,
+                tx,
+                inputIndex,
+                listOf(input.txOut),
+                Scripts.sort(listOf(localFundingPubKey, remoteFundingPubKey)),
+                listOf(localNonce, remoteSig.nonce),
+                scriptTree = null
+            )
+        }
+
     }
 
     /** This transaction collaboratively spends the channel funding output to change its capacity. */
@@ -1282,6 +1303,20 @@ object Transactions {
     sealed class ClosingTxFee {
         data class PaidByUs(val fee: Satoshi) : ClosingTxFee()
         data class PaidByThem(val fee: Satoshi) : ClosingTxFee()
+    }
+
+    /**
+     * When sending [[fr.acinq.lightning.wire.ClosingComplete]], we use a different nonce for each closing transaction we create.
+     * We generate nonces for all variants of the closing transaction for simplicity, even though we never use them all.
+     */
+    data class CloserNonces(val localAndRemote: LocalNonce, val localOnly: LocalNonce, val remoteOnly: LocalNonce) {
+        companion object {
+            fun generate(localFundingKey: PublicKey, remoteFundingKey: PublicKey, fundingTxId: TxId): CloserNonces = CloserNonces(
+                NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+                NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+                NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+            )
+        }
     }
 
     /** Each closing attempt can result in multiple potential closing transactions, depending on which outputs are included. */
