@@ -2,7 +2,9 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.LiquidityEvents
@@ -44,6 +46,7 @@ data class WaitForFundingSigned(
     val remoteSecondPerCommitmentPoint: PublicKey,
     val liquidityPurchase: LiquidityAds.Purchase?,
     val channelOrigin: Origin?,
+    val remoteCommitNonces: Map<TxId, IndividualNonce>
 ) : PersistedChannelState() {
     override val channelId: ByteVector32 = channelParams.channelId
 
@@ -117,6 +120,10 @@ data class WaitForFundingSigned(
             payments = mapOf(),
             remoteNextCommitInfo = Either.Right(remoteSecondPerCommitmentPoint),
             remotePerCommitmentSecrets = ShaChain.init,
+            action.nextRemoteCommitNonce?.let { mapOf(action.commitment.fundingTxId to it) } ?: mapOf(),
+            localCloseeNonce = null,
+            remoteCloseeNonce = null,
+            localCloserNonces = null
         )
         val commonActions = buildList {
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }

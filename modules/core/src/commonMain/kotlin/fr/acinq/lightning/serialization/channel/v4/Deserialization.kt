@@ -76,7 +76,7 @@ object Deserialization {
         val remoteSecondPerCommitmentPoint = readPublicKey()
         val liquidityPurchase = readNullable { readLiquidityPurchase() }
         val channelOrigin = readNullable { readChannelOrigin() }
-        return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase, channelOrigin)
+        return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase, channelOrigin, mapOf())
     }
 
     private fun Input.readWaitForFundingSignedWithPushAmount(): WaitForFundingSigned {
@@ -88,7 +88,7 @@ object Deserialization {
         val remoteSecondPerCommitmentPoint = readPublicKey()
         val liquidityPurchase = readNullable { readLiquidityPurchase() }
         val channelOrigin = readNullable { readChannelOrigin() }
-        return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase, channelOrigin)
+        return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase, channelOrigin, mapOf())
     }
 
     private fun Input.readWaitForFundingSignedLegacy(): WaitForFundingSigned {
@@ -99,7 +99,7 @@ object Deserialization {
         readNumber()
         val remoteSecondPerCommitmentPoint = readPublicKey()
         val channelOrigin = readNullable { readChannelOrigin() }
-        return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase = null, channelOrigin)
+        return WaitForFundingSigned(channelParams, signingSession, remoteSecondPerCommitmentPoint, liquidityPurchase = null, channelOrigin, mapOf())
     }
 
     private fun Input.readWaitForFundingConfirmedWithPushAmount(): WaitForFundingConfirmed {
@@ -650,7 +650,7 @@ object Deserialization {
             5 -> Pair(Either.Right(readLocalCommitWithoutHtlcs(htlcs, fundingParams.remoteFundingPubkey).second), readRemoteCommitWithoutHtlcs(htlcs))
             else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
         }
-        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommitParams, localCommit, remoteCommitParams, remoteCommit)
+        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommitParams, localCommit, remoteCommitParams, remoteCommit, null)
     }
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
@@ -849,7 +849,7 @@ object Deserialization {
             lastIndex = readNullable { readNumber() }
         )
         readDelimitedByteArray() // ignored legacy remoteChannelData
-        return Commitments(channelParams, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets)
+        return Commitments(channelParams, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, mapOf(), localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {

@@ -42,6 +42,18 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `basic mutual close -- alice -- simple taproot channels`() = runSuspendTest {
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        mutualCloseAlice(alice, bob, FeeratePerKw(500.sat))
+    }
+
+    @Test
+    fun `basic mutual close -- bob -- simple taproot channels`() = runSuspendTest {
+        val (alice, bob) = reachNormal(ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        mutualCloseBob(alice, bob, FeeratePerKw(500.sat))
+    }
+
+    @Test
     fun `recv ChannelCommand_Htlc_Add`() {
         val (alice, _, _) = init()
         val (_, add) = makeCmdAdd(500_000.msat, alice.staticParams.remoteNodeId, TestConstants.defaultBlockHeight.toLong())
