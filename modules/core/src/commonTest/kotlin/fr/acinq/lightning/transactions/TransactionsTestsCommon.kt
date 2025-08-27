@@ -149,8 +149,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
             toLocal = 400.mbtc.toMilliSatoshi(),
             toRemote = 300.mbtc.toMilliSatoshi()
         )
-        val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), localFundingPriv, localFundingPriv.publicKey(), listOf(localFundingPriv.publicKey()), null, null)
-        val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), remoteFundingPriv, remoteFundingPriv.publicKey(), listOf(remoteFundingPriv.publicKey()), null, null)
+        val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), Either.Left(localFundingPriv), listOf(localFundingPriv.publicKey()), null, null)
+        val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), Either.Left(remoteFundingPriv), listOf(remoteFundingPriv.publicKey()), null, null)
         val publicNonces = listOf(publicLocalNonce, publicRemoteNonce)
 
         val commitTxNumber = 0x404142434445L

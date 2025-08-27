@@ -521,6 +521,7 @@ class QuiescenceTestsCommon : LightningTestSuite() {
                 requestRemoteFunding = null,
                 currentFeeCredit = 0.msat,
                 origins = listOf(),
+                channelType = null
             )
         }
 

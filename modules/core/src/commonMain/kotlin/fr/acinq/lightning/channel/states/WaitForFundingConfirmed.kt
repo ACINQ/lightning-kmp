@@ -105,7 +105,9 @@ data class WaitForFundingConfirmed(
                                         SharedFundingInputBalances(0.msat, 0.msat, 0.msat),
                                         toSend,
                                         previousFundingTxs.map { it.sharedTx },
-                                        commitments.latest.localCommit.spec.htlcs
+                                        commitments.latest.localCommit.spec.htlcs,
+                                        commitTxIndex = 0,
+                                        fundingTxIndex = 0
                                     )
                                     val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
                                     Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localContribution))))
@@ -151,7 +153,10 @@ data class WaitForFundingConfirmed(
                                     0.msat,
                                     emptySet(),
                                     contributions.value,
-                                    previousFundingTxs.map { it.sharedTx }).send()
+                                    previousFundingTxs.map { it.sharedTx },
+                                    commitTxIndex = 0,
+                                    fundingTxIndex = 0
+                                ).send()
                                 when (action) {
                                     is InteractiveTxSessionAction.SendMessage -> {
                                         val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
@@ -332,7 +337,7 @@ data class WaitForFundingConfirmed(
         val fundingScript = action.commitment.commitInput(channelKeys()).txOut.publicKeyScript
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, fundingScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
         val nextState = WaitForFundingConfirmed(
-            commitments.add(action.commitment),
+            commitments.add(action.commitment).addRemoteCommitNonce(action.commitment.fundingTxId, action.nextRemoteCommitNonce),
             waitingSinceBlock,
             deferred,
             RbfStatus.None

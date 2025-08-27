@@ -415,6 +415,17 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv UpdateAddHtlc -- simple taproot channels`() {
+        val (_, bob0) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        val add = UpdateAddHtlc(bob0.channelId, 0, 15_000.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)
+        val (bob1, actions1) = bob0.process(ChannelCommand.MessageReceived(add))
+        assertTrue(actions1.isEmpty())
+        assertEquals(
+            bob0.copy(state = bob0.state.copy(commitments = bob0.commitments.copy(changes = bob0.commitments.changes.copy(remoteNextHtlcId = 1, remoteChanges = bob0.commitments.changes.remoteChanges.copy(proposed = listOf(add)))))),
+            bob1
+        )
+    }
+    @Test
     fun `recv UpdateAddHtlc -- zero-reserve`() {
         val (alice0, _) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 10_000.sat)
         assertEquals(alice0.commitments.availableBalanceForReceive(), 10_000_000.msat)
@@ -769,7 +780,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig -- multiple htlcs in both directions`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
         val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0) // a->b (regular)
         val (alice1, bob1) = nodes1
         val (nodes2, _, _) = addHtlc(8_000_000.msat, alice1, bob1) //  a->b (regular)
@@ -991,7 +1002,7 @@ class NormalTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv RevokeAndAck -- multiple htlcs in both directions`() {
-        val (alice0, bob0) = reachNormal()
+        val (alice0, bob0) = reachNormal(ChannelType.SupportedChannelType.SimpleTaprootChannels)
         val (nodes1, _, add1) = addHtlc(50_000_000.msat, alice0, bob0) // a->b (regular)
         val (alice1, bob1) = nodes1
         val (nodes2, _, add2) = addHtlc(8_000_000.msat, alice1, bob1) //  a->b (regular)

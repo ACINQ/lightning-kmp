@@ -92,4 +92,9 @@ data class PleasePublishYourCommitment             (override val channelId: Byte
 data class CommandUnavailableInThisState           (override val channelId: ByteVector32, val state: String) : ChannelException(channelId, "cannot execute command in state=$state")
 data class ForbiddenDuringSplice                   (override val channelId: ByteVector32, val command: String?) : ChannelException(channelId, "cannot process $command while splicing")
 data class InvalidSpliceRequest                    (override val channelId: ByteVector32) : ChannelException(channelId, "invalid splice request")
+data class MissingCommitNonce                      (override val channelId: ByteVector32, val fundingTxId: TxId, val commitmentNumber: Long) : ChannelException(channelId, "missing commit nonce for funding tx $fundingTxId commitmentNumber $commitmentNumber")
+data class InvalidCommitNonce                      (override val channelId: ByteVector32, val fundingTxId: TxId, val commitmentNumber: Long) : ChannelException(channelId, "invalid commit nonce for funding tx $fundingTxId commitmentNumber $commitmentNumber")
+data class MissingFundingNonce                     (override val channelId: ByteVector32, val fundingTxId: TxId) : ChannelException(channelId, "missing funding nonce for funding tx $fundingTxId")
+data class InvalidFundingNonce                     (override val channelId: ByteVector32, val fundingTxId: TxId) : ChannelException(channelId, "invalid funding nonce for funding tx $fundingTxId")
+data class MissingClosingNonce                     (override val channelId: ByteVector32) : ChannelException(channelId, "missing closing nonce")
 // @formatter:on

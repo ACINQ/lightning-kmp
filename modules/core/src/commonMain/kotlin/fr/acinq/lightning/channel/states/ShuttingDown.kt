@@ -83,11 +83,11 @@ data class ShuttingDown(
                     is Shutdown -> {
                         if (cmd.message.scriptPubKey != remoteShutdown.scriptPubKey) {
                             logger.debug { "our peer updated their shutdown script (previous=${remoteShutdown.scriptPubKey}, current=${cmd.message.scriptPubKey})" }
-                            val nextState = this@ShuttingDown.copy(remoteShutdown = cmd.message)
+                            val nextState = this@ShuttingDown.copy(remoteShutdown = cmd.message).updateCloseeNonce(cmd.message.closeeNonce)
                             Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
                         } else {
                             // This is a retransmission of their previous shutdown, we can ignore it.
-                            Pair(this@ShuttingDown, listOf())
+                            Pair(this@ShuttingDown.updateCloseeNonce(cmd.message.closeeNonce), listOf())
                         }
                     }
                     is Error -> {
