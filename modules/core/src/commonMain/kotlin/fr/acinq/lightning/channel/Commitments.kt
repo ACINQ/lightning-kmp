@@ -16,6 +16,7 @@ import fr.acinq.lightning.channel.states.ChannelContext
 import fr.acinq.lightning.crypto.ChannelKeys
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.LocalCommitmentKeys
+import fr.acinq.lightning.crypto.NonceGenerator
 import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.logging.MDCLogger
@@ -34,6 +35,7 @@ import fr.acinq.lightning.transactions.incomings
 import fr.acinq.lightning.transactions.outgoings
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Transient
 import kotlin.math.min
 
 /** Static channel parameters shared by all commitments. */
@@ -63,7 +65,7 @@ data class RemoteChanges(val proposed: List<UpdateMessage>, val acked: List<Upda
     val all: List<UpdateMessage> get() = proposed + signed + acked
 }
 
-/** Changes are applied to all commitments, and must be be valid for all commitments. */
+/** Changes are applied to all commitments, and must be valid for all commitments. */
 data class CommitmentChanges(val localChanges: LocalChanges, val remoteChanges: RemoteChanges, val localNextHtlcId: Long, val remoteNextHtlcId: Long) {
     fun addLocalProposal(proposal: UpdateMessage): CommitmentChanges = copy(localChanges = localChanges.copy(proposed = localChanges.proposed + proposal))
 
@@ -130,7 +132,22 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val txId: TxId
                 commitmentFormat = commitmentFormat,
                 spec = spec,
             )
-            if (!localCommitTx.checkRemoteSig(fundingKey.publicKey(), remoteFundingPubKey, commit.signature)) {
+            val remoteSigOk = when (commitmentFormat) {
+                Transactions.CommitmentFormat.SimpleTaprootChannels ->
+                    when (commit.sigOrPartialSig) {
+                        is ChannelSpendSignature.PartialSignatureWithNonce -> {
+                            val localNonce = NonceGenerator.verificationNonce(commitInput.outPoint.txid, fundingKey, remoteFundingPubKey, localCommitIndex)
+                            val check = localCommitTx.checkRemotePartialSignature(fundingKey.publicKey(), remoteFundingPubKey, commit.sigOrPartialSig, localNonce.publicNonce)
+                            println("verify signature = $check for ${commit.sigOrPartialSig} with ${fundingKey.publicKey()} and $remoteFundingPubKey localNonce = $localNonce")
+                            check
+                        }
+
+                        is ChannelSpendSignature.IndividualSignature -> false
+                    }
+
+                else -> localCommitTx.checkRemoteSig(fundingKey.publicKey(), remoteFundingPubKey, commit.signature)
+            }
+            if (!remoteSigOk) {
                 log.error { "remote signature $commit is invalid" }
                 return Either.Left(InvalidCommitmentSignature(channelParams.channelId, localCommitTx.tx.txid))
             }
@@ -142,7 +159,7 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val txId: TxId
                     return Either.Left(InvalidHtlcSignature(channelParams.channelId, htlcTx.tx.txid))
                 }
             }
-            return Either.Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, commit.signature, commit.htlcSignatures))
+            return Either.Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, commit.sigOrPartialSig, commit.htlcSignatures))
         }
     }
 }
@@ -517,7 +534,16 @@ data class Commitment(
         }
     }
 
-    fun sendCommit(params: ChannelParams, channelKeys: ChannelKeys, commitKeys: RemoteCommitmentKeys, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, batchSize: Int, log: MDCLogger): Pair<Commitment, CommitSig> {
+    fun sendCommit(
+        params: ChannelParams,
+        channelKeys: ChannelKeys,
+        commitKeys: RemoteCommitmentKeys,
+        changes: CommitmentChanges,
+        remoteNextPerCommitmentPoint: PublicKey,
+        batchSize: Int,
+        nextRemoteNonce: IndividualNonce?,
+        log: MDCLogger
+    ): Pair<Commitment, CommitSig> {
         val fundingKey = localFundingKey(channelKeys)
         // remote commitment will include all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
@@ -532,7 +558,20 @@ data class Commitment(
             commitmentFormat = commitmentFormat,
             spec = spec
         )
-        val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubkey)
+        val sig = when (commitmentFormat) {
+            Transactions.CommitmentFormat.SimpleTaprootChannels -> ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes)
+            else -> remoteCommitTx.sign(fundingKey, remoteFundingPubkey)
+        }
+        val partialSig = when (commitmentFormat) {
+            Transactions.CommitmentFormat.SimpleTaprootChannels -> {
+                val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey(), remoteFundingPubkey, remoteCommitTx.input.outPoint.txid)
+                val psig = remoteCommitTx.partialSign(fundingKey, remoteFundingPubkey, mapOf(), localNonce, listOf(localNonce.publicNonce, nextRemoteNonce!!)).right!!
+                println("sendCommit created $psig with fundingKey = ${fundingKey.publicKey()} remoteFundingPubkey = $remoteFundingPubkey nextRemoteNonce = $nextRemoteNonce")
+                psig
+            }
+
+            else -> null
+        }
         val htlcSigs = sortedHtlcTxs.map { it.localSig(commitKeys) }
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
@@ -565,6 +604,7 @@ data class Commitment(
             if (batchSize > 1) {
                 add(CommitSigTlv.Batch(batchSize))
             }
+            partialSig?.let { add(CommitSigTlv.PartialSignatureWithNonce(it)) }
         }
         val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList(), TlvStream(tlvs))
         val commitment1 = copy(nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)))
@@ -643,7 +683,9 @@ data class Commitments(
     val payments: Map<Long, UUID>, // for outgoing htlcs, maps to paymentId
     val remoteNextCommitInfo: Either<WaitingForRevocation, PublicKey>, // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit
     val remotePerCommitmentSecrets: ShaChain,
+    val remoteCommitNonces: Map<TxId, IndividualNonce>
 ) {
+
     init {
         require(active.isNotEmpty()) { "there must be at least one active commitment" }
     }
@@ -672,6 +714,8 @@ data class Commitments(
         add(commitment)
         addAll(active)
     })
+
+    fun addRemoteCommitNonce(fundingTxId: TxId, nonce: IndividualNonce?): Commitments = nonce?.let { this.copy(remoteCommitNonces = this.remoteCommitNonces + (fundingTxId to it)) } ?: this
 
     fun channelKeys(keyManager: KeyManager): ChannelKeys = channelParams.localParams.channelKeys(keyManager)
 
@@ -837,7 +881,7 @@ data class Commitments(
         val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Either.Left(CannotSignBeforeRevocation(channelId))
         val commitKeys = channelKeys.remoteCommitmentKeys(channelParams, remoteNextPerCommitmentPoint)
         if (!changes.localHasChanges()) return Either.Left(CannotSignWithoutChanges(channelId))
-        val (active1, sigs) = active.map { it.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, log) }.unzip()
+        val (active1, sigs) = active.map { it.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, remoteCommitNonces.get(it.fundingTxId), log) }.unzip()
         val commitments1 = copy(
             active = active1,
             remoteNextCommitInfo = Either.Left(WaitingForRevocation(localCommitIndex)),

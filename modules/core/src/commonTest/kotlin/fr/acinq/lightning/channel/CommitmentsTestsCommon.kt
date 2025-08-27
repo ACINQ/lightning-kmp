@@ -451,6 +451,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 payments = mapOf(),
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
                 remotePerCommitmentSecrets = ShaChain.init,
+                remoteCommitNonces = mapOf()
             )
         }
     }

@@ -1,12 +1,14 @@
 package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
+import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -115,6 +117,27 @@ sealed class ChannelReadyTlv : Tlv {
 }
 
 sealed class CommitSigTlv : Tlv {
+    data class PartialSignatureWithNonce(val psig: ChannelSpendSignature.PartialSignatureWithNonce) : CommitSigTlv() {
+        override val tag: Long get() = PartialSignatureWithNonce.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(psig.partialSig, out)
+            LightningCodecs.writeBytes(psig.nonce.toByteArray(), out)
+        }
+
+        companion object : TlvValueReader<CommitSigTlv> {
+            const val tag: Long = 2
+            override fun read(input: Input): PartialSignatureWithNonce {
+                return PartialSignatureWithNonce(
+                    ChannelSpendSignature.PartialSignatureWithNonce(
+                        LightningCodecs.bytes(input, 32).byteVector32(),
+                        IndividualNonce(LightningCodecs.bytes(input, 66))
+                    )
+                )
+            }
+        }
+    }
+
     data class AlternativeFeerateSig(val feerate: FeeratePerKw, val sig: ByteVector64)
 
     /**

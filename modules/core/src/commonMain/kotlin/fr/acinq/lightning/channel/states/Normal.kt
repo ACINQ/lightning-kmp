@@ -461,7 +461,8 @@ data class Normal(
                                     previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
                                     localHtlcs = parentCommitment.localCommit.spec.htlcs,
                                     fundingContributions = FundingContributions(emptyList(), emptyList()), // as non-initiator we don't contribute to this splice for now
-                                    previousTxs = emptyList()
+                                    previousTxs = emptyList(),
+                                    commitTxIndex = parentCommitment.localCommit.index
                                 )
                                 val nextState = this@Normal.copy(
                                     spliceStatus = SpliceStatus.InProgress(
@@ -554,7 +555,8 @@ data class Normal(
                                                 previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
                                                 localHtlcs = parentCommitment.localCommit.spec.htlcs,
                                                 fundingContributions = fundingContributions.value,
-                                                previousTxs = emptyList()
+                                                previousTxs = emptyList(),
+                                                commitTxIndex = parentCommitment.localCommit.index
                                             ).send()
                                             when (interactiveTxAction) {
                                                 is InteractiveTxSessionAction.SendMessage -> {
@@ -847,7 +849,7 @@ data class Normal(
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
         val fundingScript = action.commitment.commitInput(channelKeys()).txOut.publicKeyScript
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, fundingScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
-        val commitments = commitments.add(action.commitment)
+        val commitments = commitments.add(action.commitment).addRemoteCommitNonce(action.commitment.fundingTxId, action.nextRemoteCommitNonce)
         val nextState = this@Normal.copy(commitments = commitments, spliceStatus = SpliceStatus.None)
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))

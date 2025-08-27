@@ -283,6 +283,26 @@ object Transactions {
             val redeemScript = Script.write(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey)).byteVector()
             return checkSig(remoteSig.sig, remoteFundingPubkey, SigHash.SIGHASH_ALL, RedeemInfo.P2wsh(redeemScript))
         }
+
+        fun checkRemotePartialSignature(
+            localFundingPubKey: PublicKey,
+            remoteFundingPubKey: PublicKey,
+            remoteSig: ChannelSpendSignature.PartialSignatureWithNonce,
+            localNonce: IndividualNonce
+        ): Boolean {
+            return Musig2.verify(
+                remoteSig.partialSig,
+                remoteSig.nonce,
+                remoteFundingPubKey,
+                tx,
+                inputIndex,
+                listOf(input.txOut),
+                Scripts.sort(listOf(localFundingPubKey, remoteFundingPubKey)),
+                listOf(localNonce, remoteSig.nonce),
+                scriptTree = null
+            )
+        }
+
     }
 
     /** This transaction collaboratively spends the channel funding output to change its capacity. */
@@ -1161,6 +1181,7 @@ object Transactions {
     fun decodeTxNumber(sequence: Long, locktime: Long): Long = ((sequence and 0xffffffL) shl 24) + (locktime and 0xffffffL)
 
     fun makeFundingScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): RedeemInfo {
+        println("makeFundingScript for $commitmentFormat")
         return when (commitmentFormat) {
             CommitmentFormat.AnchorOutputs -> RedeemInfo.P2wsh(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
             CommitmentFormat.SimpleTaprootChannels -> RedeemInfo.TaprootKeyPath(Scripts.Taproot.musig2Aggregate(localFundingKey, remoteFundingKey), null)

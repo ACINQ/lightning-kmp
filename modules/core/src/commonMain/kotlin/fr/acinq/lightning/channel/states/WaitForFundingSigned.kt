@@ -117,6 +117,7 @@ data class WaitForFundingSigned(
             payments = mapOf(),
             remoteNextCommitInfo = Either.Right(remoteSecondPerCommitmentPoint),
             remotePerCommitmentSecrets = ShaChain.init,
+            action.nextRemoteCommitNonce?.let { mapOf(action.commitment.fundingTxId to it) } ?: mapOf(),
         )
         val commonActions = buildList {
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }

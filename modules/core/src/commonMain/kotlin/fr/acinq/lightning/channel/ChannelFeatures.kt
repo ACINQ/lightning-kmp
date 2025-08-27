@@ -32,7 +32,7 @@ data class ChannelFeatures(val features: Set<Feature>) {
          * In addition to channel types features, the following features will be added to the permanent channel features if they
          * are supported by both peers.
          */
-        private val permanentChannelFeatures = setOf(Feature.DualFunding)
+        private val permanentChannelFeatures = setOf(Feature.DualFunding, Feature.SimpleTaprootChannels)
     }
 
 }
@@ -65,6 +65,12 @@ sealed class ChannelType {
             override val commitmentFormat: Transactions.CommitmentFormat get() = Transactions.CommitmentFormat.AnchorOutputs
         }
 
+        object SimpleTaprootChannels : SupportedChannelType() {
+            override val name: String get() = "simple_taproot_channel"
+            override val features: Set<Feature> get() = setOf(Feature.SimpleTaprootChannels)
+            override val permanentChannelFeatures: Set<Feature> get() = setOf()
+            override val commitmentFormat: Transactions.CommitmentFormat get() = Transactions.CommitmentFormat.SimpleTaprootChannels
+        }
     }
 
     data class UnsupportedChannelType(val featureBits: Features) : ChannelType() {

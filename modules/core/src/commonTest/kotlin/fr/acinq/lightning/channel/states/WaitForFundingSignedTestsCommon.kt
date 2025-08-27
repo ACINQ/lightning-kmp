@@ -66,6 +66,30 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv CommitSig -- simple taproot channels`() {
+        val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        val commitInput = alice.state.signingSession.commitInput(alice.channelKeys)
+        run {
+            alice.process(ChannelCommand.MessageReceived(commitSigBob)).also { (state, actions) ->
+                assertIs<WaitForFundingSigned>(state.state)
+                assertTrue(actions.isEmpty())
+            }
+        }
+        run {
+            bob.process(ChannelCommand.MessageReceived(commitSigAlice)).also { (state, actions) ->
+                assertIs<WaitForFundingConfirmed>(state.state)
+                assertEquals(actions.size, 5)
+                actions.hasOutgoingMessage<TxSignatures>()
+                actions.findWatch<WatchConfirmed>()
+                    .also { assertEquals(WatchConfirmed(state.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, bob.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk), it) }
+                actions.find<ChannelAction.Storage.StoreIncomingPayment.ViaNewChannel>().also { assertEquals(TestConstants.bobFundingAmount.toMilliSatoshi(), it.amountReceived) }
+                actions.has<ChannelAction.Storage.StoreState>()
+                actions.find<ChannelAction.EmitEvent>().also { assertEquals(ChannelEvents.Created(state.state), it.event) }
+            }
+        }
+    }
+
+    @Test
     fun `recv CommitSig -- liquidity ads`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
         val purchase = alice.process(ChannelCommand.MessageReceived(commitSigBob)).let { (state, actions) ->
@@ -134,6 +158,33 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
+        val commitInput = alice.state.signingSession.commitInput(alice.channelKeys)
+        val txSigsBob = run {
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
+            assertIs<WaitForFundingConfirmed>(bob1.state)
+            actionsBob1.hasOutgoingMessage<TxSignatures>()
+        }
+        run {
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
+            assertIs<WaitForFundingSigned>(alice1.state)
+            assertTrue(actionsAlice1.isEmpty())
+            val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(txSigsBob))
+            assertIs<WaitForFundingConfirmed>(alice2.state)
+            assertEquals(6, actionsAlice2.size)
+            actionsAlice2.hasOutgoingMessage<TxSignatures>()
+            actionsAlice2.has<ChannelAction.Storage.StoreState>()
+            val watchConfirmedAlice = actionsAlice2.findWatch<WatchConfirmed>()
+            assertEquals(WatchConfirmed(alice2.channelId, commitInput.outPoint.txid, commitInput.txOut.publicKeyScript, alice2.staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk), watchConfirmedAlice)
+            assertEquals(ChannelEvents.Created(alice2.state), actionsAlice2.find<ChannelAction.EmitEvent>().event)
+            val fundingTx = actionsAlice2.find<ChannelAction.Blockchain.PublishTx>().tx
+            assertEquals(fundingTx.txid, txSigsBob.txId)
+            assertEquals(commitInput.outPoint.txid, fundingTx.txid)
+        }
+    }
+
+    @Test
+    fun `recv TxSignatures -- simple taproot channels`() {
+        val (alice, commitSigAlice, bob, commitSigBob) = init(channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
         val commitInput = alice.state.signingSession.commitInput(alice.channelKeys)
         val txSigsBob = run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))

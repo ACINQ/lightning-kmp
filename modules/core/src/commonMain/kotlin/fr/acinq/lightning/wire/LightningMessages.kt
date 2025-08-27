@@ -469,9 +469,14 @@ data class TxComplete(
 ) : InteractiveTxConstructionMessage(), HasChannelId {
     override val type: Long get() = TxComplete.type
 
-    val publicNonces: List<IndividualNonce> = tlvs.get<TxCompleteTlv.Nonces>()?.nonces ?: listOf()
+    val swapInNonces: List<IndividualNonce> = tlvs.get<TxCompleteTlv.SwapInNonces>()?.nonces ?: listOf()
+    val commitNonces: TxCompleteTlv.CommitNonces? = tlvs.get<TxCompleteTlv.CommitNonces>()
+    val fundingNone: IndividualNonce? = tlvs.get<TxCompleteTlv.FundingInputNonce>()?.nonce
 
-    constructor(channelId: ByteVector32, publicNonces: List<IndividualNonce>) : this(channelId, TlvStream(TxCompleteTlv.Nonces(publicNonces)))
+    constructor(channelId: ByteVector32, commitNonces: TxCompleteTlv.CommitNonces?, fundingNonce: IndividualNonce?, swapInNonces: List<IndividualNonce>)
+            : this(channelId, TlvStream(setOfNotNull(TxCompleteTlv.SwapInNonces(swapInNonces), commitNonces, fundingNonce?.let { TxCompleteTlv.FundingInputNonce(it) })))
+
+    constructor(channelId: ByteVector32, swapInNonces: List<IndividualNonce>) : this(channelId, TlvStream(TxCompleteTlv.SwapInNonces(swapInNonces)))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -482,7 +487,11 @@ data class TxComplete(
         const val type: Long = 70
 
         @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(TxCompleteTlv.Nonces.tag to TxCompleteTlv.Nonces.Companion as TlvValueReader<TxCompleteTlv>)
+        val readers = mapOf(
+            TxCompleteTlv.SwapInNonces.tag to TxCompleteTlv.SwapInNonces.Companion as TlvValueReader<TxCompleteTlv>,
+            TxCompleteTlv.CommitNonces.tag to TxCompleteTlv.CommitNonces.Companion as TlvValueReader<TxCompleteTlv>,
+            TxCompleteTlv.FundingInputNonce.tag to TxCompleteTlv.FundingInputNonce.Companion as TlvValueReader<TxCompleteTlv>,
+        )
 
         override fun read(input: Input): TxComplete = TxComplete(LightningCodecs.bytes(input, 32).byteVector32(), TlvStreamSerializer(false, readers).read(input))
     }
@@ -1230,8 +1239,11 @@ data class CommitSig(
     val htlcSignatures: List<ByteVector64>,
     val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
 ) : HtlcMessage, HasChannelId, RequirePeerStorageStore {
+
     override val type: Long get() = CommitSig.type
 
+    val partialSignature: ChannelSpendSignature.PartialSignatureWithNonce? = tlvStream.get<CommitSigTlv.PartialSignatureWithNonce>()?.psig
+    val sigOrPartialSig: ChannelSpendSignature = partialSignature ?: signature
     val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
     val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
 
@@ -1248,6 +1260,7 @@ data class CommitSig(
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
+            CommitSigTlv.PartialSignatureWithNonce.tag to CommitSigTlv.PartialSignatureWithNonce.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.AlternativeFeerateSigs.tag to CommitSigTlv.AlternativeFeerateSigs.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
         )

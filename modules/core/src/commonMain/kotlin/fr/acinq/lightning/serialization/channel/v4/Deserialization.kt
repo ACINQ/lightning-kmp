@@ -649,7 +649,7 @@ object Deserialization {
             5 -> Pair(Either.Right(readLocalCommitWithoutHtlcs(htlcs, fundingParams.remoteFundingPubkey)), readRemoteCommitWithoutHtlcs(htlcs))
             else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
         }
-        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommitParams, localCommit, remoteCommitParams, remoteCommit)
+        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommitParams, localCommit, remoteCommitParams, remoteCommit, null)
     }
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
@@ -848,7 +848,7 @@ object Deserialization {
             lastIndex = readNullable { readNumber() }
         )
         readDelimitedByteArray() // ignored legacy remoteChannelData
-        return Commitments(channelParams, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets)
+        return Commitments(channelParams, changes, active, inactive, payments, remoteNextCommitInfo, remotePerCommitmentSecrets, mapOf())
     }
 
     private fun Input.readDirectedHtlc(): DirectedHtlc = when (val discriminator = read()) {

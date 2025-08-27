@@ -24,6 +24,8 @@
     JsonSerializers.BlockHashSerializer::class,
     JsonSerializers.PublicKeySerializer::class,
     JsonSerializers.PrivateKeySerializer::class,
+    JsonSerializers.IndividualNonceSerializer::class,
+    JsonSerializers.PartialSignatureWithNonceSerializer::class,
     JsonSerializers.TxIdSerializer::class,
     JsonSerializers.KeyPathSerializer::class,
     JsonSerializers.SatoshiSerializer::class,
@@ -96,6 +98,7 @@
     JsonSerializers.CommitSigTlvAlternativeFeerateSigSerializer::class,
     JsonSerializers.CommitSigTlvAlternativeFeerateSigsSerializer::class,
     JsonSerializers.CommitSigTlvBatchSerializer::class,
+    JsonSerializers.CommitSigTlvPartialSignatureWithNonceSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
     JsonSerializers.ClosingSerializer::class,
@@ -113,6 +116,7 @@
 package fr.acinq.lightning.json
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -208,6 +212,7 @@ object JsonSerializers {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
+                subclass(CommitSigTlv.PartialSignatureWithNonce::class, CommitSigTlvPartialSignatureWithNonceSerializer)
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
             }
             contextual(Bolt11InvoiceSerializer)
@@ -431,6 +436,8 @@ object JsonSerializers {
     object ByteVector64Serializer : StringSerializer<ByteVector64>()
     object BlockHashSerializer : StringSerializer<BlockHash>()
     object PublicKeySerializer : StringSerializer<PublicKey>()
+    object IndividualNonceSerializer : StringSerializer<IndividualNonce>()
+    object PartialSignatureWithNonceSerializer : StringSerializer<ChannelSpendSignature.PartialSignatureWithNonce>()
     object TxIdSerializer : StringSerializer<TxId>()
     object KeyPathSerializer : StringSerializer<KeyPath>()
     object ShortChannelIdSerializer : StringSerializer<ShortChannelId>()
@@ -557,6 +564,9 @@ object JsonSerializers {
 
     @Serializer(forClass = CommitSigTlv.Batch::class)
     object CommitSigTlvBatchSerializer
+
+    @Serializer(forClass = CommitSigTlv.PartialSignatureWithNonce::class)
+    object CommitSigTlvPartialSignatureWithNonceSerializer
 
     @Serializer(forClass = CommitSigTlv::class)
     object CommitSigTlvSerializer
