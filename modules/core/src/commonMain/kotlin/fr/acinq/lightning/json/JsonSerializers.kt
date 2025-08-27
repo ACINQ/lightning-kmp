@@ -673,7 +673,7 @@ object JsonSerializers {
     data class OfferSurrogate(
         val chain: String,
         val chainHashes: List<BlockHash>?,
-        val amount: MilliSatoshi?,
+        val amount: Long?,
         val currency: String?,
         val issuer: String?,
         val quantityMax: Long?,
@@ -698,7 +698,7 @@ object JsonSerializers {
                     else -> "unknown"
                 }.lowercase(),
                 chainHashes = o.records.get<OfferChains>()?.chains,
-                amount = o.amount,
+                amount = o.records.get<OfferTypes.OfferAmount>()?.amount,
                 currency = o.currency,
                 issuer = o.issuer,
                 quantityMax = o.quantityMax,
