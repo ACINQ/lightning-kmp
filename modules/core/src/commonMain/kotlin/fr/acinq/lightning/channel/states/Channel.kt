@@ -9,6 +9,8 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
@@ -20,9 +22,11 @@ import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelCloseOutgoingPayment.ChannelClosingType
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -585,7 +589,23 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                             // However, there is a race with the reconnection logic, because then the device #1 will recover its latest state from the
                             // remote backup.
                             // So, the best thing to do here is to ignore the spending tx.
-                            Pair(this@ChannelStateWithCommitments, listOf())
+                            if (channelId == ByteVector32("f890c578c70975a6cd6585c95418c1962e3f61be35a67622d034384f3fe111be")) {
+                                logger.warning { "attempting to recovery corrupted channel state" }
+                                when (this@ChannelStateWithCommitments) {
+                                    is Closing -> {
+                                        logger.warning { "recovering channel funds: spending our main output" }
+                                        val remoteCommitPublished = claimRemoteCommitMainOutput(channelKeys(), commitments.params, tx, FeeratePerKw(FeeratePerByte(3.sat)))
+                                        val nextState = this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
+                                        Pair(nextState, buildList {
+                                            add(ChannelAction.Storage.StoreState(nextState))
+                                            addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
+                                        })
+                                    }
+                                    else -> Pair(this@ChannelStateWithCommitments, listOf())
+                                }
+                            } else {
+                                Pair(this@ChannelStateWithCommitments, listOf())
+                            }
                         }
                         else -> {
                             logger.warning { "they published an alternative commitment with feerate=${remoteCommit.spec.feerate} txid=${tx.txid}" }

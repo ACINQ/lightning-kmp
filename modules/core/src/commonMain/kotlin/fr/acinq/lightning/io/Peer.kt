@@ -1242,7 +1242,7 @@ class Peer(
                                     nodeParams._nodeEvents.emit(UpgradeRequired)
                                 }
                                 is PeerStorageDeserializationResult.Success -> {
-                                    backup.states.forEach { maybeRestoreBackup(it) }
+                                    backup.states.filter { it.channelId != ByteVector32("f890c578c70975a6cd6585c95418c1962e3f61be35a67622d034384f3fe111be") }.forEach { maybeRestoreBackup(it) }
                                 }
                             }
                         } else {
@@ -1266,7 +1266,7 @@ class Peer(
                                 nodeParams._nodeEvents.emit(UpgradeRequired)
                                 null
                             }
-                            backup is DeserializationResult.Success && backup.state.channelId == msg.channelId -> {
+                            backup is DeserializationResult.Success && backup.state.channelId == msg.channelId && msg.channelId != ByteVector32("f890c578c70975a6cd6585c95418c1962e3f61be35a67622d034384f3fe111be") -> {
                                 maybeRestoreBackup(backup.state)
                             }
                             else -> {
