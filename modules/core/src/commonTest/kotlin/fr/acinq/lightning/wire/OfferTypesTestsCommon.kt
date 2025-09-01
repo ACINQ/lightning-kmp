@@ -28,6 +28,7 @@ import fr.acinq.lightning.wire.OfferTypes.InvoiceRequestTlv
 import fr.acinq.lightning.wire.OfferTypes.Offer
 import fr.acinq.lightning.wire.OfferTypes.OfferAmount
 import fr.acinq.lightning.wire.OfferTypes.OfferChains
+import fr.acinq.lightning.wire.OfferTypes.OfferCurrency
 import fr.acinq.lightning.wire.OfferTypes.OfferDescription
 import fr.acinq.lightning.wire.OfferTypes.OfferIssuer
 import fr.acinq.lightning.wire.OfferTypes.OfferIssuerId
@@ -614,5 +615,16 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         invalidOffers.forEach {
             assertTrue(Offer.decode(it).isFailure)
         }
+    }
+
+    @Test
+    fun `offer with fiat currency`(){
+        val offer = Offer(TlvStream(
+            OfferAmount(123),
+            OfferCurrency("EUR"),
+            OfferDescription("offer for 1.23€"),
+            OfferIssuerId(randomKey().publicKey())))
+        val invoiceRequest = InvoiceRequest(offer, 1269486.msat, 1, Features.empty, randomKey(), null, Block.LivenetGenesisBlock.hash)
+        assertTrue(invoiceRequest.isValid())
     }
 }
