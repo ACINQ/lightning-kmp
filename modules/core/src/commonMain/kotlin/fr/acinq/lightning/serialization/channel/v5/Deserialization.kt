@@ -481,12 +481,7 @@ object Deserialization {
         localCommit = readLocalCommitWithoutHtlcs(htlcs),
         remoteCommitParams = readCommitParams(),
         remoteCommit = readRemoteCommitWithoutHtlcs(htlcs),
-        nextRemoteCommit = readNullable {
-            NextRemoteCommit(
-                sig = readLightningMessage() as CommitSig,
-                commit = readRemoteCommitWithoutHtlcs(htlcs)
-            )
-        }
+        nextRemoteCommit = readNullable { readRemoteCommitWithoutHtlcs(htlcs) }
     )
 
     private fun Input.readCommitments(): Commitments {

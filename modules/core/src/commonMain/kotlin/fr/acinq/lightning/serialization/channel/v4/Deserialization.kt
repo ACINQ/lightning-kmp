@@ -803,10 +803,8 @@ object Deserialization {
         val (commitInput, localCommit) = readLocalCommitWithoutHtlcs(htlcs, remoteFundingPubkey)
         val remoteCommit = readRemoteCommitWithoutHtlcs(htlcs)
         val nextRemoteCommit = readNullable {
-            NextRemoteCommit(
-                sig = readLightningMessage() as CommitSig,
-                commit = readRemoteCommitWithoutHtlcs(htlcs)
-            )
+            readLightningMessage() as CommitSig // we included our previously sent commit_sig, which we now recompute
+            readRemoteCommitWithoutHtlcs(htlcs)
         }
         // Now that we have extracted the funding output from the local commit, we make sure our localFundingStatus uses the right output.
         val localFundingStatus1 = when (localFundingStatus) {

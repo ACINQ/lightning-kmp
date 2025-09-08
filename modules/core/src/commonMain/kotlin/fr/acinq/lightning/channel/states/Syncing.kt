@@ -354,7 +354,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                 // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
                 // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
                 // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
-                logger.warning { "counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${commitments.latest.nextRemoteCommit?.commit?.index ?: commitments.latest.remoteCommit.index} theirCommitmentNumber=${remoteChannelReestablish.nextLocalCommitmentNumber}" }
+                logger.warning { "counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${commitments.latest.nextRemoteCommit?.index ?: commitments.latest.remoteCommit.index} theirCommitmentNumber=${remoteChannelReestablish.nextLocalCommitmentNumber}" }
                 handleOutdatedCommitment(remoteChannelReestablish, commitments)
             }
             is SyncResult.Failure.RemoteLying -> {
@@ -399,10 +399,15 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                     is Either.Left -> {
                         when {
                             remoteChannelReestablish.nextLocalCommitmentNumber == commitments.nextRemoteCommitIndex -> {
-                                // we just sent a new commit_sig but they didn't receive it
-                                // we resend the same updates and the same sig, and preserve the same ordering
+                                // We just sent a new commit_sig but they didn't receive it: we resend the same updates and sign them again,
+                                // and preserve the same ordering of messages.
                                 val signedUpdates = commitments.changes.localChanges.signed
-                                val commitSigs = commitments.active.mapNotNull { it.nextRemoteCommit?.sig }
+                                val channelParams = commitments.channelParams
+                                val batchSize = commitments.active.size
+                                val commitSigs = commitments.active.mapNotNull { c ->
+                                    val commitInput = c.commitInput(channelKeys)
+                                    c.nextRemoteCommit?.sign(channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubkey, commitInput, c.commitmentFormat, batchSize)
+                                }
                                 val retransmit = when (retransmitRevocation) {
                                     null -> buildList {
                                         addAll(signedUpdates)

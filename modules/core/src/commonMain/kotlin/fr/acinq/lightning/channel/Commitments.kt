@@ -152,7 +152,8 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         fundingTxIndex: Long,
         remoteFundingPubKey: PublicKey,
         commitInput: Transactions.InputInfo,
-        commitmentFormat: Transactions.CommitmentFormat
+        commitmentFormat: Transactions.CommitmentFormat,
+        batchSize: Int = 1
     ): CommitSig {
         val fundingKey = channelKeys.fundingKey(fundingTxIndex)
         val commitKeys = channelKeys.remoteCommitmentKeys(channelParams, remotePerCommitmentPoint)
@@ -169,7 +170,10 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         )
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
         val htlcSigs = sortedHtlcsTxs.map { it.localSig(commitKeys) }
-        return CommitSig(channelParams.channelId, sig, htlcSigs.toList())
+        val tlvs = buildSet<CommitSigTlv> {
+            if (batchSize > 1) add(CommitSigTlv.Batch(batchSize))
+        }
+        return CommitSig(channelParams.channelId, sig, htlcSigs.toList(), TlvStream(tlvs))
     }
 
     fun sign(channelParams: ChannelParams, channelKeys: ChannelKeys, signingSession: InteractiveTxSigningSession): CommitSig {
@@ -184,9 +188,6 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         )
     }
 }
-
-/** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */
-data class NextRemoteCommit(val sig: CommitSig, val commit: RemoteCommit)
 
 sealed class LocalFundingStatus {
     /** While the transaction is unconfirmed, we keep the funding transaction (if available) to allow rebroadcasting. */
@@ -226,7 +227,7 @@ data class Commitment(
     val localCommit: LocalCommit,
     val remoteCommitParams: CommitParams,
     val remoteCommit: RemoteCommit,
-    val nextRemoteCommit: NextRemoteCommit?
+    val nextRemoteCommit: RemoteCommit?
 ) {
     val fundingTxId: TxId = fundingInput.txid
     val shortChannelId: ShortChannelId? = when (localFundingStatus) {
@@ -299,7 +300,7 @@ data class Commitment(
 
     fun availableBalanceForSend(params: ChannelParams, changes: CommitmentChanges): MilliSatoshi {
         // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-        val remoteCommit1 = nextRemoteCommit?.commit ?: remoteCommit
+        val remoteCommit1 = nextRemoteCommit ?: remoteCommit
         val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
         val balanceNoFees = (reduced.toRemote - localChannelReserve(params).toMilliSatoshi()).coerceAtLeast(0.msat)
         return if (params.localParams.paysCommitTxFees) {
@@ -364,7 +365,7 @@ data class Commitment(
         val thisCommitAdds = localCommit.spec.htlcs.outgoings().filter(::expired).toSet() + remoteCommit.spec.htlcs.incomings().filter(::expired).toSet()
         return when (nextRemoteCommit) {
             null -> thisCommitAdds
-            else -> thisCommitAdds + nextRemoteCommit.commit.spec.htlcs.incomings().filter(::expired).toSet()
+            else -> thisCommitAdds + nextRemoteCommit.spec.htlcs.incomings().filter(::expired).toSet()
         }
     }
 
@@ -380,14 +381,14 @@ data class Commitment(
     }
 
     fun getOutgoingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? {
-        val localSigned = (nextRemoteCommit?.commit ?: remoteCommit).spec.findIncomingHtlcById(htlcId) ?: return null
+        val localSigned = (nextRemoteCommit ?: remoteCommit).spec.findIncomingHtlcById(htlcId) ?: return null
         val remoteSigned = localCommit.spec.findOutgoingHtlcById(htlcId) ?: return null
         require(localSigned.add == remoteSigned.add)
         return localSigned.add
     }
 
     fun getIncomingHtlcCrossSigned(htlcId: Long): UpdateAddHtlc? {
-        val localSigned = (nextRemoteCommit?.commit ?: remoteCommit).spec.findOutgoingHtlcById(htlcId) ?: return null
+        val localSigned = (nextRemoteCommit ?: remoteCommit).spec.findOutgoingHtlcById(htlcId) ?: return null
         val remoteSigned = localCommit.spec.findIncomingHtlcById(htlcId) ?: return null
         require(localSigned.add == remoteSigned.add)
         return localSigned.add
@@ -395,7 +396,7 @@ data class Commitment(
 
     fun canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges): Either<ChannelException, Unit> {
         // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-        val remoteCommit1 = nextRemoteCommit?.commit ?: remoteCommit
+        val remoteCommit1 = nextRemoteCommit ?: remoteCommit
         val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
         // the HTLC we are about to create is outgoing, but from their point of view it is incoming
         val outgoingHtlcs = reduced.htlcs.incomings()
@@ -562,7 +563,7 @@ data class Commitment(
             }
         }
         val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList(), TlvStream(tlvs))
-        val commitment1 = copy(nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)))
+        val commitment1 = copy(nextRemoteCommit = RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))
         return Pair(commitment1, commitSig)
     }
 
@@ -605,7 +606,7 @@ data class FullCommitment(val channelParams: ChannelParams, val changes: Commitm
     val remoteChannelParams: RemoteChannelParams = channelParams.remoteParams
     val remoteCommitParams: CommitParams = commitment.remoteCommitParams
     val remoteCommit: RemoteCommit = commitment.remoteCommit
-    val nextRemoteCommit: NextRemoteCommit? = commitment.nextRemoteCommit
+    val nextRemoteCommit: RemoteCommit? = commitment.nextRemoteCommit
     val localChannelReserve: Satoshi = when {
         channelParams.channelFeatures.hasFeature(Feature.ZeroReserveChannels) -> 0.sat
         else -> (fundingAmount / 100).max(remoteCommitParams.dustLimit)
@@ -913,7 +914,7 @@ data class Commitments(
                 else -> Unit
             }
         }
-        val active1 = active.map { it.copy(remoteCommit = it.nextRemoteCommit!!.commit, nextRemoteCommit = null) }
+        val active1 = active.map { it.copy(remoteCommit = it.nextRemoteCommit!!, nextRemoteCommit = null) }
         val commitments1 = this.copy(
             active = active1,
             changes = changes.copy(
@@ -1088,7 +1089,7 @@ data class Commitments(
             val commitParams = commitments.latest.remoteCommitParams
             return buildList {
                 add(commitments.latest.remoteCommit)
-                commitments.latest.nextRemoteCommit?.let { add(it.commit) }
+                commitments.latest.nextRemoteCommit?.let { add(it) }
             }.filter { remoteCommit ->
                 remoteCommit.spec.htlcs.isEmpty()
             }.flatMap { remoteCommit ->

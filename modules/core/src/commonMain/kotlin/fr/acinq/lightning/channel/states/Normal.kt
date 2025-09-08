@@ -66,7 +66,7 @@ data class Normal(
                     is Either.Left -> handleCommandError(cmd, result.value, channelUpdate)
                     is Either.Right -> {
                         val commitments1 = result.value.first
-                        val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.commit.spec
+                        val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.spec
                         // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
                         // counterparty, so only htlcs above remote's dust_limit matter
                         val trimmedOfferedHtlcs = commitments.active

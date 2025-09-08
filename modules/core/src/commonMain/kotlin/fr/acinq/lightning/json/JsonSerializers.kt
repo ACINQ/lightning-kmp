@@ -13,7 +13,6 @@
     JsonSerializers.LocalCommitSerializer::class,
     JsonSerializers.UnsignedLocalCommitSerializer::class,
     JsonSerializers.RemoteCommitSerializer::class,
-    JsonSerializers.NextRemoteCommitSerializer::class,
     JsonSerializers.LocalChangesSerializer::class,
     JsonSerializers.RemoteChangesSerializer::class,
     JsonSerializers.EitherSerializer::class,
@@ -397,9 +396,6 @@ object JsonSerializers {
 
     @Serializer(forClass = RemoteCommit::class)
     object RemoteCommitSerializer
-
-    @Serializer(forClass = NextRemoteCommit::class)
-    object NextRemoteCommitSerializer
 
     @Serializer(forClass = LocalChanges::class)
     object LocalChangesSerializer

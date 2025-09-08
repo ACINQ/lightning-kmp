@@ -440,7 +440,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         commitments.all.any { it.fundingTxId == w.spendingTx.txid } -> Pair(this@ChannelStateWithCommitments, listOf()) // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
         w.spendingTx.txid == commitments.latest.localCommit.txId -> spendLocalCurrent()
         w.spendingTx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(w.spendingTx, commitments.latest)
-        w.spendingTx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(w.spendingTx, commitments.latest)
+        w.spendingTx.txid == commitments.latest.nextRemoteCommit?.txid -> handleRemoteSpentNext(w.spendingTx, commitments.latest)
         w.spendingTx.txIn.any { it.outPoint == commitments.latest.fundingInput } -> handleRemoteSpentOther(w.spendingTx)
         else -> when (val commitment = commitments.resolveCommitment(w.spendingTx)) {
             is Commitment -> {
@@ -493,7 +493,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     internal suspend fun ChannelContext.handleRemoteSpentNext(commitTx: Transaction, commitment: FullCommitment): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         logger.warning { "they published their next commit in txid=${commitTx.txid}" }
         require(commitment.nextRemoteCommit != null) { "next remote commit must be defined" }
-        val remoteCommit = commitment.nextRemoteCommit.commit
+        val remoteCommit = commitment.nextRemoteCommit
         require(commitTx.txid == remoteCommit.txid) { "txid mismatch" }
         val (remoteCommitPublished, closingTxs) = Helpers.Closing.RemoteClose.run {
             claimCommitTxOutputs(channelKeys(), commitment, remoteCommit, commitTx, currentOnChainFeerates())

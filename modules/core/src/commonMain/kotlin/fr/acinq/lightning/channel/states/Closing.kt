@@ -108,7 +108,7 @@ data class Closing(
                                         // Our counterparty may attempt to spend its last commit tx at any time.
                                         newState.run { handleRemoteSpentCurrent(watch.tx, commitments1.latest) }
                                     }
-                                    watch.tx.txid == commitments1.latest.nextRemoteCommit?.commit?.txid && commitments1.remoteCommitIndex == commitments.remoteCommitIndex && commitments.remoteNextCommitInfo.isLeft -> {
+                                    watch.tx.txid == commitments1.latest.nextRemoteCommit?.txid && commitments1.remoteCommitIndex == commitments.remoteCommitIndex && commitments.remoteNextCommitInfo.isLeft -> {
                                         // Our counterparty may attempt to spend its next commit tx at any time.
                                         newState.run { handleRemoteSpentNext(watch.tx, commitments1.latest) }
                                     }
@@ -124,7 +124,7 @@ data class Closing(
                                         // outgoing payment handler so the fail command will be a no-op.
                                         val outgoingHtlcs = commitments.latest.localCommit.spec.htlcs.outgoings().toSet() +
                                                 commitments.latest.remoteCommit.spec.htlcs.incomings().toSet() +
-                                                commitments.latest.nextRemoteCommit?.commit?.spec?.htlcs.orEmpty().incomings().toSet()
+                                                commitments.latest.nextRemoteCommit?.spec?.htlcs.orEmpty().incomings().toSet()
                                         val htlcSettledActions = outgoingHtlcs.mapNotNull { add ->
                                             commitments.payments[add.id]?.let { paymentId ->
                                                 logger.info { "failing htlc #${add.id} paymentHash=${add.paymentHash} paymentId=$paymentId: overridden by revoked remote commit" }
@@ -191,7 +191,7 @@ data class Closing(
                                 }
                             }
                             // we also need to fail outgoing htlcs that we know will never reach the blockchain
-                            Closing.overriddenOutgoingHtlcs(commitments.latest.localCommit, commitments.latest.remoteCommit, commitments.latest.nextRemoteCommit?.commit, closing1.revokedCommitPublished, watch.tx).forEach { add ->
+                            Closing.overriddenOutgoingHtlcs(commitments.latest.localCommit, commitments.latest.remoteCommit, commitments.latest.nextRemoteCommit, closing1.revokedCommitPublished, watch.tx).forEach { add ->
                                 when (val paymentId = commitments.payments[add.id]) {
                                     null -> {
                                         // same as for fulfilling the htlc (no big deal)
@@ -208,7 +208,7 @@ data class Closing(
                                 }
                             }
                             // for our outgoing payments, let's log something if we know that they will settle on chain
-                            Closing.onChainOutgoingHtlcs(commitments.latest.localCommit, commitments.latest.remoteCommit, commitments.latest.nextRemoteCommit?.commit, watch.tx).forEach { add ->
+                            Closing.onChainOutgoingHtlcs(commitments.latest.localCommit, commitments.latest.remoteCommit, commitments.latest.nextRemoteCommit, watch.tx).forEach { add ->
                                 commitments.payments[add.id]?.let { paymentId -> logger.info { "paymentId=$paymentId will settle on-chain (htlc #${add.id} sending ${add.amountMsat})" } }
                             }
                             val (nextState, closedActions) = when (val closingType = closing1.isClosed(watch.tx)) {
@@ -253,7 +253,7 @@ data class Closing(
                                 // counterparty may attempt to spend its last commit tx at any time
                                 handleRemoteSpentCurrent(watch.spendingTx, commitments.latest)
                             }
-                            watch.spendingTx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> {
+                            watch.spendingTx.txid == commitments.latest.nextRemoteCommit?.txid -> {
                                 // counterparty may attempt to spend its next commit tx at any time
                                 handleRemoteSpentNext(watch.spendingTx, commitments.latest)
                             }
@@ -361,7 +361,7 @@ data class Closing(
                         publishActions.addAll(htlcTxs.map { tx -> ChannelAction.Blockchain.PublishTx(tx) })
                     }
                     nextRemoteCommitPublished?.let { rcp ->
-                        val remoteCommit = commitments1.latest.nextRemoteCommit?.commit ?: error("next remote commit must be defined")
+                        val remoteCommit = commitments1.latest.nextRemoteCommit ?: error("next remote commit must be defined")
                         val htlcTxs = Closing.RemoteClose.run { claimHtlcsWithPreimage(channelKeys, rcp, commitments1.latest, remoteCommit, cmd.r, currentOnChainFeerates()) }
                         publishActions.addAll(htlcTxs.map { tx -> ChannelAction.Blockchain.PublishTx(tx) })
                     }
@@ -379,7 +379,7 @@ data class Closing(
                 val nextState = copy(
                     localCommitPublished = localCommitPublished?.let { Closing.LocalClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest) },
                     remoteCommitPublished = remoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.remoteCommit) },
-                    nextRemoteCommitPublished = nextRemoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.nextRemoteCommit!!.commit) },
+                    nextRemoteCommitPublished = nextRemoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.nextRemoteCommit!!) },
                 )
                 Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
             }
@@ -388,7 +388,7 @@ data class Closing(
                 val nextState = copy(
                     localCommitPublished = localCommitPublished?.let { Closing.LocalClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest) },
                     remoteCommitPublished = remoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.remoteCommit) },
-                    nextRemoteCommitPublished = nextRemoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.nextRemoteCommit!!.commit) },
+                    nextRemoteCommitPublished = nextRemoteCommitPublished?.let { Closing.RemoteClose.ignoreFailedIncomingHtlc(cmd.id, it, commitments.latest, commitments.latest.nextRemoteCommit!!) },
                 )
                 Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
             }
@@ -415,7 +415,7 @@ data class Closing(
             }
             localCommitPublished?.isDone == true -> LocalClose(commitments.latest.localCommit, localCommitPublished)
             remoteCommitPublished?.isDone == true -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished)
-            nextRemoteCommitPublished?.isDone == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!.commit, nextRemoteCommitPublished)
+            nextRemoteCommitPublished?.isDone == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!, nextRemoteCommitPublished)
             futureRemoteCommitPublished?.isDone == true -> RecoveryClose(futureRemoteCommitPublished)
             revokedCommitPublished.any { it.isDone } -> RevokedClose(revokedCommitPublished.first { it.isDone })
             else -> null
@@ -426,7 +426,7 @@ data class Closing(
         return when {
             localCommitPublished?.isConfirmed == true -> LocalClose(commitments.latest.localCommit, localCommitPublished)
             remoteCommitPublished?.isConfirmed == true -> CurrentRemoteClose(commitments.latest.remoteCommit, remoteCommitPublished)
-            nextRemoteCommitPublished?.isConfirmed == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!.commit, nextRemoteCommitPublished)
+            nextRemoteCommitPublished?.isConfirmed == true -> NextRemoteClose(commitments.latest.nextRemoteCommit!!, nextRemoteCommitPublished)
             futureRemoteCommitPublished?.isConfirmed == true -> RecoveryClose(futureRemoteCommitPublished)
             revokedCommitPublished.any { it.isConfirmed } -> RevokedClose(revokedCommitPublished.first { it.isConfirmed })
             else -> null

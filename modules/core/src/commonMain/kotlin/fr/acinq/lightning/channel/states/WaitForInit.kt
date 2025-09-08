@@ -174,7 +174,7 @@ data object WaitForInit : ChannelState() {
                                         addAll(rcp.run { doPublish(staticParams.nodeParams, cmd.state.channelId, txs) })
                                     }
                                     cmd.state.nextRemoteCommitPublished?.let { rcp ->
-                                        val remoteCommit = commitment.nextRemoteCommit?.commit!!
+                                        val remoteCommit = commitment.nextRemoteCommit!!
                                         val (_, txs) = Helpers.Closing.RemoteClose.run { claimCommitTxOutputs(channelKeys, commitment, remoteCommit, rcp.commitTx, feerates) }
                                         addAll(rcp.run { doPublish(staticParams.nodeParams, cmd.state.channelId, txs) })
                                     }

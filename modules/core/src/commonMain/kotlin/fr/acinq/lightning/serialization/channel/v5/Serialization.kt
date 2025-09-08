@@ -530,10 +530,7 @@ object Serialization {
         writeLocalCommitWithoutHtlcs(localCommit)
         writeCommitParams(remoteCommitParams)
         writeRemoteCommitWithoutHtlcs(remoteCommit)
-        writeNullable(nextRemoteCommit) {
-            writeLightningMessage(it.sig)
-            writeRemoteCommitWithoutHtlcs(it.commit)
-        }
+        writeNullable(nextRemoteCommit) { writeRemoteCommitWithoutHtlcs(it) }
     }
 
     private fun Output.writeCommitments(o: Commitments) = o.run {

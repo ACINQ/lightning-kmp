@@ -127,7 +127,7 @@ object Helpers {
      * this tells if we can use the channel to make a payment.
      */
     fun aboveReserve(commitments: Commitments): Boolean = commitments.active.all {
-        val remoteCommit = it.nextRemoteCommit?.commit ?: it.remoteCommit
+        val remoteCommit = it.nextRemoteCommit ?: it.remoteCommit
         val toRemote = remoteCommit.spec.toRemote.truncateToSatoshi()
         // NB: this is an approximation (we don't take network fees into account)
         toRemote > it.localChannelReserve(commitments.channelParams)
@@ -1053,7 +1053,7 @@ object Helpers {
                 val fromRemote = commitment.remoteCommit.spec.htlcs
                     .filter { it is IncomingHtlc && it.add.paymentHash == paymentHash }
                     .map { it.add to paymentPreimage }
-                val fromNextRemote = commitment.nextRemoteCommit?.commit?.spec?.htlcs.orEmpty()
+                val fromNextRemote = commitment.nextRemoteCommit?.spec?.htlcs.orEmpty()
                     .filter { it is IncomingHtlc && it.add.paymentHash == paymentHash }
                     .map { it.add to paymentPreimage }
                 fromLocal + fromRemote + fromNextRemote
