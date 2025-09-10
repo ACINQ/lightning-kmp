@@ -178,9 +178,6 @@ data class Bolt11Invoice(
             val data1 = toByteArray(data.copyOfRange(0, data.size - 8 * 13).toList())
             val tohash = hrp.encodeToByteArray() + data1
             val msg = Crypto.sha256(tohash)
-            val nodeId = Crypto.recoverPublicKey(sig, msg, recid.toInt())
-            val check = Crypto.verifySignature(msg, sig, nodeId)
-            require(check) { "invalid signature" }
 
             val tags = ArrayList<TaggedField>()
 
@@ -200,6 +197,7 @@ data class Bolt11Invoice(
                         TaggedField.FallbackAddress.tag -> tags.add(kotlin.runCatching { TaggedField.FallbackAddress.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.Features.tag -> tags.add(kotlin.runCatching { TaggedField.Features.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.RoutingInfo.tag -> tags.add(kotlin.runCatching { TaggedField.RoutingInfo.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
+                        TaggedField.NodeId.tag -> tags.add(kotlin.runCatching { TaggedField.NodeId.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         else -> tags.add(TaggedField.UnknownTag(tag, value))
                     }
                     loop(input.drop(3 + len))
@@ -207,6 +205,18 @@ data class Bolt11Invoice(
             }
 
             loop(data.drop(7).dropLast(104))
+
+            val nodeId = when (val nodeIdTag = tags.filterIsInstance<TaggedField.NodeId>().firstOrNull()) {
+                null -> {
+                    // We use pubkey recovery to compute the node id from the message and signature, so we don't need to check the signature.
+                    Crypto.recoverPublicKey(sig, msg, recid.toInt())
+                }
+                else -> {
+                    // The nodeId is provided, so we must check the signature.
+                    require(Crypto.verifySignature(msg, sig, nodeIdTag.pub)) { "invalid signature" }
+                    nodeIdTag.pub
+                }
+            }
             val pr = Bolt11Invoice(prefix, encodedAmount, timestamp, nodeId, tags, sigandrecid.toByteVector())
             require(pr.signedPreimage().contentEquals(tohash)) { "invoice isn't canonically encoded" }
             pr
@@ -490,6 +500,20 @@ data class Bolt11Invoice(
                         hints.add(hint)
                     }
                     return RoutingInfo(hints)
+                }
+            }
+        }
+
+        /** @param pub optional public key of the payee, when public key recovery from the signature isn't used. */
+        data class NodeId(val pub: PublicKey) : TaggedField() {
+            override val tag: Int5 = NodeId.tag
+            override fun encode(): List<Int5> = Bech32.eight2five(pub.value.toByteArray()).toList()
+
+            companion object {
+                const val tag: Int5 = 19
+                fun decode(input: List<Int5>): NodeId {
+                    require(input.size == 53)
+                    return NodeId(PublicKey(Bech32.five2eight(input.toTypedArray(), 0)))
                 }
             }
         }
