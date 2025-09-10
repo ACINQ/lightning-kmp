@@ -390,7 +390,7 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `On mainnet, public-key recovery with high-S signature`() {
+    fun `On mainnet public-key recovery with high-S signature`() {
         val ref = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap2r09nt4ndd0unm3z9u5t48y6ucv4r5sg7lk98c77ctvjczkspk5qprc90gx"
         val pr = Bolt11Invoice.read(ref).get()
         assertEquals(pr.prefix, "lnbc")
