@@ -1,0 +1,176 @@
+{
+    "type": "fr.acinq.lightning.channel.states.WaitForChannelReady",
+    "commitments": {
+        "channelParams": {
+            "channelId": "1c9c6492fc038dd610071d689aff8a57f88e1163ad006643b9491bd0e6fcf8b1",
+            "channelConfig": [
+                "funding_pubkey_based_channel_keypath"
+            ],
+            "channelFeatures": [
+                "option_static_remotekey",
+                "option_anchor_outputs",
+                "option_dual_fund"
+            ],
+            "localParams": {
+                "nodeId": "037108815ff0128f7ed22640485c226d9ad64a9fd6d8b41b6623565aed6b34812c",
+                "fundingKeyPath": "m/1652959757'/1970622116'/1290530919/55438481/1700694130/1017951873'/1967259419'/205356681'/1'",
+                "isChannelOpener": true,
+                "paysCommitTxFees": true,
+                "defaultFinalScriptPubKey": "001405e0104aa726e34ff5cd3a6320d05c0862b5b01c",
+                "features": {
+                    "activated": {
+                        "option_data_loss_protect": "Optional",
+                        "var_onion_optin": "Mandatory",
+                        "option_static_remotekey": "Mandatory",
+                        "payment_secret": "Mandatory",
+                        "basic_mpp": "Optional",
+                        "option_support_large_channel": "Optional",
+                        "option_anchor_outputs": "Mandatory",
+                        "option_route_blinding": "Optional",
+                        "option_shutdown_anysegwit": "Mandatory",
+                        "option_dual_fund": "Mandatory",
+                        "option_quiescence": "Mandatory",
+                        "option_provide_storage": "Optional",
+                        "option_channel_type": "Mandatory",
+                        "option_simple_close": "Mandatory",
+                        "wake_up_notification_provider": "Optional",
+                        "trampoline_payment_experimental": "Optional",
+                        "splice_experimental": "Optional",
+                        "on_the_fly_funding": "Optional"
+                    },
+                    "unknown": []
+                }
+            },
+            "remoteParams": {
+                "nodeId": "0362b19a83930389b4468be40308efb3f352b23142ae25e6aba0465a8220f95b06",
+                "revocationBasepoint": "02c3d93ba81a89083fe6e9dc45a383b3c2bda0fd6f1af7cabf0eb432ab21e16f50",
+                "paymentBasepoint": "035b552ede5d5ae25c718ae457059277e82d02963ab031b48d425d0d691e15dbf8",
+                "delayedPaymentBasepoint": "03c9fcbef6b94e7994d2c998c71d5cd89f2237d8d79c81abeb427ec9e21fa43682",
+                "htlcBasepoint": "03fdc20fee68cb706229491e0a0cf2ce9fd40e4993d1ec51db591c70bf39f0c364",
+                "features": {
+                    "activated": {
+                        "option_data_loss_protect": "Optional",
+                        "var_onion_optin": "Mandatory",
+                        "option_static_remotekey": "Mandatory",
+                        "payment_secret": "Mandatory",
+                        "basic_mpp": "Optional",
+                        "option_support_large_channel": "Optional",
+                        "option_anchor_outputs": "Optional",
+                        "option_route_blinding": "Optional",
+                        "option_shutdown_anysegwit": "Mandatory",
+                        "option_dual_fund": "Mandatory",
+                        "option_quiescence": "Mandatory",
+                        "option_channel_type": "Mandatory",
+                        "option_payment_metadata": "Optional",
+                        "option_simple_close": "Mandatory",
+                        "zero_reserve_channels": "Optional",
+                        "wake_up_notification_client": "Optional",
+                        "trampoline_payment_experimental": "Optional",
+                        "splice_experimental": "Optional",
+                        "on_the_fly_funding": "Optional",
+                        "funding_fee_credit": "Optional"
+                    },
+                    "unknown": []
+                }
+            },
+            "channelFlags": {
+                "announceChannel": false,
+                "nonInitiatorPaysCommitFees": false
+            }
+        },
+        "changes": {
+            "localChanges": {
+                "proposed": [],
+                "signed": [],
+                "acked": []
+            },
+            "remoteChanges": {
+                "proposed": [],
+                "acked": [],
+                "signed": []
+            },
+            "localNextHtlcId": 0,
+            "remoteNextHtlcId": 0
+        },
+        "active": [
+            {
+                "fundingTxIndex": 0,
+                "fundingInput": "af08fe6683da0905dd7cb1d7ad9a3b9ca3e9cc8a7eb39a7447df8c7747feb6d2:0",
+                "fundingAmount": 1000000,
+                "remoteFundingPubkey": "02358563da6d0e053c10fafed2ef5f0bdab8f938b55e6925520021f9185475af16",
+                "localFundingStatus": {
+                    "status": "confirmed",
+                    "txId": "af08fe6683da0905dd7cb1d7ad9a3b9ca3e9cc8a7eb39a7447df8c7747feb6d2"
+                },
+                "remoteFundingStatus": {
+                    "status": "not-locked"
+                },
+                "commitmentFormat": {
+                    "rfcName": "anchor_outputs"
+                },
+                "localCommitParams": {
+                    "dustLimit": 1100,
+                    "maxHtlcValueInFlightMsat": 1500000000,
+                    "htlcMinimum": 100,
+                    "toSelfDelay": 144,
+                    "maxAcceptedHtlcs": 100
+                },
+                "localCommit": {
+                    "index": 0,
+                    "spec": {
+                        "htlcsIn": [],
+                        "htlcsOut": [],
+                        "feerate": 5000,
+                        "toLocal": 850000000,
+                        "toRemote": 150000000
+                    },
+                    "txId": "e2ad5c195fd0ecb839650322bf4d14543a2f60d1c3f04cca670c3187a7ae2894",
+                    "remoteSig": {
+                        "sig": "434a16a3d3092ce8dae91aca3b863501499c6b6a862d7e18fd580623294f65710334414fbbd1f54c87c6a52294feb09d9a76cdb10a74e890ec0b6cfb70f0e067"
+                    },
+                    "htlcRemoteSigs": []
+                },
+                "remoteCommitParams": {
+                    "dustLimit": 1000,
+                    "maxHtlcValueInFlightMsat": 1500000000,
+                    "htlcMinimum": 1000,
+                    "toSelfDelay": 144,
+                    "maxAcceptedHtlcs": 100
+                },
+                "remoteCommit": {
+                    "index": 0,
+                    "spec": {
+                        "htlcsIn": [],
+                        "htlcsOut": [],
+                        "feerate": 5000,
+                        "toLocal": 150000000,
+                        "toRemote": 850000000
+                    },
+                    "txid": "425a8cc7bb9e1391fc85395becfc2f917b5e8fd67d9ad771130488942394f3e9",
+                    "remotePerCommitmentPoint": "0277ce48908f6b17e2bafcfb79b828b8e925b548da0c9287d51053a33267472911"
+                },
+                "nextRemoteCommit": null
+            }
+        ],
+        "inactive": [],
+        "payments": {},
+        "remoteNextCommitInfo": {
+            "left": null,
+            "right": "03f515353b8f4f7aa215aa26c25d06c8cefecdd21886ebe4ba7d48bd8e0e8f1a39"
+        },
+        "remotePerCommitmentSecrets": "<redacted>"
+    },
+    "shortChannelId": "42x0x0",
+    "lastSent": {
+        "channelId": "1c9c6492fc038dd610071d689aff8a57f88e1163ad006643b9491bd0e6fcf8b1",
+        "nextPerCommitmentPoint": "023a01b19da6ef0671c8fba5f5f3d0feb0659516c131f8277df5756130e67e4c0a",
+        "tlvStream": {
+            "records": [
+                {
+                    "type": "fr.acinq.lightning.wire.ChannelReadyTlv.ShortChannelIdTlv",
+                    "alias": "16733786x15559476x33068"
+                }
+            ]
+        }
+    }
+}

@@ -22,7 +22,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CommitSig`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
-        val commitInput = alice.state.signingSession.commitInput
+        val commitInput = alice.state.signingSession.commitInput(alice.channelKeys)
         run {
             alice.process(ChannelCommand.MessageReceived(commitSigBob)).also { (state, actions) ->
                 assertIs<WaitForFundingSigned>(state.state)
@@ -116,14 +116,14 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     fun `recv CommitSig -- with invalid signature`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob.copy(signature = ByteVector64.Zeroes)))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob.copy(signature = ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes))))
             assertEquals(actionsAlice1.size, 2)
             actionsAlice1.hasOutgoingMessage<Error>()
             actionsAlice1.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(alice.channelId, it.data.channelId) }
             assertIs<Aborted>(alice1.state)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice.copy(signature = ByteVector64.Zeroes)))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice.copy(signature = ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes))))
             assertEquals(actionsBob1.size, 2)
             actionsBob1.hasOutgoingMessage<Error>()
             actionsBob1.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(bob.channelId, it.data.channelId) }
@@ -134,7 +134,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
-        val commitInput = alice.state.signingSession.commitInput
+        val commitInput = alice.state.signingSession.commitInput(alice.channelKeys)
         val txSigsBob = run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
             assertIs<WaitForFundingConfirmed>(bob1.state)
@@ -161,7 +161,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv TxSignatures -- liquidity ads`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init(requestRemoteFunding = TestConstants.bobFundingAmount)
-        val commitInput = alice.state.signingSession.commitInput
+        val commitInput = alice.state.signingSession.commitInput(alice.channelKeys)
         val txSigsBob = run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
             assertIs<WaitForFundingConfirmed>(bob1.state)
