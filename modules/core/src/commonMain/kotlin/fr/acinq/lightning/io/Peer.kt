@@ -1229,7 +1229,7 @@ class Peer(
                         if (nodeParams.usePeerStorage) {
                             val backup: PeerStorageDeserializationResult? =
                                 PersistedChannelState
-                                    .fromEncryptedPeerStorage(nodeParams.nodePrivateKey, msg.eps)
+                                    .fromEncryptedPeerStorage(nodeParams.nodePrivateKey, msg.eps, logger)
                                     .onFailure { logger.warning(it) { "unreadable peer storage" } }
                                     .getOrNull()
                             when (backup) {
