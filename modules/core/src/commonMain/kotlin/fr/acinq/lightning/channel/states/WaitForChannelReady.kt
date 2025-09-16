@@ -66,14 +66,14 @@ data class WaitForChannelReady(
                         staticParams.remoteNodeId,
                         shortChannelId,
                         staticParams.nodeParams.expiryDeltaBlocks,
-                        commitments.params.remoteParams.htlcMinimum,
+                        commitments.latest.remoteCommitParams.htlcMinimum,
                         staticParams.nodeParams.feeBase,
                         staticParams.nodeParams.feeProportionalMillionths.toLong(),
                         commitments.latest.fundingAmount.toMilliSatoshi(),
                         enable = Helpers.aboveReserve(commitments)
                     )
                     val nextState = Normal(
-                        commitments,
+                        commitments.addRemoteCommitNonce(commitments.latest.fundingTxId, cmd.message.nextLocalNonce),
                         shortChannelId,
                         initialChannelUpdate,
                         null,

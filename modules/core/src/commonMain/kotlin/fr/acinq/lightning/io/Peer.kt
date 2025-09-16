@@ -3,6 +3,7 @@ package fr.acinq.lightning.io
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.IClient
 import fr.acinq.lightning.blockchain.IWatcher
 import fr.acinq.lightning.blockchain.WatchTriggered
@@ -22,8 +23,8 @@ import fr.acinq.lightning.logging.withMDC
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.serialization.channel.Encryption.fromEncryptedPeerStorage
-import fr.acinq.lightning.serialization.channel.Serialization.PeerStorageDeserializationResult
 import fr.acinq.lightning.serialization.channel.Serialization.DeserializationResult
+import fr.acinq.lightning.serialization.channel.Serialization.PeerStorageDeserializationResult
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
@@ -191,8 +192,7 @@ class Peer(
         private val prologue = "lightning".encodeToByteArray()
 
         fun updatePeerStorage(nodeParams: NodeParams, channelStates: Map<ByteVector32, ChannelState>, peerConnection: PeerConnection?, remoteFeatures: Features?, logger: MDCLogger?) {
-            if (nodeParams.usePeerStorage &&
-                remoteFeatures?.hasFeature(Feature.ProvideStorage) == true) {
+            if (nodeParams.usePeerStorage && remoteFeatures?.hasFeature(Feature.ProvideStorage) == true) {
                 val persistedChannelStates = channelStates.values.filterIsInstance<PersistedChannelState>().filterNot { it is Closed }
                 peerConnection?.send(PeerStorageStore(EncryptedPeerStorage.from(nodeParams.nodePrivateKey, persistedChannelStates, logger)))
             }
@@ -328,7 +328,7 @@ class Peer(
         }
         launch {
             // we don't restore closed channels
-            val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed || it is LegacyWaitForFundingConfirmed }
+            val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
             _bootChannelsFlow.value = bootChannels.associateBy { it.channelId }
             val channelIds = bootChannels.map {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
@@ -595,7 +595,13 @@ class Peer(
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() >= amount }
             ?.let { channel ->
-                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = listOf(TxOut(amount, scriptPubKey)))
+                val weight = FundingContributions.computeWeightPaid(
+                    isInitiator = true,
+                    commitment = channel.commitments.active.first(),
+                    walletInputs = emptyList(),
+                    localOutputs = listOf(TxOut(amount, scriptPubKey)),
+                    channelKeys = channel.commitments.channelKeys(nodeParams.keyManager),
+                )
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 Pair(actualFeerate, ChannelManagementFees(miningFee, 0.sat))
             }
@@ -614,7 +620,13 @@ class Peer(
             .filterIsInstance<Normal>()
             .find { it.channelId == channelId }
             ?.let { channel ->
-                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList())
+                val weight = FundingContributions.computeWeightPaid(
+                    isInitiator = true,
+                    commitment = channel.commitments.active.first(),
+                    walletInputs = emptyList(),
+                    localOutputs = emptyList(),
+                    channelKeys = channel.commitments.channelKeys(nodeParams.keyManager),
+                )
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 Pair(actualFeerate, ChannelManagementFees(miningFee, 0.sat))
             }
@@ -629,7 +641,13 @@ class Peer(
             .filterIsInstance<Normal>()
             .firstOrNull()
             ?.let { channel ->
-                val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = channel.commitments.active.first(), walletInputs = emptyList(), localOutputs = emptyList()) + fundingRate.fundingWeight
+                val weight = fundingRate.fundingWeight + FundingContributions.computeWeightPaid(
+                    isInitiator = true,
+                    commitment = channel.commitments.active.first(),
+                    walletInputs = emptyList(),
+                    localOutputs = emptyList(),
+                    channelKeys = channel.commitments.channelKeys(nodeParams.keyManager),
+                )
                 // The mining fee below pays for the entirety of the splice transaction, including inputs and outputs from the liquidity provider.
                 val (actualFeerate, miningFee) = client.computeSpliceCpfpFeerate(channel.commitments, targetFeerate, spliceWeight = weight, logger)
                 // The mining fee below only covers the remote node's inputs and outputs, which are already included in the mining fee above.
@@ -649,12 +667,13 @@ class Peer(
             ?.let { channel ->
                 // We cannot be sure of the scripts that will end up being used, but that shouldn't change the fee too much.
                 Helpers.Closing.makeClosingTxs(
-                    nodeParams.keyManager.channelKeys(channel.commitments.params.localParams.fundingKeyPath),
+                    channel.commitments.channelKeys(nodeParams.keyManager),
                     channel.commitments.latest,
-                    channel.commitments.params.localParams.defaultFinalScriptPubKey,
-                    channel.commitments.params.localParams.defaultFinalScriptPubKey,
+                    channel.commitments.channelParams.localParams.defaultFinalScriptPubKey,
+                    channel.commitments.channelParams.localParams.defaultFinalScriptPubKey,
                     targetFeerate,
-                    0
+                    0,
+                    channel.commitments.remoteCloseeNonce
                 ).map { ChannelManagementFees(miningFee = it.second.fees, serviceFee = 0.sat) }.right
             }
     }
@@ -1206,7 +1225,7 @@ class Peer(
                         } else if (_channels.containsKey(msg.temporaryChannelId)) {
                             logger.warning { "ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}" }
                         } else {
-                            val localParams = LocalParams(nodeParams, isChannelOpener = false, payCommitTxFees = msg.channelFlags.nonInitiatorPaysCommitFees)
+                            val localParams = LocalChannelParams(nodeParams, isChannelOpener = false, payCommitTxFees = msg.channelFlags.nonInitiatorPaysCommitFees)
                             val state = WaitForInit
                             val channelConfig = ChannelConfig.standard
                             val initCommand = ChannelCommand.Init.NonInitiator(
@@ -1215,6 +1234,11 @@ class Peer(
                                 fundingAmount = 0.sat,
                                 walletInputs = listOf(),
                                 localParams = localParams,
+                                dustLimit = nodeParams.dustLimit,
+                                htlcMinimum = nodeParams.htlcMinimum,
+                                maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+                                maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+                                toRemoteDelay = nodeParams.toRemoteDelayBlocks,
                                 channelConfig = channelConfig,
                                 remoteInit = theirInit!!,
                                 fundingRates = null
@@ -1391,7 +1415,7 @@ class Peer(
                 }
             }
             is OpenChannel -> {
-                val localParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = true)
+                val localParams = LocalChannelParams(nodeParams, isChannelOpener = true, payCommitTxFees = true)
                 val state = WaitForInit
                 val (state1, actions1) = state.process(
                     ChannelCommand.Init.Initiator(
@@ -1400,7 +1424,12 @@ class Peer(
                         walletInputs = cmd.walletInputs,
                         commitTxFeerate = cmd.commitTxFeerate,
                         fundingTxFeerate = cmd.fundingTxFeerate,
-                        localParams = localParams,
+                        localChannelParams = localParams,
+                        dustLimit = nodeParams.dustLimit,
+                        htlcMinimum = nodeParams.htlcMinimum,
+                        maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+                        maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+                        toRemoteDelay = nodeParams.toRemoteDelayBlocks,
                         remoteInit = theirInit!!,
                         channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
                         channelConfig = ChannelConfig.standard,
@@ -1418,7 +1447,13 @@ class Peer(
                     is SelectChannelResult.Available -> {
                         // We have a channel and we are connected.
                         val targetFeerate = peerFeeratesFlow.filterNotNull().first().fundingFeerate
-                        val weight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = cmd.walletInputs, localOutputs = emptyList())
+                        val weight = FundingContributions.computeWeightPaid(
+                            isInitiator = true,
+                            commitment = available.channel.commitments.active.first(),
+                            walletInputs = cmd.walletInputs,
+                            localOutputs = emptyList(),
+                            channelKeys = available.channel.commitments.channelKeys(nodeParams.keyManager),
+                        )
                         val (feerate, fee) = client.computeSpliceCpfpFeerate(available.channel.commitments, targetFeerate, spliceWeight = weight, logger)
                         logger.info { "requesting splice-in using balance=${cmd.walletInputs.balance} feerate=$feerate fee=$fee" }
                         when (val rejected = nodeParams.liquidityPolicy.value.maybeReject(cmd.walletInputs.balance.toMilliSatoshi(), ChannelManagementFees(miningFee = fee, serviceFee = 0.sat), LiquidityEvents.Source.OnChainWallet, logger)) {
@@ -1474,7 +1509,7 @@ class Peer(
                                     // We need to know the local channel funding amount to be able use channel opening messages.
                                     // We must pay on-chain fees for our inputs/outputs of the transaction: we compute them first
                                     // and proceed backwards to retrieve the funding amount.
-                                    val dummyFundingScript = Script.write(Scripts.multiSig2of2(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey)).byteVector()
+                                    val dummyFundingScript = Script.write(Scripts.multiSig2of2(randomKey().publicKey(), randomKey().publicKey())).byteVector()
                                     val localMiningFee = Transactions.weight2fee(currentFeerates.fundingFeerate, FundingContributions.computeWeightPaid(isInitiator = true, null, dummyFundingScript, cmd.walletInputs, emptyList()))
                                     val localFundingAmount = cmd.totalAmount - localMiningFee
                                     val fundingFees = requestRemoteFunding.fees(currentFeerates.fundingFeerate, isChannelCreation = true)
@@ -1495,8 +1530,13 @@ class Peer(
                                             swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                                         }
                                         else -> {
+                                            val channelType = if (Features.canUseFeature(ourInit.features, theirInit!!.features, Feature.SimpleTaprootChannels)) {
+                                                ChannelType.SupportedChannelType.SimpleTaprootChannels
+                                            } else {
+                                                ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
+                                            }
                                             // We ask our peer to pay the commit tx fees.
-                                            val localParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
+                                            val localParams = LocalChannelParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
                                             val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
                                             val initCommand = ChannelCommand.Init.Initiator(
                                                 replyTo = CompletableDeferred(),
@@ -1504,11 +1544,16 @@ class Peer(
                                                 walletInputs = cmd.walletInputs,
                                                 commitTxFeerate = currentFeerates.commitmentFeerate,
                                                 fundingTxFeerate = currentFeerates.fundingFeerate,
-                                                localParams = localParams,
+                                                localChannelParams = localParams,
+                                                dustLimit = nodeParams.dustLimit,
+                                                htlcMinimum = nodeParams.htlcMinimum,
+                                                maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+                                                maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+                                                toRemoteDelay = nodeParams.toRemoteDelayBlocks,
                                                 remoteInit = theirInit!!,
                                                 channelFlags = channelFlags,
                                                 channelConfig = ChannelConfig.standard,
-                                                channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+                                                channelType = channelType,
                                                 requestRemoteFunding = requestRemoteFunding,
                                                 channelOrigin = Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), fees),
                                             )
@@ -1540,7 +1585,13 @@ class Peer(
                         // We don't contribute any input or output, but we must pay on-chain fees for the shared input and output.
                         // We pay those on-chain fees using our current channel balance.
                         val localBalance = available.channel.commitments.active.first().localCommit.spec.toLocal
-                        val spliceWeight = FundingContributions.computeWeightPaid(isInitiator = true, commitment = available.channel.commitments.active.first(), walletInputs = listOf(), localOutputs = listOf())
+                        val spliceWeight = FundingContributions.computeWeightPaid(
+                            isInitiator = true,
+                            commitment = available.channel.commitments.active.first(),
+                            walletInputs = listOf(),
+                            localOutputs = listOf(),
+                            channelKeys = available.channel.commitments.channelKeys(nodeParams.keyManager),
+                        )
                         val (fundingFeerate, localMiningFee) = client.computeSpliceCpfpFeerate(available.channel.commitments, currentFeerates.fundingFeerate, spliceWeight, logger)
                         val (targetFeerate, paymentDetails) = when {
                             localBalance + currentFeeCredit >= localMiningFee + cmd.fees(fundingFeerate, isChannelCreation = false).total -> {
@@ -1591,7 +1642,7 @@ class Peer(
                     }
                     SelectChannelResult.None -> {
                         // We ask our peer to pay the commit tx fees.
-                        val localParams = LocalParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
+                        val localParams = LocalChannelParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
                         val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
                         // Since we don't have inputs to contribute, we're unable to pay on-chain fees for the shared output.
                         // We target a higher feerate so that the effective feerate isn't too low compared to our target.
@@ -1620,7 +1671,12 @@ class Peer(
                                         walletInputs = listOf(),
                                         commitTxFeerate = currentFeerates.commitmentFeerate,
                                         fundingTxFeerate = fundingFeerate,
-                                        localParams = localParams,
+                                        localChannelParams = localParams,
+                                        dustLimit = nodeParams.dustLimit,
+                                        htlcMinimum = nodeParams.htlcMinimum,
+                                        maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+                                        maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+                                        toRemoteDelay = nodeParams.toRemoteDelayBlocks,
                                         remoteInit = theirInit!!,
                                         channelFlags = channelFlags,
                                         channelConfig = ChannelConfig.standard,

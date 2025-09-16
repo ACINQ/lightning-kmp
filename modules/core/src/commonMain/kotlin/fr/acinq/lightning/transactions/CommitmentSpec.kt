@@ -1,20 +1,38 @@
 package fr.acinq.lightning.transactions
 
-import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.LexicographicalOrdering
+import fr.acinq.bitcoin.TxOut
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.wire.*
-import kotlinx.serialization.Transient
 
-sealed class CommitmentOutput {
-    data object ToLocal : CommitmentOutput()
-    data object ToRemote : CommitmentOutput()
+sealed class CommitmentOutput : Comparable<CommitmentOutput> {
+    abstract val txOut: TxOut
 
-    data class ToLocalAnchor(val pub: PublicKey) : CommitmentOutput()
-    data class ToRemoteAnchor(val pub: PublicKey) : CommitmentOutput()
+    data class ToLocal(override val txOut: TxOut) : CommitmentOutput()
+    data class ToRemote(override val txOut: TxOut) : CommitmentOutput()
+    data class ToLocalAnchor(override val txOut: TxOut) : CommitmentOutput()
+    data class ToRemoteAnchor(override val txOut: TxOut) : CommitmentOutput()
+    data class InHtlc(val htlc: IncomingHtlc, override val txOut: TxOut, val htlcDelayedOutput: TxOut) : CommitmentOutput()
+    data class OutHtlc(val htlc: OutgoingHtlc, override val txOut: TxOut, val htlcDelayedOutput: TxOut) : CommitmentOutput()
 
-    data class InHtlc(val incomingHtlc: IncomingHtlc) : CommitmentOutput()
-    data class OutHtlc(val outgoingHtlc: OutgoingHtlc) : CommitmentOutput()
+    override fun compareTo(other: CommitmentOutput): Int {
+        return when {
+            // Outgoing HTLCs that have the same payment_hash will have the same script. If they also have the same amount, they
+            // will produce exactly the same output: in that case, we must sort them using their expiry (see Bolt 3).
+            // If they also have the same expiry, it doesn't really matter how we sort them, but in order to provide a fully
+            // deterministic ordering (which is useful for tests), we sort them by htlc_id, which cannot be equal.
+            this is OutHtlc && other is OutHtlc && this.txOut == other.txOut && this.htlc.add.cltvExpiry == other.htlc.add.cltvExpiry -> this.htlc.add.id.compareTo(other.htlc.add.id)
+            this is OutHtlc && other is OutHtlc && this.txOut == other.txOut -> this.htlc.add.cltvExpiry.compareTo(other.htlc.add.cltvExpiry)
+            // Incoming HTLCs that have the same payment_hash *and* expiry will have the same script. If they also have the same
+            // amount, they will produce exactly the same output: just like offered HTLCs, it doesn't really matter how we sort
+            // them, but we use the htlc_id to provide a fully deterministic ordering. Note that the expiry is included in the
+            // script, so HTLCs with different expiries will have different scripts, and will thus be sorted by script as required
+            // by Bolt 3.
+            this is InHtlc && other is InHtlc && this.txOut == other.txOut -> this.htlc.add.id.compareTo(other.htlc.add.id)
+            else -> LexicographicalOrdering.compare(this.txOut, other.txOut)
+        }
+    }
 }
 
 sealed class DirectedHtlc {

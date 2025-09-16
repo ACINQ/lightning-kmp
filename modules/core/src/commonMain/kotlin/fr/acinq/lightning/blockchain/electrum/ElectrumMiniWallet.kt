@@ -4,7 +4,7 @@ import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.SwapInOnChainKeys
 import fr.acinq.lightning.logging.debug
 import fr.acinq.lightning.logging.info
 import fr.acinq.lightning.utils.sat
@@ -96,9 +96,9 @@ data class WalletState(val addresses: Map<String, AddressState>) {
         }.coerceAtLeast(0)
 
         /** Builds a transaction spending all expired utxos and computes the mining fee. The transaction is fully signed but not published. */
-        fun spendExpiredSwapIn(swapInKeys: KeyManager.SwapInOnChainKeys, scriptPubKey: ByteVector, feerate: FeeratePerKw): Pair<Transaction, Satoshi>? {
+        fun spendExpiredSwapIn(swapInKeys: SwapInOnChainKeys, scriptPubKey: ByteVector, feerate: FeeratePerKw): Pair<Transaction, Satoshi>? {
             val utxos = readyForRefund.map {
-                KeyManager.SwapInOnChainKeys.SwapInUtxo(
+                SwapInOnChainKeys.SwapInUtxo(
                     txOut = it.txOut,
                     outPoint = it.outPoint,
                     addressIndex = it.addressMeta.indexOrNull
