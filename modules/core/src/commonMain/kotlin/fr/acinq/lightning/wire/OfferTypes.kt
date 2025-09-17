@@ -133,17 +133,17 @@ object OfferTypes {
     /**
      * Amount to pay per item. As we only support bitcoin, the amount is in msat.
      */
-    data class OfferAmount(val amount: MilliSatoshi) : OfferTlv() {
+    data class OfferAmount(val amount: Long) : OfferTlv() {
         override val tag: Long get() = OfferAmount.tag
 
         override fun write(out: Output) {
-            LightningCodecs.writeTU64(amount.toLong(), out)
+            LightningCodecs.writeTU64(amount, out)
         }
 
         companion object : TlvValueReader<OfferAmount> {
             const val tag: Long = 8
             override fun read(input: Input): OfferAmount {
-                return OfferAmount(MilliSatoshi(LightningCodecs.tu64(input)))
+                return OfferAmount(LightningCodecs.tu64(input))
             }
         }
     }
@@ -725,11 +725,12 @@ object OfferTypes {
         val chains: List<BlockHash> = records.get<OfferChains>()?.chains ?: listOf(Block.LivenetGenesisBlock.hash)
         val metadata: ByteVector? = records.get<OfferMetadata>()?.data
         val currency: String? = records.get<OfferCurrency>()?.iso4217
-        val amount: MilliSatoshi? = if (currency == null) {
-            records.get<OfferAmount>()?.amount
+        val amount: Either<MilliSatoshi, Long>? = if (currency == null) {
+            records.get<OfferAmount>()?.amount?.let { Left(MilliSatoshi(it)) }
         } else {
-            null // TODO: add exchange rates
+            records.get<OfferAmount>()?.amount?.let { Right(it) }
         }
+        val amountMsat: MilliSatoshi? = amount?.left
         val description: String? = records.get<OfferDescription>()?.description
         val features: Features = records.get<OfferFeatures>()?.features?.let { Features(it) } ?: Features.empty
         val expirySeconds: Long? = records.get<OfferAbsoluteExpiry>()?.absoluteExpirySeconds
@@ -774,7 +775,7 @@ object OfferTypes {
                 if (description == null) require(amount == null) { "an offer description must be provided if the amount isn't null" }
                 val tlvs: Set<OfferTlv> = setOfNotNull(
                     if (chain != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chain)) else null,
-                    amount?.let { OfferAmount(it) },
+                    amount?.let { OfferAmount(it.toLong()) },
                     description?.let { OfferDescription(it) },
                     features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it.toByteArray().toByteVector()) else null },
                     OfferIssuerId(nodeId)
@@ -810,7 +811,7 @@ object OfferTypes {
                 )
                 val tlvs = setOfNotNull(
                     if (chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chainHash)) else null,
-                    amount?.let { OfferAmount(it) },
+                    amount?.let { OfferAmount(it.toLong()) },
                     description?.let { OfferDescription(it) },
                     features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it.toByteArray().toByteVector()) else null },
                     // Note that we don't include an offer_node_id since we're using a blinded path.
@@ -878,14 +879,14 @@ object OfferTypes {
         val quantity_opt: Long? = records.get<InvoiceRequestQuantity>()?.quantity
         val quantity: Long = quantity_opt ?: 1
         // A valid invoice_request must either specify an amount, or the offer itself must specify an amount.
-        val requestedAmount: MilliSatoshi = amount ?: (offer.amount!! * quantity)
+        val requestedAmount: MilliSatoshi = amount ?: (offer.amountMsat!! * quantity)
         val payerId: PublicKey = records.get<InvoiceRequestPayerId>()!!.publicKey
         val payerNote: String? = records.get<InvoiceRequestPayerNote>()?.note
         private val signature: ByteVector64 = records.get<Signature>()!!.signature
 
         fun isValid(): Boolean =
-            (offer.amount == null || amount == null || offer.amount * quantity <= amount) &&
-                    (offer.amount != null || amount != null) &&
+            (offer.amountMsat == null || amount == null || offer.amountMsat * quantity <= amount) &&
+                    (offer.amountMsat != null || amount != null) &&
                     offer.chains.contains(chain) &&
                     ((offer.quantityMax == null && quantity_opt == null) || (offer.quantityMax != null && quantity_opt != null && quantity <= offer.quantityMax)) &&
                     Features.areCompatible(offer.features, features) &&
