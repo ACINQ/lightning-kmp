@@ -80,6 +80,52 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv ChannelReady -- after restart`() {
+        val (alice, _, bob, channelReadyBob) = init(bobUsePeerStorage = false)
+        val (alice1, _) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
+
+        // Alice and Bob restart.
+        val fundingTxId = alice.commitments.latest.fundingTxId
+        val aliceInit = Init(alice.state.commitments.params.localParams.features.initFeatures())
+        val bobInit = Init(bob.state.commitments.params.localParams.features.initFeatures())
+
+        // Alice had already received Bob's channel_ready before disconnecting.
+        val (alice2, _) = LNChannel(alice1.ctx, WaitForInit).process(ChannelCommand.Init.Restore(alice1.state as PersistedChannelState))
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.Connected(aliceInit, bobInit))
+        assertIs<Syncing>(alice3.state)
+        val channelReestablishAlice = actionsAlice3.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(channelReestablishAlice.myCurrentFundingLocked, fundingTxId)
+        assertEquals(channelReestablishAlice.yourLastFundingLocked, fundingTxId)
+
+        // Bob had not received Alice's channel_ready before disconnecting.
+        val (bob1, _) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Init.Restore(bob.state as PersistedChannelState))
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(bobInit, aliceInit))
+        assertIs<Syncing>(bob2.state)
+        val channelReestablishBob = actionsBob2.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(channelReestablishBob.myCurrentFundingLocked, fundingTxId)
+        assertNull(channelReestablishBob.yourLastFundingLocked)
+
+        // Alice retransmits her channel_ready to Bob.
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<Normal>(alice4.state)
+        val channelReadyAlice = actionsAlice4.hasOutgoingMessage<ChannelReady>()
+
+        // Bob doesn't retransmit channel_ready to Alice.
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        assertIs<WaitForChannelReady>(bob3.state)
+        assertNull(actionsBob3.findOutgoingMessageOpt<ChannelReady>())
+
+        // Bob receives Alice's channel_ready.
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReadyAlice))
+        assertIs<Normal>(bob4.state)
+        actionsBob4.find<ChannelAction.Storage.SetLocked>().also {
+            assertEquals(bob.commitments.latest.fundingTxId, it.txId)
+        }
+        actionsBob4.has<ChannelAction.Storage.StoreState>()
+        assertIs<ChannelEvents.Confirmed>(actionsBob4.find<ChannelAction.EmitEvent>().event)
+    }
+
+    @Test
     fun `recv ChannelSpent -- remote commit`() {
         val (alice, _, bob, _) = init()
         // bob publishes his commitment tx

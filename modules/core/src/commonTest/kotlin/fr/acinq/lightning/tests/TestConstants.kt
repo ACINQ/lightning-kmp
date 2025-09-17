@@ -1,6 +1,9 @@
 package fr.acinq.lightning.tests
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Chain
+import fr.acinq.bitcoin.MnemonicCode
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.blockchain.fee.FeerateTolerance
@@ -80,10 +83,10 @@ object TestConstants {
                 Feature.ChannelType to FeatureSupport.Mandatory,
                 Feature.PaymentMetadata to FeatureSupport.Optional,
                 Feature.SimpleClose to FeatureSupport.Mandatory,
+                Feature.Splicing to FeatureSupport.Mandatory,
                 Feature.ExperimentalTrampolinePayment to FeatureSupport.Optional,
                 Feature.WakeUpNotificationProvider to FeatureSupport.Optional,
                 Feature.ProvideStorage to FeatureSupport.Optional,
-                Feature.ExperimentalSplice to FeatureSupport.Optional,
                 Feature.OnTheFlyFunding to FeatureSupport.Optional,
             ),
             dustLimit = 1_100.sat,
