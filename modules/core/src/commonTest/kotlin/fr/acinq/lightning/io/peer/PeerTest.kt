@@ -28,6 +28,7 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
+import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -604,7 +605,7 @@ class PeerTest : LightningTestSuite() {
         Peer.updatePeerStorage(TestConstants.Bob.nodeParams, mapOf(normal.channelId to normal, closed.channelId to closed), peerConnection, TestConstants.Alice.nodeParams.features, null)
         val peerStorage = peerConnection.output.tryReceive().getOrThrow()
         assertIs<PeerStorageStore>(peerStorage)
-        val backup = PersistedChannelState.fromEncryptedPeerStorage(TestConstants.Bob.nodeParams.nodePrivateKey, peerStorage.eps).getOrThrow()
+        val backup = PersistedChannelState.fromEncryptedPeerStorage(TestConstants.Bob.nodeParams.nodePrivateKey, peerStorage.eps, null).getOrThrow()
         assertIs<PeerStorageDeserializationResult.Success>(backup)
         assertEquals(listOf(normal), backup.states) // the backup contains only the Normal channel
 
