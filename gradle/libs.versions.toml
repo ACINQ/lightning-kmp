@@ -4,8 +4,8 @@ kotlinx-coroutines = "1.10.2"
 kotlinx-datetime = "0.6.2"
 kotlinx-serialization = "1.8.1"
 ktor = "3.1.2"
-bitcoinkmp = "0.25.1" # when upgrading bitcoin-kmp, keep secpjnijvm in sync!
-secpjnijvm = "0.18.0"
+bitcoinkmp = "0.26.0" # when upgrading bitcoin-kmp, keep secpjnijvm in sync!
+secpjnijvm = "0.19.0"
 kermit = "2.0.5"
 slf4j = "2.0.16"
 
