@@ -343,7 +343,6 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
                             swapInProtocol.userPublicKey, swapInProtocol.serverPublicKey, swapInProtocol.userRefundKey, swapInProtocol.refundDelay
                         )
                     }
-
                     else -> InteractiveTxInput.LocalLegacySwapIn(
                         0,
                         i.previousTx.stripInputWitnesses(),
@@ -715,7 +714,6 @@ data class InteractiveTxSession(
                     Pair(next, InteractiveTxSessionAction.SendMessage(txComplete))
                 }
             }
-
             is Either.Left -> {
                 val inputOutgoing = msg.value
                 val txAddInput = when (inputOutgoing) {
@@ -724,13 +722,11 @@ data class InteractiveTxSession(
                         val swapInParams = TxAddInputTlv.SwapInParamsLegacy(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey, swapInKeys.refundDelay)
                         TxAddInput(fundingParams.channelId, inputOutgoing.serialId, inputOutgoing.previousTx, inputOutgoing.previousTxOutput, inputOutgoing.sequence, TlvStream(swapInParams))
                     }
-
                     is InteractiveTxInput.LocalSwapIn -> {
                         val swapInProtocol = swapInKeys.getSwapInProtocol(inputOutgoing.addressIndex)
                         val swapInParams = TxAddInputTlv.SwapInParams(swapInProtocol.userPublicKey, swapInProtocol.serverPublicKey, swapInProtocol.userRefundKey, swapInProtocol.refundDelay)
                         TxAddInput(fundingParams.channelId, inputOutgoing.serialId, inputOutgoing.previousTx, inputOutgoing.previousTxOutput, inputOutgoing.sequence, TlvStream(swapInParams))
                     }
-
                     is InteractiveTxInput.Shared -> TxAddInput(fundingParams.channelId, inputOutgoing.serialId, inputOutgoing.outPoint, inputOutgoing.sequence)
                 }
                 val nextSecretNonces = when (inputOutgoing) {
@@ -740,16 +736,13 @@ data class InteractiveTxSession(
                             val secretNonce = Musig2.generateNonce(randomBytes32(), Either.Right(swapInKeys.userPublicKey), listOf(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey), null, null)
                             secretNonces + (inputOutgoing.serialId to secretNonce)
                         }
-
                         else -> secretNonces
                     }
-
                     else -> secretNonces
                 }
                 val next = copy(toSend = toSend.tail(), localInputs = localInputs + msg.value, txCompleteSent = null, secretNonces = nextSecretNonces)
                 Pair(next, InteractiveTxSessionAction.SendMessage(txAddInput))
             }
-
             is Either.Right -> {
                 val outputOutgoing = msg.value
                 val next = copy(toSend = toSend.tail(), localOutputs = localOutputs + outputOutgoing, txCompleteSent = null)
@@ -803,7 +796,6 @@ data class InteractiveTxSession(
                         message.swapInParams.userRefundKey,
                         message.swapInParams.refundDelay
                     )
-
                     message.swapInParamsLegacy != null -> InteractiveTxInput.RemoteLegacySwapIn(
                         message.serialId,
                         outpoint,
@@ -813,7 +805,6 @@ data class InteractiveTxSession(
                         message.swapInParamsLegacy.serverKey,
                         message.swapInParamsLegacy.refundDelay
                     )
-
                     else -> InteractiveTxInput.RemoteOnly(message.serialId, outpoint, txOut, message.sequence)
                 }
             }
@@ -831,10 +822,8 @@ data class InteractiveTxSession(
                     val secretNonce = Musig2.generateNonce(randomBytes32(), Either.Right(input.serverKey), listOf(input.userKey, input.serverKey), null, null)
                     secretNonces + (input.serialId to secretNonce)
                 }
-
                 else -> secretNonces
             }
-
             else -> secretNonces
         }
         val session1 = this.copy(remoteInputs = remoteInputs + input, inputsReceivedCount = inputsReceivedCount + 1, txCompleteReceived = null, secretNonces = secretNonces1)
@@ -870,14 +859,12 @@ data class InteractiveTxSession(
                     { next -> next.send() }
                 )
             }
-
             is TxAddOutput -> {
                 receiveOutput(message).fold(
                     { f -> Pair(this, f) },
                     { output -> copy(remoteOutputs = remoteOutputs + output, outputsReceivedCount = outputsReceivedCount + 1, txCompleteReceived = null).send() }
                 )
             }
-
             is TxRemoveInput -> {
                 val remoteInputs1 = remoteInputs.filterNot { i -> (i as InteractiveTxInput).serialId == message.serialId }
                 if (remoteInputs.size != remoteInputs1.size) {
@@ -887,7 +874,6 @@ data class InteractiveTxSession(
                     Pair(this, InteractiveTxSessionAction.UnknownSerialId(message.channelId, message.serialId))
                 }
             }
-
             is TxRemoveOutput -> {
                 val remoteOutputs1 = remoteOutputs.filterNot { o -> (o as InteractiveTxOutput).serialId == message.serialId }
                 if (remoteOutputs.size != remoteOutputs1.size) {
@@ -897,7 +883,6 @@ data class InteractiveTxSession(
                     Pair(this, InteractiveTxSessionAction.UnknownSerialId(message.channelId, message.serialId))
                 }
             }
-
             is TxComplete -> {
                 val next = copy(txCompleteReceived = message)
                 if (next.isComplete) {
@@ -1043,7 +1028,6 @@ data class InteractiveTxSigningSession(
         is Either.Left -> localCommit.value.commitTx.input
         is Either.Right -> localCommit.value.publishableTxs.commitTx.input
     }
-
     // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
     val reconnectNextLocalCommitmentNumber = when (localCommit) {
         is Either.Left -> localCommit.value.index
@@ -1055,8 +1039,7 @@ data class InteractiveTxSigningSession(
             is Either.Left -> {
                 val localCommitIndex = localCommit.value.index
                 val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommitIndex)
-                when (val signedLocalCommit =
-                    LocalCommit.fromCommitSig(channelKeys, channelParams, fundingTxIndex, fundingParams.remoteFundingPubkey, commitInput, remoteCommitSig, localCommitIndex, localCommit.value.spec, localPerCommitmentPoint, logger)) {
+                when (val signedLocalCommit = LocalCommit.fromCommitSig(channelKeys, channelParams, fundingTxIndex, fundingParams.remoteFundingPubkey, commitInput, remoteCommitSig, localCommitIndex, localCommit.value.spec, localPerCommitmentPoint, logger)) {
                     is Either.Left -> {
                         val fundingKey = channelKeys.fundingKey(fundingTxIndex)
                         val localSigOfLocalTx = Transactions.sign(localCommit.value.commitTx, fundingKey)
@@ -1068,7 +1051,6 @@ data class InteractiveTxSigningSession(
                         logger.info { "signedLocalCommitTx=$signedLocalCommitTx" }
                         Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(signedLocalCommit.value))
                     }
-
                     is Either.Right -> {
                         if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
                             val fundingStatus = LocalFundingStatus.UnconfirmedFundingTx(fundingTx, fundingParams, currentBlockHeight)
@@ -1081,7 +1063,6 @@ data class InteractiveTxSigningSession(
                     }
                 }
             }
-
             is Either.Right -> Pair(this, InteractiveTxSigningSessionAction.WaitForTxSigs)
         }
     }
@@ -1199,7 +1180,6 @@ sealed class QuiescenceNegotiation : SpliceStatus() {
     abstract class Initiator : QuiescenceNegotiation() {
         abstract val command: ChannelCommand.Commitment.Splice.Request
     }
-
     abstract class NonInitiator : QuiescenceNegotiation()
 }
 
@@ -1208,22 +1188,16 @@ sealed class QuiescentSpliceStatus : SpliceStatus()
 
 sealed class SpliceStatus {
     data object None : SpliceStatus()
-
     /** We stop sending new updates and wait for our updates to be added to the local and remote commitments. */
     data class QuiescenceRequested(override val command: ChannelCommand.Commitment.Splice.Request) : QuiescenceNegotiation.Initiator()
-
     /** Our updates have been added to the local and remote commitments, we wait for our peer to do the same. */
     data class InitiatorQuiescent(override val command: ChannelCommand.Commitment.Splice.Request) : QuiescenceNegotiation.Initiator()
-
     /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
     data class ReceivedStfu(val stfu: Stfu) : QuiescenceNegotiation.NonInitiator()
-
     /** Our updates have been added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
     data object NonInitiatorQuiescent : QuiescentSpliceStatus()
-
     /** We told our peer we want to splice funds in the channel. */
     data class Requested(val command: ChannelCommand.Commitment.Splice.Request, val spliceInit: SpliceInit) : QuiescentSpliceStatus()
-
     /** We both agreed to splice and are building the splice transaction. */
     data class InProgress(
         val replyTo: CompletableDeferred<ChannelFundingResponse>?,
@@ -1231,10 +1205,8 @@ sealed class SpliceStatus {
         val liquidityPurchase: LiquidityAds.Purchase?,
         val origins: List<Origin>
     ) : QuiescentSpliceStatus()
-
     /** The splice transaction has been negotiated, we're exchanging signatures. */
     data class WaitingForSigs(val session: InteractiveTxSigningSession, val liquidityPurchase: LiquidityAds.Purchase?, val origins: List<Origin>) : QuiescentSpliceStatus()
-
     /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
     data object Aborted : QuiescentSpliceStatus()
 }
