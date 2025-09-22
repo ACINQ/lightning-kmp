@@ -515,8 +515,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
             )
             // The first step of a musig2 signing session is to exchange nonces.
             // If participants are disconnected before the end of the signing session, they must start again with fresh nonces.
-            val userNonce = Musig2.generateNonce(randomBytes32(), Either.Right(userPrivateKey.publicKey()), listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()), null, null)
-            val serverNonce = Musig2.generateNonce(randomBytes32(), Either.Right(serverPrivateKey.publicKey()), listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()), null, null)
+            val userNonce = Musig2.generateNonce(randomBytes32(), Either.Left(userPrivateKey), listOf(userPrivateKey.publicKey(), serverPrivateKey.publicKey()), null, null)
+            val serverNonce = Musig2.generateNonce(randomBytes32(), Either.Left(serverPrivateKey), listOf(serverPrivateKey.publicKey(), userPrivateKey.publicKey()), null, null)
 
             // Once they have each other's public nonce, they can produce partial signatures.
             val userSig = swapInProtocol.signSwapInputUser(tx, 0, swapInTx.txOut, userPrivateKey, userNonce.first, userNonce.second, serverNonce.second).right!!
