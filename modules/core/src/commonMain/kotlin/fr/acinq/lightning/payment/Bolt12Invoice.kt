@@ -160,7 +160,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
                 is Either.Right -> {}
             }
             if (records.get<InvoiceAmount>() == null) return Either.Left(MissingRequiredTlv(170))
-            if (records.get<InvoicePaths>()?.paths?.isEmpty() != false) return Either.Left(MissingRequiredTlv(160))
+            if (records.get<InvoicePaths>() == null) return Either.Left(MissingRequiredTlv(160))
             if (records.get<InvoiceBlindedPay>()?.paymentInfos?.size != records.get<InvoicePaths>()?.paths?.size) return Either.Left(MissingRequiredTlv(162))
             if (records.get<InvoiceNodeId>() == null) return Either.Left(MissingRequiredTlv(176))
             if (records.get<InvoiceCreatedAt>() == null) return Either.Left(MissingRequiredTlv(164))

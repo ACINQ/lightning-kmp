@@ -609,6 +609,7 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             "lno1pgx9getnwss8vetrw3hhyucsespjgef743p5fzqq9nqxh0ah7y87rzv3ud0eleps9kl2d5348hq2k8qzqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgqpqqqqqqqqqqqqqqqqqqqqqqqqqqqzqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqqzq3zyg3zyg3zygszqqqqyqqqqsqqvpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqsq",
             "lno1l6jm7eelleemqeee", // invalid TLV field length
             "lno1zmls9mk8y3wkklfvevcrszlmu23kfrxh49px20665dqwmn4p72pksese", // invalid TLV field length
+            "lno1qgqpqqq", // empty offer paths
         )
         invalidOffers.forEach {
             assertTrue(Offer.decode(it).isFailure)

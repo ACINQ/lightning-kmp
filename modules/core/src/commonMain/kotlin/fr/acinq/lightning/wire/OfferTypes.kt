@@ -85,6 +85,7 @@ object OfferTypes {
         companion object : TlvValueReader<OfferChains> {
             const val tag: Long = 2
             override fun read(input: Input): OfferChains {
+                require(input.availableBytes > 0) { "offer_chains must not be empty" }
                 val chains = ArrayList<BlockHash>()
                 while (input.availableBytes > 0) {
                     chains.add(BlockHash(LightningCodecs.bytes(input, 32)))
@@ -125,6 +126,7 @@ object OfferTypes {
         companion object : TlvValueReader<OfferCurrency> {
             const val tag: Long = 6
             override fun read(input: Input): OfferCurrency {
+                require(input.availableBytes == 3) { "offer_currency must be 3 bytes long" }
                 return OfferCurrency(LightningCodecs.bytes(input, input.availableBytes).decodeToString(throwOnInvalidSequence = true))
             }
         }
@@ -217,6 +219,7 @@ object OfferTypes {
         companion object : TlvValueReader<OfferPaths> {
             const val tag: Long = 16
             override fun read(input: Input): OfferPaths {
+                require(input.availableBytes > 0) { "offer_paths must not be empty" }
                 val paths = ArrayList<ContactInfo.BlindedPath>()
                 while (input.availableBytes > 0) {
                     val path = readPath(input)
@@ -427,6 +430,7 @@ object OfferTypes {
         companion object : TlvValueReader<InvoicePaths> {
             const val tag: Long = 160
             override fun read(input: Input): InvoicePaths {
+                require(input.availableBytes > 0) { "invoice_paths must not be empty" }
                 val paths = ArrayList<ContactInfo.BlindedPath>()
                 while (input.availableBytes > 0) {
                     val path = readPath(input)
@@ -486,6 +490,7 @@ object OfferTypes {
         companion object : TlvValueReader<InvoiceBlindedPay> {
             const val tag: Long = 162
             override fun read(input: Input): InvoiceBlindedPay {
+                require(input.availableBytes > 0) { "invoice_blindedpay must not be empty" }
                 val paymentInfos = ArrayList<PaymentInfo>()
                 while (input.availableBytes > 0) {
                     paymentInfos.add(readPaymentInfo(input))
