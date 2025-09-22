@@ -733,7 +733,7 @@ data class InteractiveTxSession(
                     // Generate a secret nonce for this input if we don't already have one.
                     is InteractiveTxInput.LocalSwapIn -> when (secretNonces[inputOutgoing.serialId]) {
                         null -> {
-                            val secretNonce = Musig2.generateNonce(randomBytes32(), swapInKeys.userPrivateKey, swapInKeys.userPublicKey, listOf(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey), null, null)
+                            val secretNonce = Musig2.generateNonce(randomBytes32(), Either.Left(swapInKeys.userPrivateKey), listOf(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey), null, null)
                             secretNonces + (inputOutgoing.serialId to secretNonce)
                         }
                         else -> secretNonces
@@ -819,7 +819,7 @@ data class InteractiveTxSession(
             // Generate a secret nonce for this input if we don't already have one.
             is InteractiveTxInput.RemoteSwapIn -> when (secretNonces[input.serialId]) {
                 null -> {
-                    val secretNonce = Musig2.generateNonce(randomBytes32(), swapInKeys.localServerPrivateKey(remoteNodeId), input.serverKey, listOf(input.userKey, input.serverKey), null, null)
+                    val secretNonce = Musig2.generateNonce(randomBytes32(), Either.Right(input.serverKey), listOf(input.userKey, input.serverKey), null, null)
                     secretNonces + (input.serialId to secretNonce)
                 }
                 else -> secretNonces
