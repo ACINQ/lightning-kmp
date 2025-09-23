@@ -3,6 +3,9 @@ package fr.acinq.lightning.io
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomBytes
+import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.IClient
 import fr.acinq.lightning.blockchain.IWatcher
 import fr.acinq.lightning.blockchain.WatchTriggered
@@ -19,6 +22,7 @@ import fr.acinq.lightning.db.*
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.logging.mdc
 import fr.acinq.lightning.logging.withMDC
+import fr.acinq.lightning.message.OnionMessages
 import fr.acinq.lightning.payment.*
 import fr.acinq.lightning.serialization.channel.Encryption.from
 import fr.acinq.lightning.serialization.channel.Encryption.fromEncryptedPeerStorage
@@ -157,6 +161,10 @@ data class PaymentNotSent(override val request: PayInvoice, val reason: Outgoing
 data class PaymentSent(override val request: PayInvoice, val payment: LightningOutgoingPayment) : SendPaymentResult()
 
 data class OfferInvoiceReceived(val request: PayOffer, val invoice: Bolt12Invoice) : PeerEvent()
+
+data class CardPaymentRequestReceived(val invoice: Bolt12Invoice, val cardParams: String): PeerEvent()
+data class CardPaymentResponseReceived(val message: String, val requestId: ByteVector): PeerEvent()
+
 data class ChannelClosing(val channelId: ByteVector32) : PeerEvent()
 
 /**
@@ -257,7 +265,7 @@ class Peer(
         val state = this
         val ctx = ChannelContext(
             StaticParams(nodeParams, remoteNodeId),
-            currentTipFlow.filterNotNull().first(),
+            getCurrentBlockHeight(),
             onChainFeeratesFlow,
             logger = MDCLogger(
                 logger = _channelLogger,
@@ -738,6 +746,19 @@ class Peer(
             }
     }
 
+    private fun getRemoteChannelUpdates(): List<ChannelUpdate> {
+        return _channels.values.mapNotNull { channelState ->
+            when (channelState) {
+                is Normal -> channelState.remoteChannelUpdate
+                is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
+                is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
+                else -> null
+            }
+        }
+    }
+
+    private suspend fun getCurrentBlockHeight(): Int = currentTipFlow.filterNotNull().first()
+
     suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
@@ -768,17 +789,106 @@ class Peer(
         return res.await()
     }
 
+    /**
+     * Sends a payment for an unsolicited Bolt12 invoice (offer + invoice, but no invoiceRequest).
+     * The given invoice must have an amount.
+     */
+    suspend fun payUnsolicitedInvoice(invoice: Bolt12Invoice, paymentId: UUID = UUID.randomUUID()): SendPaymentResult {
+        val amount = invoice.amount
+        require(amount != null) { "invoice.amount must not be null" }
+        val res = CompletableDeferred<SendPaymentResult>()
+        this.launch {
+            res.complete(
+                eventsFlow
+                    .filterIsInstance<SendPaymentResult>()
+                    .filter { it.request.paymentId == paymentId }
+                    .first()
+            )
+        }
+        val payerKey = randomKey()
+        send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Blinded(invoice, payerKey)))
+        return res.await()
+    }
+
+    data class CardPaymentInfo(val invoice: Bolt12Invoice, val offerId: ByteVector32, val requestId: ByteVector)
+
+    /**
+     * Generates & sends an onion message to the cardHolder.
+     * The information within the cardHolder's offer is used to route the onion message.
+     * The sent message will be of type `OnionMessagePayloadTlv.CardPaymentRequest`,
+     * which will contain:
+     * - the given cardParams (encrypted data only readably by cardHolder)
+     * - an unsolicited Bolt12 invoice (offer + invoice, but no invoiceRequest)
+     */
+    suspend fun requestCardPayment(
+        amount: MilliSatoshi,
+        timeout: Duration,
+        cardHolderOffer: OfferTypes.Offer,
+        cardParams: String
+    ): CardPaymentInfo {
+        // Generate a temporary offer
+        val secret = randomKey()
+        val requestId = randomBytes(16).toByteVector()
+        val (ourOffer, _) = OfferTypes.Offer.createBlindedOffer(
+            chainHash = nodeParams.chainHash,
+            nodePrivateKey = nodeParams.nodePrivateKey,
+            trampolineNodeId = remoteNodeId,
+            amount = amount,
+            description = "card payment",
+            features = Features.empty,
+            blindedPathSessionKey = secret,
+            pathId = requestId
+        )
+        val remoteChannelUpdates = getRemoteChannelUpdates()
+        val currentBlockHeight = getCurrentBlockHeight()
+        val invoice = offerManager.createUnsolicitedInvoice(ourOffer, timeout, secret, remoteChannelUpdates, currentBlockHeight)
+        // Build the onion message content
+        val content: TlvStream<OnionMessagePayloadTlv> = TlvStream(
+            OnionMessagePayloadTlv.CardPaymentRequest(
+                invoice.records.addOrUpdate(
+                    OfferTypes.CardParams(params = cardParams)
+                )
+            )
+        )
+        // Send the onion message(s)
+        cardHolderOffer.contactInfos.mapNotNull {
+            offerManager.buildOnion(
+                destination = OnionMessages.Destination(it),
+                content = content
+            ).right
+        }.forEach { onionMessage ->
+            send(SendOnionMessage(onionMessage))
+        }
+        return CardPaymentInfo(invoice, offerId = secret.value, requestId = requestId)
+    }
+
+    suspend fun sendCardResponse(
+        request: Bolt12Invoice,
+        msg: String,
+        code: Long
+    ) {
+        // Build the onion message content
+        val errMsg = "${code}:${msg}"
+        val content = TlvStream<OnionMessagePayloadTlv>(
+            OnionMessagePayloadTlv.CardPaymentResponse(
+                TlvStream(OfferTypes.Error(errMsg))
+            )
+        )
+        // Send the onion message(s)
+        request.offer.contactInfos.mapNotNull {
+            offerManager.buildOnion(
+                destination = OnionMessages.Destination(it),
+                content = content
+            ).right
+        }.forEach { onionMessage ->
+            send(SendOnionMessage(onionMessage))
+        }
+    }
+
     suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expiry: Duration? = null): Bolt11Invoice {
         // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all
         // channels to maximize the likelihood of success on the first payment attempt
-        val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
-            when (channelState) {
-                is Normal -> channelState.remoteChannelUpdate
-                is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
-                is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
-                else -> null
-            }
-        }
+        val remoteChannelUpdates = getRemoteChannelUpdates()
         val extraHops = listOf(
             listOf(
                 Bolt11Invoice.TaggedField.ExtraHop(
@@ -872,7 +982,7 @@ class Peer(
                         }
                     }
                     is ChannelAction.ProcessCmdRes.AddSettledFail -> {
-                        val currentTip = currentTipFlow.filterNotNull().first()
+                        val currentTip = getCurrentBlockHeight()
                         when (val result = outgoingPaymentHandler.processAddSettledFailed(actualChannelId, action, _channels, currentTip)) {
                             is OutgoingPaymentHandler.Progress -> {
                                 _eventsFlow.emit(PaymentProgress(result.request, result.fees))
@@ -1033,7 +1143,7 @@ class Peer(
     }
 
     private suspend fun processIncomingPayment(item: Either<WillAddHtlc, UpdateAddHtlc>) {
-        val currentBlockHeight = currentTipFlow.filterNotNull().first()
+        val currentBlockHeight = getCurrentBlockHeight()
         val currentFeerate = peerFeeratesFlow.filterNotNull().first().fundingFeerate
         val currentFeeCredit = feeCreditFlow.value
         val result = when (item) {
@@ -1351,15 +1461,9 @@ class Peer(
                     }
                     is OnionMessage -> {
                         logger.info { "received ${msg::class.simpleName}" }
-                        val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
-                            when (channelState) {
-                                is Normal -> channelState.remoteChannelUpdate
-                                is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
-                                is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
-                                else -> null
-                            }
-                        }
-                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first())?.let {
+                        val remoteChannelUpdates = getRemoteChannelUpdates()
+                        val currentBlockHeight = getCurrentBlockHeight()
+                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentBlockHeight)?.let {
                             when (it) {
                                 is OnionMessageAction.PayInvoice -> input.send(
                                     PayInvoice(
@@ -1647,7 +1751,7 @@ class Peer(
                 }
             }
             is PayInvoice -> {
-                val currentTip = currentTipFlow.filterNotNull().first()
+                val currentTip = getCurrentBlockHeight()
                 when (val result = outgoingPaymentHandler.sendPayment(cmd, _channels, currentTip)) {
                     is OutgoingPaymentHandler.Progress -> {
                         _eventsFlow.emit(PaymentProgress(result.request, result.fees))
