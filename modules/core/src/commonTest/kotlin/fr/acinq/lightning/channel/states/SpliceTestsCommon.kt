@@ -1056,6 +1056,48 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `disconnect -- new changes before splice_locked -- partially locked`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, bob1) = spliceOut(alice, bob, 70_000.sat)
+        val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
+
+        // The splice confirms on Alice's side.
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.channelId, WatchConfirmed.ChannelFundingDepthOk, 100, 0, spliceTx)))
+        val spliceLockedAlice = actionsAlice2.hasOutgoingMessage<SpliceLocked>()
+        assertEquals(spliceTx.txid, spliceLockedAlice.fundingTxId)
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(spliceLockedAlice))
+        assertNull(actionsBob2.findOutgoingMessageOpt<SpliceLocked>())
+
+        // Alice sends an HTLC to Bob, but Bob doesn't receive the commit_sig messages.
+        val (nodes3, _, htlc) = addHtlc(50_000_000.msat, alice2, bob2)
+        val (alice3, actionsAlice3) = nodes3.first.process(ChannelCommand.Commitment.Sign)
+        assertEquals(2, actionsAlice3.findOutgoingMessages<CommitSig>().size)
+        actionsAlice3.findOutgoingMessages<CommitSig>().forEach { assertEquals(2, it.batchSize) }
+
+        // At the same time, the splice confirms on Bob's side, who now expects a single commit_sig message.
+        val (bob3, actionsBob3) = nodes3.second.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.channelId, WatchConfirmed.ChannelFundingDepthOk, 100, 0, spliceTx)))
+        assertIs<LNChannel<Normal>>(bob3)
+        val spliceLockedBob = actionsBob3.hasOutgoingMessage<SpliceLocked>()
+        assertEquals(spliceTx.txid, spliceLockedBob.fundingTxId)
+        val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(spliceLockedBob))
+        assertIs<LNChannel<Normal>>(alice4)
+
+        // On reconnection, Alice will only re-send commit_sig for the (locked) splice transaction.
+        val (alice5, bob4, channelReestablishAlice) = disconnect(alice4, bob3)
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        val channelReestablishBob = actionsBob5.findOutgoingMessage<ChannelReestablish>()
+        val (_, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        actionsAlice6.hasOutgoingMessage<UpdateAddHtlc>().also { assertEquals(htlc, it) }
+        assertEquals(1, actionsAlice6.findOutgoingMessages<CommitSig>().size)
+        val commitSigAlice = actionsAlice6.hasOutgoingMessage<CommitSig>()
+        assertEquals(1, commitSigAlice.batchSize)
+        val (bob6, _) = bob5.process(ChannelCommand.MessageReceived(htlc))
+        val (bob7, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(commitSigAlice))
+        assertIs<LNChannel<Normal>>(bob7)
+        actionsBob7.hasOutgoingMessage<RevokeAndAck>()
+    }
+
+    @Test
     fun `disconnect -- splice_locked sent`() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
@@ -1401,7 +1443,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val outgoingHtlcs = htlcs.aliceToBob.map { it.second }.toSet() + setOf(htlcOut1, htlcOut2)
         val addSettled = actionsAlice10.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>()
         assertEquals(outgoingHtlcs, addSettled.map { it.htlc }.toSet())
-        addSettled.forEach { assertTrue(it.result == ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByRemoteCommit(it.htlc.channelId, it.htlc))) }
+        addSettled.forEach { assertEquals(it.result, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByRemoteCommit(it.htlc.channelId, it.htlc))) }
         val getHtlcInfos = actionsAlice10.find<ChannelAction.Storage.GetHtlcInfos>()
         assertEquals(bobRevokedCommitTx.txid, getHtlcInfos.revokedCommitTxId)
         // Alice claims every HTLC output from the revoked commitment.
@@ -1505,7 +1547,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val addSettled = actionsAlice13.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>()
         val outgoingHtlcs = htlcs.aliceToBob.map { it.second }.toSet() + setOf(htlcOut1, htlcOut2, htlcOut3)
         assertEquals(outgoingHtlcs, addSettled.map { it.htlc }.toSet())
-        addSettled.forEach { assertTrue(it.result == ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByRemoteCommit(it.htlc.channelId, it.htlc))) }
+        addSettled.forEach { assertEquals(it.result, ChannelAction.HtlcResult.Fail.OnChainFail(HtlcOverriddenByRemoteCommit(it.htlc.channelId, it.htlc))) }
         val getHtlcInfos = actionsAlice13.find<ChannelAction.Storage.GetHtlcInfos>()
         assertEquals(bobRevokedCommitTx.txid, getHtlcInfos.revokedCommitTxId)
         // Alice claims every HTLC output from the revoked commitment.
