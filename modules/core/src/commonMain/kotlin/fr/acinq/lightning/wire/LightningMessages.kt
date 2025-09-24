@@ -156,18 +156,8 @@ interface HasChainHash : LightningMessage {
 
 interface ForbiddenMessageDuringSplice : LightningMessage
 
-/**
- * Legacy format to backup channel state.
- * It is only kept to restore old channels. New backups now use EncryptedPeerStorage.
- */
+/** Legacy format for channel backup, needed to deserialize old backups */
 data class EncryptedChannelData(val data: ByteVector) {
-    /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
-    override fun toString(): String {
-        val bytes = data.take(min(data.size(), 10))
-        return if (bytes.isEmpty()) "" else "$bytes (truncated)"
-    }
-
-    fun isEmpty(): Boolean = data.isEmpty()
 
     companion object {
         val empty: EncryptedChannelData = EncryptedChannelData(ByteVector.empty)
@@ -1329,8 +1319,6 @@ data class ChannelReestablish(
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
-    // Legacy channel backup present only on old inactive channels, will be replaced by peer storage next time this channel data is updated.
-    val legacyChannelData: EncryptedChannelData get() = tlvStream.get<ChannelReestablishTlv.ChannelData>()?.ecb ?: EncryptedChannelData.empty
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)

@@ -10,7 +10,6 @@ import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.serialization.InputExtensions.readCollection
 import fr.acinq.lightning.serialization.InputExtensions.readDelimitedByteArray
 import fr.acinq.lightning.utils.toByteVector
-import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.EncryptedPeerStorage
 
 /**
@@ -32,27 +31,6 @@ object Encryption {
         val nonce = data.takeLast(12 + 16).take(12)
         val tag = data.takeLast(16)
         return ChaCha20Poly1305.decrypt(key.toByteArray(), nonce.toByteArray(), ciphertext.toByteArray(), ByteArray(0), tag.toByteArray())
-    }
-
-    /**
-     * Convenience method that builds an [EncryptedChannelData] from a [PersistedChannelState]
-     */
-    fun EncryptedChannelData.Companion.from(key: PrivateKey, state: PersistedChannelState): EncryptedChannelData {
-        val bin = Serialization.serialize(state)
-        val encrypted = encrypt(key.value, bin)
-        // we copy the first 2 bytes as meta-info on the serialization version
-        val data = bin.copyOfRange(0, 2) + encrypted
-        return EncryptedChannelData(data.toByteVector())
-    }
-
-    /**
-     * Convenience method that decrypts and deserializes a [PersistedChannelState] from an [EncryptedChannelData]
-     */
-    fun PersistedChannelState.Companion.from(key: PrivateKey, encryptedChannelData: EncryptedChannelData): Result<Serialization.DeserializationResult> {
-        // we first assume that channel data is prefixed by 2 bytes of serialization meta-info
-        return runCatching { decrypt(key.value, encryptedChannelData.data.drop(2).toByteArray()) }
-            .recoverCatching { decrypt(key.value, encryptedChannelData.data.toByteArray()) }
-            .map { Serialization.deserialize(it) }
     }
 
     /**
