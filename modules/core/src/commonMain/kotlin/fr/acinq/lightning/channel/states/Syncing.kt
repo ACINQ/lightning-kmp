@@ -66,7 +66,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                                     state.commitments.params,
                                                     fundingTxIndex = 0,
                                                     state.commitments.latest.remoteFundingPubkey,
-                                                    state.commitments.latest.commitInput
+                                                    state.commitments.latest.commitInput,
+                                                    batchSize = 1
                                                 )
                                                 add(ChannelAction.Message.Send(commitSig))
                                             }
@@ -96,7 +97,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             state.commitments.params,
                                             fundingTxIndex = state.commitments.latest.fundingTxIndex,
                                             state.commitments.latest.remoteFundingPubkey,
-                                            state.commitments.latest.commitInput
+                                            state.commitments.latest.commitInput,
+                                            batchSize = 1
                                         )
                                         actions.add(ChannelAction.Message.Send(commitSig))
                                     }
@@ -160,7 +162,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                                         state.commitments.params,
                                                         fundingTxIndex = state.commitments.latest.fundingTxIndex,
                                                         state.commitments.latest.remoteFundingPubkey,
-                                                        state.commitments.latest.commitInput
+                                                        state.commitments.latest.commitInput,
+                                                        batchSize = 1
                                                     )
                                                     actions.add(ChannelAction.Message.Send(commitSig))
                                                 }
@@ -405,10 +408,18 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                     is Either.Left -> {
                         when {
                             remoteChannelReestablish.nextLocalCommitmentNumber == commitments.nextRemoteCommitIndex -> {
-                                // we just sent a new commit_sig but they didn't receive it
-                                // we resend the same updates and the same sig, and preserve the same ordering
+                                // We just sent a new commit_sig but they didn't receive it: we resend the same updates and sign them again,
+                                // and preserve the same ordering of messages.
                                 val signedUpdates = commitments.changes.localChanges.signed
-                                val commitSigs = commitments.active.map { it.nextRemoteCommit }.filterIsInstance<NextRemoteCommit>().map { it.sig }
+                                val channelParams = commitments.params
+                                val batchSize = commitments.active.size
+                                val commitSigs = commitments.active.mapNotNull { c ->
+                                    val commitInput = c.commitInput
+                                    // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
+                                    // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
+                                    // case, we simply won't send back our commit_sig until they fix their node.
+                                    c.nextRemoteCommit?.commit?.sign(channelKeys, channelParams, c.fundingTxIndex, c.remoteFundingPubkey, commitInput, batchSize)
+                                }
                                 val retransmit = when (retransmitRevocation) {
                                     null -> buildList {
                                         addAll(signedUpdates)
