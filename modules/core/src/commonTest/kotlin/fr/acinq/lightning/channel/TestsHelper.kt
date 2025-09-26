@@ -194,29 +194,28 @@ object TestsHelper {
         val bobChannelParams = TestConstants.Bob.channelParams(payCommitTxFees = channelFlags.nonInitiatorPaysCommitFees).copy(features = bobFeatures.initFeatures())
         val aliceInit = Init(aliceFeatures)
         val bobInit = Init(bobFeatures)
-        val (alice1, actionsAlice1) = alice.process(
-            ChannelCommand.Init.Initiator(
-                CompletableDeferred(),
-                aliceFundingAmount,
-                createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
-                FeeratePerKw.CommitmentFeerate,
-                TestConstants.feeratePerKw,
-                aliceChannelParams,
-                bobInit,
-                channelFlags,
-                ChannelConfig.standard,
-                channelType,
-                requestRemoteFunding?.let {
-                    when (channelOrigin) {
-                        is Origin.OffChainPayment -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(channelOrigin.paymentHash)))
-                        else -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromChannelBalance)
-                    }
-                },
-                channelOrigin,
-            )
+        val cmd = ChannelCommand.Init.Initiator(
+            CompletableDeferred(),
+            aliceFundingAmount,
+            createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
+            FeeratePerKw.CommitmentFeerate,
+            TestConstants.feeratePerKw,
+            aliceChannelParams,
+            bobInit,
+            channelFlags,
+            ChannelConfig.standard,
+            channelType,
+            requestRemoteFunding?.let {
+                when (channelOrigin) {
+                    is Origin.OffChainPayment -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromFutureHtlc(listOf(channelOrigin.paymentHash)))
+                    else -> LiquidityAds.RequestFunding(it, TestConstants.fundingRates.findRate(it)!!, LiquidityAds.PaymentDetails.FromChannelBalance)
+                }
+            },
+            channelOrigin,
         )
+        val (alice1, actionsAlice1) = alice.process(cmd)
         assertIs<LNChannel<WaitForAcceptChannel>>(alice1)
-        val temporaryChannelId = aliceChannelParams.channelKeys(alice.ctx.keyManager).temporaryChannelId
+        val temporaryChannelId = cmd.temporaryChannelId(aliceChannelParams.channelKeys(alice.ctx.keyManager))
         val bobWallet = if (bobFundingAmount > 0.sat) createWallet(bobNodeParams.keyManager, bobFundingAmount + 1500.sat).second else listOf()
         val (bob1, _) = bob.process(
             ChannelCommand.Init.NonInitiator(
@@ -433,24 +432,23 @@ object TestsHelper {
 
     fun useAlternativeCommitSig(s: LNChannel<ChannelState>, commitment: Commitment, alternative: CommitSigTlv.AlternativeFeerateSig): Transaction {
         val channelKeys = s.commitments.params.localParams.channelKeys(s.ctx.keyManager)
+        val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
+        val commitKeys = channelKeys.localCommitmentKeys(s.commitments.params, commitment.localCommit.index)
         val alternativeSpec = commitment.localCommit.spec.copy(feerate = alternative.feerate)
         val fundingTxIndex = commitment.fundingTxIndex
         val commitInput = commitment.commitInput
         val remoteFundingPubKey = commitment.remoteFundingPubkey
-        val localPerCommitmentPoint = channelKeys.commitmentPoint(commitment.localCommit.index)
         val (localCommitTx, _) = Commitments.makeLocalTxs(
-            channelKeys,
-            commitment.localCommit.index,
-            s.commitments.params.localParams,
-            s.commitments.params.remoteParams,
-            fundingTxIndex,
-            remoteFundingPubKey,
-            commitInput,
-            localPerCommitmentPoint,
-            alternativeSpec
+            channelParams = s.commitments.params,
+            commitKeys = commitKeys,
+            commitTxNumber = commitment.localCommit.index,
+            localFundingKey = fundingKey,
+            remoteFundingPubKey = remoteFundingPubKey,
+            commitmentInput = commitInput,
+            spec = alternativeSpec
         )
         val localSig = Transactions.sign(localCommitTx, channelKeys.fundingKey(fundingTxIndex))
-        val signedCommitTx = Transactions.addSigs(localCommitTx, channelKeys.fundingPubKey(fundingTxIndex), remoteFundingPubKey, localSig, alternative.sig)
+        val signedCommitTx = Transactions.addSigs(localCommitTx, fundingKey.publicKey(), remoteFundingPubKey, localSig, alternative.sig)
         assertTrue(Transactions.checkSpendable(signedCommitTx).isSuccess)
         return signedCommitTx.tx
     }
@@ -526,13 +524,12 @@ object TestsHelper {
         return payer0 to payee0
     }
 
-    private fun <T : ChannelStateWithCommitments> receiveCommitSigs(receiver: LNChannel<T>, commitSigs: List<CommitSig>): Pair<LNChannel<T>, List<ChannelAction>> {
-        return commitSigs.fold(Pair(receiver, emptyList())) { pair, commitSig ->
-            val (statePrev, actionsPrev) = pair
-            assertTrue(actionsPrev.isEmpty())
-            val (stateNext, actionsNext) = statePrev.process(ChannelCommand.MessageReceived(commitSig))
-            assertIs<LNChannel<T>>(stateNext)
-            Pair(stateNext, actionsNext)
+    private fun verifyCommitSigsCount(commitSigs: CommitSigs, commitmentsCount: Int) {
+        if (commitmentsCount == 1) {
+            assertIs<CommitSig>(commitSigs)
+        } else {
+            assertIs<CommitSigBatch>(commitSigs)
+            assertEquals(commitmentsCount, commitSigs.batchSize)
         }
     }
 
@@ -545,22 +542,20 @@ object TestsHelper {
         val rHasChanges = nodeB.state.commitments.changes.localHasChanges()
 
         val (sender0, sActions0) = nodeA.process(ChannelCommand.Commitment.Sign)
-        val commitSigs0 = sActions0.findOutgoingMessages<CommitSig>()
-        assertEquals(commitmentsCount, commitSigs0.size)
-        commitSigs0.forEach { assertEquals(commitmentsCount, it.batchSize) }
+        val commitSigs0 = sActions0.findOutgoingMessage<CommitSigs>()
+        verifyCommitSigsCount(commitSigs0, commitmentsCount)
 
-        val (receiver0, rActions0) = receiveCommitSigs(nodeB, commitSigs0)
+        val (receiver0, rActions0) = nodeB.process(ChannelCommand.MessageReceived(commitSigs0))
         val revokeAndAck0 = rActions0.findOutgoingMessage<RevokeAndAck>()
         val commandSign0 = rActions0.findCommand<ChannelCommand.Commitment.Sign>()
 
         val (sender1, _) = sender0.process(ChannelCommand.MessageReceived(revokeAndAck0))
         assertIs<LNChannel<T>>(sender1)
         val (receiver1, rActions1) = receiver0.process(commandSign0)
-        val commitSigs1 = rActions1.findOutgoingMessages<CommitSig>()
-        assertEquals(commitmentsCount, commitSigs1.size)
-        commitSigs1.forEach { assertEquals(commitmentsCount, it.batchSize) }
+        val commitSigs1 = rActions1.findOutgoingMessage<CommitSigs>()
+        verifyCommitSigsCount(commitSigs1, commitmentsCount)
 
-        val (sender2, sActions2) = receiveCommitSigs(sender1, commitSigs1)
+        val (sender2, sActions2) = sender1.process(ChannelCommand.MessageReceived(commitSigs1))
         val revokeAndAck1 = sActions2.findOutgoingMessage<RevokeAndAck>()
         val (receiver2, _) = receiver1.process(ChannelCommand.MessageReceived(revokeAndAck1))
         assertIs<LNChannel<T>>(receiver2)
@@ -568,10 +563,10 @@ object TestsHelper {
         if (rHasChanges) {
             val commandSign1 = sActions2.findCommand<ChannelCommand.Commitment.Sign>()
             val (sender3, sActions3) = sender2.process(commandSign1)
-            val commitSigs2 = sActions3.findOutgoingMessages<CommitSig>()
-            assertEquals(commitmentsCount, commitSigs2.size)
+            val commitSigs2 = sActions3.findOutgoingMessage<CommitSigs>()
+            verifyCommitSigsCount(commitSigs2, commitmentsCount)
 
-            val (receiver3, rActions3) = receiveCommitSigs(receiver2, commitSigs2)
+            val (receiver3, rActions3) = receiver2.process(ChannelCommand.MessageReceived(commitSigs2))
             val revokeAndAck2 = rActions3.findOutgoingMessage<RevokeAndAck>()
             val (sender4, _) = sender3.process(ChannelCommand.MessageReceived(revokeAndAck2))
 

@@ -694,27 +694,22 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (nodes, preimage, htlc) = addHtlc(20_000_000.msat, alice2, bob3)
         val (alice3, bob4) = nodes
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.Commitment.Sign)
-        val commitSigsAlice = actionsAlice4.findOutgoingMessages<CommitSig>()
-        assertEquals(commitSigsAlice.size, 3)
-        commitSigsAlice.forEach { assertEquals(it.batchSize, 3) }
-        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(commitSigsAlice[0]))
-        assertTrue(actionsBob5.isEmpty())
+        val commitSigsAlice = actionsAlice4.findOutgoingMessage<CommitSigBatch>()
+        assertEquals(commitSigsAlice.batchSize, 3)
         val (alice5, _) = alice4.process(ChannelCommand.MessageReceived(spliceLocked))
         assertEquals(alice5.commitments.active.size, 1)
         assertEquals(alice5.commitments.inactive.size, 2)
-        val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigsAlice[1]))
-        assertTrue(actionsBob6.isEmpty())
-        val (bob7, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(commitSigsAlice[2]))
-        assertEquals(actionsBob7.size, 3)
-        val revokeAndAckBob = actionsBob7.findOutgoingMessage<RevokeAndAck>()
-        actionsBob7.contains(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
-        actionsBob7.has<ChannelAction.Storage.StoreState>()
-        val (bob8, actionsBob8) = bob7.process(ChannelCommand.Commitment.Sign)
-        assertEquals(actionsBob8.size, 3)
-        val commitSigBob = actionsBob8.findOutgoingMessage<CommitSig>()
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(commitSigsAlice))
+        assertEquals(actionsBob5.size, 3)
+        val revokeAndAckBob = actionsBob5.findOutgoingMessage<RevokeAndAck>()
+        actionsBob5.contains(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
+        actionsBob5.has<ChannelAction.Storage.StoreState>()
+        val (bob6, actionsBob6) = bob5.process(ChannelCommand.Commitment.Sign)
+        assertEquals(actionsBob6.size, 3)
+        val commitSigBob = actionsBob6.findOutgoingMessage<CommitSig>()
         assertEquals(commitSigBob.batchSize, 1)
-        actionsBob8.has<ChannelAction.Storage.StoreHtlcInfos>()
-        actionsBob8.has<ChannelAction.Storage.StoreState>()
+        actionsBob6.has<ChannelAction.Storage.StoreHtlcInfos>()
+        actionsBob6.has<ChannelAction.Storage.StoreState>()
         val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(revokeAndAckBob))
         assertEquals(actionsAlice6.size, 1)
         actionsAlice6.has<ChannelAction.Storage.StoreState>()
@@ -723,19 +718,19 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(actionsAlice7.size, 2)
         val revokeAndAckAlice = actionsAlice7.findOutgoingMessage<RevokeAndAck>()
         actionsAlice7.has<ChannelAction.Storage.StoreState>()
-        val (bob9, actionsBob9) = bob8.process(ChannelCommand.MessageReceived(revokeAndAckAlice))
-        assertIs<LNChannel<Normal>>(bob9)
-        assertEquals(actionsBob9.size, 2)
-        actionsBob9.has<ChannelAction.ProcessIncomingHtlc>()
-        actionsBob9.has<ChannelAction.Storage.StoreState>()
+        val (bob7, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(revokeAndAckAlice))
+        assertIs<LNChannel<Normal>>(bob7)
+        assertEquals(actionsBob7.size, 2)
+        actionsBob7.has<ChannelAction.ProcessIncomingHtlc>()
+        actionsBob7.has<ChannelAction.Storage.StoreState>()
 
         // Bob fulfills the HTLC.
-        val (alice8, bob10) = fulfillHtlc(htlc.id, preimage, alice7, bob9)
-        val (bob11, alice9) = crossSign(bob10, alice8, commitmentsCount = 1)
+        val (alice8, bob8) = fulfillHtlc(htlc.id, preimage, alice7, bob7)
+        val (bob9, alice9) = crossSign(bob8, alice8, commitmentsCount = 1)
         assertEquals(alice9.commitments.active.size, 1)
         alice9.commitments.inactive.forEach { assertTrue(it.localCommit.index < alice9.commitments.localCommitIndex) }
-        assertEquals(bob11.commitments.active.size, 1)
-        bob11.commitments.inactive.forEach { assertTrue(it.localCommit.index < bob11.commitments.localCommitIndex) }
+        assertEquals(bob9.commitments.active.size, 1)
+        bob9.commitments.inactive.forEach { assertTrue(it.localCommit.index < bob9.commitments.localCommitIndex) }
     }
 
     @Test
@@ -1039,20 +1034,19 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (nodes2, _, htlc) = addHtlc(50_000_000.msat, alice1, bob1)
         val (alice3, actionsAlice3) = nodes2.first.process(ChannelCommand.Commitment.Sign)
         assertIs<LNChannel<Normal>>(alice3)
-        assertEquals(2, actionsAlice3.findOutgoingMessages<CommitSig>().size)
-        actionsAlice3.findOutgoingMessages<CommitSig>().forEach { assertEquals(2, it.batchSize) }
+        val commitSigsAlice1 = actionsAlice3.findOutgoingMessage<CommitSigBatch>()
+        assertEquals(2, commitSigsAlice1.batchSize)
         // Bob disconnects before receiving Alice's commit_sig.
         val (alice4, bob3, channelReestablishAlice) = disconnect(alice3, nodes2.second)
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
         val (_, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(channelReestablishBob))
         actionsAlice5.hasOutgoingMessage<UpdateAddHtlc>().also { assertEquals(htlc, it) }
-        assertEquals(2, actionsAlice5.findOutgoingMessages<CommitSig>().size)
-        actionsAlice5.findOutgoingMessages<CommitSig>().forEach { assertEquals(2, it.batchSize) }
+        val commitSigsAlice2 = actionsAlice5.findOutgoingMessage<CommitSigBatch>()
+        assertEquals(2, commitSigsAlice2.batchSize)
         val (bob5, _) = bob4.process(ChannelCommand.MessageReceived(htlc))
-        val (bob6, _) = bob5.process(ChannelCommand.MessageReceived(actionsAlice5.findOutgoingMessages<CommitSig>().first()))
-        val (_, actionsBob7) = bob6.process(ChannelCommand.MessageReceived(actionsAlice5.findOutgoingMessages<CommitSig>().last()))
-        actionsBob7.findOutgoingMessage<RevokeAndAck>()
+        val (_, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigsAlice2))
+        actionsBob6.findOutgoingMessage<RevokeAndAck>()
     }
 
     @Test
@@ -1071,8 +1065,10 @@ class SpliceTestsCommon : LightningTestSuite() {
         // Alice sends an HTLC to Bob, but Bob doesn't receive the commit_sig messages.
         val (nodes3, _, htlc) = addHtlc(50_000_000.msat, alice2, bob2)
         val (alice3, actionsAlice3) = nodes3.first.process(ChannelCommand.Commitment.Sign)
-        assertEquals(2, actionsAlice3.findOutgoingMessages<CommitSig>().size)
-        actionsAlice3.findOutgoingMessages<CommitSig>().forEach { assertEquals(2, it.batchSize) }
+        actionsAlice3.hasOutgoingMessage<CommitSigBatch>().also { batch ->
+            assertEquals(2, batch.batchSize)
+            batch.messages.forEach { sig -> assertEquals(2, sig.batchSize) }
+        }
 
         // At the same time, the splice confirms on Bob's side, who now expects a single commit_sig message.
         val (bob3, actionsBob3) = nodes3.second.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.channelId, WatchConfirmed.ChannelFundingDepthOk, 100, 0, spliceTx)))
@@ -1410,7 +1406,7 @@ class SpliceTestsCommon : LightningTestSuite() {
         val (nodes6, _, htlcOut2) = addHtlc(15_000_000.msat, alice5, bob5)
         val (alice6, bob6) = nodes6
         val (alice7, actionsAlice7) = alice6.process(ChannelCommand.Commitment.Sign)
-        actionsAlice7.hasOutgoingMessage<CommitSig>() // Bob ignores Alice's message
+        actionsAlice7.hasOutgoingMessage<CommitSigBatch>() // Bob ignores Alice's message
         assertEquals(3, bob6.commitments.active.size)
         assertEquals(3, alice7.commitments.active.size)
 
