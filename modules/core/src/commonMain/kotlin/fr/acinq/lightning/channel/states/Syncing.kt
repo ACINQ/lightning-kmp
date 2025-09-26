@@ -38,7 +38,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                             Pair(state, actions)
                         }
                         is WaitForFundingConfirmed -> {
-                            val state1 = state.copy(commitments = state.commitments.copy(remoteCommitNonces = cmd.message.nextCommitNonces))
+                            val state1 = state.copy(remoteCommitNonces = cmd.message.nextCommitNonces)
                             when (cmd.message.nextFundingTxId) {
                                 null -> Pair(state1, listOf())
                                 else -> {
@@ -125,7 +125,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                             val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
                             val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
                             actions.add(ChannelAction.Message.Send(channelReady))
-                            Pair(state.copy(commitments = state.commitments.copy(remoteCommitNonces = cmd.message.nextCommitNonces)), actions)
+                            Pair(state.copy(remoteCommitNonces = cmd.message.nextCommitNonces), actions)
                         }
                         is Normal -> {
                             when (val syncResult = handleSync(state.commitments, cmd.message)) {
@@ -216,7 +216,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     actions.addAll(syncResult.retransmit.map { ChannelAction.Message.Send(it) })
 
                                     // then we clean up unsigned updates
-                                    val commitments1 = discardUnsignedUpdates(state.commitments).copy(remoteCommitNonces = cmd.message.nextCommitNonces)
+                                    val commitments1 = discardUnsignedUpdates(state.commitments)
 
                                     if (commitments1.changes.localHasChanges()) {
                                         actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
@@ -234,7 +234,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                         logger.debug { "re-sending local shutdown" }
                                         actions.add(ChannelAction.Message.Send(it))
                                     }
-                                    Pair(state.copy(commitments = commitments1, spliceStatus = spliceStatus1), actions)
+                                    Pair(state.copy(commitments = commitments1, spliceStatus = spliceStatus1, remoteCommitNonces = cmd.message.nextCommitNonces), actions)
                                 }
                             }
                         }
@@ -253,8 +253,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                         }
                         is Negotiating -> {
                             // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-                            val (commitments, shutdown) = state.commitments.createShutdown(channelKeys, state.localScript)
-                            Pair(state.copy(commitments = commitments), listOf(ChannelAction.Message.Send(shutdown)))
+                            val (localCloseeNonce, shutdown) = state.commitments.createShutdown(channelKeys, state.localScript)
+                            Pair(state.copy(localCloseeNonce = localCloseeNonce), listOf(ChannelAction.Message.Send(shutdown)))
                         }
                         is Closing, is Closed, is WaitForRemotePublishFutureCommitment -> unhandled(cmd)
                     }
@@ -309,7 +309,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
                                             val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
                                             val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.fundingInput.index.toInt())
-                                            WaitForChannelReady(commitments1, shortChannelId, channelReady)
+                                            WaitForChannelReady(commitments1, shortChannelId, channelReady, this@Syncing.state.remoteCommitNonces)
                                         }
                                         else -> state
                                     }
@@ -551,7 +551,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
         private fun handleOutdatedCommitment(remoteChannelReestablish: ChannelReestablish, commitments: Commitments): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
             val exc = PleasePublishYourCommitment(commitments.channelId)
             val error = Error(commitments.channelId, exc.message.encodeToByteArray().toByteVector())
-            val nextState = WaitForRemotePublishFutureCommitment(commitments, remoteChannelReestablish)
+            val nextState = WaitForRemotePublishFutureCommitment(commitments, remoteChannelReestablish, remoteChannelReestablish.nextCommitNonces)
             val actions = listOf(
                 ChannelAction.Storage.StoreState(nextState),
                 ChannelAction.Message.Send(error)

@@ -392,14 +392,13 @@ sealed class PersistedChannelState : ChannelState() {
 
 sealed class ChannelStateWithCommitments : PersistedChannelState() {
     abstract val commitments: Commitments
+    abstract val remoteCommitNonces: Map<TxId, IndividualNonce>
     override val channelId: ByteVector32 get() = commitments.channelId
     val isChannelOpener: Boolean get() = commitments.channelParams.localParams.isChannelOpener
     val paysCommitTxFees: Boolean get() = commitments.channelParams.localParams.paysCommitTxFees
     val remoteNodeId: PublicKey get() = commitments.remoteNodeId
 
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
-
-    fun updateCloseeNonce(remoteCloseeNonce: IndividualNonce?) = updateCommitments(commitments.copy(remoteCloseeNonce = remoteCloseeNonce))
 
     /**
      * When a funding transaction confirms, we can prune previous commitments.
@@ -450,7 +449,10 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         commitments: Commitments,
         localShutdown: Shutdown,
         remoteShutdown: Shutdown,
-        actions: List<ChannelAction>
+        actions: List<ChannelAction>,
+        remoteCommitNonces: Map<TxId, IndividualNonce>,
+        localCloseeNonce: Transactions.LocalNonce?,
+        remoteCloseeNonce: IndividualNonce?
     ): Pair<Negotiating, List<ChannelAction>> {
         val localScript = localShutdown.scriptPubKey
         val remoteScript = remoteShutdown.scriptPubKey
@@ -458,7 +460,8 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         return when (cmd) {
             null -> {
                 logger.info { "mutual close was initiated by our peer, waiting for remote closing_complete" }
-                val nextState = Negotiating(commitments, localScript, remoteScript, listOf(), listOf(), currentHeight, cmd)
+                val nextState =
+                    Negotiating(commitments, remoteCommitNonces, localScript, remoteScript, listOf(), listOf(), currentHeight, cmd, localCloseeNonce = localCloseeNonce, remoteCloseeNonce = remoteCloseeNonce, localCloserNonces = null)
                 val actions1 = listOf(ChannelAction.Storage.StoreState(nextState))
                 Pair(nextState, actions + actions1)
             }
@@ -467,13 +470,38 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     is Either.Left -> {
                         logger.warning { "cannot create local closing txs, waiting for remote closing_complete: ${closingResult.value.message}" }
                         cmd.replyTo.complete(ChannelCloseResponse.Failure.Unknown(closingResult.value))
-                        val nextState = Negotiating(commitments, localScript, remoteScript, listOf(), listOf(), currentHeight, cmd)
+                        val nextState = Negotiating(
+                            commitments,
+                            remoteCommitNonces,
+                            localScript,
+                            remoteScript,
+                            listOf(),
+                            listOf(),
+                            currentHeight,
+                            cmd,
+                            localCloseeNonce = localCloseeNonce,
+                            remoteCloseeNonce = remoteCloseeNonce,
+                            localCloserNonces = null
+                        )
                         val actions1 = listOf(ChannelAction.Storage.StoreState(nextState))
                         Pair(nextState, actions + actions1)
                     }
                     is Either.Right -> {
                         val (closingTxs, closingComplete, localNonces) = closingResult.value
-                        val nextState = Negotiating(commitments.copy(localCloserNonces = localNonces), localScript, remoteScript, listOf(closingTxs), listOf(), currentHeight, cmd)
+                        val nextState =
+                            Negotiating(
+                                commitments,
+                                remoteCommitNonces,
+                                localScript,
+                                remoteScript,
+                                listOf(closingTxs),
+                                listOf(),
+                                currentHeight,
+                                cmd,
+                                localCloseeNonce = localCloseeNonce,
+                                remoteCloseeNonce = remoteCloseeNonce,
+                                localCloserNonces = localNonces
+                            )
                         val actions1 = listOf(
                             ChannelAction.Storage.StoreState(nextState),
                             ChannelAction.Message.Send(closingComplete),
@@ -685,7 +713,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                             )
                             val nextState = when (this@ChannelStateWithCommitments) {
                                 is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
-                                is Negotiating -> Closing(commitments, waitingSinceBlock, proposedClosingTxs.flatMap { it.all }, publishedClosingTxs, remoteCommitPublished = remoteCommitPublished)
+                                is Negotiating -> Closing(commitments, remoteCommitNonces = remoteCommitNonces, waitingSinceBlock, proposedClosingTxs.flatMap { it.all }, publishedClosingTxs, remoteCommitPublished = remoteCommitPublished)
                                 else -> Closing(commitments, waitingSinceBlock = currentBlockHeight.toLong(), remoteCommitPublished = remoteCommitPublished)
                             }
                             return Pair(nextState, buildList {

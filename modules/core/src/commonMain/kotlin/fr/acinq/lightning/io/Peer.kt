@@ -1,6 +1,7 @@
 package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomKey
@@ -677,7 +678,7 @@ class Peer(
     /**
      * Estimate the actual fee that will be paid when closing the given channel at the target feerate.
      */
-    fun estimateFeeForMutualClose(channelId: ByteVector32, targetFeerate: FeeratePerKw): ChannelManagementFees? {
+    fun estimateFeeForMutualClose(channelId: ByteVector32, targetFeerate: FeeratePerKw, remoteNonce: IndividualNonce?): ChannelManagementFees? {
         return channels.values
             .filterIsInstance<ChannelStateWithCommitments>()
             .filter { it is Normal || it is ShuttingDown || it is Negotiating }
@@ -691,7 +692,7 @@ class Peer(
                     channel.commitments.channelParams.localParams.defaultFinalScriptPubKey,
                     targetFeerate,
                     0,
-                    channel.commitments.remoteCloseeNonce
+                    remoteNonce
                 ).map { ChannelManagementFees(miningFee = it.second.fees, serviceFee = 0.sat) }.right
             }
     }

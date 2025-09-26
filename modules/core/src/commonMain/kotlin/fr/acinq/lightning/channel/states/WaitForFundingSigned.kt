@@ -17,6 +17,7 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Transient
 import kotlin.math.absoluteValue
 
 /*
@@ -46,7 +47,7 @@ data class WaitForFundingSigned(
     val remoteSecondPerCommitmentPoint: PublicKey,
     val liquidityPurchase: LiquidityAds.Purchase?,
     val channelOrigin: Origin?,
-    val remoteCommitNonces: Map<TxId, IndividualNonce>
+    @Transient val remoteCommitNonces: Map<TxId, IndividualNonce>
 ) : PersistedChannelState() {
     override val channelId: ByteVector32 = channelParams.channelId
 
@@ -119,11 +120,7 @@ data class WaitForFundingSigned(
             inactive = emptyList(),
             payments = mapOf(),
             remoteNextCommitInfo = Either.Right(remoteSecondPerCommitmentPoint),
-            remotePerCommitmentSecrets = ShaChain.init,
-            action.nextRemoteCommitNonce?.let { mapOf(action.commitment.fundingTxId to it) } ?: mapOf(),
-            localCloseeNonce = null,
-            remoteCloseeNonce = null,
-            localCloserNonces = null
+            remotePerCommitmentSecrets = ShaChain.init
         )
         val commonActions = buildList {
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
@@ -175,7 +172,7 @@ data class WaitForFundingSigned(
             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
             // Collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed).
             val shortChannelId = ShortChannelId(0, Pack.int32BE(action.commitment.fundingTxId.value.slice(0, 16).toByteArray()).absoluteValue, fundingInput.outPoint.index.toInt())
-            val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady)
+            val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady, this@WaitForFundingSigned.remoteCommitNonces)
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
                 add(ChannelAction.EmitEvent(ChannelEvents.Created(nextState)))
@@ -189,7 +186,8 @@ data class WaitForFundingSigned(
                 commitments,
                 currentBlockHeight.toLong(),
                 null,
-                RbfStatus.None
+                RbfStatus.None,
+                this@WaitForFundingSigned.remoteCommitNonces
             )
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))

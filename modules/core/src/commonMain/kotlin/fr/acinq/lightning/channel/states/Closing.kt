@@ -1,6 +1,8 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.updated
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -33,6 +35,7 @@ data class RevokedClose(val revokedCommitPublished: RevokedCommitPublished) : Cl
 
 data class Closing(
     override val commitments: Commitments,
+    override val remoteCommitNonces: Map<TxId, IndividualNonce> = mapOf(), // TODO: check this
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
     val mutualCloseProposed: List<ClosingTx> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
     val mutualClosePublished: List<ClosingTx> = emptyList(),

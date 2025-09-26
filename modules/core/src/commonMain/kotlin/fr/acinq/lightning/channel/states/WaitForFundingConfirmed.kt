@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -8,6 +9,7 @@ import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Transient
 
 /** We wait for the channel funding transaction to confirm. */
 data class WaitForFundingConfirmed(
@@ -15,7 +17,8 @@ data class WaitForFundingConfirmed(
     val waitingSinceBlock: Long, // how many blocks have we been waiting for the funding tx to confirm
     val deferred: ChannelReady?,
     // We can have at most one ongoing RBF attempt.
-    val rbfStatus: RbfStatus
+    val rbfStatus: RbfStatus,
+    @Transient override val remoteCommitNonces: Map<TxId, IndividualNonce>,
 ) : ChannelStateWithCommitments() {
 
     val latestFundingTx = commitments.latest.localFundingStatus as LocalFundingStatus.UnconfirmedFundingTx
@@ -274,7 +277,7 @@ data class WaitForFundingConfirmed(
                         // as soon as it reaches NORMAL state, and before it is announced on the network
                         // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
                         val shortChannelId = ShortChannelId(cmd.watch.blockHeight, cmd.watch.txIndex, commitment.fundingInput.index.toInt())
-                        val nextState = WaitForChannelReady(commitments1, shortChannelId, channelReady)
+                        val nextState = WaitForChannelReady(commitments1, shortChannelId, channelReady, this@WaitForFundingConfirmed.remoteCommitNonces)
                         val actions1 = buildList {
                             if (rbfStatus != RbfStatus.None) add(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, cmd.watch.tx.txid).message)))
                             add(ChannelAction.Message.Send(channelReady))
@@ -337,10 +340,11 @@ data class WaitForFundingConfirmed(
         val fundingScript = action.commitment.commitInput(channelKeys()).txOut.publicKeyScript
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, fundingScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
         val nextState = WaitForFundingConfirmed(
-            commitments.add(action.commitment).addRemoteCommitNonce(action.commitment.fundingTxId, action.nextRemoteCommitNonce),
+            commitments.add(action.commitment),
             waitingSinceBlock,
             deferred,
-            RbfStatus.None
+            RbfStatus.None,
+            remoteCommitNonces = action.nextRemoteCommitNonce?.let { mapOf(action.commitment.fundingTxId to it) } ?: mapOf()
         )
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
