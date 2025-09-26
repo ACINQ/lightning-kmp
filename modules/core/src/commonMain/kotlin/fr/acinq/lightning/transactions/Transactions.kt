@@ -24,6 +24,7 @@ import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
+import fr.acinq.lightning.crypto.CommitmentPublicKeys
 import fr.acinq.lightning.transactions.CommitmentOutput.InHtlc
 import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.lightning.utils.*
@@ -324,19 +325,15 @@ object Transactions {
     fun makeCommitTxOutputs(
         localFundingPubkey: PublicKey,
         remoteFundingPubkey: PublicKey,
-        localPaysCommitTxFees: Boolean,
-        localDustLimit: Satoshi,
-        localRevocationPubkey: PublicKey,
-        toLocalDelay: CltvExpiryDelta,
-        localDelayedPaymentPubkey: PublicKey,
-        remotePaymentPubkey: PublicKey,
-        localHtlcPubkey: PublicKey,
-        remoteHtlcPubkey: PublicKey,
+        commitKeys: CommitmentPublicKeys,
+        payCommitTxFees: Boolean,
+        dustLimit: Satoshi,
+        toSelfDelay: CltvExpiryDelta,
         spec: CommitmentSpec
     ): TransactionsCommitmentOutputs {
-        val commitFee = commitTxFee(localDustLimit, spec)
+        val commitFee = commitTxFee(dustLimit, spec)
 
-        val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localPaysCommitTxFees) {
+        val (toLocalAmount, toRemoteAmount) = if (payCommitTxFees) {
             Pair(spec.toLocal.truncateToSatoshi() - commitFee, spec.toRemote.truncateToSatoshi())
         } else {
             Pair(spec.toLocal.truncateToSatoshi(), spec.toRemote.truncateToSatoshi() - commitFee)
@@ -344,26 +341,26 @@ object Transactions {
 
         val outputs = ArrayList<CommitmentOutputLink<CommitmentOutput>>()
 
-        if (toLocalAmount >= localDustLimit) outputs.add(
+        if (toLocalAmount >= dustLimit) outputs.add(
             CommitmentOutputLink(
-                TxOut(toLocalAmount, Script.pay2wsh(Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))),
-                Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey),
+                TxOut(toLocalAmount, Script.pay2wsh(Scripts.toLocalDelayed(commitKeys.revocationPublicKey, toSelfDelay, commitKeys.localDelayedPaymentPublicKey))),
+                Scripts.toLocalDelayed(commitKeys.revocationPublicKey, toSelfDelay, commitKeys.localDelayedPaymentPublicKey),
                 CommitmentOutput.ToLocal
             )
         )
 
-        if (toRemoteAmount >= localDustLimit) {
+        if (toRemoteAmount >= dustLimit) {
             outputs.add(
                 CommitmentOutputLink(
-                    TxOut(toRemoteAmount, Script.pay2wsh(Scripts.toRemoteDelayed(remotePaymentPubkey))),
-                    Scripts.toRemoteDelayed(remotePaymentPubkey),
+                    TxOut(toRemoteAmount, Script.pay2wsh(Scripts.toRemoteDelayed(commitKeys.remotePaymentPublicKey))),
+                    Scripts.toRemoteDelayed(commitKeys.remotePaymentPublicKey),
                     CommitmentOutput.ToRemote
                 )
             )
         }
 
-        val untrimmedHtlcs = trimOfferedHtlcs(localDustLimit, spec).isNotEmpty() || trimReceivedHtlcs(localDustLimit, spec).isNotEmpty()
-        if (untrimmedHtlcs || toLocalAmount >= localDustLimit)
+        val untrimmedHtlcs = trimOfferedHtlcs(dustLimit, spec).isNotEmpty() || trimReceivedHtlcs(dustLimit, spec).isNotEmpty()
+        if (untrimmedHtlcs || toLocalAmount >= dustLimit)
             outputs.add(
                 CommitmentOutputLink(
                     TxOut(Commitments.ANCHOR_AMOUNT, Script.pay2wsh(Scripts.toAnchor(localFundingPubkey))),
@@ -371,7 +368,7 @@ object Transactions {
                     CommitmentOutput.ToLocalAnchor(localFundingPubkey)
                 )
             )
-        if (untrimmedHtlcs || toRemoteAmount >= localDustLimit)
+        if (untrimmedHtlcs || toRemoteAmount >= dustLimit)
             outputs.add(
                 CommitmentOutputLink(
                     TxOut(Commitments.ANCHOR_AMOUNT, Script.pay2wsh(Scripts.toAnchor(remoteFundingPubkey))),
@@ -380,13 +377,13 @@ object Transactions {
                 )
             )
 
-        trimOfferedHtlcs(localDustLimit, spec).forEach { htlc ->
-            val redeemScript = Scripts.htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, Crypto.ripemd160(htlc.add.paymentHash.toByteArray()))
+        trimOfferedHtlcs(dustLimit, spec).forEach { htlc ->
+            val redeemScript = Scripts.htlcOffered(commitKeys.localHtlcPublicKey, commitKeys.remoteHtlcPublicKey, commitKeys.revocationPublicKey, Crypto.ripemd160(htlc.add.paymentHash.toByteArray()))
             outputs.add(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi(), Script.pay2wsh(redeemScript)), redeemScript, OutHtlc(htlc)))
         }
 
-        trimReceivedHtlcs(localDustLimit, spec).forEach { htlc ->
-            val redeemScript = Scripts.htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, Crypto.ripemd160(htlc.add.paymentHash.toByteArray()), htlc.add.cltvExpiry)
+        trimReceivedHtlcs(dustLimit, spec).forEach { htlc ->
+            val redeemScript = Scripts.htlcReceived(commitKeys.localHtlcPublicKey, commitKeys.remoteHtlcPublicKey, commitKeys.revocationPublicKey, Crypto.ripemd160(htlc.add.paymentHash.toByteArray()), htlc.add.cltvExpiry)
             outputs.add(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi(), Script.pay2wsh(redeemScript)), redeemScript, InHtlc(htlc)))
         }
 
@@ -453,7 +450,7 @@ object Transactions {
         outputIndex: Int,
         localDustLimit: Satoshi,
         localRevocationPubkey: PublicKey,
-        toLocalDelay: CltvExpiryDelta,
+        toSelfDelay: CltvExpiryDelta,
         localDelayedPaymentPubkey: PublicKey,
         feerate: FeeratePerKw
     ): TxResult<TransactionWithInputInfo.HtlcTx.HtlcSuccessTx> {
@@ -468,7 +465,7 @@ object Transactions {
             val tx = Transaction(
                 version = 2,
                 txIn = listOf(TxIn(input.outPoint, ByteVector.empty, 1L)),
-                txOut = listOf(TxOut(amount, Script.pay2wsh(Scripts.toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))),
+                txOut = listOf(TxOut(amount, Script.pay2wsh(Scripts.toLocalDelayed(localRevocationPubkey, toSelfDelay, localDelayedPaymentPubkey)))),
                 lockTime = 0
             )
             TxResult.Success(TransactionWithInputInfo.HtlcTx.HtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id))
@@ -477,10 +474,9 @@ object Transactions {
 
     fun makeHtlcTxs(
         commitTx: Transaction,
-        localDustLimit: Satoshi,
-        localRevocationPubkey: PublicKey,
-        toLocalDelay: CltvExpiryDelta,
-        localDelayedPaymentPubkey: PublicKey,
+        commitKeys: CommitmentPublicKeys,
+        dustLimit: Satoshi,
+        toSelfDelay: CltvExpiryDelta,
         feerate: FeeratePerKw,
         outputs: TransactionsCommitmentOutputs
     ): List<TransactionWithInputInfo.HtlcTx> {
@@ -488,7 +484,7 @@ object Transactions {
             .mapIndexedNotNull map@{ outputIndex, link ->
                 val outHtlc = link.commitmentOutput as? OutHtlc ?: return@map null
                 val co = CommitmentOutputLink(link.output, link.redeemScript, outHtlc)
-                makeHtlcTimeoutTx(commitTx, co, outputIndex, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, feerate)
+                makeHtlcTimeoutTx(commitTx, co, outputIndex, dustLimit, commitKeys.revocationPublicKey, toSelfDelay, commitKeys.localDelayedPaymentPublicKey, feerate)
             }
             .mapNotNull { (it as? TxResult.Success)?.result }
 
@@ -496,7 +492,7 @@ object Transactions {
             .mapIndexedNotNull map@{ outputIndex, link ->
                 val inHtlc = link.commitmentOutput as? InHtlc ?: return@map null
                 val co = CommitmentOutputLink(link.output, link.redeemScript, inHtlc)
-                makeHtlcSuccessTx(commitTx, co, outputIndex, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, feerate)
+                makeHtlcSuccessTx(commitTx, co, outputIndex, dustLimit, commitKeys.revocationPublicKey, toSelfDelay, commitKeys.localDelayedPaymentPublicKey, feerate)
             }
             .mapNotNull { (it as? TxResult.Success)?.result }
 

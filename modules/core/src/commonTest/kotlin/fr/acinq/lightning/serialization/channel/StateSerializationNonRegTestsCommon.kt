@@ -1,9 +1,15 @@
 package fr.acinq.lightning.serialization.channel
 
+import fr.acinq.lightning.channel.ChannelCloseResponse
+import fr.acinq.lightning.channel.states.Negotiating
+import fr.acinq.lightning.channel.states.Normal
+import fr.acinq.lightning.channel.states.PersistedChannelState
+import fr.acinq.lightning.channel.states.ShuttingDown
 import fr.acinq.lightning.json.JsonSerializers
 import fr.acinq.lightning.tests.utils.TestHelpers
 import fr.acinq.lightning.utils.value
 import fr.acinq.secp256k1.Hex
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -36,18 +42,16 @@ class StateSerializationNonRegTestsCommon {
                 SystemFileSystem.delete(tmpFile)
             }
             // we also make sure that serialization round-trip is identity
-            assertEquals(state, Serialization.deserialize(Serialization.serialize(state)).value, it.toString())
+            val dummyReplyTo = CompletableDeferred<ChannelCloseResponse>()
+            assertEquals(replaceClosingReplyTo(state, dummyReplyTo), replaceClosingReplyTo(Serialization.deserialize(Serialization.serialize(state)).value, dummyReplyTo), it.toString())
         }
     }
 
-    @Test
-    fun `non-reg test with v2 serialization`() {
-        regtest("v2", debug = false)
-    }
-
-    @Test
-    fun `non-reg test with v3 serialization`() {
-        regtest("v3", debug = false)
+    private fun replaceClosingReplyTo(state: PersistedChannelState, dummyReplyTo: CompletableDeferred<ChannelCloseResponse>): PersistedChannelState = when (state) {
+        is Normal -> state.copy(closeCommand = state.closeCommand?.copy(replyTo = dummyReplyTo))
+        is ShuttingDown -> state.copy(closeCommand = state.closeCommand?.copy(replyTo = dummyReplyTo))
+        is Negotiating -> state.copy(closeCommand = state.closeCommand?.copy(replyTo = dummyReplyTo))
+        else -> state
     }
 
     @Test

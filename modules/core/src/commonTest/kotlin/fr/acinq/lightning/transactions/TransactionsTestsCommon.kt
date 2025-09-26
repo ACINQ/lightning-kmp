@@ -17,6 +17,8 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.channel.Helpers.Funding
+import fr.acinq.lightning.crypto.LocalCommitmentKeys
+import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.io.AddLiquidityForIncomingPayment
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -65,14 +67,33 @@ import kotlin.test.*
 
 class TransactionsTestsCommon : LightningTestSuite() {
 
-    private val localFundingPriv = PrivateKey(randomBytes32())
-    private val remoteFundingPriv = PrivateKey(randomBytes32())
-    private val localRevocationPriv = PrivateKey(randomBytes32())
-    private val localPaymentPriv = PrivateKey(randomBytes32())
-    private val localDelayedPaymentPriv = PrivateKey(randomBytes32())
-    private val remotePaymentPriv = PrivateKey(randomBytes32())
-    private val localHtlcPriv = PrivateKey(randomBytes32())
-    private val remoteHtlcPriv = PrivateKey(randomBytes32())
+    private val localFundingPriv = randomKey()
+    private val remoteFundingPriv = randomKey()
+    private val localRevocationPriv = randomKey()
+    private val localPaymentPriv = randomKey()
+    private val localPaymentBasePoint = randomKey().publicKey()
+    private val localDelayedPaymentPriv = randomKey()
+    private val remotePaymentPriv = randomKey()
+    private val localHtlcPriv = randomKey()
+    private val remoteHtlcPriv = randomKey()
+    // Keys used by the local node to spend outputs of its local commitment.
+    private val localKeys = LocalCommitmentKeys(
+        ourDelayedPaymentKey = localDelayedPaymentPriv,
+        theirPaymentPublicKey = remotePaymentPriv.publicKey(),
+        ourPaymentBasePoint = localPaymentBasePoint,
+        ourHtlcKey = localHtlcPriv,
+        theirHtlcPublicKey = remoteHtlcPriv.publicKey(),
+        revocationPublicKey = localRevocationPriv.publicKey(),
+    )
+    // Keys used by the remote node to spend outputs of our local commitment.
+    private val remoteKeys = RemoteCommitmentKeys(
+        ourPaymentKey = remotePaymentPriv,
+        theirDelayedPaymentPublicKey = localDelayedPaymentPriv.publicKey(),
+        ourPaymentBasePoint = localPaymentBasePoint,
+        ourHtlcKey = remoteHtlcPriv,
+        theirHtlcPublicKey = localHtlcPriv.publicKey(),
+        revocationPublicKey = localRevocationPriv.publicKey(),
+    )
     private val commitInput = Funding.makeFundingInputInfo(TxId(randomBytes32()), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
     private val toLocalDelay = CltvExpiryDelta(144)
     private val localDustLimit = 546.sat
@@ -167,20 +188,15 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val paymentPreimage = randomBytes32()
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), CltvExpiryDelta(144).toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val spec = CommitmentSpec(setOf(OutgoingHtlc(htlc)), feeratePerKw, toLocal = 0.msat, toRemote = 0.msat)
-            val outputs =
-                makeCommitTxOutputs(
-                    localFundingPriv.publicKey(),
-                    remoteFundingPriv.publicKey(),
-                    true,
-                    localDustLimit,
-                    localRevocationPriv.publicKey(),
-                    toLocalDelay,
-                    localDelayedPaymentPriv.publicKey(),
-                    remotePaymentPriv.publicKey(),
-                    localHtlcPriv.publicKey(),
-                    remoteHtlcPriv.publicKey(),
-                    spec
-                )
+            val outputs = makeCommitTxOutputs(
+                localFundingPriv.publicKey(),
+                remoteFundingPriv.publicKey(),
+                localKeys.publicKeys,
+                true,
+                localDustLimit,
+                toLocalDelay,
+                spec
+            )
             val commitTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcSuccessTx =
                 makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
@@ -196,20 +212,15 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val paymentPreimage = randomBytes32()
             val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000).msat, ByteVector32(sha256(paymentPreimage)), toLocalDelay.toCltvExpiry(blockHeight.toLong()), TestConstants.emptyOnionPacket)
             val spec = CommitmentSpec(setOf(IncomingHtlc(htlc)), feeratePerKw, toLocal = 0.msat, toRemote = 0.msat)
-            val outputs =
-                makeCommitTxOutputs(
-                    localFundingPriv.publicKey(),
-                    remoteFundingPriv.publicKey(),
-                    true,
-                    localDustLimit,
-                    localRevocationPriv.publicKey(),
-                    toLocalDelay,
-                    localDelayedPaymentPriv.publicKey(),
-                    remotePaymentPriv.publicKey(),
-                    localHtlcPriv.publicKey(),
-                    remoteHtlcPriv.publicKey(),
-                    spec
-                )
+            val outputs = makeCommitTxOutputs(
+                localFundingPriv.publicKey(),
+                remoteFundingPriv.publicKey(),
+                localKeys.publicKeys,
+                true,
+                localDustLimit,
+                toLocalDelay,
+                spec
+            )
             val commitTx = Transaction(version = 2, txIn = listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0), TxIn.SEQUENCE_FINAL)), txOut = outputs.map { it.output }, lockTime = 0)
             val claimHtlcTimeoutTx =
                 makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey(), localHtlcPriv.publicKey(), localRevocationPriv.publicKey(), finalPubKeyScript, htlc, feeratePerKw)
@@ -265,14 +276,10 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val outputs = makeCommitTxOutputs(
             localFundingPriv.publicKey(),
             remoteFundingPriv.publicKey(),
+            localKeys.publicKeys,
             true,
             localDustLimit,
-            localRevocationPriv.publicKey(),
             toLocalDelay,
-            localDelayedPaymentPriv.publicKey(),
-            remotePaymentPriv.publicKey(),
-            localHtlcPriv.publicKey(),
-            remoteHtlcPriv.publicKey(),
             spec
         )
 
@@ -291,7 +298,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val check = ((commitTx.tx.txIn.first().sequence and 0xffffffL) shl 24) or (commitTx.tx.lockTime and 0xffffffL)
             assertEquals(commitTxNumber, check xor num)
         }
-        val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), spec.feerate, outputs)
+        val htlcTxs = makeHtlcTxs(commitTx.tx, localKeys.publicKeys, localDustLimit, toLocalDelay, spec.feerate, outputs)
         assertEquals(4, htlcTxs.size)
         val htlcSuccessTxs = htlcTxs.filterIsInstance<Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx>()
         assertEquals(2, htlcSuccessTxs.size) // htlc2 and htlc4
@@ -661,6 +668,14 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val remotePaymentPriv = PrivateKey.fromHex("a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
         val localHtlcPriv = PrivateKey.fromHex("a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
         val remoteHtlcPriv = PrivateKey.fromHex("a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
+        val localKeys = LocalCommitmentKeys(
+            ourDelayedPaymentKey = localDelayedPaymentPriv,
+            theirPaymentPublicKey = remotePaymentPriv.publicKey(),
+            ourPaymentBasePoint = localPaymentBasePoint,
+            ourHtlcKey = localHtlcPriv,
+            theirHtlcPublicKey = remoteHtlcPriv.publicKey(),
+            revocationPublicKey = localRevocationPriv.publicKey(),
+        )
         val commitInput = Funding.makeFundingInputInfo(TxId("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey())
 
         // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
@@ -690,25 +705,20 @@ class TransactionsTestsCommon : LightningTestSuite() {
 
         val commitTxNumber = 0x404142434446L
         val (commitTx, outputs, htlcTxs) = run {
-            val outputs =
-                makeCommitTxOutputs(
-                    localFundingPriv.publicKey(),
-                    remoteFundingPriv.publicKey(),
-                    true,
-                    localDustLimit,
-                    localRevocationPriv.publicKey(),
-                    toLocalDelay,
-                    localDelayedPaymentPriv.publicKey(),
-                    remotePaymentPriv.publicKey(),
-                    localHtlcPriv.publicKey(),
-                    remoteHtlcPriv.publicKey(),
-                    spec
-                )
+            val outputs = makeCommitTxOutputs(
+                localFundingPriv.publicKey(),
+                remoteFundingPriv.publicKey(),
+                localKeys.publicKeys,
+                true,
+                localDustLimit,
+                toLocalDelay,
+                spec
+            )
             val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey(), remotePaymentPriv.publicKey(), true, outputs)
             val localSig = sign(txInfo, localPaymentPriv)
             val remoteSig = sign(txInfo, remotePaymentPriv)
             val commitTx = addSigs(txInfo, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
-            val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey(), toLocalDelay, localDelayedPaymentPriv.publicKey(), feerate, outputs)
+            val htlcTxs = makeHtlcTxs(commitTx.tx, localKeys.publicKeys, localDustLimit, toLocalDelay, feerate, outputs)
             Triple(commitTx, outputs, htlcTxs)
         }
 
@@ -747,10 +757,10 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertNotNull(closingTxs.localAndRemote)
             assertNotNull(closingTxs.localOnly)
             assertNull(closingTxs.remoteOnly)
-            val localAndRemote = closingTxs.localAndRemote?.toLocalOutput!!
+            val localAndRemote = closingTxs.localAndRemote.toLocalOutput!!
             assertEquals(localPubKeyScript, localAndRemote.publicKeyScript)
             assertEquals(145_000.sat, localAndRemote.amount)
-            val localOnly = closingTxs.localOnly?.toLocalOutput!!
+            val localOnly = closingTxs.localOnly.toLocalOutput!!
             assertEquals(localPubKeyScript, localOnly.publicKeyScript)
             assertEquals(145_000.sat, localOnly.amount)
         }
@@ -761,10 +771,10 @@ class TransactionsTestsCommon : LightningTestSuite() {
             assertNotNull(closingTxs.localAndRemote)
             assertNotNull(closingTxs.localOnly)
             assertNull(closingTxs.remoteOnly)
-            val localAndRemote = closingTxs.localAndRemote?.toLocalOutput!!
+            val localAndRemote = closingTxs.localAndRemote.toLocalOutput!!
             assertEquals(localPubKeyScript, localAndRemote.publicKeyScript)
             assertEquals(150_000.sat, localAndRemote.amount)
-            val localOnly = closingTxs.localOnly?.toLocalOutput!!
+            val localOnly = closingTxs.localOnly.toLocalOutput!!
             assertEquals(localPubKeyScript, localOnly.publicKeyScript)
             assertEquals(150_000.sat, localOnly.amount)
         }
@@ -774,8 +784,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val closingTxs = makeClosingTxs(commitInput, spec, Transactions.ClosingTxFee.PaidByThem(800.sat), 0, localPubKeyScript, remotePubKeyScript)
             assertEquals(1, closingTxs.all.size)
             assertNotNull(closingTxs.localOnly)
-            assertEquals(1, closingTxs.localOnly!!.tx.txOut.size)
-            val toLocal = closingTxs.localOnly?.toLocalOutput!!
+            assertEquals(1, closingTxs.localOnly.tx.txOut.size)
+            val toLocal = closingTxs.localOnly.toLocalOutput!!
             assertEquals(localPubKeyScript, toLocal.publicKeyScript)
             assertEquals(150_000.sat, toLocal.amount)
         }
@@ -785,7 +795,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val closingTxs = makeClosingTxs(commitInput, spec, Transactions.ClosingTxFee.PaidByUs(800.sat), 0, localPubKeyScript, remotePubKeyScript)
             assertEquals(1, closingTxs.all.size)
             assertNotNull(closingTxs.remoteOnly)
-            assertNull(closingTxs.remoteOnly?.toLocalOutput)
+            assertNull(closingTxs.remoteOnly.toLocalOutput)
         }
         run {
             // Both outputs are trimmed:

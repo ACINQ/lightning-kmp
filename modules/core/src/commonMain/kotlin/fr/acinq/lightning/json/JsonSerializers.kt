@@ -37,7 +37,6 @@
     JsonSerializers.ChannelFeaturesSerializer::class,
     JsonSerializers.FeaturesSerializer::class,
     JsonSerializers.ShortChannelIdSerializer::class,
-    JsonSerializers.ChannelKeysSerializer::class,
     JsonSerializers.TransactionSerializer::class,
     JsonSerializers.OutPointSerializer::class,
     JsonSerializers.TxOutSerializer::class,
@@ -77,12 +76,10 @@
     JsonSerializers.ClosingCompleteSerializer::class,
     JsonSerializers.ClosingSigSerializer::class,
     JsonSerializers.CommitSigSerializer::class,
-    JsonSerializers.EncryptedChannelDataSerializer::class,
     JsonSerializers.ChannelReestablishDataSerializer::class,
     JsonSerializers.FundingCreatedSerializer::class,
     JsonSerializers.ChannelReadySerializer::class,
     JsonSerializers.ChannelReadyTlvShortChannelIdTlvSerializer::class,
-    JsonSerializers.ShutdownTlvChannelDataSerializer::class,
     JsonSerializers.GenericTlvSerializer::class,
     JsonSerializers.TlvStreamSerializer::class,
     JsonSerializers.ShutdownTlvSerializer::class,
@@ -116,7 +113,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.InteractiveTxSigningSession.Companion.UnsignedLocalCommit
 import fr.acinq.lightning.channel.states.*
-import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.payment.Bolt11Invoice
@@ -159,8 +155,6 @@ object JsonSerializers {
         serializersModule = SerializersModule {
             // we need to explicitly define a [PolymorphicSerializer] for sealed classes, but not for interfaces
             fun PolymorphicModuleBuilder<ChannelStateWithCommitments>.registerChannelStateWithCommitmentsSubclasses() {
-                subclass(LegacyWaitForFundingConfirmed::class, LegacyWaitForFundingConfirmedSerializer)
-                subclass(LegacyWaitForFundingLocked::class, LegacyWaitForFundingLockedSerializer)
                 subclass(WaitForFundingConfirmed::class, WaitForFundingConfirmedSerializer)
                 subclass(WaitForChannelReady::class, WaitForChannelReadySerializer)
                 subclass(Normal::class, NormalSerializer)
@@ -207,7 +201,6 @@ object JsonSerializers {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
-                subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
             }
             // TODO The following declarations are required because serializers for [TransactionWithInputInfo]
@@ -237,12 +230,6 @@ object JsonSerializers {
 
     @Serializer(forClass = Syncing::class)
     object SyncingSerializer
-
-    @Serializer(forClass = LegacyWaitForFundingConfirmed::class)
-    object LegacyWaitForFundingConfirmedSerializer
-
-    @Serializer(forClass = LegacyWaitForFundingLocked::class)
-    object LegacyWaitForFundingLockedSerializer
 
     @Serializer(forClass = WaitForFundingSigned::class)
     object WaitForFundingSignedSerializer
@@ -467,11 +454,6 @@ object JsonSerializers {
     object CltvExpiryDeltaSerializer : LongSerializer<CltvExpiryDelta>({ it.toLong() })
     object FeeratePerKwSerializer : LongSerializer<FeeratePerKw>({ it.toLong() })
 
-    object ChannelKeysSerializer : SurrogateSerializer<KeyManager.ChannelKeys, KeyPath>(
-        transform = { it.fundingKeyPath },
-        delegateSerializer = KeyPathSerializer
-    )
-
     @Serializer(forClass = LocalCommitPublished::class)
     object LocalCommitPublishedSerializer
 
@@ -483,9 +465,6 @@ object JsonSerializers {
 
     @Serializer(forClass = FundingSigned::class)
     object FundingSignedSerializer
-
-    @Serializer(forClass = EncryptedChannelData::class)
-    object EncryptedChannelDataSerializer
 
     @Serializer(forClass = UpdateAddHtlcTlv.PathKey::class)
     object UpdateAddHtlcTlvPathKeySerializer
@@ -537,9 +516,6 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
     object ChannelReadyTlvShortChannelIdTlvSerializer
-
-    @Serializer(forClass = ShutdownTlv.ChannelData::class)
-    object ShutdownTlvChannelDataSerializer
 
     @Serializer(forClass = ShutdownTlv::class)
     object ShutdownTlvSerializer
