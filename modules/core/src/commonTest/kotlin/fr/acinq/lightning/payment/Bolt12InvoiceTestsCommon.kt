@@ -109,7 +109,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         assertFalse(withModifiedUnknownTlv.checkSignature())
         val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map {
             when (it) {
-                is OfferAmount -> OfferAmount(it.amount + 100.msat)
+                is OfferAmount -> OfferAmount(it.amount + 100)
                 else -> it
             }
         }.toSet(), invoice.records.unknown))
@@ -156,7 +156,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         // amount must match the request
         val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map {
             when (it) {
-                is OfferAmount -> OfferAmount(9000.msat)
+                is OfferAmount -> OfferAmount(9000)
                 else -> it
             }
         }.toSet())), nodeKey)
@@ -356,7 +356,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
             setOf(
                 InvoiceRequestMetadata(payerInfo),
                 OfferChains(listOf(chain)),
-                OfferAmount(amount),
+                OfferAmount(amount.toLong()),
                 OfferDescription(description),
                 OfferFeatures(ByteVector.empty),
                 OfferIssuer(issuer),
@@ -485,7 +485,7 @@ class Bolt12InvoiceTestsCommon : LightningTestSuite() {
         val offer = Offer(
             TlvStream(
                 OfferChains(listOf(Block.Testnet3GenesisBlock.hash)),
-                OfferAmount(100000.msat),
+                OfferAmount(100000),
                 OfferDescription("offer with quantity"),
                 OfferIssuer("alice@bigshop.com"),
                 OfferQuantityMax(1000),
