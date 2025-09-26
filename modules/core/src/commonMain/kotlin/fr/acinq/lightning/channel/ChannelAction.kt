@@ -32,10 +32,9 @@ sealed class ChannelAction {
                 CommitTx,
                 HtlcSuccessTx,
                 HtlcTimeoutTx,
+                HtlcDelayedTx,
                 ClaimHtlcSuccessTx,
                 ClaimHtlcTimeoutTx,
-                ClaimLocalAnchorOutputTx,
-                ClaimRemoteAnchorOutputTx,
                 ClaimLocalDelayedOutputTx,
                 ClaimRemoteDelayedOutputTx,
                 MainPenaltyTx,
@@ -47,20 +46,19 @@ sealed class ChannelAction {
             constructor(txinfo: Transactions.TransactionWithInputInfo) : this(
                 tx = txinfo.tx,
                 txType = when (txinfo) {
-                    is Transactions.TransactionWithInputInfo.CommitTx -> Type.CommitTx
-                    is Transactions.TransactionWithInputInfo.HtlcTx.HtlcSuccessTx -> Type.HtlcSuccessTx
-                    is Transactions.TransactionWithInputInfo.HtlcTx.HtlcTimeoutTx -> Type.HtlcTimeoutTx
-                    is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcSuccessTx -> Type.ClaimHtlcSuccessTx
-                    is Transactions.TransactionWithInputInfo.ClaimHtlcTx.ClaimHtlcTimeoutTx -> Type.ClaimHtlcTimeoutTx
-                    is Transactions.TransactionWithInputInfo.ClaimAnchorOutputTx.ClaimLocalAnchorOutputTx -> Type.ClaimLocalAnchorOutputTx
-                    is Transactions.TransactionWithInputInfo.ClaimAnchorOutputTx.ClaimRemoteAnchorOutputTx -> Type.ClaimRemoteAnchorOutputTx
-                    is Transactions.TransactionWithInputInfo.ClaimLocalDelayedOutputTx -> Type.ClaimLocalDelayedOutputTx
-                    is Transactions.TransactionWithInputInfo.ClaimRemoteCommitMainOutputTx.ClaimRemoteDelayedOutputTx -> Type.ClaimRemoteDelayedOutputTx
-                    is Transactions.TransactionWithInputInfo.MainPenaltyTx -> Type.MainPenaltyTx
-                    is Transactions.TransactionWithInputInfo.HtlcPenaltyTx -> Type.HtlcPenaltyTx
-                    is Transactions.TransactionWithInputInfo.ClaimHtlcDelayedOutputPenaltyTx -> Type.ClaimHtlcDelayedOutputPenaltyTx
-                    is Transactions.TransactionWithInputInfo.ClosingTx -> Type.ClosingTx
-                    is Transactions.TransactionWithInputInfo.SpliceTx -> Type.FundingTx
+                    is Transactions.CommitTx -> Type.CommitTx
+                    is Transactions.HtlcSuccessTx -> Type.HtlcSuccessTx
+                    is Transactions.HtlcTimeoutTx -> Type.HtlcTimeoutTx
+                    is Transactions.HtlcDelayedTx -> Type.HtlcDelayedTx
+                    is Transactions.ClaimHtlcSuccessTx -> Type.ClaimHtlcSuccessTx
+                    is Transactions.ClaimHtlcTimeoutTx -> Type.ClaimHtlcTimeoutTx
+                    is Transactions.ClaimLocalDelayedOutputTx -> Type.ClaimLocalDelayedOutputTx
+                    is Transactions.ClaimRemoteDelayedOutputTx -> Type.ClaimRemoteDelayedOutputTx
+                    is Transactions.MainPenaltyTx -> Type.MainPenaltyTx
+                    is Transactions.HtlcPenaltyTx -> Type.HtlcPenaltyTx
+                    is Transactions.ClaimHtlcDelayedOutputPenaltyTx -> Type.ClaimHtlcDelayedOutputPenaltyTx
+                    is Transactions.ClosingTx -> Type.ClosingTx
+                    is Transactions.SpliceTx -> Type.FundingTx
                 }
             )
             // endregion

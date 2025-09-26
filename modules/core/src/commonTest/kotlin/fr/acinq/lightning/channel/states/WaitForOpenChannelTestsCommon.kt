@@ -7,6 +7,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.AcceptDualFundedChannel
 import fr.acinq.lightning.wire.ChannelTlv
@@ -27,7 +28,8 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
         assertTrue(bob1.state.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
-        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         actions.has<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(bob1.state), actions.find<ChannelAction.EmitEvent>().event)
@@ -39,7 +41,8 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
-        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.DualFunding)))
+        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         actions.has<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(bob1.state), actions.find<ChannelAction.EmitEvent>().event)
@@ -52,7 +55,8 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
         assertTrue(bob1.state.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
-        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.StaticRemoteKey, Feature.AnchorOutputs, Feature.ZeroReserveChannels, Feature.DualFunding)))
+        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.ZeroReserveChannels, Feature.DualFunding)))
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
         val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         assertEquals(0, accept.minimumDepth)
         actions.has<ChannelAction.ChannelId.IdAssigned>()

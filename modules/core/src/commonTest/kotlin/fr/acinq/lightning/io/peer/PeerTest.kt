@@ -119,7 +119,7 @@ class PeerTest : LightningTestSuite() {
         alice.forward(open3)
         alice2bob.expect<AcceptDualFundedChannel>()
 
-        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.fundingKeyPath }.toSet().size)
+        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localChannelParams.fundingKeyPath }.toSet().size)
     }
 
     @Test
@@ -303,9 +303,9 @@ class PeerTest : LightningTestSuite() {
 
         val syncState = syncChannels.first()
         assertIs<Normal>(syncState.state)
-        val commitments = (syncState.state as Normal).commitments
+        val commitments = syncState.state.commitments
         val yourLastPerCommitmentSecret = ByteVector32.Zeroes
-        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.channelKeys(commitments.params.localParams.fundingKeyPath).commitmentPoint(commitments.localCommitIndex)
+        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.channelKeys(commitments.channelParams.localParams.fundingKeyPath).commitmentPoint(commitments.localCommitIndex)
 
         val channelReestablish = ChannelReestablish(
             channelId = syncState.state.channelId,

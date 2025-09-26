@@ -73,7 +73,7 @@ class SwapInManager(private var reservedUtxos: Set<OutPoint>, private val logger
                             .forEach { fundingStatus ->
                                 when (fundingStatus) {
                                     is LocalFundingStatus.UnconfirmedFundingTx -> addAll(fundingStatus.sharedTx.tx.localInputs.map { it.outPoint })
-                                    is LocalFundingStatus.ConfirmedFundingTx -> addAll(fundingStatus.signedTx.txIn.map { it.outPoint })
+                                    is LocalFundingStatus.ConfirmedFundingTx -> addAll(fundingStatus.spentInputs)
                                 }
                             }
                         else -> {}

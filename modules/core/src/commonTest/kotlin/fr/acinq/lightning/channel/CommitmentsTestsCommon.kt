@@ -4,17 +4,10 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes32
+import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.blockchain.WatchSpent
-import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.channel.Helpers.Closing.trimmedOrTimedOutHtlcs
-import fr.acinq.lightning.channel.TestsHelper.claimHtlcSuccessTxs
-import fr.acinq.lightning.channel.TestsHelper.claimHtlcTimeoutTxs
-import fr.acinq.lightning.channel.TestsHelper.htlcSuccessTxs
-import fr.acinq.lightning.channel.TestsHelper.htlcTimeoutTxs
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
-import fr.acinq.lightning.channel.states.Closing
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.logging.MDCLogger
@@ -30,7 +23,10 @@ import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.lightning.wire.TxSignatures
 import fr.acinq.lightning.wire.UpdateAddHtlc
-import kotlin.test.*
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
@@ -44,9 +40,6 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     @Test
     fun `correct values for availableForSend - availableForReceive -- success case`() {
         val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
-
-        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
-        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
 
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
@@ -72,11 +65,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc1.availableBalanceForSend(), b)
         assertEquals(bc1.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac2, commit1) = ac1.sendCommit(aliceKeys, logger).right!!
+        val (ac2, commit1) = ac1.sendCommit(alice.channelKeys, logger).right!!
         assertEquals(ac2.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
-        val (bc2, revocation1) = bc1.receiveCommit(commit1, bobKeys, logger).right!!
+        val (bc2, revocation1) = bc1.receiveCommit(commit1, bob.channelKeys, logger).right!!
         assertEquals(bc2.availableBalanceForSend(), b)
         assertEquals(bc2.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -84,11 +77,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
-        val (bc3, commit2) = bc2.sendCommit(bobKeys, logger).right!!
+        val (bc3, commit2) = bc2.sendCommit(bob.channelKeys, logger).right!!
         assertEquals(bc3.availableBalanceForSend(), b)
         assertEquals(bc3.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac4, revocation2) = ac3.receiveCommit(commit2, aliceKeys, logger).right!!
+        val (ac4, revocation2) = ac3.receiveCommit(commit2, alice.channelKeys, logger).right!!
         assertEquals(ac4.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac4.availableBalanceForReceive(), b)
 
@@ -105,11 +98,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b + p)
 
-        val (bc6, commit3) = bc5.sendCommit(bobKeys, logger).right!!
+        val (bc6, commit3) = bc5.sendCommit(bob.channelKeys, logger).right!!
         assertEquals(bc6.availableBalanceForSend(), b + p)
         assertEquals(bc6.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac6, revocation3) = ac5.receiveCommit(commit3, aliceKeys, logger).right!!
+        val (ac6, revocation3) = ac5.receiveCommit(commit3, alice.channelKeys, logger).right!!
         assertEquals(ac6.availableBalanceForSend(), a - p)
         assertEquals(ac6.availableBalanceForReceive(), b + p)
 
@@ -117,11 +110,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc7.availableBalanceForSend(), b + p)
         assertEquals(bc7.availableBalanceForReceive(), a - p)
 
-        val (ac7, commit4) = ac6.sendCommit(aliceKeys, logger).right!!
+        val (ac7, commit4) = ac6.sendCommit(alice.channelKeys, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a - p)
         assertEquals(ac7.availableBalanceForReceive(), b + p)
 
-        val (bc8, revocation4) = bc7.receiveCommit(commit4, bobKeys, logger).right!!
+        val (bc8, revocation4) = bc7.receiveCommit(commit4, bob.channelKeys, logger).right!!
         assertEquals(bc8.availableBalanceForSend(), b + p)
         assertEquals(bc8.availableBalanceForReceive(), a - p)
 
@@ -133,9 +126,6 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     @Test
     fun `correct values for availableForSend - availableForReceive -- failure case`() {
         val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
-
-        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
-        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
 
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
@@ -161,11 +151,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc1.availableBalanceForSend(), b)
         assertEquals(bc1.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac2, commit1) = ac1.sendCommit(aliceKeys, logger).right!!
+        val (ac2, commit1) = ac1.sendCommit(alice.channelKeys, logger).right!!
         assertEquals(ac2.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
-        val (bc2, revocation1) = bc1.receiveCommit(commit1, bobKeys, logger).right!!
+        val (bc2, revocation1) = bc1.receiveCommit(commit1, bob.channelKeys, logger).right!!
         assertEquals(bc2.availableBalanceForSend(), b)
         assertEquals(bc2.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -173,11 +163,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
-        val (bc3, commit2) = bc2.sendCommit(bobKeys, logger).right!!
+        val (bc3, commit2) = bc2.sendCommit(bob.channelKeys, logger).right!!
         assertEquals(bc3.availableBalanceForSend(), b)
         assertEquals(bc3.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac4, revocation2) = ac3.receiveCommit(commit2, aliceKeys, logger).right!!
+        val (ac4, revocation2) = ac3.receiveCommit(commit2, alice.channelKeys, logger).right!!
         assertEquals(ac4.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac4.availableBalanceForReceive(), b)
 
@@ -194,11 +184,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b)
 
-        val (bc6, commit3) = bc5.sendCommit(bobKeys, logger).right!!
+        val (bc6, commit3) = bc5.sendCommit(bob.channelKeys, logger).right!!
         assertEquals(bc6.availableBalanceForSend(), b)
         assertEquals(bc6.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac6, revocation3) = ac5.receiveCommit(commit3, aliceKeys, logger).right!!
+        val (ac6, revocation3) = ac5.receiveCommit(commit3, alice.channelKeys, logger).right!!
         assertEquals(ac6.availableBalanceForSend(), a)
         assertEquals(ac6.availableBalanceForReceive(), b)
 
@@ -206,11 +196,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc7.availableBalanceForSend(), b)
         assertEquals(bc7.availableBalanceForReceive(), a)
 
-        val (ac7, commit4) = ac6.sendCommit(aliceKeys, logger).right!!
+        val (ac7, commit4) = ac6.sendCommit(alice.channelKeys, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a)
         assertEquals(ac7.availableBalanceForReceive(), b)
 
-        val (bc8, revocation4) = bc7.receiveCommit(commit4, bobKeys, logger).right!!
+        val (bc8, revocation4) = bc7.receiveCommit(commit4, bob.channelKeys, logger).right!!
         assertEquals(bc8.availableBalanceForSend(), b)
         assertEquals(bc8.availableBalanceForReceive(), a)
 
@@ -222,9 +212,6 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     @Test
     fun `correct values for availableForSend - availableForReceive -- multiple htlcs`() {
         val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
-
-        val aliceKeys = alice.ctx.keyManager.channelKeys(alice.commitments.params.localParams.fundingKeyPath)
-        val bobKeys = bob.ctx.keyManager.channelKeys(bob.commitments.params.localParams.fundingKeyPath)
 
         val a = 774_660_000.msat // initial balance alice
         val b = 190_000_000.msat // initial balance bob
@@ -271,11 +258,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b - p3)
 
-        val (ac4, commit1) = ac3.sendCommit(aliceKeys, logger).right!!
+        val (ac4, commit1) = ac3.sendCommit(alice.channelKeys, logger).right!!
         assertEquals(ac4.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac4.availableBalanceForReceive(), b - p3)
 
-        val (bc4, revocation1) = bc3.receiveCommit(commit1, bobKeys, logger).right!!
+        val (bc4, revocation1) = bc3.receiveCommit(commit1, bob.channelKeys, logger).right!!
         assertEquals(bc4.availableBalanceForSend(), b - p3)
         assertEquals(bc4.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
@@ -283,11 +270,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b - p3)
 
-        val (bc5, commit2) = bc4.sendCommit(bobKeys, logger).right!!
+        val (bc5, commit2) = bc4.sendCommit(bob.channelKeys, logger).right!!
         assertEquals(bc5.availableBalanceForSend(), b - p3)
         assertEquals(bc5.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-        val (ac6, revocation2) = ac5.receiveCommit(commit2, aliceKeys, logger).right!!
+        val (ac6, revocation2) = ac5.receiveCommit(commit2, alice.channelKeys, logger).right!!
         assertEquals(ac6.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // alice has acknowledged b's hltc so it needs to pay the fee for it
         assertEquals(ac6.availableBalanceForReceive(), b - p3)
 
@@ -295,11 +282,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc6.availableBalanceForSend(), b - p3)
         assertEquals(bc6.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-        val (ac7, commit3) = ac6.sendCommit(aliceKeys, logger).right!!
+        val (ac7, commit3) = ac6.sendCommit(alice.channelKeys, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
         assertEquals(ac7.availableBalanceForReceive(), b - p3)
 
-        val (bc7, revocation3) = bc6.receiveCommit(commit3, bobKeys, logger).right!!
+        val (bc7, revocation3) = bc6.receiveCommit(commit3, bob.channelKeys, logger).right!!
         assertEquals(bc7.availableBalanceForSend(), b - p3)
         assertEquals(bc7.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
@@ -334,11 +321,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc10.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc10.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // the fee for p3 disappears
 
-        val (ac12, commit4) = ac11.sendCommit(aliceKeys, logger).right!!
+        val (ac12, commit4) = ac11.sendCommit(alice.channelKeys, logger).right!!
         assertEquals(ac12.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
         assertEquals(ac12.availableBalanceForReceive(), b + p1 - p3)
 
-        val (bc11, revocation4) = bc10.receiveCommit(commit4, bobKeys, logger).right!!
+        val (bc11, revocation4) = bc10.receiveCommit(commit4, bob.channelKeys, logger).right!!
         assertEquals(bc11.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc11.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
@@ -346,11 +333,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac13.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
         assertEquals(ac13.availableBalanceForReceive(), b + p1 - p3)
 
-        val (bc12, commit5) = bc11.sendCommit(bobKeys, logger).right!!
+        val (bc12, commit5) = bc11.sendCommit(bob.channelKeys, logger).right!!
         assertEquals(bc12.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc12.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
-        val (ac14, revocation5) = ac13.receiveCommit(commit5, aliceKeys, logger).right!!
+        val (ac14, revocation5) = ac13.receiveCommit(commit5, alice.channelKeys, logger).right!!
         assertEquals(ac14.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac14.availableBalanceForReceive(), b + p1 - p3)
 
@@ -358,11 +345,11 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc13.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc13.availableBalanceForReceive(), a - p1 + p3)
 
-        val (ac15, commit6) = ac14.sendCommit(aliceKeys, logger).right!!
+        val (ac15, commit6) = ac14.sendCommit(alice.channelKeys, logger).right!!
         assertEquals(ac15.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac15.availableBalanceForReceive(), b + p1 - p3)
 
-        val (bc14, revocation6) = bc13.receiveCommit(commit6, bobKeys, logger).right!!
+        val (bc14, revocation6) = bc13.receiveCommit(commit6, bob.channelKeys, logger).right!!
         assertEquals(bc14.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc14.availableBalanceForReceive(), a - p1 + p3)
 
@@ -414,95 +401,28 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         }
     }
 
-    @Test
-    fun `find timed out htlcs`() {
-        val (alice, bob, timedOutHtlcs) = run {
-            val (alice0, bob0) = reachNormal()
-            // We have two identical HTLCs (MPP):
-            val (nodes1, _, htlcAlice1a) = TestsHelper.addHtlc(50_000_000.msat, payer = alice0, payee = bob0)
-            val (alice1, bob1) = nodes1
-            val cmdAddAlice = ChannelCommand.Htlc.Add(htlcAlice1a.amountMsat, htlcAlice1a.paymentHash, htlcAlice1a.cltvExpiry, htlcAlice1a.onionRoutingPacket, UUID.randomUUID())
-            val (alice2, bob2, htlcAlice1b) = TestsHelper.addHtlc(cmdAddAlice, alice1, bob1)
-            val (nodes3, preimageAlice2, htlcAlice2) = TestsHelper.addHtlc(60_000_000.msat, payer = alice2, payee = bob2)
-            val (alice3, bob3) = nodes3
-            val (alice4, bob4) = TestsHelper.crossSign(alice3, bob3)
-            // We have two identical HTLCs (MPP):
-            val (nodes5, _, htlcBob1a) = TestsHelper.addHtlc(15_000_000.msat, payer = bob4, payee = alice4)
-            val (bob5, alice5) = nodes5
-            val cmdAddBob = ChannelCommand.Htlc.Add(htlcBob1a.amountMsat, htlcBob1a.paymentHash, htlcBob1a.cltvExpiry, htlcBob1a.onionRoutingPacket, UUID.randomUUID())
-            val (bob6, alice6, htlcBob1b) = TestsHelper.addHtlc(cmdAddBob, bob5, alice5)
-            val (nodes7, preimageBob2, htlcBob2) = TestsHelper.addHtlc(20_000_000.msat, payer = bob6, payee = alice6)
-            val (bob7, alice7) = nodes7
-            val (bob8, alice8) = TestsHelper.crossSign(bob7, alice7)
-            // Alice and Bob both know the preimage for only one of the two HTLCs they received.
-            val (alice9, _) = alice8.process(ChannelCommand.Htlc.Settlement.Fulfill(htlcBob2.id, preimageBob2))
-            val (bob9, _) = bob8.process(ChannelCommand.Htlc.Settlement.Fulfill(htlcAlice2.id, preimageAlice2))
-            // Alice publishes her commitment.
-            val (aliceClosing, _) = alice9.process(ChannelCommand.Close.ForceClose)
-            assertIs<LNChannel<Closing>>(aliceClosing)
-            val lcp = aliceClosing.state.localCommitPublished
-            assertNotNull(lcp)
-            val (bobClosing, _) = bob9.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), lcp.commitTx)))
-            assertIs<LNChannel<Closing>>(bobClosing)
-            val rcp = bobClosing.state.remoteCommitPublished
-            assertNotNull(rcp)
-            Triple(aliceClosing, bobClosing, listOf(htlcAlice1a, htlcAlice1b, htlcAlice2, htlcBob1a, htlcBob1b, htlcBob2))
-        }
-
-        val lcp = alice.state.localCommitPublished!!
-        val localCommit = alice.state.commitments.latest.localCommit
-        val rcp = bob.state.remoteCommitPublished!!
-        val remoteCommit = bob.state.commitments.latest.remoteCommit
-        val dustLimit = TestConstants.Alice.nodeParams.dustLimit
-        val htlcTimeoutTxs = lcp.htlcTimeoutTxs()
-        val htlcSuccessTxs = lcp.htlcSuccessTxs()
-        val claimHtlcTimeoutTxs = rcp.claimHtlcTimeoutTxs()
-        val claimHtlcSuccessTxs = rcp.claimHtlcSuccessTxs()
-
-        val aliceTimedOutHtlcs = htlcTimeoutTxs.map { htlcTimeout ->
-            val htlcs = trimmedOrTimedOutHtlcs(localCommit, lcp, dustLimit, htlcTimeout.tx)
-            assertEquals(1, htlcs.size)
-            htlcs.first()
-        }
-        assertEquals(timedOutHtlcs.take(3).toSet(), aliceTimedOutHtlcs.toSet())
-
-        val bobTimedOutHtlcs = claimHtlcTimeoutTxs.map { claimHtlcTimeout ->
-            val htlcs = trimmedOrTimedOutHtlcs(remoteCommit, rcp, dustLimit, claimHtlcTimeout.tx)
-            assertEquals(1, htlcs.size)
-            htlcs.first()
-        }
-        assertEquals(timedOutHtlcs.drop(3).toSet(), bobTimedOutHtlcs.toSet())
-
-        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(trimmedOrTimedOutHtlcs(localCommit, lcp, dustLimit, htlcSuccess.tx).isEmpty()) }
-        htlcSuccessTxs.forEach { htlcSuccess -> assertTrue(trimmedOrTimedOutHtlcs(remoteCommit, rcp, dustLimit, htlcSuccess.tx).isEmpty()) }
-        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(trimmedOrTimedOutHtlcs(localCommit, lcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
-        claimHtlcSuccessTxs.forEach { claimHtlcSuccess -> assertTrue(trimmedOrTimedOutHtlcs(remoteCommit, rcp, dustLimit, claimHtlcSuccess.tx).isEmpty()) }
-        htlcTimeoutTxs.forEach { htlcTimeout -> assertTrue(trimmedOrTimedOutHtlcs(remoteCommit, rcp, dustLimit, htlcTimeout.tx).isEmpty()) }
-        claimHtlcTimeoutTxs.forEach { claimHtlcTimeout -> assertTrue(trimmedOrTimedOutHtlcs(localCommit, lcp, dustLimit, claimHtlcTimeout.tx).isEmpty()) }
-    }
-
     companion object {
         fun makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0.sat), dustLimit: Satoshi = 0.sat, isInitiator: Boolean = true): Commitments {
-            val localParams = LocalParams(
-                randomKey().publicKey(), KeyPath("42"), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50, isInitiator, isInitiator, ByteVector.empty, Features.empty
+            val localChannelParams = LocalChannelParams(
+                randomKey().publicKey(), KeyPath("42"), isInitiator, isInitiator, ByteVector.empty, Features.empty
             )
-            val remoteParams = RemoteParams(
-                randomKey().publicKey(), dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50,
+            val remoteChannelParams = RemoteChannelParams(
+                randomKey().publicKey(),
                 randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(), randomKey().publicKey(),
                 Features.empty
             )
+            val commitParams = CommitParams(dustLimit, Long.MAX_VALUE, 1.msat, CltvExpiryDelta(144), 50)
             val fundingAmount = (toLocal + toRemote).truncateToSatoshi()
             val dummyFundingScript = Scripts.multiSig2of2(randomKey().publicKey(), randomKey().publicKey())
             val dummyFundingTx = Transaction(2, listOf(TxIn(OutPoint(TxId(randomBytes32()), 1), 0)), listOf(TxOut(fundingAmount, Script.pay2wsh(dummyFundingScript))), 0)
-            val commitmentInput = Transactions.InputInfo(OutPoint(dummyFundingTx, 0), dummyFundingTx.txOut[0], dummyFundingScript)
-            val localCommitTx = Transactions.TransactionWithInputInfo.CommitTx(commitmentInput, Transaction(2, listOf(), listOf(), 0))
+            val commitmentInput = Transactions.InputInfo(OutPoint(dummyFundingTx, 0), dummyFundingTx.txOut[0])
             return Commitments(
                 ChannelParams(
                     channelId = randomBytes32(),
                     channelConfig = ChannelConfig.standard,
                     channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
-                    localParams = localParams,
-                    remoteParams = remoteParams,
+                    localParams = localChannelParams,
+                    remoteParams = remoteChannelParams,
                     channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
                 ),
                 CommitmentChanges(
@@ -514,10 +434,15 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 active = listOf(
                     Commitment(
                         fundingTxIndex = 0,
+                        fundingInput = commitmentInput.outPoint,
+                        fundingAmount = fundingAmount,
                         remoteFundingPubkey = randomKey().publicKey(),
-                        LocalFundingStatus.ConfirmedFundingTx(dummyFundingTx, 500.sat, TxSignatures(randomBytes32(), TxId(randomBytes32()), listOf()), ShortChannelId(1729)),
+                        LocalFundingStatus.ConfirmedFundingTx(listOf(), dummyFundingTx.txOut[0], 500.sat, TxSignatures(randomBytes32(), dummyFundingTx.txid, listOf()), ShortChannelId(1729)),
                         RemoteFundingStatus.Locked,
-                        LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), PublishableTxs(localCommitTx, listOf())),
+                        Transactions.CommitmentFormat.AnchorOutputs,
+                        commitParams,
+                        LocalCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toLocal, toRemote), TxId(randomBytes32()), ChannelSpendSignature.IndividualSignature(randomBytes64()), listOf()),
+                        commitParams,
                         RemoteCommit(0, CommitmentSpec(setOf(), feeRatePerKw, toRemote, toLocal), TxId(randomBytes32()), randomKey().publicKey()),
                         nextRemoteCommit = null,
                     )

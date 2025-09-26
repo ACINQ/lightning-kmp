@@ -7,12 +7,12 @@
     // serialization code in this file.
     JsonSerializers.CommitmentSerializer::class,
     JsonSerializers.CommitmentsSerializer::class,
-    JsonSerializers.LocalParamsSerializer::class,
-    JsonSerializers.RemoteParamsSerializer::class,
+    JsonSerializers.LocalChannelParamsSerializer::class,
+    JsonSerializers.RemoteChannelParamsSerializer::class,
+    JsonSerializers.CommitParamsSerializer::class,
     JsonSerializers.LocalCommitSerializer::class,
     JsonSerializers.UnsignedLocalCommitSerializer::class,
     JsonSerializers.RemoteCommitSerializer::class,
-    JsonSerializers.NextRemoteCommitSerializer::class,
     JsonSerializers.LocalChangesSerializer::class,
     JsonSerializers.RemoteChangesSerializer::class,
     JsonSerializers.EitherSerializer::class,
@@ -31,13 +31,10 @@
     JsonSerializers.CltvExpiryDeltaSerializer::class,
     JsonSerializers.FeeratePerKwSerializer::class,
     JsonSerializers.CommitmentSpecSerializer::class,
-    JsonSerializers.PublishableTxsSerializer::class,
-    JsonSerializers.HtlcTxAndSigsSerializer::class,
     JsonSerializers.ChannelConfigSerializer::class,
     JsonSerializers.ChannelFeaturesSerializer::class,
     JsonSerializers.FeaturesSerializer::class,
     JsonSerializers.ShortChannelIdSerializer::class,
-    JsonSerializers.ChannelKeysSerializer::class,
     JsonSerializers.TransactionSerializer::class,
     JsonSerializers.OutPointSerializer::class,
     JsonSerializers.TxOutSerializer::class,
@@ -70,19 +67,23 @@
     JsonSerializers.ChannelParamsSerializer::class,
     JsonSerializers.ChannelOriginSerializer::class,
     JsonSerializers.CommitmentChangesSerializer::class,
+    JsonSerializers.CommitmentFormatSerializer::class,
+    JsonSerializers.InputInfoSerializer::class,
+    JsonSerializers.IndividualSignatureSerializer::class,
+    JsonSerializers.ChannelSpendSignatureSerializer::class,
     JsonSerializers.LocalFundingStatusSerializer::class,
     JsonSerializers.RemoteFundingStatusSerializer::class,
+    JsonSerializers.ClosingTxSerializer::class,
+    JsonSerializers.ClosingTxsSerializer::class,
     JsonSerializers.CloseCommandSerializer::class,
     JsonSerializers.ShutdownSerializer::class,
     JsonSerializers.ClosingCompleteSerializer::class,
     JsonSerializers.ClosingSigSerializer::class,
     JsonSerializers.CommitSigSerializer::class,
-    JsonSerializers.EncryptedChannelDataSerializer::class,
     JsonSerializers.ChannelReestablishDataSerializer::class,
     JsonSerializers.FundingCreatedSerializer::class,
     JsonSerializers.ChannelReadySerializer::class,
     JsonSerializers.ChannelReadyTlvShortChannelIdTlvSerializer::class,
-    JsonSerializers.ShutdownTlvChannelDataSerializer::class,
     JsonSerializers.GenericTlvSerializer::class,
     JsonSerializers.TlvStreamSerializer::class,
     JsonSerializers.ShutdownTlvSerializer::class,
@@ -116,7 +117,6 @@ import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.InteractiveTxSigningSession.Companion.UnsignedLocalCommit
 import fr.acinq.lightning.channel.states.*
-import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.payment.Bolt11Invoice
@@ -124,6 +124,7 @@ import fr.acinq.lightning.payment.Bolt11Invoice.TaggedField
 import fr.acinq.lightning.transactions.CommitmentSpec
 import fr.acinq.lightning.transactions.IncomingHtlc
 import fr.acinq.lightning.transactions.OutgoingHtlc
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.wire.*
 import fr.acinq.lightning.wire.OfferTypes.OfferChains
@@ -159,8 +160,6 @@ object JsonSerializers {
         serializersModule = SerializersModule {
             // we need to explicitly define a [PolymorphicSerializer] for sealed classes, but not for interfaces
             fun PolymorphicModuleBuilder<ChannelStateWithCommitments>.registerChannelStateWithCommitmentsSubclasses() {
-                subclass(LegacyWaitForFundingConfirmed::class, LegacyWaitForFundingConfirmedSerializer)
-                subclass(LegacyWaitForFundingLocked::class, LegacyWaitForFundingLockedSerializer)
                 subclass(WaitForFundingConfirmed::class, WaitForFundingConfirmedSerializer)
                 subclass(WaitForChannelReady::class, WaitForChannelReadySerializer)
                 subclass(Normal::class, NormalSerializer)
@@ -207,19 +206,8 @@ object JsonSerializers {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
-                subclass(ShutdownTlv.ChannelData::class, ShutdownTlvChannelDataSerializer)
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
             }
-            // TODO The following declarations are required because serializers for [TransactionWithInputInfo]
-            //  depend themselves on @Contextual serializers. Once we get rid of v2/v3 serialization and we
-            //  define our own context-less serializers in this file, we will be able to clean up
-            //  those declarations.
-            contextual(OutPointSerializer)
-            contextual(TxOutSerializer)
-            contextual(TransactionSerializer)
-            contextual(ByteVectorSerializer)
-            contextual(ByteVector32Serializer)
-
             contextual(Bolt11InvoiceSerializer)
             contextual(OfferSerializer)
         }
@@ -237,12 +225,6 @@ object JsonSerializers {
 
     @Serializer(forClass = Syncing::class)
     object SyncingSerializer
-
-    @Serializer(forClass = LegacyWaitForFundingConfirmed::class)
-    object LegacyWaitForFundingConfirmedSerializer
-
-    @Serializer(forClass = LegacyWaitForFundingLocked::class)
-    object LegacyWaitForFundingLockedSerializer
 
     @Serializer(forClass = WaitForFundingSigned::class)
     object WaitForFundingSignedSerializer
@@ -274,11 +256,7 @@ object JsonSerializers {
     @Serializable
     data class SharedFundingInputSurrogate(val outPoint: OutPoint, val amount: Satoshi)
     object SharedFundingInputSerializer : SurrogateSerializer<SharedFundingInput, SharedFundingInputSurrogate>(
-        transform = { i ->
-            when (i) {
-                is SharedFundingInput.Multisig2of2 -> SharedFundingInputSurrogate(i.info.outPoint, i.info.txOut.amount)
-            }
-        },
+        transform = { i -> SharedFundingInputSurrogate(i.info.outPoint, i.info.txOut.amount) },
         delegateSerializer = SharedFundingInputSurrogate.serializer()
     )
 
@@ -337,6 +315,34 @@ object JsonSerializers {
     object CommitmentChangesSerializer
 
     @Serializable
+    data class CommitmentFormatSurrogate(val rfcName: String)
+    object CommitmentFormatSerializer : SurrogateSerializer<Transactions.CommitmentFormat, CommitmentFormatSurrogate>(
+        transform = { f ->
+            when (f) {
+                Transactions.CommitmentFormat.AnchorOutputs -> CommitmentFormatSurrogate("anchor_outputs")
+            }
+        },
+        delegateSerializer = CommitmentFormatSurrogate.serializer()
+    )
+
+    @Serializer(forClass = Transactions.InputInfo::class)
+    object InputInfoSerializer
+
+    @Serializer(forClass = ChannelSpendSignature.IndividualSignature::class)
+    object IndividualSignatureSerializer
+
+    @Serializable
+    data class ChannelSpendSignatureSurrogate(val sig: ByteVector64)
+    object ChannelSpendSignatureSerializer : SurrogateSerializer<ChannelSpendSignature, ChannelSpendSignatureSurrogate>(
+        transform = { s ->
+            when (s) {
+                is ChannelSpendSignature.IndividualSignature -> ChannelSpendSignatureSurrogate(s.sig)
+            }
+        },
+        delegateSerializer = ChannelSpendSignatureSurrogate.serializer()
+    )
+
+    @Serializable
     data class LocalFundingStatusSurrogate(val status: String, val txId: TxId)
     object LocalFundingStatusSerializer : SurrogateSerializer<LocalFundingStatus, LocalFundingStatusSurrogate>(
         transform = { o ->
@@ -360,17 +366,26 @@ object JsonSerializers {
         delegateSerializer = RemoteFundingStatusSurrogate.serializer()
     )
 
+    @Serializer(forClass = Transactions.ClosingTx::class)
+    object ClosingTxSerializer
+
+    @Serializer(forClass = Transactions.ClosingTxs::class)
+    object ClosingTxsSerializer
+
     @Serializer(forClass = Commitment::class)
     object CommitmentSerializer
 
     @Serializer(forClass = Commitments::class)
     object CommitmentsSerializer
 
-    @Serializer(forClass = LocalParams::class)
-    object LocalParamsSerializer
+    @Serializer(forClass = LocalChannelParams::class)
+    object LocalChannelParamsSerializer
 
-    @Serializer(forClass = RemoteParams::class)
-    object RemoteParamsSerializer
+    @Serializer(forClass = RemoteChannelParams::class)
+    object RemoteChannelParamsSerializer
+
+    @Serializer(forClass = CommitParams::class)
+    object CommitParamsSerializer
 
     @Serializer(forClass = LocalCommit::class)
     object LocalCommitSerializer
@@ -380,9 +395,6 @@ object JsonSerializers {
 
     @Serializer(forClass = RemoteCommit::class)
     object RemoteCommitSerializer
-
-    @Serializer(forClass = NextRemoteCommit::class)
-    object NextRemoteCommitSerializer
 
     @Serializer(forClass = LocalChanges::class)
     object LocalChangesSerializer
@@ -418,9 +430,6 @@ object JsonSerializers {
     object OutPointSerializer : StringSerializer<OutPoint>({ "${it.txid}:${it.index}" })
     object TransactionSerializer : StringSerializer<Transaction>()
 
-    @Serializer(forClass = PublishableTxs::class)
-    object PublishableTxsSerializer
-
     @Serializable
     data class CommitmentsSpecSurrogate(val htlcsIn: List<UpdateAddHtlc>, val htlcsOut: List<UpdateAddHtlc>, val feerate: FeeratePerKw, val toLocal: MilliSatoshi, val toRemote: MilliSatoshi)
     object CommitmentSpecSerializer : SurrogateSerializer<CommitmentSpec, CommitmentsSpecSurrogate>(
@@ -433,9 +442,6 @@ object JsonSerializers {
         },
         delegateSerializer = CommitmentsSpecSurrogate.serializer()
     )
-
-    @Serializer(forClass = HtlcTxAndSigs::class)
-    object HtlcTxAndSigsSerializer
 
     object ChannelConfigSerializer : SurrogateSerializer<ChannelConfig, List<String>>(
         transform = { o -> o.options.map { it.name } },
@@ -467,11 +473,6 @@ object JsonSerializers {
     object CltvExpiryDeltaSerializer : LongSerializer<CltvExpiryDelta>({ it.toLong() })
     object FeeratePerKwSerializer : LongSerializer<FeeratePerKw>({ it.toLong() })
 
-    object ChannelKeysSerializer : SurrogateSerializer<KeyManager.ChannelKeys, KeyPath>(
-        transform = { it.fundingKeyPath },
-        delegateSerializer = KeyPathSerializer
-    )
-
     @Serializer(forClass = LocalCommitPublished::class)
     object LocalCommitPublishedSerializer
 
@@ -483,9 +484,6 @@ object JsonSerializers {
 
     @Serializer(forClass = FundingSigned::class)
     object FundingSignedSerializer
-
-    @Serializer(forClass = EncryptedChannelData::class)
-    object EncryptedChannelDataSerializer
 
     @Serializer(forClass = UpdateAddHtlcTlv.PathKey::class)
     object UpdateAddHtlcTlvPathKeySerializer
@@ -537,9 +535,6 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
     object ChannelReadyTlvShortChannelIdTlvSerializer
-
-    @Serializer(forClass = ShutdownTlv.ChannelData::class)
-    object ShutdownTlvChannelDataSerializer
 
     @Serializer(forClass = ShutdownTlv::class)
     object ShutdownTlvSerializer
