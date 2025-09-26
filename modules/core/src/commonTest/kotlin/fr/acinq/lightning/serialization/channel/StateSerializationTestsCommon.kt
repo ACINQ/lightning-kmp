@@ -29,7 +29,6 @@ import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.value
-import fr.acinq.lightning.wire.EncryptedChannelData
 import fr.acinq.lightning.wire.EncryptedPeerStorage
 import fr.acinq.secp256k1.Hex
 import kotlin.test.*
@@ -45,19 +44,6 @@ class StateSerializationTestsCommon : LightningTestSuite() {
 
         val bytes1 = Serialization.serialize(bob.state)
         val check1 = Serialization.deserialize(bytes1).value
-        assertEquals(bob.state, check1)
-    }
-
-    @Test
-    fun `encrypt - decrypt normal state`() {
-        val (alice, bob) = TestsHelper.reachNormal()
-        val priv = randomKey()
-        val bytes = EncryptedChannelData.from(priv, alice.state)
-        val check = PersistedChannelState.from(priv, bytes).getOrNull()!!.value
-        assertEquals(alice.state, check)
-
-        val bytes1 = EncryptedChannelData.from(priv, bob.state)
-        val check1 = PersistedChannelState.from(priv, bytes1).getOrNull()!!.value
         assertEquals(bob.state, check1)
     }
 

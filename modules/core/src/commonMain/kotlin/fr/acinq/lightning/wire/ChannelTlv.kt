@@ -170,7 +170,7 @@ sealed class ChannelReestablishTlv : Tlv {
         }
     }
 
-    // Legacy TLV needed to deserialize old backups
+    /** Legacy TLV needed to deserialize old backups */
     data class ChannelData(val ecb: EncryptedChannelData) : ChannelReestablishTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
@@ -183,7 +183,7 @@ sealed class ChannelReestablishTlv : Tlv {
 }
 
 sealed class ShutdownTlv : Tlv {
-    // Legacy TLV needed to deserialize old backups
+    /** Legacy TLV needed to deserialize old backups */
     data class ChannelData(val ecb: EncryptedChannelData) : ShutdownTlv() {
         override val tag: Long get() = ChannelData.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(ecb.data, out)
