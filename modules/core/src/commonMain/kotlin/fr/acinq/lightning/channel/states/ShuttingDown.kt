@@ -1,17 +1,22 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Transient
 
 data class ShuttingDown(
     override val commitments: Commitments,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closeCommand: ChannelCommand.Close.MutualClose?,
+    @Transient override val remoteCommitNonces: Map<TxId, IndividualNonce>,
+    @Transient val localCloseeNonce: Transactions.LocalNonce?
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -39,36 +44,51 @@ data class ShuttingDown(
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@ShuttingDown.copy(commitments = result.value), listOf())
                     }
-                    is CommitSig -> when (val sigs = aggregateSigs(cmd.message)) {
-                        is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, channelKeys(), logger)) {
-                            is Either.Left -> handleLocalError(cmd, result.value)
-                            is Either.Right -> {
-                                val (commitments1, revocation) = result.value
-                                when {
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, remoteShutdown, listOf(ChannelAction.Message.Send(revocation)))
-                                    else -> {
-                                        val nextState = this@ShuttingDown.copy(commitments = commitments1)
-                                        val actions = buildList {
-                                            add(ChannelAction.Storage.StoreState(nextState))
-                                            add(ChannelAction.Message.Send(revocation))
-                                            if (commitments1.changes.localHasChanges()) {
-                                                // if we have newly acknowledged changes let's sign them
-                                                add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
-                                            }
+                    is CommitSigs -> when (val result = commitments.receiveCommit(cmd.message, channelKeys(), logger)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
+                        is Either.Right -> {
+                            val (commitments1, revocation) = result.value
+                            when {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
+                                    closeCommand,
+                                    commitments1,
+                                    localShutdown,
+                                    remoteShutdown,
+                                    listOf(ChannelAction.Message.Send(revocation)),
+                                    this@ShuttingDown.remoteCommitNonces,
+                                    localCloseeNonce,
+                                    remoteShutdown.closeeNonce
+                                )
+                                else -> {
+                                    val nextState = this@ShuttingDown.copy(commitments = commitments1)
+                                    val actions = buildList {
+                                        add(ChannelAction.Storage.StoreState(nextState))
+                                        add(ChannelAction.Message.Send(revocation))
+                                        if (commitments1.changes.localHasChanges()) {
+                                            // if we have newly acknowledged changes let's sign them
+                                            add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
                                         }
-                                        Pair(nextState, actions)
                                     }
+                                    Pair(nextState, actions)
                                 }
                             }
                         }
-                        else -> Pair(this@ShuttingDown, listOf())
                     }
                     is RevokeAndAck -> when (val result = commitments.receiveRevocation(cmd.message)) {
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> {
                             val (commitments1, actions) = result.value
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, remoteShutdown, actions)
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
+                                    closeCommand,
+                                    commitments1,
+                                    localShutdown,
+                                    remoteShutdown,
+                                    actions,
+                                    this@ShuttingDown.remoteCommitNonces,
+                                    localCloseeNonce,
+                                    remoteShutdown.closeeNonce
+                                )
                                 else -> {
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
                                     val actions1 = buildList {
@@ -90,7 +110,7 @@ data class ShuttingDown(
                             Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
                         } else {
                             // This is a retransmission of their previous shutdown, we can ignore it.
-                            Pair(this@ShuttingDown, listOf())
+                            Pair(this@ShuttingDown.copy(remoteShutdown = cmd.message), listOf())
                         }
                     }
                     is Error -> {
@@ -112,15 +132,22 @@ data class ShuttingDown(
                     logger.debug { "already in the process of signing, will sign again as soon as possible" }
                     Pair(this@ShuttingDown, listOf())
                 } else {
-                    when (val result = commitments.sendCommit(channelKeys(), logger)) {
+                    when (val result = commitments.sendCommit(channelKeys(), remoteCommitNonces, logger)) {
                         is Either.Left -> handleCommandError(cmd, result.value)
                         is Either.Right -> {
                             val commitments1 = result.value.first
-                            val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.commit.spec
+                            val nextRemoteSpec = commitments1.latest.nextRemoteCommit!!.spec
                             // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
                             // counterparty, so only htlcs above remote's dust_limit matter
-                            val trimmedHtlcs = Transactions.trimOfferedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec) + Transactions.trimReceivedHtlcs(commitments.params.remoteParams.dustLimit, nextRemoteSpec)
-                            val htlcInfos = trimmedHtlcs.map { it.add }.map {
+                            val trimmedOfferedHtlcs = commitments.active
+                                .flatMap { c -> Transactions.trimOfferedHtlcs(c.remoteCommitParams.dustLimit, nextRemoteSpec, c.commitmentFormat) }
+                                .map { it.add }
+                                .toSet()
+                            val trimmedReceivedHtlcs = commitments.active
+                                .flatMap { c -> Transactions.trimReceivedHtlcs(c.remoteCommitParams.dustLimit, nextRemoteSpec, c.commitmentFormat) }
+                                .map { it.add }
+                                .toSet()
+                            val htlcInfos = (trimmedOfferedHtlcs + trimmedReceivedHtlcs).map {
                                 logger.info { "adding paymentHash=${it.paymentHash} cltvExpiry=${it.cltvExpiry} to htlcs db for commitNumber=${commitments1.nextRemoteCommitIndex}" }
                                 ChannelAction.Storage.HtlcInfo(channelId, commitments1.nextRemoteCommitIndex, it.paymentHash, it.cltvExpiry)
                             }
@@ -128,7 +155,7 @@ data class ShuttingDown(
                             val actions = buildList {
                                 add(ChannelAction.Storage.StoreHtlcInfos(htlcInfos))
                                 add(ChannelAction.Storage.StoreState(nextState))
-                                addAll(result.value.second.map { ChannelAction.Message.Send(it) })
+                                add(ChannelAction.Message.Send(result.value.second))
                             }
                             Pair(nextState, actions)
                         }
@@ -164,11 +191,7 @@ data class ShuttingDown(
                 is WatchSpentTriggered -> handlePotentialForceClose(watch)
             }
             is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelCommand.Disconnected -> {
-                // reset the commit_sig batch
-                sigStash = emptyList()
-                Pair(Offline(this@ShuttingDown), listOf())
-            }
+            is ChannelCommand.Disconnected -> Pair(Offline(this@ShuttingDown), listOf())
             else -> unhandled(cmd)
         }
     }

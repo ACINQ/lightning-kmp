@@ -66,7 +66,7 @@ class PeerTest : LightningTestSuite() {
         randomKey().publicKey(),
         randomKey().publicKey(),
         ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
-        TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.SimpleTaprootChannels))
     )
 
     @Test
@@ -119,7 +119,7 @@ class PeerTest : LightningTestSuite() {
         alice.forward(open3)
         alice2bob.expect<AcceptDualFundedChannel>()
 
-        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localParams.fundingKeyPath }.toSet().size)
+        assertEquals(3, alice.channels.values.filterIsInstance<WaitForFundingCreated>().map { it.localChannelParams.fundingKeyPath }.toSet().size)
     }
 
     @Test
@@ -242,7 +242,7 @@ class PeerTest : LightningTestSuite() {
         assertTrue(open.fundingAmount < 500_000.sat) // we pay the mining fees
         assertTrue(open.channelFlags.nonInitiatorPaysCommitFees)
         assertEquals(open.requestFunding?.requestedAmount, 100_000.sat) // we always request funds from the remote, because we ask them to pay the commit tx fees
-        assertEquals(open.channelType, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        assertEquals(open.channelType, ChannelType.SupportedChannelType.SimpleTaprootChannels)
         // We cannot test the rest of the flow as lightning-kmp doesn't implement the LSP side that responds to the liquidity ads request.
     }
 
@@ -303,9 +303,9 @@ class PeerTest : LightningTestSuite() {
 
         val syncState = syncChannels.first()
         assertIs<Normal>(syncState.state)
-        val commitments = (syncState.state as Normal).commitments
+        val commitments = syncState.state.commitments
         val yourLastPerCommitmentSecret = ByteVector32.Zeroes
-        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.channelKeys(commitments.params.localParams.fundingKeyPath).commitmentPoint(commitments.localCommitIndex)
+        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.channelKeys(commitments.channelParams.localParams.fundingKeyPath).commitmentPoint(commitments.localCommitIndex)
 
         val channelReestablish = ChannelReestablish(
             channelId = syncState.state.channelId,
