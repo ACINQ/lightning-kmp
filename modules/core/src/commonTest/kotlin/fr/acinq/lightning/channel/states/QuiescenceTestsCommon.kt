@@ -520,8 +520,7 @@ class QuiescenceTestsCommon : LightningTestSuite() {
                 feerate = FeeratePerKw(253.sat),
                 requestRemoteFunding = null,
                 currentFeeCredit = 0.msat,
-                origins = listOf(),
-                channelType = null
+                origins = listOf()
             )
         }
 

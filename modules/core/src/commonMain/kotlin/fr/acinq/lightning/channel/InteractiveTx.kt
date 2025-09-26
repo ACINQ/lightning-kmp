@@ -509,7 +509,7 @@ data class SharedTransaction(
                 .find { txIn.outPoint == it.outPoint }
                 ?.let { input ->
                     // We generate our secret nonce when sending the corresponding input, we know it exists in the map.
-                    val userNonce = session.secretNonces[input.serialId]!!
+                    val userNonce = session.swapInSecretNonces[input.serialId]!!
                     val serverNonce = remoteNonces[input.serialId]!!
                     keyManager.swapInOnChainWallet.signSwapInputUser(unsignedTx, i, previousOutputs, userNonce.first, userNonce.second, serverNonce, input.addressIndex)
                         .map { TxSignaturesTlv.PartialSignature(it, userNonce.second, serverNonce) }
@@ -536,7 +536,7 @@ data class SharedTransaction(
                     val serverKey = keyManager.swapInOnChainWallet.localServerPrivateKey(remoteNodeId)
                     val swapInProtocol = SwapInProtocol(input.userKey, serverKey.publicKey(), input.userRefundKey, input.refundDelay)
                     // We generate our secret nonce when receiving the corresponding input, we know it exists in the map.
-                    val serverNonce = session.secretNonces[input.serialId]!!
+                    val serverNonce = session.swapInSecretNonces[input.serialId]!!
                     val userNonce = remoteNonces[input.serialId]!!
                     swapInProtocol.signSwapInputServer(unsignedTx, i, previousOutputs, serverKey, serverNonce.first, userNonce, serverNonce.second)
                         .map { TxSignaturesTlv.PartialSignature(it, userNonce, serverNonce.second) }
@@ -694,7 +694,7 @@ data class InteractiveTxSession(
     val txCompleteReceived: TxComplete? = null,
     val inputsReceivedCount: Int = 0,
     val outputsReceivedCount: Int = 0,
-    val secretNonces: Map<Long, Pair<SecretNonce, IndividualNonce>> = mapOf(),
+    val swapInSecretNonces: Map<Long, Pair<SecretNonce, IndividualNonce>> = mapOf(),
     val commitTxIndex: Long,
     val fundingTxIndex: Long,
     // README: this is a field because we want to preserve this value when we use .copy() and it would not be the case if it was a val defined in the class body
@@ -760,7 +760,7 @@ data class InteractiveTxSession(
                     .map { it.serialId }
                     .sorted()
                     // We generate secret nonces whenever we send and receive tx_add_input, so we know they exist in the map.
-                    .map { serialId -> secretNonces[serialId]!!.second }
+                    .map { serialId -> swapInSecretNonces[serialId]!!.second }
                 val commitNonces = when (this.fundingParams.commitmentFormat) {
                     Transactions.CommitmentFormat.SimpleTaprootChannels -> {
                         val fundingTxId = runTrying {
@@ -810,16 +810,18 @@ data class InteractiveTxSession(
                 }
                 val nextSecretNonces = when (inputOutgoing) {
                     // Generate a secret nonce for this input if we don't already have one.
-                    is InteractiveTxInput.LocalSwapIn -> when (secretNonces[inputOutgoing.serialId]) {
+                    is InteractiveTxInput.LocalSwapIn -> when (swapInSecretNonces[inputOutgoing.serialId]) {
                         null -> {
                             val secretNonce = Musig2.generateNonce(randomBytes32(), Either.Left(swapInKeys.userPrivateKey), listOf(swapInKeys.userPublicKey, swapInKeys.remoteServerPublicKey), null, null)
-                            secretNonces + (inputOutgoing.serialId to secretNonce)
+                            swapInSecretNonces + (inputOutgoing.serialId to secretNonce)
                         }
-                        else -> secretNonces
+
+                        else -> swapInSecretNonces
                     }
-                    else -> secretNonces
+
+                    else -> swapInSecretNonces
                 }
-                val next = copy(toSend = toSend.tail(), localInputs = localInputs + msg.value, txCompleteSent = null, secretNonces = nextSecretNonces)
+                val next = copy(toSend = toSend.tail(), localInputs = localInputs + msg.value, txCompleteSent = null, swapInSecretNonces = nextSecretNonces)
                 Pair(next, InteractiveTxSessionAction.SendMessage(txAddInput))
             }
             is Either.Right -> {
@@ -901,16 +903,18 @@ data class InteractiveTxSession(
         }
         val secretNonces1 = when (input) {
             // Generate a secret nonce for this input if we don't already have one.
-            is InteractiveTxInput.RemoteSwapIn -> when (secretNonces[input.serialId]) {
+            is InteractiveTxInput.RemoteSwapIn -> when (swapInSecretNonces[input.serialId]) {
                 null -> {
                     val secretNonce = Musig2.generateNonce(randomBytes32(), Either.Right(input.serverKey), listOf(input.userKey, input.serverKey), null, null)
-                    secretNonces + (input.serialId to secretNonce)
+                    swapInSecretNonces + (input.serialId to secretNonce)
                 }
-                else -> secretNonces
+
+                else -> swapInSecretNonces
             }
-            else -> secretNonces
+
+            else -> swapInSecretNonces
         }
-        val session1 = this.copy(remoteInputs = remoteInputs + input, inputsReceivedCount = inputsReceivedCount + 1, txCompleteReceived = null, secretNonces = secretNonces1)
+        val session1 = this.copy(remoteInputs = remoteInputs + input, inputsReceivedCount = inputsReceivedCount + 1, txCompleteReceived = null, swapInSecretNonces = secretNonces1)
         return Either.Right(session1)
     }
 

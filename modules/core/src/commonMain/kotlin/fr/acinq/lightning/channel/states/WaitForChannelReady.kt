@@ -1,5 +1,7 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
@@ -9,12 +11,14 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
+import kotlinx.serialization.Transient
 
 /** The channel funding transaction was confirmed, we exchange funding_locked messages. */
 data class WaitForChannelReady(
     override val commitments: Commitments,
     val shortChannelId: ShortChannelId,
-    val lastSent: ChannelReady
+    val lastSent: ChannelReady,
+    @Transient override val remoteCommitNonces: Map<TxId, IndividualNonce>,
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -73,7 +77,7 @@ data class WaitForChannelReady(
                         enable = Helpers.aboveReserve(commitments)
                     )
                     val nextState = Normal(
-                        commitments.addRemoteCommitNonce(commitments.latest.fundingTxId, cmd.message.nextLocalNonce),
+                        commitments,
                         shortChannelId,
                         initialChannelUpdate,
                         null,
@@ -81,7 +85,11 @@ data class WaitForChannelReady(
                         null,
                         null,
                         null,
-                    )
+                        localCloseeNonce = null,
+                        remoteCloseeNonce = null,
+                        remoteCommitNonces = remoteCommitNonces,
+                        localCloserNonces = null
+                    ).addRemoteCommitNonce(commitments.latest.fundingTxId, cmd.message.nextLocalNonce)
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),
                         ChannelAction.Storage.SetLocked(commitments.latest.fundingTxId),

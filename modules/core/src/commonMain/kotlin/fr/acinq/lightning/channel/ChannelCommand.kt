@@ -103,8 +103,7 @@ sealed class ChannelCommand {
                 val requestRemoteFunding: LiquidityAds.RequestFunding?,
                 val currentFeeCredit: MilliSatoshi,
                 val feerate: FeeratePerKw,
-                val origins: List<Origin>,
-                val channelType: ChannelType? = null
+                val origins: List<Origin>
             ) : Splice() {
                 val spliceOutputs: List<TxOut> = spliceOut?.let { listOf(TxOut(it.amount, it.scriptPubKey)) } ?: emptyList()
                 val liquidityFees: LiquidityAds.Fees? = requestRemoteFunding?.fees(feerate, isChannelCreation = false)

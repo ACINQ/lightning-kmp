@@ -104,7 +104,7 @@ object Transactions {
             // weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and
             // not in variable length DER format (around 72 bytes)
             override val fundingInputWeight = 230
-            override val commitWeight = 960
+            override val commitWeight = 968
             override val htlcOutputWeight = 172
             override val htlcTimeoutWeight = 645
             override val htlcSuccessWeight = 705

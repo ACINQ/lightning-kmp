@@ -703,11 +703,7 @@ data class Commitments(
     val inactive: List<Commitment>,
     val payments: Map<Long, UUID>, // for outgoing htlcs, maps to paymentId
     val remoteNextCommitInfo: Either<WaitingForRevocation, PublicKey>, // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit
-    val remotePerCommitmentSecrets: ShaChain,
-    @Transient val remoteCommitNonces: Map<TxId, IndividualNonce>,
-    @Transient val localCloseeNonce: Transactions.LocalNonce?,
-    @Transient val remoteCloseeNonce: IndividualNonce?,
-    @Transient val localCloserNonces: Transactions.CloserNonces?,
+    val remotePerCommitmentSecrets: ShaChain
 ) {
     init {
         require(active.isNotEmpty()) { "there must be at least one active commitment" }
@@ -738,9 +734,9 @@ data class Commitments(
         addAll(active)
     })
 
-    fun addRemoteCommitNonce(fundingTxId: TxId, nonce: IndividualNonce?): Commitments = nonce?.let { this.copy(remoteCommitNonces = this.remoteCommitNonces + (fundingTxId to it)) } ?: this
-
-    fun resetNonces(): Commitments = copy(remoteCommitNonces = emptyMap(), localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
+//    fun addRemoteCommitNonce(fundingTxId: TxId, nonce: IndividualNonce?): Commitments = nonce?.let { this.copy(remoteCommitNonces = this.remoteCommitNonces + (fundingTxId to it)) } ?: this
+//
+//    fun resetNonces(): Commitments = copy(remoteCommitNonces = emptyMap(), localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
 
     fun channelKeys(keyManager: KeyManager): ChannelKeys = channelParams.localParams.channelKeys(keyManager)
 
@@ -902,7 +898,7 @@ data class Commitments(
         return failure?.let { Either.Left(it) } ?: Either.Right(copy(changes = changes1))
     }
 
-    fun sendCommit(channelKeys: ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, CommitSigs>> {
+    fun sendCommit(channelKeys: ChannelKeys, remoteCommitNonces: Map<TxId, IndividualNonce>, log: MDCLogger): Either<ChannelException, Pair<Commitments, CommitSigs>> {
         val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Either.Left(CannotSignBeforeRevocation(channelId))
         val commitKeys = channelKeys.remoteCommitmentKeys(channelParams, remoteNextPerCommitmentPoint)
         if (!changes.localHasChanges()) return Either.Left(CannotSignWithoutChanges(channelId))
@@ -1016,20 +1012,19 @@ data class Commitments(
             remoteNextCommitInfo = Either.Right(revocation.nextPerCommitmentPoint),
             remotePerCommitmentSecrets = remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - remoteCommitIndex),
             payments = payments1,
-            remoteCommitNonces = revocation.nextCommitNonces
         )
         return Either.Right(Pair(commitments1, actions.toList()))
     }
 
-    fun createShutdown(channelKeys: ChannelKeys, finalScriptPubKey: ByteVector): Pair<Commitments, Shutdown> = when (latest.commitmentFormat) {
+    fun createShutdown(channelKeys: ChannelKeys, finalScriptPubKey: ByteVector): Pair<Transactions.LocalNonce?, Shutdown> = when (latest.commitmentFormat) {
         is Transactions.CommitmentFormat.SimpleTaprootChannels -> {
             // We create a fresh local closee nonce every time we send shutdown.
             val localFundingPubKey = channelKeys.fundingKey(latest.fundingTxIndex).publicKey()
             val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, latest.remoteFundingPubkey, latest.fundingTxId)
-            this.copy(localCloseeNonce = localCloseeNonce) to Shutdown(channelId, finalScriptPubKey, TlvStream<ShutdownTlv>(ShutdownTlv.ShutdownNonce(localCloseeNonce.publicNonce)))
+            localCloseeNonce to Shutdown(channelId, finalScriptPubKey, TlvStream<ShutdownTlv>(ShutdownTlv.ShutdownNonce(localCloseeNonce.publicNonce)))
         }
 
-        else -> this to Shutdown(channelId, finalScriptPubKey)
+        else -> null to Shutdown(channelId, finalScriptPubKey)
     }
 
     private fun ChannelContext.updateFundingStatus(fundingTxId: TxId, updateMethod: (Commitment, Long) -> Commitment): Either<Commitments, Pair<Commitments, Commitment>> {
