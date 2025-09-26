@@ -66,7 +66,7 @@ class PeerTest : LightningTestSuite() {
         randomKey().publicKey(),
         randomKey().publicKey(),
         ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
-        TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.SimpleTaprootChannels))
     )
 
     @Test
@@ -242,7 +242,7 @@ class PeerTest : LightningTestSuite() {
         assertTrue(open.fundingAmount < 500_000.sat) // we pay the mining fees
         assertTrue(open.channelFlags.nonInitiatorPaysCommitFees)
         assertEquals(open.requestFunding?.requestedAmount, 100_000.sat) // we always request funds from the remote, because we ask them to pay the commit tx fees
-        assertEquals(open.channelType, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        assertEquals(open.channelType, ChannelType.SupportedChannelType.SimpleTaprootChannels)
         // We cannot test the rest of the flow as lightning-kmp doesn't implement the LSP side that responds to the liquidity ads request.
     }
 

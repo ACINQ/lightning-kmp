@@ -397,7 +397,7 @@ data class Normal(
                                                 feerate = spliceStatus.command.feerate,
                                                 fundingPubkey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey(),
                                                 requestFunding = spliceStatus.command.requestRemoteFunding,
-                                                channelType = spliceStatus.command.channelType,
+                                                channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
                                             )
                                             logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution}" }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(spliceStatus.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
@@ -520,10 +520,6 @@ data class Normal(
                                     val channelKeys = channelKeys()
                                     val parentCommitment = commitments.active.first()
                                     val sharedInput = SharedFundingInput(channelKeys, parentCommitment)
-                                    val nextCommitmentFormat = when {
-                                        spliceStatus.command.channelType == cmd.message.channelType -> spliceStatus.command.channelType?.commitmentFormat ?: parentCommitment.commitmentFormat
-                                        else -> parentCommitment.commitmentFormat
-                                    }
                                     val fundingParams = InteractiveTxParams(
                                         channelId = channelId,
                                         isInitiator = true,
@@ -532,7 +528,7 @@ data class Normal(
                                         sharedInput = sharedInput,
                                         remoteFundingPubkey = cmd.message.fundingPubkey,
                                         localOutputs = spliceStatus.command.spliceOutputs,
-                                        commitmentFormat = nextCommitmentFormat,
+                                        commitmentFormat = Transactions.CommitmentFormat.SimpleTaprootChannels,
                                         lockTime = spliceStatus.spliceInit.lockTime,
                                         dustLimit = commitments.latest.localCommitParams.dustLimit.max(commitments.latest.remoteCommitParams.dustLimit),
                                         targetFeerate = spliceStatus.spliceInit.feerate,

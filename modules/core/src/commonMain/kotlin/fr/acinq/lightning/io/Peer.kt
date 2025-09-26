@@ -701,7 +701,7 @@ class Peer(
      *
      * @return [ChannelFundingResponse] if a splice was attempted, or {null} if no suitable channel was found
      */
-    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw, channelType: ChannelType? = null): ChannelFundingResponse? {
+    suspend fun spliceOut(amount: Satoshi, scriptPubKey: ByteVector, feerate: FeeratePerKw): ChannelFundingResponse? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull { it.commitments.availableBalanceForSend() >= amount }
@@ -714,7 +714,6 @@ class Peer(
                     currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
-                    channelType = channelType
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
@@ -735,14 +734,13 @@ class Peer(
                     currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
-                    channelType = null
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
             }
     }
 
-    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, fundingRate: LiquidityAds.FundingRate, channelType: ChannelType? = null): ChannelFundingResponse? {
+    suspend fun requestInboundLiquidity(amount: Satoshi, feerate: FeeratePerKw, fundingRate: LiquidityAds.FundingRate): ChannelFundingResponse? {
         return channels.values
             .filterIsInstance<Normal>()
             .firstOrNull()
@@ -755,7 +753,6 @@ class Peer(
                     currentFeeCredit = feeCreditFlow.value,
                     feerate = feerate,
                     origins = listOf(),
-                    channelType = channelType
                 )
                 send(WrappedChannelCommand(channel.channelId, spliceCommand))
                 spliceCommand.replyTo.await()
@@ -1457,8 +1454,7 @@ class Peer(
                                     requestRemoteFunding = null,
                                     currentFeeCredit = feeCreditFlow.value,
                                     feerate = feerate,
-                                    origins = listOf(Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), ChannelManagementFees(fee, 0.sat))),
-                                    channelType = null // FIXME do we allow upgrade here ?
+                                    origins = listOf(Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), ChannelManagementFees(fee, 0.sat)))
                                 )
                                 // If the splice fails, we immediately unlock the utxos to reuse them in the next attempt.
                                 spliceCommand.replyTo.invokeOnCompletion { ex ->
@@ -1518,11 +1514,6 @@ class Peer(
                                             swapInCommands.trySend(SwapInCommand.UnlockWalletInputs(cmd.walletInputs.map { it.outPoint }.toSet()))
                                         }
                                         else -> {
-                                            val channelType = if (Features.canUseFeature(ourInit.features, theirInit!!.features, Feature.SimpleTaprootChannels)) {
-                                                ChannelType.SupportedChannelType.SimpleTaprootChannels
-                                            } else {
-                                                ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
-                                            }
                                             // We ask our peer to pay the commit tx fees.
                                             val localParams = LocalChannelParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
                                             val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
@@ -1541,7 +1532,7 @@ class Peer(
                                                 remoteInit = theirInit!!,
                                                 channelFlags = channelFlags,
                                                 channelConfig = ChannelConfig.standard,
-                                                channelType = channelType,
+                                                channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels, // we always create taproot channels
                                                 requestRemoteFunding = requestRemoteFunding,
                                                 channelOrigin = Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), fees),
                                             )
@@ -1620,8 +1611,7 @@ class Peer(
                                     requestRemoteFunding = LiquidityAds.RequestFunding(cmd.requestedAmount, cmd.fundingRate, paymentDetails),
                                     currentFeeCredit = currentFeeCredit,
                                     feerate = targetFeerate,
-                                    origins = listOf(Origin.OffChainPayment(cmd.preimage, cmd.paymentAmount, totalFees)),
-                                    channelType = null // FIXME do we allow upgrade here ?
+                                    origins = listOf(Origin.OffChainPayment(cmd.preimage, cmd.paymentAmount, totalFees))
                                 )
                                 val (state, actions) = available.channel.process(spliceCommand)
                                 _channels = _channels + (available.channel.channelId to state)

@@ -59,6 +59,8 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
+    // TLV used to upgrade to "simple taproot channels" format during splices.
+    // We cannot reuse the channel_type TLV defined above because the tag is different
     data class SpliceChannelTypeTlv(val channelType: ChannelType) : ChannelTlv() {
         override val tag: Long get() = SpliceChannelTypeTlv.tag
 
