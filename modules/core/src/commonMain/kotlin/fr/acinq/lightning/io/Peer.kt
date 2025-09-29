@@ -1518,6 +1518,14 @@ class Peer(
                                             // We ask our peer to pay the commit tx fees.
                                             val localParams = LocalChannelParams(nodeParams, isChannelOpener = true, payCommitTxFees = false)
                                             val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = true)
+                                            val channelType = when {
+                                                nodeParams.chain == Chain.Regtest && cmd.totalAmount == 2_121_212.sat -> {
+                                                    // special case for local integration tests on regtest
+                                                    ChannelType.SupportedChannelType.AnchorOutputsZeroReserve
+                                                }
+
+                                                else -> ChannelType.SupportedChannelType.SimpleTaprootChannels // we always create taproot channels
+                                            }
                                             val initCommand = ChannelCommand.Init.Initiator(
                                                 replyTo = CompletableDeferred(),
                                                 fundingAmount = localFundingAmount,
@@ -1533,7 +1541,7 @@ class Peer(
                                                 remoteInit = theirInit!!,
                                                 channelFlags = channelFlags,
                                                 channelConfig = ChannelConfig.standard,
-                                                channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels, // we always create taproot channels
+                                                channelType = channelType,
                                                 requestRemoteFunding = requestRemoteFunding,
                                                 channelOrigin = Origin.OnChainWallet(cmd.walletInputs.map { it.outPoint }.toSet(), cmd.totalAmount.toMilliSatoshi(), fees),
                                             )
