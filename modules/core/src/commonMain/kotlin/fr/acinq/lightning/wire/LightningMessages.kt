@@ -156,14 +156,6 @@ interface HasChainHash : LightningMessage {
 
 interface ForbiddenMessageDuringSplice : LightningMessage
 
-/** Legacy format for channel backup, needed to deserialize old backups */
-data class EncryptedChannelData(val data: ByteVector) {
-
-    companion object {
-        val empty: EncryptedChannelData = EncryptedChannelData(ByteVector.empty)
-    }
-}
-
 data class EncryptedPeerStorage(val data: ByteVector) {
     /** We don't want to log the encrypted channel backups, they take a lot of space. We only keep the first bytes to help correlate mobile/server backups. */
     override fun toString(): String {
@@ -1359,7 +1351,6 @@ data class ChannelReestablish(
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
-            ChannelReestablishTlv.ChannelData.tag to ChannelReestablishTlv.ChannelData.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
         )
 
@@ -1568,8 +1559,7 @@ data class Shutdown(
     companion object : LightningMessageReader<Shutdown> {
         const val type: Long = 38
 
-        @Suppress("UNCHECKED_CAST")
-        val readers = mapOf(ShutdownTlv.ChannelData.tag to ShutdownTlv.ChannelData.Companion as TlvValueReader<ShutdownTlv>)
+        val readers: Map<Long, TlvValueReader<ShutdownTlv>> = mapOf()
 
         override fun read(input: Input): Shutdown {
             return Shutdown(
