@@ -41,7 +41,7 @@ data class WaitForOpenChannel(
                             val channelFeatures = ChannelFeatures(channelType, localFeatures = localParams.features, remoteFeatures = remoteInit.features)
                             val minimumDepth = if (staticParams.useZeroConf) 0 else staticParams.nodeParams.minDepthBlocks
                             val channelKeys = keyManager.channelKeys(localParams.fundingKeyPath)
-                            val localFundingPubkey = channelKeys.fundingPubKey(0)
+                            val localFundingPubkey = channelKeys.fundingKey(0).publicKey()
                             val fundingScript = Helpers.Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey)
                             val requestFunding = open.requestFunding
                             val willFund = when {
@@ -60,10 +60,10 @@ data class WaitForOpenChannel(
                                 toSelfDelay = localParams.toSelfDelay,
                                 maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
                                 fundingPubkey = localFundingPubkey,
-                                revocationBasepoint = channelKeys.revocationBasepoint,
-                                paymentBasepoint = channelKeys.paymentBasepoint,
-                                delayedPaymentBasepoint = channelKeys.delayedPaymentBasepoint,
-                                htlcBasepoint = channelKeys.htlcBasepoint,
+                                revocationBasepoint = channelKeys.revocationBasePoint,
+                                paymentBasepoint = channelKeys.paymentBasePoint,
+                                delayedPaymentBasepoint = channelKeys.delayedPaymentBasePoint,
+                                htlcBasepoint = channelKeys.htlcBasePoint,
                                 firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
                                 secondPerCommitmentPoint = channelKeys.commitmentPoint(1),
                                 tlvStream = TlvStream(
