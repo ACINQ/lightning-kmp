@@ -490,15 +490,14 @@ class Peer(
 
                 try {
                     while (isActive) {
-                        val msg = receiveMessage()
-                        when {
-                            msg is CommitSig && msg.batchSize > 1 -> {
+                        val msg = when (val msg = receiveMessage()) {
+                            is CommitSig -> {
                                 val others = (1 until msg.batchSize).mapNotNull { receiveMessage() as CommitSig }
-                                input.send(MessageReceived(peerConnection.id, CommitSigs.fromSigs(listOf(msg) + others)))
+                                CommitSigs.fromSigs(listOf(msg) + others)
                             }
-                            msg is LightningMessage -> input.send(MessageReceived(peerConnection.id, msg))
-                            else -> {}
+                            else -> msg
                         }
+                        msg?.let { input.send(MessageReceived(peerConnection.id, it)) }
                     }
                     closeSocket(null)
                 } catch (ex: Throwable) {

@@ -1267,15 +1267,15 @@ data class CommitSig(
 data class CommitSigBatch(val messages: List<CommitSig>) : CommitSigs() {
     // The read/write functions and the type field are meant for individual lightning messages.
     // While we treat a commit_sig batch as one logical message, we will actually encode each messages individually.
-    // That's why the read/write functions are no-op.
+    // That's why the read/write functions aren't implemented.
     override val type: Long get() = 0
     override val channelId: ByteVector32 = messages.first().channelId
     val batchSize: Int = messages.size
 
-    override fun write(out: Output) = Unit
+    override fun write(out: Output) = error("cannot write commit_sig batch: each message must be written individually")
 
     companion object : LightningMessageReader<CommitSigBatch> {
-        override fun read(input: Input): CommitSigBatch = CommitSigBatch(listOf())
+        override fun read(input: Input): CommitSigBatch = error("cannot read commit_sig batch: each message must be read individually")
     }
 }
 

@@ -782,20 +782,12 @@ data class Commitments(
         // while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard the commit_sig that belong
         // to commitments we deactivated.
         val sigs = when (commits) {
-            is CommitSigBatch -> {
-                if (commits.batchSize < active.size) {
-                    return Either.Left(CommitSigCountMismatch(channelId, active.size, commits.batchSize))
-                }
-                commits.messages
-            }
-            is CommitSig -> {
-                if (active.size > 1) {
-                    return Either.Left(CommitSigCountMismatch(channelId, active.size, 1))
-                }
-                listOf(commits)
-            }
+            is CommitSigBatch -> commits.messages
+            is CommitSig -> listOf(commits)
         }
-
+        if (sigs.size < active.size) {
+            return Either.Left(CommitSigCountMismatch(channelId, active.size, sigs.size))
+        }
         // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
         val active1 = active.zip(sigs).map {
             when (val commitment1 = it.first.receiveCommit(channelKeys, params, changes, it.second, log)) {
