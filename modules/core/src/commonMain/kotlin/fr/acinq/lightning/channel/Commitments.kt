@@ -762,7 +762,7 @@ data class Commitments(
         return failure?.let { Either.Left(it) } ?: Either.Right(copy(changes = changes1))
     }
 
-    fun sendCommit(channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, List<CommitSig>>> {
+    fun sendCommit(channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, CommitSigs>> {
         val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Either.Left(CannotSignBeforeRevocation(channelId))
         if (!changes.localHasChanges()) return Either.Left(CannotSignWithoutChanges(channelId))
         val (active1, sigs) = active.map { it.sendCommit(channelKeys, params, changes, remoteNextPerCommitmentPoint, active.size, log) }.unzip()
@@ -774,18 +774,22 @@ data class Commitments(
                 remoteChanges = changes.remoteChanges.copy(acked = emptyList(), signed = changes.remoteChanges.acked)
             )
         )
-        return Either.Right(Pair(commitments1, sigs))
+        return Either.Right(Pair(commitments1, CommitSigs.fromSigs(sigs)))
     }
 
-    fun receiveCommit(commits: List<CommitSig>, channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
+    fun receiveCommit(commits: CommitSigs, channelKeys: KeyManager.ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
         // We may receive more commit_sig than the number of active commitments, because there can be a race where we send splice_locked
         // while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard the commit_sig that belong
         // to commitments we deactivated.
-        if (commits.size < active.size) {
-            return Either.Left(CommitSigCountMismatch(channelId, active.size, commits.size))
+        val sigs = when (commits) {
+            is CommitSigBatch -> commits.messages
+            is CommitSig -> listOf(commits)
+        }
+        if (sigs.size < active.size) {
+            return Either.Left(CommitSigCountMismatch(channelId, active.size, sigs.size))
         }
         // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
-        val active1 = active.zip(commits).map {
+        val active1 = active.zip(sigs).map {
             when (val commitment1 = it.first.receiveCommit(channelKeys, params, changes, it.second, log)) {
                 is Either.Left -> return Either.Left(commitment1.value)
                 is Either.Right -> commitment1.value

@@ -39,29 +39,26 @@ data class ShuttingDown(
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@ShuttingDown.copy(commitments = result.value), listOf())
                     }
-                    is CommitSig -> when (val sigs = aggregateSigs(cmd.message)) {
-                        is List<CommitSig> -> when (val result = commitments.receiveCommit(sigs, channelKeys(), logger)) {
-                            is Either.Left -> handleLocalError(cmd, result.value)
-                            is Either.Right -> {
-                                val (commitments1, revocation) = result.value
-                                when {
-                                    commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, remoteShutdown, listOf(ChannelAction.Message.Send(revocation)))
-                                    else -> {
-                                        val nextState = this@ShuttingDown.copy(commitments = commitments1)
-                                        val actions = buildList {
-                                            add(ChannelAction.Storage.StoreState(nextState))
-                                            add(ChannelAction.Message.Send(revocation))
-                                            if (commitments1.changes.localHasChanges()) {
-                                                // if we have newly acknowledged changes let's sign them
-                                                add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
-                                            }
+                    is CommitSigs -> when (val result = commitments.receiveCommit(cmd.message, channelKeys(), logger)) {
+                        is Either.Left -> handleLocalError(cmd, result.value)
+                        is Either.Right -> {
+                            val (commitments1, revocation) = result.value
+                            when {
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, remoteShutdown, listOf(ChannelAction.Message.Send(revocation)))
+                                else -> {
+                                    val nextState = this@ShuttingDown.copy(commitments = commitments1)
+                                    val actions = buildList {
+                                        add(ChannelAction.Storage.StoreState(nextState))
+                                        add(ChannelAction.Message.Send(revocation))
+                                        if (commitments1.changes.localHasChanges()) {
+                                            // if we have newly acknowledged changes let's sign them
+                                            add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
                                         }
-                                        Pair(nextState, actions)
                                     }
+                                    Pair(nextState, actions)
                                 }
                             }
                         }
-                        else -> Pair(this@ShuttingDown, listOf())
                     }
                     is RevokeAndAck -> when (val result = commitments.receiveRevocation(cmd.message)) {
                         is Either.Left -> handleLocalError(cmd, result.value)
@@ -128,7 +125,7 @@ data class ShuttingDown(
                             val actions = buildList {
                                 add(ChannelAction.Storage.StoreHtlcInfos(htlcInfos))
                                 add(ChannelAction.Storage.StoreState(nextState))
-                                addAll(result.value.second.map { ChannelAction.Message.Send(it) })
+                                add(ChannelAction.Message.Send(result.value.second))
                             }
                             Pair(nextState, actions)
                         }
@@ -164,11 +161,7 @@ data class ShuttingDown(
                 is WatchSpentTriggered -> handlePotentialForceClose(watch)
             }
             is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelCommand.Disconnected -> {
-                // reset the commit_sig batch
-                sigStash = emptyList()
-                Pair(Offline(this@ShuttingDown), listOf())
-            }
+            is ChannelCommand.Disconnected -> Pair(Offline(this@ShuttingDown), listOf())
             else -> unhandled(cmd)
         }
     }
