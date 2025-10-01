@@ -11,17 +11,12 @@ import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.channel.Helpers.Closing.claimCurrentLocalCommitTxOutputs
-import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitMainOutput
-import fr.acinq.lightning.channel.Helpers.Closing.claimRemoteCommitTxOutputs
-import fr.acinq.lightning.channel.Helpers.Closing.claimRevokedRemoteCommitTxOutputs
-import fr.acinq.lightning.channel.Helpers.Closing.getRemotePerCommitmentSecret
 import fr.acinq.lightning.crypto.ChannelKeys
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.db.ChannelCloseOutgoingPayment.ChannelClosingType
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.logging.MDCLogger
-import fr.acinq.lightning.transactions.Transactions.TransactionWithInputInfo.ClosingTx
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
@@ -119,7 +114,7 @@ sealed class ChannelState {
         }
     }
 
-    private fun ChannelContext.emitMutualCloseEvents(state: ChannelStateWithCommitments, mutualCloseTx: ClosingTx): List<ChannelAction> {
+    private fun ChannelContext.emitMutualCloseEvents(state: ChannelStateWithCommitments, mutualCloseTx: Transactions.ClosingTx): List<ChannelAction> {
         val channelBalance = state.commitments.latest.localCommit.spec.toLocal
         val finalAmount = mutualCloseTx.toLocalOutput?.amount ?: 0.sat
         val address = mutualCloseTx.toLocalOutput?.publicKeyScript?.let { Bitcoin.addressFromPublicKeyScript(staticParams.nodeParams.chainHash, it.toByteArray()).right } ?: "unknown"
@@ -131,7 +126,7 @@ sealed class ChannelState {
                         miningFee = channelBalance.truncateToSatoshi() - finalAmount,
                         address = address,
                         txId = mutualCloseTx.tx.txid,
-                        isSentToDefaultAddress = mutualCloseTx.toLocalOutput?.publicKeyScript == state.commitments.params.localParams.defaultFinalScriptPubKey,
+                        isSentToDefaultAddress = mutualCloseTx.toLocalOutput?.publicKeyScript == state.commitments.channelParams.localParams.defaultFinalScriptPubKey,
                         closingType = ChannelClosingType.Mutual
                     )
                 )
@@ -143,7 +138,7 @@ sealed class ChannelState {
         val channelBalance = state.commitments.latest.localCommit.spec.toLocal
         val address = Bitcoin.addressFromPublicKeyScript(
             chainHash = staticParams.nodeParams.chainHash,
-            pubkeyScript = state.commitments.params.localParams.defaultFinalScriptPubKey.toByteArray() // force close always send to the default script
+            pubkeyScript = state.commitments.channelParams.localParams.defaultFinalScriptPubKey.toByteArray() // force close always send to the default script
         ).right ?: "unknown"
         return buildList {
             if (channelBalance > 0.msat) {
@@ -181,7 +176,7 @@ sealed class ChannelState {
         }
     }
 
-    internal fun ChannelContext.doPublish(tx: ClosingTx, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
+    internal fun ChannelContext.doPublish(tx: Transactions.ClosingTx, channelId: ByteVector32): List<ChannelAction.Blockchain> = listOf(
         ChannelAction.Blockchain.PublishTx(tx),
         ChannelAction.Blockchain.SendWatch(WatchConfirmed(channelId, tx.tx, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ClosingTxConfirmed))
     )
@@ -289,9 +284,14 @@ sealed class ChannelState {
 sealed class PersistedChannelState : ChannelState() {
     abstract val channelId: ByteVector32
 
+    fun ChannelContext.channelKeys(): ChannelKeys = when (val state = this@PersistedChannelState) {
+        is WaitForFundingSigned -> state.channelParams.localParams.channelKeys(keyManager)
+        is ChannelStateWithCommitments -> state.commitments.channelKeys(keyManager)
+    }
+
     internal fun ChannelContext.createChannelReestablish(): ChannelReestablish = when (val state = this@PersistedChannelState) {
         is WaitForFundingSigned -> {
-            val myFirstPerCommitmentPoint = keyManager.channelKeys(state.channelParams.localParams.fundingKeyPath).commitmentPoint(0)
+            val myFirstPerCommitmentPoint = channelKeys().commitmentPoint(0)
             ChannelReestablish(
                 channelId = channelId,
                 nextLocalCommitmentNumber = state.signingSession.reconnectNextLocalCommitmentNumber,
@@ -303,7 +303,7 @@ sealed class PersistedChannelState : ChannelState() {
         }
         is ChannelStateWithCommitments -> {
             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-            val myCurrentPerCommitmentPoint = keyManager.channelKeys(state.commitments.params.localParams.fundingKeyPath).commitmentPoint(state.commitments.localCommitIndex)
+            val myCurrentPerCommitmentPoint = channelKeys().commitmentPoint(state.commitments.localCommitIndex)
             // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
             val nextLocalCommitmentNumber = when (state) {
                 is WaitForFundingConfirmed -> when (state.rbfStatus) {
@@ -342,11 +342,9 @@ sealed class PersistedChannelState : ChannelState() {
 sealed class ChannelStateWithCommitments : PersistedChannelState() {
     abstract val commitments: Commitments
     override val channelId: ByteVector32 get() = commitments.channelId
-    val isChannelOpener: Boolean get() = commitments.params.localParams.isChannelOpener
-    val paysCommitTxFees: Boolean get() = commitments.params.localParams.paysCommitTxFees
+    val isChannelOpener: Boolean get() = commitments.channelParams.localParams.isChannelOpener
+    val paysCommitTxFees: Boolean get() = commitments.channelParams.localParams.paysCommitTxFees
     val remoteNodeId: PublicKey get() = commitments.remoteNodeId
-
-    fun ChannelContext.channelKeys(): ChannelKeys = commitments.params.localParams.channelKeys(keyManager)
 
     abstract fun updateCommitments(input: Commitments): ChannelStateWithCommitments
 
@@ -358,7 +356,8 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
         logger.info { "funding txid=${w.tx.txid} was confirmed at blockHeight=${w.blockHeight} txIndex=${w.txIndex}" }
         return commitments.run {
             updateLocalFundingConfirmed(w.tx, w.blockHeight, w.txIndex).map { (commitments1, commitment) ->
-                val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitment.commitInput.outPoint.index.toInt(), commitment.commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
+                val commitInput = commitment.commitInput(channelKeys())
+                val watchSpent = WatchSpent(channelId, commitment.fundingTxId, commitInput.outPoint.index.toInt(), commitInput.txOut.publicKeyScript, WatchSpent.ChannelSpent(commitment.fundingAmount))
                 val actions = buildList {
                     newlyLocked(commitments, commitments1).forEach { add(ChannelAction.Storage.SetLocked(it.fundingTxId)) }
                     add(ChannelAction.Blockchain.SendWatch(watchSpent))
@@ -439,10 +438,10 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     internal suspend fun ChannelContext.handlePotentialForceClose(w: WatchSpentTriggered): Pair<ChannelStateWithCommitments, List<ChannelAction>> = when {
         w.event !is WatchSpent.ChannelSpent -> Pair(this@ChannelStateWithCommitments, listOf())
         commitments.all.any { it.fundingTxId == w.spendingTx.txid } -> Pair(this@ChannelStateWithCommitments, listOf()) // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
-        w.spendingTx.txid == commitments.latest.localCommit.publishableTxs.commitTx.tx.txid -> spendLocalCurrent()
+        w.spendingTx.txid == commitments.latest.localCommit.txId -> spendLocalCurrent()
         w.spendingTx.txid == commitments.latest.remoteCommit.txid -> handleRemoteSpentCurrent(w.spendingTx, commitments.latest)
-        w.spendingTx.txid == commitments.latest.nextRemoteCommit?.commit?.txid -> handleRemoteSpentNext(w.spendingTx, commitments.latest)
-        w.spendingTx.txIn.any { it.outPoint == commitments.latest.commitInput.outPoint } -> handleRemoteSpentOther(w.spendingTx)
+        w.spendingTx.txid == commitments.latest.nextRemoteCommit?.txid -> handleRemoteSpentNext(w.spendingTx, commitments.latest)
+        w.spendingTx.txIn.any { it.outPoint == commitments.latest.fundingInput } -> handleRemoteSpentOther(w.spendingTx)
         else -> when (val commitment = commitments.resolveCommitment(w.spendingTx)) {
             is Commitment -> {
                 logger.warning { "a commit tx for an older commitment has been published fundingTxId=${commitment.fundingTxId} fundingTxIndex=${commitment.fundingTxIndex}" }
@@ -467,9 +466,9 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     internal suspend fun ChannelContext.handleRemoteSpentCurrent(commitTx: Transaction, commitment: FullCommitment): Pair<Closing, List<ChannelAction>> {
         logger.warning { "they published their current commit in txid=${commitTx.txid}" }
         require(commitTx.txid == commitment.remoteCommit.txid) { "txid mismatch" }
-
-        val remoteCommitPublished = claimRemoteCommitTxOutputs(channelKeys(), commitment, commitment.remoteCommit, commitTx, currentOnChainFeerates())
-
+        val (remoteCommitPublished, closingTxs) = Helpers.Closing.RemoteClose.run {
+            claimCommitTxOutputs(channelKeys(), commitment, commitment.remoteCommit, commitTx, currentOnChainFeerates())
+        }
         val nextState = when (this@ChannelStateWithCommitments) {
             is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
             is Negotiating -> Closing(
@@ -485,21 +484,20 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 remoteCommitPublished = remoteCommitPublished
             )
         }
-
         return Pair(nextState, buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
+            addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId, closingTxs) })
         })
     }
 
     internal suspend fun ChannelContext.handleRemoteSpentNext(commitTx: Transaction, commitment: FullCommitment): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         logger.warning { "they published their next commit in txid=${commitTx.txid}" }
         require(commitment.nextRemoteCommit != null) { "next remote commit must be defined" }
-        val remoteCommit = commitment.nextRemoteCommit.commit
+        val remoteCommit = commitment.nextRemoteCommit
         require(commitTx.txid == remoteCommit.txid) { "txid mismatch" }
-
-        val remoteCommitPublished = claimRemoteCommitTxOutputs(channelKeys(), commitment, remoteCommit, commitTx, currentOnChainFeerates())
-
+        val (remoteCommitPublished, closingTxs) = Helpers.Closing.RemoteClose.run {
+            claimCommitTxOutputs(channelKeys(), commitment, remoteCommit, commitTx, currentOnChainFeerates())
+        }
         val nextState = when (this@ChannelStateWithCommitments) {
             is Closing -> copy(nextRemoteCommitPublished = remoteCommitPublished)
             is Negotiating -> Closing(
@@ -515,18 +513,23 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 nextRemoteCommitPublished = remoteCommitPublished
             )
         }
-
         return Pair(nextState, buildList {
             add(ChannelAction.Storage.StoreState(nextState))
-            addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
+            addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId, closingTxs) })
         })
     }
 
     internal suspend fun ChannelContext.handleRemoteSpentOther(tx: Transaction): Pair<ChannelStateWithCommitments, List<ChannelAction>> {
         logger.warning { "funding tx spent in txid=${tx.txid}" }
-        return getRemotePerCommitmentSecret(commitments.params, channelKeys(), commitments.remotePerCommitmentSecrets, tx)?.let { (remotePerCommitmentSecret, commitmentNumber) ->
-            logger.warning { "txid=${tx.txid} was a revoked commitment, publishing the penalty tx" }
-            val revokedCommitPublished = claimRevokedRemoteCommitTxOutputs(commitments.params, channelKeys(), tx, remotePerCommitmentSecret, currentOnChainFeerates())
+        return Helpers.Closing.RevokedClose.getRemotePerCommitmentSecret(commitments.channelParams, channelKeys(), commitments.remotePerCommitmentSecrets, tx)?.let { (remotePerCommitmentSecret, commitmentNumber) ->
+            logger.warning { "txId=${tx.txid} was a revoked commitment for commitmentNumber=$commitmentNumber, publishing penalty transactions" }
+            val (revokedCommitPublished, closingTxs) = Helpers.Closing.RevokedClose.run {
+                // TODO: once we allow changing the commitment format or to_self_delay during a splice, those values may be incorrect.
+                val toSelfDelay = commitments.latest.remoteCommitParams.toSelfDelay
+                val commitmentFormat = commitments.latest.commitmentFormat
+                val dustLimit = commitments.latest.localCommitParams.dustLimit
+                claimCommitTxOutputs(commitments.channelParams, channelKeys(), tx, remotePerCommitmentSecret, dustLimit, toSelfDelay, commitmentFormat, currentOnChainFeerates())
+            }
             val ex = FundingTxSpent(channelId, tx.txid)
             val error = Error(channelId, ex.message)
             val nextState = when (this@ChannelStateWithCommitments) {
@@ -550,7 +553,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             }
             Pair(nextState, buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
-                addAll(revokedCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
+                addAll(revokedCommitPublished.run { doPublish(staticParams.nodeParams, channelId, closingTxs) })
                 add(ChannelAction.Message.Send(error))
                 add(ChannelAction.Storage.GetHtlcInfos(revokedCommitPublished.commitTx.txid, commitmentNumber))
             })
@@ -558,16 +561,34 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             when (this@ChannelStateWithCommitments) {
                 is WaitForRemotePublishFutureCommitment -> {
                     logger.warning { "they published their future commit (because we asked them to) in txid=${tx.txid}" }
-                    val commitKeys = channelKeys().remoteCommitmentKeys(commitments.params, remoteChannelReestablish.myCurrentPerCommitmentPoint)
-                    val remoteCommitPublished = claimRemoteCommitMainOutput(commitKeys, tx, commitments.params.localParams.dustLimit, commitments.params.localParams.defaultFinalScriptPubKey, currentOnChainFeerates().claimMainFeerate)
+                    val commitKeys = channelKeys().remoteCommitmentKeys(commitments.channelParams, remoteChannelReestablish.myCurrentPerCommitmentPoint)
+                    val mainTx = Helpers.Closing.RemoteClose.run {
+                        claimMainOutput(
+                            commitKeys,
+                            tx,
+                            commitments.latest.localCommitParams.dustLimit,
+                            commitments.latest.commitmentFormat,
+                            commitments.channelParams.localParams.defaultFinalScriptPubKey,
+                            currentOnChainFeerates().claimMainFeerate
+                        )
+                    }
+                    mainTx?.let { logger.warning { "our recovery transaction is tx=${it.tx}" } }
+                    val remoteCommitPublished = RemoteCommitPublished(
+                        commitTx = tx,
+                        localOutput = mainTx?.input?.outPoint,
+                        anchorOutput = null,
+                        incomingHtlcs = mapOf(),
+                        outgoingHtlcs = mapOf(),
+                        irrevocablySpent = mapOf(),
+                    )
                     val nextState = Closing(
                         commitments = commitments,
                         waitingSinceBlock = currentBlockHeight.toLong(),
-                        futureRemoteCommitPublished = remoteCommitPublished
+                        futureRemoteCommitPublished = remoteCommitPublished,
                     )
                     Pair(nextState, buildList {
                         add(ChannelAction.Storage.StoreState(nextState))
-                        addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
+                        addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId, RemoteCommitSecondStageTransactions(mainTx, listOf())) })
                     })
                 }
                 else -> {
@@ -589,8 +610,26 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                         }
                         else -> {
                             logger.warning { "they published an alternative commitment with feerate=${remoteCommit.spec.feerate} txid=${tx.txid}" }
-                            val commitKeys = channelKeys().remoteCommitmentKeys(commitments.params, remoteCommit.remotePerCommitmentPoint)
-                            val remoteCommitPublished = claimRemoteCommitMainOutput(commitKeys, tx, commitments.params.localParams.dustLimit, commitments.params.localParams.defaultFinalScriptPubKey, currentOnChainFeerates().claimMainFeerate)
+                            // We only provide alternative feerate signatures when there are no pending HTLCs: we only need to claim our main output.
+                            val commitKeys = channelKeys().remoteCommitmentKeys(commitments.channelParams, remoteCommit.remotePerCommitmentPoint)
+                            val mainTx = Helpers.Closing.RemoteClose.run {
+                                claimMainOutput(
+                                    commitKeys,
+                                    tx,
+                                    commitments.latest.localCommitParams.dustLimit,
+                                    commitments.latest.commitmentFormat,
+                                    commitments.channelParams.localParams.defaultFinalScriptPubKey,
+                                    currentOnChainFeerates().claimMainFeerate
+                                )
+                            }
+                            val remoteCommitPublished = RemoteCommitPublished(
+                                commitTx = tx,
+                                localOutput = mainTx?.input?.outPoint,
+                                anchorOutput = null,
+                                incomingHtlcs = mapOf(),
+                                outgoingHtlcs = mapOf(),
+                                irrevocablySpent = mapOf(),
+                            )
                             val nextState = when (this@ChannelStateWithCommitments) {
                                 is Closing -> this@ChannelStateWithCommitments.copy(remoteCommitPublished = remoteCommitPublished)
                                 is Negotiating -> Closing(commitments, waitingSinceBlock, proposedClosingTxs.flatMap { it.all }, publishedClosingTxs, remoteCommitPublished = remoteCommitPublished)
@@ -598,7 +637,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                             }
                             return Pair(nextState, buildList {
                                 add(ChannelAction.Storage.StoreState(nextState))
-                                addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
+                                addAll(remoteCommitPublished.run { doPublish(staticParams.nodeParams, channelId, RemoteCommitSecondStageTransactions(mainTx, listOf())) })
                             })
                         }
                     }
@@ -613,18 +652,14 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
             is Closing -> this@ChannelStateWithCommitments.futureRemoteCommitPublished != null
             else -> false
         }
-
         return if (outdatedCommitment) {
             logger.warning { "we have an outdated commitment: will not publish our local tx" }
             Pair(this@ChannelStateWithCommitments, listOf())
         } else {
-            val commitTx = commitments.latest.localCommit.publishableTxs.commitTx.tx
-            val localCommitPublished = claimCurrentLocalCommitTxOutputs(
-                channelKeys(),
-                commitments.latest,
-                commitTx,
-                currentOnChainFeerates()
-            )
+            val commitTx = commitments.latest.fullySignedCommitTx(channelKeys())
+            val (localCommitPublished, closingTxs) = Helpers.Closing.LocalClose.run {
+                claimCommitTxOutputs(channelKeys(), commitments.latest, commitTx, currentOnChainFeerates())
+            }
             val nextState = when (this@ChannelStateWithCommitments) {
                 is Closing -> copy(localCommitPublished = localCommitPublished)
                 is Negotiating -> Closing(
@@ -640,10 +675,9 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     localCommitPublished = localCommitPublished
                 )
             }
-
             Pair(nextState, buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
-                addAll(localCommitPublished.run { doPublish(staticParams.nodeParams, channelId) })
+                addAll(localCommitPublished.run { doPublish(staticParams.nodeParams, channelId, closingTxs) })
             })
         }
     }

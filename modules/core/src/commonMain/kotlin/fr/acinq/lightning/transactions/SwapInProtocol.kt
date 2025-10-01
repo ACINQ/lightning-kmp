@@ -111,11 +111,13 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
 
     fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PrivateKey): ByteVector64 {
         require(userKey.publicKey() == userPublicKey) { "user private key does not match expected public key: are you using the refund key instead of the user key?" }
-        return Transactions.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, userKey)
+        val sigDER = fundingTx.signInput(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, userKey)
+        return Crypto.der2compact(sigDER)
     }
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, serverKey: PrivateKey): ByteVector64 {
-        return Transactions.sign(fundingTx, index, Script.write(redeemScript), parentTxOut.amount, serverKey)
+        val sigDER = fundingTx.signInput(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, serverKey)
+        return Crypto.der2compact(sigDER)
     }
 
     companion object {

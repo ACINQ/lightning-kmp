@@ -156,7 +156,7 @@ suspend fun CoroutineScope.newPeer(
         }
 
         val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.channelKeys(state.commitments.params.localParams.fundingKeyPath).commitmentPoint(state.commitments.localCommitIndex)
+        val myCurrentPerCommitmentPoint = peer.nodeParams.keyManager.channelKeys(state.commitments.channelParams.localParams.fundingKeyPath).commitmentPoint(state.commitments.localCommitIndex)
 
         val channelReestablish = ChannelReestablish(
             channelId = state.channelId,

@@ -90,6 +90,7 @@ data class WaitForFundingConfirmed(
                                         latestFundingTx.fundingParams.remoteFundingPubkey,
                                         cmd.message.lockTime,
                                         latestFundingTx.fundingParams.dustLimit,
+                                        latestFundingTx.fundingParams.commitmentFormat,
                                         cmd.message.feerate
                                     )
                                     val toSend = buildList<Either<InteractiveTxInput.Outgoing, InteractiveTxOutput.Outgoing>> {
@@ -132,6 +133,7 @@ data class WaitForFundingConfirmed(
                             latestFundingTx.fundingParams.remoteFundingPubkey,
                             rbfStatus.command.lockTime,
                             latestFundingTx.fundingParams.dustLimit,
+                            latestFundingTx.fundingParams.commitmentFormat,
                             rbfStatus.command.targetFeerate
                         )
                         when (val contributions = FundingContributions.create(channelKeys(), keyManager.swapInOnChainWallet, fundingParams, rbfStatus.command.walletInputs, null)) {
@@ -178,7 +180,9 @@ data class WaitForFundingConfirmed(
                                 val signingSession = InteractiveTxSigningSession.create(
                                     rbfSession1,
                                     keyManager,
-                                    commitments.params,
+                                    commitments.channelParams,
+                                    commitments.latest.localCommitParams,
+                                    commitments.latest.remoteCommitParams,
                                     rbfSession1.fundingParams,
                                     fundingTxIndex = replacedCommitment.fundingTxIndex,
                                     interactiveTxAction.sharedTx,
@@ -219,7 +223,7 @@ data class WaitForFundingConfirmed(
                 }
                 is CommitSig -> when (rbfStatus) {
                     is RbfStatus.WaitingForSigs -> {
-                        val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.params, cmd.message, currentBlockHeight.toLong(), logger)
+                        val (signingSession1, action) = rbfStatus.session.receiveCommitSig(channelKeys(), commitments.channelParams, cmd.message, currentBlockHeight.toLong(), logger)
                         when (action) {
                             is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
                                 logger.warning { "rbf attempt failed: ${action.reason.message}" }
@@ -264,7 +268,7 @@ data class WaitForFundingConfirmed(
                         // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
                         // as soon as it reaches NORMAL state, and before it is announced on the network
                         // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
-                        val shortChannelId = ShortChannelId(cmd.watch.blockHeight, cmd.watch.txIndex, commitment.commitInput.outPoint.index.toInt())
+                        val shortChannelId = ShortChannelId(cmd.watch.blockHeight, cmd.watch.txIndex, commitment.fundingInput.index.toInt())
                         val nextState = WaitForChannelReady(commitments1, shortChannelId, channelReady)
                         val actions1 = buildList {
                             if (rbfStatus != RbfStatus.None) add(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, cmd.watch.tx.txid).message)))
@@ -325,7 +329,8 @@ data class WaitForFundingConfirmed(
     private fun ChannelContext.sendRbfTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs): Pair<WaitForFundingConfirmed, List<ChannelAction>> {
         logger.info { "rbf funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
         logger.info { "will wait for ${staticParams.nodeParams.minDepthBlocks} confirmations" }
-        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
+        val fundingScript = action.commitment.commitInput(channelKeys()).txOut.publicKeyScript
+        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, fundingScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
         val nextState = WaitForFundingConfirmed(
             commitments.add(action.commitment),
             waitingSinceBlock,

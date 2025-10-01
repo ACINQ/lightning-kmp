@@ -106,7 +106,9 @@ data class WaitForFundingSigned(
     private fun ChannelContext.sendTxSigs(action: InteractiveTxSigningSessionAction.SendTxSigs): Pair<ChannelState, List<ChannelAction>> {
         logger.info { "funding tx created with txId=${action.fundingTx.txId}, ${action.fundingTx.sharedTx.tx.localInputs.size} local inputs, ${action.fundingTx.sharedTx.tx.remoteInputs.size} remote inputs, ${action.fundingTx.sharedTx.tx.localOutputs.size} local outputs and ${action.fundingTx.sharedTx.tx.remoteOutputs.size} remote outputs" }
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
-        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, action.commitment.commitInput.txOut.publicKeyScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
+        val channelKeys = channelParams.localParams.channelKeys(keyManager)
+        val fundingInput = action.commitment.commitInput(channelKeys)
+        val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, fundingInput.txOut.publicKeyScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
         val commitments = Commitments(
             channelParams,
             CommitmentChanges.init(),
@@ -165,7 +167,7 @@ data class WaitForFundingSigned(
             // We use part of the funding txid to create a dummy short channel id.
             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
             // Collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed).
-            val shortChannelId = ShortChannelId(0, Pack.int32BE(action.commitment.fundingTxId.value.slice(0, 16).toByteArray()).absoluteValue, action.commitment.commitInput.outPoint.index.toInt())
+            val shortChannelId = ShortChannelId(0, Pack.int32BE(action.commitment.fundingTxId.value.slice(0, 16).toByteArray()).absoluteValue, fundingInput.outPoint.index.toInt())
             val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady)
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
