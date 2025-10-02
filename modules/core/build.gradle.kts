@@ -65,7 +65,6 @@ kotlin {
                 api("fr.acinq.bitcoin:bitcoin-kmp:${libs.versions.bitcoinkmp.get()}")
                 api("org.jetbrains.kotlinx:kotlinx-coroutines-core:${libs.versions.kotlinx.coroutines.get()}")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-core:${libs.versions.kotlinx.serialization.get()}")
-                api("org.jetbrains.kotlinx:kotlinx-serialization-cbor:${libs.versions.kotlinx.serialization.get()}")
                 api("org.jetbrains.kotlinx:kotlinx-serialization-json:${libs.versions.kotlinx.serialization.get()}")
                 api("org.jetbrains.kotlinx:kotlinx-datetime:${libs.versions.kotlinx.datetime.get()}")
                 api("co.touchlab:kermit:${libs.versions.kermit.get()}")
