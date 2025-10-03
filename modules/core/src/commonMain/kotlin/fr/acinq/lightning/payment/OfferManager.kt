@@ -20,6 +20,7 @@ import fr.acinq.lightning.message.OnionMessages.buildMessage
 import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.wire.OfferTypes.OfferAmount
 import kotlinx.coroutines.flow.MutableSharedFlow
 
 sealed class OnionMessageAction {
@@ -232,7 +233,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     private fun isOurOffer(offer: OfferTypes.Offer, pathId: ByteVector?, blindedPrivateKey: PrivateKey): Boolean = when {
         pathId != null && pathId.size() != 32 -> false
         else -> {
-            val expected = deterministicOffer(nodeParams.chainHash, nodeParams.nodePrivateKey, walletParams.trampolineNode.id, offer.amountMsat, offer.description, pathId?.let { ByteVector32(it) })
+            val expected = deterministicOffer(nodeParams.chainHash, nodeParams.nodePrivateKey, walletParams.trampolineNode.id, offer.records.get<OfferAmount>()?.amount, offer.description, pathId?.let { ByteVector32(it) })
             expected == Pair(offer, blindedPrivateKey)
         }
     }
@@ -246,7 +247,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             chainHash: BlockHash,
             nodePrivateKey: PrivateKey,
             trampolineNodeId: PublicKey,
-            amount: MilliSatoshi?,
+            amount: Long?,
             description: String?,
             pathId: ByteVector32?,
         ): Pair<OfferTypes.Offer, PrivateKey> {
@@ -255,15 +256,10 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             //  - the offer parameters (amount, description and pathId)
             //  - our trampoline node, which is used as an introduction node for the offer's blinded path
             //  - our private key, which ensures that nobody else can generate the same path key secret
-            val tweak = when {
-                amount == null && description == null && pathId == null -> "bolt 12 default offer".encodeToByteArray().byteVector()
-                else -> {
+            val tweak =
                     "bolt 12 deterministic offer".encodeToByteArray().byteVector() +
-                            Crypto.sha256("offer amount".encodeToByteArray() + (amount?.let { Pack.writeInt64BE(it.msat) } ?: ByteArray(0))) +
                             Crypto.sha256("offer description".encodeToByteArray() + (description?.encodeToByteArray() ?: ByteArray(0))) +
                             Crypto.sha256("offer path_id".encodeToByteArray().byteVector() + (pathId ?: ByteVector.empty))
-                }
-            }
             val sessionKey = PrivateKey(Crypto.sha256(tweak + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
             return OfferTypes.Offer.createBlindedOffer(chainHash, nodePrivateKey, trampolineNodeId, amount, description, Features.empty, sessionKey, pathId)
         }
