@@ -39,8 +39,8 @@ object Scripts {
      * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
      */
     fun witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness {
-        val encodedSig1 = der(sig1, SigHash.SIGHASH_ALL)
-        val encodedSig2 = der(sig2, SigHash.SIGHASH_ALL)
+        val encodedSig1 = der(sig1, SIGHASH_ALL)
+        val encodedSig2 = der(sig2, SIGHASH_ALL)
         val redeemScript = ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))
         return when {
             LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value) -> ScriptWitness(listOf(ByteVector.empty, encodedSig1, encodedSig2, redeemScript))
@@ -123,20 +123,20 @@ object Scripts {
      * This witness script spends a [toLocalDelayed] output using a local sig after a delay
      */
     fun witnessToRemoteDelayedAfterDelay(localSig: ByteVector64, toRemoteDelayedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), toRemoteDelayedScript))
+        ScriptWitness(listOf(der(localSig, SIGHASH_ALL), toRemoteDelayedScript))
 
     /**
      * This witness script spends a [toLocalDelayed] output using a local sig after a delay
      */
     fun witnessToLocalDelayedAfterDelay(localSig: ByteVector64, toLocalDelayedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, toLocalDelayedScript))
+        ScriptWitness(listOf(der(localSig, SIGHASH_ALL), ByteVector.empty, toLocalDelayedScript))
 
     /**
      * This witness script spends (steals) a [toLocalDelayed] output using a revocation key as a punishment
      * for having published a revoked transaction
      */
     fun witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector64, toLocalScript: ByteVector) =
-        ScriptWitness(listOf(der(revocationSig, SigHash.SIGHASH_ALL), ByteVector(byteArrayOf(1)), toLocalScript))
+        ScriptWitness(listOf(der(revocationSig, SIGHASH_ALL), ByteVector(byteArrayOf(1)), toLocalScript))
 
     fun htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32): List<ScriptElt> = listOf(
         // @formatter:off
@@ -164,7 +164,7 @@ object Scripts {
      * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
     fun witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, preimage: ByteVector32, htlcOfferedScript: ByteVector) =
-        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig, SigHash.SIGHASH_ALL), preimage, htlcOfferedScript))
+        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SIGHASH_SINGLE or SIGHASH_ANYONECANPAY), der(localSig, SIGHASH_ALL), preimage, htlcOfferedScript))
 
     /** Extract payment preimages from a 2nd-stage HTLC Success transaction's witness script. */
     fun extractPreimagesFromHtlcSuccess(tx: Transaction): Set<ByteVector32> {
@@ -183,7 +183,7 @@ object Scripts {
      * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
      */
     fun witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, preimage: ByteVector32, htlcOffered: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), preimage, htlcOffered))
+        ScriptWitness(listOf(der(localSig, SIGHASH_ALL), preimage, htlcOffered))
 
     /** Extract payment preimages from a claim-htlc transaction. */
     fun extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set<ByteVector32> {
@@ -224,21 +224,21 @@ object Scripts {
      * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
     fun witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector) =
-        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SigHash.SIGHASH_SINGLE or SigHash.SIGHASH_ANYONECANPAY), der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, htlcOfferedScript))
+        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SIGHASH_SINGLE or SIGHASH_ANYONECANPAY), der(localSig, SIGHASH_ALL), ByteVector.empty, htlcOfferedScript))
 
     /**
      * If remote publishes its commit tx where there was a local->remote htlc, then local uses this script to
      * claim its funds after timeout (consumes htlcReceived script from commit tx)
      */
     fun witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SigHash.SIGHASH_ALL), ByteVector.empty, htlcReceivedScript))
+        ScriptWitness(listOf(der(localSig, SIGHASH_ALL), ByteVector.empty, htlcReceivedScript))
 
     /**
      * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
      * for having published a revoked transaction
      */
     fun witnessHtlcWithRevocationSig(commitKeys: RemoteCommitmentKeys, revocationSig: ByteVector64, htlcScript: ByteVector) =
-        ScriptWitness(listOf(der(revocationSig, SigHash.SIGHASH_ALL), commitKeys.revocationPublicKey.value, htlcScript))
+        ScriptWitness(listOf(der(revocationSig, SIGHASH_ALL), commitKeys.revocationPublicKey.value, htlcScript))
 
     /**
      * Specific scripts for taproot channels
@@ -255,12 +255,10 @@ object Scripts {
         /**
          * Sort and aggregate the public keys of a musig2 session.
          *
-         * @param pubkey1 public key
-         * @param pubkey2 public key
          * @return the aggregated public key
-         * @see [[fr.acinq.bitcoin.Musig2.aggregateKeys()]]
+         * @see [fr.acinq.bitcoin.crypto.musig2.Musig2.aggregateKeys]
          */
-        fun musig2Aggregate(pubkey1: PublicKey, pubkey2: PublicKey): XonlyPublicKey = Musig2.aggregateKeys(listOf(pubkey1, pubkey2).sortedWith { p1, p2 -> LexicographicalOrdering.compare(p1, p2) })
+        fun musig2Aggregate(pubkey1: PublicKey, pubkey2: PublicKey): XonlyPublicKey = Musig2.aggregateKeys(sort(listOf(pubkey1, pubkey2)))
 
         /**
          * "Nothing Up My Sleeve" point, for which there is no known private key.
@@ -276,7 +274,6 @@ object Scripts {
          * The key used matches the key for the matching node's main output.
          */
         fun anchor(anchorKey: PublicKey): List<ScriptElt> = Script.pay2tr(anchorKey.xOnly(), anchorScriptTree)
-
 
         /**
          * Script that can be spent with the revocation key and reveals the delayed payment key to allow observers to claim
@@ -298,7 +295,7 @@ object Scripts {
          * @return a script that will be used to add a "to local key" leaf to a script tree
          */
         private fun toLocalDelayed(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): List<ScriptElt> = listOf(
-            OP_PUSHDATA(keys.localDelayedPaymentPublicKey.xOnly()), OP_CHECKSIGVERIFY, Scripts.encodeNumber(toSelfDelay.toLong()), OP_CHECKSEQUENCEVERIFY
+            OP_PUSHDATA(keys.localDelayedPaymentPublicKey.xOnly()), OP_CHECKSIGVERIFY, encodeNumber(toSelfDelay.toLong()), OP_CHECKSEQUENCEVERIFY
         )
 
         data class ToLocalScriptTree(val localDelayed: ScriptTree.Leaf, val revocation: ScriptTree.Leaf) {
@@ -386,7 +383,7 @@ object Scripts {
                 Script.witnessScriptPathPay2tr(
                     commitKeys.revocationPublicKey.xOnly(),
                     timeout,
-                    ScriptWitness(listOf(Taproot.encodeSig(remoteSig, htlcRemoteSighash(Transactions.CommitmentFormat.SimpleTaprootChannels)), localSig)),
+                    ScriptWitness(listOf(encodeSig(remoteSig, htlcRemoteSighash(Transactions.CommitmentFormat.SimpleTaprootChannels)), localSig)),
                     scriptTree
                 )
 
@@ -439,7 +436,7 @@ object Scripts {
                 Script.witnessScriptPathPay2tr(
                     commitKeys.revocationPublicKey.xOnly(),
                     success,
-                    ScriptWitness(listOf(Taproot.encodeSig(remoteSig, htlcRemoteSighash(Transactions.CommitmentFormat.SimpleTaprootChannels)), localSig, paymentPreimage)),
+                    ScriptWitness(listOf(encodeSig(remoteSig, htlcRemoteSighash(Transactions.CommitmentFormat.SimpleTaprootChannels)), localSig, paymentPreimage)),
                     scriptTree
                 )
 
@@ -463,11 +460,6 @@ object Scripts {
         fun htlcDelayedScriptTree(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): ScriptTree.Leaf =
             ScriptTree.Leaf(toLocalDelayed(keys, toSelfDelay))
 
-        /**
-         * Script used for the output of pre-signed HTLC 2nd-stage transactions.
-         */
-        fun htlcDelayed(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): List<ScriptElt> =
-            Script.pay2tr(keys.revocationPublicKey.xOnly(), htlcDelayedScriptTree(keys, toSelfDelay))
     }
 
 }
