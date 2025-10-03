@@ -94,8 +94,6 @@
     JsonSerializers.ClosingSigTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvSerializer::class,
     JsonSerializers.ChannelReadyTlvSerializer::class,
-    JsonSerializers.CommitSigTlvAlternativeFeerateSigSerializer::class,
-    JsonSerializers.CommitSigTlvAlternativeFeerateSigsSerializer::class,
     JsonSerializers.CommitSigTlvBatchSerializer::class,
     JsonSerializers.CommitSigTlvPartialSignatureWithNonceSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
@@ -209,7 +207,6 @@ object JsonSerializers {
             }
             polymorphic(Tlv::class) {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
-                subclass(CommitSigTlv.AlternativeFeerateSigs::class, CommitSigTlvAlternativeFeerateSigsSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
                 subclass(CommitSigTlv.PartialSignatureWithNonce::class, CommitSigTlvPartialSignatureWithNonceSerializer)
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
@@ -340,12 +337,12 @@ object JsonSerializers {
     object IndividualSignatureSerializer
 
     @Serializable
-    data class ChannelSpendSignatureSurrogate(val sig: ByteVector64)
+    data class ChannelSpendSignatureSurrogate(val sig: ByteVector, val nonce: IndividualNonce?)
     object ChannelSpendSignatureSerializer : SurrogateSerializer<ChannelSpendSignature, ChannelSpendSignatureSurrogate>(
         transform = { s ->
             when (s) {
-                is ChannelSpendSignature.IndividualSignature -> ChannelSpendSignatureSurrogate(s.sig)
-                is ChannelSpendSignature.PartialSignatureWithNonce -> ChannelSpendSignatureSurrogate(ByteVector64.Zeroes) // FIXME
+                is ChannelSpendSignature.IndividualSignature -> ChannelSpendSignatureSurrogate(s.sig, nonce = null)
+                is ChannelSpendSignature.PartialSignatureWithNonce -> ChannelSpendSignatureSurrogate(s.partialSig, s.nonce)
             }
         },
         delegateSerializer = ChannelSpendSignatureSurrogate.serializer()
@@ -552,12 +549,6 @@ object JsonSerializers {
 
     @Serializer(forClass = ShutdownTlv.ShutdownNonce::class)
     object ShutdownTlvShutdownNonceSerializer
-
-    @Serializer(forClass = CommitSigTlv.AlternativeFeerateSig::class)
-    object CommitSigTlvAlternativeFeerateSigSerializer
-
-    @Serializer(forClass = CommitSigTlv.AlternativeFeerateSigs::class)
-    object CommitSigTlvAlternativeFeerateSigsSerializer
 
     @Serializer(forClass = CommitSigTlv.Batch::class)
     object CommitSigTlvBatchSerializer

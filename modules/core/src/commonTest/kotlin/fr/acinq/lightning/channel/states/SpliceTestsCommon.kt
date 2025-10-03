@@ -309,7 +309,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
         run {
             val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)?.willFund
             assertNotNull(willFund)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund, channelType = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.InProgress>(alice2.state.spliceStatus)
@@ -328,7 +328,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
             // Bob uses a different funding script than what Alice expects.
             val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, ByteVector("deadbeef"), cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)?.willFund
             assertNotNull(willFund)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund, channelType = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -336,7 +336,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
         }
         run {
             // Bob doesn't fund the splice.
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund = null)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund = null, channelType = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -1373,7 +1373,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
         val (alice2, bob2) = exchangeSpliceSigs(alice1, commitSigAlice, bob1, commitSigBob)
 
         // Bob force-closes using the latest active commitment and an optional feerate.
-        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), commitSigAlice.alternativeFeerateSigs.last())
+        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), Commitments.alternativeFeerates.last())
         val commitment = alice1.commitments.active.first()
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
         assertIs<LNChannel<Closing>>(alice3)
@@ -1406,7 +1406,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
         // Bob force-closes using an older active commitment with an alternative feerate.
         assertEquals(bob4.commitments.active.map { it.localCommit.txId }.toSet().size, 3)
-        val bobCommitTx = useAlternativeCommitSig(bob4, bob4.commitments.active[1], commitSigAlice1.alternativeFeerateSigs.first())
+        val bobCommitTx = useAlternativeCommitSig(bob4, bob4.commitments.active[1], Commitments.alternativeFeerates.first())
         handlePreviousRemoteClose(alice4, bobCommitTx)
     }
 
@@ -1454,7 +1454,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
         val (alice1, commitSigAlice, bob1, commitSigBob) = spliceOutWithoutSigs(alice, bob, 50_000.sat)
         val (alice2, bob2) = exchangeSpliceSigs(alice1, commitSigAlice, bob1, commitSigBob)
-        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), commitSigAlice.alternativeFeerateSigs.first())
+        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), Commitments.alternativeFeerates.first())
 
         // Alice sends an HTLC to Bob, which revokes the previous commitment.
         val (nodes3, _, _) = addHtlc(25_000_000.msat, alice2, bob2)

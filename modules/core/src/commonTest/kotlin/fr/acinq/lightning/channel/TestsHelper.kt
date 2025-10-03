@@ -507,13 +507,13 @@ object TestsHelper {
         return Triple(closingState, remoteCommitPublished, RemoteCloseTxs(mainTx, htlcSuccessTxs, htlcTimeoutTxs))
     }
 
-    fun useAlternativeCommitSig(s: LNChannel<ChannelState>, commitment: Commitment, alternative: CommitSigTlv.AlternativeFeerateSig): Transaction {
+    fun useAlternativeCommitSig(s: LNChannel<ChannelState>, commitment: Commitment, feerate: FeeratePerKw): Transaction {
         val channelKeys = s.commitments.channelKeys(s.ctx.keyManager)
         val fundingKey = commitment.localFundingKey(channelKeys)
         val commitKeys = channelKeys.localCommitmentKeys(s.commitments.channelParams, commitment.localCommit.index)
-        val alternativeSpec = commitment.localCommit.spec.copy(feerate = alternative.feerate)
-        val alternativeSig = ChannelSpendSignature.IndividualSignature(alternative.sig)
+        val alternativeSpec = commitment.localCommit.spec.copy(feerate = feerate)
         val remoteFundingPubKey = commitment.remoteFundingPubkey
+        // This commitment transaction isn't signed, but we don't care, we will make it look like it was confirmed anyway.
         val (localCommitTx, _) = Commitments.makeLocalTxs(
             channelParams = s.commitments.channelParams,
             commitParams = commitment.localCommitParams,
@@ -525,10 +525,7 @@ object TestsHelper {
             commitmentFormat = commitment.commitmentFormat,
             spec = alternativeSpec,
         )
-        val localSig = localCommitTx.sign(fundingKey, remoteFundingPubKey)
-        val signedCommitTx = localCommitTx.aggregateSigs(fundingKey.publicKey(), remoteFundingPubKey, localSig, alternativeSig)
-        Transaction.correctlySpends(signedCommitTx, mapOf(commitment.fundingInput to commitment.localFundingStatus.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        return signedCommitTx
+        return localCommitTx.tx
     }
 
     fun signAndRevack(alice: LNChannel<ChannelState>, bob: LNChannel<ChannelState>): Pair<LNChannel<ChannelState>, LNChannel<ChannelState>> {

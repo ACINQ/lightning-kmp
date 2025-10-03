@@ -16,11 +16,7 @@ import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.lightning.channel.states.Channel
-import fr.acinq.lightning.crypto.ChannelKeys
-import fr.acinq.lightning.crypto.LocalCommitmentKeys
-import fr.acinq.lightning.crypto.NonceGenerator
-import fr.acinq.lightning.crypto.RemoteCommitmentKeys
-import fr.acinq.lightning.crypto.ShaChain
+import fr.acinq.lightning.crypto.*
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.transactions.*
 import fr.acinq.lightning.transactions.Transactions.commitTxFee
@@ -284,6 +280,19 @@ object Helpers {
         }
 
         fun isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean, allowOpReturn: Boolean): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray(), allowAnySegwit, allowOpReturn)
+
+        fun createShutdown(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptOverride: ByteVector? = null): Pair<Transactions.LocalNonce?, Shutdown> {
+            val localScript = localScriptOverride ?: commitment.channelParams.localParams.defaultFinalScriptPubKey
+            return when (commitment.commitmentFormat) {
+                Transactions.CommitmentFormat.SimpleTaprootChannels -> {
+                    // We create a fresh local closee nonce every time we send shutdown.
+                    val localFundingPubKey = channelKeys.fundingKey(commitment.fundingTxIndex).publicKey()
+                    val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitment.remoteFundingPubkey, commitment.fundingTxId)
+                    Pair(localCloseeNonce, Shutdown(commitment.channelId, localScript, localCloseeNonce.publicNonce))
+                }
+                Transactions.CommitmentFormat.AnchorOutputs -> Pair(null, Shutdown(commitment.channelId, localScript))
+            }
+        }
 
         /** We are the closer: we sign closing transactions for which we pay the fees. */
         fun makeClosingTxs(

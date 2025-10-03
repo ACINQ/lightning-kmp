@@ -121,7 +121,7 @@ data class Normal(
                         handleCommandError(cmd, InvalidFinalScript(channelId), channelUpdate)
                     }
                     else -> {
-                        val (localCloseeNonce, shutdown) = this@Normal.commitments.createShutdown(channelKeys(), localScriptPubkey)
+                        val (localCloseeNonce, shutdown) = Helpers.Closing.createShutdown(channelKeys(), commitments.latest, localScriptPubkey)
                         val newState = this@Normal.copy(localCloseeNonce = localCloseeNonce, localShutdown = shutdown, closeCommand = cmd)
                         val actions = listOf(ChannelAction.Storage.StoreState(newState), ChannelAction.Message.Send(shutdown))
                         Pair(newState, actions)
@@ -245,7 +245,7 @@ data class Normal(
                             }
                             val nextState = if (remoteShutdown != null && !commitments1.changes.localHasUnsignedOutgoingHtlcs()) {
                                 // we were waiting for our pending htlcs to be signed before replying with our local shutdown
-                                val (localCloseeNonce, localShutdown) = commitments1.createShutdown(channelKeys(), commitments.channelParams.localParams.defaultFinalScriptPubKey)
+                                val (localCloseeNonce, localShutdown) = Helpers.Closing.createShutdown(channelKeys(), commitments1.latest)
                                 actions.add(ChannelAction.Message.Send(localShutdown))
                                 if (commitments1.latest.remoteCommit.spec.htlcs.isNotEmpty()) {
                                     // we just signed htlcs that need to be resolved now
@@ -321,7 +321,7 @@ data class Normal(
                                 // so we don't have any unsigned outgoing changes
                                 val actions = mutableListOf<ChannelAction>()
                                 val (localCloseeNonce, localShutdown) = when (this@Normal.localShutdown) {
-                                    null -> commitments.createShutdown(channelKeys(), commitments.channelParams.localParams.defaultFinalScriptPubKey)
+                                    null -> Helpers.Closing.createShutdown(channelKeys(), commitments.latest)
                                     else -> this@Normal.localCloseeNonce to this@Normal.localShutdown
                                 }
                                 if (this@Normal.localShutdown == null) actions.add(ChannelAction.Message.Send(localShutdown))

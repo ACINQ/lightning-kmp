@@ -253,7 +253,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                         }
                         is Negotiating -> {
                             // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-                            val (localCloseeNonce, shutdown) = state.commitments.createShutdown(channelKeys, state.localScript)
+                            val (localCloseeNonce, shutdown) = Helpers.Closing.createShutdown(channelKeys, state.commitments.latest, state.localScript)
                             Pair(state.copy(localCloseeNonce = localCloseeNonce), listOf(ChannelAction.Message.Send(shutdown)))
                         }
                         is Closing, is Closed, is WaitForRemotePublishFutureCommitment -> unhandled(cmd)
@@ -425,7 +425,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 val batchSize = commitments.active.size
                                 val commitSigs = CommitSigs.fromSigs(commitments.active.mapNotNull { c ->
                                     val commitInput = c.commitInput(channelKeys)
-                                    val remoteNonce = remoteChannelReestablish.nextCommitNonces.get(commitInput.outPoint.txid)
+                                    val remoteNonce = remoteChannelReestablish.nextCommitNonces[commitInput.outPoint.txid]
                                     // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
                                     // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
                                     // case, we simply won't send back our commit_sig until they fix their node.

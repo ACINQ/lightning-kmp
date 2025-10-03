@@ -644,7 +644,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigAlice))
             val revBob = actionsBob6.hasOutgoingMessage<RevokeAndAck>()
             val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(revBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), Commitments.alternativeFeerates.first())
             remoteClose(alternativeCommitTx, bob6)
         }
 
@@ -857,7 +857,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
             val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
             val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates.first())
             remoteClose(alternativeCommitTx, bob4)
         }
 
