@@ -677,7 +677,7 @@ object Deserialization {
 
     private fun Input.readInteractiveTxSigningSession(htlcs: Set<DirectedHtlc>, localCommitParams: CommitParams, remoteCommitParams: CommitParams): InteractiveTxSigningSession {
         val fundingParams = readInteractiveTxParams()
-        val fundingTxIndex = readNumber()
+        readNumber() // the fundingTxIndex was explicitly encoded, even though it is already in the fundingParams
         val fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction
         val (localCommit, remoteCommit) = when (val discriminator = read()) {
             0 -> Pair(Either.Left(readUnsignedLocalCommitWithHtlcs()), readRemoteCommitWithHtlcs())
@@ -694,7 +694,7 @@ object Deserialization {
             5 -> Pair(Either.Right(readLocalCommitWithoutHtlcs(htlcs, fundingParams.remoteFundingPubkey).second), readRemoteCommitWithoutHtlcs(htlcs))
             else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
         }
-        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommitParams, localCommit, remoteCommitParams, remoteCommit, null)
+        return InteractiveTxSigningSession(fundingParams, fundingTx, localCommitParams, localCommit, remoteCommitParams, remoteCommit, null)
     }
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {

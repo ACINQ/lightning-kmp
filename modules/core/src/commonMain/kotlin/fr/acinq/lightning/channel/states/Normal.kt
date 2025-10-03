@@ -495,13 +495,12 @@ data class Normal(
                                     channelKeys,
                                     keyManager.swapInOnChainWallet,
                                     fundingParams,
+                                    parentCommitment.localCommit.index,
                                     previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                     previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
                                     localHtlcs = parentCommitment.localCommit.spec.htlcs,
                                     fundingContributions = FundingContributions(emptyList(), emptyList()), // as non-initiator we don't contribute to this splice for now
                                     previousTxs = emptyList(),
-                                    commitTxIndex = parentCommitment.localCommit.index,
-                                    fundingTxIndex = parentCommitment.fundingTxIndex + 1
                                 )
                                 val nextState = this@Normal.copy(
                                     spliceStatus = SpliceStatus.InProgress(
@@ -590,13 +589,12 @@ data class Normal(
                                                 channelKeys,
                                                 keyManager.swapInOnChainWallet,
                                                 fundingParams,
+                                                parentCommitment.localCommit.index,
                                                 previousLocalBalance = parentCommitment.localCommit.spec.toLocal,
                                                 previousRemoteBalance = parentCommitment.localCommit.spec.toRemote,
                                                 localHtlcs = parentCommitment.localCommit.spec.htlcs,
                                                 fundingContributions = fundingContributions.value,
                                                 previousTxs = emptyList(),
-                                                commitTxIndex = parentCommitment.localCommit.index,
-                                                fundingTxIndex = parentCommitment.fundingTxIndex + 1
                                             ).send()
                                             when (interactiveTxAction) {
                                                 is InteractiveTxSessionAction.SendMessage -> {
@@ -640,7 +638,6 @@ data class Normal(
                                         parentCommitment.localCommitParams,
                                         parentCommitment.remoteCommitParams,
                                         spliceStatus.spliceSession.fundingParams,
-                                        fundingTxIndex = parentCommitment.fundingTxIndex + 1,
                                         interactiveTxAction.sharedTx,
                                         liquidityPurchase = spliceStatus.liquidityPurchase,
                                         localCommitmentIndex = parentCommitment.localCommit.index,
@@ -664,7 +661,7 @@ data class Normal(
                                             spliceStatus.replyTo?.complete(
                                                 ChannelFundingResponse.Success(
                                                     channelId = channelId,
-                                                    fundingTxIndex = session.fundingTxIndex,
+                                                    fundingTxIndex = session.fundingParams.fundingTxIndex,
                                                     fundingTxId = session.fundingTx.txId,
                                                     capacity = session.fundingParams.fundingAmount,
                                                     balance = session.localCommit.fold({ it.spec }, { it.spec }).toLocal,

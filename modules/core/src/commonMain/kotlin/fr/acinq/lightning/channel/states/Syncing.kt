@@ -148,7 +148,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                         if (cmd.message.nextLocalCommitmentNumber == state.commitments.remoteCommitIndex) {
                                             // They haven't received our commit_sig: we retransmit it.
                                             // We're waiting for signatures from them, and will send our tx_signatures once we receive them.
-                                            logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
+                                            logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingParams.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
                                             when (val commitSig =
                                                 state.spliceStatus.session.remoteCommit.sign(state.commitments.channelParams, channelKeys, state.spliceStatus.session, remoteNonce = cmd.message.currentCommitNonce)) {
                                                 is Either.Left -> return handleLocalError(cmd, commitSig.value)

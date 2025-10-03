@@ -105,12 +105,11 @@ data class WaitForFundingConfirmed(
                                         channelKeys(),
                                         keyManager.swapInOnChainWallet,
                                         fundingParams,
+                                        localCommitIndex = 0,
                                         SharedFundingInputBalances(0.msat, 0.msat, 0.msat),
                                         toSend,
                                         previousFundingTxs.map { it.sharedTx },
                                         commitments.latest.localCommit.spec.htlcs,
-                                        commitTxIndex = 0,
-                                        fundingTxIndex = 0
                                     )
                                     val nextState = this@WaitForFundingConfirmed.copy(rbfStatus = RbfStatus.InProgress(session))
                                     Pair(nextState, listOf(ChannelAction.Message.Send(TxAckRbf(channelId, fundingParams.localContribution))))
@@ -152,13 +151,12 @@ data class WaitForFundingConfirmed(
                                     channelKeys(),
                                     keyManager.swapInOnChainWallet,
                                     fundingParams,
-                                    0.msat,
-                                    0.msat,
-                                    emptySet(),
-                                    contributions.value,
-                                    previousFundingTxs.map { it.sharedTx },
-                                    commitTxIndex = 0,
-                                    fundingTxIndex = 0
+                                    localCommitIndex = 0,
+                                    previousLocalBalance = 0.msat,
+                                    previousRemoteBalance = 0.msat,
+                                    localHtlcs = emptySet(),
+                                    fundingContributions = contributions.value,
+                                    previousTxs = previousFundingTxs.map { it.sharedTx },
                                 ).send()
                                 when (action) {
                                     is InteractiveTxSessionAction.SendMessage -> {
@@ -182,7 +180,7 @@ data class WaitForFundingConfirmed(
                     is RbfStatus.InProgress -> {
                         val (rbfSession1, interactiveTxAction) = rbfStatus.rbfSession.receive(cmd.message)
                         when (interactiveTxAction) {
-                            is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus.copy(rbfSession1)), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
+                            is InteractiveTxSessionAction.SendMessage -> Pair(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus.copy(rbfSession = rbfSession1)), listOf(ChannelAction.Message.Send(interactiveTxAction.msg)))
                             is InteractiveTxSessionAction.SignSharedTx -> {
                                 val replacedCommitment = commitments.latest
                                 val signingSession = InteractiveTxSigningSession.create(
@@ -192,7 +190,6 @@ data class WaitForFundingConfirmed(
                                     commitments.latest.localCommitParams,
                                     commitments.latest.remoteCommitParams,
                                     rbfSession1.fundingParams,
-                                    fundingTxIndex = replacedCommitment.fundingTxIndex,
                                     interactiveTxAction.sharedTx,
                                     liquidityPurchase = null,
                                     localCommitmentIndex = replacedCommitment.localCommit.index,

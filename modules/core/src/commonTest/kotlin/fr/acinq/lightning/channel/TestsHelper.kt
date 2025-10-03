@@ -154,12 +154,10 @@ data class LNChannel<out S : ChannelState>(
         // We don't persist unsigned funding RBF or splice attempts.
         fun removeTemporaryStatuses(state: PersistedChannelState): PersistedChannelState = when (state) {
             is Normal -> when (state.spliceStatus) {
-                is SpliceStatus.WaitingForSigs -> state.copy(spliceStatus = state.spliceStatus.copy(session = state.spliceStatus.session.copy(nextRemoteNonce = null)))
+                is SpliceStatus.WaitingForSigs -> state.copy(spliceStatus = state.spliceStatus.copy(session = state.spliceStatus.session.copy(nextRemoteCommitNonce = null)))
                 else -> state.copy(spliceStatus = SpliceStatus.None)
             }
-
-            is WaitForFundingSigned -> state.copy(signingSession = state.signingSession.copy(nextRemoteNonce = null), remoteCommitNonces = mapOf())
-
+            is WaitForFundingSigned -> state.copy(signingSession = state.signingSession.copy(nextRemoteCommitNonce = null), remoteCommitNonces = mapOf())
             else -> state
         }
 

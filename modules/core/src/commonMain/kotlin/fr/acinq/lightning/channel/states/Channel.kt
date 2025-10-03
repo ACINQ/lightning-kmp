@@ -313,7 +313,7 @@ sealed class PersistedChannelState : ChannelState() {
             }
             ChannelReestablish(
                 channelId = channelId,
-                nextLocalCommitmentNumber = state.signingSession.reconnectNextLocalCommitmentNumber,
+                nextLocalCommitmentNumber = state.signingSession.nextLocalCommitmentNumber,
                 nextRemoteRevocationNumber = 0,
                 yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
                 myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
@@ -326,11 +326,11 @@ sealed class PersistedChannelState : ChannelState() {
             // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
             val nextLocalCommitmentNumber = when (state) {
                 is WaitForFundingConfirmed -> when (state.rbfStatus) {
-                    is RbfStatus.WaitingForSigs -> state.rbfStatus.session.reconnectNextLocalCommitmentNumber
+                    is RbfStatus.WaitingForSigs -> state.rbfStatus.session.nextLocalCommitmentNumber
                     else -> state.commitments.localCommitIndex + 1
                 }
                 is Normal -> when (state.spliceStatus) {
-                    is SpliceStatus.WaitingForSigs -> state.spliceStatus.session.reconnectNextLocalCommitmentNumber
+                    is SpliceStatus.WaitingForSigs -> state.spliceStatus.session.nextLocalCommitmentNumber
                     else -> state.commitments.localCommitIndex + 1
                 }
                 else -> state.commitments.localCommitIndex + 1

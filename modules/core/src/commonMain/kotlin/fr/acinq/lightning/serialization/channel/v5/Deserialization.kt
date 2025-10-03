@@ -1,7 +1,6 @@
 package fr.acinq.lightning.serialization.channel.v5
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.utils.Either
@@ -378,7 +377,6 @@ object Deserialization {
 
     private fun Input.readInteractiveTxSigningSession(htlcs: Set<DirectedHtlc>): InteractiveTxSigningSession = InteractiveTxSigningSession(
         fundingParams = readInteractiveTxParams(),
-        fundingTxIndex = readNumber(),
         fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction,
         localCommitParams = readCommitParams(),
         localCommit = when (val discriminator = read()) {
@@ -388,7 +386,7 @@ object Deserialization {
         },
         remoteCommitParams = readCommitParams(),
         remoteCommit = readRemoteCommitWithoutHtlcs(htlcs),
-        nextRemoteNonce = null
+        nextRemoteCommitNonce = null
     )
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {
